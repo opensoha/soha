@@ -2327,7 +2327,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** @description Read immutable configuration revisions after application view and package scope authorization. File content and binding parameters are configuration data and are not a guarantee of secret-free content. */
+        get: operations["listManifestRevisions"];
         put?: never;
         /** @description Save the current configuration as an immutable revision without creating a build, plan, deployment or execution task. Requires application update permission and the current draft updatedAt token. Existing current published content is returned unchanged. */
         post: operations["saveManifestRevision"];
@@ -2657,6 +2658,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/delivery/blueprints/{blueprintID}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read authorized inferred application/environment usage and bounded latest execution observations. This does not execute a blueprint or prove deployment readiness. */
+        get: operations["getDeliveryBlueprintUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/delivery/blueprints/{blueprintID}/render-spec": {
         parameters: {
             query?: never;
@@ -2894,6 +2912,74 @@ export interface paths {
         put?: never;
         /** @description Control the current approved deployment using native UID and resourceVersion preconditions. Promotion cannot skip analysis or a timed pause. Abort requests native traffic restoration; task cancellation completes only after stop confirmation. */
         post: operations["controlExecutionTaskRollout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/delivery/execution-tasks/{taskID}/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Action-specific task control with current permission and application/environment scope authorization and a user-safe task response. Clients requiring these semantics use this endpoint and treat an older server without it as unsupported, without falling back to legacy cancel/retry paths. Acceptance does not prove completion. Uncertain responses must be inspected by the original task ID before deciding another action. */
+        post: operations["controlExecutionTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/delivery/execution-tasks/{taskID}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read at most 1000 persisted logs for an authorized task in creation order. This is a bounded query, not a runtime log stream. VM SSH command tasks do not expose logs through this endpoint. */
+        get: operations["listExecutionTaskLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/delivery/execution-tasks/{taskID}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Request durable cancellation. Inspect the original task until the server confirms its terminal state; acceptance does not prove the external operation stopped. */
+        post: operations["cancelExecutionTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/delivery/execution-tasks/{taskID}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicitly retry an eligible original task after server authorization and lifecycle checks. Preserve its task ID and inspect the actual queued or running state; clients must not automatically retry an uncertain request. */
+        post: operations["retryExecutionTask"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3715,6 +3801,262 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/docker/hosts/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires docker.hosts.manage:create and current target scope. Metadata-only registration, with stable actor/key receipt; no VM, Agent or Docker action. */
+        post: operations["registerDockerHostConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/hosts/{dockerHostID}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Requires docker.hosts.manage:update and current resource scope. UID/revision and optional target Host UID are checked under the same SQL transaction as the partial update and receipt. */
+        patch: operations["patchDockerHostConfiguration"];
+        trace?: never;
+    };
+    "/docker/hosts/{dockerHostID}/configuration-deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires docker.hosts.manage:delete and current resource scope. Conditional metadata deregistration only; runtime effects are never inferred from record deletion. */
+        post: operations["deleteDockerHostConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Requires docker.projects.manage:update and current resource scope. UID/revision and optional target Host UID are checked under the same SQL transaction as the partial update and receipt. */
+        patch: operations["patchDockerProjectConfiguration"];
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/configuration-deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires docker.projects.manage:delete and current resource scope. Conditional metadata deregistration only; runtime effects are never inferred from record deletion. */
+        post: operations["deleteDockerProjectConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/configuration-requests/{requestKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the original actor-owned minimal receipt under the current mutation permission and frozen target scope. No configuration disclosure or replay. A missing result is not proof an in-flight transaction cannot commit. */
+        get: operations["getDockerConfigurationRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/hosts/{dockerHostID}/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.hosts.view. Reads the database-owned resource UID and opaque configuration revision without reconciliation, Agent calls or configuration content. This endpoint does not prove runtime container ownership or enable conditional writes. */
+        get: operations["getDockerHostIdentity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.projects.view. Reads the database-owned resource UID and opaque configuration revision without reconciliation, Agent calls or configuration content. This endpoint does not prove runtime container ownership or enable conditional writes. */
+        get: operations["getDockerProjectIdentity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/terminal-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Rejects Origin and governed-AI credentials. Requires current docker.services.terminal and project scope. Prepares one persistent lease and a 60-second single-use header ticket bound to original actor/credential, host/project UID/revision, endpoint and full CID. Default 300s, maximum 900s, bounded by original credential expiry; maximum four pending/active leases per actor and 64 globally. Unsupported old Agents never fall back to Compose -T. */
+        post: operations["createDockerNativeTerminal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/terminal-sessions/{sessionID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reads original actor/credential-bound lease under current terminal permission and project scope. No shell creation or reconnect. Expired/interrupted active outcomes remain unknown. */
+        get: operations["getDockerNativeTerminal"];
+        put?: never;
+        post?: never;
+        /** @description Requests close under original actor/credential and current authorization. Active streams recheck lease, permission, original credential and frozen registry binding. Closing a transport never claims the remote exec was terminated. */
+        delete: operations["closeDockerNativeTerminal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/terminal-sessions/{sessionID}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Native WebSocket only. Rejects Origin, duplicate ticket headers and query credentials. Requires Authorization and the original single-use ticket; CAS consume precedes Agent connection. Uses existing NativeTerminalClientFrame/NativeTerminalServerFrame with hard lease/input/output bounds. One connection and one exec only; no automatic reconnect, replay or legacy fallback. Output/keystrokes are not persisted. */
+        get: operations["streamDockerNativeTerminal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/runtime/v1/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.services.logs. The server resolves the current registered full CID and immutable Host/Project UIDs, enforces existing module permissions and any installed invocation scope, verifies the Agent response against the original request and rechecks the registry. Legacy projects or Agents are unsupported; no Compose fallback. Unknown query options are rejected. Ordinary REST follows existing Docker module RBAC and credential ceilings; Gateway credentials retain their additional target grants and cannot fall back to this REST family. */
+        get: operations["getDockerRuntimeLogsV1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/runtime/v1/volumes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.services.files. The server resolves the current registered full CID and immutable Host/Project UIDs, enforces existing module permissions and any installed invocation scope, verifies the Agent response against the original request and rechecks the registry. Legacy projects or Agents are unsupported; no Compose fallback. Unknown query options are rejected. Ordinary REST follows existing Docker module RBAC and credential ceilings; Gateway credentials retain their additional target grants and cannot fall back to this REST family. Returns actual container mount targets only. Browse capability requires an explicitly configured pinned safe reader; no host source paths. */
+        get: operations["getDockerRuntimeVolumesV1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/runtime/v1/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.services.files. The server resolves the current registered full CID and immutable Host/Project UIDs, enforces existing module permissions and any installed invocation scope, verifies the Agent response against the original request and rechecks the registry. Legacy projects or Agents are unsupported; no Compose fallback. Unknown query options are rejected. Ordinary REST follows existing Docker module RBAC and credential ceilings; Gateway credentials retain their additional target grants and cannot fall back to this REST family. Reads only declared volume/bind mounts of a compatible running Linux container with private PID and compatible daemon-default user namespaces. Symbolic links, hard-linked files, special files, nested-mount traversal and non-UTF8 data are unsupported; the target process image needs no shell/runtime. A read never mutates business files. */
+        get: operations["listDockerRuntimeFilesV1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/runtime/v1/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.services.files. The server resolves the current registered full CID and immutable Host/Project UIDs, enforces existing module permissions and any installed invocation scope, verifies the Agent response against the original request and rechecks the registry. Legacy projects or Agents are unsupported; no Compose fallback. Unknown query options are rejected. Ordinary REST follows existing Docker module RBAC and credential ceilings; Gateway credentials retain their additional target grants and cannot fall back to this REST family. Reads only declared volume/bind mounts of a compatible running Linux container with private PID and compatible daemon-default user namespaces. Symbolic links, hard-linked files, special files, nested-mount traversal and non-UTF8 data are unsupported; the target process image needs no shell/runtime. A read never mutates business files. */
+        get: operations["readDockerRuntimeFileV1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/docker/hosts/{dockerHostID}/agent-installation": {
         parameters: {
             query?: never;
@@ -3853,6 +4195,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["deployDockerProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/deploy-requests/{requestKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the original actor-scoped deployment operation by its idempotency key. This lookup never creates or replays work and does not require the current project configuration to match the original plan. Current operations.view and resource scope still apply. Runner payloads and provider results are omitted. */
+        get: operations["getOriginalDockerProjectDeployment"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6975,6 +7334,178 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clusters/{clusterID}/resources/{kind}/{name}/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the authorized object identity without resource content, Secret data, managedFields or arbitrary annotations. Older Agent implementations may return unsupported. */
+        get: operations["getKubernetesResourceIdentity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/resources/{kind}/{name}/conditional": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Delete only the caller-reviewed UID and resourceVersion. Kubernetes preconditions, existing owner protection and finalizers are preserved. A successful response confirms acceptance only; observe the same UID before reporting completion. The server never falls back to an unconditional Agent deletion. */
+        delete: operations["deleteKubernetesResourceConditional"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/resources/{kind}/{name}/conditional/yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Edit only the caller-reviewed UID and resourceVersion using the existing non-forced SSA editor. YAML target and any embedded identity must match the route and preconditions. Secret content additionally requires the existing sensitive-data permission. No unconditional Agent fallback is allowed. */
+        put: operations["applyKubernetesResourceYamlConditional"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/resources/{kind}/{name}/conditional/yaml/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Perform the existing server-side dry-run analysis against caller-reviewed UID and resourceVersion. Does not change live ownership or resource contents. A plan is an analysis, not an execution authorization or proof of readiness. */
+        post: operations["preflightKubernetesResourceYamlConditional"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/resources/{kind}/{name}/conditional/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Run one typed workload action against the caller-reviewed UID and resourceVersion. Uses the exact kind/action permission, existing external-owner protection and Kubernetes optimistic concurrency. A successful update is not rollout readiness. Dry-run uses Kubernetes Update dry-run and never changes live objects; no unconditional Agent fallback is allowed. */
+        post: operations["executeKubernetesWorkloadActionConditional"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/pods/{podName}/terminal-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Native clients only: rejects Origin. Requires current pods.exec permission and scope. Creates a persistent lease and 60-second single-use ticket bound to actor, original credential, Pod UID, container and shell. Default 5 minutes, maximum 15 minutes, bounded by original access expiry. At most four pending/active leases per actor and 64 globally. No bearer or ticket in URLs. */
+        post: operations["createKubernetesPodTerminal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/pods/{podName}/terminal-sessions/{sessionID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reads this actor-owned lease under current pods.exec authorization. Never reconnects or starts a shell. */
+        get: operations["getKubernetesPodTerminal"];
+        put?: never;
+        post?: never;
+        /** @description Requests cancellation of this actor-owned lease under current authorization. Active streams continuously recheck lease, identity, permission and scope. Does not assert remote process termination. */
+        delete: operations["closeKubernetesPodTerminal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/pods/{podName}/terminal-sessions/{sessionID}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Rejects nonempty Origin, duplicate ticket headers and query credentials. Requires ordinary Authorization plus the single-use ticket header. Atomically consumes the ticket before connecting. Session remains bound to its original credential and deadline; permission revocation cancels the stream. Interactive output is not persisted or included in audit logs. */
+        get: operations["streamKubernetesPodTerminal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/pods/{podName}/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read an existing actor-owned execution by its original key under current pods.exec permission and scope. Never executes a command. */
+        get: operations["getKubernetesPodExecutionByKey"];
+        put?: never;
+        /** @description Authorize pods.exec and cluster/namespace scope, persist one attempt, and run literal argv. The original key never repeats a command, including after response loss or Core restart. Requires versioned Agent support; no legacy shell fallback. */
+        post: operations["executeKubernetesPodArgv"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/pods/{podName}/executions/{executionID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read an existing actor-owned execution under current pods.exec permission and scope. Never executes a command. */
+        get: operations["getKubernetesPodExecution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/clusters/{clusterID}/resources/update-plan": {
         parameters: {
             query?: never;
@@ -7860,6 +8391,74 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["rotatePersonalAccessToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-gateway/governed-credentials/personal-access-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires metadata.governedAI with gateway_only binding. Requires CLIAuthOptions.supportsGovernedAI=true. This distinct route fails closed on older servers. Clients must not fall back to the ordinary credential route. The response uses the governed credential prefix and preserves the binding. */
+        post: operations["createGovernedPersonalAccessToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-gateway/governed-credentials/personal-access-tokens/{tokenID}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires the existing credential to have a valid gateway_only binding. Requires CLIAuthOptions.supportsGovernedAI=true. This distinct route fails closed on older servers. Clients must not fall back to the ordinary credential route. The response uses the governed credential prefix and preserves the binding. */
+        post: operations["rotateGovernedPersonalAccessToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-gateway/governed-credentials/service-accounts/{serviceAccountID}/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires metadata.governedAI with gateway_only binding. Requires CLIAuthOptions.supportsGovernedAI=true. This distinct route fails closed on older servers. Clients must not fall back to the ordinary credential route. The response uses the governed credential prefix and preserves the binding. */
+        post: operations["createGovernedServiceAccountToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-gateway/governed-credentials/service-account-tokens/{tokenID}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires the existing credential to have a valid gateway_only binding. Requires CLIAuthOptions.supportsGovernedAI=true. This distinct route fails closed on older servers. Clients must not fall back to the ordinary credential route. The response uses the governed credential prefix and preserves the binding. */
+        post: operations["rotateGovernedServiceAccountToken"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11654,6 +12253,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/network-access/sessions/{sessionID}/commands/{commandID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkSessionScopedCommand"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/sessions/{sessionID}/command-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOriginalNetworkSessionCommand"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/network-access/sessions/{sessionID}/actions/plan": {
         parameters: {
             query?: never;
@@ -12468,12 +13099,1603 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workflows/trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["triggerWorkflowRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflows/{workflowRunID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["getWorkflowRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflows/{workflowRunID}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["approveWorkflowRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflows/{workflowRunID}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["rejectWorkflowRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/delivery/runtime/workflows/{workflowRunID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["getWorkflowRuntimeDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/monitoring/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["getMonitoringSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["listAlertRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{alertID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["getAlertRecord"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["listAlertEventRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert-events/{eventID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["getAlertEventRecord"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/healing-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["listHealingRunRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/healing-runs/{runID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["getHealingRunRecord"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{alertID}/ownership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        put: operations["assignAlertOwnership"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{alertID}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["acknowledgeAlertRecord"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert-events/{eventID}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["acknowledgeAlertEventRecord"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert-events/{eventID}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["resolveAlertEventRecord"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert-events/{eventID}/heal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["healAlertEventRecord"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert-events/{eventID}/healing-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Atomically create an original manual healing request and its pending run. Approval and workflow execution are independent actions. Never fall back to the legacy unkeyed heal endpoint. */
+        post: operations["createOriginalHealingRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert-events/{eventID}/healing-requests/{requestID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read only the original actor and credential bound manual request. This never creates a run, approves or enqueues a workflow, including when a referenced workflow is missing or uncertain. */
+        get: operations["getOriginalHealingRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/healing-runs/{runID}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["approveHealingRunRecord"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/healing-runs/{runID}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["rejectHealingRunRecord"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/healing-runs/{runID}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["retryHealingRunRecord"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/directory-connections/{connectionID}/sync/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["previewDirectorySynchronization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/directory-connections/{connectionID}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Apply the current provider snapshot under directory sync permission. Core currently completes the manual synchronization before returning the original run with HTTP 202; this is not proof of asynchronous background execution. */
+        post: operations["startDirectorySynchronization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/directory-connections/{connectionID}/sync-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Claim the original actor/credential-bound request before pulling the provider. Only its first claimant may synchronize. The same request returns its original queued/running/terminal run without another pull or projection. A claimed interruption is never replayed. This synchronous implementation can return a completed run with 202; acceptance alone does not prove success. Old /sync remains compatible and is never a fallback for this protocol. */
+        post: operations["createDirectorySynchronizationRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/directory-connections/{connectionID}/sync-requests/{idempotencyKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read only the original request for this connection, actor and credential under current sync/view permission. This never pulls a provider, creates a run or resumes unknown work. A different credential cannot replay or recover the request with the same key. */
+        get: operations["getOriginalDirectorySynchronizationRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/directory-connections/{connectionID}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the newest 50 original synchronization runs. Core does not support a limit or cursor on this legacy operation. */
+        get: operations["listDirectorySynchronizationRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/directory-runs/{runID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        get: operations["getDirectorySynchronizationRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/directory-connections/{connectionID}/runs/{runID}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Existing Core operation. Server rechecks current permission, resource scope and workflow policy; CLI confirmation grants no authorization. */
+        post: operations["cancelDirectorySynchronizationRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Claim one request key per current actor before triggering any workflow. Same key with changed input conflicts. A retained receipt survives run deletion; duplicates never trigger again, including an unknown dispatch outcome. New path deliberately has no old-server fallback. Current authorization is rechecked on every access. The legacy application runner is not promoted to replay-safe execution. */
+        post: operations["submitWorkflowRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-requests/{requestKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the original current-actor receipt without creating or resuming a run. A missing receipt does not prove that an earlier submission cannot commit later. */
+        get: operations["getWorkflowRequestReceipt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.dlp-policy.view and DockerProject object scope. Metadata contains no file content or matched excerpts. */
+        get: operations["getDockerVolumeDLPPolicy"];
+        /** @description Requires docker.dlp-policy.update and DockerProject object scope. Metadata contains no file content or matched excerpts. */
+        put: operations["saveDockerVolumeDLPPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires docker.dlp-policy.publish and DockerProject object scope. Metadata contains no file content or matched excerpts. */
+        post: operations["publishDockerVolumeDLPPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.dlp-events.view and DockerProject object scope. Metadata contains no file content or matched excerpts. Returns latest 100 events, newest first; bounded history, not a total or export. */
+        get: operations["listDockerVolumeDLPEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/runtime/volume-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires docker.services.view. When a project DLP policy is published and enabled, Core additionally requires DockerProject object scope and inspects a complete UTF-8 file up to 262144 bytes before returning content. Block denies matches and incomplete/unsupported scans; audit may allow uninspected content. With no enabled published policy, the existing channel remains uninspected and no transfer DLP event is issued. Terminal/log/direct volume access are outside this channel. No-store; DLP denials return no file content. */
+        get: operations["readDockerProjectVolumeFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires own docker.services.view or reviewer/event-view permission plus project ABAC. Returns latest100 own cases unless authorized for review. */
+        get: operations["listDockerVolumeDLPActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp/events/{eventID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires event ownership and docker.services.view, or independent event/review permission, plus project ABAC. */
+        get: operations["getDockerVolumeDLPCase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp/events/{eventID}/authorizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires event owner and current file-view object scope. Warning acknowledgement or approved appeal only. Token expires within60s, one-use, actor/content/target/policy-bound; retry rereads and rescans. */
+        post: operations["authorizeDockerVolumeDLPTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp/events/{eventID}/appeal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires event owner and file-view project scope. Fixed reason codes; no content evidence. */
+        post: operations["appealDockerVolumeDLPTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp/events/{eventID}/appeal/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires docker.dlp-appeals.review, project ABAC, no self-review; release of event-owned network hold additionally requires global network linkage scope. Approval permits one exact retry and does not restore old network authorizations. */
+        post: operations["reviewDockerVolumeDLPAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/runtime/volume-file/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires docker.services.view. Structured Core-gated read; authorization appears only in body. On warn/block no file content is returned. Existing GET remains fail-closed. */
+        post: operations["readDockerProjectVolumeTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/workload-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listNetworkWorkloadBindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/workload-bindings/{bindingID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["putNetworkWorkloadBinding"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/devices/{deviceID}/management-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submitNetworkManagementProof"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/sessions/{sessionID}/vpn-revocation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkVPNSessionRevocation"];
+        put?: never;
+        /** @description Revokes every active VPN session for the selected session's subject, device and site and persists a reconnect restriction. A separate explicit release permits fresh authorization; it never restores old sessions or leases. NAS sessions use the existing NAS action API. */
+        post: operations["revokeNetworkVPNSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/sessions/{sessionID}/vpn-revocation/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["releaseNetworkVPNSessionRevocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/configuration-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listNetworkProxyConfigurationHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/configuration-history/{revision}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restoreNetworkProxyConfiguration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/close-commands/{commandID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkProxyCloseCommand"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Draft and published endpoint response policies in the authorized site scope. */
+        get: operations["listNetworkEndpointResponsePolicies"];
+        put?: never;
+        /** @description Create a draft. No network action occurs until explicit publication. */
+        post: operations["createNetworkEndpointResponsePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-policies/{policyID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read a scoped policy and its immutable published configuration. */
+        get: operations["getNetworkEndpointResponsePolicy"];
+        /** @description Update the draft with revision checking. Authorize both old and new scopes. */
+        put: operations["updateNetworkEndpointResponsePolicy"];
+        post?: never;
+        /** @description Retire a policy without implicitly clearing existing restrictions. */
+        delete: operations["deleteNetworkEndpointResponsePolicy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-policies/{policyID}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Publish a validated immutable revision after checking NAS and endpoint capabilities. Disabling stops new triggers; existing restrictions are reevaluated. */
+        post: operations["publishNetworkEndpointResponsePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-policies/{policyID}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Publish the chosen previous configuration as a new revision. Restriction epochs never decrease. */
+        post: operations["rollbackNetworkEndpointResponsePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-policies/{policyID}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read bounded policy revision history in the authorized scope. */
+        get: operations["listNetworkEndpointResponsePolicyRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-policies/{policyID}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Preview this policy against a visible device and fresh NAS evidence without creating restrictions or commands. */
+        post: operations["previewNetworkEndpointResponsePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read scoped endpoint response events. Notification and network enforcement are separate states. */
+        get: operations["listNetworkEndpointResponseEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-events/{eventID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read a response event and causal presence/session evidence. */
+        get: operations["getNetworkEndpointResponseEvent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-response-events/{eventID}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Restore only after current trusted health and all other constraints are reevaluated. One heartbeat or policy retirement cannot restore access. */
+        post: operations["restoreNetworkEndpointResponseEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-maintenance-windows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read bounded, scoped maintenance exceptions. */
+        get: operations["listNetworkEndpointMaintenanceWindows"];
+        put?: never;
+        /** @description Create an audited exception of at most 24 hours for one device and site. Existing denies and sensitive lease bounds remain effective. */
+        post: operations["createNetworkEndpointMaintenanceWindow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-maintenance-windows/{windowID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description End a scoped maintenance exception and reevaluate current health. */
+        delete: operations["deleteNetworkEndpointMaintenanceWindow"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-devices/{deviceID}/presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read current trusted service presence separately from device registration and UI state. */
+        get: operations["getNetworkEndpointPresence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/session-commands/{commandID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read command progress only after authorizing its parent session scope. Applied ACK is distinct from verified network effects. */
+        get: operations["getNetworkSessionCommand"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/admission/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read-only admission evaluation for the device owner and selected NAS. Returns current policy and attribute versions; it does not authenticate a certificate or grant network access. */
+        post: operations["previewNetworkAdmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-devices/{deviceID}/channel-controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Requires endpoint_controls.view and device ABAC. Scope and freshness are explicit. */
+        get: operations["getEndpointChannelControls"];
+        /** @description Requires independent update permission, device ABAC and all-subjects scope; CAS draft only. */
+        put: operations["saveEndpointChannelControls"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/endpoint-devices/{deviceID}/channel-controls/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit publish; independent publish permission plus device and all-subjects ABAC. New revision is required to release controls. */
+        post: operations["publishEndpointChannelControls"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/runtimes/{runtimeID}/channel-controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description mTLS current endpoint credential and windows-channel-controls-v1 capability; response includes one-use receipt challenge. */
+        get: operations["getRuntimeChannelControls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/runtimes/{runtimeID}/channel-controls/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description mTLS endpoint report. Current credential/policy and one-use challenge are atomically checked; replay cannot refresh receipt. */
+        post: operations["reportRuntimeChannelControls"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * listManagedContentDestinations
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        get: operations["listManagedContentDestinations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/destinations/admin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * listManagedContentAdminDestinations
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        get: operations["listManagedContentAdminDestinations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/destinations/{destinationID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * getManagedContentDestination
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        get: operations["getManagedContentDestination"];
+        /**
+         * saveManagedContentDestination
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        put: operations["saveManagedContentDestination"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/destinations/{destinationID}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * publishManagedContentDestination
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        post: operations["publishManagedContentDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * submitManagedContentUploads
+         * @description Buffer at most 256 KiB in Core, inspect all bytes, persist a decision and only then submit to the approved destination. requestId is single-attempt idempotency; unknown outcomes must be looked up, never automatically replayed.
+         */
+        post: operations["submitManagedContentUploads"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/pastes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * submitManagedContentPastes
+         * @description Buffer at most 256 KiB in Core, inspect all bytes, persist a decision and only then submit to the approved destination. requestId is single-attempt idempotency; unknown outcomes must be looked up, never automatically replayed.
+         */
+        post: operations["submitManagedContentPastes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * listManagedContentFiles
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        get: operations["listManagedContentFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/files/{fileID}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * performManagedContentFileRead
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        post: operations["performManagedContentFileRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/files/{fileID}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * performManagedContentFileCopy
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        post: operations["performManagedContentFileCopy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/files/{fileID}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * performManagedContentFileDelete
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        post: operations["performManagedContentFileDelete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * listManagedContentRecords
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        get: operations["listManagedContentRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/records/{recordID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * getManagedContentRecord
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        get: operations["getManagedContentRecord"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/destinations/{destinationID}/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * listManagedContentCases
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        get: operations["listManagedContentCases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/records/{recordID}/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * handleManagedContentAuthorize
+         * @description The owner needs view plus the original operation permissions (create and/or download). Current object scopes are rechecked. Authorization is single-use, content/target/connection/version-bound and does not transfer data.
+         */
+        post: operations["handleManagedContentAuthorize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/records/{recordID}/appeal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * handleManagedContentAppeal
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        post: operations["handleManagedContentAppeal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/records/{recordID}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * handleManagedContentReview
+         * @description Soha managed, bounded content transfer. Current permission and object scope are rechecked; no external browser-wide coverage.
+         */
+        post: operations["handleManagedContentReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/destinations/{destinationID}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare saved draft with active policy on bounded samples
+         * @description Shadow only; no upload, download, policy publication, network restriction or persisted content. 1-8 complete samples, each at most 32KiB. Counts are sample counts, not false-positive rates.
+         */
+        post: operations["previewManagedContentDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/docker/projects/{dockerProjectID}/content-dlp/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare saved draft with active policy on bounded samples
+         * @description Shadow only; no upload, download, policy publication, network restriction or persisted content. 1-8 complete samples, each at most 32KiB. Counts are sample counts, not false-positive rates.
+         */
+        post: operations["previewDockerContentDLPPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/records/{recordID}/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read source-owned network hold and execution receipts
+         * @description Own record with transfer view; other actors require global transfer event view and every gate scope. No file content.
+         */
+        get: operations["getManagedContentNetworkState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/content-transfers/destinations/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List authorized destinations for content case review
+         * @description Requires independent global event-view scope; includes disabled/unpublished destinations so earlier findings remain reviewable. Returns summaries without connection configuration or content.
+         */
+        get: operations["listManagedContentReviewDestinations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        WorkflowRequestInput: {
+            idempotencyKey: string;
+            workflow: components["schemas"]["WorkflowTriggerRequest"];
+        };
+        WorkflowRequestReceipt: {
+            id: string;
+            requestKey: string;
+            runId: string;
+            /** @enum {string} */
+            submissionStatus: "accepted" | "unknown" | "rejected";
+            errorCode?: string;
+            run?: components["schemas"]["WorkflowRun"];
+        };
+        WorkflowRequestReceiptEnvelope: {
+            data: components["schemas"]["WorkflowRequestReceipt"];
+        };
+        OperationCommentInput: {
+            comment?: string;
+        };
+        AlertOwnershipInput: {
+            ownerTeam: string;
+            assignee: string;
+        };
+        WorkflowTriggerRequest: {
+            applicationId: string;
+            applicationEnvironmentId?: string;
+            workflowName?: string;
+            clusterId?: string;
+            namespace?: string;
+            deploymentName?: string;
+            buildSourceId?: string;
+            refType?: string;
+            refName?: string;
+            imageTag?: string;
+            releaseName?: string;
+            containerName?: string;
+            variables?: components["schemas"]["TemplateParameterValues"];
+            buildArgs?: components["schemas"]["TemplateParameterValues"];
+            triggerBuild?: boolean;
+            triggerRelease?: boolean;
+        };
+        WorkflowRunEnvelope: {
+            data: components["schemas"]["WorkflowRun"];
+        };
         CLIAuthOptions: {
             enabled: boolean;
+            /**
+             * @description Software support for gateway_only PAT and service-account token bindings with fail-closed opaque token prefixes. An absent or false value means unsupported. Clients must require true before creating or rotating a bound credential.
+             * @default false
+             */
+            supportsGovernedAI?: boolean;
             /**
              * Format: int32
              * @enum {integer}
@@ -12570,6 +14792,7 @@ export interface components {
             refreshToken: string;
         };
         CLIAuthContext: {
+            governedAI?: components["schemas"]["GovernedAITokenBinding"];
             /** @enum {string} */
             credentialKind: "session" | "personal_access_token" | "service_account_token";
             /** @enum {string} */
@@ -16454,8 +18677,14 @@ export interface components {
             /** Format: date-time */
             readonly createdAt: string;
         };
+        /** @description Canonical data array with a legacy items alias for existing Core list clients. When present, items contains the same authorized artifacts as data. New clients prefer data; the alias remains for compatibility. */
         PersonalAssistantArtifactListEnvelope: {
             data: components["schemas"]["PersonalAssistantArtifact"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data; servers preserve it for existing list clients.
+             */
+            items?: components["schemas"]["PersonalAssistantArtifact"][];
         };
         PersonalAssistantEnvelope: {
             data: components["schemas"]["PersonalAssistant"];
@@ -17180,7 +19409,7 @@ export interface components {
             messageId?: string;
         };
         WorkbenchSendMessageStreamRequest: {
-            /** @description A stable per-turn idempotency key. Reusing it with different content or selections is rejected. */
+            /** @description Stable client turn identifier of at most 128 Unicode code points. Native turns deduplicate by user, session and key and reject changed input; assistant appearance tasks have separate reuse checks. Synchronous and external provider paths do not guarantee deduplication. Preserve the original key after an uncertain response; a missing Native lookup is not proof that submission cannot commit later. */
             requestId?: string;
             taskIntent?: components["schemas"]["WorkbenchTaskIntent"];
             assistantTask?: components["schemas"]["WorkbenchAssistantTask"];
@@ -17386,8 +19615,11 @@ export interface components {
         WorkbenchMessageDoneEvent: components["schemas"]["WorkbenchStreamEventBase"] & {
             /** @enum {string} */
             type: "message.done";
-            /** @enum {string} */
-            role: "assistant";
+            /**
+             * @description Native failed or canceled terminal notices use system; generated assistant replies use assistant. This does not widen runner callback input roles.
+             * @enum {string}
+             */
+            role: "assistant" | "system";
             content: string;
             metadata?: {
                 [key: string]: unknown;
@@ -20023,6 +22255,127 @@ export interface components {
             files: components["schemas"]["ManifestFile"][];
             bindings: components["schemas"]["ManifestPackageBinding"][];
         };
+        ManifestRevision: {
+            id: string;
+            packageId: string;
+            version: number;
+            digest: string;
+            note?: string;
+            files: components["schemas"]["ManifestFile"][];
+            bindings: components["schemas"]["ManifestPackageBinding"][];
+            createdBy?: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ManifestRevisionListEnvelope: {
+            data: components["schemas"]["ManifestRevision"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data containing the same authorized revisions.
+             */
+            items?: components["schemas"]["ManifestRevision"][];
+        };
+        DeliveryTemplateUsageApplication: {
+            id: string;
+            name?: string;
+            key?: string;
+            businessLineId?: string;
+            group?: string;
+        };
+        DeliveryTemplateUsageEnvironment: {
+            id?: string;
+            key?: string;
+            name?: string;
+            isProduction: boolean;
+            requiresApproval: boolean;
+        };
+        DeliveryTemplateUsageBinding: {
+            id?: string;
+            applicationId?: string;
+            environmentId?: string;
+            environmentKey?: string;
+            requiresApproval: boolean;
+            targetCount: number;
+            /** @enum {string} */
+            riskLevel: "low" | "medium" | "high";
+            application?: components["schemas"]["DeliveryTemplateUsageApplication"];
+            environment?: components["schemas"]["DeliveryTemplateUsageEnvironment"];
+        };
+        DeliveryTemplateUsageBuildSource: {
+            applicationId: string;
+            buildSourceId: string;
+            buildSourceName?: string;
+            application?: components["schemas"]["DeliveryTemplateUsageApplication"];
+            bindingCount: number;
+            /** @enum {string} */
+            riskLevel: "low" | "medium" | "high";
+        };
+        DeliveryTemplateUsageRuntimeItem: {
+            kind: string;
+            id: string;
+            status: string;
+            /** Format: date-time */
+            observedAt?: string;
+            applicationId?: string;
+            applicationEnvironmentId?: string;
+            buildSourceId?: string;
+            releaseBundleId?: string;
+            executionTaskId?: string;
+            sourceSystem?: string;
+            workflowName?: string;
+            workflowTemplateId?: string;
+            clusterId?: string;
+            namespace?: string;
+            deploymentName?: string;
+            version?: string;
+            sourceType?: string;
+            artifactRef?: string;
+            taskKind?: string;
+            providerKind?: string;
+            operationState?: components["schemas"]["OperationState"];
+        };
+        DeliveryTemplateUsageRuntimeSummary: {
+            source: string;
+            note?: string;
+            items: components["schemas"]["DeliveryTemplateUsageRuntimeItem"][];
+            statusCounts: {
+                [key: string]: number;
+            };
+            stateCounts: {
+                [key: string]: number;
+            };
+            kindCounts?: {
+                [key: string]: number;
+            };
+            latest?: components["schemas"]["DeliveryTemplateUsageRuntimeItem"];
+            /** Format: date-time */
+            latestAt?: string;
+        };
+        DeliveryTemplateUsageSummary: {
+            /** @enum {string} */
+            templateKind: "workflow" | "build" | "blueprint";
+            templateId: string;
+            usageCount: number;
+            applicationCount: number;
+            environmentCount: number;
+            productionEnvironmentCount: number;
+            approvalBindingCount: number;
+            targetCount: number;
+            /** @enum {string} */
+            riskLevel: "low" | "medium" | "high";
+            riskReasons?: string[];
+            recommendedAction?: string;
+            applications?: components["schemas"]["DeliveryTemplateUsageApplication"][];
+            bindings?: components["schemas"]["DeliveryTemplateUsageBinding"][];
+            buildSources?: components["schemas"]["DeliveryTemplateUsageBuildSource"][];
+            fileKindCounts?: {
+                [key: string]: number;
+            };
+            lastExecutionSummary?: components["schemas"]["DeliveryTemplateUsageRuntimeSummary"];
+        };
+        DeliveryTemplateUsageSummaryEnvelope: {
+            data: components["schemas"]["DeliveryTemplateUsageSummary"];
+        };
         ManifestRevisionInput: {
             /**
              * Format: date-time
@@ -20435,6 +22788,11 @@ export interface components {
         };
         ManifestBindingListEnvelope: {
             data: components["schemas"]["ManifestBinding"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data containing the same authorized bindings.
+             */
+            items?: components["schemas"]["ManifestBinding"][];
         };
         /** @enum {string} */
         ManifestConditionStatus: "true" | "false" | "unknown";
@@ -20653,8 +23011,14 @@ export interface components {
         DeliveryBlueprintEnvelope: {
             data: components["schemas"]["DeliveryBlueprint"];
         };
+        /** @description Canonical data array with a deprecated items alias containing the same authorized rows, retained for existing Core list clients. */
         DeliveryBlueprintListEnvelope: {
             data: components["schemas"]["DeliveryBlueprint"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data; both arrays contain the same authorized rows.
+             */
+            items?: components["schemas"]["DeliveryBlueprint"][];
         };
         RenderedDeliverySpecEnvelope: {
             data: components["schemas"]["RenderedDeliverySpec"];
@@ -20917,23 +23281,44 @@ export interface components {
         ApplicationEnvelope: {
             data: components["schemas"]["Application"];
         };
+        /** @description Canonical data array with a deprecated items alias containing the same authorized rows, retained for existing Core list clients. */
         ApplicationListEnvelope: {
             data: components["schemas"]["Application"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data; both arrays contain the same authorized rows.
+             */
+            items?: components["schemas"]["Application"][];
         };
         ApplicationServiceEnvelope: {
             data: components["schemas"]["ApplicationService"];
         };
+        /** @description Canonical data array with a deprecated items alias containing the same authorized rows, retained for existing Core list clients. */
         ApplicationServiceListEnvelope: {
             data: components["schemas"]["ApplicationService"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data; both arrays contain the same authorized rows.
+             */
+            items?: components["schemas"]["ApplicationService"][];
         };
         ApplicationEnvironmentEnvelope: {
             data: components["schemas"]["ApplicationEnvironment"];
         };
+        /** @description Canonical data array with a deprecated items alias containing the same authorized rows, retained for existing Core list clients. */
         ApplicationEnvironmentListEnvelope: {
             data: components["schemas"]["ApplicationEnvironment"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data; both arrays contain the same authorized rows.
+             */
+            items?: components["schemas"]["ApplicationEnvironment"][];
         };
+        /** @description Canonical data array with the same authorized rows in the deprecated items alias. */
         DeliveryEnvironmentListEnvelope: {
             data: components["schemas"]["DeliveryEnvironment"][];
+            /** @deprecated */
+            items?: components["schemas"]["DeliveryEnvironment"][];
         };
         BuildTemplateEnvelope: {
             data: components["schemas"]["BuildTemplate"];
@@ -20977,11 +23362,45 @@ export interface components {
         ReleaseBundleListEnvelope: {
             data: components["schemas"]["ReleaseBundle"][];
         };
+        /** @description Canonical data array with a deprecated items alias containing the same authorized rows, retained for existing Core list clients. */
         ExecutionArtifactListEnvelope: {
             data: components["schemas"]["ExecutionArtifact"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data; both arrays contain the same authorized rows.
+             */
+            items?: components["schemas"]["ExecutionArtifact"][];
         };
+        /** @description Canonical data array with a deprecated items alias containing the same authorized rows, retained for existing Core list clients. */
         ExecutionTaskListEnvelope: {
             data: components["schemas"]["ExecutionTask"][];
+            /**
+             * @deprecated
+             * @description Legacy alias of data; both arrays contain the same authorized rows.
+             */
+            items?: components["schemas"]["ExecutionTask"][];
+        };
+        ExecutionTaskControlInput: {
+            /** @enum {string} */
+            action: "cancel" | "retry";
+            reason?: string;
+        };
+        ExecutionTaskActionInput: {
+            reason?: string;
+        };
+        ExecutionLog: {
+            id: string;
+            executionTaskId: string;
+            logLevel: string;
+            message: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ExecutionLogListEnvelope: {
+            items: components["schemas"]["ExecutionLog"][];
         };
         ExecutionTask: {
             id: string;
@@ -20997,6 +23416,7 @@ export interface components {
             maxRetries?: number;
             attemptCount?: number;
             timeoutSeconds?: number;
+            /** @description Runner callback credential. Ordinary user task and nested runtime views always return an empty string; only authenticated runner claim/status paths return the real value. */
             callbackToken: string;
             secretLease?: components["schemas"]["SecretLeaseGrant"];
             claimedByAgentId?: string;
@@ -21063,6 +23483,7 @@ export interface components {
             changes: components["schemas"]["OperationalPlanChange"][];
             warnings: string[];
             kubernetesResourceUpdate?: components["schemas"]["KubernetesResourceUpdateAnalysis"];
+            dockerProjectDeploy?: components["schemas"]["DockerProjectDeployPreconditions"];
         };
         OperationalPlanEnvelope: {
             data: components["schemas"]["OperationalPlan"];
@@ -21843,7 +24264,7 @@ export interface components {
                 [key: string]: components["schemas"]["DockerPayloadValue"];
             };
         };
-        /** @description Docker project configuration. Idempotent creation requires inline Compose, no caller ID or sourceRef, and sourceKind compose or single_container; it saves configuration only. */
+        /** @description Docker project configuration. Idempotent creation requires inline Compose, no caller ID or sourceRef, and sourceKind compose or single_container; it saves configuration only. Configuration and service-definition writes are atomic and preserve observed service inventory. Legacy updates preserve stored status and desiredState when those fields are omitted or empty; explicit non-empty legacy values remain supported. A configuration-only host move conflicts when runtime evidence, bound ports or associated operation history require an explicit runtime relocation; failed or missing results do not prove that no external resources exist. */
         DockerProjectInput: {
             idempotencyKey?: string;
             id?: string;
@@ -21858,7 +24279,9 @@ export interface components {
             sourceRef?: string;
             composeContent?: string;
             envContent?: string;
+            /** @description Legacy state input. An omitted or empty value preserves the stored runtime status during updates; prefer runtime actions for state transitions. */
             status?: string;
+            /** @description Legacy desired-state input. An omitted or empty value preserves the stored value during updates. */
             desiredState?: string;
             templateId?: string;
             ttlSeconds?: number;
@@ -21868,6 +24291,234 @@ export interface components {
             config?: {
                 [key: string]: components["schemas"]["DockerPayloadValue"];
             };
+        };
+        DockerConfigurationScalar: string | number | boolean;
+        DockerConfigurationMapValue: components["schemas"]["DockerConfigurationScalar"] | components["schemas"]["DockerConfigurationScalar"][] | {
+            [key: string]: components["schemas"]["DockerConfigurationScalar"];
+        };
+        DockerConfigurationPreconditions: {
+            /** Format: uuid */
+            expectedConfigurationRevision: string;
+            /** Format: uuid */
+            expectedUid: string;
+        };
+        /** @description Replace one explicit top-level configuration field using exactly one typed value. Unsupported target fields, duplicate fields, nulls and runtime/identity fields are rejected. Empty strings/objects clear supported fields; TTL zero clears expiry and zero host ports restore the documented defaults 20000/39999. */
+        DockerConfigurationChange: {
+            /** @enum {string} */
+            field: "name" | "endpoint" | "environment" | "owner" | "team" | "virtualizationConnectionId" | "vmId" | "vmName" | "hostId" | "slug" | "description" | "sourceKind" | "sourceRef" | "composeContent" | "envContent" | "templateId" | "availablePortStart" | "availablePortEnd" | "ttlSeconds" | "labels" | "config";
+            integerValue?: number;
+            objectValue?: {
+                [key: string]: components["schemas"]["DockerConfigurationMapValue"];
+            };
+            stringValue?: string;
+        } & ({
+            /** @enum {unknown} */
+            field?: "name" | "endpoint" | "environment" | "owner" | "team" | "virtualizationConnectionId" | "vmId" | "vmName" | "hostId" | "slug" | "description" | "sourceKind" | "sourceRef" | "composeContent" | "envContent" | "templateId";
+        } | {
+            /** @enum {unknown} */
+            field?: "availablePortStart" | "availablePortEnd" | "ttlSeconds";
+        } | {
+            /** @enum {unknown} */
+            field?: "labels" | "config";
+        });
+        /** @description Atomic partial metadata update with UID/revision fencing and a durable actor-owned request receipt. Project hostId changes require targetHostUid; other changes reject that unused field. Compose/env/config are never duplicated in the public receipt. Does not invoke or reconcile a runtime. */
+        DockerConfigurationPatchInput: {
+            changes: components["schemas"]["DockerConfigurationChange"][];
+            idempotencyKey: string;
+            preconditions: components["schemas"]["DockerConfigurationPreconditions"];
+            /** Format: uuid */
+            targetHostUid?: string;
+        };
+        /** @description Delete only a safely unregistered metadata target under UID/revision conditions. Refuses child projects, observed runtime evidence or associated operations requiring explicit lifecycle cleanup. This never stops, removes or destroys a VM/container. */
+        DockerConfigurationDeleteInput: {
+            idempotencyKey: string;
+            preconditions: components["schemas"]["DockerConfigurationPreconditions"];
+        };
+        DockerHostRegistration: {
+            availablePortEnd?: number;
+            availablePortStart?: number;
+            config?: {
+                [key: string]: components["schemas"]["DockerConfigurationMapValue"];
+            };
+            endpoint?: string;
+            environment?: string;
+            labels?: {
+                [key: string]: components["schemas"]["DockerConfigurationMapValue"];
+            };
+            name: string;
+            owner?: string;
+            team?: string;
+            virtualizationConnectionId?: string;
+            vmId?: string;
+            vmName?: string;
+        };
+        /** @description Register host metadata only, using a server-derived public ID and database-owned UID. This is separate from quick-create VM provisioning and does not contact the Agent or provider. */
+        DockerHostRegistrationInput: {
+            host: components["schemas"]["DockerHostRegistration"];
+            idempotencyKey: string;
+        };
+        /** @description Immutable minimal receipt for an atomic SQL metadata transaction. Bound to the original actor/key/input, retained after target deletion; no configuration body, input digest, bearer, env or Compose content. A missing GET does not prove that an in-flight submission cannot commit. Query or explicitly retry exactly the same input/key; never invent a new key to escape an unknown result. */
+        DockerConfigurationReceipt: {
+            /** @enum {string} */
+            action: "register" | "update" | "delete";
+            /** Format: date-time */
+            createdAt: string;
+            deleted: boolean;
+            id: string;
+            requestKey: string;
+            resource: components["schemas"]["DockerResourceIdentity"];
+            /** @constant */
+            status: "committed";
+        };
+        DockerConfigurationReceiptEnvelope: {
+            data: components["schemas"]["DockerConfigurationReceipt"];
+        };
+        DockerResourceIdentity: {
+            /** @enum {string} */
+            resourceKind: "docker.host" | "docker.project";
+            id: string;
+            /**
+             * Format: uuid
+             * @description Server/database-owned immutable row identity. Do not substitute the public id or slug; deletion and recreation produce a different UID.
+             */
+            uid: string;
+            /**
+             * Format: uuid
+             * @description Opaque equality token for configuration state. Runtime status, metrics and pure heartbeats do not change it. This read endpoint does not itself provide a conditional mutation API.
+             */
+            configurationRevision: string;
+            hostId?: string;
+        };
+        DockerResourceIdentityEnvelope: {
+            data: components["schemas"]["DockerResourceIdentity"];
+        };
+        /** @description Native client only. Frozen full CID and registered host/project UID labels; no arbitrary argv or privileged exec. Shell and dimensions normalize under shared native PTY limits. No execution until the one-use WebSocket lease is consumed. */
+        DockerNativeTerminalInput: {
+            expectedContainerId: string;
+            serviceName: string;
+            /**
+             * @default /bin/sh
+             * @enum {string}
+             */
+            shell?: "sh" | "bash" | "/bin/sh" | "/bin/bash";
+            /** Format: int64 */
+            width?: number;
+            /** Format: int64 */
+            height?: number;
+            /**
+             * Format: int64
+             * @default 300
+             */
+            timeoutSeconds?: number;
+        };
+        /** @description Actor-owned metadata only; no bearer, ticket, output or keystrokes. Shared PTY result uidVerifiedBeforeStart means full Docker CID plus immutable host/project UID and Compose coordinates. Unknown must never reconnect or start another exec. */
+        DockerNativeTerminalSession: {
+            /** @constant */
+            protocol: "docker-native-terminal-v1";
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "pending" | "active" | "closing" | "closed" | "expired";
+            projectId: string;
+            target: components["schemas"]["DockerRuntimeContainerBinding"];
+            /** @enum {string} */
+            shell: "/bin/sh" | "/bin/bash";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            ticketExpiresAt: string;
+            /** Format: date-time */
+            deadlineAt: string;
+            /** Format: date-time */
+            closedAt?: string;
+            /**
+             * Format: int64
+             * @constant
+             */
+            maxInputBytes: 1048576;
+            /**
+             * Format: int64
+             * @constant
+             */
+            maxOutputBytes: 33554432;
+            result?: components["schemas"]["KubernetesPodTerminalResult"];
+        };
+        DockerNativeTerminalCreated: {
+            session: components["schemas"]["DockerNativeTerminalSession"];
+            ticket: string;
+        };
+        DockerNativeTerminalSessionEnvelope: {
+            data: components["schemas"]["DockerNativeTerminalSession"];
+        };
+        DockerNativeTerminalCreatedEnvelope: {
+            data: components["schemas"]["DockerNativeTerminalCreated"];
+        };
+        DockerRuntimeContainerBinding: {
+            /** @constant */
+            protocol: "docker-project-identity-v1";
+            /** Format: uuid */
+            hostUid: string;
+            /** Format: uuid */
+            projectUid: string;
+            namespace: string;
+            serviceName: string;
+            containerId: string;
+        };
+        DockerRuntimeVolume: {
+            target: string;
+            type: string;
+            readOnly: boolean;
+            browseSupported: boolean;
+            unsupportedReason?: string;
+        } & unknown;
+        DockerRuntimeFileEntry: {
+            name: string;
+            path: string;
+            /** @enum {unknown} */
+            kind: "file" | "directory" | "symlink" | "other";
+            /** Format: int64 */
+            sizeBytes: number;
+            modifiedAt?: string;
+            readSupported: boolean;
+            listSupported: boolean;
+        } & unknown;
+        /** @description Identity-bound bounded runtime read. No Compose, environment or daemon-host source path is returned. File sizeBytes is the complete observed source size; returnedBytes is returned UTF-8 bytes. complete/truncated are explicit. Directory results may truncate by entry count or encoded byte budget. */
+        DockerRuntimeReadResult: {
+            /** @constant */
+            protocol: "docker-runtime-read-v1";
+            /** @enum {unknown} */
+            action: "logs" | "volumes" | "files.list" | "files.read";
+            projectId: string;
+            container: components["schemas"]["DockerRuntimeContainerBinding"];
+            target?: string;
+            path?: string;
+            content?: string;
+            /** @constant */
+            encoding?: "utf-8";
+            /**
+             * Format: int64
+             * @description For files.read: complete source file size. For logs: returned byte count. Metadata lists use zero.
+             */
+            sizeBytes: number;
+            truncated: boolean;
+            complete: boolean;
+            volumes: components["schemas"]["DockerRuntimeVolume"][];
+            files: components["schemas"]["DockerRuntimeFileEntry"][];
+            /** Format: int64 */
+            returnedBytes: number;
+        } & (({
+            /** @constant */
+            complete?: true;
+            /** @constant */
+            truncated?: false;
+        } | {
+            /** @constant */
+            complete?: false;
+            /** @constant */
+            truncated?: true;
+        }) & unknown & unknown & unknown);
+        DockerRuntimeReadEnvelope: {
+            data: components["schemas"]["DockerRuntimeReadResult"];
         };
         DockerProject: {
             id: string;
@@ -21904,12 +24555,19 @@ export interface components {
         DockerProjectEnvelope: {
             data: components["schemas"]["DockerProject"];
         };
+        /** @description Legacy callers may omit preconditions. Interactive clients submit the exact binding returned by the reviewed plan. Core atomically checks both resource identities and configuration revisions before creating work; changes conflict without adopting a new revision. An accepted original idempotency key and identical input may recover its original operation without creating work. */
         DockerProjectDeployInput: {
             /**
              * @default deploy
              * @enum {string}
              */
             action?: "deploy" | "redeploy" | "start" | "stop" | "restart" | "down" | "pull" | "build" | "destroy";
+            preconditions?: components["schemas"]["DockerProjectDeployPreconditions"];
+        };
+        DockerProjectDeployPreconditions: {
+            project: components["schemas"]["DockerConfigurationPreconditions"];
+            hostId: string;
+            host: components["schemas"]["DockerConfigurationPreconditions"];
         };
         DockerPayloadScalarValue: string | number | boolean;
         DockerPayloadValue: components["schemas"]["DockerPayloadScalarValue"] | components["schemas"]["DockerPayloadScalarValue"][] | {
@@ -22025,6 +24683,8 @@ export interface components {
             operationKinds?: string[];
             /** @description Set by upgraded runners that can return the per-claim callback token. */
             callbackTokenSupported?: boolean;
+            /** @description Explicit execution protocols implemented by this runner. Missing or unknown protocols cannot claim identity-bound operations; there is no legacy fallback. */
+            runtimeProtocols?: string[];
         };
         DockerOperationCallbackRequest: {
             operationId: string;
@@ -22651,6 +25311,347 @@ export interface components {
         };
         KubernetesResourceYamlEnvelope: {
             data: components["schemas"]["KubernetesResourceYaml"];
+        };
+        /** @description Caller-reviewed immutable resource identity and version. Values are opaque, bounded to 256 UTF-8 bytes, and contain no whitespace or control characters. A server must reject a changed UID or resourceVersion and must never replace these values with a newer observation before mutation. */
+        KubernetesResourceMutationPreconditions: {
+            expectedUid: string;
+            expectedResourceVersion: string;
+        };
+        /** @description Authorized metadata only. Includes no resource body, Secret values, managedFields or arbitrary annotations. */
+        KubernetesResourceIdentity: {
+            apiVersion: string;
+            kind: string;
+            name: string;
+            namespace?: string;
+            uid: string;
+            resourceVersion: string;
+            /** Format: date-time */
+            deletionTimestamp?: string;
+        };
+        KubernetesResourceIdentityEnvelope: {
+            data: components["schemas"]["KubernetesResourceIdentity"];
+        };
+        /** @description Bounded YAML edit with mandatory caller-reviewed preconditions. Any UID or resourceVersion supplied within YAML must match the preconditions. Dry-run and mutation use distinct routes and never fall back to an unconditional edit. */
+        KubernetesConditionalResourceYamlInput: {
+            content: string;
+            preconditions: components["schemas"]["KubernetesResourceMutationPreconditions"];
+        };
+        /** @description Native interactive PTY lease input. Zero dimensions select 80x24. The shell and reviewed UID/container are frozen; Kubernetes exec does not support an atomic UID precondition. */
+        KubernetesPodTerminalInput: {
+            expectedUid: string;
+            container?: string;
+            /**
+             * @default /bin/sh
+             * @enum {string}
+             */
+            shell?: "sh" | "bash" | "/bin/sh" | "/bin/bash";
+            /** Format: int32 */
+            width?: number;
+            /** Format: int32 */
+            height?: number;
+            /**
+             * Format: int64
+             * @default 300
+             */
+            timeoutSeconds?: number;
+        };
+        KubernetesPodTerminalResult: {
+            /** @enum {string} */
+            status: "succeeded" | "failed" | "timed_out" | "canceled" | "transport_lost" | "unknown" | "input_limit" | "output_limit";
+            /** Format: int64 */
+            exitCode?: number;
+            /** Format: int64 */
+            inputBytes: number;
+            /** Format: int64 */
+            outputBytes: number;
+            uidVerifiedBeforeStart: boolean;
+            targetChanged: boolean;
+            /** @enum {string} */
+            reasonCode?: "process_exited" | "deadline_exceeded" | "request_canceled" | "transport_lost" | "target_changed" | "target_verification_unavailable" | "input_limit" | "output_limit";
+        } & (unknown & unknown & unknown & unknown);
+        KubernetesPodTerminalSession: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "pending" | "active" | "closing" | "closed" | "expired";
+            clusterId: string;
+            target: components["schemas"]["KubernetesPodExecutionTarget"];
+            /** @enum {string} */
+            shell: "/bin/sh" | "/bin/bash";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            ticketExpiresAt: string;
+            /** Format: date-time */
+            deadlineAt: string;
+            /** Format: date-time */
+            closedAt?: string;
+            /**
+             * Format: int64
+             * @constant
+             */
+            maxInputBytes: 1048576;
+            /**
+             * Format: int64
+             * @constant
+             */
+            maxOutputBytes: 33554432;
+            result?: components["schemas"]["KubernetesPodTerminalResult"];
+        };
+        KubernetesPodTerminalCreated: {
+            session: components["schemas"]["KubernetesPodTerminalSession"];
+            ticket: string;
+        };
+        KubernetesPodTerminalSessionEnvelope: {
+            data: components["schemas"]["KubernetesPodTerminalSession"];
+        };
+        KubernetesPodTerminalCreatedEnvelope: {
+            data: components["schemas"]["KubernetesPodTerminalCreated"];
+        };
+        /** @description One JSON text WebSocket message, at most 128 KiB. Input is canonical base64 of at most 64 KiB; aggregate input is at most 1 MiB. Input after EOF is rejected. WebSocket control ping/pong are separate from these data frames. */
+        NativeTerminalClientFrame: {
+            /** @constant */
+            type: "input";
+            data: string;
+        } | {
+            /** @constant */
+            type: "resize";
+            /** Format: int32 */
+            width: number;
+            /** Format: int32 */
+            height: number;
+        } | {
+            /** @constant */
+            type: "eof";
+        };
+        /** @description One ready frame precedes output and exactly one terminal exit/error. Ready acknowledges authorization and transport, not shell readiness. PTY stdout/stderr are merged. Output chunks are at most 64 KiB (servers normally emit 16 KiB) and aggregate output at most 32 MiB. No reconnection or command replay. */
+        NativeTerminalServerFrame: {
+            /** @constant */
+            type: "ready";
+        } | {
+            /** @constant */
+            type: "output";
+            data: string;
+        } | {
+            /** @constant */
+            type: "exit";
+            result: components["schemas"]["KubernetesPodTerminalResult"];
+        } | {
+            /** @constant */
+            type: "error";
+            /** @enum {string} */
+            code: "invalid_frame" | "input_limit" | "output_limit" | "lease_expired" | "authorization_revoked" | "target_changed" | "transport_lost" | "unsupported";
+        };
+        /** @description Executes exactly argv without an implicit shell. Aggregate argv is at most 32768 UTF-8 bytes, stdin at most 65536 decoded bytes and canonical standard base64. Zero timeout selects 10 seconds; zero combined output limit selects 65536 bytes. The reviewed UID is checked before and after execution, but Kubernetes exec does not provide an atomic UID precondition. Never automatically replay an uncertain execution. */
+        KubernetesPodArgvInput: {
+            expectedUid: string;
+            container?: string;
+            argv: [
+                string
+            ];
+            stdinBase64?: string;
+            /**
+             * Format: int64
+             * @default 10
+             */
+            timeoutSeconds?: number;
+            /**
+             * Format: int64
+             * @default 65536
+             */
+            maxOutputBytes?: number;
+        };
+        /** @description Input for the versioned high-risk k8s.pods.exec Gateway capability. The Gateway must approve and bind the exact actor, credential, target, original key and execution input before delegating to the existing native one-attempt execution service. This schema grants no permission and never enables native REST access for governed AI credentials. Process outcome is read from the actor-owned execution receipt; invocation acceptance is not process success. */
+        KubernetesPodArgvToolInput: {
+            clusterId: string;
+            namespace: string;
+            podName: string;
+            /** @description Stable original actor-owned execution key. It binds the exact target and normalized input; changing input requires a new reviewed intent. Reuse can only return the existing receipt, never execute again. */
+            idempotencyKey: string;
+            execution: components["schemas"]["KubernetesPodArgvInput"];
+        };
+        /** @description Read an existing actor-owned execution under current pods.exec permission, Gateway grants, policy and target scope. Supply exactly one original key or execution ID. Lookup never submits a process or retries an uncertain execution. Gateway policy may still require approval; output remains subject to Gateway output policy. */
+        KubernetesPodExecutionLookupInput: {
+            clusterId: string;
+            namespace: string;
+            podName: string;
+            /** Format: uuid */
+            executionId?: string;
+            idempotencyKey?: string;
+        } & (unknown | unknown);
+        KubernetesPodExecutionOutput: {
+            /** @enum {string} */
+            status: "succeeded" | "failed" | "timed_out" | "canceled" | "transport_lost" | "unknown";
+            /** Format: int64 */
+            exitCode?: number;
+            stdout: string;
+            stderr: string;
+            /** @enum {string} */
+            stdoutEncoding: "utf-8" | "base64";
+            /** @enum {string} */
+            stderrEncoding: "utf-8" | "base64";
+            /** Format: int64 */
+            stdoutBytes: number;
+            /** Format: int64 */
+            stderrBytes: number;
+            /** Format: int64 */
+            maxOutputBytes: number;
+            stdoutTruncated: boolean;
+            stderrTruncated: boolean;
+            /** @constant */
+            uidVerifiedBeforeStart: true;
+            targetChanged: boolean;
+            /** @description Static outcome category, never a raw Kubernetes transport error. */
+            reasonCode?: string;
+        };
+        KubernetesPodExecutionTarget: {
+            namespace: string;
+            podName: string;
+            uid: string;
+            container: string;
+            /** Format: date-time */
+            checkedAt: string;
+        };
+        AgentPodArgvResult: {
+            target: components["schemas"]["KubernetesPodExecutionTarget"];
+            output: components["schemas"]["KubernetesPodExecutionOutput"];
+        };
+        AgentPodExecutionCapabilities: {
+            /** @constant */
+            protocolVersion: "1";
+            /** @constant */
+            argvVersion: "1";
+            ready: boolean;
+            /** Format: int64 */
+            maxTimeoutSeconds: number;
+            /** Format: int64 */
+            maxOutputBytes: number;
+            /** @constant */
+            terminalVersion?: "1";
+            /** Format: int64 */
+            maxSessionSeconds?: number;
+            /** Format: int64 */
+            maxTerminalInputBytes?: number;
+            /** Format: int64 */
+            maxTerminalOutputBytes?: number;
+        };
+        /** @description An actor-owned receipt for one execution attempt. A repeated original key returns this receipt without executing again. Unknown outcomes are never automatically retried. Output is bounded, encrypted at rest and retained for seven days. */
+        KubernetesPodExecutionReceipt: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed" | "timed_out" | "canceled" | "transport_lost" | "unknown";
+            clusterId: string;
+            namespace: string;
+            podName: string;
+            expectedUid: string;
+            container: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            deadlineAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            finishedAt?: string;
+            outputAvailable: boolean;
+            output?: components["schemas"]["KubernetesPodExecutionOutput"];
+        };
+        /** @description Gateway projection of the original one-attempt receipt. Receipt metadata excludes raw process output and sets outputAvailable=false. Separate text output is subject to baseline secret redaction and current Gateway policy; byte counters describe the original retained stream, not redacted display length. Binary streams are withheld entirely, never passed through as base64. The original encrypted native receipt is unchanged. Tool success is not process success; inspect receipt.status and output.exitCode when available. */
+        KubernetesPodGatewayResult: {
+            receipt: components["schemas"]["KubernetesPodExecutionReceipt"] & {
+                /** @constant */
+                outputAvailable?: false;
+            };
+            /** @enum {string} */
+            outputState: "unavailable" | "text" | "redacted" | "binary_withheld";
+            output?: components["schemas"]["KubernetesPodExecutionOutput"] & {
+                /** @constant */
+                stdoutEncoding?: "utf-8";
+                /** @constant */
+                stderrEncoding?: "utf-8";
+            };
+        } & ({
+            /** @enum {unknown} */
+            outputState?: "text" | "redacted";
+        } | {
+            /** @enum {unknown} */
+            outputState?: "unavailable" | "binary_withheld";
+        });
+        KubernetesPodExecutionReceiptEnvelope: {
+            data: components["schemas"]["KubernetesPodExecutionReceipt"];
+        };
+        /** @description UID/version guard for a typed action. Scale requires replicas and rejects revision. Deployment rollback requires revision and rejects replicas. Restart rejects both. Unsupported kind/action combinations fail closed. Dry-run retains the same permission and guard checks. */
+        KubernetesConditionalWorkloadActionInput: {
+            preconditions: components["schemas"]["KubernetesResourceMutationPreconditions"];
+            /** Format: int32 */
+            replicas?: number;
+            revision?: string;
+            /** @default false */
+            dryRun?: boolean;
+        };
+        /** @description The UID/version is returned by Kubernetes after update or dry-run. Applied is false for dry-run. This receipt never asserts rollout readiness. */
+        KubernetesConditionalWorkloadActionReceipt: {
+            applied: boolean;
+            dryRun: boolean;
+            /** @enum {string} */
+            kind: "Deployment" | "StatefulSet" | "DaemonSet";
+            name: string;
+            namespace: string;
+            /** @enum {string} */
+            action: "restart" | "scale" | "rollback";
+            uid: string;
+            resourceVersion: string;
+            preconditions: components["schemas"]["KubernetesResourceMutationPreconditions"];
+        };
+        KubernetesConditionalWorkloadActionReceiptEnvelope: {
+            data: components["schemas"]["KubernetesConditionalWorkloadActionReceipt"];
+        };
+        /** @description Authenticated Agent resource-presence-v1 read result. One successful current metadata-only collection with exact metadata.name selector, no continuation and at most one target. Absence is never inferred from HTTP errors. Collection versions are opaque. This proves only presence at observation, not deletion causality or business health. Consumers bind kind/GVR, namespace/name and the original cluster connection. */
+        KubernetesResourcePresence: {
+            /** @constant */
+            protocol: "resource-presence-v1";
+            apiVersion: string;
+            resource: string;
+            kind: string;
+            namespace: string;
+            name: string;
+            collectionResourceVersion: string;
+            /** @enum {string} */
+            state: "present" | "absent";
+            uid?: string;
+            resourceVersion?: string;
+            /** Format: date-time */
+            deletionTimestamp?: string;
+        };
+        /** @description Authenticated Agent preconditions-v1 transport. The named action allowlist, Kubernetes RBAC, caller-reviewed identity and existing ownership protection all apply. Older Agent routes must never be used as a mutation fallback. */
+        AgentConditionalResourceMutationRequest: {
+            namespace?: string;
+            kind: string;
+            name: string;
+            preconditions: components["schemas"]["KubernetesResourceMutationPreconditions"];
+        };
+        /** @description Authenticated Agent preconditions-v1 YAML transport, including the explicit target and immutable caller-reviewed guard. The YAML target must match, and caller preconditions cannot be overwritten by a newer observation. */
+        AgentConditionalResourceYamlRequest: {
+            namespace?: string;
+            kind: string;
+            name: string;
+            content: string;
+            preconditions: components["schemas"]["KubernetesResourceMutationPreconditions"];
+        };
+        /** @description Acceptance receipt for a caller-reviewed object. This does not assert deletion completion or remove finalizers; observe the same UID separately. */
+        KubernetesResourceDeletionReceipt: {
+            /** @constant */
+            accepted: true;
+            /** @enum {string} */
+            state: "deletion_requested";
+            kind: string;
+            name: string;
+            namespace?: string;
+            preconditions: components["schemas"]["KubernetesResourceMutationPreconditions"];
+        };
+        KubernetesResourceDeletionReceiptEnvelope: {
+            data: components["schemas"]["KubernetesResourceDeletionReceipt"];
         };
         KubernetesResourceUpdatePlanRequest: {
             namespace?: string;
@@ -27641,6 +30642,13 @@ export interface components {
         InstalledPluginListEnvelope: {
             items: components["schemas"]["InstalledPlugin"][];
         };
+        /** @description Optional server-persisted PAT or service-account token binding stored at metadata.governedAI. It restricts the credential to governed Gateway endpoints and pins an active registered AI client and a known skill. The skill's declared capabilities form an additional ceiling. Bound PATs use soha_gpat_ and bound service-account tokens use soha_gsat_ so older servers reject them. Clients require CLIAuthOptions.supportsGovernedAI and use the distinct governed-credentials creation and rotation routes without fallback, including during mixed-version deployments. Ordinary credentials without this binding retain their existing behavior and prefixes. Client headers, local confirmation and --yes cannot change this binding or bypass domain authorization, tool grants, policies, budgets or required approvals. Long-running and approval execution reload the original credential and its current binding before continuing. */
+        GovernedAITokenBinding: {
+            /** @enum {string} */
+            mode: "gateway_only";
+            aiClientId: string;
+            skillId: string;
+        };
         PersonalAccessToken: {
             id: string;
             userId: string;
@@ -27648,6 +30656,7 @@ export interface components {
             tokenPrefix: string;
             scopes: string[];
             permissionKeys: string[];
+            /** @description Optional governedAI entry follows GovernedAITokenBinding. The server validates and persists this binding; a bound credential cannot use native domain REST endpoints or override its AI client and skill through caller input. Other metadata and unbound credentials remain compatible. */
             metadata?: {
                 [key: string]: unknown;
             };
@@ -27667,6 +30676,7 @@ export interface components {
             name: string;
             scopes: string[];
             permissionKeys: string[];
+            /** @description Optional governedAI entry follows GovernedAITokenBinding. The server validates and persists this binding; a bound credential cannot use native domain REST endpoints or override its AI client and skill through caller input. Other metadata and unbound credentials remain compatible. */
             metadata?: {
                 [key: string]: unknown;
             };
@@ -27727,6 +30737,7 @@ export interface components {
             tokenPrefix: string;
             scopes: string[];
             permissionKeys: string[];
+            /** @description Optional governedAI entry follows GovernedAITokenBinding. The server validates and persists this binding; a bound credential cannot use native domain REST endpoints or override its AI client and skill through caller input. Other metadata and unbound credentials remain compatible. */
             metadata?: {
                 [key: string]: unknown;
             };
@@ -27746,6 +30757,7 @@ export interface components {
             name: string;
             scopes: string[];
             permissionKeys: string[];
+            /** @description Optional governedAI entry follows GovernedAITokenBinding. The server validates and persists this binding; a bound credential cannot use native domain REST endpoints or override its AI client and skill through caller input. Other metadata and unbound credentials remain compatible. */
             metadata?: {
                 [key: string]: unknown;
             };
@@ -28131,6 +31143,49 @@ export interface components {
             finishedAt?: string;
             errorSummary?: string;
         };
+        DirectorySyncRequestInput: {
+            /** Format: uuid */
+            idempotencyKey: string;
+        };
+        DirectorySyncRequestOrganizations: {
+            create: number;
+            update: number;
+            move: number;
+            archive: number;
+        };
+        DirectorySyncRequestPeople: {
+            create: number;
+            update: number;
+            archive: number;
+            conflict: number;
+        };
+        /** @description The existing manual run response projection. Started/finished times are durable transitions, never fabricated from HTTP 202. */
+        DirectorySyncRequestRun: {
+            /** Format: uuid */
+            id: string;
+            connectionId: string;
+            trigger: string;
+            status: components["schemas"]["DirectorySyncRunStatus"];
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            finishedAt?: string;
+            /** @description A running original request retains its active slot until its creator stops. This flag alone is not a canceled terminal result or rollback proof. */
+            cancelRequested?: boolean;
+            error?: string;
+            organizations?: components["schemas"]["DirectorySyncRequestOrganizations"];
+            people?: components["schemas"]["DirectorySyncRequestPeople"];
+        };
+        DirectorySyncRequestReceipt: {
+            /** @constant */
+            protocol: "directory-sync-request-v1";
+            /** Format: uuid */
+            idempotencyKey: string;
+            run: components["schemas"]["DirectorySyncRequestRun"];
+        };
+        DirectorySyncRequestEnvelope: {
+            data: components["schemas"]["DirectorySyncRequestReceipt"];
+        };
         /** @enum {string} */
         DirectoryCallbackStatus: "not_configured" | "awaiting_event" | "verified";
         DirectoryRuntimeStatus: {
@@ -28241,6 +31296,9 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** Format: date-time */
+            readonly managementVerifiedUntil?: string;
+            managementState?: components["schemas"]["EndpointDeviceManagementState"];
         };
         EndpointDeviceInput: {
             name: string;
@@ -28249,6 +31307,7 @@ export interface components {
             postureStatus?: components["schemas"]["EndpointDevicePostureStatus"];
             deviceType?: components["schemas"]["EndpointDeviceType"];
             ownershipType?: components["schemas"]["EndpointDeviceOwnershipType"];
+            managementState?: components["schemas"]["EndpointDeviceManagementState"];
         };
         EndpointDeviceRegistrationInput: {
             name: string;
@@ -28275,12 +31334,18 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** @description Base64 Ed25519 public key for the site MDM issuer; empty clears and omission preserves. */
+            managementIssuerKey?: string;
+            deviceGovernance?: components["schemas"]["NetworkDeviceGovernanceMode"];
         };
         NetworkSiteInput: {
             name: string;
             status: components["schemas"]["NetworkSiteStatus"];
             description?: string;
             location?: string;
+            /** @description Base64 Ed25519 public key for the site MDM issuer; empty clears and omission preserves. */
+            managementIssuerKey?: string;
+            deviceGovernance?: components["schemas"]["NetworkDeviceGovernanceMode"];
         };
         NetworkSiteEnvelope: {
             data: components["schemas"]["NetworkSite"];
@@ -28297,7 +31362,7 @@ export interface components {
             siteId: string;
             name: string;
             status: components["schemas"]["NetworkSpaceStatus"];
-            cidrs: components["schemas"]["NetworkIPv4CIDR"][];
+            cidrs: components["schemas"]["NetworkIPCIDR"][];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -28307,7 +31372,7 @@ export interface components {
             siteId: string;
             name: string;
             status: components["schemas"]["NetworkSpaceStatus"];
-            cidrs: components["schemas"]["NetworkIPv4CIDR"][];
+            cidrs: components["schemas"]["NetworkIPCIDR"][];
         };
         NetworkSpaceEnvelope: {
             data: components["schemas"]["NetworkSpace"];
@@ -28372,13 +31437,13 @@ export interface components {
             administrativeStatus: components["schemas"]["NetworkGatewayAdministrativeStatus"];
             publicEndpointHost: string;
             publicEndpointPort: number;
-            overlayCidr: string;
+            overlayCidr: components["schemas"]["NetworkIPCIDR"];
             routingMode: components["schemas"]["NetworkGatewayRoutingMode"];
             hubGatewayId?: string;
-            advertisedCidrs?: components["schemas"]["NetworkIPv4CIDR"][];
+            advertisedCidrs?: components["schemas"]["NetworkIPCIDR"][];
             mtu: number;
             persistentKeepaliveSeconds: number;
-            dnsServers: string[];
+            dnsServers: components["schemas"]["NetworkIPAddress"][];
         };
         NetworkGateway: {
             region?: string;
@@ -28396,13 +31461,13 @@ export interface components {
             status: components["schemas"]["NetworkGatewayStatus"];
             publicEndpointHost: string;
             publicEndpointPort: number;
-            overlayCidr: string;
+            overlayCidr: components["schemas"]["NetworkIPCIDR"];
             routingMode: components["schemas"]["NetworkGatewayRoutingMode"];
             hubGatewayId?: string;
-            advertisedCidrs?: components["schemas"]["NetworkIPv4CIDR"][];
+            advertisedCidrs?: components["schemas"]["NetworkIPCIDR"][];
             mtu: number;
             persistentKeepaliveSeconds: number;
-            dnsServers: string[];
+            dnsServers: components["schemas"]["NetworkIPAddress"][];
             wireguardPublicKey?: string;
             version?: string;
             /** Format: date-time */
@@ -28462,7 +31527,7 @@ export interface components {
             fakeIpRange?: components["schemas"]["NetworkIPv4CIDR"];
             selectorGroup: string;
             selectedProxy?: string;
-            bypassCidrs: components["schemas"]["NetworkIPv4CIDR"][];
+            bypassCidrs: components["schemas"]["NetworkIPCIDR"][];
             bypassHosts: string[];
             failClosed: boolean;
         } & unknown & unknown & unknown & unknown;
@@ -28482,7 +31547,7 @@ export interface components {
             fakeIpRange?: components["schemas"]["NetworkIPv4CIDR"];
             selectorGroup: string;
             selectedProxy?: string;
-            bypassCidrs: components["schemas"]["NetworkIPv4CIDR"][];
+            bypassCidrs: components["schemas"]["NetworkIPCIDR"][];
             bypassHosts: string[];
             failClosed: boolean;
             /** Format: date-time */
@@ -28570,6 +31635,8 @@ export interface components {
             authentication: components["schemas"]["NetworkConnectionAuthentication"];
             accessProfile: components["schemas"]["NetworkAccessProfile"];
             policyVersion: number;
+            provisioningAvailable?: boolean;
+            provisioningReason?: string;
         };
         NetworkConnectionOptionListEnvelope: {
             items: components["schemas"]["NetworkConnectionOption"][];
@@ -28588,6 +31655,7 @@ export interface components {
             status: components["schemas"]["NetworkNASBindingStatus"];
             coaSupported: boolean;
             disconnectSupported: boolean;
+            eapServerTrust?: components["schemas"]["NetworkEAPServerTrust"];
         };
         NetworkNASBinding: {
             id: string;
@@ -28606,6 +31674,7 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            eapServerTrust?: components["schemas"]["NetworkEAPServerTrust"];
         };
         NetworkNASBindingEnvelope: {
             data: components["schemas"]["NetworkNASBinding"];
@@ -28649,7 +31718,7 @@ export interface components {
         /** @enum {string} */
         NetworkProxyInstanceStatus: "unregistered" | "online" | "degraded" | "offline" | "disabled";
         /** @enum {string} */
-        NetworkProxyCapability: "traffic" | "connections" | "close_connection";
+        NetworkProxyCapability: "traffic" | "connections" | "close_connection" | "protected_destinations_v1" | "protection_rules_readback" | "guarded_dns_tcp_v1";
         NetworkProxyInstance: {
             id: string;
             name: string;
@@ -28672,6 +31741,11 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            binding?: components["schemas"]["NetworkProxyBinding"];
+            policyVersion?: number;
+            observedPolicyVersion?: number;
+            /** @description Owner-bound managed runtime suspension; not per-flow user attribution. */
+            securityRestricted?: boolean;
         };
         NetworkProxyInstanceEnvelope: {
             data: components["schemas"]["NetworkProxyInstance"];
@@ -28679,6 +31753,7 @@ export interface components {
         NetworkProxyInstanceListEnvelope: {
             items: components["schemas"]["NetworkProxyInstance"][];
         };
+        /** @description Retained full-configuration SDK input for existing consumers. New partial updates use NetworkProxyConfigurationPatchInput; the HTTP endpoint still accepts full configurations. */
         NetworkProxyConfigurationInput: {
             /** Format: int64 */
             expectedRevision: number;
@@ -28728,6 +31803,8 @@ export interface components {
             status: "pending" | "closed" | "not-found" | "failed" | "expired";
             /** Format: date-time */
             expiresAt: string;
+            connectionId?: string;
+            reasonCode?: string;
         };
         /** @enum {string} */
         NetworkRuntimeKind: "endpoint" | "gateway" | "nas" | "proxy";
@@ -28789,6 +31866,8 @@ export interface components {
             users: string[];
             teams: string[];
             tags: string[];
+            /** @description Current role binding IDs. Removing a binding removes this selector match on re-evaluation. */
+            roles?: string[];
         };
         NetworkAccessPolicyInput: {
             name: string;
@@ -28802,6 +31881,8 @@ export interface components {
             deviceStatuses: components["schemas"]["EndpointDeviceStatus"][];
             postureStatuses: components["schemas"]["EndpointDevicePostureStatus"][];
             accessProfile: components["schemas"]["NetworkAccessProfile"];
+            /** @description Administrator-managed device classifications. Omission on update preserves the current selector; an explicit empty array clears it. Site governance constraints still apply. */
+            deviceManagementStates?: components["schemas"]["EndpointDeviceManagementState"][];
         };
         NetworkAccessPolicy: {
             id: string;
@@ -28821,6 +31902,8 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** @description Administrator-managed device classifications. Omission on update preserves the current selector; an explicit empty array clears it. Site governance constraints still apply. */
+            deviceManagementStates?: components["schemas"]["EndpointDeviceManagementState"][];
         };
         NetworkAccessPolicyEnvelope: {
             data: components["schemas"]["NetworkAccessPolicy"];
@@ -28845,7 +31928,7 @@ export interface components {
             sourceType: components["schemas"]["NetworkConflictSourceType"];
             sourceId?: string;
             name: string;
-            cidr: components["schemas"]["NetworkIPv4CIDR"];
+            cidr: components["schemas"]["NetworkIPCIDR"];
         };
         NetworkConflictAnalysisRequest: {
             runtimeRanges: components["schemas"]["NetworkConflictRange"][];
@@ -28877,7 +31960,7 @@ export interface components {
             subjectId: string;
             deviceId: string;
             networkSpaceId: string;
-            cidrs: components["schemas"]["NetworkIPv4CIDR"][];
+            cidrs: components["schemas"]["NetworkIPCIDR"][];
             policyVersion: number;
             status: components["schemas"]["NetworkLeaseStatus"];
             /** Format: date-time */
@@ -28970,6 +32053,15 @@ export interface components {
             startedAt: string;
             /** Format: date-time */
             expiresAt: string;
+            /** @description Policy version used by the original NAS authentication decision. */
+            admissionPolicyVersion?: number;
+            /** @description Original NAS decision input version, including health and persisted restrictions; absent for legacy or non-NAS sessions. */
+            admissionAttributeVersion?: string;
+            /** @description Persisted security ceiling for this NAS session; it is not evidence of network enforcement. */
+            restrictionProfile?: components["schemas"]["NetworkAccessProfile"];
+            restrictionReason?: string;
+            /** @description Latest admission revalidation command. Applied means NAS acknowledgment; Accounting or data-plane checks must verify enforcement. */
+            latestCommand?: components["schemas"]["NetworkSessionCommand"];
         };
         NetworkSessionEnvelope: {
             data: components["schemas"]["NetworkSession"];
@@ -29006,6 +32098,38 @@ export interface components {
         };
         NetworkSessionActionPlanEnvelope: {
             data: components["schemas"]["NetworkSessionActionPlan"];
+        };
+        HealingOriginalRequestInput: {
+            /** Format: uuid */
+            idempotencyKey: string;
+            policyId: string;
+        };
+        HealingOriginalRun: {
+            id: string;
+            eventId: string;
+            policyId: string;
+            status: string;
+            /** @enum {string} */
+            approvalStatus: "pending" | "approved" | "rejected";
+            executionGeneration: number;
+            /** @enum {string} */
+            submissionStatus: "not_submitted" | "unknown" | "accepted";
+            workflowRunId?: string;
+            intentDigest?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        HealingOriginalRequestReceipt: {
+            /** @constant */
+            protocol: "healing-request-v1";
+            /** Format: uuid */
+            idempotencyKey: string;
+            run: components["schemas"]["HealingOriginalRun"];
+        };
+        HealingOriginalRequestEnvelope: {
+            data: components["schemas"]["HealingOriginalRequestReceipt"];
         };
         /** @enum {string} */
         NetworkSessionCommandStatus: "pending" | "delivered" | "applied" | "rejected" | "unsupported" | "timed-out" | "expired";
@@ -29047,6 +32171,9 @@ export interface components {
             networkLeaseRequired: boolean;
             resourceLeaseRequired: boolean;
             reasons: string[];
+            attributeVersion?: string;
+            /** Format: date-time */
+            evaluatedAt?: string;
         };
         NetworkPolicyPreviewEnvelope: {
             data: components["schemas"]["NetworkPolicyPreviewResult"];
@@ -29246,6 +32373,924 @@ export interface components {
             reason: string;
             steps: components["schemas"]["TemplateMigrationStep"][];
         };
+        DockerVolumeDLPRule: {
+            expression: string;
+            id: string;
+            /** @description Default confidential. The administrator classifies this detector rule. */
+            dataLevel?: components["schemas"]["DLPDataLevel"];
+        };
+        DockerVolumeDLPContent: {
+            /** @description Default false. For warn/block matched releases, both authorization issuance and use require recent server-verified MFA in the same authenticated session. MFA does not replace acknowledgement or independent appeal approval. */
+            requireStepUp?: boolean;
+            detectors: ("private_key" | "aws_access_key" | "credential_assignment")[];
+            enabled: boolean;
+            /** @enum {string} */
+            mode: "audit" | "warn" | "block";
+            /**
+             * @description Default none. revoke_network only for block matched denials and requires independent all-subjects network linkage authorization.
+             * @enum {string}
+             */
+            networkAction?: "none" | "revoke_network";
+            rules: components["schemas"]["DockerVolumeDLPRule"][];
+            /** @description Default public (all matches enforce); derived only from trusted detector/rule policy, never client classification. */
+            minimumDataLevel?: components["schemas"]["DLPDataLevel"];
+            /**
+             * @description Optional explicit pin; unknown engines rejected.
+             * @constant
+             */
+            detectorVersion?: "content-dlp-text-v1";
+        } & unknown;
+        DockerVolumeDLPPolicy: {
+            projectId: string;
+            /** Format: int64 */
+            revision: number;
+            draft: components["schemas"]["DockerVolumeDLPContent"];
+            published?: components["schemas"]["DockerVolumeDLPContent"];
+            /** Format: int64 */
+            publishedVersion: number;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        DockerVolumeDLPSaveInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+            draft: components["schemas"]["DockerVolumeDLPContent"];
+        };
+        DockerVolumeDLPPublishInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+        };
+        DockerVolumeDLPDecision: {
+            /** @description A matched release additionally requires recent MFA in the authenticated issuing session; no content or MFA secret is returned. */
+            stepUpRequired?: boolean;
+            allowed: boolean;
+            /** @enum {string} */
+            authorizationKind?: "acknowledge" | "approved_appeal";
+            contentFingerprint?: string;
+            /** @enum {string} */
+            detectorVersion: "content-dlp-text-v1" | "content-dlp-archive-v2";
+            eventId: string;
+            matchedRuleIds: string[];
+            /** @enum {string} */
+            mode: "audit" | "warn" | "block";
+            originEventId?: string;
+            /** Format: int64 */
+            policyVersion: number;
+            /** @enum {string} */
+            requiredAction?: "acknowledge" | "appeal";
+            /** @enum {string} */
+            status: "clean" | "matched" | "unsupported" | "encrypted" | "too_large" | "timeout" | "error";
+            /**
+             * @description Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+             * @enum {string}
+             */
+            dataLevel?: "public" | "internal" | "confidential" | "restricted" | "unclassified" | "unknown";
+            minimumDataLevel?: components["schemas"]["DLPDataLevel"];
+            ruleSetVersion?: string;
+        };
+        DockerVolumeDLPEvent: {
+            /** @enum {string} */
+            action: "transfer" | "policy_saved" | "policy_published" | "appeal_submitted" | "appeal_reviewed" | "warning_acknowledged" | "appeal_authorization_issued";
+            actorId: string;
+            allowed: boolean;
+            /** @enum {string} */
+            authorizationKind?: "acknowledge" | "approved_appeal";
+            contentFingerprint?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @enum {string} */
+            detectorVersion: "content-dlp-text-v1" | "content-dlp-archive-v2";
+            eventId: string;
+            id: string;
+            /** Format: int64 */
+            inspectedBytes: number;
+            matchedRuleIds: string[];
+            /** @enum {string} */
+            mode: "audit" | "warn" | "block";
+            networkHoldId?: string;
+            originEventId?: string;
+            /** Format: int64 */
+            policyVersion: number;
+            projectId: string;
+            /** @enum {string} */
+            requiredAction?: "acknowledge" | "appeal";
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            sizeBytes: number;
+            /** @enum {string} */
+            status: "clean" | "matched" | "unsupported" | "encrypted" | "too_large" | "timeout" | "error";
+            targetFingerprint?: string;
+            /**
+             * @description Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+             * @enum {string}
+             */
+            dataLevel?: "public" | "internal" | "confidential" | "restricted" | "unclassified" | "unknown";
+            minimumDataLevel?: components["schemas"]["DLPDataLevel"];
+            ruleSetVersion?: string;
+        };
+        DockerVolumeDLPPolicyEnvelope: {
+            data: components["schemas"]["DockerVolumeDLPPolicy"];
+        };
+        DockerVolumeDLPEventListEnvelope: {
+            items: components["schemas"]["DockerVolumeDLPEvent"][];
+        };
+        DockerVolumeFileContent: {
+            projectId: string;
+            serviceName: string;
+            target: string;
+            path: string;
+            content: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            truncated: boolean;
+            dlp?: components["schemas"]["DockerVolumeDLPDecision"];
+        };
+        DockerVolumeFileContentEnvelope: {
+            data: components["schemas"]["DockerVolumeFileContent"];
+        };
+        DockerVolumeDLPAuthorizationInput: {
+            /** @enum {string} */
+            action: "acknowledge" | "approved_appeal";
+        };
+        DockerVolumeDLPAuthorization: {
+            token: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        DockerVolumeDLPAppealInput: {
+            /** @enum {string} */
+            reasonCode: "false_positive" | "business_need";
+        };
+        DockerVolumeDLPAppealReviewInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+            /** @enum {string} */
+            resolution: "approved" | "rejected";
+            /** @enum {string} */
+            reasonCode: "confirmed_false_positive" | "approved_business_exception" | "policy_required" | "insufficient_context";
+        };
+        DockerVolumeDLPAppeal: {
+            eventId: string;
+            projectId: string;
+            actorId: string;
+            /** @enum {string} */
+            reasonCode: "false_positive" | "business_need";
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected";
+            /** Format: int64 */
+            revision: number;
+            reviewerId?: string;
+            /** @enum {string} */
+            reviewReason?: "confirmed_false_positive" | "approved_business_exception" | "policy_required" | "insufficient_context";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        DockerVolumeDLPNetworkTarget: {
+            /** @enum {string} */
+            kind: "configuration" | "nas" | "proxy" | "unattributed_proxy";
+            runtimeId?: string;
+            sessionId?: string;
+            commandId?: string;
+            /** Format: int64 */
+            baseVersion: number;
+            /** Format: int64 */
+            observedVersion: number;
+            status: string;
+        };
+        DockerVolumeDLPNetworkHold: {
+            id: string;
+            sourceEventId: string;
+            projectId: string;
+            subjectId: string;
+            active: boolean;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            releasedAt?: string;
+            targets: components["schemas"]["DockerVolumeDLPNetworkTarget"][];
+        };
+        DockerVolumeDLPCase: {
+            event: components["schemas"]["DockerVolumeDLPEvent"];
+            appeal?: components["schemas"]["DockerVolumeDLPAppeal"];
+            linkage?: components["schemas"]["DockerVolumeDLPNetworkHold"];
+        };
+        DockerVolumeFileReadInput: {
+            serviceName?: string;
+            target: string;
+            path: string;
+            /** Format: int64 */
+            limitBytes?: number;
+            /** @description Single-use opaque authorization, never a URL parameter. */
+            authorization?: string;
+        };
+        DockerVolumeTransferResult: {
+            file?: components["schemas"]["DockerVolumeFileContent"];
+            decision?: components["schemas"]["DockerVolumeDLPDecision"];
+        } | {
+            file: components["schemas"]["DockerVolumeFileContent"];
+        } | {
+            decision: components["schemas"]["DockerVolumeDLPDecision"];
+        };
+        DockerVolumeDLPAuthorizationEnvelope: {
+            data: components["schemas"]["DockerVolumeDLPAuthorization"];
+        };
+        DockerVolumeDLPAppealEnvelope: {
+            data: components["schemas"]["DockerVolumeDLPAppeal"];
+        };
+        DockerVolumeDLPCaseEnvelope: {
+            data: components["schemas"]["DockerVolumeDLPCase"];
+        };
+        DockerVolumeTransferResultEnvelope: {
+            data: components["schemas"]["DockerVolumeTransferResult"];
+        };
+        DockerVolumeDLPCaseListEnvelope: {
+            items: components["schemas"]["DockerVolumeDLPCase"][];
+        };
+        /**
+         * @description Administrator-maintained management classification. Ownership and endpoint-reported facts cannot promote this value; unknown is the default and this is not attestation.
+         * @enum {string}
+         */
+        EndpointDeviceManagementState: "managed" | "unmanaged" | "unknown";
+        /**
+         * @description Explicit site governance rollout. Legacy preserves existing behavior; managed_only requires managed devices; restricted_unmanaged limits other devices to explicitly authorized unprotected resource ZTNA or restricted admission profiles.
+         * @enum {string}
+         */
+        NetworkDeviceGovernanceMode: "legacy" | "managed_only" | "restricted_unmanaged" | "verified_managed_only";
+        NetworkWorkloadBindingInput: {
+            serviceAccountId: string;
+            runtimeId: string;
+            deviceId: string;
+            siteId: string;
+            networkSpaceId: string;
+            resourceIds: string[];
+            enabled: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+            revision: number;
+        };
+        NetworkWorkloadBinding: {
+            id: string;
+            serviceAccountId: string;
+            runtimeId: string;
+            deviceId: string;
+            siteId: string;
+            networkSpaceId: string;
+            resourceIds: string[];
+            enabled: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+            revision: number;
+        };
+        NetworkManagementProofInput: {
+            payload: string;
+            signature: string;
+        };
+        NetworkWorkloadBindingEnvelope: {
+            data: components["schemas"]["NetworkWorkloadBinding"];
+        };
+        NetworkWorkloadBindingListEnvelope: {
+            items: components["schemas"]["NetworkWorkloadBinding"][];
+        };
+        /** @description Non-default IPv4 or IPv6 CIDR syntax; Core additionally validates canonical network-address bits and compressed spelling. */
+        NetworkIPCIDR: string;
+        /** @description Canonical unicast IPv4 or IPv6 address; mapped, scoped and unspecified addresses are rejected. */
+        NetworkIPAddress: string;
+        NetworkVPNRevocationReleaseInput: {
+            expectedEpoch: number;
+        };
+        NetworkVPNRevocationExecution: {
+            runtimeId: string;
+            configurationVersion: number;
+            /** @description Configuration receipt only. Pending or missing receipt does not prove enforcement. */
+            applyStatus: string;
+            reasonCode?: string;
+            /** Format: date-time */
+            appliedAt?: string;
+        };
+        NetworkVPNRevocation: {
+            sessionId: string;
+            subjectId: string;
+            deviceId: string;
+            siteId: string;
+            epoch: number;
+            active: boolean;
+            reasonCode: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            releasedAt?: string;
+            executions: components["schemas"]["NetworkVPNRevocationExecution"][];
+        };
+        NetworkVPNRevocationStateEnvelope: {
+            data: {
+                present: boolean;
+                revocation?: components["schemas"]["NetworkVPNRevocation"];
+            };
+        };
+        NetworkVPNRevocationEnvelope: {
+            data: components["schemas"]["NetworkVPNRevocation"];
+        };
+        /** @description Administrative placement only. Does not authenticate proxy users or grant resource access. */
+        NetworkProxyBinding: {
+            siteId: string;
+            deviceId: string;
+            resourceIds: string[];
+        };
+        NetworkProxyRestoreInput: {
+            expectedRevision: number;
+        };
+        NetworkProxyConfigurationRevision: {
+            revision: number;
+            contentHash: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        NetworkProxyConfigurationHistoryEnvelope: {
+            items: components["schemas"]["NetworkProxyConfigurationRevision"][];
+        };
+        NetworkProxyConfigurationPatchInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+            /** @description Only permitted when disabled. Requires scope authorization for the existing and unbound instance. */
+            clearBinding?: boolean;
+            binding?: components["schemas"]["NetworkProxyBinding"];
+            enabled: boolean;
+            /**
+             * Format: password
+             * @description Omission retains the stored encrypted configuration. Required for the first configuration.
+             */
+            content?: string;
+        };
+        NetworkAdmissionPreviewResult: components["schemas"]["NetworkPolicyPreviewResult"] & {
+            attributeVersion: string;
+            /** Format: date-time */
+            evaluatedAt: string;
+        };
+        NetworkAdmissionPreviewEnvelope: {
+            data: components["schemas"]["NetworkAdmissionPreviewResult"];
+        };
+        /** @enum {string} */
+        NetworkEndpointResponseAction: "record" | "notify" | "restrict" | "disconnect";
+        /** @enum {string} */
+        NetworkEndpointResponseSignal: "service_unavailable" | "service_unhealthy" | "ui_unavailable";
+        NetworkEndpointResponseStep: {
+            afterSeconds: number;
+            action: components["schemas"]["NetworkEndpointResponseAction"];
+            /** @enum {string} */
+            targetAccessProfile?: "restricted" | "quarantine";
+        };
+        NetworkEndpointResponsePolicyConfiguration: {
+            name: string;
+            enabled: boolean;
+            siteIds: string[];
+            nasBindingIds: string[];
+            deviceIds: string[];
+            subjects: components["schemas"]["NetworkPolicySubjects"];
+            signal: components["schemas"]["NetworkEndpointResponseSignal"];
+            requireHealthyForAdmission: boolean;
+            heartbeatIntervalSeconds: number;
+            missedHeartbeats: number;
+            gracePeriodSeconds: number;
+            accountingFreshnessSeconds: number;
+            restoreHeartbeats: number;
+            restoreObservationSeconds: number;
+            autoRestore: boolean;
+            /** @description Steps execute in array order. afterSeconds must strictly increase and disconnect must be the last step. The service rejects configurations that violate these cross-step rules. */
+            steps: components["schemas"]["NetworkEndpointResponseStep"][];
+            /** @enum {string} */
+            failureAction: "record" | "disconnect";
+            notificationPolicyId?: string;
+        };
+        NetworkEndpointResponsePolicyInput: {
+            expectedRevision: number;
+            configuration: components["schemas"]["NetworkEndpointResponsePolicyConfiguration"];
+        };
+        NetworkEndpointResponsePolicyPublishInput: {
+            expectedRevision: number;
+        };
+        NetworkEndpointResponsePolicyRollbackInput: {
+            expectedRevision: number;
+            revision: number;
+        };
+        NetworkEndpointResponsePolicy: {
+            id: string;
+            revision: number;
+            publishedRevision: number;
+            configuration: components["schemas"]["NetworkEndpointResponsePolicyConfiguration"];
+            publishedConfiguration?: components["schemas"]["NetworkEndpointResponsePolicyConfiguration"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            publishedAt?: string;
+        };
+        NetworkEndpointResponsePolicyRevision: {
+            revision: number;
+            configuration: components["schemas"]["NetworkEndpointResponsePolicyConfiguration"];
+            /** Format: date-time */
+            createdAt: string;
+            actorId: string;
+        };
+        NetworkEndpointPresence: {
+            deviceId: string;
+            runtimeId?: string;
+            /** @enum {string} */
+            serviceState: "healthy" | "degraded" | "unknown" | "offline";
+            /** @enum {string} */
+            uiState: "online" | "offline" | "unknown";
+            /** Format: date-time */
+            uiLastObservedAt?: string;
+            /** Format: date-time */
+            uiHealthySince?: string;
+            uiHealthySamples?: number;
+            bootId?: string;
+            sequence?: number;
+            configurationVersion?: number;
+            policyVersion?: number;
+            /** Format: date-time */
+            lastObservedAt?: string;
+            /** Format: date-time */
+            lastReceivedAt?: string;
+            /** Format: date-time */
+            healthySince?: string;
+            healthySamples: number;
+            reasonCode?: string;
+        };
+        NetworkNASSessionEvidence: {
+            sessionId: string;
+            runtimeId: string;
+            nasId: string;
+            accountingSessionId?: string;
+            /** @enum {string} */
+            state: "active" | "stopped" | "unknown";
+            /** Format: date-time */
+            lastObservedAt?: string;
+            /** Format: date-time */
+            lastReceivedAt?: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            stoppedAt?: string;
+            /** @enum {string} */
+            verificationState: "unknown" | "observed" | "verified";
+            observedAccessProfile?: components["schemas"]["NetworkAccessProfile"];
+        };
+        NetworkEndpointResponsePreviewInput: {
+            deviceId: string;
+            sessionId?: string;
+        };
+        NetworkEndpointResponsePreview: {
+            policyId: string;
+            revision: number;
+            deviceId: string;
+            matched: boolean;
+            reasonCode: string;
+            /** Format: date-time */
+            triggerAfter?: string;
+            presence: components["schemas"]["NetworkEndpointPresence"];
+            sessions: components["schemas"]["NetworkNASSessionEvidence"][];
+            steps: components["schemas"]["NetworkEndpointResponseStep"][];
+            unsupportedActions: components["schemas"]["NetworkEndpointResponseAction"][];
+        };
+        /** @enum {string} */
+        NetworkEndpointResponseEventStatus: "observing" | "active" | "enforcing" | "restricted" | "disconnected" | "enforcement_unknown" | "recovering" | "restored";
+        /** @enum {string} */
+        NetworkEndpointResponseNotificationState: "not_requested" | "pending" | "delivered" | "failed";
+        NetworkEndpointResponseEvent: {
+            id: string;
+            policyId: string;
+            policyRevision: number;
+            revision: number;
+            deviceId: string;
+            subjectId: string;
+            siteId: string;
+            sessionId: string;
+            nasId: string;
+            status: components["schemas"]["NetworkEndpointResponseEventStatus"];
+            reasonCode: string;
+            signal: components["schemas"]["NetworkEndpointResponseSignal"];
+            stage: number;
+            action: components["schemas"]["NetworkEndpointResponseAction"];
+            commandIds: string[];
+            notificationState: components["schemas"]["NetworkEndpointResponseNotificationState"];
+            notificationReason?: string;
+            presence?: components["schemas"]["NetworkEndpointPresence"];
+            nasEvidence?: components["schemas"]["NetworkNASSessionEvidence"];
+            restrictionEpoch: number;
+            /** Format: date-time */
+            triggeredAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            restoredAt?: string;
+        };
+        NetworkEndpointResponseRestoreInput: {
+            expectedRevision: number;
+            reason: string;
+        };
+        NetworkEndpointMaintenanceInput: {
+            deviceId: string;
+            siteId: string;
+            /** Format: date-time */
+            expiresAt: string;
+            reason: string;
+        };
+        NetworkEndpointMaintenance: {
+            id: string;
+            deviceId: string;
+            siteId: string;
+            /** Format: date-time */
+            expiresAt: string;
+            reason: string;
+            actorId: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        NetworkEAPServerTrust: {
+            serverNames: string[];
+            caCertificates: string[];
+            /** @enum {string} */
+            wifiSecurity: "wpa2-enterprise" | "wpa3-enterprise";
+        };
+        NetworkEndpointResponsePolicyEnvelope: {
+            data: components["schemas"]["NetworkEndpointResponsePolicy"];
+        };
+        NetworkEndpointPresenceEnvelope: {
+            data: components["schemas"]["NetworkEndpointPresence"];
+        };
+        NetworkEndpointResponsePreviewEnvelope: {
+            data: components["schemas"]["NetworkEndpointResponsePreview"];
+        };
+        NetworkEndpointResponseEventEnvelope: {
+            data: components["schemas"]["NetworkEndpointResponseEvent"];
+        };
+        NetworkEndpointMaintenanceEnvelope: {
+            data: components["schemas"]["NetworkEndpointMaintenance"];
+        };
+        NetworkEndpointResponsePolicyListEnvelope: {
+            items: components["schemas"]["NetworkEndpointResponsePolicy"][];
+        };
+        NetworkEndpointResponsePolicyRevisionListEnvelope: {
+            items: components["schemas"]["NetworkEndpointResponsePolicyRevision"][];
+        };
+        NetworkEndpointResponseEventListEnvelope: {
+            items: components["schemas"]["NetworkEndpointResponseEvent"][];
+        };
+        NetworkEndpointMaintenanceListEnvelope: {
+            items: components["schemas"]["NetworkEndpointMaintenance"][];
+        };
+        NetworkAdmissionPreviewRequest: {
+            deviceId: string;
+            nasBindingId: string;
+        };
+        EndpointChannelControls: {
+            usb: boolean;
+            print: boolean;
+            clipboard: boolean;
+        };
+        EndpointChannelReceipt: {
+            /** @enum {string} */
+            name: "usb" | "print" | "clipboard";
+            /** @enum {string} */
+            scope: "current_usb_volumes" | "local_new_print_jobs" | "enrolled_console_win32";
+            /** @enum {string} */
+            state: "off" | "controlled" | "partial" | "failed" | "unsupported" | "conflict" | "unconfigured" | "not_present";
+            targets: number;
+            controlled: number;
+            reasonCode: string;
+        };
+        EndpointChannelPolicy: {
+            deviceId: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            publishedVersion: number;
+            draft: components["schemas"]["EndpointChannelControls"];
+            published?: components["schemas"]["EndpointChannelControls"];
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        EndpointChannelDesired: {
+            /** @constant */
+            schemaVersion: "endpoint-controls/v1alpha1";
+            deviceId: string;
+            runtimeId: string;
+            credentialId: string;
+            /** Format: int64 */
+            policyVersion: number;
+            challenge: string;
+            controls: components["schemas"]["EndpointChannelControls"];
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            validUntil: string;
+            /** @description False means unconfigured; never a release. Release requires a higher explicit published version. */
+            configured: boolean;
+        };
+        EndpointChannelReport: {
+            /** @constant */
+            schemaVersion: "endpoint-controls/v1alpha1";
+            deviceId: string;
+            runtimeId: string;
+            credentialId: string;
+            /** Format: int64 */
+            policyVersion: number;
+            challenge: string;
+            /** Format: date-time */
+            observedAt: string;
+            channels: components["schemas"]["EndpointChannelReceipt"][];
+        };
+        EndpointChannelView: {
+            policy: components["schemas"]["EndpointChannelPolicy"];
+            receipt?: components["schemas"]["EndpointChannelObservation"];
+            /** Format: date-time */
+            receivedAt?: string;
+            fresh: boolean;
+            runtimeCount: number;
+            pendingRuntimeCount: number;
+        };
+        EndpointChannelSaveInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+            draft: components["schemas"]["EndpointChannelControls"];
+        };
+        EndpointChannelPublishInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+        };
+        EndpointChannelPolicyEnvelope: {
+            data: components["schemas"]["EndpointChannelPolicy"];
+        };
+        EndpointChannelDesiredEnvelope: {
+            data: components["schemas"]["EndpointChannelDesired"];
+        };
+        EndpointChannelViewEnvelope: {
+            data: components["schemas"]["EndpointChannelView"];
+        };
+        EndpointChannelObservation: {
+            runtimeId: string;
+            credentialId: string;
+            /** Format: int64 */
+            policyVersion: number;
+            /** Format: date-time */
+            observedAt: string;
+            channels: components["schemas"]["EndpointChannelReceipt"][];
+        };
+        ManagedContentPolicy: {
+            /** @description Default false. For warn/block matched releases, authorization issuance and use require recent server-verified MFA in the same authenticated session, in addition to acknowledgement or independent approval. */
+            requireStepUp?: boolean;
+            detectors: ("private_key" | "aws_access_key" | "credential_assignment")[];
+            /** @enum {string} */
+            mode: "audit" | "warn" | "block";
+            rules: components["schemas"]["DockerVolumeDLPRule"][];
+            /** @description Default public (all matches enforce); derived only from trusted detector/rule policy, never client classification. */
+            minimumDataLevel?: components["schemas"]["DLPDataLevel"];
+            /**
+             * @description Omitted means text-v1. Archive-v2 additionally inspects complete bounded ZIP (store/deflate), POSIX USTAR and single-member GZIP recursively in Core memory: raw input and cumulative expansion each at most 256 KiB, 64 entries, three archive layers and 100:1 per-container and ZIP-member expansion. Names and comments are inspected. Encryption, corruption, unsafe/duplicate names, special files, unsupported members including Office/PDF/images, trailing payloads and exceeded budgets are never clean. Original bytes remain the authorization and transfer target; audit retains explicit non-blocking semantics.
+             * @enum {string}
+             */
+            detectorVersion?: "content-dlp-text-v1" | "content-dlp-archive-v2";
+            /**
+             * @description Only block matched denials; requires independent network_access.dlp_linkage.manage and all-subjects ABAC.
+             * @enum {string}
+             */
+            networkAction?: "none" | "revoke_network";
+        } & unknown;
+        ManagedContentDestinationConfig: {
+            name: string;
+            /** @enum {string} */
+            kind: "s3" | "webdav";
+            enabled: boolean;
+            policy: components["schemas"]["ManagedContentPolicy"];
+            storageIntegrationId?: string;
+            /** Format: uri */
+            baseUrl?: string;
+            secretRef?: string;
+            privateCIDRs?: string[];
+        };
+        ManagedContentDestination: {
+            /** Format: uuid */
+            id: string;
+            ownerId: string;
+            revision: number;
+            draft: components["schemas"]["ManagedContentDestinationConfig"];
+            published?: components["schemas"]["ManagedContentDestinationConfig"];
+            publishedVersion: number;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManagedContentDestinationSummary: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            kind: "s3" | "webdav";
+            publishedVersion: number;
+            /** @enum {string} */
+            mode: "audit" | "warn" | "block";
+        };
+        ManagedContentSaveInput: {
+            expectedRevision: number;
+            draft: components["schemas"]["ManagedContentDestinationConfig"];
+        };
+        ManagedContentPublishInput: {
+            expectedRevision: number;
+        };
+        ManagedContentAuthorization: {
+            /** Format: uuid */
+            attemptId: string;
+            token: string;
+        };
+        ManagedContentRequest: {
+            /** Format: uuid */
+            requestId: string;
+            authorization?: components["schemas"]["ManagedContentAuthorization"];
+        };
+        ManagedContentUploadInput: {
+            /** Format: uuid */
+            requestId: string;
+            authorization?: components["schemas"]["ManagedContentAuthorization"];
+            /** Format: uuid */
+            destinationId: string;
+            fileName: string;
+            /** Format: byte */
+            contentBase64: string;
+        };
+        ManagedContentPasteInput: {
+            /** Format: uuid */
+            requestId: string;
+            authorization?: components["schemas"]["ManagedContentAuthorization"];
+            /** Format: uuid */
+            destinationId: string;
+            fileName: string;
+            text: string;
+        };
+        ManagedContentCopyInput: {
+            /** Format: uuid */
+            requestId: string;
+            authorization?: components["schemas"]["ManagedContentAuthorization"];
+            /** Format: uuid */
+            destinationId: string;
+        };
+        ManagedContentGate: {
+            /** Format: uuid */
+            destinationId: string;
+            policyVersion: number;
+        };
+        ManagedContentRecord: {
+            /** @enum {string} */
+            action: "upload" | "paste" | "copy" | "download" | "delete";
+            actorId: string;
+            appealReason?: string;
+            /** @enum {string} */
+            appealStatus: "none" | "pending" | "approved" | "rejected";
+            /** Format: date-time */
+            createdAt: string;
+            decision?: components["schemas"]["DockerVolumeDLPDecision"];
+            /** Format: date-time */
+            deletedAt?: string;
+            /** Format: uuid */
+            destinationId: string;
+            errorCode?: string;
+            fileName: string;
+            gates: components["schemas"]["ManagedContentGate"][];
+            /** Format: uuid */
+            id: string;
+            nameRedacted?: boolean;
+            reviewerId?: string;
+            reviewReason?: string;
+            revision: number;
+            sizeBytes: number;
+            /** Format: uuid */
+            sourceId?: string;
+            /** @enum {string} */
+            state: "prepared" | "sending" | "blocked" | "completed" | "failed" | "unknown";
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            networkHoldId?: string;
+        };
+        ManagedContentResult: {
+            record: components["schemas"]["ManagedContentRecord"];
+            /** Format: byte */
+            contentBase64?: string;
+        };
+        ManagedContentRecordPage: {
+            items: components["schemas"]["ManagedContentRecord"][];
+            total: number;
+            offset: number;
+            limit: number;
+        };
+        ManagedContentAuthorizeInput: {
+            /** @enum {string} */
+            action: "acknowledge" | "use_approval";
+        };
+        ManagedContentAppealInput: {
+            /** @enum {string} */
+            reasonCode: "false_positive" | "business_exception";
+        };
+        ManagedContentReviewInput: {
+            expectedRevision: number;
+            /** @enum {string} */
+            resolution: "approve" | "reject";
+            /** @enum {string} */
+            reasonCode: "false_positive" | "business_exception" | "insufficient_justification";
+        };
+        ManagedContentDestinationEnvelope: {
+            data: components["schemas"]["ManagedContentDestination"];
+        };
+        ManagedContentResultEnvelope: {
+            data: components["schemas"]["ManagedContentResult"];
+        };
+        ManagedContentRecordEnvelope: {
+            data: components["schemas"]["ManagedContentRecord"];
+        };
+        ManagedContentRecordPageEnvelope: {
+            data: components["schemas"]["ManagedContentRecordPage"];
+        };
+        ManagedContentDestinationsEnvelope: {
+            data: components["schemas"]["ManagedContentDestinationSummary"][];
+        };
+        ManagedContentAdminDestinationsEnvelope: {
+            data: components["schemas"]["ManagedContentDestination"][];
+        };
+        ManagedContentAuthorizationEnvelope: {
+            data: components["schemas"]["DockerVolumeDLPAuthorization"];
+        };
+        /** @enum {string} */
+        DLPDataLevel: "public" | "internal" | "confidential" | "restricted";
+        DLPShadowDecision: {
+            /** @description The matched sample would require recent MFA in addition to the configured release workflow. Shadow evaluation issues no MFA challenge or transfer token. */
+            stepUpRequired?: boolean;
+            allowed: boolean;
+            /** @enum {string} */
+            detectorVersion: "content-dlp-text-v1" | "content-dlp-archive-v2";
+            matchedRuleIds: string[];
+            /** @enum {string} */
+            mode: "audit" | "warn" | "block";
+            /** @enum {string} */
+            status: "clean" | "matched" | "unsupported" | "encrypted" | "too_large" | "timeout" | "error";
+            /**
+             * @description Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+             * @enum {string}
+             */
+            dataLevel?: "public" | "internal" | "confidential" | "restricted" | "unclassified" | "unknown";
+            minimumDataLevel?: components["schemas"]["DLPDataLevel"];
+            ruleSetVersion?: string;
+            enabled: boolean;
+        };
+        DLPShadowInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+            samples: string[];
+        };
+        DLPShadowSample: {
+            index: number;
+            /** Format: int64 */
+            sizeBytes: number;
+            draft: components["schemas"]["DLPShadowDecision"];
+            published?: components["schemas"]["DLPShadowDecision"];
+        };
+        DLPShadowResult: {
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            publishedVersion: number;
+            draftRuleSetVersion: string;
+            samples: components["schemas"]["DLPShadowSample"][];
+            wouldBlock: number;
+            wouldWarn: number;
+            uninspected: number;
+            changed: number;
+        };
+        DLPShadowEnvelope: {
+            data: components["schemas"]["DLPShadowResult"];
+        };
+        ManagedContentNetworkHold: {
+            active: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            /** Format: date-time */
+            releasedAt?: string;
+            /** Format: int64 */
+            revision: number;
+            subjectId: string;
+            targets: components["schemas"]["DockerVolumeDLPNetworkTarget"][];
+            /** Format: uuid */
+            destinationId: string;
+            /** Format: uuid */
+            sourceRecordId: string;
+        };
+        ManagedContentNetworkEnvelope: {
+            data: components["schemas"]["ManagedContentNetworkHold"];
+        };
     };
     responses: {
         /** @description Stable redacted Identity protocol or management error. */
@@ -29314,6 +33359,10 @@ export interface components {
         KubernetesSubjectNameQuery: string;
         KubernetesSubjectNamespaceQuery: string;
         KubernetesNodeName: string;
+        KubernetesNativeExecutionID: string;
+        /** @description Stable original execution key, scoped to the current actor. Reuse only with the same original target and normalized input; changed input conflicts. Reading by this key never starts execution. */
+        KubernetesNativeExecutionKey: string;
+        KubernetesNativeExecutionNamespace: string;
         KubernetesPodName: string;
         KubernetesServiceName: string;
         KubernetesCRDName: string;
@@ -29449,6 +33498,13 @@ export interface components {
     };
     pathItems: never;
 }
+export type WorkflowRequestInput = components['schemas']['WorkflowRequestInput'];
+export type WorkflowRequestReceipt = components['schemas']['WorkflowRequestReceipt'];
+export type WorkflowRequestReceiptEnvelope = components['schemas']['WorkflowRequestReceiptEnvelope'];
+export type OperationCommentInput = components['schemas']['OperationCommentInput'];
+export type AlertOwnershipInput = components['schemas']['AlertOwnershipInput'];
+export type WorkflowTriggerRequest = components['schemas']['WorkflowTriggerRequest'];
+export type WorkflowRunEnvelope = components['schemas']['WorkflowRunEnvelope'];
 export type CLIAuthOptions = components['schemas']['CLIAuthOptions'];
 export type CLIDeviceAuthorizationCreateRequest = components['schemas']['CLIDeviceAuthorizationCreateRequest'];
 export type CLIDeviceAuthorization = components['schemas']['CLIDeviceAuthorization'];
@@ -30359,6 +34415,16 @@ export type ManifestKustomizeOptions = components['schemas']['ManifestKustomizeO
 export type ManifestPackageBinding = components['schemas']['ManifestPackageBinding'];
 export type ManifestPackage = components['schemas']['ManifestPackage'];
 export type ManifestPackageInput = components['schemas']['ManifestPackageInput'];
+export type ManifestRevision = components['schemas']['ManifestRevision'];
+export type ManifestRevisionListEnvelope = components['schemas']['ManifestRevisionListEnvelope'];
+export type DeliveryTemplateUsageApplication = components['schemas']['DeliveryTemplateUsageApplication'];
+export type DeliveryTemplateUsageEnvironment = components['schemas']['DeliveryTemplateUsageEnvironment'];
+export type DeliveryTemplateUsageBinding = components['schemas']['DeliveryTemplateUsageBinding'];
+export type DeliveryTemplateUsageBuildSource = components['schemas']['DeliveryTemplateUsageBuildSource'];
+export type DeliveryTemplateUsageRuntimeItem = components['schemas']['DeliveryTemplateUsageRuntimeItem'];
+export type DeliveryTemplateUsageRuntimeSummary = components['schemas']['DeliveryTemplateUsageRuntimeSummary'];
+export type DeliveryTemplateUsageSummary = components['schemas']['DeliveryTemplateUsageSummary'];
+export type DeliveryTemplateUsageSummaryEnvelope = components['schemas']['DeliveryTemplateUsageSummaryEnvelope'];
 export type ManifestRevisionInput = components['schemas']['ManifestRevisionInput'];
 export type ManifestPackagePage = components['schemas']['ManifestPackagePage'];
 export type ManifestPackageEnvelope = components['schemas']['ManifestPackageEnvelope'];
@@ -30472,6 +34538,10 @@ export type ReleaseBundleEnvelope = components['schemas']['ReleaseBundleEnvelope
 export type ReleaseBundleListEnvelope = components['schemas']['ReleaseBundleListEnvelope'];
 export type ExecutionArtifactListEnvelope = components['schemas']['ExecutionArtifactListEnvelope'];
 export type ExecutionTaskListEnvelope = components['schemas']['ExecutionTaskListEnvelope'];
+export type ExecutionTaskControlInput = components['schemas']['ExecutionTaskControlInput'];
+export type ExecutionTaskActionInput = components['schemas']['ExecutionTaskActionInput'];
+export type ExecutionLog = components['schemas']['ExecutionLog'];
+export type ExecutionLogListEnvelope = components['schemas']['ExecutionLogListEnvelope'];
 export type ExecutionTask = components['schemas']['ExecutionTask'];
 export type ExecutionTaskClaimRequest = components['schemas']['ExecutionTaskClaimRequest'];
 export type ExecutionCallbackRequest = components['schemas']['ExecutionCallbackRequest'];
@@ -30565,9 +34635,32 @@ export type VirtualizationOperationPage = components['schemas']['VirtualizationO
 export type VirtualizationOperationPageEnvelope = components['schemas']['VirtualizationOperationPageEnvelope'];
 export type DockerQuickCreateHostInput = components['schemas']['DockerQuickCreateHostInput'];
 export type DockerProjectInput = components['schemas']['DockerProjectInput'];
+export type DockerConfigurationScalar = components['schemas']['DockerConfigurationScalar'];
+export type DockerConfigurationMapValue = components['schemas']['DockerConfigurationMapValue'];
+export type DockerConfigurationPreconditions = components['schemas']['DockerConfigurationPreconditions'];
+export type DockerConfigurationChange = components['schemas']['DockerConfigurationChange'];
+export type DockerConfigurationPatchInput = components['schemas']['DockerConfigurationPatchInput'];
+export type DockerConfigurationDeleteInput = components['schemas']['DockerConfigurationDeleteInput'];
+export type DockerHostRegistration = components['schemas']['DockerHostRegistration'];
+export type DockerHostRegistrationInput = components['schemas']['DockerHostRegistrationInput'];
+export type DockerConfigurationReceipt = components['schemas']['DockerConfigurationReceipt'];
+export type DockerConfigurationReceiptEnvelope = components['schemas']['DockerConfigurationReceiptEnvelope'];
+export type DockerResourceIdentity = components['schemas']['DockerResourceIdentity'];
+export type DockerResourceIdentityEnvelope = components['schemas']['DockerResourceIdentityEnvelope'];
+export type DockerNativeTerminalInput = components['schemas']['DockerNativeTerminalInput'];
+export type DockerNativeTerminalSession = components['schemas']['DockerNativeTerminalSession'];
+export type DockerNativeTerminalCreated = components['schemas']['DockerNativeTerminalCreated'];
+export type DockerNativeTerminalSessionEnvelope = components['schemas']['DockerNativeTerminalSessionEnvelope'];
+export type DockerNativeTerminalCreatedEnvelope = components['schemas']['DockerNativeTerminalCreatedEnvelope'];
+export type DockerRuntimeContainerBinding = components['schemas']['DockerRuntimeContainerBinding'];
+export type DockerRuntimeVolume = components['schemas']['DockerRuntimeVolume'];
+export type DockerRuntimeFileEntry = components['schemas']['DockerRuntimeFileEntry'];
+export type DockerRuntimeReadResult = components['schemas']['DockerRuntimeReadResult'];
+export type DockerRuntimeReadEnvelope = components['schemas']['DockerRuntimeReadEnvelope'];
 export type DockerProject = components['schemas']['DockerProject'];
 export type DockerProjectEnvelope = components['schemas']['DockerProjectEnvelope'];
 export type DockerProjectDeployInput = components['schemas']['DockerProjectDeployInput'];
+export type DockerProjectDeployPreconditions = components['schemas']['DockerProjectDeployPreconditions'];
 export type DockerPayloadScalarValue = components['schemas']['DockerPayloadScalarValue'];
 export type DockerPayloadValue = components['schemas']['DockerPayloadValue'];
 export type DockerGitBuildInput = components['schemas']['DockerGitBuildInput'];
@@ -30646,6 +34739,36 @@ export type KubernetesPodLogs = components['schemas']['KubernetesPodLogs'];
 export type KubernetesPodLogsEnvelope = components['schemas']['KubernetesPodLogsEnvelope'];
 export type KubernetesResourceYaml = components['schemas']['KubernetesResourceYaml'];
 export type KubernetesResourceYamlEnvelope = components['schemas']['KubernetesResourceYamlEnvelope'];
+export type KubernetesResourceMutationPreconditions = components['schemas']['KubernetesResourceMutationPreconditions'];
+export type KubernetesResourceIdentity = components['schemas']['KubernetesResourceIdentity'];
+export type KubernetesResourceIdentityEnvelope = components['schemas']['KubernetesResourceIdentityEnvelope'];
+export type KubernetesConditionalResourceYamlInput = components['schemas']['KubernetesConditionalResourceYamlInput'];
+export type KubernetesPodTerminalInput = components['schemas']['KubernetesPodTerminalInput'];
+export type KubernetesPodTerminalResult = components['schemas']['KubernetesPodTerminalResult'];
+export type KubernetesPodTerminalSession = components['schemas']['KubernetesPodTerminalSession'];
+export type KubernetesPodTerminalCreated = components['schemas']['KubernetesPodTerminalCreated'];
+export type KubernetesPodTerminalSessionEnvelope = components['schemas']['KubernetesPodTerminalSessionEnvelope'];
+export type KubernetesPodTerminalCreatedEnvelope = components['schemas']['KubernetesPodTerminalCreatedEnvelope'];
+export type NativeTerminalClientFrame = components['schemas']['NativeTerminalClientFrame'];
+export type NativeTerminalServerFrame = components['schemas']['NativeTerminalServerFrame'];
+export type KubernetesPodArgvInput = components['schemas']['KubernetesPodArgvInput'];
+export type KubernetesPodArgvToolInput = components['schemas']['KubernetesPodArgvToolInput'];
+export type KubernetesPodExecutionLookupInput = components['schemas']['KubernetesPodExecutionLookupInput'];
+export type KubernetesPodExecutionOutput = components['schemas']['KubernetesPodExecutionOutput'];
+export type KubernetesPodExecutionTarget = components['schemas']['KubernetesPodExecutionTarget'];
+export type AgentPodArgvResult = components['schemas']['AgentPodArgvResult'];
+export type AgentPodExecutionCapabilities = components['schemas']['AgentPodExecutionCapabilities'];
+export type KubernetesPodExecutionReceipt = components['schemas']['KubernetesPodExecutionReceipt'];
+export type KubernetesPodGatewayResult = components['schemas']['KubernetesPodGatewayResult'];
+export type KubernetesPodExecutionReceiptEnvelope = components['schemas']['KubernetesPodExecutionReceiptEnvelope'];
+export type KubernetesConditionalWorkloadActionInput = components['schemas']['KubernetesConditionalWorkloadActionInput'];
+export type KubernetesConditionalWorkloadActionReceipt = components['schemas']['KubernetesConditionalWorkloadActionReceipt'];
+export type KubernetesConditionalWorkloadActionReceiptEnvelope = components['schemas']['KubernetesConditionalWorkloadActionReceiptEnvelope'];
+export type KubernetesResourcePresence = components['schemas']['KubernetesResourcePresence'];
+export type AgentConditionalResourceMutationRequest = components['schemas']['AgentConditionalResourceMutationRequest'];
+export type AgentConditionalResourceYamlRequest = components['schemas']['AgentConditionalResourceYamlRequest'];
+export type KubernetesResourceDeletionReceipt = components['schemas']['KubernetesResourceDeletionReceipt'];
+export type KubernetesResourceDeletionReceiptEnvelope = components['schemas']['KubernetesResourceDeletionReceiptEnvelope'];
 export type KubernetesResourceUpdatePlanRequest = components['schemas']['KubernetesResourceUpdatePlanRequest'];
 export type KubernetesManagedFieldOwner = components['schemas']['KubernetesManagedFieldOwner'];
 export type KubernetesFieldConflict = components['schemas']['KubernetesFieldConflict'];
@@ -31257,6 +35380,7 @@ export type MarketplacePluginEnvelope = components['schemas']['MarketplacePlugin
 export type MarketplacePluginListEnvelope = components['schemas']['MarketplacePluginListEnvelope'];
 export type InstalledPluginEnvelope = components['schemas']['InstalledPluginEnvelope'];
 export type InstalledPluginListEnvelope = components['schemas']['InstalledPluginListEnvelope'];
+export type GovernedAITokenBinding = components['schemas']['GovernedAITokenBinding'];
 export type PersonalAccessToken = components['schemas']['PersonalAccessToken'];
 export type PersonalAccessTokenInput = components['schemas']['PersonalAccessTokenInput'];
 export type CreatedPersonalAccessToken = components['schemas']['CreatedPersonalAccessToken'];
@@ -31306,6 +35430,12 @@ export type DirectoryEventStatus = components['schemas']['DirectoryEventStatus']
 export type DirectorySyncRunMode = components['schemas']['DirectorySyncRunMode'];
 export type DirectorySyncRunStatus = components['schemas']['DirectorySyncRunStatus'];
 export type DirectorySyncRunSummary = components['schemas']['DirectorySyncRunSummary'];
+export type DirectorySyncRequestInput = components['schemas']['DirectorySyncRequestInput'];
+export type DirectorySyncRequestOrganizations = components['schemas']['DirectorySyncRequestOrganizations'];
+export type DirectorySyncRequestPeople = components['schemas']['DirectorySyncRequestPeople'];
+export type DirectorySyncRequestRun = components['schemas']['DirectorySyncRequestRun'];
+export type DirectorySyncRequestReceipt = components['schemas']['DirectorySyncRequestReceipt'];
+export type DirectorySyncRequestEnvelope = components['schemas']['DirectorySyncRequestEnvelope'];
 export type DirectoryCallbackStatus = components['schemas']['DirectoryCallbackStatus'];
 export type DirectoryRuntimeStatus = components['schemas']['DirectoryRuntimeStatus'];
 export type DirectoryRuntimeStatusEnvelope = components['schemas']['DirectoryRuntimeStatusEnvelope'];
@@ -31439,6 +35569,10 @@ export type NetworkSessionActionInput = components['schemas']['NetworkSessionAct
 export type NetworkSessionActionExecuteInput = components['schemas']['NetworkSessionActionExecuteInput'];
 export type NetworkSessionActionPlan = components['schemas']['NetworkSessionActionPlan'];
 export type NetworkSessionActionPlanEnvelope = components['schemas']['NetworkSessionActionPlanEnvelope'];
+export type HealingOriginalRequestInput = components['schemas']['HealingOriginalRequestInput'];
+export type HealingOriginalRun = components['schemas']['HealingOriginalRun'];
+export type HealingOriginalRequestReceipt = components['schemas']['HealingOriginalRequestReceipt'];
+export type HealingOriginalRequestEnvelope = components['schemas']['HealingOriginalRequestEnvelope'];
 export type NetworkSessionCommandStatus = components['schemas']['NetworkSessionCommandStatus'];
 export type NetworkSessionCommand = components['schemas']['NetworkSessionCommand'];
 export type NetworkSessionCommandEnvelope = components['schemas']['NetworkSessionCommandEnvelope'];
@@ -31468,6 +35602,128 @@ export type TemplateMigrationPolicy = components['schemas']['TemplateMigrationPo
 export type TemplateVersionReference = components['schemas']['TemplateVersionReference'];
 export type TemplateMigrationStep = components['schemas']['TemplateMigrationStep'];
 export type TemplateMigrationAssessment = components['schemas']['TemplateMigrationAssessment'];
+export type DockerVolumeDLPRule = components['schemas']['DockerVolumeDLPRule'];
+export type DockerVolumeDLPContent = components['schemas']['DockerVolumeDLPContent'];
+export type DockerVolumeDLPPolicy = components['schemas']['DockerVolumeDLPPolicy'];
+export type DockerVolumeDLPSaveInput = components['schemas']['DockerVolumeDLPSaveInput'];
+export type DockerVolumeDLPPublishInput = components['schemas']['DockerVolumeDLPPublishInput'];
+export type DockerVolumeDLPDecision = components['schemas']['DockerVolumeDLPDecision'];
+export type DockerVolumeDLPEvent = components['schemas']['DockerVolumeDLPEvent'];
+export type DockerVolumeDLPPolicyEnvelope = components['schemas']['DockerVolumeDLPPolicyEnvelope'];
+export type DockerVolumeDLPEventListEnvelope = components['schemas']['DockerVolumeDLPEventListEnvelope'];
+export type DockerVolumeFileContent = components['schemas']['DockerVolumeFileContent'];
+export type DockerVolumeFileContentEnvelope = components['schemas']['DockerVolumeFileContentEnvelope'];
+export type DockerVolumeDLPAuthorizationInput = components['schemas']['DockerVolumeDLPAuthorizationInput'];
+export type DockerVolumeDLPAuthorization = components['schemas']['DockerVolumeDLPAuthorization'];
+export type DockerVolumeDLPAppealInput = components['schemas']['DockerVolumeDLPAppealInput'];
+export type DockerVolumeDLPAppealReviewInput = components['schemas']['DockerVolumeDLPAppealReviewInput'];
+export type DockerVolumeDLPAppeal = components['schemas']['DockerVolumeDLPAppeal'];
+export type DockerVolumeDLPNetworkTarget = components['schemas']['DockerVolumeDLPNetworkTarget'];
+export type DockerVolumeDLPNetworkHold = components['schemas']['DockerVolumeDLPNetworkHold'];
+export type DockerVolumeDLPCase = components['schemas']['DockerVolumeDLPCase'];
+export type DockerVolumeFileReadInput = components['schemas']['DockerVolumeFileReadInput'];
+export type DockerVolumeTransferResult = components['schemas']['DockerVolumeTransferResult'];
+export type DockerVolumeDLPAuthorizationEnvelope = components['schemas']['DockerVolumeDLPAuthorizationEnvelope'];
+export type DockerVolumeDLPAppealEnvelope = components['schemas']['DockerVolumeDLPAppealEnvelope'];
+export type DockerVolumeDLPCaseEnvelope = components['schemas']['DockerVolumeDLPCaseEnvelope'];
+export type DockerVolumeTransferResultEnvelope = components['schemas']['DockerVolumeTransferResultEnvelope'];
+export type DockerVolumeDLPCaseListEnvelope = components['schemas']['DockerVolumeDLPCaseListEnvelope'];
+export type EndpointDeviceManagementState = components['schemas']['EndpointDeviceManagementState'];
+export type NetworkDeviceGovernanceMode = components['schemas']['NetworkDeviceGovernanceMode'];
+export type NetworkWorkloadBindingInput = components['schemas']['NetworkWorkloadBindingInput'];
+export type NetworkWorkloadBinding = components['schemas']['NetworkWorkloadBinding'];
+export type NetworkManagementProofInput = components['schemas']['NetworkManagementProofInput'];
+export type NetworkWorkloadBindingEnvelope = components['schemas']['NetworkWorkloadBindingEnvelope'];
+export type NetworkWorkloadBindingListEnvelope = components['schemas']['NetworkWorkloadBindingListEnvelope'];
+export type NetworkIPCIDR = components['schemas']['NetworkIPCIDR'];
+export type NetworkIPAddress = components['schemas']['NetworkIPAddress'];
+export type NetworkVPNRevocationReleaseInput = components['schemas']['NetworkVPNRevocationReleaseInput'];
+export type NetworkVPNRevocationExecution = components['schemas']['NetworkVPNRevocationExecution'];
+export type NetworkVPNRevocation = components['schemas']['NetworkVPNRevocation'];
+export type NetworkVPNRevocationStateEnvelope = components['schemas']['NetworkVPNRevocationStateEnvelope'];
+export type NetworkVPNRevocationEnvelope = components['schemas']['NetworkVPNRevocationEnvelope'];
+export type NetworkProxyBinding = components['schemas']['NetworkProxyBinding'];
+export type NetworkProxyRestoreInput = components['schemas']['NetworkProxyRestoreInput'];
+export type NetworkProxyConfigurationRevision = components['schemas']['NetworkProxyConfigurationRevision'];
+export type NetworkProxyConfigurationHistoryEnvelope = components['schemas']['NetworkProxyConfigurationHistoryEnvelope'];
+export type NetworkProxyConfigurationPatchInput = components['schemas']['NetworkProxyConfigurationPatchInput'];
+export type NetworkAdmissionPreviewResult = components['schemas']['NetworkAdmissionPreviewResult'];
+export type NetworkAdmissionPreviewEnvelope = components['schemas']['NetworkAdmissionPreviewEnvelope'];
+export type NetworkEndpointResponseAction = components['schemas']['NetworkEndpointResponseAction'];
+export type NetworkEndpointResponseSignal = components['schemas']['NetworkEndpointResponseSignal'];
+export type NetworkEndpointResponseStep = components['schemas']['NetworkEndpointResponseStep'];
+export type NetworkEndpointResponsePolicyConfiguration = components['schemas']['NetworkEndpointResponsePolicyConfiguration'];
+export type NetworkEndpointResponsePolicyInput = components['schemas']['NetworkEndpointResponsePolicyInput'];
+export type NetworkEndpointResponsePolicyPublishInput = components['schemas']['NetworkEndpointResponsePolicyPublishInput'];
+export type NetworkEndpointResponsePolicyRollbackInput = components['schemas']['NetworkEndpointResponsePolicyRollbackInput'];
+export type NetworkEndpointResponsePolicy = components['schemas']['NetworkEndpointResponsePolicy'];
+export type NetworkEndpointResponsePolicyRevision = components['schemas']['NetworkEndpointResponsePolicyRevision'];
+export type NetworkEndpointPresence = components['schemas']['NetworkEndpointPresence'];
+export type NetworkNASSessionEvidence = components['schemas']['NetworkNASSessionEvidence'];
+export type NetworkEndpointResponsePreviewInput = components['schemas']['NetworkEndpointResponsePreviewInput'];
+export type NetworkEndpointResponsePreview = components['schemas']['NetworkEndpointResponsePreview'];
+export type NetworkEndpointResponseEventStatus = components['schemas']['NetworkEndpointResponseEventStatus'];
+export type NetworkEndpointResponseNotificationState = components['schemas']['NetworkEndpointResponseNotificationState'];
+export type NetworkEndpointResponseEvent = components['schemas']['NetworkEndpointResponseEvent'];
+export type NetworkEndpointResponseRestoreInput = components['schemas']['NetworkEndpointResponseRestoreInput'];
+export type NetworkEndpointMaintenanceInput = components['schemas']['NetworkEndpointMaintenanceInput'];
+export type NetworkEndpointMaintenance = components['schemas']['NetworkEndpointMaintenance'];
+export type NetworkEAPServerTrust = components['schemas']['NetworkEAPServerTrust'];
+export type NetworkEndpointResponsePolicyEnvelope = components['schemas']['NetworkEndpointResponsePolicyEnvelope'];
+export type NetworkEndpointPresenceEnvelope = components['schemas']['NetworkEndpointPresenceEnvelope'];
+export type NetworkEndpointResponsePreviewEnvelope = components['schemas']['NetworkEndpointResponsePreviewEnvelope'];
+export type NetworkEndpointResponseEventEnvelope = components['schemas']['NetworkEndpointResponseEventEnvelope'];
+export type NetworkEndpointMaintenanceEnvelope = components['schemas']['NetworkEndpointMaintenanceEnvelope'];
+export type NetworkEndpointResponsePolicyListEnvelope = components['schemas']['NetworkEndpointResponsePolicyListEnvelope'];
+export type NetworkEndpointResponsePolicyRevisionListEnvelope = components['schemas']['NetworkEndpointResponsePolicyRevisionListEnvelope'];
+export type NetworkEndpointResponseEventListEnvelope = components['schemas']['NetworkEndpointResponseEventListEnvelope'];
+export type NetworkEndpointMaintenanceListEnvelope = components['schemas']['NetworkEndpointMaintenanceListEnvelope'];
+export type NetworkAdmissionPreviewRequest = components['schemas']['NetworkAdmissionPreviewRequest'];
+export type EndpointChannelControls = components['schemas']['EndpointChannelControls'];
+export type EndpointChannelReceipt = components['schemas']['EndpointChannelReceipt'];
+export type EndpointChannelPolicy = components['schemas']['EndpointChannelPolicy'];
+export type EndpointChannelDesired = components['schemas']['EndpointChannelDesired'];
+export type EndpointChannelReport = components['schemas']['EndpointChannelReport'];
+export type EndpointChannelView = components['schemas']['EndpointChannelView'];
+export type EndpointChannelSaveInput = components['schemas']['EndpointChannelSaveInput'];
+export type EndpointChannelPublishInput = components['schemas']['EndpointChannelPublishInput'];
+export type EndpointChannelPolicyEnvelope = components['schemas']['EndpointChannelPolicyEnvelope'];
+export type EndpointChannelDesiredEnvelope = components['schemas']['EndpointChannelDesiredEnvelope'];
+export type EndpointChannelViewEnvelope = components['schemas']['EndpointChannelViewEnvelope'];
+export type EndpointChannelObservation = components['schemas']['EndpointChannelObservation'];
+export type ManagedContentPolicy = components['schemas']['ManagedContentPolicy'];
+export type ManagedContentDestinationConfig = components['schemas']['ManagedContentDestinationConfig'];
+export type ManagedContentDestination = components['schemas']['ManagedContentDestination'];
+export type ManagedContentDestinationSummary = components['schemas']['ManagedContentDestinationSummary'];
+export type ManagedContentSaveInput = components['schemas']['ManagedContentSaveInput'];
+export type ManagedContentPublishInput = components['schemas']['ManagedContentPublishInput'];
+export type ManagedContentAuthorization = components['schemas']['ManagedContentAuthorization'];
+export type ManagedContentRequest = components['schemas']['ManagedContentRequest'];
+export type ManagedContentUploadInput = components['schemas']['ManagedContentUploadInput'];
+export type ManagedContentPasteInput = components['schemas']['ManagedContentPasteInput'];
+export type ManagedContentCopyInput = components['schemas']['ManagedContentCopyInput'];
+export type ManagedContentGate = components['schemas']['ManagedContentGate'];
+export type ManagedContentRecord = components['schemas']['ManagedContentRecord'];
+export type ManagedContentResult = components['schemas']['ManagedContentResult'];
+export type ManagedContentRecordPage = components['schemas']['ManagedContentRecordPage'];
+export type ManagedContentAuthorizeInput = components['schemas']['ManagedContentAuthorizeInput'];
+export type ManagedContentAppealInput = components['schemas']['ManagedContentAppealInput'];
+export type ManagedContentReviewInput = components['schemas']['ManagedContentReviewInput'];
+export type ManagedContentDestinationEnvelope = components['schemas']['ManagedContentDestinationEnvelope'];
+export type ManagedContentResultEnvelope = components['schemas']['ManagedContentResultEnvelope'];
+export type ManagedContentRecordEnvelope = components['schemas']['ManagedContentRecordEnvelope'];
+export type ManagedContentRecordPageEnvelope = components['schemas']['ManagedContentRecordPageEnvelope'];
+export type ManagedContentDestinationsEnvelope = components['schemas']['ManagedContentDestinationsEnvelope'];
+export type ManagedContentAdminDestinationsEnvelope = components['schemas']['ManagedContentAdminDestinationsEnvelope'];
+export type ManagedContentAuthorizationEnvelope = components['schemas']['ManagedContentAuthorizationEnvelope'];
+export type DLPDataLevel = components['schemas']['DLPDataLevel'];
+export type DLPShadowDecision = components['schemas']['DLPShadowDecision'];
+export type DLPShadowInput = components['schemas']['DLPShadowInput'];
+export type DLPShadowSample = components['schemas']['DLPShadowSample'];
+export type DLPShadowResult = components['schemas']['DLPShadowResult'];
+export type DLPShadowEnvelope = components['schemas']['DLPShadowEnvelope'];
+export type ManagedContentNetworkHold = components['schemas']['ManagedContentNetworkHold'];
+export type ManagedContentNetworkEnvelope = components['schemas']['ManagedContentNetworkEnvelope'];
 export type ResponseIdentityError = components['responses']['IdentityError'];
 export type ResponseError = components['responses']['Error'];
 export type ResponseComputeError = components['responses']['ComputeError'];
@@ -31505,6 +35761,9 @@ export type ParameterKubernetesSubjectKindQuery = components['parameters']['Kube
 export type ParameterKubernetesSubjectNameQuery = components['parameters']['KubernetesSubjectNameQuery'];
 export type ParameterKubernetesSubjectNamespaceQuery = components['parameters']['KubernetesSubjectNamespaceQuery'];
 export type ParameterKubernetesNodeName = components['parameters']['KubernetesNodeName'];
+export type ParameterKubernetesNativeExecutionId = components['parameters']['KubernetesNativeExecutionID'];
+export type ParameterKubernetesNativeExecutionKey = components['parameters']['KubernetesNativeExecutionKey'];
+export type ParameterKubernetesNativeExecutionNamespace = components['parameters']['KubernetesNativeExecutionNamespace'];
 export type ParameterKubernetesPodName = components['parameters']['KubernetesPodName'];
 export type ParameterKubernetesServiceName = components['parameters']['KubernetesServiceName'];
 export type ParameterKubernetesCrdName = components['parameters']['KubernetesCRDName'];
@@ -34598,6 +38857,13 @@ export interface operations {
                     "application/json": components["schemas"]["OperationStatus"];
                 };
             };
+            /** @description Binding deleted; no response body. Current Core uses this response. The legacy 200 shape remains documented for compatibility. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             404: components["responses"]["Error"];
         };
     };
@@ -36690,6 +40956,31 @@ export interface operations {
             404: components["responses"]["Error"];
         };
     };
+    listManifestRevisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                manifestPackageID: components["parameters"]["ManifestPackageID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable revisions, without starting execution. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManifestRevisionListEnvelope"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
     saveManifestRevision: {
         parameters: {
             query?: never;
@@ -37404,6 +41695,31 @@ export interface operations {
             404: components["responses"]["Error"];
         };
     };
+    getDeliveryBlueprintUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                blueprintID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage and execution observations visible to the current principal. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryTemplateUsageSummaryEnvelope"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
     renderDeliveryBlueprintSpec: {
         parameters: {
             query?: never;
@@ -37814,6 +42130,128 @@ export interface operations {
             };
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    controlExecutionTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskID: components["parameters"]["TaskID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutionTaskControlInput"];
+            };
+        };
+        responses: {
+            /** @description Actual task state after accepting the requested control; ordinary user responses contain an empty callbackToken and no SecretLease. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionTaskEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    listExecutionTaskLogs: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                taskID: components["parameters"]["TaskID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted execution log rows. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionLogListEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    cancelExecutionTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskID: components["parameters"]["TaskID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ExecutionTaskActionInput"];
+            };
+        };
+        responses: {
+            /** @description Accepted action with the current task state, not proof of completion. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionTaskEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    retryExecutionTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                taskID: components["parameters"]["TaskID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ExecutionTaskActionInput"];
+            };
+        };
+        responses: {
+            /** @description Accepted action with the current task state, not proof of completion. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionTaskEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
         };
     };
     listExecutionTaskArtifacts: {
@@ -39494,6 +43932,504 @@ export interface operations {
             403: components["responses"]["Error"];
         };
     };
+    registerDockerHostConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerHostRegistrationInput"];
+            };
+        };
+        responses: {
+            /** @description Original committed configuration receipt; replay returns the same receipt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerConfigurationReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    patchDockerHostConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerHostID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerConfigurationPatchInput"];
+            };
+        };
+        responses: {
+            /** @description Original committed configuration receipt; replay returns the same receipt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerConfigurationReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    deleteDockerHostConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerHostID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerConfigurationDeleteInput"];
+            };
+        };
+        responses: {
+            /** @description Original committed configuration receipt; replay returns the same receipt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerConfigurationReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    patchDockerProjectConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerConfigurationPatchInput"];
+            };
+        };
+        responses: {
+            /** @description Original committed configuration receipt; replay returns the same receipt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerConfigurationReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    deleteDockerProjectConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerConfigurationDeleteInput"];
+            };
+        };
+        responses: {
+            /** @description Original committed configuration receipt; replay returns the same receipt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerConfigurationReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            413: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    getDockerConfigurationRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original immutable committed receipt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerConfigurationReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    getDockerHostIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerHostID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized metadata only. UID survives updates and changes on deletion and recreation; configurationRevision changes on configuration changes, including legacy writers, and stays stable for pure heartbeat/status updates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerResourceIdentityEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    getDockerProjectIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized metadata only. UID survives updates and changes on deletion and recreation; configurationRevision changes on configuration changes, including legacy writers, and stays stable for pure heartbeat/status updates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerResourceIdentityEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    createDockerNativeTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerNativeTerminalInput"];
+            };
+        };
+        responses: {
+            /** @description Original actor-owned native Docker terminal metadata. Cancellation does not assert remote process termination. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerNativeTerminalCreatedEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getDockerNativeTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: string;
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original actor-owned native Docker terminal metadata. Cancellation does not assert remote process termination. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerNativeTerminalSessionEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    closeDockerNativeTerminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: string;
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original actor-owned native Docker terminal metadata. Cancellation does not assert remote process termination. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerNativeTerminalSessionEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    streamDockerNativeTerminal: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Soha-Terminal-Ticket": string;
+            };
+            path: {
+                dockerProjectID: string;
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native WebSocket using shared bounded PTY frames; ready is admission, exit requires original Engine exec outcome and frozen target verification. */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getDockerRuntimeLogsV1: {
+        parameters: {
+            query: {
+                serviceName: string;
+                tailLines?: number;
+                sinceSeconds?: number;
+                limitBytes?: number;
+            };
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original identity-bound bounded result; source and returned size/completeness are distinct. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerRuntimeReadEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            502: components["responses"]["Error"];
+        };
+    };
+    getDockerRuntimeVolumesV1: {
+        parameters: {
+            query: {
+                serviceName: string;
+            };
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original identity-bound bounded result; source and returned size/completeness are distinct. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerRuntimeReadEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            502: components["responses"]["Error"];
+        };
+    };
+    listDockerRuntimeFilesV1: {
+        parameters: {
+            query: {
+                serviceName: string;
+                target: string;
+                path?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original identity-bound bounded result; source and returned size/completeness are distinct. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerRuntimeReadEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            502: components["responses"]["Error"];
+        };
+    };
+    readDockerRuntimeFileV1: {
+        parameters: {
+            query: {
+                serviceName: string;
+                target: string;
+                path?: string;
+                limitBytes?: number;
+            };
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original identity-bound bounded result; source and returned size/completeness are distinct. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerRuntimeReadEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            502: components["responses"]["Error"];
+        };
+    };
     createDockerHostAgentInstallation: {
         parameters: {
             query?: never;
@@ -39730,6 +44666,36 @@ export interface operations {
         responses: {
             /** @description Docker Compose project action accepted as an auditable operation. */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerOperationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getOriginalDockerProjectDeployment: {
+        parameters: {
+            query?: {
+                /** @description Optional assertion of the original normalized deployment action. */
+                action?: "deploy" | "redeploy" | "start" | "stop" | "restart" | "down" | "pull" | "build" | "destroy";
+            };
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+                requestKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original Docker project deployment receipt. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -45561,6 +50527,473 @@ export interface operations {
             503: components["responses"]["Error"];
         };
     };
+    getKubernetesResourceIdentity: {
+        parameters: {
+            query?: {
+                /** @description Omit to aggregate across namespaces when the operation supports cluster-wide reads. */
+                namespace?: components["parameters"]["KubernetesNamespaceQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                kind: string;
+                name: components["parameters"]["KubernetesResourceName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current authorized metadata identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceIdentityEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    deleteKubernetesResourceConditional: {
+        parameters: {
+            query: {
+                /** @description Omit to aggregate across namespaces when the operation supports cluster-wide reads. */
+                namespace?: components["parameters"]["KubernetesNamespaceQuery"];
+                expectedUid: string;
+                expectedResourceVersion: string;
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                kind: string;
+                name: components["parameters"]["KubernetesResourceName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deletion accepted for the frozen target; completion is not yet observed. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceDeletionReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    applyKubernetesResourceYamlConditional: {
+        parameters: {
+            query?: {
+                /** @description Omit to aggregate across namespaces when the operation supports cluster-wide reads. */
+                namespace?: components["parameters"]["KubernetesNamespaceQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                kind: string;
+                name: components["parameters"]["KubernetesResourceName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesConditionalResourceYamlInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized conditional edit result; application readiness must be observed separately. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceYamlEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    preflightKubernetesResourceYamlConditional: {
+        parameters: {
+            query?: {
+                /** @description Omit to aggregate across namespaces when the operation supports cluster-wide reads. */
+                namespace?: components["parameters"]["KubernetesNamespaceQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                kind: string;
+                name: components["parameters"]["KubernetesResourceName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesConditionalResourceYamlInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized conditional server-side dry-run plan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationalPlanEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    executeKubernetesWorkloadActionConditional: {
+        parameters: {
+            query: {
+                namespace: string;
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                kind: "Deployment" | "StatefulSet" | "DaemonSet";
+                name: components["parameters"]["KubernetesResourceName"];
+                action: "restart" | "scale" | "rollback";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesConditionalWorkloadActionInput"];
+            };
+        };
+        responses: {
+            /** @description Update or dry-run receipt for the original workload. Observe rollout readiness separately. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesConditionalWorkloadActionReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    createKubernetesPodTerminal: {
+        parameters: {
+            query: {
+                namespace: components["parameters"]["KubernetesNativeExecutionNamespace"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                podName: components["parameters"]["KubernetesPodName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesPodTerminalInput"];
+            };
+        };
+        responses: {
+            /** @description Actor-owned native terminal metadata. Closing requests cancellation; it does not prove remote process termination. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodTerminalCreatedEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesPodTerminal: {
+        parameters: {
+            query: {
+                namespace: components["parameters"]["KubernetesNativeExecutionNamespace"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                podName: components["parameters"]["KubernetesPodName"];
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Actor-owned native terminal metadata. Closing requests cancellation; it does not prove remote process termination. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodTerminalSessionEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    closeKubernetesPodTerminal: {
+        parameters: {
+            query: {
+                namespace: components["parameters"]["KubernetesNativeExecutionNamespace"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                podName: components["parameters"]["KubernetesPodName"];
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Actor-owned native terminal metadata. Closing requests cancellation; it does not prove remote process termination. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodTerminalSessionEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    streamKubernetesPodTerminal: {
+        parameters: {
+            query: {
+                namespace: components["parameters"]["KubernetesNativeExecutionNamespace"];
+            };
+            header: {
+                "X-Soha-Terminal-Ticket": string;
+            };
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                podName: components["parameters"]["KubernetesPodName"];
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authenticated native WebSocket. JSON data frames follow NativeTerminalClientFrame and NativeTerminalServerFrame; control ping/pong every 15 seconds, 45-second read idle and hard lease deadline. One connection only; no reconnect/replay. */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesPodExecutionByKey: {
+        parameters: {
+            query: {
+                namespace: components["parameters"]["KubernetesNativeExecutionNamespace"];
+            };
+            header: {
+                /** @description Stable original execution key, scoped to the current actor. Reuse only with the same original target and normalized input; changed input conflicts. Reading by this key never starts execution. */
+                "Idempotency-Key": components["parameters"]["KubernetesNativeExecutionKey"];
+            };
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                podName: components["parameters"]["KubernetesPodName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Actor-owned original execution receipt; process success is separate from transport success. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodExecutionReceiptEnvelope"];
+                };
+            };
+            /** @description Actor-owned original execution receipt; process success is separate from transport success. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodExecutionReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    executeKubernetesPodArgv: {
+        parameters: {
+            query: {
+                namespace: components["parameters"]["KubernetesNativeExecutionNamespace"];
+            };
+            header: {
+                /** @description Stable original execution key, scoped to the current actor. Reuse only with the same original target and normalized input; changed input conflicts. Reading by this key never starts execution. */
+                "Idempotency-Key": components["parameters"]["KubernetesNativeExecutionKey"];
+            };
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                podName: components["parameters"]["KubernetesPodName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesPodArgvInput"];
+            };
+        };
+        responses: {
+            /** @description Actor-owned original execution receipt; process success is separate from transport success. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodExecutionReceiptEnvelope"];
+                };
+            };
+            /** @description Actor-owned original execution receipt; process success is separate from transport success. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodExecutionReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesPodExecution: {
+        parameters: {
+            query: {
+                namespace: components["parameters"]["KubernetesNativeExecutionNamespace"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                podName: components["parameters"]["KubernetesPodName"];
+                executionID: components["parameters"]["KubernetesNativeExecutionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Actor-owned original execution receipt; process success is separate from transport success. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodExecutionReceiptEnvelope"];
+                };
+            };
+            /** @description Actor-owned original execution receipt; process success is separate from transport success. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPodExecutionReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
     planKubernetesResourceUpdate: {
         parameters: {
             query?: never;
@@ -47292,6 +52725,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreatedPersonalAccessTokenEnvelope"];
+                };
+            };
+        };
+    };
+    createGovernedPersonalAccessToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonalAccessTokenInput"];
+            };
+        };
+        responses: {
+            /** @description Newly created personal access token and one-time secret value. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedPersonalAccessTokenEnvelope"];
+                };
+            };
+        };
+    };
+    rotateGovernedPersonalAccessToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TokenRotationInput"];
+            };
+        };
+        responses: {
+            /** @description Rotated personal access token and one-time secret value. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedPersonalAccessTokenEnvelope"];
+                };
+            };
+        };
+    };
+    createGovernedServiceAccountToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceAccountTokenInput"];
+            };
+        };
+        responses: {
+            /** @description Newly created service account token and one-time secret value. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedServiceAccountTokenEnvelope"];
+                };
+            };
+        };
+    };
+    rotateGovernedServiceAccountToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TokenRotationInput"];
+            };
+        };
+        responses: {
+            /** @description Rotated service account token and one-time secret value. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedServiceAccountTokenEnvelope"];
                 };
             };
         };
@@ -55320,7 +60855,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NetworkProxyConfigurationInput"];
+                "application/json": components["schemas"]["NetworkProxyConfigurationPatchInput"];
             };
         };
         responses: {
@@ -55782,6 +61317,59 @@ export interface operations {
                     "application/json": components["schemas"]["NetworkSessionEnvelope"];
                 };
             };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getNetworkSessionScopedCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: string;
+                commandID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original durable NAS command for this session. Pending or delivered is not proof of enforcement; the runtime reports the terminal outcome. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkSessionCommandEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getOriginalNetworkSessionCommand: {
+        parameters: {
+            query: {
+                planHash: string;
+            };
+            header?: never;
+            path: {
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read the original command after an uncertain execute response using the reviewed planHash. This endpoint never creates, claims or retries a command. A missing command does not authorize replay. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkSessionCommandEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
@@ -57682,6 +63270,3439 @@ export interface operations {
             409: components["responses"]["Error"];
             429: components["responses"]["Error"];
             503: components["responses"]["Error"];
+        };
+    };
+    triggerWorkflowRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTriggerRequest"];
+            };
+        };
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getWorkflowRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflowRunID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    approveWorkflowRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflowRunID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationCommentInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    rejectWorkflowRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflowRunID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationCommentInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRunEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getWorkflowRuntimeDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflowRunID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getMonitoringSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listAlertRecords: {
+        parameters: {
+            query?: {
+                status?: string;
+                clusterId?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericItemsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getAlertRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alertID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listAlertEventRecords: {
+        parameters: {
+            query?: {
+                status?: string;
+                clusterId?: string;
+                ruleId?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericItemsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getAlertEventRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listHealingRunRecords: {
+        parameters: {
+            query?: {
+                status?: string;
+                policyId?: string;
+                eventId?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericItemsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getHealingRunRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    assignAlertOwnership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alertID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertOwnershipInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    acknowledgeAlertRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alertID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    acknowledgeAlertEventRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    resolveAlertEventRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    healAlertEventRecord: {
+        parameters: {
+            query?: {
+                policyId?: string;
+            };
+            header?: never;
+            path: {
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createOriginalHealingRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HealingOriginalRequestInput"];
+            };
+        };
+        responses: {
+            /** @description Original request, including a duplicate observation of the same actor, credential and input. Pending approval does not mean a workflow was executed. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealingOriginalRequestEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getOriginalHealingRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventID: string;
+                requestID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current original healing and workflow submission state, without sensitive execution payloads. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealingOriginalRequestEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    approveHealingRunRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationCommentInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    rejectHealingRunRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationCommentInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    retryHealingRunRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    previewDirectorySynchronization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    startDirectorySynchronization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createDirectorySynchronizationRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectorySyncRequestInput"];
+            };
+        };
+        responses: {
+            /** @description Original request receipt, including its actual durable run state. Failed/unknown work must not be resubmitted with another key automatically. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectorySyncRequestEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getOriginalDirectorySynchronizationRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionID: string;
+                idempotencyKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original durable run state; no credential material is returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectorySyncRequestEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listDirectorySynchronizationRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericItemsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getDirectorySynchronizationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    cancelDirectorySynchronizationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionID: string;
+                runID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized operation result; legacy response fields are preserved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericDataEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    submitWorkflowRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowRequestInput"];
+            };
+        };
+        responses: {
+            /** @description Original submission receipt. accepted means accepted by the owning workflow service, not completed. unknown must never be automatically resubmitted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRequestReceiptEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getWorkflowRequestReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original submission receipt. accepted means accepted by the owning workflow service, not completed. unknown must never be automatically resubmitted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRequestReceiptEnvelope"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getDockerVolumeDLPPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPPolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    saveDockerVolumeDLPPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerVolumeDLPSaveInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPPolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    publishDockerVolumeDLPPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerVolumeDLPPublishInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPPolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listDockerVolumeDLPEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPEventListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    readDockerProjectVolumeFile: {
+        parameters: {
+            query: {
+                serviceName?: string;
+                target: string;
+                path: string;
+                limitBytes?: number;
+            };
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeFileContentEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listDockerVolumeDLPActivity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized bounded result; denied transfer results contain no file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPCaseListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getDockerVolumeDLPCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized bounded result; denied transfer results contain no file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPCaseEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    authorizeDockerVolumeDLPTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerVolumeDLPAuthorizationInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized bounded result; denied transfer results contain no file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPAuthorizationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    appealDockerVolumeDLPTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerVolumeDLPAppealInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized bounded result; denied transfer results contain no file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPAppealEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    reviewDockerVolumeDLPAppeal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerVolumeDLPAppealReviewInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized bounded result; denied transfer results contain no file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeDLPAppealEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    readDockerProjectVolumeTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: components["parameters"]["DockerProjectID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DockerVolumeFileReadInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized bounded result; denied transfer results contain no file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerVolumeTransferResultEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listNetworkWorkloadBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current network security state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkWorkloadBindingListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    putNetworkWorkloadBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bindingID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkWorkloadBindingInput"];
+            };
+        };
+        responses: {
+            /** @description Current network security state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkWorkloadBindingEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    submitNetworkManagementProof: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkManagementProofInput"];
+            };
+        };
+        responses: {
+            /** @description Current network security state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EndpointDeviceEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkVPNSessionRevocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persistent VPN restriction for this subject, device and site, including asynchronous configuration receipts. Applied is execution readback, not an end-to-end traffic test. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkVPNRevocationStateEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    revokeNetworkVPNSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Restriction persisted and endpoint/gateway configurations queued. This is not proof that traffic has already stopped. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkVPNRevocationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    releaseNetworkVPNSessionRevocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkVPNRevocationReleaseInput"];
+            };
+        };
+        responses: {
+            /** @description Restriction released with an epoch compare-and-swap. New connections must obtain fresh authorization and MFA; revoked sessions remain revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkVPNRevocationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listNetworkProxyConfigurationHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest 100 source revision metadata entries; encrypted content and old bindings are never returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyConfigurationHistoryEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    restoreNetworkProxyConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyRestoreInput"];
+            };
+        };
+        responses: {
+            /** @description Source restored as a new desired revision with current binding and current protection; runtime applies asynchronously. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyInstanceEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxyCloseCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+                commandID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Close command state reported by its enrolled runtime. Pending is not proof of closure; expired commands did not receive a timely terminal receipt. No configuration or controller credentials are returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyCloseCommandEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listNetworkEndpointResponsePolicies: {
+        parameters: {
+            query?: {
+                siteId?: string;
+                deviceId?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Draft and published endpoint response policies in the authorized site scope. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponsePolicyListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createNetworkEndpointResponsePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkEndpointResponsePolicyInput"];
+            };
+        };
+        responses: {
+            /** @description Create a draft. No network action occurs until explicit publication. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponsePolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkEndpointResponsePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policyID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read a scoped policy and its immutable published configuration. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponsePolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateNetworkEndpointResponsePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policyID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkEndpointResponsePolicyInput"];
+            };
+        };
+        responses: {
+            /** @description Update the draft with revision checking. Authorize both old and new scopes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponsePolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    deleteNetworkEndpointResponsePolicy: {
+        parameters: {
+            query: {
+                expectedRevision: number;
+            };
+            header?: never;
+            path: {
+                policyID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retire a policy without implicitly clearing existing restrictions. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    publishNetworkEndpointResponsePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policyID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkEndpointResponsePolicyPublishInput"];
+            };
+        };
+        responses: {
+            /** @description Publish a validated immutable revision after checking NAS and endpoint capabilities. Disabling stops new triggers; existing restrictions are reevaluated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponsePolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    rollbackNetworkEndpointResponsePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policyID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkEndpointResponsePolicyRollbackInput"];
+            };
+        };
+        responses: {
+            /** @description Publish the chosen previous configuration as a new revision. Restriction epochs never decrease. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponsePolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listNetworkEndpointResponsePolicyRevisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policyID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read bounded policy revision history in the authorized scope. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponsePolicyRevisionListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    previewNetworkEndpointResponsePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policyID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkEndpointResponsePreviewInput"];
+            };
+        };
+        responses: {
+            /** @description Preview this policy against a visible device and fresh NAS evidence without creating restrictions or commands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponsePreviewEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listNetworkEndpointResponseEvents: {
+        parameters: {
+            query?: {
+                siteId?: string;
+                deviceId?: string;
+                limit?: number;
+                policyId?: string;
+                status?: components["schemas"]["NetworkEndpointResponseEventStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read scoped endpoint response events. Notification and network enforcement are separate states. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponseEventListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkEndpointResponseEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read a response event and causal presence/session evidence. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponseEventEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    restoreNetworkEndpointResponseEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkEndpointResponseRestoreInput"];
+            };
+        };
+        responses: {
+            /** @description Restore only after current trusted health and all other constraints are reevaluated. One heartbeat or policy retirement cannot restore access. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointResponseEventEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listNetworkEndpointMaintenanceWindows: {
+        parameters: {
+            query?: {
+                siteId?: string;
+                deviceId?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read bounded, scoped maintenance exceptions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointMaintenanceListEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createNetworkEndpointMaintenanceWindow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkEndpointMaintenanceInput"];
+            };
+        };
+        responses: {
+            /** @description Create an audited exception of at most 24 hours for one device and site. Existing denies and sensitive lease bounds remain effective. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointMaintenanceEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    deleteNetworkEndpointMaintenanceWindow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                windowID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description End a scoped maintenance exception and reevaluate current health. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkEndpointPresence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read current trusted service presence separately from device registration and UI state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkEndpointPresenceEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkSessionCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                commandID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read command progress only after authorizing its parent session scope. Applied ACK is distinct from verified network effects. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkSessionCommandEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    previewNetworkAdmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkAdmissionPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Current admission policy, health restrictions, input version and evaluation time. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkAdmissionPreviewEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getEndpointChannelControls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded, authenticated channel result; control receipt is not data-plane acceptance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EndpointChannelViewEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    saveEndpointChannelControls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EndpointChannelSaveInput"];
+            };
+        };
+        responses: {
+            /** @description Bounded, authenticated channel result; control receipt is not data-plane acceptance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EndpointChannelPolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    publishEndpointChannelControls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EndpointChannelPublishInput"];
+            };
+        };
+        responses: {
+            /** @description Bounded, authenticated channel result; control receipt is not data-plane acceptance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EndpointChannelPolicyEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getRuntimeChannelControls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded, authenticated channel result; control receipt is not data-plane acceptance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EndpointChannelDesiredEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    reportRuntimeChannelControls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EndpointChannelReport"];
+            };
+        };
+        responses: {
+            /** @description Current, content-free control report recorded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listManagedContentDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentDestinationsEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listManagedContentAdminDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentAdminDestinationsEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getManagedContentDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destinationID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentDestinationEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    saveManagedContentDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destinationID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentSaveInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentDestinationEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    publishManagedContentDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destinationID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentPublishInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentDestinationEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    submitManagedContentUploads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentUploadInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentResultEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    submitManagedContentPastes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentPasteInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentResultEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listManagedContentFiles: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentRecordPageEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    performManagedContentFileRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentRequest"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentResultEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    performManagedContentFileCopy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentCopyInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentResultEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    performManagedContentFileDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentRequest"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentResultEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listManagedContentRecords: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentRecordPageEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getManagedContentRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recordID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentRecordEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listManagedContentCases: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                destinationID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentRecordPageEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    handleManagedContentAuthorize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recordID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentAuthorizeInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentAuthorizationEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    handleManagedContentAppeal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recordID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentAppealInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentRecordEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    handleManagedContentReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recordID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedContentReviewInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentRecordEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    previewManagedContentDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destinationID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DLPShadowInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DLPShadowEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    previewDockerContentDLPPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dockerProjectID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DLPShadowInput"];
+            };
+        };
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DLPShadowEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description JSON request body exceeds 512 KiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getManagedContentNetworkState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recordID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentNetworkEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Record or network hold not found in the authorized scope */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listManagedContentReviewDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current record or decision. A blocked/unknown record is not a completed transfer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagedContentDestinationsEnvelope"];
+                };
+            };
+            /** @description Invalid or over-limit request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission or object scope denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version, identity or single-use conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dependency or reliable recording unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

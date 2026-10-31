@@ -1,0 +1,17 @@
+{
+  "data": {
+    "id": "request-1",
+    "requestKey": "original-request-1",
+    "runId": "workflow:original",
+    "submissionStatus": "accepted",
+    "run": {
+      "id": "workflow:original",
+      "applicationId": "app-1",
+      "workflowName": "reviewed",
+      "status": "queued",
+      "steps": [],
+      "createdAt": "2026-10-28T00:00:00Z",
+      "updatedAt": "2026-10-28T00:00:00Z"
+    }
+  }
+}

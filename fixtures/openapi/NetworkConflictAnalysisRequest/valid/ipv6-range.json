@@ -1,0 +1,9 @@
+{
+  "runtimeRanges": [
+    {
+      "cidr": "fd00::/64",
+      "name": "IPv6 overlay",
+      "sourceType": "wireguard_overlay"
+    }
+  ]
+}

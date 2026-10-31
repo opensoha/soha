@@ -1,0 +1,5 @@
+{
+  "mode": "gateway_only",
+  "aiClientId": "codex",
+  "skillId": "k8s-sre"
+}

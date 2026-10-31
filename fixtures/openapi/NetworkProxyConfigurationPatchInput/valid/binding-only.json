@@ -1,0 +1,11 @@
+{
+  "expectedRevision": 4,
+  "enabled": true,
+  "binding": {
+    "siteId": "site-a",
+    "deviceId": "device-host",
+    "resourceIds": [
+      "resource-payroll"
+    ]
+  }
+}

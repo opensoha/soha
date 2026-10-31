@@ -1,0 +1,17 @@
+{
+  "protocol": "healing-request-v1",
+  "idempotencyKey": "59958828-535f-4f70-91a7-9ec1f0e9cfcb",
+  "run": {
+    "id": "healing-run:59958828-535f-4f70-91a7-9ec1f0e9cfcb",
+    "eventId": "event:owned",
+    "policyId": "policy:owned",
+    "status": "pending_approval",
+    "approvalStatus": "pending",
+    "executionGeneration": 1,
+    "submissionStatus": "not_submitted",
+    "intentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "createdAt": "2026-10-29T00:00:00Z",
+    "updatedAt": "2026-10-29T00:00:00Z"
+  },
+  "unexpected": true
+}

@@ -1,0 +1,7 @@
+{
+  "target": "/data",
+  "type": "volume",
+  "readOnly": false,
+  "browseSupported": false,
+  "unsupportedReason": "reader not configured"
+}

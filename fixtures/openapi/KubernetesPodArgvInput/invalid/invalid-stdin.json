@@ -1,0 +1,7 @@
+{
+  "expectedUid": "reviewed",
+  "argv": [
+    "cat"
+  ],
+  "stdinBase64": "!invalid"
+}

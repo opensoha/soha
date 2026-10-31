@@ -1,5 +1,5 @@
 {
-  "version": "0.1.26",
+  "version": "0.1.28",
   "generatedFrom": "openapi/soha-api.yaml",
   "entries": [
     {
@@ -297,6 +297,10 @@
     {
       "kind": "additionalPropertiesTrue",
       "path": "components/schemas/ExecutionCallbackRequest/properties/payload/additionalProperties"
+    },
+    {
+      "kind": "additionalPropertiesTrue",
+      "path": "components/schemas/ExecutionLog/properties/metadata/additionalProperties"
     },
     {
       "kind": "additionalPropertiesTrue",

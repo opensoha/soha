@@ -1,0 +1,9 @@
+{
+  "expectedRevision": 4,
+  "enabled": true,
+  "binding": {
+    "siteId": "invalid id",
+    "deviceId": "device-host",
+    "resourceIds": []
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "target": {
+    "namespace": "test",
+    "podName": "fixture-pod",
+    "uid": "reviewed",
+    "container": "fixture",
+    "checkedAt": "2026-10-25T00:00:00Z"
+  },
+  "output": {
+    "status": "succeeded",
+    "exitCode": 0,
+    "stdout": "ready\n",
+    "stderr": "",
+    "stdoutEncoding": "utf-8",
+    "stderrEncoding": "utf-8",
+    "stdoutBytes": 6,
+    "stderrBytes": 0,
+    "maxOutputBytes": 65536,
+    "stdoutTruncated": false,
+    "stderrTruncated": false,
+    "uidVerifiedBeforeStart": true,
+    "targetChanged": false
+  }
+}

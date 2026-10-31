@@ -17,14 +17,20 @@
     "payload"
   ],
   "properties": {
-    "schemaVersion": { "const": "network-runtime/v1alpha1" },
-    "messageId": { "$ref": "#/$defs/Identifier" },
+    "schemaVersion": {
+      "const": "network-runtime/v1alpha1"
+    },
+    "messageId": {
+      "$ref": "#/$defs/Identifier"
+    },
     "messageType": {
       "enum": [
         "vpn.managed.prepare.request",
         "vpn.managed.prepare.result",
         "vpn.managed.connect.request",
         "vpn.managed.connect.result",
+        "endpoint.presence.request",
+        "endpoint.presence.result",
         "runtime.enroll.request",
         "runtime.enroll.result",
         "configuration.desired",
@@ -37,36 +43,155 @@
         "nas.authorization.request",
         "nas.authorization.result",
         "nas.session.command",
-        "nas.session.command.result"
+        "nas.session.command.result",
+        "eap.certificate.request",
+        "eap.certificate.result",
+        "eap.certificate.activate.request",
+        "eap.certificate.activate.result",
+        "dns.observations"
       ]
     },
-    "producerId": { "$ref": "#/$defs/Identifier" },
-    "runtimeId": { "$ref": "#/$defs/Identifier" },
-    "runtimeKind": { "enum": ["endpoint", "gateway", "nas", "proxy"] },
-    "occurredAt": { "type": "string", "format": "date-time" },
-    "expiresAt": { "type": "string", "format": "date-time" },
+    "producerId": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "runtimeId": {
+      "$ref": "#/$defs/Identifier"
+    },
+    "runtimeKind": {
+      "enum": [
+        "endpoint",
+        "gateway",
+        "nas",
+        "proxy"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
     "payload": {
       "oneOf": [
-        { "$ref": "#/$defs/VPNManagedPrepareResult" },
-        { "$ref": "#/$defs/VPNManagedConnectRequest" },
-        { "$ref": "#/$defs/VPNManagedConnectResult" },
-        { "$ref": "#/$defs/EnrollmentRequest" },
-        { "$ref": "#/$defs/EnrollmentResult" },
-        { "$ref": "#/$defs/ConfigurationDesired" },
-        { "$ref": "#/$defs/ConfigurationApplied" },
-        { "$ref": "#/$defs/LeaseRenewRequest" },
-        { "$ref": "#/$defs/LeaseRenewResult" },
-        { "$ref": "#/$defs/LeaseRevoke" },
-        { "$ref": "#/$defs/VPNConnectRequest" },
-        { "$ref": "#/$defs/VPNConnectResult" },
-        { "$ref": "#/$defs/NASAuthorizationRequest" },
-        { "$ref": "#/$defs/NASAuthorizationResult" },
-        { "$ref": "#/$defs/NASSessionCommand" },
-        { "$ref": "#/$defs/NASSessionCommandResult" }
+        {
+          "$ref": "#/$defs/VPNManagedPrepareResult"
+        },
+        {
+          "$ref": "#/$defs/VPNManagedConnectRequest"
+        },
+        {
+          "$ref": "#/$defs/VPNManagedConnectResult"
+        },
+        {
+          "$ref": "#/$defs/EndpointPresenceRequest"
+        },
+        {
+          "$ref": "#/$defs/EndpointPresenceResult"
+        },
+        {
+          "$ref": "#/$defs/EnrollmentRequest"
+        },
+        {
+          "$ref": "#/$defs/EnrollmentResult"
+        },
+        {
+          "$ref": "#/$defs/ConfigurationDesired"
+        },
+        {
+          "$ref": "#/$defs/ConfigurationApplied"
+        },
+        {
+          "$ref": "#/$defs/LeaseRenewRequest"
+        },
+        {
+          "$ref": "#/$defs/LeaseRenewResult"
+        },
+        {
+          "$ref": "#/$defs/LeaseRevoke"
+        },
+        {
+          "$ref": "#/$defs/VPNConnectRequest"
+        },
+        {
+          "$ref": "#/$defs/VPNConnectResult"
+        },
+        {
+          "$ref": "#/$defs/NASAuthorizationRequest"
+        },
+        {
+          "$ref": "#/$defs/NASAuthorizationResult"
+        },
+        {
+          "$ref": "#/$defs/NASSessionCommand"
+        },
+        {
+          "$ref": "#/$defs/NASSessionCommandResult"
+        },
+        {
+          "$ref": "#/$defs/EAPCertificateRequest"
+        },
+        {
+          "$ref": "#/$defs/EAPCertificateResult"
+        },
+        {
+          "$ref": "#/$defs/EAPCertificateActivateRequest"
+        },
+        {
+          "$ref": "#/$defs/EAPCertificateActivateResult"
+        },
+        {
+          "$ref": "#/$defs/DNSObservationBatch"
+        }
       ]
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "endpoint.presence.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/EndpointPresenceRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "endpoint.presence.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/EndpointPresenceResult"
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {
@@ -156,89 +281,569 @@
       }
     },
     {
-      "if": { "properties": { "messageType": { "const": "runtime.enroll.request" } }, "required": ["messageType"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/EnrollmentRequest" } } }
-    },
-    {
-      "if": { "properties": { "messageType": { "const": "runtime.enroll.result" } }, "required": ["messageType"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/EnrollmentResult" } } }
-    },
-    {
-      "if": { "properties": { "messageType": { "const": "configuration.desired" } }, "required": ["messageType"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/ConfigurationDesired" } } }
-    },
-    {
-      "if": { "properties": { "messageType": { "const": "configuration.applied" } }, "required": ["messageType"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/ConfigurationApplied" } } }
-    },
-    {
-      "if": { "properties": { "messageType": { "const": "lease.renew.request" } }, "required": ["messageType"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/LeaseRenewRequest" } } }
-    },
-    {
-      "if": { "properties": { "messageType": { "const": "lease.renew.result" } }, "required": ["messageType"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/LeaseRenewResult" } } }
-    },
-    {
-      "if": { "properties": { "messageType": { "const": "lease.revoke" } }, "required": ["messageType"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/LeaseRevoke" } } }
-    },
-    {
-      "if": { "properties": { "messageType": { "const": "vpn.connect.request" } }, "required": ["messageType"] },
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "runtime.enroll.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
       "then": {
         "properties": {
-          "runtimeKind": { "const": "endpoint" },
-          "payload": { "$ref": "#/$defs/VPNConnectRequest" }
+          "payload": {
+            "$ref": "#/$defs/EnrollmentRequest"
+          }
         }
       }
     },
     {
-      "if": { "properties": { "messageType": { "const": "vpn.connect.result" } }, "required": ["messageType"] },
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "runtime.enroll.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
       "then": {
         "properties": {
-          "runtimeKind": { "const": "endpoint" },
-          "payload": { "$ref": "#/$defs/VPNConnectResult" }
+          "payload": {
+            "$ref": "#/$defs/EnrollmentResult"
+          }
         }
       }
     },
     {
-      "if": { "properties": { "messageType": { "const": "nas.authorization.request" } }, "required": ["messageType"] },
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "configuration.desired"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
       "then": {
         "properties": {
-          "runtimeKind": { "const": "nas" },
-          "payload": { "$ref": "#/$defs/NASAuthorizationRequest" }
+          "payload": {
+            "$ref": "#/$defs/ConfigurationDesired"
+          }
         }
       }
     },
     {
-      "if": { "properties": { "messageType": { "const": "nas.authorization.result" } }, "required": ["messageType"] },
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "configuration.applied"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
       "then": {
         "properties": {
-          "runtimeKind": { "const": "nas" },
-          "payload": { "$ref": "#/$defs/NASAuthorizationResult" }
+          "payload": {
+            "$ref": "#/$defs/ConfigurationApplied"
+          }
         }
       }
     },
     {
-      "if": { "properties": { "messageType": { "const": "nas.session.command" } }, "required": ["messageType"] },
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "lease.renew.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
       "then": {
         "properties": {
-          "runtimeKind": { "const": "nas" },
-          "payload": { "$ref": "#/$defs/NASSessionCommand" }
+          "payload": {
+            "$ref": "#/$defs/LeaseRenewRequest"
+          }
         }
       }
     },
     {
-      "if": { "properties": { "messageType": { "const": "nas.session.command.result" } }, "required": ["messageType"] },
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "lease.renew.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
       "then": {
         "properties": {
-          "runtimeKind": { "const": "nas" },
-          "payload": { "$ref": "#/$defs/NASSessionCommandResult" }
+          "payload": {
+            "$ref": "#/$defs/LeaseRenewResult"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "lease.revoke"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/LeaseRevoke"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "vpn.connect.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/VPNConnectRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "vpn.connect.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/VPNConnectResult"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "nas.authorization.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "nas"
+          },
+          "payload": {
+            "$ref": "#/$defs/NASAuthorizationRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "nas.authorization.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "nas"
+          },
+          "payload": {
+            "$ref": "#/$defs/NASAuthorizationResult"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "nas.session.command"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "nas"
+          },
+          "payload": {
+            "$ref": "#/$defs/NASSessionCommand"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "nas.session.command.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "nas"
+          },
+          "payload": {
+            "$ref": "#/$defs/NASSessionCommandResult"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "eap.certificate.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/EAPCertificateRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "eap.certificate.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/EAPCertificateResult"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "eap.certificate.activate.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/EAPCertificateActivateRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "eap.certificate.activate.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/EAPCertificateActivateResult"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "dns.observations"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/DNSObservationBatch"
+          },
+          "runtimeKind": {
+            "const": "gateway"
+          }
         }
       }
     }
   ],
   "$defs": {
+    "EndpointPresenceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deviceId",
+        "bootId",
+        "sequence",
+        "status",
+        "configurationVersion",
+        "policyVersion"
+      ],
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "bootId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "healthy",
+            "unhealthy"
+          ]
+        },
+        "configurationVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uiState": {
+          "enum": [
+            "online",
+            "offline",
+            "unknown"
+          ]
+        },
+        "uiObservedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "admissionPolicyVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Admission policy version last read from Core, independent of applied VPN configuration."
+        }
+      }
+    },
+    "EndpointPresenceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted",
+        "presenceEpoch",
+        "receivedAt",
+        "nextHeartbeatSeconds"
+      ],
+      "properties": {
+        "accepted": {
+          "const": true
+        },
+        "presenceEpoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "nextHeartbeatSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 300
+        },
+        "admissionPolicyVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Admission policy version last read from Core, independent of applied VPN configuration."
+        }
+      }
+    },
+    "AdmissionConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profiles",
+        "restrictionEpoch"
+      ],
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/AdmissionProfile"
+          }
+        },
+        "restrictionEpoch": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "AdmissionProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "siteId",
+        "accessMedium",
+        "identity",
+        "serverNames",
+        "caCertificates",
+        "wifiSecurity"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "siteId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "accessMedium": {
+          "enum": [
+            "wifi",
+            "wired"
+          ]
+        },
+        "ssid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "identity": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "serverNames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$"
+          }
+        },
+        "caCertificates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 16384,
+            "pattern": "^-----BEGIN CERTIFICATE-----"
+          }
+        },
+        "wifiSecurity": {
+          "enum": [
+            "wpa2-enterprise",
+            "wpa3-enterprise"
+          ]
+        },
+        "clientCertificateFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
     "VPNManagedPrepareRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -598,7 +1203,13 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
     },
     "AccessProfile": {
-      "enum": ["onboarding", "full", "restricted", "quarantine", "deny"]
+      "enum": [
+        "onboarding",
+        "full",
+        "restricted",
+        "quarantine",
+        "deny"
+      ]
     },
     "IPv4Address": {
       "type": "string",
@@ -609,12 +1220,21 @@
       "type": "string",
       "maxLength": 18,
       "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/(?:[0-9]|[12][0-9]|3[0-2])$",
-      "description": "Canonical IPv4 CIDR. IPv6 is intentionally deferred beyond network-runtime/v1alpha1."
+      "description": "Canonical IPv4 CIDR; use IPCIDR for either supported address family."
     },
     "SplitRoute": {
       "allOf": [
-        { "$ref": "#/$defs/IPv4CIDR" },
-        { "not": { "const": "0.0.0.0/0" } }
+        {
+          "$ref": "#/$defs/IPCIDR"
+        },
+        {
+          "not": {
+            "enum": [
+              "0.0.0.0/0",
+              "::/0"
+            ]
+          }
+        }
       ]
     },
     "WireGuardPublicKey": {
@@ -626,11 +1246,25 @@
     "RadiusAttributes": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionTimeoutSeconds"],
+      "required": [
+        "sessionTimeoutSeconds"
+      ],
       "properties": {
-        "vlanId": { "type": "integer", "minimum": 1, "maximum": 4094 },
-        "filterId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "sessionTimeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+        "vlanId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4094
+        },
+        "filterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sessionTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
       }
     },
     "NetworkLease": {
@@ -648,21 +1282,42 @@
         "expiresAt"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/Identifier" },
-        "sessionId": { "$ref": "#/$defs/Identifier" },
-        "subjectId": { "$ref": "#/$defs/Identifier" },
-        "deviceId": { "$ref": "#/$defs/Identifier" },
-        "networkSpaceId": { "$ref": "#/$defs/Identifier" },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "subjectId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "networkSpaceId": {
+          "$ref": "#/$defs/Identifier"
+        },
         "cidrs": {
           "type": "array",
           "minItems": 1,
           "maxItems": 128,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/IPv4CIDR" }
+          "items": {
+            "$ref": "#/$defs/IPCIDR"
+          }
         },
-        "policyVersion": { "type": "integer", "minimum": 1 },
-        "issuedAt": { "type": "string", "format": "date-time" },
-        "expiresAt": { "type": "string", "format": "date-time" }
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "ResourceLease": {
@@ -679,75 +1334,202 @@
         "expiresAt"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/Identifier" },
-        "sessionId": { "$ref": "#/$defs/Identifier" },
-        "subjectId": { "$ref": "#/$defs/Identifier" },
-        "deviceId": { "$ref": "#/$defs/Identifier" },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "subjectId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Identifier"
+        },
         "resourceIds": {
           "type": "array",
           "minItems": 1,
           "maxItems": 256,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/Identifier" }
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
         },
-        "policyVersion": { "type": "integer", "minimum": 1 },
-        "issuedAt": { "type": "string", "format": "date-time" },
-        "expiresAt": { "type": "string", "format": "date-time" }
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "EnrollmentRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enrollmentId", "challengeId", "deviceId", "devicePublicKey", "platform", "clientVersion", "capabilities"],
+      "required": [
+        "enrollmentId",
+        "challengeId",
+        "deviceId",
+        "devicePublicKey",
+        "platform",
+        "clientVersion",
+        "capabilities"
+      ],
       "properties": {
-        "enrollmentId": { "$ref": "#/$defs/Identifier" },
-        "challengeId": { "$ref": "#/$defs/Identifier" },
-        "deviceId": { "$ref": "#/$defs/Identifier" },
-        "devicePublicKey": { "type": "string", "minLength": 32, "maxLength": 4096 },
-        "wireguardPublicKey": { "$ref": "#/$defs/WireGuardPublicKey" },
-        "platform": { "enum": ["windows", "linux", "macos"] },
-        "clientVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "enrollmentId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "challengeId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "devicePublicKey": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 4096
+        },
+        "wireguardPublicKey": {
+          "$ref": "#/$defs/WireGuardPublicKey"
+        },
+        "platform": {
+          "enum": [
+            "windows",
+            "linux",
+            "macos"
+          ]
+        },
+        "clientVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
         "capabilities": {
           "type": "array",
           "minItems": 1,
           "maxItems": 32,
           "uniqueItems": true,
-          "items": { "enum": ["wireguard", "mihomo", "route-coordinator", "dns-coordinator", "managed-vpn-v1", "vpn-probe-v1", "vpn-metrics-v1", "proxy-runtime-v1"] }
+          "items": {
+            "enum": [
+              "wireguard",
+              "mihomo",
+              "mihomo-policy-v1",
+              "route-coordinator",
+              "dns-coordinator",
+              "managed-vpn-v1",
+              "vpn-probe-v1",
+              "vpn-metrics-v1",
+              "proxy-runtime-v1",
+              "proxy-policy-v1",
+              "radius-eap-tls-v1",
+              "eap-profile-v1",
+              "radius-aaa-v1",
+              "endpoint-presence-v1",
+              "nas-session-accounting-v1",
+              "endpoint-ui-presence-v1",
+              "windows-channel-controls-v1"
+            ]
+          }
         }
       },
-      "allOf": [{
-        "if": {
-          "properties": {
-            "capabilities": { "contains": { "const": "wireguard" } }
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "capabilities": {
+                "contains": {
+                  "const": "wireguard"
+                }
+              }
+            },
+            "required": [
+              "capabilities"
+            ]
           },
-          "required": ["capabilities"]
+          "then": {
+            "required": [
+              "wireguardPublicKey"
+            ]
+          }
         },
-        "then": { "required": ["wireguardPublicKey"] }
-      }]
+        {
+          "if": {
+            "properties": {
+              "capabilities": {
+                "contains": {
+                  "const": "eap-profile-v1"
+                }
+              }
+            },
+            "required": [
+              "capabilities"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilities": {
+                "contains": {
+                  "const": "radius-eap-tls-v1"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "EnrollmentResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["accepted", "reasonCode"],
+      "required": [
+        "accepted",
+        "reasonCode"
+      ],
       "properties": {
-        "accepted": { "type": "boolean" },
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "accepted": {
+          "type": "boolean"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "credentialReference": {
           "type": "string",
           "maxLength": 266,
           "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$",
           "description": "Opaque reference to runtime-local protected storage, never raw credential material."
         },
-        "credentialExpiresAt": { "type": "string", "format": "date-time" }
+        "credentialExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "RuntimeIntervals": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["heartbeatIntervalSeconds", "configurationPollIntervalSeconds"],
+      "required": [
+        "heartbeatIntervalSeconds",
+        "configurationPollIntervalSeconds"
+      ],
       "properties": {
-        "heartbeatIntervalSeconds": { "type": "integer", "minimum": 30, "maximum": 300 },
-        "configurationPollIntervalSeconds": { "type": "integer", "minimum": 30, "maximum": 300 }
+        "heartbeatIntervalSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 300
+        },
+        "configurationPollIntervalSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 300
+        }
       }
     },
     "ConfigurationDesired": {
@@ -766,29 +1548,62 @@
         "vpnProbe": {
           "$ref": "#/$defs/VPNProbeConfiguration"
         },
-        "configurationVersion": { "type": "integer", "minimum": 1 },
-        "policyVersion": { "type": "integer", "minimum": 1 },
-        "validUntil": { "type": "string", "format": "date-time" },
-        "accessProfile": { "$ref": "#/$defs/AccessProfile" },
+        "configurationVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "accessProfile": {
+          "$ref": "#/$defs/AccessProfile"
+        },
         "protectedResourceIds": {
           "type": "array",
           "maxItems": 2048,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/Identifier" }
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
         },
         "networkLeases": {
           "type": "array",
           "maxItems": 256,
-          "items": { "$ref": "#/$defs/NetworkLease" }
+          "items": {
+            "$ref": "#/$defs/NetworkLease"
+          }
         },
         "resourceLeases": {
           "type": "array",
           "maxItems": 512,
-          "items": { "$ref": "#/$defs/ResourceLease" }
+          "items": {
+            "$ref": "#/$defs/ResourceLease"
+          }
         },
-        "runtimeIntervals": { "$ref": "#/$defs/RuntimeIntervals" },
-        "wireguard": { "$ref": "#/$defs/WireGuardConfiguration" },
-        "mihomo": { "$ref": "#/$defs/MihomoConfiguration" }
+        "admission": {
+          "$ref": "#/$defs/AdmissionConfiguration"
+        },
+        "runtimeIntervals": {
+          "$ref": "#/$defs/RuntimeIntervals"
+        },
+        "wireguard": {
+          "$ref": "#/$defs/WireGuardConfiguration"
+        },
+        "mihomo": {
+          "$ref": "#/$defs/MihomoConfiguration"
+        },
+        "dnsRequests": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/DNSResolutionRequest"
+          }
+        }
       }
     },
     "MihomoBypassHost": {
@@ -796,6 +1611,37 @@
       "minLength": 1,
       "maxLength": 253,
       "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|[A-Za-z0-9])$"
+    },
+    "MihomoProtection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyVersion",
+        "cidrs",
+        "hosts"
+      ],
+      "properties": {
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cidrs": {
+          "type": "array",
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SplitRoute"
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "maxItems": 2048,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/MihomoBypassHost"
+          }
+        }
+      }
     },
     "MihomoConfiguration": {
       "type": "object",
@@ -813,60 +1659,200 @@
         "failClosed"
       ],
       "properties": {
-        "mode": { "enum": ["managed_follow", "app_subscription"] },
-        "sourceType": { "enum": ["managed_subscription", "manual_node"] },
-        "profileId": { "$ref": "#/$defs/Identifier" },
-        "profileRevision": { "type": "integer", "minimum": 1 },
-        "mixedPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "controllerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "dnsMode": { "enum": ["disabled", "fake_ip"] },
-        "fakeIpRange": { "$ref": "#/$defs/SplitRoute" },
-        "selectorGroup": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "selectedProxy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "protection": {
+          "$ref": "#/$defs/MihomoProtection"
+        },
+        "mode": {
+          "enum": [
+            "managed_follow",
+            "app_subscription"
+          ]
+        },
+        "sourceType": {
+          "enum": [
+            "managed_subscription",
+            "manual_node"
+          ]
+        },
+        "profileId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "profileRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mixedPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "controllerPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "dnsMode": {
+          "enum": [
+            "disabled",
+            "fake_ip"
+          ]
+        },
+        "fakeIpRange": {
+          "$ref": "#/$defs/SplitRoute"
+        },
+        "selectorGroup": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "selectedProxy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "bypassCidrs": {
           "type": "array",
           "maxItems": 256,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/SplitRoute" }
+          "items": {
+            "$ref": "#/$defs/SplitRoute"
+          }
         },
         "bypassHosts": {
           "type": "array",
           "maxItems": 128,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/MihomoBypassHost" }
+          "items": {
+            "$ref": "#/$defs/MihomoBypassHost"
+          }
         },
-        "failClosed": { "type": "boolean" }
+        "failClosed": {
+          "type": "boolean"
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "mode": { "const": "managed_follow" } }, "required": ["mode"] },
-          "then": { "properties": { "failClosed": { "const": true } } },
-          "else": { "not": { "anyOf": [{ "required": ["sourceType"] }, { "required": ["selectedProxy"] }] } }
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "managed_follow"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "failClosed": {
+                "const": true
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "sourceType"
+                  ]
+                },
+                {
+                  "required": [
+                    "selectedProxy"
+                  ]
+                }
+              ]
+            }
+          }
         },
         {
           "if": {
             "allOf": [
-              { "properties": { "mode": { "const": "managed_follow" } }, "required": ["mode"] },
-              { "not": { "properties": { "sourceType": { "const": "manual_node" } }, "required": ["sourceType"] } }
+              {
+                "properties": {
+                  "mode": {
+                    "const": "managed_follow"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              },
+              {
+                "not": {
+                  "properties": {
+                    "sourceType": {
+                      "const": "manual_node"
+                    }
+                  },
+                  "required": [
+                    "sourceType"
+                  ]
+                }
+              }
             ]
           },
-          "then": { "required": ["selectedProxy"] }
+          "then": {
+            "required": [
+              "selectedProxy"
+            ]
+          }
         },
         {
-          "if": { "properties": { "sourceType": { "const": "manual_node" } }, "required": ["sourceType"] },
-          "then": { "not": { "required": ["selectedProxy"] } }
+          "if": {
+            "properties": {
+              "sourceType": {
+                "const": "manual_node"
+              }
+            },
+            "required": [
+              "sourceType"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "selectedProxy"
+              ]
+            }
+          }
         },
         {
-          "if": { "properties": { "dnsMode": { "const": "fake_ip" } }, "required": ["dnsMode"] },
-          "then": { "required": ["fakeIpRange"] },
-          "else": { "not": { "required": ["fakeIpRange"] } }
+          "if": {
+            "properties": {
+              "dnsMode": {
+                "const": "fake_ip"
+              }
+            },
+            "required": [
+              "dnsMode"
+            ]
+          },
+          "then": {
+            "required": [
+              "fakeIpRange"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "fakeIpRange"
+              ]
+            }
+          }
         }
       ]
     },
     "WireGuardPeer": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["runtimeId", "publicKey", "allowedIPs", "persistentKeepaliveSeconds"],
+      "required": [
+        "runtimeId",
+        "publicKey",
+        "allowedIPs",
+        "persistentKeepaliveSeconds"
+      ],
       "properties": {
         "sessionId": {
           "$ref": "#/$defs/Identifier"
@@ -874,334 +1860,1197 @@
         "vpnProfileId": {
           "$ref": "#/$defs/Identifier"
         },
-        "runtimeId": { "$ref": "#/$defs/Identifier" },
-        "deviceId": { "$ref": "#/$defs/Identifier" },
-        "publicKey": { "$ref": "#/$defs/WireGuardPublicKey" },
+        "runtimeId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "publicKey": {
+          "$ref": "#/$defs/WireGuardPublicKey"
+        },
         "endpointHost": {
           "type": "string",
-          "minLength": 1,
           "maxLength": 253,
-          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
+          "anyOf": [
+            {
+              "format": "hostname"
+            },
+            {
+              "format": "ipv4"
+            },
+            {
+              "format": "ipv6"
+            }
+          ]
         },
-        "endpointPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "endpointPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
         "allowedIPs": {
           "type": "array",
           "minItems": 1,
           "maxItems": 128,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/SplitRoute" }
+          "items": {
+            "$ref": "#/$defs/SplitRoute"
+          }
         },
-        "persistentKeepaliveSeconds": { "type": "integer", "minimum": 0, "maximum": 300 }
+        "persistentKeepaliveSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300
+        }
       },
       "dependentRequired": {
-        "endpointHost": ["endpointPort"],
-        "endpointPort": ["endpointHost"]
+        "endpointHost": [
+          "endpointPort"
+        ],
+        "endpointPort": [
+          "endpointHost"
+        ]
       }
     },
     "WireGuardFirewallRule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "effect", "sourceCidr", "destinationCidr", "protocol"],
+      "required": [
+        "id",
+        "effect",
+        "sourceCidr",
+        "destinationCidr",
+        "protocol"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/Identifier" },
-        "effect": { "enum": ["allow", "deny"] },
-        "leaseId": { "$ref": "#/$defs/Identifier" },
-        "siteLinkRuntimeId": { "$ref": "#/$defs/Identifier" },
-        "direction": { "enum": ["from_wireguard", "to_wireguard"] },
-        "sourceCidr": { "$ref": "#/$defs/SplitRoute" },
-        "destinationCidr": { "$ref": "#/$defs/SplitRoute" },
-        "protocol": { "enum": ["any", "tcp", "udp", "icmp"] },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "effect": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "leaseId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "siteLinkRuntimeId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "direction": {
+          "enum": [
+            "from_wireguard",
+            "to_wireguard"
+          ]
+        },
+        "sourceCidr": {
+          "$ref": "#/$defs/SplitRoute"
+        },
+        "destinationCidr": {
+          "$ref": "#/$defs/SplitRoute"
+        },
+        "protocol": {
+          "enum": [
+            "any",
+            "tcp",
+            "udp",
+            "icmp"
+          ]
+        },
         "ports": {
           "type": "array",
           "minItems": 1,
           "maxItems": 64,
           "uniqueItems": true,
-          "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
         },
-        "expiresAt": { "type": "string", "format": "date-time" }
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "effect": { "const": "allow" } }, "required": ["effect"] },
+          "if": {
+            "properties": {
+              "effect": {
+                "const": "allow"
+              }
+            },
+            "required": [
+              "effect"
+            ]
+          },
           "then": {
-            "required": ["expiresAt"],
+            "required": [
+              "expiresAt"
+            ],
             "oneOf": [
-              { "required": ["leaseId"], "not": { "required": ["siteLinkRuntimeId"] } },
-              { "required": ["siteLinkRuntimeId", "direction"], "not": { "required": ["leaseId"] } }
+              {
+                "required": [
+                  "leaseId"
+                ],
+                "not": {
+                  "required": [
+                    "siteLinkRuntimeId"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "siteLinkRuntimeId",
+                  "direction"
+                ],
+                "not": {
+                  "required": [
+                    "leaseId"
+                  ]
+                }
+              }
             ]
           }
         },
         {
-          "if": { "properties": { "protocol": { "enum": ["any", "icmp"] } }, "required": ["protocol"] },
-          "then": { "not": { "required": ["ports"] } }
+          "if": {
+            "properties": {
+              "protocol": {
+                "enum": [
+                  "any",
+                  "icmp"
+                ]
+              }
+            },
+            "required": [
+              "protocol"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "ports"
+              ]
+            }
+          }
         },
-        { "not": { "required": ["leaseId", "siteLinkRuntimeId"] } }
+        {
+          "not": {
+            "required": [
+              "leaseId",
+              "siteLinkRuntimeId"
+            ]
+          }
+        }
       ],
       "dependentRequired": {
-        "siteLinkRuntimeId": ["direction", "expiresAt"],
-        "direction": ["siteLinkRuntimeId"]
+        "siteLinkRuntimeId": [
+          "direction",
+          "expiresAt"
+        ],
+        "direction": [
+          "siteLinkRuntimeId"
+        ]
       }
     },
     "WireGuardConfiguration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["role", "interfaceName", "publicKey", "addresses", "mtu", "routingMode", "firewallDefault", "peers", "routes", "firewallRules"],
+      "required": [
+        "role",
+        "interfaceName",
+        "publicKey",
+        "addresses",
+        "mtu",
+        "routingMode",
+        "firewallDefault",
+        "peers",
+        "routes",
+        "firewallRules"
+      ],
       "properties": {
-        "role": { "enum": ["endpoint", "gateway"] },
-        "interfaceName": { "type": "string", "minLength": 1, "maxLength": 15, "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
-        "publicKey": { "$ref": "#/$defs/WireGuardPublicKey" },
+        "role": {
+          "enum": [
+            "endpoint",
+            "gateway"
+          ]
+        },
+        "interfaceName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 15,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+        },
+        "publicKey": {
+          "$ref": "#/$defs/WireGuardPublicKey"
+        },
         "addresses": {
           "type": "array",
           "minItems": 1,
           "maxItems": 8,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/SplitRoute" }
+          "items": {
+            "$ref": "#/$defs/SplitRoute"
+          }
         },
-        "listenPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "mtu": { "type": "integer", "minimum": 1280, "maximum": 1500 },
-        "routingMode": { "enum": ["routed", "snat"] },
-        "firewallDefault": { "const": "deny" },
+        "listenPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "mtu": {
+          "type": "integer",
+          "minimum": 1280,
+          "maximum": 1500
+        },
+        "routingMode": {
+          "enum": [
+            "routed",
+            "snat"
+          ]
+        },
+        "firewallDefault": {
+          "const": "deny"
+        },
         "peers": {
           "type": "array",
           "maxItems": 1024,
-          "items": { "$ref": "#/$defs/WireGuardPeer" }
+          "items": {
+            "$ref": "#/$defs/WireGuardPeer"
+          }
         },
         "routes": {
           "type": "array",
           "maxItems": 256,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/SplitRoute" }
+          "items": {
+            "$ref": "#/$defs/SplitRoute"
+          }
         },
         "dnsServers": {
           "type": "array",
           "maxItems": 8,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/IPv4Address" }
+          "items": {
+            "$ref": "#/$defs/IPAddress"
+          }
         },
         "firewallRules": {
           "type": "array",
           "maxItems": 4096,
-          "items": { "$ref": "#/$defs/WireGuardFirewallRule" }
+          "items": {
+            "$ref": "#/$defs/WireGuardFirewallRule"
+          }
+        },
+        "dnsRecords": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/DNSRecord"
+          }
         }
       },
-      "allOf": [{
-        "if": { "properties": { "role": { "const": "gateway" } }, "required": ["role"] },
-        "then": { "required": ["listenPort"] }
-      }]
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "gateway"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "required": [
+              "listenPort"
+            ]
+          }
+        }
+      ]
     },
     "ConfigurationApplied": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["configurationVersion", "policyVersion", "status", "readbackHash"],
+      "required": [
+        "configurationVersion",
+        "policyVersion",
+        "status",
+        "readbackHash"
+      ],
       "properties": {
-        "configurationVersion": { "type": "integer", "minimum": 1 },
-        "policyVersion": { "type": "integer", "minimum": 1 },
-        "status": { "enum": ["applied", "rejected", "rolled-back"] },
-        "readbackHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "configurationVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "applied",
+            "rejected",
+            "rolled-back"
+          ]
+        },
+        "readbackHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
       }
     },
     "LeaseRenewRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionId", "leaseIds", "observedConfigurationVersion"],
+      "required": [
+        "sessionId",
+        "leaseIds",
+        "observedConfigurationVersion"
+      ],
       "properties": {
-        "sessionId": { "$ref": "#/$defs/Identifier" },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
         "leaseIds": {
           "type": "array",
           "minItems": 1,
           "maxItems": 512,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/Identifier" }
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
         },
-        "observedConfigurationVersion": { "type": "integer", "minimum": 1 },
-        "postureVersion": { "type": "integer", "minimum": 0 }
+        "observedConfigurationVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "postureVersion": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "LeaseRenewResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["policyVersion", "validUntil", "networkLeases", "resourceLeases", "revokedLeaseIds"],
+      "required": [
+        "policyVersion",
+        "validUntil",
+        "networkLeases",
+        "resourceLeases",
+        "revokedLeaseIds"
+      ],
       "properties": {
-        "policyVersion": { "type": "integer", "minimum": 1 },
-        "validUntil": { "type": "string", "format": "date-time" },
-        "networkLeases": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/NetworkLease" } },
-        "resourceLeases": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/ResourceLease" } },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "networkLeases": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/NetworkLease"
+          }
+        },
+        "resourceLeases": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/ResourceLease"
+          }
+        },
         "revokedLeaseIds": {
           "type": "array",
           "maxItems": 512,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/Identifier" }
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
         }
       }
     },
     "LeaseRevoke": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionId", "leaseIds", "reasonCode", "effectiveAt"],
+      "required": [
+        "sessionId",
+        "leaseIds",
+        "reasonCode",
+        "effectiveAt"
+      ],
       "properties": {
-        "sessionId": { "$ref": "#/$defs/Identifier" },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
         "leaseIds": {
           "type": "array",
           "minItems": 1,
           "maxItems": 512,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/Identifier" }
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
         },
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "effectiveAt": { "type": "string", "format": "date-time" }
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "effectiveAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "VPNConnectRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requestId", "siteId", "networkSpaceId", "mode"],
+      "required": [
+        "requestId",
+        "siteId",
+        "networkSpaceId",
+        "mode"
+      ],
       "properties": {
-        "requestId": { "$ref": "#/$defs/Identifier" },
-        "siteId": { "$ref": "#/$defs/Identifier" },
-        "networkSpaceId": { "$ref": "#/$defs/Identifier" },
-        "gatewayId": { "$ref": "#/$defs/Identifier" },
-        "mode": { "enum": ["internal_ztna", "external_vpn", "external_vpn_ztna", "external_direct_ztna"] },
+        "requestId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "siteId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "networkSpaceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "gatewayId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "mode": {
+          "enum": [
+            "internal_ztna",
+            "external_vpn",
+            "external_vpn_ztna",
+            "external_direct_ztna"
+          ]
+        },
         "resourceIds": {
           "type": "array",
           "maxItems": 256,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/Identifier" }
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          }
         },
-        "accessGrantId": { "$ref": "#/$defs/Identifier" },
+        "accessGrantId": {
+          "$ref": "#/$defs/Identifier"
+        },
         "accessGrantToken": {
           "type": "string",
           "minLength": 32,
           "maxLength": 512
+        },
+        "workloadId": {
+          "$ref": "#/$defs/Identifier"
         }
       },
-      "allOf": [{
-        "if": { "properties": { "mode": { "const": "external_vpn" } }, "required": ["mode"] },
-        "then": {
-          "properties": { "resourceIds": { "maxItems": 0 } },
-          "not": { "anyOf": [{ "required": ["accessGrantId"] }, { "required": ["accessGrantToken"] }] }
-        },
-        "else": {
-          "required": ["resourceIds", "accessGrantId", "accessGrantToken"],
-          "properties": { "resourceIds": { "minItems": 1 } }
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "external_vpn"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "resourceIds": {
+                "maxItems": 0
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "accessGrantId"
+                  ]
+                },
+                {
+                  "required": [
+                    "accessGrantToken"
+                  ]
+                },
+                {
+                  "required": [
+                    "workloadId"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "anyOf": [
+              {
+                "required": [
+                  "resourceIds",
+                  "accessGrantId",
+                  "accessGrantToken"
+                ],
+                "properties": {
+                  "resourceIds": {
+                    "minItems": 1
+                  }
+                },
+                "not": {
+                  "required": [
+                    "workloadId"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "workloadId",
+                  "resourceIds"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "external_direct_ztna"
+                  },
+                  "resourceIds": {
+                    "minItems": 1
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "accessGrantId"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "accessGrantToken"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
         }
-      }]
+      ]
     },
     "VPNConnectResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requestId", "decision", "reasonCode", "policyVersion", "validUntil", "networkLeases", "resourceLeases"],
+      "required": [
+        "requestId",
+        "decision",
+        "reasonCode",
+        "policyVersion",
+        "validUntil",
+        "networkLeases",
+        "resourceLeases"
+      ],
       "properties": {
-        "requestId": { "$ref": "#/$defs/Identifier" },
-        "decision": { "enum": ["allow", "deny"] },
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "sessionId": { "$ref": "#/$defs/Identifier" },
-        "gatewayId": { "$ref": "#/$defs/Identifier" },
-        "configurationVersion": { "type": "integer", "minimum": 1 },
-        "policyVersion": { "type": "integer", "minimum": 1 },
-        "validUntil": { "type": "string", "format": "date-time" },
+        "requestId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "gatewayId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "configurationVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
         "networkLeases": {
           "type": "array",
           "maxItems": 256,
-          "items": { "$ref": "#/$defs/NetworkLease" }
+          "items": {
+            "$ref": "#/$defs/NetworkLease"
+          }
         },
         "resourceLeases": {
           "type": "array",
           "maxItems": 512,
-          "items": { "$ref": "#/$defs/ResourceLease" }
-        }
-      },
-      "allOf": [{
-        "if": { "properties": { "decision": { "const": "allow" } }, "required": ["decision"] },
-        "then": {
-          "required": ["sessionId", "gatewayId", "configurationVersion"],
-          "anyOf": [
-            { "properties": { "networkLeases": { "minItems": 1 } } },
-            { "properties": { "resourceLeases": { "minItems": 1 } } }
-          ]
-        },
-        "else": {
-          "properties": {
-            "networkLeases": { "maxItems": 0 },
-            "resourceLeases": { "maxItems": 0 }
+          "items": {
+            "$ref": "#/$defs/ResourceLease"
           }
         }
-      }]
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "allow"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "required": [
+              "sessionId",
+              "gatewayId",
+              "configurationVersion"
+            ],
+            "anyOf": [
+              {
+                "properties": {
+                  "networkLeases": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "resourceLeases": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          },
+          "else": {
+            "properties": {
+              "networkLeases": {
+                "maxItems": 0
+              },
+              "resourceLeases": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
     },
     "NASAuthorizationRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requestId", "nasId", "subjectId", "authenticationMethod"],
+      "required": [
+        "requestId",
+        "nasId",
+        "subjectId",
+        "authenticationMethod"
+      ],
       "properties": {
-        "requestId": { "$ref": "#/$defs/Identifier" },
-        "nasId": { "$ref": "#/$defs/Identifier" },
-        "subjectId": { "$ref": "#/$defs/Identifier" },
-        "deviceId": { "$ref": "#/$defs/Identifier" },
-        "stationId": { "$ref": "#/$defs/Identifier" },
-        "authenticationMethod": { "enum": ["eap-tls", "password-compatible"] },
-        "clientCertificateSerial": { "type": "string", "pattern": "^[A-Fa-f0-9]{1,40}$" },
-        "clientCertificateAuthorityKeyId": { "type": "string", "minLength": 16, "maxLength": 191, "pattern": "^[A-Fa-f0-9:]+$" }
-      },
-      "allOf": [{
-        "if": { "properties": { "authenticationMethod": { "const": "eap-tls" } }, "required": ["authenticationMethod"] },
-        "then": {
-          "required": ["stationId", "clientCertificateSerial", "clientCertificateAuthorityKeyId"],
-          "not": { "required": ["deviceId"] }
+        "requestId": {
+          "$ref": "#/$defs/Identifier"
         },
-        "else": {
-          "required": ["deviceId"],
-          "not": {
-            "anyOf": [
-              { "required": ["clientCertificateSerial"] },
-              { "required": ["clientCertificateAuthorityKeyId"] }
+        "nasId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "subjectId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "stationId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "authenticationMethod": {
+          "enum": [
+            "eap-tls",
+            "password-compatible"
+          ]
+        },
+        "clientCertificateSerial": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{1,40}$"
+        },
+        "clientCertificateAuthorityKeyId": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 191,
+          "pattern": "^[A-Fa-f0-9:]+$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "authenticationMethod": {
+                "const": "eap-tls"
+              }
+            },
+            "required": [
+              "authenticationMethod"
             ]
+          },
+          "then": {
+            "required": [
+              "stationId",
+              "clientCertificateSerial",
+              "clientCertificateAuthorityKeyId"
+            ],
+            "not": {
+              "required": [
+                "deviceId"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "deviceId"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "clientCertificateSerial"
+                  ]
+                },
+                {
+                  "required": [
+                    "clientCertificateAuthorityKeyId"
+                  ]
+                }
+              ]
+            }
           }
         }
-      }]
+      ]
     },
     "NASAuthorizationResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requestId", "sessionId", "decision", "accessProfile", "policyVersion", "validUntil", "reasonCode"],
+      "required": [
+        "requestId",
+        "sessionId",
+        "decision",
+        "accessProfile",
+        "policyVersion",
+        "validUntil",
+        "reasonCode"
+      ],
       "properties": {
-        "requestId": { "$ref": "#/$defs/Identifier" },
-        "sessionId": { "$ref": "#/$defs/Identifier" },
-        "decision": { "enum": ["allow", "deny"] },
-        "accessProfile": { "$ref": "#/$defs/AccessProfile" },
-        "policyVersion": { "type": "integer", "minimum": 1 },
-        "validUntil": { "type": "string", "format": "date-time" },
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "radiusAttributes": { "$ref": "#/$defs/RadiusAttributes" }
+        "requestId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "accessProfile": {
+          "$ref": "#/$defs/AccessProfile"
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "radiusAttributes": {
+          "$ref": "#/$defs/RadiusAttributes"
+        }
       }
     },
     "NASSessionCommand": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["commandId", "sessionId", "nasId", "subjectId", "deviceId", "action", "targetAccessProfile", "policyVersion", "effectiveAt", "reasonCode"],
+      "required": [
+        "commandId",
+        "sessionId",
+        "nasId",
+        "subjectId",
+        "deviceId",
+        "action",
+        "targetAccessProfile",
+        "policyVersion",
+        "effectiveAt",
+        "reasonCode"
+      ],
       "properties": {
-        "commandId": { "$ref": "#/$defs/Identifier" },
-        "sessionId": { "$ref": "#/$defs/Identifier" },
-        "nasId": { "$ref": "#/$defs/Identifier" },
-        "subjectId": { "$ref": "#/$defs/Identifier" },
-        "deviceId": { "$ref": "#/$defs/Identifier" },
-        "action": { "enum": ["coa", "disconnect"] },
-        "targetAccessProfile": { "$ref": "#/$defs/AccessProfile" },
-        "policyVersion": { "type": "integer", "minimum": 1 },
-        "effectiveAt": { "type": "string", "format": "date-time" },
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "radiusAttributes": { "$ref": "#/$defs/RadiusAttributes" }
+        "commandId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "nasId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "subjectId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "action": {
+          "enum": [
+            "coa",
+            "disconnect"
+          ]
+        },
+        "targetAccessProfile": {
+          "$ref": "#/$defs/AccessProfile"
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effectiveAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "radiusAttributes": {
+          "$ref": "#/$defs/RadiusAttributes"
+        },
+        "stationId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "accountingSessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "nasPortId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        }
       }
     },
     "NASSessionCommandResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["commandId", "sessionId", "status", "reasonCode", "completedAt"],
+      "required": [
+        "commandId",
+        "sessionId",
+        "status",
+        "reasonCode",
+        "completedAt"
+      ],
       "properties": {
-        "commandId": { "$ref": "#/$defs/Identifier" },
-        "sessionId": { "$ref": "#/$defs/Identifier" },
-        "status": { "enum": ["applied", "rejected", "unsupported", "timed-out"] },
-        "reasonCode": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "completedAt": { "type": "string", "format": "date-time" }
+        "commandId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "status": {
+          "enum": [
+            "applied",
+            "rejected",
+            "unsupported",
+            "timed-out"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "EAPCertificateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "csrPem"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "csrPem": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 4096,
+          "pattern": "^-----BEGIN CERTIFICATE REQUEST-----"
+        }
+      }
+    },
+    "EAPCertificateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "certificatePem",
+        "caCertificatePem",
+        "fingerprint",
+        "expiresAt",
+        "status"
+      ],
+      "properties": {
+        "credentialId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "certificatePem": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 16384,
+          "pattern": "^-----BEGIN CERTIFICATE-----"
+        },
+        "caCertificatePem": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 16384,
+          "pattern": "^-----BEGIN CERTIFICATE-----"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "active"
+          ]
+        }
+      }
+    },
+    "EAPCertificateActivateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "fingerprint"
+      ],
+      "properties": {
+        "credentialId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "EAPCertificateActivateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "fingerprint",
+        "expiresAt",
+        "status"
+      ],
+      "properties": {
+        "credentialId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "const": "active"
+        }
+      }
+    },
+    "IPAddress": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IPv4Address"
+        },
+        {
+          "type": "string",
+          "format": "ipv6"
+        }
+      ]
+    },
+    "IPCIDR": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(?:(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/(?:[1-9]|[12][0-9]|3[0-2])|(?:(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){7}(?:0|[1-9a-f][0-9a-f]{0,3})|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,7}:|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,6}:(?:0|[1-9a-f][0-9a-f]{0,3})|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,5}(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,2}|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,4}(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,3}|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,3}(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,4}|(?:(?:0|[1-9a-f][0-9a-f]{0,3}):){1,2}(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,5}|(?:0|[1-9a-f][0-9a-f]{0,3}):(?:(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,6})|:(?:(?::(?:0|[1-9a-f][0-9a-f]{0,3})){1,7}|:))/(?:[1-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$",
+      "description": "Non-default IPv4 or IPv6 CIDR syntax. Core additionally validates canonical network-address bits and compressed address spelling with netip."
+    },
+    "DNSResolutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resourceId",
+        "siteId",
+        "hostname",
+        "resolvers"
+      ],
+      "properties": {
+        "resourceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "siteId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "hostname": {
+          "type": "string",
+          "format": "hostname",
+          "maxLength": 253
+        },
+        "resolvers": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/IPAddress"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "DNSResolutionObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resourceId",
+        "hostname",
+        "addresses",
+        "observedAt",
+        "ttlSeconds"
+      ],
+      "properties": {
+        "resourceId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "hostname": {
+          "type": "string",
+          "format": "hostname",
+          "maxLength": 253
+        },
+        "addresses": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/IPAddress"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ttlSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        }
+      }
+    },
+    "DNSObservationBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configurationVersion",
+        "policyVersion",
+        "observations"
+      ],
+      "properties": {
+        "configurationVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "policyVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observations": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/DNSResolutionObservation"
+          }
+        }
+      }
+    },
+    "DNSRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostname",
+        "addresses",
+        "expiresAt"
+      ],
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "format": "hostname",
+          "maxLength": 253
+        },
+        "addresses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IPAddress"
+          }
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     }
   }

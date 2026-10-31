@@ -1,0 +1,11 @@
+{
+  "accepted": true,
+  "state": "deleted",
+  "kind": "ConfigMap",
+  "name": "example",
+  "namespace": "test",
+  "preconditions": {
+    "expectedUid": "reviewed-resource-uid",
+    "expectedResourceVersion": "opaque/version+1"
+  }
+}

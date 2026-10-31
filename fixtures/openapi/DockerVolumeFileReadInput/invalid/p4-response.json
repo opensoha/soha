@@ -1,0 +1,5 @@
+{
+  "target": "/data",
+  "path": "/file.txt",
+  "authorization": "short"
+}

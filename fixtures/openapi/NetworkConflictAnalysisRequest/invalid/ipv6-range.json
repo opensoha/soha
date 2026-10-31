@@ -1,8 +1,8 @@
 {
   "runtimeRanges": [
     {
-      "cidr": "fd00::/64",
-      "name": "Unsupported IPv6 overlay",
+      "cidr": "fd00::/129",
+      "name": "Invalid IPv6 prefix length",
       "sourceType": "wireguard_overlay"
     }
   ]

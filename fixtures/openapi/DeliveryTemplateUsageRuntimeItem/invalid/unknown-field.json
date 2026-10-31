@@ -1,0 +1,6 @@
+{
+  "kind": "execution_task",
+  "id": "task-1",
+  "status": "running",
+  "callbackToken": "synthetic-forbidden-field"
+}

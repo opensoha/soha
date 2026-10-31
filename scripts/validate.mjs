@@ -8,6 +8,11 @@ const root = new URL("..", import.meta.url);
 const openapiPath = "openapi/soha-api.yaml";
 
 const requiredJsonSchemas = [
+  { file: "runner/docker-project-identity.schema.json", fixtureDir: "fixtures/json-schema/docker-project-identity" },
+  { file: "runner/docker-container-identity.schema.json", fixtureDir: "fixtures/json-schema/docker-container-identity" },
+  { file: "runner/docker-runtime-read.schema.json", fixtureDir: "fixtures/json-schema/docker-runtime-read" },
+  { file: "runner/docker-runtime-read-result.schema.json", fixtureDir: "fixtures/json-schema/docker-runtime-read-result" },
+  { file: "endpointcontrol/protocol.schema.json", fixtureDir: "fixtures/json-schema/endpoint-controls" },
   {
     file: "capabilities/cluster-capability-matrix.schema.json",
     fixtureDir: "fixtures/json-schema/cluster-capability-matrix",
@@ -114,6 +119,12 @@ const requiredJsonSchemas = [
 ];
 
 const requiredOpenapiFixtureSchemas = [
+  "DockerRuntimeContainerBinding",
+  "DockerRuntimeVolume",
+  "DockerRuntimeFileEntry",
+  "DockerRuntimeReadResult",
+  "DockerRuntimeReadEnvelope",
+
   "TemplateUpdatePreviewInput",
   "TemplateUpdatePolicyInput",
   "TemplateMigrationPolicy",

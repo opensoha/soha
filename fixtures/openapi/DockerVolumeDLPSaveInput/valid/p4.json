@@ -1,0 +1,11 @@
+{
+  "expectedRevision": 0,
+  "draft": {
+    "enabled": true,
+    "mode": "audit",
+    "detectors": [
+      "private_key"
+    ],
+    "rules": []
+  }
+}

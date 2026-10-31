@@ -309,6 +309,11 @@ async function writeGoCompatibilitySpec() {
 function applyGoCompatibility(spec) {
   const schemas = spec?.components?.schemas ?? {};
 
+  // Keep the published full-input request-body alias and its string Content.
+  // Partial HTTP updates have a separate schema used explicitly by new consumers.
+  const proxyBody = spec.paths?.["/network-access/proxy-instances/{instanceID}/configuration"]?.put?.requestBody?.content?.["application/json"];
+  if (proxyBody) proxyBody.schema = { $ref: "#/components/schemas/NetworkProxyConfigurationInput" };
+
   anchorGoSdkSchemas(spec, [
     "KubernetesResourceAgentCreateDocument",
     "KubernetesResourceAgentCreateRequest",
@@ -337,6 +342,7 @@ function applyGoCompatibility(spec) {
     "WorkbenchProfessionalCapabilityInput",
     "NetworkProxyInstanceInput",
     "NetworkProxyConfigurationInput",
+    "NetworkProxyConfigurationPatchInput",
   ]);
 
   const riskLevel = schemas.RiskLevel;
@@ -353,6 +359,9 @@ function applyGoCompatibility(spec) {
   // These branches only validate field presence. The generated union marshaler
   // adds empty workflow fields to inline batches, violating the public oneOf.
   delete schemas.DeliveryBatchInput.oneOf;
+  // Typed patch value branches validate presence only. Keep pointer fields and
+  // public oneOf validation; a generated union marshaler injects unused values.
+  delete schemas.DockerConfigurationChange.oneOf;
   const runtimeConfigItem = schemas.RuntimeConfigItem;
   if (isObject(runtimeConfigItem)) {
     // oapi-codegen v2.7 cannot model OpenAPI 3.1 conditional validation.

@@ -22,6 +22,16 @@ Current stream: `0.1.x`.
 - `1.0.0` starts the stable contract line. After `1.0.0`, breaking changes
   require a major version bump, a migration note, and consumer coordination.
 
+## Proxy Configuration Inputs
+
+The proxy configuration endpoint accepts partial updates through
+`NetworkProxyConfigurationPatchInput`. Its optional `content` distinguishes omission
+from an explicit empty value. Existing Go consumers retain
+`NetworkProxyConfigurationInput.Content` as a string and the full-input
+`UpdateNetworkProxyConfigurationJSONRequestBody` alias. New Go consumers that omit
+encrypted content must explicitly use the Patch input. TypeScript operation types
+follow the partial HTTP schema. Both full and partial requests use the same endpoint.
+
 ## Version Synchronization
 
 Each release must keep these values aligned:
@@ -362,6 +372,14 @@ resource/action meaning, or make a legacy alias authorize a broader action.
 Coarse keys become non-assignable before removal, and are removed only after
 role migration and consumer conformance prove no active dependency.
 
+Docker runtime directory listing and file content require the independently
+assignable `docker.services.files` permission. Volume mount metadata remains
+under `docker.services.view`. Neither the view permission nor a legacy alias
+grants file access. Existing default operator/developer roles receive an
+explicit file grant on the Core side; custom roles must opt in. This closes
+an overbroad read boundary without changing endpoint shapes. A selected project
+and host must still pass the server-resolved scope check before Agent access.
+
 ## Consumer Adoption
 
 Session access tokens may add the optional positive `authzVersion` claim. Core
@@ -554,3 +572,56 @@ this SDK alone does not enable the feature or validate a production deployment.
 Consumers must pin the actually published npm/Go artifacts and validate the
 released combination; local tarballs and provenance policy files do not prove
 registry publication or an npm provenance attestation.
+
+
+## Docker project execution identity v1 (Task115 candidate)
+
+`runtimeProtocols` is an optional additive claim field. A missing protocol never
+claims an operation containing `runtimeBinding`; unknown versions remain queued.
+New control-plane-created projects may opt into `docker-project-identity-v1`.
+Existing rows remain legacy and are not silently adopted or renamed. The binding
+contains immutable database Host/Project UIDs and their deterministic Compose
+namespace; the execution copy reserves identity labels and rejects explicit
+`container_name`. Original configuration is retained. Every Compose invocation must explicitly use `-p <namespace>`; the top-level
+name alone is insufficient because environment variables take precedence.
+Both runner and runtime queries use this same namespace. Compose include/extends
+are explicitly unsupported until resolved configuration can be verified. Container reads require the full Engine ID,
+Compose project/service labels and both resource UIDs; labels do not authenticate
+an untrusted runtime. A replacement ID is a conflict, never a name-based retry.
+A new Agent API version is required for safe file/PTY operations; no fallback to
+legacy shell file access is permitted. These are candidate protocol semantics,
+not evidence of a published SDK, live migration or production enablement.
+
+Bound service start/stop/restart freezes the full container ID in
+`runtimeContainer`; the runner observes that ID and acts on that same ID. A
+project-wide operation also freezes an explicit `runtimeContainers` array from
+the control plane's registered full IDs, under its project transaction lock.
+Before a project command the actual namespace must match that whole set; a
+missing snapshot, unexpected member or replacement CID blocks dispatch, even
+when labels match. A fresh deployment freezes an explicit empty array.
+A
+successful observation of the entire project namespace sets callback
+`runtimeInventoryConfirmed: true` and includes `services`, including an explicit
+empty array. Only this complete, bounded, unique-name/full-ID inventory may clear
+an absent service's runtime ID and mark it removed; its configuration record is
+retained. Missing, malformed or unconfirmed observations never clear inventory.
+Compose namespace checks assume a trusted Docker daemon and writers; labels do
+not isolate a malicious process with privileged access to that same daemon.
+
+## Docker runtime read v1 (Task115 candidate)
+
+`docker-runtime-read-v1` carries only the full registered container binding,
+project reference and bounded action options. No Compose configuration,
+environment, Agent credential or daemon host-source path crosses this protocol.
+The Agent must observe the exact full CID and all identity coordinates before
+reading. Its response returns the same binding; consumers reject missing,
+different or unsupported protocol responses without falling back to legacy
+Compose-name or shell-file reads. Runtime file content is UTF-8 text with explicit
+size/truncation; a bounded directory result states whether it is complete.
+Missing kernel/reader-image/action capability fails closed. This source protocol
+and its Go helper are not evidence of a published SDK or implemented Agent/Core
+file/PTY support.
+
+Versioned read responses bind the complete original request and require explicit arrays and completeness. For `files.read`, `sizeBytes` reports the full observed source file size and `returnedBytes` counts the returned UTF-8 payload; truncation must agree with the difference. Log byte counts describe returned content. Files and logs never imply a coherent ongoing stream snapshot. Agent read action policies apply to both versioned and legacy route families: existing deployments explicitly add `docker.runtime.logs` / `docker.runtime.files` to use the corresponding reads after upgrade. Legacy wire formats remain accepted when allowlisted, and are never a fallback for identity-bound reads.
+
+The additive `/docker/projects/{dockerProjectID}/runtime/v1/{logs,volumes,files,file}` GET family is identity-bound and never forwards caller-supplied UID/CID values. Logs uses docker.services.logs; mount metadata and files use docker.services.files plus the existing resource scope. Caller query controls are action-specific. Old paths are retained. New endpoints reject unbound projects and do not fall back to legacy agents. Identity v1 represents one container per service, so explicit scale/replicas must be literal 1 and deploy mode must be replicated; dynamic or multi-replica shapes are rejected before runtime execution.

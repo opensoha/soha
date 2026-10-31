@@ -84,6 +84,14 @@ capabilities, and versioned Outpost agent messages. Sensitive enrollment and
 protocol inputs are write-only; response DTOs exclude private keys and raw
 SAML assertions.
 
+The `resource` package also provides `PodArgvToolInput` and
+`PodExecutionLookupInput` helpers for the closed Gateway Pod execution schemas.
+They validate targets, original references and bounded runtime input. They do
+not grant execution permission or bypass Gateway approval; the consuming
+Gateway must register and enforce the capability. The Go HTTP generator prunes
+schemas that are used only by Gateway tools, so these semantic helpers remain
+hand-maintained alongside `PodArgvInput`.
+
 ```sh
 npm run generate
 npm run check:generated

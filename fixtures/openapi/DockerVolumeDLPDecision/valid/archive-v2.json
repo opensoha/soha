@@ -1,0 +1,12 @@
+{
+  "eventId": "e1",
+  "mode": "block",
+  "status": "matched",
+  "allowed": false,
+  "policyVersion": 1,
+  "detectorVersion": "content-dlp-archive-v2",
+  "matchedRuleIds": [
+    "private_key"
+  ],
+  "stepUpRequired": true
+}

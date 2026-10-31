@@ -1,0 +1,9 @@
+{
+  "mode": "audit",
+  "detectors": [
+    "private_key"
+  ],
+  "rules": [],
+  "requireStepUp": true,
+  "enabled": true
+}

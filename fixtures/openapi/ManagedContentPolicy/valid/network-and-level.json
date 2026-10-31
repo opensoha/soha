@@ -1,0 +1,10 @@
+{
+  "mode": "block",
+  "detectors": [
+    "private_key"
+  ],
+  "rules": [],
+  "minimumDataLevel": "restricted",
+  "detectorVersion": "content-dlp-text-v1",
+  "networkAction": "revoke_network"
+}

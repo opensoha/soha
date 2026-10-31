@@ -1,0 +1,6 @@
+{
+  "resourceKind": "docker.host",
+  "id": "host-1",
+  "uid": "public-id",
+  "configurationRevision": "85d6f8f1-0e9c-464c-bbaa-d42a8aff157a"
+}

@@ -1,0 +1,8 @@
+{
+  "kind": "ConfigMap",
+  "name": "example",
+  "preconditions": {
+    "expectedUid": "reviewed-resource-uid",
+    "expectedResourceVersion": " "
+  }
+}
