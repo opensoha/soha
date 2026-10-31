@@ -63,72 +63,12 @@
 .soha-deployment-detail .soha-detail-stack {
   gap: 16px;
 }
-.soha-deployment-overview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 20px;
-  align-items: start;
-}
-.soha-deployment-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
 .soha-deployment-detail .soha-detail-card > .ant-card-head {
   min-height: 46px;
   padding-inline: 18px;
 }
 .soha-deployment-detail .soha-detail-card > .ant-card-body {
   padding: 18px;
-}
-.soha-deployment-replica-facts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 24px;
-}
-.soha-deployment-replica-facts > div {
-  min-width: 0;
-}
-.soha-deployment-replica-facts span {
-  color: var(--soha-text-secondary);
-  font-size: 12px;
-}
-.soha-deployment-replica-facts strong {
-  display: block;
-  font-size: 28px;
-  line-height: 40px;
-  font-variant-numeric: tabular-nums;
-}
-.soha-deployment-replica-facts small {
-  font-size: 12px;
-  color: var(--soha-text-secondary);
-  font-weight: 400;
-}
-.soha-deployment-fact-track {
-  height: 4px;
-  background: var(--soha-fill-weak);
-  margin-top: 12px;
-  border-radius: 2px;
-  overflow: hidden;
-}
-.soha-deployment-fact-track i {
-  display: block;
-  height: 100%;
-}
-.soha-deployment-facts-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-items: center;
-  border-top: 1px solid var(--soha-border-color);
-  margin-top: 18px;
-  padding-top: 10px;
-  font-size: 12px;
-}
-.soha-deployment-facts-footer .ant-btn {
-  margin-left: auto;
-  padding-inline: 0;
 }
 .soha-deployment-template {
   display: flex;
@@ -141,37 +81,6 @@
 }
 .soha-deployment-template .ant-typography {
   font-size: 12px;
-}
-.soha-deployment-config,
-.soha-deployment-metadata {
-  margin: 0;
-}
-.soha-deployment-config > div {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  gap: 8px;
-  margin-bottom: 14px;
-  font-size: 12px;
-}
-.soha-deployment-config > div:last-child {
-  margin-bottom: 0;
-}
-.soha-deployment-config dt,
-.soha-deployment-metadata dt {
-  color: var(--soha-text-secondary);
-}
-.soha-deployment-config dd,
-.soha-deployment-metadata dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.soha-deployment-metadata > div {
-  display: grid;
-  grid-template-columns: minmax(160px, 0.6fr) 1fr;
-  gap: 16px;
-  padding-block: 8px;
-  border-bottom: 1px solid var(--soha-border-color);
-  overflow-wrap: anywhere;
 }
 .soha-deployment-detail details summary {
   cursor: pointer;
@@ -321,18 +230,6 @@
   color: var(--soha-text-secondary);
   font-size: 12px;
 }
-@media (max-width: 1279px) {
-  .soha-deployment-overview {
-    grid-template-columns: 1fr;
-  }
-  .soha-deployment-overview > aside {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .soha-deployment-overview > aside > :last-child {
-    grid-column: 1 / -1;
-  }
-}
 @media (max-width: 1050px) {
   .soha-deployment-actions {
     flex-basis: 100%;
@@ -354,20 +251,9 @@
     > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
     padding: 14px;
   }
-  .soha-deployment-overview > aside,
   .soha-deployment-delivery-grid {
     display: flex;
     flex-direction: column;
-  }
-  .soha-deployment-replica-facts {
-    gap: 10px;
-  }
-  .soha-deployment-replica-facts strong {
-    font-size: 24px;
-  }
-  .soha-deployment-metadata > div {
-    grid-template-columns: 1fr;
-    gap: 4px;
   }
   .soha-deployment-relation-board {
     padding: 20px 12px;

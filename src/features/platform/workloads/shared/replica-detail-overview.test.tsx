@@ -97,9 +97,10 @@ describe('replica workload details', () => {
       />,
     )
 
-    expect(view.textContent).toContain('ReplicaSet 状态')
-    expect(view.querySelector('dl')?.textContent).toContain('期望3')
-    expect(view.querySelector('dl')?.textContent).toContain('就绪2')
+    expect(view.textContent).toContain('ReplicaSet 仍有副本未就绪')
+    expect(view.querySelector('.soha-workload-overview-facts')?.textContent).toContain('期望3')
+    expect(view.querySelector('.soha-workload-overview-facts')?.textContent).toContain('就绪2')
+    expect(view.querySelector('.soha-workload-overview-facts')?.textContent).not.toContain('当前')
     expect(view.textContent).toContain('app=web')
     expect(view.textContent).toContain('Pods 1')
   })
@@ -113,10 +114,69 @@ describe('replica workload details', () => {
       />,
     )
 
-    expect(view.textContent).toContain('ReplicationController 状态')
+    expect(view.textContent).toContain('ReplicationController 仍有副本未就绪')
     expect(view.textContent).toContain('当前2')
-    expect(view.querySelector('dl')?.textContent).toContain('期望2')
-    expect(view.querySelector('dl')?.textContent).toContain('就绪1')
+    expect(view.querySelector('.soha-workload-overview-facts')?.textContent).toContain('期望2')
+    expect(view.querySelector('.soha-workload-overview-facts')?.textContent).toContain('就绪1')
     expect(view.textContent).toContain('Pods 2')
   })
+
+  it('aligns StatefulSet overview regions without inventing Deployment-only data', async () => {
+    const view = await render(
+      <ControllerOverview
+        resource="statefulsets"
+        title="StatefulSet"
+        detail={{
+          name: 'database',
+          namespace: 'apps',
+          createdAt: '2026-01-01',
+          desiredReplicas: 3,
+          currentReplicas: 3,
+          readyReplicas: 3,
+          currentRevision: 'database-old',
+          updateRevision: 'database-new',
+          updateStrategy: 'RollingUpdate',
+          serviceName: 'database-headless',
+          labels: { app: 'database' },
+          annotations: { owner: 'team' },
+          pods: [{ name: 'database-0' }],
+        }}
+      />,
+    )
+    const main = view.querySelector('.soha-workload-overview > div')!
+    const aside = view.querySelector('.soha-workload-overview > aside')!
+    expect(main.textContent).toContain('当前副本已就绪，版本仍有差异')
+    expect(main.textContent).toContain('副本与发布')
+    expect(main.textContent).toContain('Pods 1')
+    expect(aside.textContent).toContain('运行配置')
+    expect(aside.textContent).toContain('database-headless')
+    expect(aside.textContent).toContain('database-old')
+    expect(aside.textContent).toContain('database-new')
+    expect(view.querySelectorAll('.soha-k8s-detail-metadata')).toHaveLength(1)
+    expect(view.querySelectorAll('.soha-k8s-detail-metadata [aria-expanded="false"]')).toHaveLength(
+      2,
+    )
+    for (const absent of ['当前模板', '运行条件', '已更新', '可用', 'ReplicaSet', '更新完成']) {
+      expect(view.textContent).not.toContain(absent)
+    }
+  })
+
+  it.each([
+    [{ desiredReplicas: 0, currentReplicas: 0, readyReplicas: 0 }, '已缩容至 0 个副本', '0'],
+    [{}, 'StatefulSet 就绪数据尚未返回', '—'],
+    [{ desiredReplicas: 3, readyReplicas: 1 }, 'StatefulSet 仍有副本未就绪', '3'],
+  ])(
+    'keeps zero, unavailable and unready replica states distinct',
+    async (counts, message, expected) => {
+      const view = await render(
+        <ControllerOverview
+          detail={{ name: 'database', namespace: 'apps', createdAt: '2026-01-01', ...counts }}
+          resource="statefulsets"
+          title="StatefulSet"
+        />,
+      )
+      expect(view.textContent).toContain(message)
+      expect(view.querySelector('.soha-workload-overview-facts dd')?.textContent).toBe(expected)
+    },
+  )
 })

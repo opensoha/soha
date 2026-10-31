@@ -58,6 +58,7 @@ export function ControllerDetailPage({
       activeTabKey={active}
       onTabChange={changeTab}
       yamlLast
+      hideMetadataOverview
       extraOverview={(detail) => (
         <ControllerOverview detail={detail} resource={resource} title={title} />
       )}

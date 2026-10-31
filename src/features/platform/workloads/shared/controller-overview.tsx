@@ -4,10 +4,10 @@ import type { TableColumnsType } from 'antd'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
 import { AdminTable } from '@/components/admin-table'
-import { BooleanTag, MetadataTag } from '@/components/status-tag'
+import { BooleanTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
-import { Button, Card, Descriptions, Input, Space } from 'antd'
+import { Alert, Button, Card, Input } from 'antd'
 import { Link } from 'react-router-dom'
 import { buildWorkloadDetailPath } from '@/features/platform/workloads-model'
 import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
@@ -16,6 +16,13 @@ import type { WorkloadMeta } from './detail-shell'
 import type { WorkloadKind } from './types'
 import type { Pod } from '@/types'
 import { WorkloadPodsCard } from './workload-relations'
+import {
+  WorkloadOverview,
+  WorkloadOverviewConfiguration,
+  WorkloadOverviewFacts,
+  WorkloadOverviewMetadata,
+  type WorkloadOverviewFact,
+} from './workload-overview'
 
 export interface ChildJob {
   name: string
@@ -180,18 +187,23 @@ export function ControllerOverview({
     typeof detail[field] === 'number' || typeof detail[field] === 'string'
       ? String(detail[field])
       : '—'
+  const number = (field: string) =>
+    typeof detail[field] === 'number' && Number.isFinite(detail[field])
+      ? (detail[field] as number)
+      : undefined
+  const desired = number(resource === 'daemonsets' ? 'desiredNumber' : 'desiredReplicas')
+  const ready = number(resource === 'daemonsets' ? 'readyNumber' : 'readyReplicas')
   const fields =
     resource === 'daemonsets'
       ? [
           ['desiredNumber', '期望', 'Desired'],
-          ['currentNumber', '当前', 'Current'],
-          ['readyNumber', '就绪', 'Ready'],
           ['updatedNumber', '已更新', 'Updated'],
+          ['readyNumber', '就绪', 'Ready'],
           ['availableNumber', '可用', 'Available'],
         ]
       : resource === 'jobs'
         ? [
-            ['completions', '完成数', 'Completions'],
+            ['completions', '目标完成数', 'Target completions'],
             ['succeeded', '成功', 'Succeeded'],
             ['failed', '失败', 'Failed'],
             ['active', '活跃', 'Active'],
@@ -200,17 +212,29 @@ export function ControllerOverview({
           ? [['activeJobs', '活跃 Jobs', 'Active Jobs']]
           : [
               ['desiredReplicas', '期望', 'Desired'],
-              ['currentReplicas', '当前', 'Current'],
+              ...(resource === 'replicasets' ? [] : [['currentReplicas', '当前', 'Current']]),
               ['readyReplicas', '就绪', 'Ready'],
               ...(resource === 'statefulsets' ? [] : [['availableReplicas', '可用', 'Available']]),
             ]
+  const isReplicaController = resource !== 'jobs' && resource !== 'cronjobs'
+  const facts: WorkloadOverviewFact[] = fields.map(([field, cn, en], index) => ({
+    key: field,
+    label: zh ? cn : en,
+    value: number(field),
+    target: isReplicaController ? desired : undefined,
+    showTarget: isReplicaController && index !== 0,
+    tone:
+      field === 'updatedNumber'
+        ? 'primary'
+        : desired !== undefined && (number(field) ?? desired) < desired
+          ? 'warning'
+          : 'success',
+  }))
   const extra =
     resource === 'statefulsets'
       ? [
-          ['serviceName', 'Service', 'Service'],
           ['updateStrategy', '更新策略', 'Update strategy'],
-          ['currentRevision', 'Current Revision', 'Current revision'],
-          ['updateRevision', 'Update Revision', 'Update revision'],
+          ['serviceName', 'Service', 'Service'],
         ]
       : resource === 'daemonsets'
         ? [['updateStrategy', '更新策略', 'Update strategy']]
@@ -232,62 +256,176 @@ export function ControllerOverview({
   const selector =
     detail.selector && typeof detail.selector === 'object'
       ? Object.entries(detail.selector as Record<string, string>)
-      : []
+          .map(([key, val]) => `${key}=${val}`)
+          .join(', ')
+      : ''
   const conditions = Array.isArray(detail.conditions) ? detail.conditions : []
+  const revisionsDiffer =
+    resource === 'statefulsets' &&
+    typeof detail.currentRevision === 'string' &&
+    Boolean(detail.currentRevision) &&
+    typeof detail.updateRevision === 'string' &&
+    Boolean(detail.updateRevision) &&
+    detail.currentRevision !== detail.updateRevision
+  let summary: { type: 'info' | 'success' | 'warning'; title: string } = {
+    type: 'info',
+    title: zh ? `${title} 就绪数据尚未返回` : `${title} readiness is unavailable`,
+  }
+  if (resource === 'cronjobs') {
+    summary = {
+      type: 'info',
+      title:
+        typeof detail.suspend !== 'boolean'
+          ? zh
+            ? 'CronJob 调度状态尚未返回'
+            : 'CronJob scheduling status is unavailable'
+          : detail.suspend
+            ? zh
+              ? 'CronJob 已暂停后续调度'
+              : 'CronJob scheduling is suspended'
+            : zh
+              ? 'CronJob 调度已启用'
+              : 'CronJob scheduling is enabled',
+    }
+  } else if (resource === 'jobs') {
+    const succeeded = number('succeeded')
+    const completions = number('completions')
+    const active = number('active')
+    const failed = number('failed')
+    summary =
+      succeeded !== undefined &&
+      completions !== undefined &&
+      completions > 0 &&
+      succeeded >= completions
+        ? {
+            type: 'success',
+            title: zh
+              ? `Job 已完成 ${succeeded} 个执行`
+              : `Job has ${succeeded} successful completions`,
+          }
+        : active !== undefined && active > 0
+          ? {
+              type: 'info',
+              title: zh ? `Job 当前有 ${active} 个活跃 Pod` : `Job has ${active} active Pods`,
+            }
+          : failed !== undefined && failed > 0
+            ? {
+                type: 'warning',
+                title: zh
+                  ? `Job 已记录 ${failed} 个失败 Pod`
+                  : `Job has recorded ${failed} failed Pods`,
+              }
+            : { type: 'info', title: zh ? 'Job 尚无完成结果' : 'Job has no completion result yet' }
+  } else if (desired === 0) {
+    summary = { type: 'info', title: zh ? '已缩容至 0 个副本' : 'Scaled to zero replicas' }
+  } else if (desired !== undefined && ready !== undefined) {
+    summary =
+      ready < desired
+        ? {
+            type: 'warning',
+            title: zh ? `${title} 仍有副本未就绪` : `${title} has replicas that are not ready`,
+          }
+        : revisionsDiffer
+          ? {
+              type: 'warning',
+              title: zh
+                ? `${title} 当前副本已就绪，版本仍有差异`
+                : `${title} replicas are ready; revisions still differ`,
+            }
+          : {
+              type: 'success',
+              title: zh ? `${title} 当前副本已就绪` : `${title} replicas are ready`,
+            }
+  }
+  const [, changeTab] = useResourceDetailTab()
   return (
-    <div className="soha-detail-stack">
+    <WorkloadOverview
+      aside={
+        <>
+          <Card className="soha-detail-card" title={zh ? '运行配置' : 'Configuration'}>
+            <WorkloadOverviewConfiguration
+              items={[
+                { label: zh ? '命名空间' : 'Namespace', children: detail.namespace },
+                ...extra.map(([field, cn, en]) => ({
+                  label: zh ? cn : en,
+                  children:
+                    field.endsWith('Time') && typeof detail[field] === 'string'
+                      ? formatDateTime(detail[field] as string)
+                      : value(field),
+                })),
+                {
+                  label: zh ? '创建时间' : 'Created',
+                  children: detail.createdAt ? formatDateTime(detail.createdAt) : '—',
+                },
+                { label: zh ? '选择器' : 'Selector', children: selector || '—' },
+              ]}
+            />
+          </Card>
+          {resource === 'statefulsets' && (
+            <Card className="soha-detail-card" title={zh ? '版本' : 'Revisions'}>
+              <WorkloadOverviewConfiguration
+                items={[
+                  {
+                    label: zh ? '当前版本' : 'Current revision',
+                    children: value('currentRevision'),
+                  },
+                  { label: zh ? '目标版本' : 'Update revision', children: value('updateRevision') },
+                ]}
+              />
+            </Card>
+          )}
+        </>
+      }
+    >
+      <Alert
+        showIcon
+        type={summary.type}
+        title={summary.title}
+        action={
+          <Button type="link" onClick={() => changeTab('events')}>
+            {zh ? '查看事件' : 'View events'}
+          </Button>
+        }
+      />
       <Card
         className="soha-detail-card soha-controller-overview"
-        title={zh ? `${title} ${resource === 'cronjobs' ? '调度' : '状态'}` : `${title} status`}
+        title={
+          resource === 'cronjobs'
+            ? zh
+              ? '调度与执行'
+              : 'Schedule and execution'
+            : resource === 'jobs'
+              ? zh
+                ? '执行状态'
+                : 'Execution'
+              : zh
+                ? '副本与发布'
+                : 'Replicas and rollout'
+        }
       >
-        <dl className="soha-k8s-detail-summary">
-          {fields.map(([field, cn, en]) => (
-            <div key={field}>
-              <dt>{zh ? cn : en}</dt>
-              <dd>{value(field)}</dd>
-            </div>
-          ))}
-        </dl>
-        <Descriptions
-          column={{ xs: 1, sm: 2 }}
-          size="small"
-          items={[
-            ...extra.map(([field, cn, en]) => ({
-              key: field,
-              label: zh ? cn : en,
-              span: field.endsWith('Revision') ? ('filled' as const) : 1,
-              children:
-                field.endsWith('Time') && typeof detail[field] === 'string'
-                  ? formatDateTime(detail[field] as string)
-                  : value(field),
-            })),
-            ...(resource === 'cronjobs'
-              ? [
-                  {
-                    key: 'suspend',
-                    label: zh ? '暂停' : 'Suspend',
-                    children: <BooleanTag value={detail.suspend === true} />,
-                  },
-                ]
-              : []),
-            ...(selector.length
-              ? [
-                  {
-                    key: 'selector',
-                    label: 'Selector',
-                    span: 'filled' as const,
-                    children: (
-                      <Space className="soha-controller-selector" wrap>
-                        {selector.map(([key, val]) => (
-                          <MetadataTag key={key} label={`${key}=${val}`} />
-                        ))}
-                      </Space>
-                    ),
-                  },
-                ]
-              : []),
-          ]}
-        />
+        <WorkloadOverviewFacts facts={facts} />
+        <div className="soha-workload-overview-facts-footer">
+          {(resource === 'statefulsets' || resource === 'daemonsets') && (
+            <span>
+              {zh ? '策略' : 'Strategy'} {value('updateStrategy')}
+            </span>
+          )}
+          {resource === 'daemonsets' && (
+            <span>
+              {zh ? '当前' : 'Current'} {value('currentNumber')}
+            </span>
+          )}
+          {resource === 'cronjobs' && <ControllerHeaderFacts detail={detail} resource={resource} />}
+          <Button type="link" onClick={() => changeTab(resource === 'cronjobs' ? 'jobs' : 'pods')}>
+            {zh
+              ? resource === 'cronjobs'
+                ? '查看 Jobs'
+                : '查看 Pods'
+              : resource === 'cronjobs'
+                ? 'View Jobs'
+                : 'View Pods'}
+          </Button>
+        </div>
       </Card>
       {resource !== 'cronjobs' && (
         <WorkloadPodsCard
@@ -324,6 +462,7 @@ export function ControllerOverview({
           />
         </Card>
       )}
-    </div>
+      <WorkloadOverviewMetadata labels={detail.labels} annotations={detail.annotations} />
+    </WorkloadOverview>
   )
 }

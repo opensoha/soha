@@ -144,6 +144,18 @@ for (const [kind, label, permission] of controllers)
     await expect(page.locator('.soha-k8s-detail-header .soha-metadata-tag')).toHaveText(
       'monitoring',
     )
+    const overview = page.locator('.soha-workload-overview')
+    await expect(overview.locator('aside')).toContainText('运行配置')
+    await expect(overview.locator('.soha-k8s-detail-metadata')).toHaveCount(1)
+    const columns = await overview.evaluate((element) => {
+      const main = element.children[0].getBoundingClientRect()
+      const side = element.children[1].getBoundingClientRect()
+      return { sideIsRight: side.left > main.right, aligned: Math.abs(main.top - side.top) < 1 }
+    })
+    expect(columns).toEqual({ sideIsRight: true, aligned: true })
+    await overview.getByRole('button', { name: /标签 · 1/ }).click()
+    await expect(overview.locator('.soha-workload-overview-metadata')).toContainText('app:')
+    await overview.getByRole('button', { name: /标签 · 1/ }).click()
     expect(
       reads.some(
         (path) =>
@@ -197,9 +209,22 @@ for (const [kind, label, permission] of controllers)
       await page.getByRole('tab', { name: '概览', exact: true }).click()
       await page.setViewportSize({ width: 900, height: 850 })
       await page.getByLabel('切换到深色模式').click()
+      await expect(overview.locator('aside')).toContainText(detail.currentRevision)
+      await expect(overview.locator('aside')).toContainText(detail.updateRevision)
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
         false,
       )
+      await page.setViewportSize({ width: 320, height: 850 })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      )
+      const narrow = await overview.evaluate((element) => {
+        const main = element.children[0].getBoundingClientRect()
+        const side = element.children[1].getBoundingClientRect()
+        return side.top >= main.bottom
+      })
+      expect(narrow).toBe(true)
+      await page.setViewportSize({ width: 900, height: 850 })
       await page.screenshot({
         path: info.outputPath('statefulset-detail-dark.png'),
         fullPage: true,

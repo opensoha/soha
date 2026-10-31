@@ -1,0 +1,132 @@
+.soha-workload-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 20px;
+  align-items: start;
+  min-width: 0;
+}
+.soha-workload-overview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+/* This composition owns the density of existing child cards without changing their behavior. */
+.soha-workload-overview .soha-detail-card > .ant-card-head {
+  min-height: 46px;
+  padding-inline: 18px;
+}
+.soha-workload-overview .soha-detail-card > .ant-card-body {
+  padding: 18px;
+}
+.soha-workload-overview-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 100px), 1fr));
+  gap: 24px;
+  margin: 0;
+}
+.soha-workload-overview-facts > div {
+  min-width: 0;
+}
+.soha-workload-overview-facts dt {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+.soha-workload-overview-facts dd {
+  margin: 0;
+}
+.soha-workload-overview-facts strong {
+  display: block;
+  font-size: 28px;
+  line-height: 40px;
+  font-variant-numeric: tabular-nums;
+}
+.soha-workload-overview-facts small {
+  font-size: 12px;
+  color: var(--soha-text-secondary);
+  font-weight: 400;
+}
+.soha-workload-overview-track {
+  height: 4px;
+  background: var(--soha-fill-weak);
+  margin-top: 12px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.soha-workload-overview-track i {
+  display: block;
+  height: 100%;
+}
+.soha-workload-overview-facts-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  border-top: 1px solid var(--soha-border-color);
+  margin-top: 18px;
+  padding-top: 10px;
+  font-size: 12px;
+}
+.soha-workload-overview-facts-footer .ant-btn {
+  margin-left: auto;
+  padding-inline: 0;
+}
+.soha-workload-overview-config,
+.soha-workload-overview-metadata {
+  margin: 0;
+}
+.soha-workload-overview-config > div {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+.soha-workload-overview-config > div:last-child {
+  margin-bottom: 0;
+}
+.soha-workload-overview-config dt,
+.soha-workload-overview-metadata dt {
+  color: var(--soha-text-secondary);
+}
+.soha-workload-overview-config dd,
+.soha-workload-overview-metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.soha-workload-overview-metadata > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.6fr) minmax(0, 1fr);
+  gap: 16px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--soha-border-color);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1279px) {
+  .soha-workload-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-workload-overview > aside {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .soha-workload-overview > aside > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 760px) {
+  .soha-workload-overview > aside {
+    display: flex;
+    flex-direction: column;
+  }
+  .soha-workload-overview-facts {
+    gap: 10px;
+  }
+  .soha-workload-overview-facts strong {
+    font-size: 24px;
+  }
+  .soha-workload-overview-metadata > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
