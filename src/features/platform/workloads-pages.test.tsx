@@ -1521,7 +1521,7 @@ describe('workloads pods page refresh controls', () => {
     )
 
     await act(async () => {
-      vi.runAllTimers()
+      vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
 
@@ -1550,7 +1550,7 @@ describe('workloads pods page refresh controls', () => {
       '/workloads/pods/demo-pod?namespace=monitoring',
     )
     await act(async () => {
-      vi.runAllTimers()
+      vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
     await flushAsyncWork()
@@ -1605,7 +1605,7 @@ describe('workloads pods page refresh controls', () => {
       '/workloads/pods/demo-pod?namespace=monitoring',
     )
     await act(async () => {
-      vi.runAllTimers()
+      vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
     await flushAsyncWork()
@@ -1677,7 +1677,7 @@ describe('workloads pods page refresh controls', () => {
     )
     await flushAsyncWork()
     await act(async () => {
-      vi.runAllTimers()
+      vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
     await flushAsyncWork()

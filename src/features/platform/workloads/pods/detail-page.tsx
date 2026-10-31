@@ -22,7 +22,8 @@ import type { PodVolume, PodVolumeMount } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatRelativeTime } from '@/utils/time'
 import { WorkloadDetailHeader } from '../shared/workload-detail-header'
-import { CodeOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
+import { WorkloadDetailRefresh, useWorkloadDetailRefresh } from '../shared/workload-detail-refresh'
+import { CodeOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
 import { Button, Card, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd'
@@ -194,7 +195,12 @@ export function PodDetailPage() {
       ? '正在读取当前集群的终端能力。'
       : 'Reading terminal capability for the current cluster.'
   const detailScope = { clusterId, namespace: detailNamespace }
-  const podDetailQuery = useQuery(podQueries.detail(detailScope, podName))
+  const detailRefresh = useWorkloadDetailRefresh()
+  const podDetailQuery = useQuery({
+    ...podQueries.detail(detailScope, podName),
+    refetchInterval: detailRefresh.interval,
+    refetchIntervalInBackground: false,
+  })
   const visiblePodDetailQueryData = readableQueryData(podDetailQuery)
   const readsMetrics = activeTabKey === 'overview' || activeTabKey === 'metrics'
   const podMetricsQueryOptions = podQueries.metrics(detailScope, podName, metricsRangeMinutes)
@@ -734,17 +740,21 @@ export function PodDetailPage() {
       backTo={`/workloads/pods?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(detailNamespace || '')}`}
       actions={
         <>
-          <Button
-            icon={<ReloadOutlined />}
-            loading={podDetailQuery.isFetching}
-            onClick={() => {
+          <WorkloadDetailRefresh
+            resourceLabel="Pod"
+            label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+            settings={detailRefresh}
+            queries={[
+              podDetailQuery,
+              ...(readsMetrics ? [podMetricsQuery] : []),
+              ...(activeTabKey === 'events' ? [podEventsQuery] : []),
+            ]}
+            onRefresh={() => {
               void podDetailQuery.refetch()
               if (readsMetrics) void podMetricsQuery.refetch()
               if (activeTabKey === 'events') void podEventsQuery.refetch()
             }}
-          >
-            {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-          </Button>
+          />
           <KubernetesResourceActionsMenu
             resourceLabel="Pod"
             name={podName}

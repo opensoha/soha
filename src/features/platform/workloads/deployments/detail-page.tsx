@@ -6,15 +6,14 @@ import { useAIPageContext } from '@/features/copilot'
 import { resourceInsightQueries } from '@/features/platform/shared/resource-insights/queries'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
-import { formatDateTime } from '@/utils/time'
-import { ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Spin, Typography } from 'antd'
+import { Spin } from 'antd'
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useWorkloadDetailScope } from '../shared/detail-scope'
 import { WorkloadDetailShell } from '../shared/detail-shell'
 import { WorkloadDetailHeader } from '../shared/workload-detail-header'
+import { WorkloadDetailRefresh, useWorkloadDetailRefresh } from '../shared/workload-detail-refresh'
 import { WorkloadDetailEvents } from '../shared/detail-events'
 import { workloadKeys } from '../shared/keys'
 import { deploymentQueries } from './queries'
@@ -78,9 +77,12 @@ export function DeploymentDetailPage() {
       },
       { replace: true },
     )
+  const detailRefresh = useWorkloadDetailRefresh()
   const detailOptions = deploymentQueries.detail(scope, deploymentName)
   const detailQuery = useQuery({
     ...detailOptions,
+    refetchInterval: detailRefresh.interval,
+    refetchIntervalInBackground: false,
     enabled: Boolean(detailOptions.enabled && canRead),
   })
   const rawDetail = canRead ? readableQueryData(detailQuery) : undefined
@@ -95,6 +97,8 @@ export function DeploymentDetailPage() {
   const statusOptions = deploymentQueries.rolloutStatus(scope, deploymentName)
   const statusQuery = useQuery({
     ...statusOptions,
+    refetchInterval: detailRefresh.interval,
+    refetchIntervalInBackground: false,
     enabled: Boolean(statusOptions.enabled && canRead),
   })
   const status = canRead ? readableQueryData(statusQuery) : undefined
@@ -237,11 +241,17 @@ export function DeploymentDetailPage() {
             actions={
               <>
                 {actions.buttons}
-                <Button
-                  icon={<ReloadOutlined />}
-                  aria-label={zh ? '刷新 Deployment' : 'Refresh Deployment'}
-                  loading={detailQuery.isFetching || statusQuery.isFetching}
-                  onClick={() => {
+                <WorkloadDetailRefresh
+                  resourceLabel="Deployment"
+                  settings={detailRefresh}
+                  queries={[
+                    detailQuery,
+                    statusQuery,
+                    historyQuery,
+                    graphQuery,
+                    ...(active === 'pods' ? [podListQuery] : []),
+                  ]}
+                  onRefresh={() => {
                     void client.invalidateQueries({
                       queryKey: workloadKeys.detail('deployments', scope, deploymentName),
                     })
@@ -249,9 +259,7 @@ export function DeploymentDetailPage() {
                     if (podListQuery.isEnabled) void podListQuery.refetch()
                     setRefreshToken((value) => value + 1)
                   }}
-                >
-                  {zh ? '刷新' : 'Refresh'}
-                </Button>
+                />
                 {actions.deleteButton}
               </>
             }
@@ -273,10 +281,6 @@ export function DeploymentDetailPage() {
                 </span>
 
                 <span>{detail.strategy}</span>
-                <Typography.Text type="secondary">
-                  {zh ? '读取于' : 'Read at'}{' '}
-                  {formatDateTime(new Date(detailQuery.dataUpdatedAt).toISOString())}
-                </Typography.Text>
               </>
             }
           />

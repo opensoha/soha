@@ -176,7 +176,8 @@ for (const [kind, label, permission] of controllers)
       kind === 'cronjobs' ? '调度已启用' : kind === 'jobs' ? '执行中' : '副本未就绪',
     )
     await expect(header).toContainText('已创建')
-    await expect(header).toContainText('读取于')
+    await expect(header).not.toContainText('读取于')
+    await expect(header.getByRole('switch', { name: /自动刷新/ })).toBeChecked()
     if (kind === 'statefulsets') {
       await expect(header.locator(`[title="${detail.currentRevision}"]`)).toContainText('当前版本')
       await expect(header.locator(`[title="${detail.updateRevision}"]`)).toContainText('目标版本')
@@ -243,13 +244,14 @@ for (const [kind, label, permission] of controllers)
       } else if (kind === 'daemonsets') {
         detail.readyNumber = 4
         detail.updatedNumber = 4
+        detail.availableNumber = 4
       }
       await page.getByRole('button', { name: `刷新 ${label}`, exact: true }).click()
       await expect
         .poll(() => reads.filter((path) => path.startsWith(`${root}/workloads/pods?`)).length)
         .toBe(before + 1)
       if (kind === 'statefulsets' || kind === 'daemonsets') {
-        await expect(header.locator('.soha-status-tag')).toHaveText('副本就绪')
+        await expect(header.locator('.soha-status-tag')).toHaveText('健康')
         if (kind === 'statefulsets') {
           await expect(header.locator('.soha-controller-header-revision')).toHaveCount(1)
           await expect(header.locator(`[title="${detail.currentRevision}"]`)).toContainText(
@@ -337,6 +339,100 @@ for (const [kind, label, permission] of controllers)
     }
     verifyBrowserEvidence(evidence)
   })
+
+test('detail summary auto refresh has truthful colors, pause, failure retry and no YAML polling', async ({
+  context,
+  page,
+}) => {
+  const detail = {
+    ...base,
+    desiredNumber: 2,
+    currentNumber: 2,
+    readyNumber: 2,
+    updatedNumber: 2,
+    availableNumber: 2,
+    updateStrategy: 'RollingUpdate',
+    pods: [],
+    relatedResources: [],
+  }
+  const { reads, evidence } = await setup(context, page, ['platform.workloads.daemon-sets.view'], {
+    [`${root}/workloads/daemonsets/sample/detail`]: detail,
+    [`${root}/workloads/daemonsets/sample/yaml`]: {
+      yaml: 'apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: sample\n',
+    },
+  })
+  let detailReads = 0
+  let failing = false
+  let held: Promise<void> | undefined
+  await context.route(
+    '**/api/v1/clusters/cluster-a/workloads/daemonsets/sample/detail**',
+    async (route) => {
+      detailReads++
+      if (held) await held
+      await route.fulfill({
+        status: failing ? 500 : 200,
+        json: failing
+          ? { error: { code: 'test_refresh_failure', message: 'Synthetic refresh failure' } }
+          : { data: detail },
+      })
+    },
+  )
+  await page.goto('/workloads/daemonsets/sample?clusterId=cluster-a&namespace=monitoring')
+  const header = page.locator('.soha-workload-detail-header')
+  const toggle = header.getByRole('switch', { name: /自动刷新/ })
+  const manual = header.getByRole('button', { name: '刷新 DaemonSet', exact: true })
+  await expect(header.locator('.soha-status-tag')).toHaveText('健康')
+  await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
+  await page.clock.install()
+  await toggle.focus()
+  await page.keyboard.press('Space')
+  await expect(toggle).not.toBeChecked()
+  await expect(toggle).toHaveAttribute('data-refresh-state', 'paused')
+  let before = detailReads
+  await page.clock.fastForward(30_100)
+  expect(detailReads).toBe(before)
+  await toggle.click()
+  await expect(toggle).toBeChecked()
+  await page.clock.fastForward(15_100)
+  await expect.poll(() => detailReads).toBeGreaterThan(before)
+  await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
+  await page.getByRole('tab', { name: 'YAML', exact: true }).click()
+  await expect.poll(() => reads.filter((path) => path.includes('/sample/yaml')).length).toBe(1)
+  before = detailReads
+  await page.clock.fastForward(15_100)
+  await expect.poll(() => detailReads).toBeGreaterThan(before)
+  expect(reads.filter((path) => path.includes('/sample/yaml'))).toHaveLength(1)
+  await page.getByRole('tab', { name: '概览', exact: true }).click()
+  let release!: () => void
+  held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await manual.click()
+  await expect(toggle).toHaveAttribute('data-refresh-state', 'refreshing')
+  await expect(header.locator('.ant-badge-status-warning')).toHaveCount(1)
+  failing = true
+  release()
+  held = undefined
+  await expect(toggle).toHaveAttribute('data-refresh-state', 'failed', { timeout: 10_000 })
+  await expect(header.locator('.ant-badge-status-error')).toHaveCount(1)
+  await expect(header.locator('.soha-status-tag')).toHaveText('健康')
+  before = detailReads
+  await page.clock.fastForward(60_100)
+  expect(detailReads).toBe(before)
+  failing = false
+  await manual.click()
+  await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
+  before = detailReads
+  await page.clock.fastForward(15_100)
+  await expect.poll(() => detailReads).toBeGreaterThan(before)
+  expect(
+    reads.some(
+      (path) =>
+        path.includes('/metrics') || path.includes('/events') || path.includes('/resources/graph'),
+    ),
+  ).toBe(false)
+  verifyBrowserEvidence(evidence)
+})
 
 test('a short Pod child table keeps a compact action column and keyboard access to usage', async ({
   context,

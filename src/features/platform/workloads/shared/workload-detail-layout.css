@@ -114,3 +114,15 @@
     padding: 14px 0;
   }
 }
+
+.soha-workload-detail-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.soha-workload-detail-refresh-dot.ant-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+}

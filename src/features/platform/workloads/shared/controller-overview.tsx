@@ -158,6 +158,37 @@ function controllerSummary(
         ? `${title} 当前副本已就绪，版本仍有差异`
         : `${title} replicas are ready; revisions still differ`,
     }
+  const current = controllerCount(
+    detail,
+    resource === 'daemonsets' ? 'currentNumber' : 'currentReplicas',
+  )
+  const available = controllerCount(detail, 'availableNumber')
+  if (resource === 'daemonsets' && available !== undefined && available < desired)
+    return {
+      type: 'warning' as const,
+      status: 'warning',
+      label: zh ? '部分不可用' : 'Availability incomplete',
+      title: zh ? `${title} 仍有副本不可用` : `${title} has replicas that are not available`,
+    }
+  const healthy =
+    current !== undefined &&
+    current >= desired &&
+    (resource === 'statefulsets'
+      ? typeof detail.currentRevision === 'string' &&
+        Boolean(detail.currentRevision.trim()) &&
+        detail.currentRevision === detail.updateRevision
+      : resource === 'daemonsets' &&
+        updated !== undefined &&
+        updated >= desired &&
+        available !== undefined &&
+        available >= desired)
+  if (healthy)
+    return {
+      type: 'success' as const,
+      status: 'healthy',
+      label: zh ? '健康' : 'Healthy',
+      title: zh ? `${title} 当前副本已就绪` : `${title} replicas are ready`,
+    }
   return {
     type: 'success' as const,
     status: 'ready',

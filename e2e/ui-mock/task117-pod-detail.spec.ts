@@ -263,6 +263,10 @@ test('Pod detail connects overview, init containers, six metric cards and scoped
   await page.goto(path)
   await expect(page.getByRole('heading', { name: podName, exact: true })).toBeVisible()
   await expectWorkloadDetailFrame(page)
+  await expect(page.locator('.soha-workload-detail-header')).not.toContainText('读取于')
+  await expect(
+    page.locator('.soha-workload-detail-header').getByRole('switch', { name: /自动刷新/ }),
+  ).toBeChecked()
   const overview = page.getByRole('tabpanel', { name: '概览', exact: true })
   await expect(overview.getByText('Pod 运行正常', { exact: true })).toBeVisible()
   const containers = overview.locator('.soha-pod-detail-container-label')

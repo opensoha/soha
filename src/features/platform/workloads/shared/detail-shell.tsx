@@ -30,10 +30,10 @@ import {
   type ChildJob,
 } from './controller-overview'
 import { WorkloadDetailHeader } from './workload-detail-header'
-import { formatDateTime, formatRelativeTime } from '@/utils/time'
+import { WorkloadDetailRefresh, useWorkloadDetailRefresh } from './workload-detail-refresh'
+import { formatRelativeTime } from '@/utils/time'
 import type { TabsProps } from 'antd'
-import { App, Button, Card, Segmented, Spin, Typography } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
+import { App, Card, Segmented, Spin, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -120,12 +120,16 @@ export function WorkloadDetailShell({
   const resolvedActiveTabKey = activeTabKey ?? internalActiveTabKey
   const queryClient = useQueryClient()
 
+  const detailRefresh = useWorkloadDetailRefresh()
+  const enhanced = resource !== 'pods' && resource !== 'deployments'
   const detailScope = { clusterId, namespace: detailNamespace }
   const podListKey = workloadQueries.list('pods', detailScope).queryKey
   const podsFetching = useIsFetching({ queryKey: podListKey })
   const detailQuery = useQuery({
     ...workloadQueries.detail<WorkloadMeta>(resource, detailScope, name),
     refetchOnMount: detailRefetchOnMount,
+    refetchInterval: enhanced ? detailRefresh.interval : false,
+    refetchIntervalInBackground: false,
   })
   const visibleDetailQueryData = readableQueryData(detailQuery)
   const yamlQueryOptions = workloadQueries.yaml(resource, detailScope, name)
@@ -208,7 +212,6 @@ export function WorkloadDetailShell({
   const resolvedExtraTabPanes =
     typeof extraTabPanes === 'function' ? extraTabPanes(detail) : (extraTabPanes ?? [])
   const graphKind = RESOURCE_GRAPH_KINDS[resource]
-  const enhanced = resource !== 'pods' && resource !== 'deployments'
   const controllerTabs: NonNullable<TabsProps['items']> = enhanced
     ? [
         ...(resource !== 'cronjobs'
@@ -268,22 +271,24 @@ export function WorkloadDetailShell({
                     {formatRelativeTime(detail.createdAt)}
                   </Typography.Text>
                 )}
-                {detailQuery.dataUpdatedAt > 0 && (
-                  <Typography.Text type="secondary">
-                    {localeCode === 'zh_CN' ? '读取于' : 'Read at'}{' '}
-                    {formatDateTime(new Date(detailQuery.dataUpdatedAt).toISOString())}
-                  </Typography.Text>
-                )}
               </>
             }
             actions={
-              <Button
-                icon={<ReloadOutlined />}
-                aria-label={localeCode === 'zh_CN' ? `刷新 ${title}` : `Refresh ${title}`}
-                loading={
-                  detailQuery.isFetching || (resolvedActiveTabKey === 'pods' && podsFetching > 0)
-                }
-                onClick={() =>
+              <WorkloadDetailRefresh
+                resourceLabel={title}
+                settings={detailRefresh}
+                queries={[
+                  detailQuery,
+                  ...(resolvedActiveTabKey === 'pods'
+                    ? [
+                        {
+                          isFetching: podsFetching > 0,
+                          isError: queryClient.getQueryState(podListKey)?.status === 'error',
+                        },
+                      ]
+                    : []),
+                ]}
+                onRefresh={() =>
                   Promise.all([
                     queryClient.invalidateQueries({
                       queryKey: workloadQueries.detail(resource, detailScope, name).queryKey,
@@ -293,9 +298,7 @@ export function WorkloadDetailShell({
                       : []),
                   ])
                 }
-              >
-                {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              </Button>
+              />
             }
           />
         ) : null)}

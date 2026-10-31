@@ -33,6 +33,40 @@ async function render(resource: WorkloadKind, detail: Partial<WorkloadMeta> = {}
 
 describe('controller header observations', () => {
   it.each([
+    [
+      'statefulsets',
+      {
+        desiredReplicas: 2,
+        currentReplicas: 2,
+        readyReplicas: 2,
+        currentRevision: 'database-v2',
+        updateRevision: 'database-v2',
+      },
+    ],
+    [
+      'daemonsets',
+      { desiredNumber: 2, currentNumber: 2, readyNumber: 2, updatedNumber: 2, availableNumber: 2 },
+    ],
+  ] as const)(
+    'uses the shared healthy label for complete %s observations',
+    async (resource, fields) => {
+      const view = await render(resource, fields)
+      expect(view.querySelector('.soha-status-tag')?.textContent).toBe('健康')
+    },
+  )
+
+  it('keeps unavailable DaemonSet replicas visible even after ready and updated reach target', async () => {
+    const view = await render('daemonsets', {
+      desiredNumber: 2,
+      currentNumber: 2,
+      readyNumber: 2,
+      updatedNumber: 2,
+      availableNumber: 1,
+    })
+    expect(view.querySelector('.soha-status-tag')?.textContent).toBe('部分不可用')
+  })
+
+  it.each([
     ['statefulsets', { desiredReplicas: 3, readyReplicas: 3 }, '副本就绪', 'success'],
     ['daemonsets', { desiredNumber: 10, readyNumber: 8 }, '副本未就绪', 'warning'],
     ['replicasets', { desiredReplicas: 2, readyReplicas: 2 }, '副本就绪', 'success'],

@@ -347,6 +347,10 @@ test('Deployment detail connects eight tabs, four header actions, continuous his
   await page.goto(path)
   await expect(page.getByRole('heading', { name: 'api', exact: true })).toBeVisible()
   await expectWorkloadDetailFrame(page)
+  await expect(page.locator('.soha-workload-detail-header')).not.toContainText('读取于')
+  await expect(
+    page.locator('.soha-workload-detail-header').getByRole('switch', { name: /自动刷新/ }),
+  ).toBeChecked()
   const actions = page.locator('.soha-workload-detail-actions')
   await expect(actions.getByRole('button')).toHaveCount(4)
   await expect(actions).not.toContainText('YAML')
