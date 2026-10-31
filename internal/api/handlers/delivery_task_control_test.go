@@ -78,7 +78,7 @@ func TestExecutionTaskControlStrictBoundary(t *testing.T) {
 			var envelope struct {
 				Data domaindelivery.ExecutionTask `json:"data"`
 			}
-			if json.Unmarshal(response.Body.Bytes(), &envelope) != nil || envelope.Data.Status != "queued" || envelope.Data.CallbackToken != "" || envelope.Data.Payload == nil {
+			if json.Unmarshal(response.Body.Bytes(), &envelope) != nil || envelope.Data.Status != "queued" || envelope.Data.CallbackToken != "[redacted]" || envelope.Data.Payload == nil {
 				t.Fatal("actual state or safe required task fields lost")
 			}
 			if actions.action == "retry" && actions.reason != strings.Repeat("验", 2048) {

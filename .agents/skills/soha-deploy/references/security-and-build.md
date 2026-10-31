@@ -8,7 +8,7 @@ binary, configuration loader, bootstrap, or credential-encryption behavior chang
 
 - Build the frontend first and stage `../soha-web/dist` under `internal/staticassets/web/dist` before compiling with `-tags embedassets`.
 - Build a static server with `CGO_ENABLED=0`. Keep `/app/soha` as the explicit runtime executable.
-- Use the sibling `soha-contracts` repository only as the Docker build context expected by `deploy/Dockerfile`.
+- Build the declared, checksummed `soha-contracts` module with `GOWORK=off`. Ordinary images must not require a sibling checkout or named contracts context. An unpublished source revision may be supplied through an explicitly recorded immutable module proxy for local integration; this does not prove public availability.
 - Keep runtime images minimal. Do not ship the Vite server, Go toolchain, source tree, or build caches in the final stage.
 - Treat `deploy/Dockerfile`, `deploy/docker-compose.yaml`, `deploy/deployment.yaml`, `deploy/kustomization.yaml`, config, and README commands as one compatibility surface.
 

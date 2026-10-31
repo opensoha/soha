@@ -66,16 +66,6 @@ jobs:
           GOWORK=off go mod download
           GOWORK=off go mod verify
           GOWORK=off go list -m github.com/opensoha/soha-contracts | tee ../soha-contracts-module.txt
-      - name: Stage pinned contracts build context
-        working-directory: soha
-        run: |
-          set -euo pipefail
-          contracts_dir="$(GOWORK=off go list -m -f '{{.Dir}}' github.com/opensoha/soha-contracts)"
-          test -n "${contracts_dir}"
-          rm -rf ../contracts-build-context
-          mkdir -p ../contracts-build-context
-          cp -R "${contracts_dir}/." ../contracts-build-context/
-          test -f ../contracts-build-context/go.mod
       - name: Download web artifact
         env:
           GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
@@ -141,8 +131,6 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           build-args: |
             SOHA_BUILD_VERSION=${{ env.SOHA_BUILD_VERSION }}
-          build-contexts: |
-            contracts=./contracts-build-context
       - name: Publish network gateway image to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v6
@@ -155,8 +143,6 @@ jobs:
           tags: ghcr.io/opensoha/soha-network-gateway:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./contracts-build-context
       - name: Publish proxy-mihomo image to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v6
@@ -169,8 +155,6 @@ jobs:
           tags: ghcr.io/opensoha/soha-proxy-mihomo:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./contracts-build-context
       - name: Publish proxy-sing-box image to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v6
@@ -183,8 +167,6 @@ jobs:
           tags: ghcr.io/opensoha/soha-proxy-sing-box:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./contracts-build-context
       - name: Publish proxy-v2ray image to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v6
@@ -197,8 +179,6 @@ jobs:
           tags: ghcr.io/opensoha/soha-proxy-v2ray:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./contracts-build-context
       - name: Publish radius image to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v6
@@ -211,8 +191,6 @@ jobs:
           tags: ghcr.io/opensoha/soha-radius:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./contracts-build-context
       - name: Generate release manifest
         run: |
           set -euo pipefail

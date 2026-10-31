@@ -164,7 +164,7 @@ func TestExecutionTaskControlsEnforceScopeBeforeController(t *testing.T) {
 
 func assertPublicTaskBoundary(t *testing.T, task domaindelivery.ExecutionTask) {
 	t.Helper()
-	if task.CallbackToken != "" || task.SecretLease != nil || task.Payload == nil {
+	if task.CallbackToken != "[redacted]" || task.SecretLease != nil || task.Payload == nil {
 		t.Fatal("public task retained a runner credential or omitted its payload object")
 	}
 	raw, err := json.Marshal(task)
@@ -172,8 +172,8 @@ func assertPublicTaskBoundary(t *testing.T, task domaindelivery.ExecutionTask) {
 		t.Fatal("public task JSON leaked a synthetic runner secret")
 	}
 	var wire map[string]json.RawMessage
-	if json.Unmarshal(raw, &wire) != nil || string(wire["callbackToken"]) != `""` || string(wire["payload"]) != `{}` {
-		t.Fatal("public task no longer satisfies required empty callbackToken/payload fields")
+	if json.Unmarshal(raw, &wire) != nil || string(wire["callbackToken"]) != `"[redacted]"` || string(wire["payload"]) != `{}` {
+		t.Fatal("public task no longer satisfies required callbackToken/payload fields")
 	}
 }
 
@@ -206,7 +206,7 @@ func TestExecutionTaskUserViewsRemoveRunnerCredentialsWithoutMutatingTask(t *tes
 	assertPublicTaskBoundary(t, *latestExecutionTaskForApplication(task.ApplicationID, []domaindelivery.ExecutionTask{task}))
 	assertPublicTaskBoundary(t, *latestExecutionTaskForBinding(catalog.bindings[0], []domaindelivery.ExecutionTask{task}))
 	// Runner serialization and stored objects retain their credentials. Only
-	// the explicitly selected user views may replace them with an empty string.
+	// the explicitly selected user views may replace them with a non-secret marker.
 	raw, err := json.Marshal(task)
 	if err != nil || !bytes.Contains(raw, []byte(task.CallbackToken)) || !bytes.Contains(raw, []byte(task.SecretLease.Token)) || task.Payload != nil {
 		t.Fatal("public projection mutated the stored/runner task")

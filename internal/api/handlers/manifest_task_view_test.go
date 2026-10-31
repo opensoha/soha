@@ -81,7 +81,7 @@ func assertManifestPublicTask(t *testing.T, raw []byte, nested bool) {
 		}
 		task = inner
 	}
-	if string(task["callbackToken"]) != `""` || string(task["payload"]) != `{}` || string(task["status"]) != `"queued"` || task["secretLease"] != nil {
+	if string(task["callbackToken"]) != `"[redacted]"` || string(task["payload"]) != `{}` || string(task["status"]) != `"queued"` || task["secretLease"] != nil {
 		t.Fatal("public manifest task shape or accepted lifecycle state changed")
 	}
 }

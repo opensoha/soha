@@ -26,14 +26,14 @@ jobs:
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
-          ref: ${{ inputs.latest_siblings && 'main' || '9d23081036491f629d69be9ac78a14d5ff5db929' }}
+          ref: ${{ inputs.latest_siblings && 'main' || 'd1eaebb02c5bb222badf52dc43d569ccedc34c02' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Checkout web
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-web
           path: soha-web
-          ref: ${{ inputs.latest_siblings && 'main' || '9f724cabdc5014f4836da37fa9ac6f3efeb1da7b' }}
+          ref: ${{ inputs.latest_siblings && 'main' || 'e53b1e8713a66a729c73923a72a95d2f815e31f1' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Record actual source combination
         env:
@@ -111,13 +111,13 @@ jobs:
       - name: Docker build
         working-directory: soha
         run: |
-          docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
-          docker build --build-context contracts=../soha-contracts --target network-gateway-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-network-gateway:test .
+          docker build -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
+          docker build --target network-gateway-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-network-gateway:test .
           docker build --target radius-eap-test-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-radius-eap-test:test .
-          docker build --build-context contracts=../soha-contracts --target proxy-runtime-mihomo -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-mihomo:test .
-          docker build --build-context contracts=../soha-contracts --target proxy-runtime-sing-box -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-sing-box:test .
-          docker build --platform linux/amd64 --build-context contracts=../soha-contracts --target proxy-runtime-v2ray -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-v2ray:test .
-          docker build --platform linux/amd64 --build-context contracts=../soha-contracts --target radius-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-radius:test .
+          docker build --target proxy-runtime-mihomo -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-mihomo:test .
+          docker build --target proxy-runtime-sing-box -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-sing-box:test .
+          docker build --platform linux/amd64 --target proxy-runtime-v2ray -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-v2ray:test .
+          docker build --platform linux/amd64 --target radius-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-radius:test .
       - name: Verify container storage permissions
         run: >-
           docker run --rm --entrypoint sh ghcr.io/opensoha/soha:test -ec
