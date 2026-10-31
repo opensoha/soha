@@ -1,6 +1,6 @@
 module github.com/opensoha/soha-agent
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -13,10 +13,11 @@ require (
 	github.com/hashicorp/yamux v0.1.2
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
-	github.com/opensoha/soha-contracts v0.1.25
+	github.com/opensoha/soha-contracts v0.1.28-0.20261031074133-d1eaebb02c5b
 	github.com/spf13/viper v1.21.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.57.0
+	golang.org/x/sys v0.48.0
 	helm.sh/helm/v4 v4.3.0
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
@@ -158,7 +159,6 @@ require (
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.16.0 // indirect

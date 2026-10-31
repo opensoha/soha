@@ -160,7 +160,7 @@ The packaged Outpost uses the same generic `soha-agent` image. Its protocol-matc
 Buildpacks uses a dedicated Agent and Docker-compatible daemon. Build the separate runtime target; the generic cluster and Hermes images do not include pack:
 
 ```sh
-docker build --build-context contracts=../soha-contracts --target buildpacks-runtime \
+docker build --target buildpacks-runtime \
   -f deploy/Dockerfile -t soha-buildpacks-agent:local .
 ```
 
@@ -224,3 +224,7 @@ helm install soha-hermes-agent opensoha/soha-hermes-agent \
 
 This repository is licensed under the Apache License 2.0. See
 [LICENSE](./LICENSE) for the full license text.
+
+### Task115 source dependency
+
+The integration candidate pins reviewed contracts source commit `d1eaebb02c5bb222badf52dc43d569ccedc34c02` through a canonical Go pseudo-version. Standard Go and Docker builds use `GOWORK=off` and need no sibling SDK checkout. The source commit must stay reachable before clean remote builds; no SDK package release is implied. Formal tagged release workflows retain their stable contracts-version assertion.

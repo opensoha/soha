@@ -140,8 +140,6 @@ jobs:
             ghcr.io/opensoha/soha-agent:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./soha-contracts
           build-args: |
             VERSION=${{ github.event.inputs.version || github.ref_name }}
             COMMIT=${{ github.sha }}
@@ -157,8 +155,6 @@ jobs:
           tags: ghcr.io/opensoha/soha-docker-volume-reader:${{ github.event.inputs.version || github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./soha-contracts
           build-args: |
             VERSION=${{ github.event.inputs.version || github.ref_name }}
             COMMIT=${{ github.sha }}
@@ -175,8 +171,6 @@ jobs:
             ghcr.io/opensoha/soha-hermes-agent:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./soha-contracts
           build-args: |
             VERSION=${{ github.event.inputs.version || github.ref_name }}
             COMMIT=${{ github.sha }}
@@ -192,8 +186,6 @@ jobs:
           tags: ghcr.io/opensoha/soha-buildpacks-agent:${{ github.event.inputs.version || github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./soha-contracts
           build-args: |
             VERSION=${{ github.event.inputs.version || github.ref_name }}
             COMMIT=${{ github.sha }}
@@ -209,8 +201,6 @@ jobs:
           tags: ghcr.io/opensoha/soha-buildpacks-agent:daemonless-${{ github.event.inputs.version || github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          build-contexts: |
-            contracts=./soha-contracts
           build-args: |
             VERSION=${{ github.event.inputs.version || github.ref_name }}
             COMMIT=${{ github.sha }}

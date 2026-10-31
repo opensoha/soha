@@ -5,19 +5,16 @@ ARG GOPROXY=https://proxy.golang.org,direct
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-ENV GOPROXY=$GOPROXY
+ENV GOPROXY=$GOPROXY GOWORK=off
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./soha-agent/
-COPY --from=contracts go.mod go.sum ./soha-contracts/
 RUN for attempt in 1 2 3; do \
-      printf 'go 1.27.3\n\nuse (\n\t./soha-agent\n\t./soha-contracts\n)\n' > go.work; \
       (cd soha-agent && go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \
     done; \
     exit 1
-COPY --from=contracts . ./soha-contracts
 COPY . ./soha-agent
 ARG GOMAXPROCS=4
 ENV GOMAXPROCS=$GOMAXPROCS
