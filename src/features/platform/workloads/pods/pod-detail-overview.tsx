@@ -56,6 +56,9 @@ export function PodDetailOverview({
   ownerLink,
   onEvents,
   metrics,
+  containerDetails,
+  containerFeedback,
+  containerExtra,
 }: {
   pod: PodDetail
   zh: boolean
@@ -72,6 +75,9 @@ export function PodDetailOverview({
   ownerLink: ReactNode
   onEvents: () => void
   metrics?: ReactNode
+  containerDetails?: (container: WorkloadContainer) => ReactNode
+  containerFeedback?: ReactNode
+  containerExtra?: ReactNode
 }) {
   const containers = [...(pod.containers ?? [])].sort(
     (a, b) => Number(b.role === 'init') - Number(a.role === 'init'),
@@ -167,12 +173,17 @@ export function PodDetailOverview({
         className="soha-detail-card soha-pod-detail-card"
         title={zh ? '容器' : 'Containers'}
         extra={
-          <Text type="secondary">
-            {regular.length} {zh ? '常规' : 'app'} · {containers.length - regular.length} init
-          </Text>
+          <span className="soha-pod-container-card-extra">
+            <Text type="secondary">
+              {regular.length} {zh ? '常规' : 'app'} · {containers.length - regular.length} init
+            </Text>
+            {containerExtra}
+          </span>
         }
       >
+        {containerFeedback}
         <Collapse
+          className="soha-pod-container-collapse"
           ghost
           activeKey={expanded}
           onChange={(keys) => onExpand(Array.isArray(keys) ? keys : [keys])}
@@ -219,7 +230,9 @@ export function PodDetailOverview({
                 onSelect={(key) => onContainerAction(key, item.name)}
               />
             ),
-            children: (
+            children: containerDetails ? (
+              containerDetails(item)
+            ) : (
               <Descriptions
                 column={1}
                 size="small"

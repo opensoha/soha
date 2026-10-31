@@ -6,15 +6,8 @@ import type { PodVolume } from '@/types'
 import { Card, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { Link } from 'react-router-dom'
+import { podVolumeReadOnly } from './pod-volume-mounts'
 
-// Kubernetes API-projected sources are read-only even when the mount flag is false.
-const readOnlySources = new Set([
-  'ConfigMap',
-  'Secret',
-  'Projected',
-  'DownwardAPI',
-  'ServiceAccountToken',
-])
 const wrappingCell = () => ({
   style: {
     whiteSpace: 'normal' as const,
@@ -78,7 +71,7 @@ export function PodDetailStorage({
                 <span className="soha-pod-storage-container">
                   <strong>{mount.name}</strong>
                   <Typography.Text type="secondary">
-                    {volume.readOnly || mount.readOnly || readOnlySources.has(volume.type)
+                    {podVolumeReadOnly(volume, mount.readOnly)
                       ? zh
                         ? '只读'
                         : 'Read only'

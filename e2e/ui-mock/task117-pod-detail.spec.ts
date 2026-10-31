@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
+import { stringify } from 'yaml'
 import { baselineResponse } from '../fixtures/baseline-data'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { expectWorkloadDetailFrame } from '../fixtures/workload-detail-geometry'
@@ -14,6 +15,10 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
     allowedActions: ['get', 'logs', 'exec'],
     metricsConfigured: true,
     omitOwnerGraph: false,
+    yamlReads: 0,
+    yamlFault: '' as '' | 'read' | 'identity',
+    containerArgument: '--config=/etc/api/config.yaml',
+    referencePermissions: true,
   }
   await context.addInitScript(() =>
     localStorage.setItem(
@@ -32,6 +37,13 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
         'platform.pods.view',
         'platform.nodes.view',
         'platform.namespaces.view',
+        ...(state.referencePermissions
+          ? [
+              'platform.configuration.config-maps.view',
+              'platform.configuration.secrets.view',
+              'platform.storage.persistent-volume-claims.view',
+            ]
+          : []),
         ...(sessions ? ['platform.pods.logs', 'platform.pods.exec'] : []),
       )
       body.data.visibleMenuIds!.push('workloads-pods')
@@ -210,15 +222,111 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
           },
         },
       }
-    if (url.pathname.endsWith(`/pods/${podName}/yaml`))
+    if (url.pathname.endsWith(`/pods/${podName}/yaml`)) {
+      state.yamlReads += 1
+      if (state.yamlFault === 'read')
+        return {
+          status: 503,
+          body: { error: { code: 'unavailable', message: 'Synthetic configuration read failed' } },
+        }
       return {
         body: {
           data: {
-            content: `apiVersion: v1\nkind: Pod\nmetadata:\n  name: ${podName}\n`,
+            content: stringify({
+              apiVersion: 'v1',
+              kind: 'Pod',
+              metadata: {
+                name: state.yamlFault === 'identity' ? 'another-pod' : podName,
+                namespace: 'monitoring',
+              },
+              spec: {
+                initContainers: [
+                  {
+                    name: 'migrate',
+                    imagePullPolicy: 'IfNotPresent',
+                    command: ['/bin/sh', '-c'],
+                    args: ['echo init'],
+                  },
+                ],
+                containers: [
+                  {
+                    name: 'app',
+                    imagePullPolicy: 'Always',
+                    command: ['/usr/bin/api'],
+                    args: [state.containerArgument],
+                    resources: {
+                      requests: { cpu: '100m', memory: '128Mi' },
+                      limits: { cpu: '500m', memory: '256Mi' },
+                    },
+                    env: [
+                      { name: 'LOG_LEVEL', value: 'info' },
+                      {
+                        name: 'API_PASSWORD',
+                        valueFrom: { secretKeyRef: { name: 'app-secrets', key: 'password' } },
+                      },
+                      { name: 'POD_NAME', valueFrom: { fieldRef: { fieldPath: 'metadata.name' } } },
+                    ],
+                    envFrom: [{ configMapRef: { name: 'app-config' }, prefix: 'APP_' }],
+                    ports: [{ name: 'http', containerPort: 8080, protocol: 'TCP' }],
+                    volumeMounts: [
+                      {
+                        name: 'config',
+                        mountPath: '/etc/config',
+                        subPath: 'settings',
+                        readOnly: true,
+                      },
+                    ],
+                    livenessProbe: {
+                      httpGet: { path: '/health', port: 8080 },
+                      initialDelaySeconds: 0,
+                      periodSeconds: 10,
+                      timeoutSeconds: 1,
+                    },
+                    readinessProbe: { tcpSocket: { port: 8080 } },
+                    startupProbe: {
+                      exec: { command: ['test', '-f', '/ready'] },
+                      failureThreshold: 30,
+                    },
+                  },
+                ],
+              },
+              status: {
+                initContainerStatuses: [
+                  {
+                    name: 'migrate',
+                    state: {
+                      terminated: {
+                        exitCode: 0,
+                        reason: 'Completed',
+                        startedAt: '2026-10-30T10:00:00Z',
+                        finishedAt: '2026-10-30T10:01:00Z',
+                      },
+                    },
+                  },
+                ],
+                containerStatuses: [
+                  {
+                    name: 'app',
+                    state: { running: { startedAt: '2026-10-30T10:01:00Z' } },
+                    lastState: {
+                      terminated: {
+                        exitCode: 137,
+                        signal: 9,
+                        reason: 'OOMKilled',
+                        message: 'Synthetic memory limit exceeded',
+                        startedAt: '2026-10-30T09:00:00Z',
+                        finishedAt: '2026-10-30T09:59:00Z',
+                      },
+                    },
+                  },
+                ],
+              },
+            }),
             resourceVersion: '1',
           },
         },
       }
+    }
     if (url.pathname === '/api/v1/clusters/cluster-a/resources/graph') {
       state.graphReads += 1
       return {
@@ -620,5 +728,101 @@ test('Pod relationships retain explicit Pod owners omitted by graph collection',
   )
   await board.getByRole('button', { name: 'Deployment api', exact: true }).click()
   await expect(page.locator('.soha-pod-relation-inspector')).toContainText('Pod 关联信息')
+  verifyBrowserEvidence(evidence)
+})
+
+test('Pod expanded containers share a server configuration read and retain exit records on refresh', async ({
+  context,
+  page,
+}, testInfo) => {
+  const { state, evidence } = await setup(context, page)
+  await page.goto(path)
+  await expect(page.locator('.soha-pod-container-collapse')).toBeVisible()
+  await page.getByRole('switch', { name: /^自动刷新/ }).click()
+  expect(state.yamlReads).toBe(0)
+  const migrate = page
+    .locator('.soha-pod-container-collapse .ant-collapse-item')
+    .filter({ has: page.getByRole('button', { name: /^migrate 初始化容器/ }) })
+  await migrate.getByRole('button').first().focus()
+  await migrate.getByRole('button').first().press('Enter')
+  await expect(migrate).toContainText('Exit Code 0')
+  const app = page
+    .locator('.soha-pod-container-collapse .ant-collapse-item')
+    .filter({ has: page.getByRole('button', { name: /^app 常规容器/ }) })
+  await app.getByRole('button').first().click()
+  const details = app.locator('.soha-pod-container-panel')
+  await expect(details).toBeVisible()
+  expect(await details.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1)
+  await expect(details).toContainText('OOMKilled')
+  await expect(details).toContainText('Exit Code 137')
+  await expect(details).toContainText('Signal 9')
+  await expect(details).toContainText('100m')
+  await expect(details).toContainText('256Mi')
+  await expect(details).toContainText('/usr/bin/api')
+  await expect(details).toContainText(state.containerArgument)
+  await expect(details).toContainText('API_PASSWORD')
+  await expect(details).toContainText('password')
+  await expect(details.getByRole('link', { name: 'app-secrets', exact: true })).toHaveAttribute(
+    'href',
+    /clusterId=cluster-a&namespace=monitoring/,
+  )
+  await expect(details).toContainText('prefix: APP_')
+  await expect(details).toContainText('subPath: settings')
+  await expect(details).toContainText('只读')
+  await expect(details).toContainText('8080/TCP')
+  for (const label of ['存活探针', '就绪探针', '启动探针'])
+    await expect(details).toContainText(label)
+  expect(state.yamlReads).toBe(1)
+  state.containerArgument = `--config=/etc/api/${'long-path-'.repeat(30)}config.yaml`
+  await page.getByRole('button', { name: '刷新容器详情', exact: true }).click()
+  await expect(details).toContainText(state.containerArgument)
+  await expect(migrate).toContainText('Exit Code 0')
+  expect(state.yamlReads).toBe(2)
+  expect(state.terminalTickets).toBe(0)
+  for (const theme of ['light', 'dark']) {
+    if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
+    for (const width of [1373, 900, 320]) {
+      await page.setViewportSize({ width, height: 1502 })
+      expect(
+        await page.locator('.soha-pod-detail').evaluate((el) => el.scrollWidth - el.clientWidth),
+      ).toBeLessThanOrEqual(1)
+      await expect(details).toContainText('Exit Code 137')
+    }
+  }
+  await page.setViewportSize({ width: 1373, height: 1502 })
+  await details.screenshot({
+    path: testInfo.outputPath('pod-container-details-dark.png'),
+    animations: 'disabled',
+  })
+  verifyBrowserEvidence(evidence)
+})
+
+test('Pod container details keep read errors recoverable and gate reference navigation', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await setup(context, page)
+  state.referencePermissions = false
+  state.yamlFault = 'read'
+  await page.goto(path)
+  await page.getByRole('switch', { name: /^自动刷新/ }).click()
+  const app = page
+    .locator('.soha-pod-container-collapse .ant-collapse-item')
+    .filter({ has: page.getByRole('button', { name: /^app 常规容器/ }) })
+  await app.getByRole('button').first().click()
+  await expect(page.getByText('容器配置与退出记录暂不可用', { exact: true })).toBeVisible()
+  await expect(app).not.toContainText('未声明独立环境变量')
+  state.yamlFault = ''
+  await page.getByRole('button', { name: '刷新容器详情', exact: true }).click()
+  await expect(app).toContainText('Exit Code 137')
+  await expect(app).toContainText('app-secrets')
+  await expect(app.getByRole('link', { name: 'app-secrets', exact: true })).toHaveCount(0)
+  await expect(app.getByRole('link', { name: 'app-config', exact: true })).toHaveCount(0)
+  state.yamlFault = 'identity'
+  state.containerArgument = '--rejected-identity-value'
+  await page.getByRole('button', { name: '刷新容器详情', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Pod YAML identity does not match')
+  await expect(app).toContainText('Exit Code 137')
+  await expect(app).not.toContainText(state.containerArgument)
   verifyBrowserEvidence(evidence)
 })

@@ -483,3 +483,96 @@
 .soha-pod-storage-container strong {
   font-weight: 500;
 }
+
+.soha-pod-container-card-extra,
+.soha-pod-container-state,
+.soha-pod-container-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.soha-pod-container-section-heading {
+  justify-content: space-between;
+}
+.soha-pod-container-panel {
+  min-width: 0;
+}
+.soha-pod-container-panel h4 {
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+.soha-pod-container-section,
+.soha-pod-container-runtime-grid {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-pod-container-runtime-grid,
+.soha-pod-container-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.soha-pod-container-runtime {
+  min-width: 0;
+}
+.soha-pod-container-runtime p {
+  margin: 8px 0;
+}
+.soha-pod-container-runtime.is-failed {
+  border-inline-start: 3px solid var(--soha-danger);
+  padding-inline-start: 12px;
+}
+.soha-pod-container-quantities {
+  margin: 8px 0 0;
+}
+.soha-pod-container-quantities > div {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.soha-pod-container-quantities dt {
+  color: var(--soha-text-secondary);
+}
+.soha-pod-container-quantities dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.soha-pod-container-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.soha-pod-container-env-from {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.soha-pod-container-ports {
+  margin: 0;
+  padding-inline-start: 18px;
+  overflow-wrap: anywhere;
+}
+.soha-pod-container-probes {
+  display: grid;
+  gap: 14px;
+}
+.soha-pod-container-probes p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .soha-pod-container-runtime-grid,
+  .soha-pod-container-resource-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

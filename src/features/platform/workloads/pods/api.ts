@@ -4,6 +4,7 @@ import { requireWorkloadNamespace } from '../shared/scope'
 import {
   getWorkloadDetail,
   getWorkloadMetrics,
+  getWorkloadYAML,
   listWorkloadEvents,
   listWorkloads,
 } from '../shared/api'
@@ -30,6 +31,16 @@ export function getPodDetail(target: PodTarget): Promise<PodDetail> {
 
 export function getPodMetrics(target: PodTarget, rangeMinutes: number): Promise<PodMetrics> {
   return getWorkloadMetrics(podKind, target.scope, target.name, rangeMinutes)
+}
+
+export async function getPodContainerConfiguration(target: PodTarget) {
+  const yaml = await getWorkloadYAML(podKind, target.scope, target.name)
+  const { readPodContainerConfiguration } = await import('./pod-container-configuration')
+  return readPodContainerConfiguration(
+    yaml.content,
+    target.name.trim(),
+    target.scope.namespace?.trim() || '',
+  )
 }
 
 export async function listPodEvents(target: PodTarget): Promise<WorkloadEvent[]> {

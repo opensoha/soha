@@ -8,6 +8,7 @@ import {
 } from './pod-detail-overview'
 import { PodResourceCell } from './pod-resource-cell'
 import { PodDetailStorage } from './pod-detail-storage'
+import { PodContainerDetails } from './pod-container-details'
 import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import './pod-detail.css'
 import { StatusTag } from '@/components/status-tag'
@@ -22,7 +23,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { formatRelativeTime } from '@/utils/time'
 import { WorkloadDetailHeader } from '../shared/workload-detail-header'
 import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
-import { CodeOutlined, FileTextOutlined } from '@ant-design/icons'
+import { CodeOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TabsProps } from 'antd'
 import { Button, Card, Select, Space, Spin, Tooltip, Typography } from 'antd'
@@ -142,6 +143,21 @@ export function PodDetailPage() {
     refetchIntervalInBackground: false,
   })
   const visiblePodDetailQueryData = readableQueryData(podDetailQuery)
+  const readsContainerConfiguration =
+    activeTabKey === 'overview' &&
+    expanded.length > 0 &&
+    Boolean(visiblePodDetailQueryData) &&
+    hasPermission(permissionSnapshot, 'platform.pods.view')
+  const containerConfigurationOptions = podQueries.containerConfiguration(detailScope, podName)
+  const containerConfigurationQuery = useQuery({
+    ...containerConfigurationOptions,
+    enabled: Boolean(containerConfigurationOptions.enabled) && readsContainerConfiguration,
+    refetchInterval: readsContainerConfiguration ? detailRefresh.interval : false,
+    refetchIntervalInBackground: false,
+  })
+  const containerConfiguration = containerConfigurationQuery.isEnabled
+    ? readableQueryData(containerConfigurationQuery)
+    : undefined
   const readsMetrics = activeTabKey === 'overview' || activeTabKey === 'metrics'
   const podMetricsQueryOptions = podQueries.metrics(detailScope, podName, metricsRangeMinutes)
   const podMetricsQuery = useQuery({
@@ -368,6 +384,52 @@ export function PodDetailPage() {
         ) : null
       }
       onEvents={() => setActiveTabKey('events')}
+      containerExtra={
+        readsContainerConfiguration && (
+          <Tooltip title={localeCode === 'zh_CN' ? '刷新容器详情' : 'Refresh container details'}>
+            <Button
+              type="text"
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={containerConfigurationQuery.isFetching}
+              aria-label={localeCode === 'zh_CN' ? '刷新容器详情' : 'Refresh container details'}
+              onClick={() => void containerConfigurationQuery.refetch()}
+            />
+          </Tooltip>
+        )
+      }
+      containerFeedback={
+        <ReadFeedback
+          canRead={containerConfigurationQuery.isEnabled}
+          query={containerConfigurationQuery}
+          label={
+            localeCode === 'zh_CN' ? '容器配置与退出记录' : 'Container configuration and state'
+          }
+        />
+      }
+      containerDetails={(item) => (
+        <PodContainerDetails
+          container={item}
+          configuration={containerConfiguration?.containers.find(
+            (container) => container.name === item.name,
+          )}
+          loading={containerConfigurationQuery.isPending && containerConfigurationQuery.isEnabled}
+          scope={detailScope}
+          volumes={podVolumes}
+          zh={localeCode === 'zh_CN'}
+          canViewReference={(kind) => {
+            const permission = (
+              {
+                ConfigMap: 'platform.configuration.config-maps.view',
+                Secret: 'platform.configuration.secrets.view',
+                PersistentVolumeClaim: 'platform.storage.persistent-volume-claims.view',
+              } as Record<string, string>
+            )[kind]
+            return Boolean(permission && hasPermission(permissionSnapshot, permission))
+          }}
+          onViewStorage={() => openContainerTab('volumes', item.name)}
+        />
+      )}
       metrics={
         <Card
           className="soha-detail-card soha-pod-detail-card"
@@ -665,11 +727,13 @@ export function PodDetailPage() {
             settings={detailRefresh}
             queries={[
               podDetailQuery,
+              ...(readsContainerConfiguration ? [containerConfigurationQuery] : []),
               ...(readsMetrics ? [podMetricsQuery] : []),
               ...(activeTabKey === 'events' ? [podEventsQuery] : []),
             ]}
             onRefresh={() => {
               void podDetailQuery.refetch()
+              if (readsContainerConfiguration) void containerConfigurationQuery.refetch()
               if (readsMetrics) void podMetricsQuery.refetch()
               if (activeTabKey === 'events') void podEventsQuery.refetch()
             }}
