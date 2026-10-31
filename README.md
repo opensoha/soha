@@ -376,10 +376,13 @@ runtimes. For local development, build both images from this checkout:
 
 ```bash
 make deploy-image
-docker build --build-context contracts=../soha-contracts \
+docker build \
   --target network-gateway-runtime -f deploy/Dockerfile \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
+
+Standard image builds resolve the immutable contracts dependency from `go.mod` with `GOWORK=off`; they do not need a sibling contracts checkout. Task115 uses a reviewed Git source revision without publishing an SDK package. Its source commit must be reachable before clean remote builds.
+
 
 For local builds, load these images into every target cluster node and set both
 tags in `deploy/kustomization.yaml` to `local`, or push them to your own registry

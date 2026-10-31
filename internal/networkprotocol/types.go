@@ -16,19 +16,26 @@ const (
 	MinRuntimeIntervalSeconds     = 30
 	MaxRuntimeIntervalSeconds     = 300
 
-	MessageEnrollmentRequest       = "runtime.enroll.request"
-	MessageEnrollmentResult        = "runtime.enroll.result"
-	MessageConfiguration           = "configuration.desired"
-	MessageConfigurationApply      = "configuration.applied"
-	MessageLeaseRenewRequest       = "lease.renew.request"
-	MessageLeaseRenewResult        = "lease.renew.result"
-	MessageLeaseRevoke             = "lease.revoke"
-	MessageVPNConnectRequest       = "vpn.connect.request"
-	MessageVPNConnectResult        = "vpn.connect.result"
-	MessageNASAuthorizationRequest = "nas.authorization.request"
-	MessageNASAuthorizationResult  = "nas.authorization.result"
-	MessageNASSessionCommand       = "nas.session.command"
-	MessageNASSessionCommandResult = "nas.session.command.result"
+	MessageEnrollmentRequest             = "runtime.enroll.request"
+	MessageEnrollmentResult              = "runtime.enroll.result"
+	MessageConfiguration                 = "configuration.desired"
+	MessageConfigurationApply            = "configuration.applied"
+	MessageDNSObservations               = "dns.observations"
+	MessageLeaseRenewRequest             = "lease.renew.request"
+	MessageLeaseRenewResult              = "lease.renew.result"
+	MessageLeaseRevoke                   = "lease.revoke"
+	MessageVPNConnectRequest             = "vpn.connect.request"
+	MessageVPNConnectResult              = "vpn.connect.result"
+	MessageNASAuthorizationRequest       = "nas.authorization.request"
+	MessageNASAuthorizationResult        = "nas.authorization.result"
+	MessageNASSessionCommand             = "nas.session.command"
+	MessageNASSessionCommandResult       = "nas.session.command.result"
+	MessageEndpointPresenceRequest       = "endpoint.presence.request"
+	MessageEndpointPresenceResult        = "endpoint.presence.result"
+	MessageEAPCertificateRequest         = "eap.certificate.request"
+	MessageEAPCertificateResult          = "eap.certificate.result"
+	MessageEAPCertificateActivateRequest = "eap.certificate.activate.request"
+	MessageEAPCertificateActivateResult  = "eap.certificate.activate.result"
 
 	NASAuthenticationEAPTLS             = "eap-tls"
 	NASAuthenticationPasswordCompatible = "password-compatible"
@@ -73,6 +80,70 @@ type EnrollmentResult struct {
 	CredentialExpiresAt *time.Time `json:"credentialExpiresAt,omitempty"`
 }
 
+type EndpointPresenceRequest struct {
+	AdmissionPolicyVersion int        `json:"admissionPolicyVersion,omitempty"`
+	DeviceID               string     `json:"deviceId"`
+	BootID                 string     `json:"bootId"`
+	Sequence               int64      `json:"sequence"`
+	Status                 string     `json:"status"`
+	ConfigurationVersion   int        `json:"configurationVersion"`
+	PolicyVersion          int        `json:"policyVersion"`
+	UIState                string     `json:"uiState,omitempty"`
+	UIObservedAt           *time.Time `json:"uiObservedAt,omitempty"`
+	Capabilities           []string   `json:"capabilities,omitempty"`
+}
+
+type EndpointPresenceResult struct {
+	AdmissionPolicyVersion int       `json:"admissionPolicyVersion,omitempty"`
+	Accepted               bool      `json:"accepted"`
+	PresenceEpoch          int       `json:"presenceEpoch"`
+	ReceivedAt             time.Time `json:"receivedAt"`
+	NextHeartbeatSeconds   int       `json:"nextHeartbeatSeconds"`
+}
+
+type EAPCertificateRequest struct {
+	RequestID string `json:"requestId"`
+	CSRPEM    string `json:"csrPem"`
+}
+
+type EAPCertificateResult struct {
+	CredentialID     string    `json:"credentialId"`
+	CertificatePEM   string    `json:"certificatePem"`
+	CACertificatePEM string    `json:"caCertificatePem"`
+	Fingerprint      string    `json:"fingerprint"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+	Status           string    `json:"status"`
+}
+
+type EAPCertificateActivateRequest struct {
+	CredentialID string `json:"credentialId"`
+	Fingerprint  string `json:"fingerprint"`
+}
+
+type EAPCertificateActivateResult struct {
+	CredentialID string    `json:"credentialId"`
+	Fingerprint  string    `json:"fingerprint"`
+	ExpiresAt    time.Time `json:"expiresAt"`
+	Status       string    `json:"status"`
+}
+
+type AdmissionConfiguration struct {
+	Profiles         []AdmissionProfile `json:"profiles"`
+	RestrictionEpoch int                `json:"restrictionEpoch"`
+}
+
+type AdmissionProfile struct {
+	ID                           string   `json:"id"`
+	SiteID                       string   `json:"siteId"`
+	AccessMedium                 string   `json:"accessMedium"`
+	SSID                         string   `json:"ssid,omitempty"`
+	Identity                     string   `json:"identity"`
+	ServerNames                  []string `json:"serverNames"`
+	CACertificates               []string `json:"caCertificates"`
+	WifiSecurity                 string   `json:"wifiSecurity"`
+	ClientCertificateFingerprint string   `json:"clientCertificateFingerprint,omitempty"`
+}
+
 type NetworkLease struct {
 	ID             string    `json:"id"`
 	SessionID      string    `json:"sessionId"`
@@ -97,6 +168,8 @@ type ResourceLease struct {
 }
 
 type ConfigurationDesired struct {
+	DNSRequests          []DNSResolutionRequest  `json:"dnsRequests,omitempty"`
+	Admission            *AdmissionConfiguration `json:"admission,omitempty"`
 	ConfigurationVersion int                     `json:"configurationVersion"`
 	PolicyVersion        int                     `json:"policyVersion"`
 	ValidUntil           time.Time               `json:"validUntil"`
@@ -116,19 +189,26 @@ type RuntimeIntervals struct {
 }
 
 type MihomoConfiguration struct {
-	Mode            string   `json:"mode"`
-	SourceType      string   `json:"sourceType,omitempty"`
-	ProfileID       string   `json:"profileId"`
-	ProfileRevision int      `json:"profileRevision"`
-	MixedPort       int      `json:"mixedPort"`
-	ControllerPort  int      `json:"controllerPort"`
-	DNSMode         string   `json:"dnsMode"`
-	FakeIPRange     string   `json:"fakeIpRange,omitempty"`
-	SelectorGroup   string   `json:"selectorGroup"`
-	SelectedProxy   string   `json:"selectedProxy,omitempty"`
-	BypassCIDRs     []string `json:"bypassCidrs"`
-	BypassHosts     []string `json:"bypassHosts"`
-	FailClosed      bool     `json:"failClosed"`
+	Protection      *MihomoProtection `json:"protection,omitempty"`
+	Mode            string            `json:"mode"`
+	SourceType      string            `json:"sourceType,omitempty"`
+	ProfileID       string            `json:"profileId"`
+	ProfileRevision int               `json:"profileRevision"`
+	MixedPort       int               `json:"mixedPort"`
+	ControllerPort  int               `json:"controllerPort"`
+	DNSMode         string            `json:"dnsMode"`
+	FakeIPRange     string            `json:"fakeIpRange,omitempty"`
+	SelectorGroup   string            `json:"selectorGroup"`
+	SelectedProxy   string            `json:"selectedProxy,omitempty"`
+	BypassCIDRs     []string          `json:"bypassCidrs"`
+	BypassHosts     []string          `json:"bypassHosts"`
+	FailClosed      bool              `json:"failClosed"`
+}
+
+type MihomoProtection struct {
+	PolicyVersion int      `json:"policyVersion"`
+	CIDRs         []string `json:"cidrs"`
+	Hosts         []string `json:"hosts"`
 }
 
 type MihomoManualNode struct {
@@ -179,6 +259,7 @@ type WireGuardFirewallRule struct {
 }
 
 type WireGuardConfiguration struct {
+	DNSRecords      []DNSRecord             `json:"dnsRecords,omitempty"`
 	Role            string                  `json:"role"`
 	InterfaceName   string                  `json:"interfaceName"`
 	PublicKey       string                  `json:"publicKey"`
@@ -224,6 +305,7 @@ type LeaseRevoke struct {
 }
 
 type VPNConnectRequest struct {
+	WorkloadID       string   `json:"workloadId,omitempty"`
 	RequestID        string   `json:"requestId"`
 	SiteID           string   `json:"siteId"`
 	NetworkSpaceID   string   `json:"networkSpaceId"`
@@ -276,6 +358,9 @@ type NASAuthorizationResult struct {
 }
 
 type NASSessionCommand struct {
+	StationID           string            `json:"stationId,omitempty"`
+	AccountingSessionID string            `json:"accountingSessionId,omitempty"`
+	NASPortID           string            `json:"nasPortId,omitempty"`
 	CommandID           string            `json:"commandId"`
 	SessionID           string            `json:"sessionId"`
 	NASID               string            `json:"nasId"`
@@ -315,19 +400,22 @@ type IngestEvent struct {
 }
 
 type RadiusAccounting struct {
-	StatusType          string `json:"statusType"`
-	AccountingSessionID string `json:"accountingSessionId"`
-	SessionID           string `json:"sessionId,omitempty"`
-	NASID               string `json:"nasId"`
-	NASPortID           string `json:"nasPortId,omitempty"`
-	UserID              string `json:"userId,omitempty"`
-	DeviceID            string `json:"deviceId,omitempty"`
-	SessionTimeSeconds  int64  `json:"sessionTimeSeconds"`
-	InputOctets         int64  `json:"inputOctets,omitempty"`
-	OutputOctets        int64  `json:"outputOctets,omitempty"`
-	InputPackets        int64  `json:"inputPackets,omitempty"`
-	OutputPackets       int64  `json:"outputPackets,omitempty"`
-	TerminationCause    string `json:"terminationCause,omitempty"`
+	StatusType             string `json:"statusType"`
+	AccountingSessionID    string `json:"accountingSessionId"`
+	SessionID              string `json:"sessionId,omitempty"`
+	NASID                  string `json:"nasId"`
+	NASPortID              string `json:"nasPortId,omitempty"`
+	UserID                 string `json:"userId,omitempty"`
+	DeviceID               string `json:"deviceId,omitempty"`
+	SessionTimeSeconds     int64  `json:"sessionTimeSeconds"`
+	InputOctets            int64  `json:"inputOctets,omitempty"`
+	OutputOctets           int64  `json:"outputOctets,omitempty"`
+	InputPackets           int64  `json:"inputPackets,omitempty"`
+	OutputPackets          int64  `json:"outputPackets,omitempty"`
+	TerminationCause       string `json:"terminationCause,omitempty"`
+	AccountingDelaySeconds int    `json:"accountingDelaySeconds,omitempty"`
+	ObservedVLANID         int    `json:"observedVlanId,omitempty"`
+	ObservedFilterID       string `json:"observedFilterId,omitempty"`
 }
 
 type RadiusAccountingRequest struct {
@@ -516,4 +604,10 @@ func eventAllowed(producerKind, eventType string) bool {
 	default:
 		return false
 	}
+}
+
+type DNSRecord struct {
+	Hostname  string    `json:"hostname"`
+	Addresses []string  `json:"addresses"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }

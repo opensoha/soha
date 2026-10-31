@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
 	domainnetworkruntime "github.com/opensoha/soha/internal/domain/networkruntime"
 	domainruntimeconfig "github.com/opensoha/soha/internal/domain/runtimeconfig"
@@ -24,38 +25,102 @@ import (
 )
 
 type controlStoreStub struct {
-	snapshot           domainnetworkruntime.PolicySnapshot
-	consumption        domainnetworkruntime.EnrollmentConsumption
-	credential         domainnetworkruntime.Credential
-	config             domainnetworkruntime.Configuration
-	revoke             networkprotocol.LeaseRevoke
-	nasBinding         domainnetworkaccess.NASBinding
-	subject            domainnetworkaccess.Subject
-	device             domainnetworkaccess.Device
-	site               domainnetworkaccess.Site
-	profile            domainnetworkaccess.SiteProfileBinding
-	authorized         domainnetworkruntime.NASAuthorization
-	subjectErr         error
-	deviceErr          error
-	nextCommand        domainnetworkaccess.SessionCommand
-	commandResult      networkprotocol.NASSessionCommandResult
-	credentials        map[string]domainnetworkruntime.Credential
-	credentialErr      map[string]error
-	space              domainnetworkaccess.Space
-	resource           domainnetworkaccess.Resource
-	gateway            domainnetworkaccess.Gateway
-	gatewayCred        domainnetworkruntime.Credential
-	vpnSaved           domainnetworkruntime.VPNConnection
-	vpnResult          networkprotocol.VPNConnectResult
-	vpnGatewayErr      error
-	gatewaySiteID      string
-	requestedGatewayID string
-	mihomoCipher       string
-	mihomoSourceType   string
-	mihomoRev          int
-	mihomoCredID       string
-	mihomoID           string
-	mihomoErr          error
+	admissionBindings   []domainnetworkaccess.NASBinding
+	admissionSites      map[string]domainnetworkaccess.Site
+	eapCredential       domainnetworkruntime.EAPCredential
+	endpointRestriction domainnetworkaccess.EndpointRestriction
+	presenceRecord      domainnetworkaccess.PresenceRecord
+	responsePolicies    []domainnetworkaccess.EndpointResponsePolicy
+	presenceCalls       int
+	accountingRuntime   string
+	accountingRequest   networkprotocol.RadiusAccountingRequest
+	accountingCalls     int
+	snapshot            domainnetworkruntime.PolicySnapshot
+	consumption         domainnetworkruntime.EnrollmentConsumption
+	credential          domainnetworkruntime.Credential
+	config              domainnetworkruntime.Configuration
+	revoke              networkprotocol.LeaseRevoke
+	nasBinding          domainnetworkaccess.NASBinding
+	subject             domainnetworkaccess.Subject
+	device              domainnetworkaccess.Device
+	site                domainnetworkaccess.Site
+	profile             domainnetworkaccess.SiteProfileBinding
+	authorized          domainnetworkruntime.NASAuthorization
+	subjectErr          error
+	deviceErr           error
+	nextCommand         domainnetworkaccess.SessionCommand
+	commandResult       networkprotocol.NASSessionCommandResult
+	credentials         map[string]domainnetworkruntime.Credential
+	credentialErr       map[string]error
+	space               domainnetworkaccess.Space
+	resource            domainnetworkaccess.Resource
+	gateway             domainnetworkaccess.Gateway
+	gatewayCred         domainnetworkruntime.Credential
+	vpnSaved            domainnetworkruntime.VPNConnection
+	vpnResult           networkprotocol.VPNConnectResult
+	vpnGatewayErr       error
+	gatewaySiteID       string
+	requestedGatewayID  string
+	mihomoCipher        string
+	mihomoSourceType    string
+	mihomoRev           int
+	mihomoCredID        string
+	mihomoID            string
+	mihomoErr           error
+}
+
+func (store *controlStoreStub) AdmissionNASBindings(_ context.Context, after string, limit int) ([]domainnetworkaccess.NASBinding, error) {
+	var result []domainnetworkaccess.NASBinding
+	for _, binding := range store.admissionBindings {
+		if binding.ID > after && len(result) < limit {
+			result = append(result, binding)
+		}
+	}
+	return result, nil
+}
+
+func (store *controlStoreStub) EAPFingerprint(context.Context, string, time.Time) (string, error) {
+	return "", nil
+}
+func (store *controlStoreStub) EndpointAdmissionEpoch(context.Context, string) (int, error) {
+	return 0, nil
+}
+
+func (store *controlStoreStub) SaveEAPCertificate(_ context.Context, value domainnetworkruntime.EAPCredential, _ time.Time) (domainnetworkruntime.EAPCredential, error) {
+	store.eapCredential = value
+	return value, nil
+}
+
+func (store *controlStoreStub) ActivateEAPCertificate(_ context.Context, _ domainnetworkruntime.Credential, request networkprotocol.EAPCertificateActivateRequest, _ time.Time) (networkprotocol.EAPCertificateActivateResult, error) {
+	return networkprotocol.EAPCertificateActivateResult{CredentialID: request.CredentialID, Fingerprint: request.Fingerprint, ExpiresAt: store.credential.ExpiresAt, Status: "active"}, nil
+}
+
+func (store *controlStoreStub) EndpointRestriction(context.Context, string, string) (domainnetworkaccess.EndpointRestriction, error) {
+	return store.endpointRestriction, nil
+}
+
+func (store *controlStoreStub) SaveEndpointPresence(_ context.Context, record domainnetworkaccess.PresenceRecord) (domainnetworkaccess.PresenceRecord, error) {
+	record.Epoch = 1
+	store.presenceRecord = record
+	store.presenceCalls++
+	return record, nil
+}
+
+func (store *controlStoreStub) EndpointPresence(context.Context, string) (domainnetworkaccess.PresenceRecord, error) {
+	if store.presenceRecord.DeviceID == "" {
+		return domainnetworkaccess.PresenceRecord{}, apperrors.ErrNotFound
+	}
+	return store.presenceRecord, nil
+}
+
+func (store *controlStoreStub) PublishedEndpointResponsePolicies(context.Context) ([]domainnetworkaccess.EndpointResponsePolicy, error) {
+	return store.responsePolicies, nil
+}
+
+func (store *controlStoreStub) RecordNASAccounting(_ context.Context, runtimeID string, request networkprotocol.RadiusAccountingRequest, _ time.Time, _ time.Duration) error {
+	store.accountingRuntime, store.accountingRequest = runtimeID, request
+	store.accountingCalls++
+	return nil
 }
 
 func (store *controlStoreStub) LatestSnapshot(context.Context) (domainnetworkruntime.PolicySnapshot, error) {
@@ -119,7 +184,14 @@ func (store *controlStoreStub) NetworkDevice(context.Context, string) (domainnet
 	return store.device, store.deviceErr
 }
 
-func (store *controlStoreStub) NetworkSite(context.Context, string) (domainnetworkaccess.Site, error) {
+func (store *controlStoreStub) NetworkSite(_ context.Context, id string) (domainnetworkaccess.Site, error) {
+	if store.admissionSites != nil {
+		value, ok := store.admissionSites[id]
+		if !ok {
+			return domainnetworkaccess.Site{}, apperrors.ErrNotFound
+		}
+		return value, nil
+	}
 	return store.site, nil
 }
 
@@ -376,7 +448,7 @@ func TestServiceConnectVPNUsesCredentialIdentityAndLiveGateway(t *testing.T) {
 		space:       domainnetworkaccess.Space{ID: "space-hq", SiteID: "site-hq", CIDRs: []string{"10.20.0.0/16"}, Status: domainnetworkaccess.StatusActive},
 		resource:    domainnetworkaccess.Resource{ID: "resource-db", SpaceID: "space-hq", Kind: "ip", Target: "10.20.8.10", Protocol: "tcp", Ports: []int{5432}, Protected: true, PathMode: domainnetworkaccess.PathAutomatic},
 		gateway:     domainnetworkaccess.Gateway{ID: "gateway-branch", RuntimeID: "gateway-runtime", SiteID: "site-branch", HubGatewayID: "gateway-hq", AdministrativeStatus: domainnetworkaccess.StatusActive, WireGuardPublicKey: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC="},
-		gatewayCred: domainnetworkruntime.Credential{ID: "gateway-credential", RuntimeID: "gateway-runtime", RuntimeKind: "gateway", WireGuardPublicKey: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=", Capabilities: []string{"wireguard"}, LastControlSeenAt: &lastGatewayPoll, ExpiresAt: now.Add(time.Hour)},
+		gatewayCred: domainnetworkruntime.Credential{ID: "gateway-credential", RuntimeID: "gateway-runtime", RuntimeKind: "gateway", WireGuardPublicKey: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=", Capabilities: []string{"wireguard", "wireguard-kernel-expiry-v1"}, LastControlSeenAt: &lastGatewayPoll, ExpiresAt: now.Add(time.Hour)},
 		vpnResult:   networkprotocol.VPNConnectResult{RequestID: "vpn-request-1", Decision: domainnetworkaccess.DecisionAllow, ReasonCode: "policy_allowed", SessionID: "vpn-session-1", GatewayID: "gateway-branch", ConfigurationVersion: 2, PolicyVersion: 7, ValidUntil: now.Add(5 * time.Minute), NetworkLeases: []networkprotocol.NetworkLease{{ID: "lease-1", SessionID: "vpn-session-1", SubjectID: "user-1", DeviceID: "device-1", NetworkSpaceID: "space-hq", CIDRs: []string{"10.20.0.0/16"}, PolicyVersion: 7, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)}}, ResourceLeases: []networkprotocol.ResourceLease{}},
 	}
 	schemas, err := networkprotocol.CompileSchemas()
@@ -499,6 +571,14 @@ func TestServiceAuthorizesNASFromPublishedNetworkPolicy(t *testing.T) {
 	}
 	if store.authorized.SessionID == "" || store.authorized.RuntimeID != identity.ID || store.authorized.PolicyVersion != 7 {
 		t.Fatalf("persisted authorization = %#v", store.authorized)
+	}
+	var previewPolicies []domainnetworkaccess.Policy
+	if err := json.Unmarshal(policies, &previewPolicies); err != nil {
+		t.Fatal(err)
+	}
+	preview := appnetworkaccess.EvaluateAdmissionPreview(domainnetworkaccess.AdmissionPreviewSnapshot{Subject: store.subject, Device: store.device, Site: store.site, Binding: store.nasBinding, Policies: domainnetworkaccess.PolicySnapshot{PolicyVersion: 7, Policies: previewPolicies}, Profiles: map[string]domainnetworkaccess.SiteProfileBinding{domainnetworkaccess.ProfileFull: store.profile}, ResponsePolicies: store.responsePolicies, Presence: store.presenceRecord, Restriction: store.endpointRestriction}, now)
+	if preview.AttributeVersion != store.authorized.AttributeVersion || preview.NetworkProfile != store.authorized.AccessProfile || preview.PolicyVersion != store.authorized.PolicyVersion {
+		t.Fatalf("preview and NAS execution used different input versions: preview=%#v actual=%#v", preview, store.authorized)
 	}
 
 	request.RequestID = "radius-request-mismatched-subject"

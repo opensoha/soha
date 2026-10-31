@@ -43,7 +43,7 @@ func TestRuntimeVolumeFilePermissionAndCredentialCeiling(t *testing.T) {
 			_, _ = io.WriteString(w, `{"data":[]}`)
 			return
 		}
-		_, _ = io.WriteString(w, `{"data":{"projectId":"project-1","items":[],"content":"synthetic private file"}}`)
+		_, _ = io.WriteString(w, `{"data":{"projectId":"project-1","serviceName":"web","target":"/data","path":"/private.txt","items":[],"content":"synthetic private file","sizeBytes":22}}`)
 	}))
 	defer agent.Close()
 	for _, tc := range []struct {
@@ -159,7 +159,7 @@ func TestRuntimeVolumeScopeRevocationIsRechecked(t *testing.T) {
 		if r.URL.Path == "/api/v1/docker/runtime/volumes" {
 			_, _ = io.WriteString(w, `{"data":[]}`)
 		} else {
-			_, _ = io.WriteString(w, `{"data":{"projectId":"project-1","items":[],"content":"fixture"}}`)
+			_, _ = io.WriteString(w, `{"data":{"projectId":"project-1","serviceName":"web","target":"/data","path":"/private.txt","items":[],"content":"fixture","sizeBytes":7}}`)
 		}
 	}))
 	defer agent.Close()

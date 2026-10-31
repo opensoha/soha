@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"syscall"
 	"time"
@@ -90,6 +92,15 @@ func runGateway(config networkgateway.Config, privateKey [32]byte, control *netw
 	}
 	runtime, err := networkgateway.NewRuntime(config.RuntimeID, control, executor, telemetry, config.PollInterval, config.HeartbeatInterval, config.MaxClockSkew, logger)
 	if err != nil {
+		return fail(err)
+	}
+	cleanup, cancelCleanup := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := executor.Disable(cleanup); err != nil {
+		cancelCleanup()
+		return fail(err)
+	}
+	cancelCleanup()
+	if err := runtime.ConfigureState(filepath.Join(filepath.Dir(config.WireGuardPrivateKeyFile), "configuration-floor.json"), config.ControlURL, wgtypes.Key(privateKey).PublicKey().String()); err != nil {
 		return fail(err)
 	}
 	health := &http.Server{Addr: config.HealthAddress, Handler: runtime.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10}

@@ -359,10 +359,13 @@ docker compose -f deploy/docker-compose.yaml --profile network-access \
 
 ```bash
 make deploy-image
-docker build --build-context contracts=../soha-contracts \
+docker build \
   --target network-gateway-runtime -f deploy/Dockerfile \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
+
+默认镜像构建使用 `GOWORK=off` 解析 `go.mod` 中的不可变 contracts 依赖，不需要相邻 contracts checkout。Task115 使用已审查的 Git 源提交，无需发布 SDK 包；干净的远端构建前需确保该源提交可下载。
+
 
 本地构建后，将镜像导入每个目标集群节点并将 `deploy/kustomization.yaml`
 中两个 tag 改为 `local`，或推送到自有镜像仓库后替换两种镜像引用。server、network-control 和 ingest

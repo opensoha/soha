@@ -37,6 +37,10 @@ type VPNConnectionStore interface {
 	VPNEndpointCredential(context.Context, string, time.Time) (runtime.Credential, error)
 	VPNGatewayCandidates(context.Context, domain.VPNProfileConfig, time.Time) ([]runtime.VPNGatewayCandidate, error)
 	CreateVPNIntent(context.Context, domain.VPNIntent) error
+	VPNRestrictionActive(context.Context, string, string, string) (bool, error)
+	GetVPNRevocation(context.Context, domain.Session) (domain.VPNRevocation, error)
+	RevokeVPNSession(context.Context, domain.Session, string, time.Time) (domain.VPNRevocation, error)
+	ReleaseVPNRevocation(context.Context, domain.Session, int64, string, time.Time) (domain.VPNRevocation, error)
 }
 
 type VPNScopeAuthorizer interface {

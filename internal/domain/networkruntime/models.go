@@ -23,6 +23,7 @@ const (
 )
 
 type EnrollmentChallenge struct {
+	SourceTokenID string
 	ID            string     `json:"id"`
 	ChallengeID   string     `json:"challengeId"`
 	RuntimeID     string     `json:"runtimeId"`
@@ -87,6 +88,7 @@ type AccessGrantSecret struct {
 }
 
 type Credential struct {
+	SourceTokenID             string
 	ID                        string
 	EnrollmentID              string
 	RuntimeID                 string
@@ -169,12 +171,19 @@ type Session struct {
 }
 
 type NASAuthorization struct {
+	AttributeVersion     string
 	RequestID            string
 	RequestHash          string
 	RuntimeID            string
 	NASID                string
 	SubjectID            string
 	DeviceID             string
+	CredentialID         string
+	StationID            string
+	InputsHash           string
+	ResponsePolicyHash   string
+	PresenceHash         string
+	RestrictionEpoch     int
 	AuthenticationMethod string
 	SessionID            string
 	Decision             string
@@ -187,6 +196,7 @@ type NASAuthorization struct {
 }
 
 type VPNConnection struct {
+	WorkloadID           string
 	Managed              *ManagedVPNConnection
 	RequestID            string
 	RequestHash          string

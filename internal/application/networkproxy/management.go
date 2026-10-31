@@ -3,6 +3,7 @@ package networkproxy
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -27,10 +28,12 @@ var identifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 type ManagementStore interface {
 	Create(context.Context, domain.InstanceInput, time.Time) (domain.Instance, error)
 	Get(context.Context, string) (domain.Instance, error)
-	List(context.Context, string, string, int) ([]domain.Instance, error)
-	UpdateConfiguration(context.Context, string, int64, bool, string, string, time.Time) (domain.Instance, error)
+	List(context.Context, string, string, int, int) ([]domain.Instance, error)
+	UpdateConfiguration(context.Context, string, int64, bool, string, string, *domain.Binding, bool, time.Time) (domain.Instance, error)
+	ResolveBinding(context.Context, domain.Binding) (domain.Binding, error)
 	Connections(context.Context, string) (domain.ConnectionsSnapshot, error)
 	QueueClose(context.Context, string, string, string, time.Time) (domain.CloseCommand, error)
+	GetClose(context.Context, string, string, time.Time) (domain.CloseCommand, error)
 }
 
 type TrafficReader interface {
@@ -48,14 +51,15 @@ type Management struct {
 	store       ManagementStore
 	traffic     TrafficReader
 	permissions *appaccess.PermissionResolver
+	scope       ScopeAuthorizer
 	audit       AuditRecorder
 	operations  OperationRecorder
 	keys        keyring.Ring
 	now         func() time.Time
 }
 
-func NewManagement(store ManagementStore, traffic TrafficReader, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) (*Management, error) {
-	for name, value := range map[string]any{"store": store, "permissions": permissions, "audit": audit, "operations": operations} {
+func NewManagement(store ManagementStore, traffic TrafficReader, permissions *appaccess.PermissionResolver, scope ScopeAuthorizer, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) (*Management, error) {
+	for name, value := range map[string]any{"store": store, "permissions": permissions, "scope": scope, "audit": audit, "operations": operations} {
 		if missing(value) {
 			return nil, fmt.Errorf("proxy management: %s is required", name)
 		}
@@ -63,7 +67,7 @@ func NewManagement(store ManagementStore, traffic TrafficReader, permissions *ap
 	if keys.Active().ID() == "" {
 		return nil, fmt.Errorf("proxy management: encryption key is required")
 	}
-	return &Management{store: store, traffic: traffic, permissions: permissions, audit: audit, operations: operations, keys: keys, now: time.Now}, nil
+	return &Management{store: store, traffic: traffic, permissions: permissions, scope: scope, audit: audit, operations: operations, keys: keys, now: time.Now}, nil
 }
 
 func missing(value any) bool {
@@ -93,7 +97,7 @@ func public(item domain.Instance, now time.Time) domain.Instance {
 		item.Status = "unregistered"
 	case item.LastSeenAt == nil || now.Sub(*item.LastSeenAt) > 2*time.Minute:
 		item.Status = "offline"
-	case item.LastSampleAt != nil && now.Sub(*item.LastSampleAt) <= 2*time.Minute && item.Health == "healthy":
+	case item.LastSampleAt != nil && now.Sub(*item.LastSampleAt) <= 2*time.Minute && item.Health == "healthy" && item.DesiredRevision == item.ObservedRevision && item.PolicyVersion > 0 && item.PolicyVersion == item.ObservedPolicyVersion && slices.Contains(item.Capabilities, "protected_destinations_v1") && slices.Contains(item.Capabilities, "guarded_dns_tcp_v1"):
 		item.Status = "online"
 	default:
 		item.Status = "degraded"
@@ -108,6 +112,9 @@ func (s *Management) Create(ctx context.Context, principal domainidentity.Princi
 	input.ID, input.Name, input.Engine, input.Host = strings.TrimSpace(input.ID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Engine), strings.TrimSpace(input.Host)
 	if !identifier.MatchString(input.ID) || input.Name == "" || len(input.Name) > 128 || len(input.Host) > 128 || !validEngine(input.Engine) {
 		return domain.Instance{}, invalid("proxy instance input is invalid")
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyInstancesCreate, domain.Instance{ID: input.ID, Engine: input.Engine, Host: input.Host}); err != nil {
+		return domain.Instance{}, err
 	}
 	item, err := s.store.Create(ctx, input, s.now().UTC())
 	if err != nil {
@@ -128,15 +135,28 @@ func (s *Management) List(ctx context.Context, principal domainidentity.Principa
 	if limit == 0 {
 		limit = 100
 	}
-	items, err := s.store.List(ctx, search, engine, limit)
-	if err != nil {
-		return nil, err
+	items := make([]domain.Instance, 0, limit)
+	for offset := 0; offset < 10000; offset += 200 {
+		page, err := s.store.List(ctx, search, engine, 200, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range page {
+			if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyInstancesView, item); errors.Is(err, apperrors.ErrAccessDenied) {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+			items = append(items, public(item, s.now().UTC()))
+			if len(items) == limit {
+				return items, nil
+			}
+		}
+		if len(page) < 200 {
+			return items, nil
+		}
 	}
-	now := s.now().UTC()
-	for index := range items {
-		items[index] = public(items[index], now)
-	}
-	return items, nil
+	return nil, apperrors.NewBusiness(apperrors.ErrServiceUnavailable, "proxy_scope_scan_limit", "Narrow the proxy instance query before retrying.", "请缩小代理实例查询范围后重试。")
 }
 
 func (s *Management) Get(ctx context.Context, principal domainidentity.Principal, id string) (domain.Instance, error) {
@@ -147,30 +167,82 @@ func (s *Management) Get(ctx context.Context, principal domainidentity.Principal
 		return domain.Instance{}, invalid("proxy instance ID is invalid")
 	}
 	item, err := s.store.Get(ctx, id)
-	return public(item, s.now().UTC()), err
+	if err != nil {
+		return domain.Instance{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyInstancesView, item); err != nil {
+		return domain.Instance{}, err
+	}
+	return public(item, s.now().UTC()), nil
 }
 
 func (s *Management) UpdateConfiguration(ctx context.Context, principal domainidentity.Principal, id string, input domain.ConfigurationInput) (domain.Instance, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermNetworkAccessProxyInstancesUpdate); err != nil {
 		return domain.Instance{}, err
 	}
-	if !identifier.MatchString(id) || input.ExpectedRevision < 0 || len(input.Content) < 1 || len(input.Content) > 1048576 {
-		return domain.Instance{}, invalid("proxy configuration is invalid")
-	}
-	if _, err := s.store.Get(ctx, id); err != nil {
+	if err := validateConfigurationInput(id, input); err != nil {
 		return domain.Instance{}, err
 	}
-	encrypted, err := secretcrypto.EncryptStringWithKeyring(s.keys, input.Content)
+	existing, err := s.store.Get(ctx, id)
 	if err != nil {
-		return domain.Instance{}, fmt.Errorf("encrypt proxy configuration: %w", err)
+		return domain.Instance{}, err
 	}
-	digest := sha256.Sum256([]byte(input.Content))
-	item, err := s.store.UpdateConfiguration(ctx, id, input.ExpectedRevision, input.Enabled, encrypted, fmt.Sprintf("sha256:%x", digest), s.now().UTC())
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyInstancesUpdate, existing); err != nil {
+		return domain.Instance{}, err
+	}
+	binding, err := s.configurationBinding(ctx, principal, input, existing)
+	if err != nil {
+		return domain.Instance{}, err
+	}
+	encrypted, hash, err := s.configurationContent(input, existing)
+	if err != nil {
+		return domain.Instance{}, err
+	}
+	item, err := s.store.UpdateConfiguration(ctx, id, input.ExpectedRevision, input.Enabled, encrypted, hash, binding, input.ClearBinding, s.now().UTC())
 	if err != nil {
 		return domain.Instance{}, err
 	}
 	s.record(ctx, principal, "network_access.proxy_instances.update", id)
 	return public(item, s.now().UTC()), nil
+}
+
+func validateConfigurationInput(id string, input domain.ConfigurationInput) error {
+	if !identifier.MatchString(id) || input.ExpectedRevision < 0 || input.Content != nil && (len(*input.Content) < 1 || len(*input.Content) > 1048576) || input.ClearBinding && (input.Enabled || input.Binding != nil) {
+		return invalid("proxy configuration is invalid")
+	}
+	return nil
+}
+
+func (s *Management) configurationBinding(ctx context.Context, principal domainidentity.Principal, input domain.ConfigurationInput, existing domain.Instance) (*domain.Binding, error) {
+	binding, err := s.authorizeBinding(ctx, principal, input.Binding)
+	if err != nil {
+		return nil, err
+	}
+	if input.Enabled && binding == nil && existing.Binding == nil {
+		return nil, invalid("an enabled proxy requires a site and host-device binding")
+	}
+	if binding != nil || input.ClearBinding {
+		updated := existing
+		updated.Binding = binding
+		if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyInstancesUpdate, updated); err != nil {
+			return nil, err
+		}
+	}
+	return binding, nil
+}
+
+func (s *Management) configurationContent(input domain.ConfigurationInput, existing domain.Instance) (string, string, error) {
+	if input.Content == nil {
+		if existing.DesiredRevision == 0 {
+			return "", "", invalid("content is required for the first proxy configuration")
+		}
+		return existing.DesiredContentEncrypted, existing.DesiredHash, nil
+	}
+	encrypted, err := secretcrypto.EncryptStringWithKeyring(s.keys, *input.Content)
+	if err != nil {
+		return "", "", fmt.Errorf("encrypt proxy configuration: %w", err)
+	}
+	return encrypted, fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(*input.Content))), nil
 }
 
 func (s *Management) Traffic(ctx context.Context, principal domainidentity.Principal, id string, from, to time.Time) (domain.Traffic, error) {
@@ -182,6 +254,9 @@ func (s *Management) Traffic(ctx context.Context, principal domainidentity.Princ
 	}
 	item, err := s.store.Get(ctx, id)
 	if err != nil {
+		return domain.Traffic{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyInstancesView, item); err != nil {
 		return domain.Traffic{}, err
 	}
 	now := s.now().UTC()
@@ -224,6 +299,9 @@ func (s *Management) Connections(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domain.ConnectionsSnapshot{}, err
 	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyConnectionsView, item); err != nil {
+		return domain.ConnectionsSnapshot{}, err
+	}
 	if item.Engine == domain.EngineV2Ray {
 		return domain.ConnectionsSnapshot{InstanceID: id, State: "unsupported", Connections: []domain.Connection{}}, nil
 	}
@@ -249,6 +327,9 @@ func (s *Management) Close(ctx context.Context, principal domainidentity.Princip
 	}
 	item, err := s.store.Get(ctx, id)
 	if err != nil {
+		return domain.CloseCommand{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyConnectionsClose, item); err != nil {
 		return domain.CloseCommand{}, err
 	}
 	if !slices.Contains(item.Capabilities, "close_connection") {
@@ -290,6 +371,23 @@ func (s *Management) Close(ctx context.Context, principal domainidentity.Princip
 		map[string]any{"module": "network_access", "resourceKind": "NetworkProxyInstance", "targetId": id},
 		"success", "proxy connection close queued", nil))
 	return command, nil
+}
+
+func (s *Management) GetClose(ctx context.Context, principal domainidentity.Principal, id, commandID string) (domain.CloseCommand, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermNetworkAccessProxyConnectionsView); err != nil {
+		return domain.CloseCommand{}, err
+	}
+	if !identifier.MatchString(id) || !identifier.MatchString(commandID) {
+		return domain.CloseCommand{}, invalid("proxy command ID is invalid")
+	}
+	item, err := s.store.Get(ctx, id)
+	if err != nil {
+		return domain.CloseCommand{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyConnectionsView, item); err != nil {
+		return domain.CloseCommand{}, err
+	}
+	return s.store.GetClose(ctx, id, commandID, s.now().UTC())
 }
 
 func (s *Management) record(ctx context.Context, principal domainidentity.Principal, action, id string) {

@@ -36,6 +36,7 @@ func (h *DockerHandler) ListRuntimeFilesV1(c *gin.Context)  { h.readRuntimeV1(c,
 func (h *DockerHandler) ReadRuntimeFileV1(c *gin.Context)   { h.readRuntimeV1(c, "files.read") }
 
 func (h *DockerHandler) readRuntimeV1(c *gin.Context, action string) {
+	c.Header("Cache-Control", "no-store")
 	if h.versionedRuntime == nil {
 		writeError(c, apperrors.ErrUnsupportedOperation)
 		return

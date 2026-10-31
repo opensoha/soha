@@ -172,6 +172,8 @@ func WithAtomicHostCreation(apply func(context.Context, string, func(context.Con
 }
 
 type Service struct {
+	contentDLP                ContentDLP
+	volumeReads               chan struct{}
 	executionMu               sync.RWMutex
 	executionPrincipals       func(context.Context, string, string) (domainidentity.Principal, error)
 	authorizeGatewayExecution func(context.Context, domainidentity.Principal, domainaigateway.ExecutionAuthorization) error
@@ -190,7 +192,7 @@ type Service struct {
 }
 
 func New(repo Repository, permissions *appaccess.PermissionResolver, operations OperationRecorder, opts ...Option) *Service {
-	service := &Service{repo: repo, permissions: permissions, operations: operations}
+	service := &Service{repo: repo, permissions: permissions, operations: operations, volumeReads: make(chan struct{}, 8)}
 	for _, opt := range opts {
 		opt(service)
 	}

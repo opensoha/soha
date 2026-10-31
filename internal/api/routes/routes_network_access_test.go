@@ -73,6 +73,7 @@ func TestRegisterNetworkAccessRoutes(t *testing.T) {
 		"DELETE /api/v1/network-access/policies/:policyID",
 		"GET /api/v1/network-access/policy/snapshot",
 		"POST /api/v1/network-access/policy/preview",
+		"POST /api/v1/network-access/admission/preview",
 		"POST /api/v1/network-access/conflicts/analyze",
 	} {
 		if !slices.Contains(registered, route) {

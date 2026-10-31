@@ -65,6 +65,9 @@ func TestDockerVersionedReadHandlerRejectsAmbiguousOrForeignQueryControls(t *tes
 			if recorder.Code != tc.status || service.calls != wantCalls {
 				t.Fatalf("status=%d calls=%d want=%d/%d", recorder.Code, service.calls, tc.status, wantCalls)
 			}
+			if recorder.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("identity-bound runtime responses must not be cached")
+			}
 			if wantCalls == 1 && (service.project != "project-1" || service.input.ServiceName != "web") {
 				t.Fatal("wrong resolved request", service.project, service.input)
 			}

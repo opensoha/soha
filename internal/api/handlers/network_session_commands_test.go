@@ -19,7 +19,7 @@ type networkCommandReadStub struct {
 	command      domainnetworkaccess.SessionCommand
 }
 
-func (s *networkCommandReadStub) GetSessionCommand(_ context.Context, _ domainidentity.Principal, session, key string) (domainnetworkaccess.SessionCommand, error) {
+func (s *networkCommandReadStub) GetSessionCommandForSession(_ context.Context, _ domainidentity.Principal, session, key string) (domainnetworkaccess.SessionCommand, error) {
 	s.session, s.key = session, key
 	return s.command, nil
 }

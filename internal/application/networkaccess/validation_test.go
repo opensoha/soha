@@ -14,7 +14,10 @@ func TestValidateSpaceAndResourceInputs(t *testing.T) {
 	if err := validateSpaceInput(domainnetworkaccess.SpaceInput{SiteID: "site-1", Name: "corp", Status: domainnetworkaccess.StatusActive, CIDRs: []string{"10.0.0.0/24"}}); err != nil {
 		t.Fatalf("valid space rejected: %v", err)
 	}
-	for _, cidr := range []string{"10.0.0.1/24", "2001:db8::/64", "not-a-cidr"} {
+	if err := validateSpaceInput(domainnetworkaccess.SpaceInput{SiteID: "site-1", Name: "IPv6", Status: domainnetworkaccess.StatusActive, CIDRs: []string{"fd00:53::/64"}}); err != nil {
+		t.Fatalf("valid IPv6 space rejected: %v", err)
+	}
+	for _, cidr := range []string{"10.0.0.1/24", "fd00:53::1/64", "::/0", "not-a-cidr"} {
 		err := validateSpaceInput(domainnetworkaccess.SpaceInput{SiteID: "site-1", Name: "corp", Status: domainnetworkaccess.StatusActive, CIDRs: []string{cidr}})
 		if !errors.Is(err, apperrors.ErrInvalidArgument) {
 			t.Fatalf("CIDR %q error = %v, want invalid argument", cidr, err)
@@ -76,6 +79,34 @@ func TestValidateDeviceRegistrationFacts(t *testing.T) {
 	}
 }
 
+func TestReportedAddressesKeepInventorySeparateFromRouting(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		item  domainnetworkaccess.DeviceNetworkInterface
+		valid bool
+	}{
+		{"IPv4 loopback", domainnetworkaccess.DeviceNetworkInterface{IPv4Addresses: []string{"127.0.0.1"}}, true},
+		{"IPv4 link local", domainnetworkaccess.DeviceNetworkInterface{IPv4Addresses: []string{"169.254.1.2"}}, true},
+		{"IPv6 loopback", domainnetworkaccess.DeviceNetworkInterface{IPv6Addresses: []string{"::1"}}, true},
+		{"IPv6 link local", domainnetworkaccess.DeviceNetworkInterface{IPv6Addresses: []string{"fe80::1"}}, true},
+		{"local DNS fact", domainnetworkaccess.DeviceNetworkInterface{DNSServers: []string{"127.0.0.53"}}, true},
+		{"wrong IPv4 family", domainnetworkaccess.DeviceNetworkInterface{IPv4Addresses: []string{"fd00::1"}}, false},
+		{"wrong IPv6 family", domainnetworkaccess.DeviceNetworkInterface{IPv6Addresses: []string{"192.0.2.1"}}, false},
+		{"mapped IPv6", domainnetworkaccess.DeviceNetworkInterface{IPv6Addresses: []string{"::ffff:192.0.2.1"}}, false},
+		{"unscoped fact", domainnetworkaccess.DeviceNetworkInterface{IPv6Addresses: []string{"fe80::1%en0"}}, false},
+		{"unspecified", domainnetworkaccess.DeviceNetworkInterface{IPv6Addresses: []string{"::"}}, false},
+		{"multicast", domainnetworkaccess.DeviceNetworkInterface{IPv6Addresses: []string{"ff02::1"}}, false},
+		{"equivalent duplicates", domainnetworkaccess.DeviceNetworkInterface{IPv6Addresses: []string{"fd00::1", "fd00:0:0:0:0:0:0:1"}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDeviceAddresses(tc.item)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v error=%v", tc.valid, err)
+			}
+		})
+	}
+}
+
 func TestValidateListFilters(t *testing.T) {
 	tests := []struct {
 		name string
@@ -109,13 +140,18 @@ func TestValidateGatewayInput(t *testing.T) {
 	if err := validateGatewayInput(valid); err != nil {
 		t.Fatalf("valid gateway rejected: %v", err)
 	}
+	ipv6DNS := valid
+	ipv6DNS.DNSServers = []string{"fd00:53::53"}
+	if err := validateGatewayInput(ipv6DNS); err != nil {
+		t.Fatalf("valid IPv6 resolver rejected: %v", err)
+	}
 	for name, mutate := range map[string]func(*domainnetworkaccess.GatewayInput){
 		"runtime":        func(input *domainnetworkaccess.GatewayInput) { input.RuntimeID = "bad runtime" },
 		"host":           func(input *domainnetworkaccess.GatewayInput) { input.PublicEndpointHost = "-bad.example" },
 		"host bits":      func(input *domainnetworkaccess.GatewayInput) { input.OverlayCIDR = "100.96.0.0/15" },
 		"canonical CIDR": func(input *domainnetworkaccess.GatewayInput) { input.OverlayCIDR = "100.96.0.1/24" },
 		"default route":  func(input *domainnetworkaccess.GatewayInput) { input.OverlayCIDR = "0.0.0.0/0" },
-		"dns":            func(input *domainnetworkaccess.GatewayInput) { input.DNSServers = []string{"2001:db8::53"} },
+		"dns":            func(input *domainnetworkaccess.GatewayInput) { input.DNSServers = []string{"::"} },
 		"hub ID":         func(input *domainnetworkaccess.GatewayInput) { input.HubGatewayID = "bad hub" },
 		"advertised":     func(input *domainnetworkaccess.GatewayInput) { input.AdvertisedCIDRs = []string{"10.0.0.1/24"} },
 		"overlap": func(input *domainnetworkaccess.GatewayInput) {

@@ -3,6 +3,7 @@ package networkaccess
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,7 +12,11 @@ import (
 	"gorm.io/gorm"
 )
 
-const nasBindingColumns = `id, nas_id, runtime_id, site_id, name, COALESCE(access_medium, ''), COALESCE(device_type, ''), COALESCE(ssid, ''), COALESCE(management_address, ''), status, coa_supported, disconnect_supported, created_at, updated_at`
+const nasBindingColumns = `id, nas_id, runtime_id, site_id, name, COALESCE(access_medium, ''), COALESCE(device_type, ''), COALESCE(ssid, ''), COALESCE(management_address, ''), status, coa_supported, disconnect_supported, COALESCE(eap_server_trust, 'null'::jsonb), created_at, updated_at`
+
+func (r *Repository) AdmissionNASBindings(ctx context.Context, after string, limit int) ([]domainnetworkaccess.NASBinding, error) {
+	return queryMany(ctx, r.db, `SELECT `+nasBindingColumns+` FROM network_access_nas_bindings WHERE tenant_id='default' AND workspace_id='default' AND status='active' AND eap_server_trust IS NOT NULL AND id>? ORDER BY id LIMIT ?`, []any{after, limit}, scanNASBinding)
+}
 
 func (r *Repository) ListNASBindings(ctx context.Context, filter domainnetworkaccess.NASBindingFilter) ([]domainnetworkaccess.NASBinding, error) {
 	query := `SELECT ` + nasBindingColumns + ` FROM network_access_nas_bindings WHERE tenant_id = 'default' AND workspace_id = 'default'`
@@ -19,8 +24,8 @@ func (r *Repository) ListNASBindings(ctx context.Context, filter domainnetworkac
 	query, args = addFilter(query, args, "site_id", filter.SiteID)
 	query, args = addFilter(query, args, "runtime_id", filter.RuntimeID)
 	query, args = addFilter(query, args, "status", filter.Status)
-	query += ` ORDER BY name ASC, id ASC LIMIT ?`
-	args = append(args, filter.Limit)
+	query += ` ORDER BY name ASC, id ASC LIMIT ? OFFSET ?`
+	args = append(args, filter.Limit, filter.Offset)
 	return queryMany(ctx, r.db, query, args, scanNASBinding)
 }
 
@@ -33,11 +38,15 @@ func (r *Repository) FindActiveNASBinding(ctx context.Context, runtimeID, nasID 
 }
 
 func (r *Repository) CreateNASBinding(ctx context.Context, item domainnetworkaccess.NASBinding) (domainnetworkaccess.NASBinding, error) {
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	trust, err := json.Marshal(item.EAPServerTrust)
+	if err != nil {
+		return domainnetworkaccess.NASBinding{}, err
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := ensureNASRuntime(tx, item.RuntimeID); err != nil {
 			return err
 		}
-		return tx.Exec(`INSERT INTO network_access_nas_bindings (id, nas_id, runtime_id, site_id, name, access_medium, device_type, ssid, management_address, status, coa_supported, disconnect_supported, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, item.ID, item.NASID, item.RuntimeID, item.SiteID, item.Name, nullableText(item.AccessMedium), nullableText(item.DeviceType), nullableText(item.SSID), nullableText(item.ManagementAddress), item.Status, item.CoASupported, item.DisconnectSupported, item.CreatedAt, item.UpdatedAt).Error
+		return tx.Exec(`INSERT INTO network_access_nas_bindings (id, nas_id, runtime_id, site_id, name, access_medium, device_type, ssid, management_address, status, coa_supported, disconnect_supported, eap_server_trust, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)`, item.ID, item.NASID, item.RuntimeID, item.SiteID, item.Name, nullableText(item.AccessMedium), nullableText(item.DeviceType), nullableText(item.SSID), nullableText(item.ManagementAddress), item.Status, item.CoASupported, item.DisconnectSupported, string(trust), item.CreatedAt, item.UpdatedAt).Error
 	})
 	if err != nil {
 		return domainnetworkaccess.NASBinding{}, normalizeDatabaseError(err)
@@ -46,11 +55,15 @@ func (r *Repository) CreateNASBinding(ctx context.Context, item domainnetworkacc
 }
 
 func (r *Repository) UpdateNASBinding(ctx context.Context, id string, input domainnetworkaccess.NASBindingInput, updatedAt time.Time) (domainnetworkaccess.NASBinding, error) {
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	trust, err := json.Marshal(input.EAPServerTrust)
+	if err != nil {
+		return domainnetworkaccess.NASBinding{}, err
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := ensureNASRuntime(tx, input.RuntimeID); err != nil {
 			return err
 		}
-		return mutationError(tx.Exec(`UPDATE network_access_nas_bindings SET nas_id = ?, runtime_id = ?, site_id = ?, name = ?, access_medium = ?, device_type = ?, ssid = ?, management_address = ?, status = ?, coa_supported = ?, disconnect_supported = ?, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`, input.NASID, input.RuntimeID, input.SiteID, input.Name, nullableText(input.AccessMedium), nullableText(input.DeviceType), nullableText(input.SSID), nullableText(input.ManagementAddress), input.Status, input.CoASupported, input.DisconnectSupported, updatedAt, id), "NAS binding")
+		return mutationError(tx.Exec(`UPDATE network_access_nas_bindings SET nas_id = ?, runtime_id = ?, site_id = ?, name = ?, access_medium = ?, device_type = ?, ssid = ?, management_address = ?, status = ?, coa_supported = ?, disconnect_supported = ?, eap_server_trust = ?::jsonb, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`, input.NASID, input.RuntimeID, input.SiteID, input.Name, nullableText(input.AccessMedium), nullableText(input.DeviceType), nullableText(input.SSID), nullableText(input.ManagementAddress), input.Status, input.CoASupported, input.DisconnectSupported, string(trust), updatedAt, id), "NAS binding")
 	})
 	if err != nil {
 		return domainnetworkaccess.NASBinding{}, normalizeDatabaseError(err)
@@ -69,8 +82,8 @@ func (r *Repository) ListSiteProfileBindings(ctx context.Context, filter domainn
 	args := []any{}
 	query, args = addFilter(query, args, "site_id", filter.SiteID)
 	query, args = addFilter(query, args, "access_profile", filter.AccessProfile)
-	query += ` ORDER BY site_id ASC, access_profile ASC, id ASC LIMIT ?`
-	args = append(args, filter.Limit)
+	query += ` ORDER BY site_id ASC, access_profile ASC, id ASC LIMIT ? OFFSET ?`
+	args = append(args, filter.Limit, filter.Offset)
 	return queryMany(ctx, r.db, query, args, scanSiteProfileBinding)
 }
 
@@ -115,8 +128,11 @@ func ensureNASRuntime(tx *gorm.DB, runtimeID string) error {
 
 func scanNASBinding(row scanner) (domainnetworkaccess.NASBinding, error) {
 	var item domainnetworkaccess.NASBinding
-	err := row.Scan(&item.ID, &item.NASID, &item.RuntimeID, &item.SiteID, &item.Name, &item.AccessMedium, &item.DeviceType, &item.SSID, &item.ManagementAddress, &item.Status, &item.CoASupported, &item.DisconnectSupported, &item.CreatedAt, &item.UpdatedAt)
-	return item, err
+	var trust []byte
+	if err := row.Scan(&item.ID, &item.NASID, &item.RuntimeID, &item.SiteID, &item.Name, &item.AccessMedium, &item.DeviceType, &item.SSID, &item.ManagementAddress, &item.Status, &item.CoASupported, &item.DisconnectSupported, &trust, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return item, err
+	}
+	return item, json.Unmarshal(trust, &item.EAPServerTrust)
 }
 
 func scanSiteProfileBinding(row scanner) (domainnetworkaccess.SiteProfileBinding, error) {
