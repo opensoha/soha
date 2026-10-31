@@ -724,7 +724,6 @@ export function WorkloadsDeploymentsPage() {
         </Text>
       ) : null}
       <ResourceStreamStatus
-        showLabel
         status={deploymentStream.status}
         lastEventAt={deploymentStream.lastEventAt}
         localeCode={localeCode}

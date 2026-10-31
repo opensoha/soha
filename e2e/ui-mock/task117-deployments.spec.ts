@@ -187,7 +187,11 @@ test('second sample: supporting count, compact fixed menu, keyboard and responsi
   page,
 }) => {
   const { state, evidence } = await setup(context, page, { live: true })
-  await expect(page.getByText('实时更新', { exact: true })).toBeVisible()
+  const streamStatus = page.getByRole('status', { name: /^实时/ })
+  await expect(streamStatus).toBeVisible()
+  await expect(streamStatus).toHaveText('')
+  await expect(streamStatus).toHaveAttribute('aria-label', /更新于/)
+  await expect(streamStatus.locator('.ant-badge-status-success')).toBeVisible()
   await expect(page.getByRole('button', { name: '批量操作', exact: true })).toHaveCount(0)
   expect(await page.locator('.soha-deployments-table .ant-table-row').count()).toBeLessThan(80)
   const count = page.locator('.soha-kubernetes-resource-count')
