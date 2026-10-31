@@ -21,6 +21,10 @@ import (
 )
 
 type Service interface {
+	IssueEAPCertificate(context.Context, networkidentity.Identity, []byte) (networkprotocol.RuntimeMessage, error)
+	ActivateEAPCertificate(context.Context, networkidentity.Identity, []byte) (networkprotocol.RuntimeMessage, error)
+	EndpointPresence(context.Context, networkidentity.Identity, []byte) (networkprotocol.RuntimeMessage, error)
+	NASAccounting(context.Context, networkidentity.Identity, []byte) error
 	Ready() bool
 	Enroll(context.Context, networkidentity.Identity, string, []byte) (networkprotocol.RuntimeMessage, error)
 	Configuration(context.Context, networkidentity.Identity) (networkprotocol.RuntimeMessage, error)
@@ -68,6 +72,7 @@ func NewRouter(service Service, ready ReadyStore, options Options) (*gin.Engine,
 	router.GET("/healthz", handler.health)
 	router.GET("/readyz", handler.readiness)
 	router.GET("/api/network-control/v1/runtimes/:runtimeID/configuration", handler.configuration)
+	router.GET("/api/network-control/v1/runtimes/:runtimeID/channel-controls", handler.channelControls)
 	router.GET("/api/network-control/v1/runtimes/:runtimeID/mihomo-profiles/:profileID/source", handler.mihomoSource)
 	router.GET("/api/network-control/v1/runtimes/:runtimeID/mihomo-profiles/:profileID/subscription", handler.mihomoSubscription)
 	router.GET("/api/network-control/v1/runtimes/:runtimeID/nas-session-commands/next", handler.nextNASSessionCommand)
@@ -86,6 +91,10 @@ func NewRouter(service Service, ready ReadyStore, options Options) (*gin.Engine,
 
 func (h *handler) action(c *gin.Context) {
 	switch c.Param("action") {
+	case "/channel-controls/receipt":
+		h.channelReport(c)
+	case "/dns:observations":
+		h.dnsObservations(c)
 	case "/enroll":
 		h.enroll(c)
 	case "/configuration:applied":
@@ -102,6 +111,14 @@ func (h *handler) action(c *gin.Context) {
 		h.managedVPN(c, false)
 	case "/nas:authorize":
 		h.authorizeNAS(c)
+	case "/endpoint:presence":
+		h.endpointPresence(c)
+	case "/eap:certificate":
+		h.eapCertificate(c, false)
+	case "/eap:activate":
+		h.eapCertificate(c, true)
+	case "/nas:accounting":
+		h.nasAccounting(c)
 	case "/radius:post-auth":
 		h.radiusPostAuth(c)
 	case "/nas-session-commands/result":
@@ -274,6 +291,39 @@ func (h *handler) authorizeNAS(c *gin.Context) {
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, result)
+}
+
+func (h *handler) endpointPresence(c *gin.Context) {
+	identity, ok := h.identity(c)
+	if !ok {
+		return
+	}
+	raw, ok := h.body(c)
+	if !ok {
+		return
+	}
+	result, err := h.service.EndpointPresence(c.Request.Context(), identity, raw)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, result)
+}
+
+func (h *handler) nasAccounting(c *gin.Context) {
+	identity, ok := h.identity(c)
+	if !ok {
+		return
+	}
+	raw, ok := h.body(c)
+	if !ok {
+		return
+	}
+	if err := h.service.NASAccounting(c.Request.Context(), identity, raw); err != nil {
+		respondError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 type radiusReplyAttribute struct {

@@ -61,6 +61,14 @@ func NewEnrollmentService(store EnrollmentStore, proxy ProxyInstanceStore, permi
 }
 
 func (s *EnrollmentService) Create(ctx context.Context, principal domainidentity.Principal, input EnrollmentInput) (domainnetworkruntime.EnrollmentSecret, error) {
+	workload := strings.HasPrefix(strings.TrimSpace(input.SubjectID), "service_account:")
+	if strings.HasPrefix(principal.UserID, "service_account:") && (!workload || input.SubjectID != principal.UserID || input.RuntimeKind != "endpoint") {
+		return domainnetworkruntime.EnrollmentSecret{}, invalid("service accounts require their own workload binding")
+	}
+	if workload && (input.RuntimeKind != "endpoint" || input.SubjectID != principal.UserID || principal.AccessTokenID == "") {
+		return domainnetworkruntime.EnrollmentSecret{}, invalid("workload enrollment requires its service-account token")
+	}
+
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermNetworkAccessEnrollmentsCreate); err != nil {
 		return domainnetworkruntime.EnrollmentSecret{}, err
 	}
@@ -80,6 +88,14 @@ func (s *EnrollmentService) Create(ctx context.Context, principal domainidentity
 		}
 	}
 
+	if workload {
+		ttl, err := s.workloadEnrollmentTTL(ctx, principal, input)
+		if err != nil {
+			return domainnetworkruntime.EnrollmentSecret{}, err
+		}
+		input.TTL = ttl
+	}
+
 	random := make([]byte, 32)
 	if _, err := rand.Read(random); err != nil {
 		return domainnetworkruntime.EnrollmentSecret{}, fmt.Errorf("generate enrollment token: %w", err)
@@ -91,6 +107,9 @@ func (s *EnrollmentService) Create(ctx context.Context, principal domainidentity
 		ID: uuid.NewString(), ChallengeID: uuid.NewString(), ChallengeHash: fmt.Sprintf("sha256:%x", digest),
 		RuntimeID: input.RuntimeID, RuntimeKind: input.RuntimeKind, DeviceID: input.DeviceID, SubjectID: input.SubjectID,
 		Status: domainnetworkruntime.EnrollmentPending, ExpiresAt: now.Add(input.TTL), CreatedBy: principal.UserID, CreatedAt: now,
+	}
+	if workload {
+		item.SourceTokenID = principal.AccessTokenID
 	}
 	if err := s.store.CreateEnrollment(ctx, item); err != nil {
 		return domainnetworkruntime.EnrollmentSecret{}, err
@@ -176,6 +195,7 @@ func validateEnrollmentInput(principal domainidentity.Principal, input Enrollmen
 
 func publicEnrollment(item domainnetworkruntime.EnrollmentChallenge) domainnetworkruntime.EnrollmentChallenge {
 	item.ChallengeHash = ""
+	item.SourceTokenID = ""
 	return item
 }
 
@@ -195,4 +215,22 @@ func (s *EnrollmentService) recordMutation(ctx context.Context, principal domain
 		"module": "network_access", "resourceKind": "NetworkRuntimeEnrollment", "targetId": item.ID,
 		"targetLabel": item.RuntimeID, "runtimeKind": item.RuntimeKind, "deviceId": item.DeviceID, "subjectId": item.SubjectID,
 	}, "success", summary, nil))
+}
+
+func (s *EnrollmentService) workloadEnrollmentTTL(ctx context.Context, principal domainidentity.Principal, input EnrollmentInput) (time.Duration, error) {
+	store, ok := s.store.(interface {
+		AuthorizeWorkloadEnrollment(context.Context, string, string, string, string, time.Time) (time.Time, error)
+	})
+	if !ok {
+		return 0, fmt.Errorf("workload enrollment unavailable")
+	}
+	until, err := store.AuthorizeWorkloadEnrollment(ctx, input.RuntimeID, input.DeviceID, input.SubjectID, principal.AccessTokenID, s.now().UTC())
+	if err != nil {
+		return 0, err
+	}
+	ttl := min(input.TTL, 5*time.Minute, until.Sub(s.now().UTC()))
+	if ttl < time.Minute {
+		return 0, invalid("workload token or binding expires too soon")
+	}
+	return ttl, nil
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -16,6 +17,16 @@ type sessionCommandLookupStore struct {
 	Store
 	session, key string
 	calls        int
+	parentReads  int
+	parent       domainnetworkaccess.Session
+}
+
+func (s *sessionCommandLookupStore) GetSession(_ context.Context, id string) (domainnetworkaccess.Session, error) {
+	s.parentReads++
+	if s.parent.ID != "" {
+		return s.parent, nil
+	}
+	return domainnetworkaccess.Session{ID: id, SiteID: "site-1"}, nil
 }
 
 func (s *sessionCommandLookupStore) GetSessionCommandForSession(_ context.Context, session, id string) (domainnetworkaccess.SessionCommand, error) {
@@ -30,9 +41,9 @@ func (s *sessionCommandLookupStore) GetSessionCommandForPlan(_ context.Context, 
 func TestSessionCommandLookupUsesCurrentPermissionAndExactCoordinates(t *testing.T) {
 	store := &sessionCommandLookupStore{}
 	roles := enrollmentRoleReader{"task115-command-reader": {appaccess.PermNetworkAccessSitesView}, "unrelated": {appaccess.PermNetworkAccessSitesUpdate}}
-	service := &Service{store: store, permissions: appaccess.NewPermissionResolver(roles)}
+	service := &Service{store: store, permissions: appaccess.NewPermissionResolver(roles), scope: allowTestNetworkScope()}
 	actor := domainidentity.Principal{UserID: "actor", Roles: []string{"task115-command-reader"}}
-	command, err := service.GetSessionCommand(t.Context(), actor, "session-1", "command-1")
+	command, err := service.GetSessionCommandForSession(t.Context(), actor, "session-1", "command-1")
 	if err != nil || command.ID != "command-1" || store.session != "session-1" || store.key != "command-1" || store.calls != 1 {
 		t.Fatalf("lookup=%+v err=%v store=%+v", command, err, store)
 	}
@@ -47,18 +58,18 @@ func TestSessionCommandLookupUsesCurrentPermissionAndExactCoordinates(t *testing
 	}
 	actor.PermissionKeys = nil
 	delete(roles, "task115-command-reader")
-	if _, err := service.GetSessionCommand(t.Context(), actor, "session-1", "command-1"); !errors.Is(err, apperrors.ErrAccessDenied) || store.calls != 2 {
+	if _, err := service.GetSessionCommandForSession(t.Context(), actor, "session-1", "command-1"); !errors.Is(err, apperrors.ErrAccessDenied) || store.calls != 2 {
 		t.Fatalf("current role err=%v calls=%d", err, store.calls)
 	}
 	service.permissions = nil
-	if _, err := service.GetSessionCommand(t.Context(), actor, "session-1", "command-1"); !errors.Is(err, apperrors.ErrAccessDenied) || store.calls != 2 {
+	if _, err := service.GetSessionCommandForSession(t.Context(), actor, "session-1", "command-1"); !errors.Is(err, apperrors.ErrAccessDenied) || store.calls != 2 {
 		t.Fatalf("missing resolver err=%v calls=%d", err, store.calls)
 	}
 }
 
 func TestSessionCommandLookupRejectsInvalidCoordinatesBeforeStorage(t *testing.T) {
 	store := &sessionCommandLookupStore{}
-	service := &Service{store: store, permissions: appaccess.NewPermissionResolver(enrollmentRoleReader{"reader": {appaccess.PermNetworkAccessSitesView}})}
+	service := &Service{store: store, permissions: appaccess.NewPermissionResolver(enrollmentRoleReader{"reader": {appaccess.PermNetworkAccessSitesView}}), scope: allowTestNetworkScope()}
 	actor := domainidentity.Principal{UserID: "actor", Roles: []string{"reader"}}
 	for _, tc := range []struct {
 		session, key string
@@ -71,10 +82,39 @@ func TestSessionCommandLookupRejectsInvalidCoordinatesBeforeStorage(t *testing.T
 		if tc.plan {
 			_, err = service.GetOriginalSessionCommand(t.Context(), actor, tc.session, tc.key)
 		} else {
-			_, err = service.GetSessionCommand(t.Context(), actor, tc.session, tc.key)
+			_, err = service.GetSessionCommandForSession(t.Context(), actor, tc.session, tc.key)
 		}
-		if !errors.Is(err, apperrors.ErrInvalidArgument) || store.calls != 0 {
+		if !errors.Is(err, apperrors.ErrInvalidArgument) || store.calls != 0 || store.parentReads != 0 {
 			t.Fatalf("invalid lookup err=%v calls=%d", err, store.calls)
+		}
+	}
+}
+
+func TestSessionQualifiedCommandReadsEnforceCurrentParentScope(t *testing.T) {
+	for _, original := range []bool{false, true} {
+		for _, unavailable := range []bool{false, true} {
+			store := &sessionCommandLookupStore{parent: domainnetworkaccess.Session{ID: "session-1", SiteID: "site-hidden"}}
+			service := &Service{store: store, permissions: appaccess.NewPermissionResolver(enrollmentRoleReader{"reader": {appaccess.PermNetworkAccessSitesView}})}
+			service.scope = scopeAuthorizerFunc(func(_ context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+				if request.Resource.Labels["network.siteId"] != "site-hidden" {
+					t.Fatal("scope did not use the actual parent session")
+				}
+				if unavailable {
+					return domainaccess.Decision{}, apperrors.ErrServiceUnavailable
+				}
+				return domainaccess.Decision{Allowed: false}, nil
+			})
+			actor := domainidentity.Principal{UserID: "actor", Roles: []string{"reader"}}
+			var command domainnetworkaccess.SessionCommand
+			var err error
+			if original {
+				command, err = service.GetOriginalSessionCommand(t.Context(), actor, "session-1", "sha256:"+strings.Repeat("a", 64))
+			} else {
+				command, err = service.GetSessionCommandForSession(t.Context(), actor, "session-1", "command-1")
+			}
+			if err == nil || command.ID != "" || store.calls != 0 || store.parentReads != 1 {
+				t.Fatalf("session scope must fail before command data: original=%v unavailable=%v error=%v calls=%d", original, unavailable, err, store.calls)
+			}
 		}
 	}
 }

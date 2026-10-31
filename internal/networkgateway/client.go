@@ -32,6 +32,7 @@ type Enrollment struct {
 }
 
 type ControlClient struct {
+	runtimeKind  string
 	origin       string
 	runtimeID    string
 	http         *http.Client
@@ -68,7 +69,7 @@ func (c *ControlClient) Configuration(ctx context.Context) (networkprotocol.Runt
 		return networkprotocol.RuntimeMessage{}, fmt.Errorf("validate desired configuration: %w", err)
 	}
 	message, err := networkprotocol.DecodeRuntimeMessage(raw)
-	if err != nil || message.MessageType != networkprotocol.MessageConfiguration || message.ProducerID != "network-control" || message.RuntimeID != c.runtimeID || message.RuntimeKind != "gateway" {
+	if err != nil || message.MessageType != networkprotocol.MessageConfiguration || message.ProducerID != "network-control" || message.RuntimeID != c.runtimeID || message.RuntimeKind != c.kind() {
 		return networkprotocol.RuntimeMessage{}, fmt.Errorf("network control returned an invalid gateway configuration message")
 	}
 	if err := networkprotocol.ValidateRuntimeMessageWindow(message, c.now().UTC(), c.maxClockSkew); err != nil {
@@ -136,7 +137,7 @@ func validateGatewayEnrollment(enrollment Enrollment) error {
 
 func (c *ControlClient) decodeEnrollmentResult(responseRaw []byte) (networkprotocol.EnrollmentResult, error) {
 	message, err := networkprotocol.DecodeRuntimeMessage(responseRaw)
-	if err != nil || message.MessageType != networkprotocol.MessageEnrollmentResult || message.ProducerID != "network-control" || message.RuntimeID != c.runtimeID || message.RuntimeKind != "gateway" {
+	if err != nil || message.MessageType != networkprotocol.MessageEnrollmentResult || message.ProducerID != "network-control" || message.RuntimeID != c.runtimeID || message.RuntimeKind != c.kind() {
 		return networkprotocol.EnrollmentResult{}, fmt.Errorf("network control returned an invalid enrollment result")
 	}
 	if err := networkprotocol.ValidateRuntimeMessageWindow(message, c.now().UTC(), c.maxClockSkew); err != nil {
@@ -155,7 +156,7 @@ func (c *ControlClient) runtimeMessage(messageType string, payload any) (network
 	if err != nil {
 		return networkprotocol.RuntimeMessage{}, nil, err
 	}
-	message := networkprotocol.RuntimeMessage{SchemaVersion: networkprotocol.RuntimeSchemaVersion, MessageID: uuid.NewString(), MessageType: messageType, ProducerID: c.runtimeID, RuntimeID: c.runtimeID, RuntimeKind: "gateway", OccurredAt: now, ExpiresAt: now.Add(min(c.maxClockSkew, 2*time.Minute)), Payload: payloadRaw}
+	message := networkprotocol.RuntimeMessage{SchemaVersion: networkprotocol.RuntimeSchemaVersion, MessageID: uuid.NewString(), MessageType: messageType, ProducerID: c.runtimeID, RuntimeID: c.runtimeID, RuntimeKind: c.kind(), OccurredAt: now, ExpiresAt: now.Add(min(c.maxClockSkew, 2*time.Minute)), Payload: payloadRaw}
 	raw, err := json.Marshal(message)
 	if err != nil {
 		return networkprotocol.RuntimeMessage{}, nil, err
@@ -282,4 +283,11 @@ func readRuntimeResponse(response *http.Response, expectedStatus int) ([]byte, e
 		return nil, fmt.Errorf("network control response exceeded the safe limit")
 	}
 	return raw, nil
+}
+
+func (c *ControlClient) kind() string {
+	if c.runtimeKind == "endpoint" {
+		return "endpoint"
+	}
+	return "gateway"
 }

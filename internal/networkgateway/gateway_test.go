@@ -56,12 +56,12 @@ func TestGatewayDesiredValidationAndFirewallPlanFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	desired := testGatewayDesired(privateKey.PublicKey().String(), now)
 	if err := ValidateGatewayDesired(desired, privateKey.PublicKey(), now, ""); err != nil {
 		t.Fatalf("valid desired rejected: %v", err)
 	}
-	program, err := BuildNftProgram(*desired.WireGuard, false, "")
+	program, err := BuildNftProgram(*desired.WireGuard, false, "", desired.ValidUntil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestGatewayDesiredValidationAndFirewallPlanFailClosed(t *testing.T) {
 	if err := ValidateGatewayDesired(snat, privateKey.PublicKey(), now, ""); err == nil {
 		t.Fatal("SNAT without an egress interface must fail closed")
 	}
-	snatProgram, err := BuildNftProgram(*snat.WireGuard, false, "eth0")
+	snatProgram, err := BuildNftProgram(*snat.WireGuard, false, "eth0", desired.ValidUntil)
 	if err != nil || !strings.Contains(snatProgram, `oifname "eth0" masquerade`) {
 		t.Fatalf("SNAT program = %q, %v", snatProgram, err)
 	}
@@ -100,7 +100,7 @@ func TestGatewayDesiredValidationAndFirewallPlanFailClosed(t *testing.T) {
 	tcpAll := *desired.WireGuard
 	tcpAll.FirewallRules = append([]networkprotocol.WireGuardFirewallRule(nil), desired.WireGuard.FirewallRules...)
 	tcpAll.FirewallRules[1].Protocol = "tcp"
-	if program, err := BuildNftProgram(tcpAll, false, ""); err != nil || !strings.Contains(program, "ip protocol tcp accept") {
+	if program, err := BuildNftProgram(tcpAll, false, "", desired.ValidUntil); err != nil || !strings.Contains(program, "meta l4proto tcp meta mark & 0 @lease_guard accept") {
 		t.Fatalf("all-port TCP rule = %q, %v", program, err)
 	}
 	foreignInterface := desired
@@ -112,7 +112,7 @@ func TestGatewayDesiredValidationAndFirewallPlanFailClosed(t *testing.T) {
 	}
 	injected := *desired.WireGuard
 	injected.FirewallRules = []networkprotocol.WireGuardFirewallRule{{ID: "rule-1", Effect: "allow", SourceCIDR: "100.96.0.2/32 counter accept", DestinationCIDR: "10.77.0.0/24", Protocol: "any"}}
-	if _, err := BuildNftProgram(injected, false, ""); err == nil {
+	if _, err := BuildNftProgram(injected, false, "", desired.ValidUntil); err == nil {
 		t.Fatal("nft program builder must reject unvalidated rule input")
 	}
 }
@@ -122,7 +122,7 @@ func TestGatewayDesiredAllowsResourceLeaseBeforeProtectedDenyAndSiteLinks(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	desired := testGatewayDesired(privateKey.PublicKey().String(), now)
 	desired.ResourceLeases = []networkprotocol.ResourceLease{{
 		ID: "resource-lease-1", SessionID: "session-1", SubjectID: "user-1", DeviceID: "device-1",
@@ -157,7 +157,7 @@ func TestGatewayDesiredAllowsResourceLeaseBeforeProtectedDenyAndSiteLinks(t *tes
 	if err := ValidateGatewayDesired(site, privateKey.PublicKey(), now, ""); err != nil {
 		t.Fatalf("site link desired rejected: %v", err)
 	}
-	program, err := BuildNftProgram(*site.WireGuard, false, "")
+	program, err := BuildNftProgram(*site.WireGuard, false, "", site.ValidUntil)
 	if err != nil || !strings.Contains(program, `oifname "soha0" ip saddr 10.40.0.0/16`) {
 		t.Fatalf("site link nft program = %q, %v", program, err)
 	}
@@ -260,7 +260,7 @@ func TestLinuxSystemUsesReplacePeersAndScopedCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	desired := testGatewayDesired(privateKey.PublicKey().String(), now)
 	wg := &fakeWireGuard{}
 	commands := &fakeCommands{missingLink: true}
@@ -280,7 +280,7 @@ func TestLinuxSystemUsesReplacePeersAndScopedCommands(t *testing.T) {
 		}
 	}
 	joined := strings.Join(commands.calls, "\n")
-	for _, expected := range []string{"/sbin/ip link add dev soha0 type wireguard", "/sbin/ip -4 address flush dev soha0", "/sbin/ip link set dev soha0 mtu 1420 up", "/usr/sbin/nft -f -"} {
+	for _, expected := range []string{"/sbin/ip link add dev soha0 type wireguard", "/sbin/ip address flush dev soha0", "/sbin/ip link set dev soha0 mtu 1420 up", "/usr/sbin/nft -f -"} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("commands missing %q: %s", expected, joined)
 		}
@@ -337,10 +337,11 @@ func TestNftReadbackRejectsWrongPolicyAndRuleAction(t *testing.T) {
 	desired := testGatewayDesired(privateKey.PublicKey().String(), time.Now().UTC())
 	raw := []byte(`{"nftables":[
 		{"table":{"family":"inet","name":"soha_network_gateway"}},
+        {"set":{"family":"inet","table":"soha_network_gateway","name":"lease_guard","type":"mark","flags":["timeout"],"elem":[{"elem":{"val":0,"timeout":60,"expires":59}}]}},
 		{"chain":{"family":"inet","table":"soha_network_gateway","name":"forward","type":"filter","hook":"forward","policy":"accept"}},
-		{"rule":{"family":"inet","table":"soha_network_gateway","chain":"forward","expr":[{"match":{"op":"==","left":{"meta":{"key":"oifname"}},"right":"soha0"}},{"match":{"op":"in","left":{"ct":{"key":"state"}},"right":["established","related"]}},{"accept":null}],"comment":"return-established"}},
+		{"rule":{"family":"inet","table":"soha_network_gateway","chain":"forward","expr":[{"match":{"op":"==","left":{"meta":{"key":"oifname"}},"right":"soha0"}},{"match":{"op":"in","left":{"ct":{"key":"state"}},"right":["established","related"]}},{"match":{"op":"==","left":{"&":[{"meta":{"key":"mark"}},0]},"right":"@lease_guard"}},{"accept":null}],"comment":"return-established"}},
 		{"rule":{"family":"inet","table":"soha_network_gateway","chain":"forward","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"soha0"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"saddr"}},"right":"100.96.0.2"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"10.77.0.10"}},{"drop":null}],"comment":"deny-protected"}},
-		{"rule":{"family":"inet","table":"soha_network_gateway","chain":"forward","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"soha0"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"saddr"}},"right":"100.96.0.2"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":{"prefix":{"addr":"10.77.0.0","len":24}}}},{"accept":null}],"comment":"allow-network"}},
+		{"rule":{"family":"inet","table":"soha_network_gateway","chain":"forward","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"soha0"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"saddr"}},"right":"100.96.0.2"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":{"prefix":{"addr":"10.77.0.0","len":24}}}},{"match":{"op":"==","left":{"&":[{"meta":{"key":"mark"}},0]},"right":"@lease_guard"}},{"accept":null}],"comment":"allow-network"}},
 		{"rule":{"family":"inet","table":"soha_network_gateway","chain":"forward","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"soha0"}},{"drop":null}],"comment":"default-deny-from-wireguard"}},
 		{"rule":{"family":"inet","table":"soha_network_gateway","chain":"forward","expr":[{"match":{"op":"==","left":{"meta":{"key":"oifname"}},"right":"soha0"}},{"drop":null}],"comment":"default-deny-to-wireguard"}}
 	]}`)
@@ -686,6 +687,10 @@ func (fn telemetryFunc) Heartbeat(ctx context.Context, status RuntimeStatus) err
 
 func (a *fakeApplier) Apply(context.Context, networkprotocol.ConfigurationDesired, time.Time) ApplyOutcome {
 	a.applied++
+	return a.outcome
+}
+
+func (a *fakeApplier) Verify(context.Context, networkprotocol.ConfigurationDesired, time.Time) ApplyOutcome {
 	return a.outcome
 }
 

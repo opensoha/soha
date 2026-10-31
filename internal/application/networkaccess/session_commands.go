@@ -10,13 +10,16 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-// GetSessionCommand observes the original command. It cannot claim, execute or
+// GetSessionCommandForSession observes the original command. It cannot claim, execute or
 // redeliver it; only the authenticated NAS runtime owns those transitions.
-func (s *Service) GetSessionCommand(ctx context.Context, principal domainidentity.Principal, sessionID, commandID string) (domainnetworkaccess.SessionCommand, error) {
+func (s *Service) GetSessionCommandForSession(ctx context.Context, principal domainidentity.Principal, sessionID, commandID string) (domainnetworkaccess.SessionCommand, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessSitesView); err != nil {
 		return domainnetworkaccess.SessionCommand{}, err
 	}
 	if err := validateCommandCoordinates(sessionID, commandID, false); err != nil {
+		return domainnetworkaccess.SessionCommand{}, err
+	}
+	if _, err := s.GetSession(ctx, principal, sessionID); err != nil {
 		return domainnetworkaccess.SessionCommand{}, err
 	}
 	return s.store.GetSessionCommandForSession(ctx, sessionID, commandID)
@@ -29,6 +32,9 @@ func (s *Service) GetOriginalSessionCommand(ctx context.Context, principal domai
 		return domainnetworkaccess.SessionCommand{}, err
 	}
 	if err := validateCommandCoordinates(sessionID, planHash, true); err != nil {
+		return domainnetworkaccess.SessionCommand{}, err
+	}
+	if _, err := s.GetSession(ctx, principal, sessionID); err != nil {
 		return domainnetworkaccess.SessionCommand{}, err
 	}
 	return s.store.GetSessionCommandForPlan(ctx, sessionID, planHash)

@@ -42,6 +42,19 @@ func TestRadclientRequestUsesSecretFileAndEscapesValues(t *testing.T) {
 	}
 }
 
+func TestRadclientTargetsEAPStationAndAccountingSession(t *testing.T) {
+	command := networkprotocol.NASSessionCommand{NASID: "nas-1", SubjectID: "user-1", DeviceID: "opaque-endpoint-id", SessionID: "core-session-1", StationID: "aa:bb:cc:dd:ee:ff", AccountingSessionID: "acct-1", NASPortID: "Gi1/0/1", Action: "disconnect"}
+	_, input := radclientRequest(Config{CommandTimeout: time.Second}, command)
+	for _, attribute := range []string{`Calling-Station-Id = "aa:bb:cc:dd:ee:ff"`, `Acct-Session-Id = "acct-1"`, `NAS-Port-Id = "Gi1/0/1"`, `Class = "core-session-1"`} {
+		if !strings.Contains(input, attribute) {
+			t.Fatalf("missing bound target %q in %q", attribute, input)
+		}
+	}
+	if strings.Contains(input, command.DeviceID) {
+		t.Fatal("opaque Soha device ID was used as a station address")
+	}
+}
+
 func TestAdapterReplaysJournalWithoutExecutingCommandTwice(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	commandMessage := runtimeCommand(t, now, "runtime-1", "nas-hq")

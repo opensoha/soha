@@ -63,6 +63,12 @@ func New(ctx context.Context) (*App, error) {
 	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podTerminalRepository, infra.logger, "platform.pod.execution.cleanup.failed")
 	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.dockerTerminalRepository, infra.logger, "docker.native.terminal.cleanup.failed")
 	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.conditionalMutationRepository, infra.logger, "platform.resource.mutation.cleanup.failed")
+	go core.networkEndpointResponseService.Run(infra.lifecycleCtx, func(err error) {
+		infra.logger.Named("network-endpoint-response").Warn("endpoint response reconciliation failed", zap.Error(err))
+	})
+	go core.networkEndpointResponseService.RunNotifications(infra.lifecycleCtx, func(err error) {
+		infra.logger.Named("network-endpoint-response").Warn("endpoint notification delivery failed", zap.Error(err))
+	})
 
 	return &App{
 		PodTerminals:          core.resourceService.PodTerminals(),

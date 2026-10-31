@@ -9,7 +9,7 @@ import (
 )
 
 func (h *NetworkAccessHandler) GetSessionCommand(c *gin.Context) {
-	item, err := h.service.GetSessionCommand(c.Request.Context(), principal(c), c.Param("sessionID"), c.Param("commandID"))
+	item, err := h.service.GetSessionCommandForSession(c.Request.Context(), principal(c), c.Param("sessionID"), c.Param("commandID"))
 	if err != nil {
 		writeError(c, err)
 		return

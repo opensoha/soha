@@ -73,9 +73,20 @@ func (s *Service) ReadProjectRuntime(ctx context.Context, principal domainidenti
 	if err != nil {
 		return protocol.ReadResult{}, fmt.Errorf("%w: invalid Docker runtime read options", apperrors.ErrInvalidArgument)
 	}
+	original := req
+	snapshot, err := s.prepareRuntimeFileDLP(ctx, principal, target, &req)
+	if err != nil {
+		return protocol.ReadResult{}, err
+	}
 	result, err := postBoundRuntimeRead(ctx, target, req)
 	if err != nil {
 		return protocol.ReadResult{}, err
+	}
+	if err := s.checkRuntimeFileDLP(ctx, principal, snapshot, &result, original.LimitBytes); err != nil {
+		return protocol.ReadResult{}, err
+	}
+	if result.ValidateFor(original) != nil {
+		return protocol.ReadResult{}, apperrors.ErrConflict
 	}
 	if err := s.authorize(ctx, principal, permission); err != nil {
 		return protocol.ReadResult{}, err

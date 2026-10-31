@@ -40,7 +40,7 @@ func (r *Repository) MihomoSource(ctx context.Context, credentialID, profileID s
 		WHERE p.tenant_id = 'default' AND p.workspace_id = 'default' AND p.id = ? AND p.status = 'active'
 		AND p.mode = 'managed_follow' AND ((p.source_type = 'managed_subscription' AND p.subscription_url_ciphertext IS NOT NULL) OR (p.source_type = 'manual_node' AND p.manual_node_ciphertext IS NOT NULL))
 		AND c.id = ? AND c.runtime_kind = 'endpoint' AND c.status = 'active' AND c.not_before <= ? AND c.expires_at > ?
-		AND c.capabilities @> '["mihomo"]'::jsonb
+		AND c.capabilities @> '["mihomo","mihomo-policy-v1"]'::jsonb
 		LIMIT 1`, profileID, credentialID, now, now).Row().Scan(&sourceType, &ciphertext, &revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", 0, apperrors.ErrNotFound
@@ -117,6 +117,9 @@ func (r *Repository) SaveVPNConnection(ctx context.Context, connection domainnet
 			result = vpnConnectResult(connection, nil, nil, 0)
 			return insertVPNRequest(tx, connection, result)
 		}
+		if err := limitDNSConnection(tx, &connection); err != nil {
+			return err
+		}
 		networkLeases, resourceLeases, err := buildVPNLeases(&connection, state.space)
 		if err != nil {
 			return err
@@ -150,14 +153,18 @@ func beginVPNRequest(tx *gorm.DB, connection domainnetworkruntime.VPNConnection,
 	if err := lockWireGuardMutations(tx); err != nil {
 		return networkprotocol.VPNConnectResult{}, false, err
 	}
+	if connection.Decision == domainnetworkaccess.DecisionAllow {
+		if err := ensureVPNNotRevoked(tx, connection.SubjectID, connection.DeviceID, connection.SiteID); err != nil {
+			return networkprotocol.VPNConnectResult{}, false, err
+		}
+	}
 	var existing vpnRequestRow
 	err := tx.Where("tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND request_id = ?", connection.RuntimeID, connection.RequestID).First(&existing).Error
 	if err == nil {
 		if existing.RequestHash != connection.RequestHash {
 			return networkprotocol.VPNConnectResult{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "vpn_request_reused", "The VPN request ID was already used with different content.", "VPN 请求 ID 已被不同内容使用。")
 		}
-		result, err := existing.domain()
-		return result, true, err
+		return replayVPNRequest(tx, existing, connection.CreatedAt)
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return networkprotocol.VPNConnectResult{}, false, err
@@ -170,6 +177,22 @@ func beginVPNRequest(tx *gorm.DB, connection domainnetworkruntime.VPNConnection,
 		return networkprotocol.VPNConnectResult{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "stale_vpn_decision", "The VPN decision is stale.", "VPN 决策已过期。")
 	}
 	return networkprotocol.VPNConnectResult{}, false, nil
+}
+
+func replayVPNRequest(tx *gorm.DB, existing vpnRequestRow, now time.Time) (networkprotocol.VPNConnectResult, bool, error) {
+	result, err := existing.domain()
+	if err != nil || result.Decision != domainnetworkaccess.DecisionAllow {
+		return result, true, err
+	}
+	var live int64
+	err = tx.Model(&sessionRow{}).Where("tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND status IN ? AND valid_until > ?", result.SessionID, []string{"pending", "active", "restricted", "quarantine"}, now).Count(&live).Error
+	if err == nil && live == 0 {
+		err = invalidVPNIntent()
+	}
+	if err == nil && live > 0 {
+		err = validateReplayedVPNGovernance(tx, result.SessionID, now)
+	}
+	return result, true, err
 }
 
 func prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConnection) (vpnConnectionState, bool, error) {
@@ -193,11 +216,12 @@ func prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConne
 	if err != nil {
 		return vpnConnectionState{}, false, err
 	}
+
 	state := vpnConnectionState{endpointCredential: endpointCredential, gateway: gateway, gatewayCredential: gatewayCredential, space: space}
 	if err := lockVPNCapacity(tx, *connection); err != nil {
 		return vpnConnectionState{}, false, err
 	}
-	if connection.Mode != domainnetworkaccess.ModeExternalVPN && connection.Managed == nil {
+	if connection.Mode != domainnetworkaccess.ModeExternalVPN && connection.Managed == nil && connection.WorkloadID == "" {
 		grant, err := lockAccessGrant(tx, *connection)
 		if err != nil {
 			return vpnConnectionState{}, false, err
@@ -205,7 +229,7 @@ func prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConne
 		state.grant = &grant
 		connection.ValidUntil = minTime(connection.ValidUntil, grant.ExpiresAt)
 	}
-	if endpointCredential.ExpiresAt.Before(connection.ValidUntil) || gatewayCredential.ExpiresAt.Before(connection.ValidUntil) {
+	if minTime(endpointCredential.ExpiresAt, gatewayCredential.ExpiresAt).Before(connection.ValidUntil) {
 		return vpnConnectionState{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "stale_vpn_decision", "The VPN credential lifetime changed.", "VPN 凭据有效期已变化。")
 	}
 	if err := replaceActiveVPNPeer(tx, *connection); err != nil {
@@ -319,7 +343,7 @@ func persistVPNConnection(tx *gorm.DB, connection domainnetworkruntime.VPNConnec
 			return 0, err
 		}
 	}
-	addressCIDR := netip.PrefixFrom(state.address, 32).String()
+	addressCIDR := netip.PrefixFrom(state.address, state.address.BitLen()).String()
 	if err := tx.Exec(`INSERT INTO network_wireguard_peers
 		(id, gateway_id, runtime_id, device_id, session_id, public_key, overlay_address, status, expires_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?::inet, 'active', ?, ?, ?)`, uuid.NewString(), connection.GatewayID, connection.RuntimeID,
@@ -342,6 +366,10 @@ func persistVPNConfigurations(tx *gorm.DB, connection domainnetworkruntime.VPNCo
 		return 0, err
 	}
 	endpointDesired, err := endpointVPNDesired(tx, connection, state.gateway, state.endpointCredential, state.gatewayCredential, networkLeases, resourceLeases, addressCIDR, snapshot, mihomoProfile)
+	if err != nil {
+		return 0, err
+	}
+	endpointDesired, err = withMihomoProtection(tx, endpointDesired, snapshot)
 	if err != nil {
 		return 0, err
 	}
@@ -446,6 +474,14 @@ func invalidAccessGrant() error {
 }
 
 func desiredConfigurationForRuntime(tx *gorm.DB, runtimeID string, snapshot domainnetworkruntime.PolicySnapshot, now, expiresAt time.Time) (networkprotocol.ConfigurationDesired, error) {
+	desired, err := desiredRuntimeNetworkConfiguration(tx, runtimeID, snapshot, now, expiresAt)
+	if err != nil {
+		return desired, err
+	}
+	return withMihomoProtection(tx, desired, snapshot)
+}
+
+func desiredRuntimeNetworkConfiguration(tx *gorm.DB, runtimeID string, snapshot domainnetworkruntime.PolicySnapshot, now, expiresAt time.Time) (networkprotocol.ConfigurationDesired, error) {
 	fallback := onboardingDesired(snapshot, expiresAt)
 	if err := expireWireGuardPeers(tx, now); err != nil {
 		return networkprotocol.ConfigurationDesired{}, err
@@ -458,6 +494,17 @@ func desiredConfigurationForRuntime(tx *gorm.DB, runtimeID string, snapshot doma
 		return networkprotocol.ConfigurationDesired{}, err
 	}
 	expiresAt = minTime(expiresAt, credential.ExpiresAt)
+	if credential.RuntimeKind == "endpoint" {
+		restricted, err := subjectDLPRestricted(tx, credential.SubjectID)
+		if err != nil {
+			return networkprotocol.ConfigurationDesired{}, err
+		}
+		if restricted {
+			fallback.ValidUntil = expiresAt.UTC()
+			fallback.AccessProfile = domainnetworkaccess.ProfileQuarantine
+			return fallback, nil
+		}
+	}
 	fallback.ValidUntil = expiresAt.UTC()
 	var mihomoProfile *domainnetworkaccess.MihomoProfile
 	if credential.RuntimeKind == "endpoint" {
@@ -492,6 +539,9 @@ func desiredGatewayConfiguration(tx *gorm.DB, runtimeID string, credential crede
 		return networkprotocol.ConfigurationDesired{}, err
 	}
 	if _, err := validatedOverlay(gateway.OverlayCIDR); err != nil {
+		return fallback, nil
+	}
+	if !gatewayCredentialSupportsOverlay(credential, gateway.OverlayCIDR) {
 		return fallback, nil
 	}
 	return gatewayVPNDesired(tx, gateway, credential, snapshot, expiresAt, now)
@@ -659,7 +709,7 @@ func scanGatewayRuntime(row rowScanner) (gatewayRuntimeRow, error) {
 
 func validatedOverlay(raw string) (netip.Prefix, error) {
 	overlay, err := netip.ParsePrefix(raw)
-	if err != nil || !overlay.Addr().Is4() || overlay != overlay.Masked() || overlay.Bits() < 16 || overlay.Bits() > 30 {
+	if err != nil || !domainnetworkaccess.ValidOverlayPrefix(overlay) {
 		return netip.Prefix{}, fmt.Errorf("invalid WireGuard overlay prefix")
 	}
 	return overlay, nil
@@ -761,8 +811,8 @@ func lockVPNInputs(tx *gorm.DB, connection domainnetworkruntime.VPNConnection) (
 	}
 	var postureVersion int
 	err := tx.Raw(`SELECT posture_version FROM network_access_devices
-		WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND owner_user_id::text = ?
-		AND (? NOT IN (?, ?) OR COALESCE(site_id, '') = ?) FOR UPDATE`, connection.DeviceID, connection.SubjectID,
+		WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND (owner_user_id::text = ? OR (?<>'' AND EXISTS(SELECT 1 FROM network_workload_bindings w WHERE w.id=? AND w.device_id=network_access_devices.id AND w.runtime_id=? AND 'service_account:'||w.service_account_id=? AND w.enabled=true AND w.expires_at>CURRENT_TIMESTAMP)))
+		AND (? NOT IN (?, ?) OR COALESCE(site_id, '') = ?) FOR UPDATE`, connection.DeviceID, connection.SubjectID, connection.WorkloadID, connection.WorkloadID, connection.RuntimeID, connection.SubjectID,
 		connection.Mode, domainnetworkaccess.ModeInternalDirect, domainnetworkaccess.ModeInternalZTNA, connection.SiteID).Row().Scan(&postureVersion)
 	if err != nil {
 		return endpointCredential, gatewayRuntimeRow{}, gatewayCredential, domainnetworkaccess.Space{}, normalizeVPNInputError(err, "endpoint device")
@@ -791,7 +841,7 @@ func lockVPNInputs(tx *gorm.DB, connection domainnetworkruntime.VPNConnection) (
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND runtime_kind = 'gateway' AND status = 'active' AND expires_at >= ?", connection.GatewayCredentialID, gateway.RuntimeID, connection.ValidUntil).First(&gatewayCredential).Error; err != nil {
 		return endpointCredential, gateway, gatewayCredential, domainnetworkaccess.Space{}, normalizeVPNInputError(err, "gateway credential")
 	}
-	if gatewayCredential.WireGuardPublicKey == "" {
+	if gatewayCredential.WireGuardPublicKey == "" || !gatewayCredentialSupportsOverlay(gatewayCredential, gateway.OverlayCIDR) {
 		return endpointCredential, gateway, gatewayCredential, domainnetworkaccess.Space{}, apperrors.NewBusiness(apperrors.ErrConflict, "gateway_configuration_invalid", "The gateway WireGuard key is unavailable.", "网关 WireGuard 公钥不可用。")
 	}
 	space, err := lockVPNSpace(tx, connection, gateway, gatewayCredential)
@@ -811,11 +861,14 @@ func lockVPNSpace(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, ga
 	}
 	for _, cidr := range space.CIDRs {
 		prefix, parseErr := netip.ParsePrefix(cidr)
-		if parseErr != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() || prefix.Bits() == 0 {
+		if parseErr != nil || prefix.Addr().Is4In6() || prefix != prefix.Masked() || prefix.Bits() == 0 {
 			return space, apperrors.NewBusiness(apperrors.ErrConflict, "network_scope_invalid", "The network space is not a valid split-tunnel scope.", "网络空间不是有效的分流范围。")
 		}
 	}
 	if gateway.SiteID != connection.SiteID {
+		if resourceVPNMode(connection.Mode) {
+			return space, apperrors.NewBusiness(apperrors.ErrConflict, "resource_gateway_must_be_local", "Resource access requires a gateway in the target site.", "资源访问需要目标站点本地网关。")
+		}
 		members, err := gatewayTopologyMembers(tx, gateway, gatewayCredential, connection.CreatedAt)
 		if err != nil {
 			return space, err
@@ -827,6 +880,9 @@ func lockVPNSpace(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, ga
 		if !routesCoverAll(plan.routes, space.CIDRs) || plan.validUntil.Before(connection.ValidUntil) {
 			return space, apperrors.NewBusiness(apperrors.ErrConflict, "gateway_topology_unavailable", "The selected VPN gateway cannot currently reach the target network.", "所选 VPN 网关当前无法到达目标网络。")
 		}
+	}
+	if err := requireVPNGovernance(tx, connection); err != nil {
+		return space, err
 	}
 	return space, nil
 }
@@ -900,12 +956,14 @@ func usedOverlayAddresses(tx *gorm.DB, gatewayID string) (map[netip.Addr]struct{
 	return used, rows.Err()
 }
 
+const maxOverlayCandidates = 65534
+
 func allocateOverlayAddress(prefix netip.Prefix, used map[netip.Addr]struct{}) (netip.Addr, error) {
-	if !prefix.Addr().Is4() || prefix != prefix.Masked() || prefix.Bits() < 16 || prefix.Bits() > 30 {
+	if !domainnetworkaccess.ValidOverlayPrefix(prefix) {
 		return netip.Addr{}, fmt.Errorf("invalid WireGuard overlay prefix")
 	}
-	// The first usable address belongs to the gateway and the final address is the IPv4 broadcast address.
-	for candidate := prefix.Addr().Next().Next(); prefix.Contains(candidate) && prefix.Contains(candidate.Next()); candidate = candidate.Next() {
+	// Reserve the network, gateway and final address consistently for both families.
+	for candidate, attempts := prefix.Addr().Next().Next(), 0; attempts < maxOverlayCandidates && prefix.Contains(candidate) && prefix.Contains(candidate.Next()); candidate, attempts = candidate.Next(), attempts+1 {
 		if _, exists := used[candidate]; !exists {
 			return candidate, nil
 		}
@@ -1014,6 +1072,7 @@ type vpnPeerState struct {
 }
 
 type leasedResourceTarget struct {
+	Hostname        string
 	ResourceID      string
 	DestinationCIDR string
 	Protocol        string
@@ -1023,11 +1082,15 @@ type leasedResourceTarget struct {
 }
 
 func endpointVPNDesired(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, gateway gatewayRuntimeRow, credential, gatewayCredential credentialRow, networkLeases []networkprotocol.NetworkLease, resourceLeases []networkprotocol.ResourceLease, address string, snapshot domainnetworkruntime.PolicySnapshot, mihomoProfile *domainnetworkaccess.MihomoProfile) (networkprotocol.ConfigurationDesired, error) {
-	space, routes, resourceTargets, err := compileLeaseAccess(tx, networkLeases, resourceLeases)
+	_, routes, resourceTargets, err := compileProtectedLeaseAccess(tx, networkLeases, resourceLeases, snapshot)
 	if err != nil {
 		return networkprotocol.ConfigurationDesired{}, err
 	}
-	denied, err := protectedDestinations(tx, space.ID, snapshot.ProtectedResourceIDs, space.CIDRs)
+	routes = slices.DeleteFunc(routes, func(route string) bool { return !sameAddressFamily(address, route) })
+	if len(routes) == 0 {
+		return networkprotocol.ConfigurationDesired{}, staleVPNResourceScope()
+	}
+	denied, err := vpnProtectedDestinations(tx, snapshot)
 	if err != nil {
 		return networkprotocol.ConfigurationDesired{}, err
 	}
@@ -1043,17 +1106,27 @@ func endpointVPNDesired(tx *gorm.DB, connection domainnetworkruntime.VPNConnecti
 		ProtectedResourceIDs: slices.Clone(snapshot.ProtectedResourceIDs), NetworkLeases: slices.Clone(networkLeases), ResourceLeases: slices.Clone(resourceLeases),
 		WireGuard: &networkprotocol.WireGuardConfiguration{
 			Role: "endpoint", InterfaceName: "soha0", PublicKey: credential.WireGuardPublicKey, Addresses: []string{address},
-			MTU: gateway.MTU, RoutingMode: gateway.RoutingMode, FirewallDefault: "deny",
+			MTU: gateway.MTU, RoutingMode: "routed", FirewallDefault: "deny",
 			Peers:  []networkprotocol.WireGuardPeer{{RuntimeID: gateway.RuntimeID, PublicKey: gatewayCredential.WireGuardPublicKey, EndpointHost: gateway.PublicEndpointHost, EndpointPort: gateway.PublicEndpointPort, AllowedIPs: slices.Clone(routes), PersistentKeepaliveSeconds: gateway.PersistentKeepaliveSeconds}},
 			Routes: slices.Clone(routes), DNSServers: dnsWithinRoutes(gateway.DNSServers, routes), FirewallRules: leaseFirewallRules(address, networkLeases, resourceTargets, denied),
 		},
+	}
+	if credentialHasCapability(credential, "mihomo-dns-pin-v1") {
+		desired.WireGuard.DNSRecords = resourceDNSRecords(resourceTargets, address)
 	}
 	desired.Mihomo, err = mihomoDesired(mihomoProfile, desired.WireGuard, gateway.PublicEndpointHost)
 	return desired, err
 }
 
 func activeEndpointMihomoProfile(tx *gorm.DB, credential credentialRow) (*domainnetworkaccess.MihomoProfile, error) {
-	if credential.RuntimeKind != "endpoint" || !credentialHasCapability(credential, "mihomo") {
+	restricted, err := subjectDLPRestricted(tx, credential.SubjectID)
+	if err != nil {
+		return nil, err
+	}
+	if restricted {
+		return nil, nil
+	}
+	if credential.RuntimeKind != "endpoint" || !credentialHasCapability(credential, "mihomo") || !credentialHasCapability(credential, "mihomo-policy-v1") || !credentialHasCapability(credential, "mihomo-dns-pin-v1") {
 		return nil, nil
 	}
 	profiles, err := networkaccessrepo.New(tx).ListMihomoProfiles(tx.Statement.Context, domainnetworkaccess.MihomoProfileFilter{
@@ -1112,7 +1185,7 @@ func mihomoFakeIP(raw string) (netip.Prefix, error) {
 		return netip.Prefix{}, nil
 	}
 	prefix, err := netip.ParsePrefix(raw)
-	if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() || prefix.Bits() == 0 {
+	if err != nil || prefix.Addr().Is4In6() || prefix != prefix.Masked() || prefix.Bits() == 0 {
 		return netip.Prefix{}, invalidMihomoRuntimeConfiguration()
 	}
 	return prefix, nil
@@ -1121,7 +1194,7 @@ func mihomoFakeIP(raw string) (netip.Prefix, error) {
 func validateMihomoBypass(cidrs []string, fakeIP netip.Prefix) error {
 	for _, raw := range cidrs {
 		prefix, err := netip.ParsePrefix(raw)
-		if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() || prefix.Bits() == 0 {
+		if err != nil || prefix.Addr().Is4In6() || prefix != prefix.Masked() || prefix.Bits() == 0 {
 			return invalidMihomoRuntimeConfiguration()
 		}
 		if fakeIP.IsValid() && fakeIP.Overlaps(prefix) {
@@ -1284,10 +1357,10 @@ func siteLinkFirewallRules(local, directPeer gatewayRuntimeRow, members []gatewa
 		}
 		for _, source := range gatewaySitePrefixes(sourceGateway) {
 			for _, destination := range destinations {
-				if source != sourceGateway.OverlayCIDR {
-					for _, denied := range protectedWithin(protected, destination) {
-						appendRule(&denies, "deny", "from_wireguard", source, denied)
-					}
+				// A site link proves its gateway identity, not a resource lease
+				// for arbitrary packets carrying a remote overlay source.
+				for _, denied := range protectedWithin(protected, destination) {
+					appendRule(&denies, "deny", "from_wireguard", source, denied)
 				}
 				appendRule(&allows, "allow", "from_wireguard", source, destination)
 			}
@@ -1332,7 +1405,7 @@ func sortedUniqueStrings(values []string) []string {
 	return slices.Compact(values)
 }
 
-func gatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential credentialRow, snapshot domainnetworkruntime.PolicySnapshot, validUntil, now time.Time) (networkprotocol.ConfigurationDesired, error) {
+func compileGatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential credentialRow, snapshot domainnetworkruntime.PolicySnapshot, validUntil, now time.Time) (networkprotocol.ConfigurationDesired, error) {
 	peers, err := activeVPNPeers(tx, gateway.ID, now)
 	if err != nil {
 		return networkprotocol.ConfigurationDesired{}, err
@@ -1344,7 +1417,7 @@ func gatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential creden
 	if err != nil {
 		return networkprotocol.ConfigurationDesired{}, err
 	}
-	protected, err := topologyProtectedDestinations(tx, topology, snapshot.ProtectedResourceIDs)
+	protected, err := vpnProtectedDestinations(tx, snapshot)
 	if err != nil {
 		return networkprotocol.ConfigurationDesired{}, err
 	}
@@ -1354,7 +1427,7 @@ func gatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential creden
 	}
 	desired := networkprotocol.ConfigurationDesired{PolicyVersion: snapshot.PolicyVersion, ValidUntil: sitePlan.validUntil, AccessProfile: domainnetworkaccess.ProfileFull, ProtectedResourceIDs: slices.Clone(snapshot.ProtectedResourceIDs), NetworkLeases: []networkprotocol.NetworkLease{}, ResourceLeases: []networkprotocol.ResourceLease{}}
 	wireGuard := &networkprotocol.WireGuardConfiguration{Role: "gateway", InterfaceName: "soha0", PublicKey: credential.WireGuardPublicKey,
-		Addresses: []string{netip.PrefixFrom(netip.MustParsePrefix(gateway.OverlayCIDR).Addr().Next(), 32).String()}, ListenPort: gateway.PublicEndpointPort,
+		Addresses: []string{netip.PrefixFrom(netip.MustParsePrefix(gateway.OverlayCIDR).Addr().Next(), netip.MustParsePrefix(gateway.OverlayCIDR).Addr().BitLen()).String()}, ListenPort: gateway.PublicEndpointPort,
 		MTU: gateway.MTU, RoutingMode: gateway.RoutingMode, FirewallDefault: "deny", Peers: slices.Clone(sitePlan.peers), Routes: slices.Clone(sitePlan.routes), DNSServers: slices.Clone(gateway.DNSServers), FirewallRules: []networkprotocol.WireGuardFirewallRule{}}
 	for index := range peers {
 		peer := &peers[index]
@@ -1365,11 +1438,11 @@ func gatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential creden
 		if len(peerNetworkLeases) == 0 && len(peerResourceLeases) == 0 {
 			continue
 		}
-		space, _, resourceTargets, err := compileLeaseAccess(tx, peerNetworkLeases, peerResourceLeases)
+		_, _, resourceTargets, err := compileProtectedLeaseAccess(tx, peerNetworkLeases, peerResourceLeases, snapshot)
 		if err != nil {
 			return networkprotocol.ConfigurationDesired{}, err
 		}
-		denied, err := protectedDestinations(tx, space.ID, snapshot.ProtectedResourceIDs, space.CIDRs)
+		denied, err := vpnProtectedDestinations(tx, snapshot)
 		if err != nil {
 			return networkprotocol.ConfigurationDesired{}, err
 		}
@@ -1396,46 +1469,6 @@ func gatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential creden
 	}
 	desired.WireGuard = wireGuard
 	return desired, nil
-}
-
-func topologyProtectedDestinations(tx *gorm.DB, members []gatewayTopologyMember, protectedIDs []string) ([]string, error) {
-	if len(protectedIDs) == 0 {
-		return []string{}, nil
-	}
-	advertised := []string{}
-	for _, member := range members {
-		advertised = append(advertised, member.gateway.AdvertisedCIDRs...)
-	}
-	rows, err := tx.Raw(`SELECT kind, target FROM network_access_resources
-		WHERE tenant_id = 'default' AND workspace_id = 'default' AND protected = true AND id IN ? ORDER BY id`, protectedIDs).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	result := []string{}
-	for rows.Next() {
-		var kind, target string
-		if err := rows.Scan(&kind, &target); err != nil {
-			return nil, err
-		}
-		switch kind {
-		case "ip":
-			target += "/32"
-			if !prefixOverlapsAny(target, advertised) {
-				continue
-			}
-			result = append(result, target)
-		case "cidr":
-			if target == "0.0.0.0/0" {
-				result = append(result, advertised...)
-			} else if prefixOverlapsAny(target, advertised) {
-				result = append(result, target)
-			}
-		case "fqdn":
-			result = append(result, advertised...)
-		}
-	}
-	return sortedUniqueStrings(result), rows.Err()
 }
 
 func prefixOverlapsAny(raw string, candidates []string) bool {
@@ -1526,7 +1559,12 @@ func compileLeaseAccess(tx *gorm.DB, networkLeases []networkprotocol.NetworkLeas
 		}
 		for _, target := range targets {
 			routes = append(routes, target.DestinationCIDR)
-			target.LeaseID, target.ExpiresAt = lease.ID, lease.ExpiresAt
+			target.LeaseID = lease.ID
+			if target.ExpiresAt.IsZero() {
+				target.ExpiresAt = lease.ExpiresAt
+			} else {
+				target.ExpiresAt = minTime(target.ExpiresAt, lease.ExpiresAt)
+			}
 			resourceTargets = append(resourceTargets, target)
 		}
 	}
@@ -1568,7 +1606,7 @@ func dnsWithinRoutes(servers, routes []string) []string {
 	result := []string{}
 	for _, raw := range servers {
 		address, err := netip.ParseAddr(raw)
-		if err != nil || !address.Is4() {
+		if err != nil || address.Is4In6() {
 			continue
 		}
 		for _, route := range routes {
@@ -1598,60 +1636,49 @@ func runtimeSpace(tx *gorm.DB, spaceID string) (domainnetworkaccess.Space, error
 func runtimeResourceTargets(tx *gorm.DB, resourceIDs []string, expectedSpaceID string) (domainnetworkaccess.Space, []leasedResourceTarget, error) {
 	ids := slices.Clone(resourceIDs)
 	slices.Sort(ids)
-	if len(ids) == 0 || len(slices.Compact(ids)) != len(ids) {
+	if len(ids) == 0 || len(slices.Compact(slices.Clone(ids))) != len(ids) {
 		return domainnetworkaccess.Space{}, nil, staleVPNResourceScope()
 	}
-	rows, err := tx.Raw(`SELECT r.id, r.space_id, r.kind, r.target, r.protocol, r.ports, s.id, s.site_id, s.cidrs, s.status
-		FROM network_access_resources r JOIN network_access_spaces s ON s.id = r.space_id
-		WHERE r.tenant_id = 'default' AND r.workspace_id = 'default' AND s.tenant_id = 'default' AND s.workspace_id = 'default'
-		AND s.status = 'active' AND r.id IN ? ORDER BY r.id`, ids).Rows()
+	resources, err := networkaccessrepo.New(tx).ResourcesByIDs(tx.Statement.Context, ids)
 	if err != nil {
 		return domainnetworkaccess.Space{}, nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	if len(resources) != len(ids) {
+		return domainnetworkaccess.Space{}, nil, staleVPNResourceScope()
+	}
 	var space domainnetworkaccess.Space
 	targets := []leasedResourceTarget{}
-	for rows.Next() {
-		var resource domainnetworkaccess.Resource
-		var ports, cidrs []byte
-		var rowSpace domainnetworkaccess.Space
-		if err := rows.Scan(&resource.ID, &resource.SpaceID, &resource.Kind, &resource.Target, &resource.Protocol, &ports,
-			&rowSpace.ID, &rowSpace.SiteID, &cidrs, &rowSpace.Status); err != nil {
+	for _, resource := range resources {
+		rowSpace, err := runtimeSpace(tx, resource.SpaceID)
+		if err != nil {
 			return space, nil, err
-		}
-		if err := json.Unmarshal(ports, &resource.Ports); err != nil {
-			return space, nil, fmt.Errorf("decode network resource ports: %w", err)
-		}
-		if err := json.Unmarshal(cidrs, &rowSpace.CIDRs); err != nil {
-			return space, nil, fmt.Errorf("decode network space CIDRs: %w", err)
 		}
 		if (expectedSpaceID != "" && rowSpace.ID != expectedSpaceID) || (space.ID != "" && rowSpace.ID != space.ID) {
 			return space, nil, staleVPNResourceScope()
 		}
 		space = rowSpace
-		destination, ok := domainnetworkaccess.WireGuardResourceTarget(resource, rowSpace)
+		if err := networkaccessrepo.New(tx).ResolveResourceDNS(tx.Statement.Context, &resource); err != nil {
+			return space, nil, err
+		}
+		destinations, ok := domainnetworkaccess.WireGuardResourceTargets(resource, space)
 		if !ok {
 			return space, nil, staleVPNResourceScope()
 		}
-		targets = append(targets, leasedResourceTarget{ResourceID: resource.ID, DestinationCIDR: destination, Protocol: resource.Protocol, Ports: slices.Clone(resource.Ports)})
-	}
-	if err := rows.Err(); err != nil {
-		return space, nil, err
-	}
-	if len(targets) != len(ids) {
-		return space, nil, staleVPNResourceScope()
+		for _, destination := range destinations {
+			targets = append(targets, leasedResourceTarget{Hostname: resourceHostname(resource), ResourceID: resource.ID, DestinationCIDR: destination, Protocol: resource.Protocol, Ports: slices.Clone(resource.Ports), ExpiresAt: resource.DNSExpiresAt})
+		}
 	}
 	return space, targets, nil
 }
 
 func routeWithinSpace(raw string, space domainnetworkaccess.Space) bool {
 	route, err := netip.ParsePrefix(raw)
-	if err != nil || !route.Addr().Is4() || route != route.Masked() || route.Bits() == 0 {
+	if err != nil || route.Addr().Is4In6() || route != route.Masked() || route.Bits() == 0 {
 		return false
 	}
 	for _, spaceCIDR := range space.CIDRs {
 		prefix, err := netip.ParsePrefix(spaceCIDR)
-		if err == nil && prefix.Addr().Is4() && prefix == prefix.Masked() && prefix.Bits() <= route.Bits() && prefix.Contains(route.Addr()) {
+		if err == nil && !prefix.Addr().Is4In6() && prefix == prefix.Masked() && prefix.Bits() <= route.Bits() && prefix.Contains(route.Addr()) {
 			return true
 		}
 	}
@@ -1662,62 +1689,41 @@ func staleVPNResourceScope() error {
 	return apperrors.NewBusiness(apperrors.ErrConflict, "stale_vpn_resource_scope", "The VPN resource scope changed or cannot be enforced.", "VPN 资源范围已变化或无法执行。")
 }
 
-func protectedDestinations(tx *gorm.DB, spaceID string, protectedIDs, spaceCIDRs []string) ([]string, error) {
-	if len(protectedIDs) == 0 {
-		return []string{}, nil
-	}
-	rows, err := tx.Raw(`SELECT kind, target FROM network_access_resources WHERE tenant_id = 'default' AND workspace_id = 'default' AND space_id = ? AND protected = true AND id IN ? ORDER BY id`, spaceID, protectedIDs).Rows()
+// All VPN paths use the same published set as managed proxies. Scope filtering
+// here would miss a protected destination reachable through an overlapping route.
+func vpnProtectedDestinations(tx *gorm.DB, snapshot domainnetworkruntime.PolicySnapshot) ([]string, error) {
+	protection, err := networkaccessrepo.New(tx).CompileProtectedDestinations(tx.Statement.Context, snapshot.PolicyVersion, snapshot.ProtectedResourceIDs)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	unique := map[string]struct{}{}
-	for rows.Next() {
-		var kind, target string
-		if err := rows.Scan(&kind, &target); err != nil {
-			return nil, err
-		}
-		switch kind {
-		case "ip":
-			unique[target+"/32"] = struct{}{}
-		case "cidr":
-			if target == "0.0.0.0/0" {
-				for _, cidr := range spaceCIDRs {
-					unique[cidr] = struct{}{}
-				}
-			} else {
-				unique[target] = struct{}{}
-			}
-		case "fqdn":
-			// FQDN has no stable L3 target in Phase 4; deny its entire containing space until the Phase 5 mapper exists.
-			for _, cidr := range spaceCIDRs {
-				unique[cidr] = struct{}{}
-			}
-		}
-	}
-	result := make([]string, 0, len(unique))
-	for cidr := range unique {
-		result = append(result, cidr)
-	}
-	slices.Sort(result)
-	return result, rows.Err()
+	return slices.Clone(protection.CIDRs), nil
 }
 
 func leaseFirewallRules(source string, networkLeases []networkprotocol.NetworkLease, resourceTargets []leasedResourceTarget, denied []string) []networkprotocol.WireGuardFirewallRule {
 	rules := make([]networkprotocol.WireGuardFirewallRule, 0, len(resourceTargets)+len(denied)+len(networkLeases))
 	for _, target := range resourceTargets {
-		expiresAt := target.ExpiresAt
+		if !sameAddressFamily(source, target.DestinationCIDR) {
+			continue
+		}
+		// Match PostgreSQL readback without timezone or sub-microsecond drift.
+		expiresAt := target.ExpiresAt.UTC().Truncate(time.Microsecond)
 		rules = append(rules, networkprotocol.WireGuardFirewallRule{
 			ID: firewallRuleID("allow", source, target.DestinationCIDR, target.LeaseID), Effect: "allow", LeaseID: target.LeaseID,
 			SourceCIDR: source, DestinationCIDR: target.DestinationCIDR, Protocol: target.Protocol, Ports: slices.Clone(target.Ports), ExpiresAt: &expiresAt,
 		})
 	}
 	for _, destination := range denied {
+		if !sameAddressFamily(source, destination) {
+			continue
+		}
 		rules = append(rules, networkprotocol.WireGuardFirewallRule{ID: firewallRuleID("deny", source, destination, ""), Effect: "deny", SourceCIDR: source, DestinationCIDR: destination, Protocol: "any"})
 	}
 	for _, lease := range networkLeases {
 		for _, destination := range lease.CIDRs {
-			expiresAt := lease.ExpiresAt
+			if !sameAddressFamily(source, destination) {
+				continue
+			}
+			expiresAt := lease.ExpiresAt.UTC().Truncate(time.Microsecond)
 			rules = append(rules, networkprotocol.WireGuardFirewallRule{ID: firewallRuleID("allow", source, destination, lease.ID), Effect: "allow", LeaseID: lease.ID, SourceCIDR: source, DestinationCIDR: destination, Protocol: "any", ExpiresAt: &expiresAt})
 		}
 	}
@@ -1731,4 +1737,70 @@ func firewallRuleID(effect, source, destination, leaseID string) string {
 
 func gatewayPeerMetricsEnabled(credential credentialRow, profileID string) bool {
 	return credentialHasCapability(credential, networkprotocol.CapabilityVPNMetrics) && profileID != ""
+}
+
+func resourceVPNMode(mode string) bool {
+	switch mode {
+	case domainnetworkaccess.ModeInternalZTNA, domainnetworkaccess.ModeExternalVPNZTNA, domainnetworkaccess.ModeExternalDirectZTNA:
+		return true
+	default:
+		return false
+	}
+}
+
+func sameAddressFamily(a, b string) bool {
+	left, e1 := netip.ParsePrefix(a)
+	right, e2 := netip.ParsePrefix(b)
+	return e1 == nil && e2 == nil && left.Addr().BitLen() == right.Addr().BitLen()
+}
+
+func resourceHostname(resource domainnetworkaccess.Resource) string {
+	if resource.Kind == "fqdn" {
+		return resource.Target
+	}
+	return ""
+}
+func resourceDNSRecords(targets []leasedResourceTarget, source string) []networkprotocol.DNSRecord {
+	records := map[string]networkprotocol.DNSRecord{}
+	for _, target := range targets {
+		if target.Hostname == "" || !sameAddressFamily(source, target.DestinationCIDR) {
+			continue
+		}
+		record := records[target.Hostname]
+		record.Hostname = target.Hostname
+		record.Addresses = append(record.Addresses, netip.MustParsePrefix(target.DestinationCIDR).Addr().String())
+		if record.ExpiresAt.IsZero() || target.ExpiresAt.Before(record.ExpiresAt) {
+			record.ExpiresAt = target.ExpiresAt.UTC().Truncate(time.Microsecond)
+		}
+		records[target.Hostname] = record
+	}
+	names := make([]string, 0, len(records))
+	for name := range records {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	result := make([]networkprotocol.DNSRecord, 0, len(names))
+	for _, name := range names {
+		record := records[name]
+		record.Addresses = sortedUniqueStrings(record.Addresses)
+		result = append(result, record)
+	}
+	return result
+}
+
+func gatewayCredentialSupportsOverlay(c credentialRow, overlay string) bool {
+	prefix, err := netip.ParsePrefix(overlay)
+	if err != nil {
+		return false
+	}
+	return credentialHasCapability(c, "wireguard") && credentialHasCapability(c, "wireguard-kernel-expiry-v1") && (prefix.Addr().Is4() || credentialHasCapability(c, "wireguard-ipv6-v1"))
+}
+
+func gatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential credentialRow, snapshot domainnetworkruntime.PolicySnapshot, validUntil, now time.Time) (networkprotocol.ConfigurationDesired, error) {
+	desired, err := compileGatewayVPNDesired(tx, gateway, credential, snapshot, validUntil, now)
+	if err != nil {
+		return desired, err
+	}
+	desired.DNSRequests, err = gatewayDNSRequests(tx, gateway, credential)
+	return desired, err
 }

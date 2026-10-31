@@ -51,6 +51,8 @@ func boundReadFixture(endpoint string) (*Service, *readFenceRepo, domainidentity
 	repo := &readFenceRepo{memoryDockerRepo: base}
 	permissions := appaccess.NewPermissionResolver(dockerTestRoleReader{matrix: map[string][]string{"reader": {"docker.services.logs", "docker.services.files"}}})
 	s := New(repo, permissions, nil, WithRuntimeBearerToken("runtime-token"))
+	// Identity tests use a project with DLP disabled, not a missing guard.
+	withDisabledRuntimeReadDLP(s, base.projects["project-1"])
 	return s, repo, domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}
 }
 

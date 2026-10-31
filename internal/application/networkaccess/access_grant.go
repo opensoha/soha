@@ -74,6 +74,9 @@ func NewAccessGrantService(store AccessGrantStore, policy AccessGrantPolicyStore
 }
 
 func (s *AccessGrantService) Create(ctx context.Context, principal domainidentity.Principal, authSessionID string, input AccessGrantInput) (domainnetworkruntime.AccessGrantSecret, error) {
+	if err := networkUserSubject(principal.UserID); err != nil {
+		return domainnetworkruntime.AccessGrantSecret{}, err
+	}
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermNetworkAccessAccessGrantsCreate); err != nil {
 		return domainnetworkruntime.AccessGrantSecret{}, err
 	}

@@ -122,7 +122,7 @@ func (c *Client) Enroll(ctx context.Context, enrollmentID, challengeID, publicKe
 	now := time.Now().UTC()
 	payload, err := json.Marshal(networkprotocol.EnrollmentRequest{EnrollmentID: enrollmentID, ChallengeID: challengeID,
 		DeviceID: c.runtimeID, DevicePublicKey: publicKey, Platform: "linux", ClientVersion: version,
-		Capabilities: []string{"proxy-runtime-v1"}})
+		Capabilities: []string{"proxy-runtime-v1", "proxy-policy-v1", "proxy-guarded-dns-v1"}})
 	if err != nil {
 		return err
 	}
@@ -226,14 +226,17 @@ func (c *Client) Configuration(ctx context.Context) (*domain.Configuration, erro
 	}
 	var desired domain.Configuration
 	if err := json.Unmarshal(raw, &desired); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: invalid payload", errUnsafeConfiguration)
 	}
 	if !desired.ValidUntil.After(time.Now()) {
-		return nil, fmt.Errorf("proxy configuration expired")
+		return nil, fmt.Errorf("%w: expired", errUnsafeConfiguration)
 	}
 	digest := sha256.Sum256([]byte(desired.Content))
 	if desired.ContentHash != fmt.Sprintf("sha256:%x", digest) {
-		return nil, fmt.Errorf("proxy configuration hash mismatch")
+		return nil, fmt.Errorf("%w: content hash mismatch", errUnsafeConfiguration)
+	}
+	if err := validateProtection(desired); err != nil {
+		return nil, err
 	}
 	return &desired, nil
 }

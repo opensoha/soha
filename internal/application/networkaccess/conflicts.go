@@ -12,8 +12,8 @@ func analyzeConflictRanges(ranges []domainnetworkaccess.ConflictRange) (domainne
 	prefixes := make([]netip.Prefix, len(ranges))
 	for index, item := range ranges {
 		prefix, err := netip.ParsePrefix(item.CIDR)
-		if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() {
-			return domainnetworkaccess.ConflictAnalysis{}, fmt.Errorf("%w: invalid canonical IPv4 CIDR %q", apperrors.ErrInvalidArgument, item.CIDR)
+		if err != nil || prefix.Addr().Is4In6() || prefix != prefix.Masked() {
+			return domainnetworkaccess.ConflictAnalysis{}, fmt.Errorf("%w: invalid canonical IP CIDR %q", apperrors.ErrInvalidArgument, item.CIDR)
 		}
 		prefixes[index] = prefix
 	}
