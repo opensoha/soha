@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/opensoha/soha-contracts v0.1.25
+	github.com/opensoha/soha-contracts v0.1.28-0.20261031074133-d1eaebb02c5b
 	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
@@ -40,6 +40,7 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
@@ -49,4 +50,5 @@ require (
 	k8s.io/apimachinery v0.37.1 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
+	sigs.k8s.io/yaml v1.6.0 // indirect
 )

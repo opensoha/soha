@@ -49,12 +49,11 @@ command for installed binaries.
 This module requires Go 1.27.3 or newer.
 
 ```sh
-go test ./...
 GOWORK=off go test ./...
-go build ./cmd/soha
+GOWORK=off go build ./cmd/soha
 ```
 
-`soha-cli` consumes released Go contracts from
+`soha-cli` consumes versioned Go contracts from
 `github.com/opensoha/soha-contracts`. A clean checkout should build without a
 sibling `../soha-contracts` directory. When developing unreleased contract
 changes locally, create a temporary workspace outside the committed module
@@ -71,13 +70,18 @@ for a multi-repository workspace.
 ## Contracts Compatibility
 
 `soha-cli` treats `github.com/opensoha/soha-contracts` as its public API source.
-The committed `go.mod` must point at a released contracts tag, not a sibling
-checkout. Contract upgrades should be reviewed with this minimum matrix:
+Formal release branches pin a released contracts tag. The current Task115
+integration candidate pins immutable source commit
+`d1eaebb02c5bb222badf52dc43d569ccedc34c02` through its canonical Go pseudo-version,
+so matching Core/Agent/CLI builds can be validated without publishing an SDK
+package. Standard builds use `GOWORK=off` and no sibling replacement. This source
+commit must remain reachable when the candidate branches are integrated; retain
+its ancestry or the source branch. A source pin is not an SDK registry release. Contract upgrades should be reviewed with this minimum matrix:
 
 | soha-cli | soha-contracts | Compatible Soha API | Notes |
 | --- | --- | --- | --- |
 | `v0.1.x` | `v0.1.x` | `v0.1.x` beta API | Supported beta line. |
-| `main` | latest released `v0.1.x` unless intentionally bumped | local development API | Must pass `go test ./...` and `GOWORK=off go test ./...`. |
+| `main` Task115 candidate | the reviewed immutable source above | matching candidate API | Complete owner gates and both declared-dependency and local-candidate consumer matrices. |
 
 When a contracts change is not backward compatible, release a new contracts tag
 first, update this module in a dedicated commit, and run the consumer matrix for
