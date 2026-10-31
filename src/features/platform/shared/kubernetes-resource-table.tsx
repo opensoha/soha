@@ -59,6 +59,7 @@ export type KubernetesResourceTableProps = Omit<
   allRows: Record<string, any>[]
   filterKey?: string
   scopeMode?: 'namespace' | 'cluster' | 'global'
+  hideNamespaceWhenScoped?: boolean
 }
 
 /** K8s full-collection browsing; request and mutation ownership stays with each resource. */
@@ -69,6 +70,7 @@ export function KubernetesResourceTable({
   allRows,
   filterKey = '',
   scopeMode = 'namespace',
+  hideNamespaceWhenScoped = true,
   columns,
   dataSource,
   rowKey,
@@ -183,7 +185,7 @@ export function KubernetesResourceTable({
         viewportScroll
         columnLayoutKey={`${resourceKey}:${userId || 'session'}:${localeCode}`}
         defaultHiddenColumnKeys={
-          scopeMode === 'namespace' && namespace
+          hideNamespaceWhenScoped && scopeMode === 'namespace' && namespace
             ? columns.flatMap((column, index) =>
                 column.dataIndex === 'namespace' ? [columnId(column, index)] : [],
               )

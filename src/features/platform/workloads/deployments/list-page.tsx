@@ -754,6 +754,7 @@ export function WorkloadsDeploymentsPage() {
         selectionToolbar={selectionToolbar}
         resourceKey={'deployments'}
         resourceLabel={'Deployments'}
+        hideNamespaceWhenScoped={false}
         allRows={deployments}
         filterKey={JSON.stringify([searchKeyword, healthFilter])}
         error={deploymentsQuery.isEnabled === false ? null : deploymentsQuery.error}

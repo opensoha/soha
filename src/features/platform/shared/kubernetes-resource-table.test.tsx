@@ -99,6 +99,13 @@ it('keeps initial widths on refresh and refits explicitly from the full scope', 
   await act(async () => table.onResetColumns?.())
   expect(table.columns[0].width).toBe(initialName)
 })
+it('lets a resource keep its namespace column visible in a selected namespace', async () => {
+  await render({ hideNamespaceWhenScoped: false })
+  expect(table.defaultHiddenColumnKeys).toEqual([])
+  expect(table.columnLayoutKey).toBe('deployments:user-a:zh_CN')
+  await render()
+  expect(table.defaultHiddenColumnKeys).toEqual(['namespace'])
+})
 it('preserves row operations and reports failed reads instead of an empty successful list', async () => {
   const onChange = vi.fn()
   const onRow = vi.fn()

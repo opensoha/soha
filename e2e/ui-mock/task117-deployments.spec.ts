@@ -249,9 +249,18 @@ test('namespace tags switch Deployment scope, toolbar and query while clearing t
   await expect(page.getByRole('status').filter({ hasText: '1 个 Deployments' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'deployment-001', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '批量操作', exact: true })).toHaveCount(0)
+  await expect(table.getByRole('columnheader', { name: '命名空间', exact: true })).toBeVisible()
+  await expect(
+    table.getByRole('button', { name: '切换到命名空间 monitoring', exact: true }),
+  ).toBeVisible()
   const url = new URL(page.url())
   expect(url.searchParams.get('namespace')).toBe('monitoring')
   expect(url.searchParams.get('clusterId')).toBe('cluster-a')
+  await page.reload()
+  await expect(table.getByRole('columnheader', { name: '命名空间', exact: true })).toBeVisible()
+  await expect(
+    table.getByRole('button', { name: '切换到命名空间 monitoring', exact: true }),
+  ).toBeVisible()
   expect(state.writes).toHaveLength(0)
   verifyBrowserEvidence(evidence)
 })
