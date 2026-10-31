@@ -1,4 +1,5 @@
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
+import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementQueryField, ManagementTableToolbar } from '@/components/management-list'
 import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
@@ -547,7 +548,11 @@ export function WorkloadsDeploymentsPage() {
         />
       ),
     },
-    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace' },
+    {
+      title: t('common.namespace', 'Namespace'),
+      dataIndex: 'namespace',
+      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+    },
     {
       title: localeCode === 'zh_CN' ? '状态' : 'Status',
       dataIndex: 'health',

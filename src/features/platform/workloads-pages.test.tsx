@@ -77,6 +77,7 @@ vi.mock('@/components/resource-events-timeline', () => ({
 }))
 
 vi.mock('@/components/status-tag', () => ({
+  MetadataTag: ({ label }: { label: ReactNode }) => <span>{label}</span>,
   BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
   StatusTag: ({ value }: { value: string }) => <span>{value}</span>,
 }))

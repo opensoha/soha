@@ -18,23 +18,40 @@ function deployments(count = 80) {
 async function setup(
   context: BrowserContext,
   page: Page,
-  options: { readonly?: boolean; live?: boolean; unsupported?: boolean; empty?: boolean } = {},
+  options: {
+    readonly?: boolean
+    live?: boolean
+    unsupported?: boolean
+    empty?: boolean
+    allNamespaces?: boolean
+  } = {},
 ) {
   const state = {
     rows: options.empty ? [] : deployments(),
     reads: 0,
+    namespaceReads: [] as (string | null)[],
     status: 200,
     writes: [] as { method: string; path: string; body: Record<string, unknown> | null }[],
     failDelete: false,
     failRestart: '',
     failScale: '',
   }
+  if (options.allNamespaces)
+    state.rows = deployments(2).map((item, index) => ({
+      ...item,
+      namespace: index ? 'kube-system' : 'monitoring',
+    }))
   if (options.readonly) state.rows = state.rows.map((row) => ({ ...row, allowedActions: ['view'] }))
-  await context.addInitScript(() =>
-    localStorage.setItem(
-      'soha-scope',
-      JSON.stringify({ state: { clusterId: 'cluster-a', namespace: 'monitoring' }, version: 0 }),
-    ),
+  await context.addInitScript(
+    (allNamespaces) =>
+      localStorage.setItem(
+        'soha-scope',
+        JSON.stringify({
+          state: { clusterId: 'cluster-a', namespace: allNamespaces ? null : 'monitoring' },
+          version: 0,
+        }),
+      ),
+    Boolean(options.allNamespaces),
   )
   if (options.live)
     await page.routeWebSocket('**/resources/stream?*', (socket) =>
@@ -43,6 +60,16 @@ async function setup(
       ),
     )
   const evidence = await installMocks(context, page, (url, method, request) => {
+    if (options.allNamespaces && url.pathname === '/api/v1/clusters/cluster-a/namespaces')
+      return {
+        body: {
+          data: ['monitoring', 'kube-system'].map((name) => ({
+            name,
+            status: 'Active',
+            labels: {},
+          })),
+        },
+      }
     if (url.pathname === '/api/v1/clusters')
       return {
         body: {
@@ -101,8 +128,17 @@ async function setup(
           }
     if (url.pathname === '/api/v1/clusters/cluster-a/workloads/deployments' && method === 'GET') {
       state.reads += 1
+      const namespace = url.searchParams.get('namespace')
+      state.namespaceReads.push(namespace)
       return state.status === 200
-        ? { body: { data: state.rows } }
+        ? {
+            body: {
+              data:
+                options.allNamespaces && namespace
+                  ? state.rows.filter((item) => item.namespace === namespace)
+                  : state.rows,
+            },
+          }
         : {
             status: state.status,
             body: { error: { code: 'read_failed', message: 'Synthetic deployment read failure' } },
@@ -193,6 +229,29 @@ test('second sample: supporting count, compact fixed menu, keyboard and responsi
   await expect(menu(page).getByRole('menuitem', { name: '删除', exact: true })).toBeVisible()
   await page.keyboard.press('Tab')
   await expect(row(page, 'deployment-001').getByRole('checkbox')).toBeFocused()
+  expect(state.writes).toHaveLength(0)
+  verifyBrowserEvidence(evidence)
+})
+
+test('namespace tags switch Deployment scope, toolbar and query while clearing the previous selection', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await setup(context, page, { allNamespaces: true })
+  const table = page.locator('.soha-deployments-table')
+  await table.getByRole('checkbox').first().check()
+  await expect(page.getByRole('button', { name: '批量操作', exact: true })).toBeVisible()
+  const tag = table.getByRole('button', { name: '切换到命名空间 monitoring', exact: true })
+  await expect(tag.locator('.ant-tag')).toHaveText('monitoring')
+  await tag.click()
+  await expect.poll(() => state.namespaceReads.at(-1)).toBe('monitoring')
+  await expect(page.getByRole('group', { name: '资源范围' })).toContainText('monitoring')
+  await expect(page.getByRole('status').filter({ hasText: '1 个 Deployments' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'deployment-001', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '批量操作', exact: true })).toHaveCount(0)
+  const url = new URL(page.url())
+  expect(url.searchParams.get('namespace')).toBe('monitoring')
+  expect(url.searchParams.get('clusterId')).toBe('cluster-a')
   expect(state.writes).toHaveLength(0)
   verifyBrowserEvidence(evidence)
 })

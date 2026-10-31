@@ -1,4 +1,5 @@
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
+import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import {
   ManagementBatchBar,
   ManagementQueryField,
@@ -299,17 +300,7 @@ export function WorkloadsPodsPage() {
       dataIndex: 'namespace',
       width: 132,
       sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)),
-      render: (value: string) => (
-        <Tooltip
-          title={value || '-'}
-          placement="top"
-          styles={{ container: { overflowWrap: 'anywhere' } }}
-        >
-          <Tag variant="filled" color="blue" className="soha-pod-table-namespace-tag">
-            <span className="soha-pod-table-namespace-label">{value || '-'}</span>
-          </Tag>
-        </Tooltip>
-      ),
+      render: (value: string) => <NamespaceScopeTag namespace={value} />,
     },
     {
       title: 'IP',

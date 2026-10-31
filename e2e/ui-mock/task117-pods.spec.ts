@@ -75,6 +75,7 @@ async function setup(
     pods: makePods(),
     status: 200,
     reads: 0,
+    namespaceReads: [] as (string | null)[],
     deletes: 0,
     terminalTickets: 0,
     terminalRows: [] as number[],
@@ -176,8 +177,16 @@ async function setup(
     }
     if (url.pathname === '/api/v1/clusters/cluster-a/workloads/pods' && method === 'GET') {
       state.reads += 1
+      const scopeNamespace = url.searchParams.get('namespace')
+      state.namespaceReads.push(scopeNamespace)
       return state.status === 200
-        ? { body: { data: state.pods } }
+        ? {
+            body: {
+              data: scopeNamespace
+                ? state.pods.filter((pod) => pod.namespace === scopeNamespace)
+                : state.pods,
+            },
+          }
         : {
             status: state.status,
             body: { error: { code: 'test_read_failed', message: 'Synthetic read failure' } },
@@ -254,6 +263,31 @@ async function setup(
 const holder = (page: Page) => page.getByRole('region', { name: '资源列表，可连续滚动' })
 const rows = (page: Page) => page.locator('.soha-pods-table .ant-table-row[data-row-key]')
 const search = (page: Page) => page.getByPlaceholder('搜索 Pod / Node / IP')
+
+test('namespace tag supports Enter and switches the Pod query and top toolbar together', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await setup(context, page, true, false, null)
+  state.pods = makePods(2).map((pod, index) => ({
+    ...pod,
+    namespace: index ? 'kube-system' : 'monitoring',
+  }))
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(rows(page)).toHaveCount(2)
+  const tag = page.getByRole('button', { name: '切换到命名空间 monitoring', exact: true })
+  await tag.focus()
+  await expect(tag).toBeFocused()
+  await tag.press('Enter')
+  await expect.poll(() => state.namespaceReads.at(-1)).toBe('monitoring')
+  await expect(page.getByRole('group', { name: '资源范围' })).toContainText('monitoring')
+  await expect(rows(page)).toHaveCount(1)
+  await expect(rows(page).first()).toContainText('pod-0000')
+  expect(new URL(page.url()).searchParams.get('namespace')).toBe('monitoring')
+  expect(state.deletes).toBe(0)
+  expect(state.terminalTickets).toBe(0)
+  verifyBrowserEvidence(evidence)
+})
 
 async function expectContainerColumnAligned(page: Page) {
   await expect
@@ -545,11 +579,11 @@ for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: '刷新', exact: true }).click()
     await expect(rows(page)).toHaveCount(2)
     if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
-    const tag = rows(page).first().locator('.soha-pod-table-namespace-tag')
+    const tag = rows(page).first().locator('.soha-namespace-scope-tag')
     await expect(tag).toHaveText('envoy-gateway-system-with-a-long-resource-namespace')
     await expect
       .poll(() =>
-        tag.locator('.soha-pod-table-namespace-label').evaluate((element) => ({
+        tag.locator('.soha-namespace-scope-label').evaluate((element) => ({
           display: getComputedStyle(element).display,
           overflow: getComputedStyle(element).overflow,
           ellipsis: getComputedStyle(element).textOverflow,
