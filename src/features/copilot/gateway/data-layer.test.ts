@@ -70,10 +70,16 @@ describe('gateway data layer', () => {
   })
 
   it('preserves approval decisions and token rotation/revocation endpoints', async () => {
+    apiMocks.get
+      .mockResolvedValueOnce({ data: [{ id: 'pat-1', metadata: {} }] })
+      .mockResolvedValueOnce({ data: [{ id: 'sat-1', metadata: {} }] })
     await decideGatewayApproval({ action: 'approve', id: 'approval/1', comment: 'reviewed' })
     await rotateGatewayToken('personal-token', 'pat-1')
     await rotateGatewayToken('service-token', 'sat-1')
     await deleteGatewayResource('personal-token', 'pat-2')
+
+    expect(apiMocks.get).toHaveBeenNthCalledWith(1, '/ai-gateway/personal-access-tokens')
+    expect(apiMocks.get).toHaveBeenNthCalledWith(2, '/ai-gateway/service-account-tokens')
 
     expect(apiMocks.post).toHaveBeenNthCalledWith(
       1,
@@ -83,10 +89,12 @@ describe('gateway data layer', () => {
     expect(apiMocks.post).toHaveBeenNthCalledWith(
       2,
       '/ai-gateway/personal-access-tokens/pat-1/rotate',
+      undefined,
     )
     expect(apiMocks.post).toHaveBeenNthCalledWith(
       3,
       '/ai-gateway/service-account-tokens/sat-1/rotate',
+      undefined,
     )
     expect(apiMocks.post).toHaveBeenNthCalledWith(
       4,

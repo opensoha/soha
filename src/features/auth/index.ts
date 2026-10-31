@@ -12,6 +12,7 @@ export {
 export { publishAuthSessionAvailable, subscribeAuthSessionAvailable } from './auth-session-channel'
 export { authKeys } from './keys'
 export { authProfileApi } from './profile-api'
+export { createGatewayCredential, rotateGatewayCredential } from './governed-credentials-api'
 export {
   hasAllowedAction,
   hasPermission,

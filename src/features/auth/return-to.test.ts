@@ -34,3 +34,24 @@ describe('shouldUseDocumentNavigation', () => {
     expect(shouldUseDocumentNavigation('/portal/applications/app-1')).toBe(false)
   })
 })
+
+describe('path deployment return targets', () => {
+  it('converts browser callback targets into router paths without losing query or fragment', () => {
+    expect(normalizeLocalReturnTo('/team/auth/device', '/team/')).toBe('/auth/device')
+    expect(normalizeLocalReturnTo('/team/projects?p=1#selection', '/team/')).toBe(
+      '/projects?p=1#selection',
+    )
+    expect(normalizeLocalReturnTo('/auth/device', '/team/')).toBe('/auth/device')
+    expect(normalizeLocalReturnTo('//other.example.test/team/', '/team/')).toBeNull()
+    expect(normalizeLocalReturnTo('/team/../auth/device', '/team/')).toBe('/auth/device')
+  })
+  it('recognizes server callbacks below the deployment prefix', () => {
+    expect(
+      shouldUseDocumentNavigation('/team/api/v1/provider/proxy/callback?state=resume', '/team/'),
+    ).toBe(true)
+    expect(shouldUseDocumentNavigation('/team/oauth2/authorize?client_id=portal', '/team/')).toBe(
+      true,
+    )
+    expect(shouldUseDocumentNavigation('/team/auth/device', '/team/')).toBe(false)
+  })
+})

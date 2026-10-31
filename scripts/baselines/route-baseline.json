@@ -54,14 +54,14 @@
     ]
   },
   "summary": {
-    "runtimePaths": 292,
-    "metadataPaths": 292,
-    "overlappingPaths": 292,
+    "runtimePaths": 293,
+    "metadataPaths": 293,
+    "overlappingPaths": 293,
     "runtimeOnlyPaths": 0,
     "metadataOnlyPaths": 0,
     "inlineJsxPaths": 0,
-    "lazyRouteLoads": 239,
-    "lazySourceModules": 225
+    "lazyRouteLoads": 240,
+    "lazySourceModules": 226
   },
   "paths": {
     "runtime": [
@@ -111,6 +111,7 @@
       "/applications/:applicationId/application-environments/:applicationEnvironmentId/workloads/:workloadName",
       "/applications/:applicationId/workflows/design",
       "/auth/browser-handoff/:handoffId",
+      "/auth/device",
       "/auth/oidc/callback",
       "/build-templates",
       "/builds/:buildId",
@@ -405,6 +406,7 @@
       "/applications/:applicationId/application-environments/:applicationEnvironmentId/workloads/:workloadName",
       "/applications/:applicationId/workflows/design",
       "/auth/browser-handoff/:handoffId",
+      "/auth/device",
       "/auth/oidc/callback",
       "/build-templates",
       "/builds/:buildId",
@@ -699,6 +701,7 @@
       "/applications/:applicationId/application-environments/:applicationEnvironmentId/workloads/:workloadName",
       "/applications/:applicationId/workflows/design",
       "/auth/browser-handoff/:handoffId",
+      "/auth/device",
       "/auth/oidc/callback",
       "/build-templates",
       "/builds/:buildId",
@@ -1161,6 +1164,11 @@
         "exportName": "CapabilityTasksPage",
         "moduleExport": "CapabilityTasksPage",
         "source": "@/features/copilot/capability-tasks/page"
+      },
+      {
+        "exportName": "CLIDevicePage",
+        "moduleExport": "CLIDevicePage",
+        "source": "@/features/auth/cli-device-page"
       },
       {
         "exportName": "ClusterDetailPage",
@@ -2156,6 +2164,7 @@
       "@/features/access/users/page",
       "@/features/auth/about-page",
       "@/features/auth/browser-handoff-page",
+      "@/features/auth/cli-device-page",
       "@/features/auth/login-page",
       "@/features/auth/oidc-callback-page",
       "@/features/auth/user-profile-page",
@@ -2383,6 +2392,7 @@
       "@/features/access/users/page": ["AccessUsersPage"],
       "@/features/auth/about-page": ["AboutPage"],
       "@/features/auth/browser-handoff-page": ["BrowserHandoffPage"],
+      "@/features/auth/cli-device-page": ["CLIDevicePage"],
       "@/features/auth/login-page": ["LoginPage"],
       "@/features/auth/oidc-callback-page": ["OIDCCallbackPage", "OIDCCallbackPage"],
       "@/features/auth/user-profile-page": ["UserProfilePage"],
@@ -2701,5 +2711,5 @@
       "@/features/virtualization/virtual-machines/list-page": ["VirtualizationVmsPage"]
     }
   },
-  "generatedAt": "2026-10-19T15:48:23.079Z"
+  "generatedAt": "2026-10-23T06:19:02.166Z"
 }

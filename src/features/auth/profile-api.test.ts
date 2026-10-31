@@ -21,7 +21,7 @@ describe('auth profile data boundary', () => {
   })
 
   it('preserves profile and gateway token wire paths', async () => {
-    vi.mocked(api.get).mockResolvedValue({ data: [] })
+    vi.mocked(api.get).mockResolvedValue({ data: [{ id: 'token-1' }] })
     vi.mocked(api.patch).mockResolvedValue({ data: {} })
     vi.mocked(api.post).mockResolvedValue({ data: {} })
 
@@ -35,7 +35,11 @@ describe('auth profile data boundary', () => {
       scopes: [],
     })
     await authProfileApi.revokeGatewayToken('token-1')
-    await authProfileApi.rotateGatewayToken('token-1')
+    const rotation = {
+      rotationRequestId: '11111111-1111-4111-8111-111111111111',
+      expiresAt: '2099-01-01T00:00:00Z',
+    }
+    await authProfileApi.rotateGatewayToken('token-1', rotation)
 
     expect(api.get).toHaveBeenNthCalledWith(1, '/auth/profile')
     expect(api.patch).toHaveBeenCalledWith('/auth/profile', {
@@ -53,6 +57,9 @@ describe('auth profile data boundary', () => {
       scopes: [],
     })
     expect(api.post).toHaveBeenCalledWith('/ai-gateway/personal-access-tokens/token-1/revoke')
-    expect(api.post).toHaveBeenCalledWith('/ai-gateway/personal-access-tokens/token-1/rotate')
+    expect(api.post).toHaveBeenCalledWith(
+      '/ai-gateway/personal-access-tokens/token-1/rotate',
+      rotation,
+    )
   })
 })

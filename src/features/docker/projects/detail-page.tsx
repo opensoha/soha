@@ -52,6 +52,7 @@ function ProjectDetailWorkspace() {
     canViewServices,
     canViewServiceLogs,
     canAccessServiceTerminal,
+    canReadServiceFiles,
     canViewPorts,
   } = useDockerPermissions()
   const [runtimeServiceName, setRuntimeServiceName] = useState('')
@@ -355,7 +356,7 @@ function ProjectDetailWorkspace() {
           },
         ]
       : []),
-    ...(canViewServices
+    ...(canViewServices && canReadServiceFiles
       ? [
           {
             key: 'volumes',
@@ -363,7 +364,7 @@ function ProjectDetailWorkspace() {
             children: (
               <RuntimeBoundary>
                 <DockerProjectVolumesPanel
-                  enabled={canViewServices}
+                  enabled={canViewServices && canReadServiceFiles}
                   projectId={resolvedProjectId}
                   projectName={project?.name}
                   serviceName={runtimeServiceName}

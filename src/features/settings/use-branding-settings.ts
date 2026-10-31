@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth-store'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { readableQueryData } from '@/utils/query-feedback'
 import type { BrandingSettings } from '@/types'
 import {
   defaultBrandingSettings,
@@ -11,7 +13,9 @@ import { settingsQueries } from './queries'
 export function useBrandingSettings() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated())
   const fallback = readStoredBrandingSettings()
-  const query = useQuery(settingsQueries.branding(isAuthenticated))
+  const permissions = usePermissionSnapshot()
+  const canRead = hasPermission(readableQueryData(permissions)?.data, 'settings.branding.view')
+  const query = useQuery(settingsQueries.branding(isAuthenticated && canRead))
   return {
     ...query,
     data: { data: query.data ?? fallback ?? defaultBrandingSettings },

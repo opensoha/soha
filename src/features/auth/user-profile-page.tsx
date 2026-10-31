@@ -57,15 +57,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { authKeys } from './keys'
 import { authProfileApi } from './profile-api'
+import { CLISessionsPanel } from './cli-sessions-panel'
+import { useProfileKeyRotation } from './use-profile-key-rotation'
 import './user-profile-page.css'
 
 const { Paragraph, Text, Title } = Typography
 
-type GatewayTokenExpiration = '7d' | '30d' | '90d' | 'never' | 'custom'
+type GatewayTokenExpiration = '7d' | '30d' | '90d' | 'custom'
 type AvatarFit = 'cover' | 'contain' | 'fill'
 type AvatarCrop = { x: number; y: number; zoom: number }
 
 interface GatewayTokenFormValues {
+  purpose?: 'llm' | 'cli'
   name: string
   permissionKeys?: string[]
   scopes?: string[]
@@ -103,7 +106,6 @@ const gatewayExpirationOptions = [
   { label: '7 天', value: '7d' },
   { label: '30 天', value: '30d' },
   { label: '90 天', value: '90d' },
-  { label: '不过期', value: 'never' },
   { label: '自定义', value: 'custom' },
 ]
 
@@ -167,8 +169,7 @@ function gatewayTokenStatus(record: Pick<PersonalAccessToken, 'expiresAt' | 'rev
 }
 
 function gatewayTokenExpiresAt(values: GatewayTokenFormValues) {
-  const expiresIn = values.expiresIn ?? '30d'
-  if (expiresIn === 'never') return undefined
+  const expiresIn = values.expiresIn ?? '90d'
   if (expiresIn === 'custom') return compact(values.customExpiresAt) || undefined
   const days = expiresIn === '7d' ? 7 : expiresIn === '90d' ? 90 : 30
   const expiresAt = new Date()
@@ -178,7 +179,7 @@ function gatewayTokenExpiresAt(values: GatewayTokenFormValues) {
 
 function validDateTime(value?: string) {
   if (!value) return true
-  return Number.isFinite(new Date(value).getTime())
+  return Number.isFinite(new Date(value).getTime()) && new Date(value).getTime() > Date.now()
 }
 
 function defaultGatewayTokenName(profile?: UserProfile) {
@@ -285,6 +286,7 @@ export function UserProfilePage() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const setAuthUser = useAuthStore((state) => state.setUser)
+  const authenticatedUserId = useAuthStore((state) => state.user?.userId)
   const [profileForm] = Form.useForm<ProfileFormValues>()
   const [avatarForm] = Form.useForm<AvatarFormValues>()
   const [passwordForm] = Form.useForm<PasswordFormValues>()
@@ -302,6 +304,7 @@ export function UserProfilePage() {
   const avatarFileInputRef = useRef<HTMLInputElement | null>(null)
   const avatarDragRef = useRef<{ clientX: number; clientY: number; crop: AvatarCrop } | null>(null)
   const avatarUrlValue = Form.useWatch('avatarUrl', avatarForm)
+  const tokenPurpose = Form.useWatch('purpose', tokenForm)
 
   const profileQuery = useQuery({
     queryKey: authKeys.profile(),
@@ -324,7 +327,12 @@ export function UserProfilePage() {
 
   const profile = readableQueryData(profileQuery)?.data
   const denied = queryAccessDenied(profileQuery)
-  const tokenDenied = queryAccessDenied(gatewayTokensQuery) || !canIssueGatewayKeys || denied
+  const tokenDenied =
+    queryAccessDenied(gatewayTokensQuery) ||
+    !canIssueGatewayKeys ||
+    denied ||
+    !authenticatedUserId ||
+    profile?.userId !== authenticatedUserId
   const secretGeneration = useRef(0)
   const secretAllowed = useRef(!tokenDenied)
   secretAllowed.current = !tokenDenied
@@ -404,14 +412,16 @@ export function UserProfilePage() {
     if (!denied && !linkIdentity.blocked) linkIdentity.mutate(providerId)
   }
 
-  const openCreateToken = () => {
+  const openCreateToken = (purpose: 'llm' | 'cli' = 'llm') => {
     if (tokenBlocked || tokenDenied) return
     createTokenMutation.reset()
     tokenForm.setFieldsValue({
-      name: defaultGatewayTokenName(profile),
-      permissionKeys: ['ai.gateway.invoke'],
+      purpose,
+      name:
+        purpose === 'cli' ? `${profile?.username || 'user'}-cli` : defaultGatewayTokenName(profile),
+      permissionKeys: purpose === 'cli' ? [] : ['ai.gateway.invoke'],
       scopes: [],
-      expiresIn: '30d',
+      expiresIn: '90d',
       customExpiresAt: undefined,
     })
     setCreateTokenOpen(true)
@@ -522,15 +532,21 @@ export function UserProfilePage() {
       gcTime: 0,
       mutationFn: async (values: GatewayTokenFormValues) => {
         const generation = secretGeneration.current
+        const owner = useAuthStore.getState().user?.userId
         const res = await authProfileApi.createGatewayToken({
           name: values.name,
           permissionKeys: values.permissionKeys ?? [],
           scopes: values.scopes ?? [],
           expiresAt: gatewayTokenExpiresAt(values),
         })
-        if (generation === secretGeneration.current && secretAllowed.current && res.data?.value) {
+        if (
+          generation === secretGeneration.current &&
+          owner === useAuthStore.getState().user?.userId &&
+          secretAllowed.current &&
+          res.data?.value
+        ) {
           setOneTimeToken({
-            title: 'Soha AI Gateway Login Key 已生成',
+            title: values.purpose === 'cli' ? 'CLI 个人访问凭据已生成' : 'LLM Gateway Key 已生成',
             value: res.data.value,
             prefix: res.data.token?.tokenPrefix,
           })
@@ -562,29 +578,13 @@ export function UserProfilePage() {
       receipt: () => ({ message: 'Gateway key 吊销请求已返回' }),
     },
   )
-  const rotateTokenMutation = useOperationMutation(
-    {
-      gcTime: 0,
-      mutationFn: async (record: PersonalAccessToken) => {
-        const generation = secretGeneration.current
-        const res = await authProfileApi.rotateGatewayToken(record.id)
-        if (generation === secretGeneration.current && secretAllowed.current && res.data?.value) {
-          setOneTimeToken({
-            title: 'Soha AI Gateway Login Key 已轮换',
-            value: res.data.value,
-            prefix: res.data.token?.tokenPrefix,
-          })
-        }
-        return res.data?.token
-      },
-      onSuccess: () => {
-        void refreshGatewayTokens()
-      },
+  const rotateTokenMutation = useProfileKeyRotation(
+    authenticatedUserId || '',
+    (value, prefix) => {
+      if (secretAllowed.current) setOneTimeToken({ title: '个人访问凭据已轮换', value, prefix })
     },
-    {
-      label: ['轮换 Gateway key', 'Rotate Gateway key'],
-      target: (record) => record.id,
-      receipt: (token) => ({ message: 'Gateway key 轮换记录已返回', evidence: token?.id }),
+    () => {
+      void refreshGatewayTokens()
     },
   )
   const profileBlocked = denied || updateProfileMutation.blocked || changePasswordMutation.blocked
@@ -795,8 +795,8 @@ export function UserProfilePage() {
         render: (_: unknown, record) => (
           <Space className="soha-row-action-icons" size={2}>
             <Popconfirm
-              title="轮换 Gateway key？"
-              description="旧 key 会被吊销，新明文只展示一次。"
+              title="轮换个人访问凭据？"
+              description="旧 Key 会立即撤销；新 Key 默认 90 天有效，明文只展示一次。"
               okButtonProps={{
                 loading: rotateTokenMutation.isPending,
                 disabled: tokenBlocked || tokenDenied,
@@ -814,7 +814,7 @@ export function UserProfilePage() {
             </Popconfirm>
             <Popconfirm
               title="吊销 Gateway key？"
-              description="吊销后外部 AI Client 将不能再使用该 key 登录 Gateway。"
+              description="吊销后，终端和其他客户端均无法继续使用此 Key。"
               okButtonProps={{
                 danger: true,
                 loading: revokeTokenMutation.isPending,
@@ -932,6 +932,11 @@ export function UserProfilePage() {
           tableSize="small"
         />
       ),
+    },
+    {
+      key: 'cli-sessions',
+      label: 'CLI 会话',
+      children: <CLISessionsPanel key={authenticatedUserId} />,
     },
     {
       key: 'access',
@@ -1085,30 +1090,39 @@ export function UserProfilePage() {
             title={
               <Space>
                 <ApiOutlined />
-                <span>AI Gateway Login Key</span>
+                <span>个人访问凭据（PAT）</span>
               </Space>
             }
             extra={
-              <Button
-                size="small"
-                type="primary"
-                icon={<PlusOutlined />}
-                disabled={!canIssueGatewayKeys || tokenBlocked || tokenDenied}
-                onClick={openCreateToken}
-              >
-                生成 key
-              </Button>
+              <Space wrap>
+                <Button
+                  size="small"
+                  disabled={!canIssueGatewayKeys || tokenBlocked || tokenDenied}
+                  onClick={() => openCreateToken('llm')}
+                >
+                  生成 LLM Key
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  disabled={!canIssueGatewayKeys || tokenBlocked || tokenDenied}
+                  onClick={() => openCreateToken('cli')}
+                >
+                  生成 CLI PAT
+                </Button>
+              </Space>
             }
           >
             <div className="soha-profile-gateway-overview">
               <div>
                 <Space size={4}>
-                  <Text strong>面向当前用户的 Soha Gateway 登录凭证</Text>
+                  <Text strong>用于终端、MCP 或 LLM 的个人访问凭据</Text>
                   <Tooltip
-                    title="用于 soha-cli、MCP 客户端或外部 AI Client 以你的用户身份调用 Soha AI Gateway。明文只在生成或轮换后展示一次。"
+                    title="CLI PAT 只能使用你明确选择且当前拥有的权限；LLM Key 默认仅调用 AI Gateway。两者共用 PAT 记录，实际权限以每条记录为准。明文仅展示一次。"
                     trigger={['hover', 'focus']}
                   >
-                    <QuestionCircleOutlined aria-label="AI Gateway Login Key 说明" tabIndex={0} />
+                    <QuestionCircleOutlined aria-label="个人访问凭据说明" tabIndex={0} />
                   </Tooltip>
                 </Space>
               </div>
@@ -1123,7 +1137,7 @@ export function UserProfilePage() {
               <Alert
                 type="warning"
                 showIcon
-                title="当前账号没有 AI Gateway key 查看权限"
+                title="当前账号没有个人访问凭据查看权限"
                 description="需要 ai.gateway.view 查看已有 key，需要 ai.gateway.invoke 生成、轮换或吊销个人 key。"
               />
             ) : (
@@ -1137,10 +1151,7 @@ export function UserProfilePage() {
                 dataSource={gatewayTokens}
                 loading={gatewayTokensQuery.isLoading || permissionSnapshotQuery.isLoading}
                 empty={
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="暂无 AI Gateway login key"
-                  />
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无个人访问凭据" />
                 }
                 pagination={false}
                 rowKey="id"
@@ -1409,7 +1420,7 @@ export function UserProfilePage() {
       </Modal>
 
       <Modal
-        title="生成 Soha AI Gateway Login Key"
+        title={tokenPurpose === 'cli' ? '生成 CLI 个人访问凭据' : '生成 LLM Gateway Key'}
         open={createTokenOpen && !tokenDenied}
         closable={!createTokenMutation.blocked}
         keyboard={!createTokenMutation.blocked}
@@ -1432,9 +1443,24 @@ export function UserProfilePage() {
           disabled={tokenBlocked || tokenDenied}
           form={tokenForm}
           layout="vertical"
-          initialValues={{ permissionKeys: ['ai.gateway.invoke'], scopes: [], expiresIn: '30d' }}
+          initialValues={{ permissionKeys: ['ai.gateway.invoke'], scopes: [], expiresIn: '90d' }}
           onFinish={(values) => createTokenMutation.mutate(values)}
         >
+          <Form.Item name="purpose" hidden>
+            <Input />
+          </Form.Item>
+          <Alert
+            showIcon
+            type="info"
+            title={
+              tokenPurpose === 'cli' ? '选择这个终端实际需要的权限' : '仅用于 LLM Gateway 调用'
+            }
+            description={
+              tokenPurpose === 'cli'
+                ? '创建后通过 soha login --with-token 从标准输入导入。新 Key 默认 90 天有效；不会继承你的全部权限。'
+                : '默认仅授予 ai.gateway.invoke，不自动获得平台管理权限。'
+            }
+          />
           <Form.Item
             name="name"
             label="Key 名称"
@@ -1442,8 +1468,25 @@ export function UserProfilePage() {
           >
             <Input placeholder="例如 codex-local" />
           </Form.Item>
-          <Form.Item name="permissionKeys" label="权限 keys">
-            <Select mode="tags" tokenSeparators={[',', ' ']} options={gatewayPermissionOptions} />
+          <Form.Item
+            name="permissionKeys"
+            label="权限 keys"
+            rules={[{ required: true, type: 'array', min: 1, message: '请至少选择一项权限' }]}
+          >
+            <Select
+              mode="multiple"
+              maxCount={256}
+              options={
+                tokenPurpose === 'cli'
+                  ? (snapshot?.permissionKeys ?? [])
+                      .filter((key) => key !== '*')
+                      .map((value) => ({
+                        value,
+                        label: `${consolePermissionLabelMap[value] || value} (${value})`,
+                      }))
+                  : gatewayPermissionOptions.filter((item) => hasPermission(snapshot, item.value))
+              }
+            />
           </Form.Item>
           <Form.Item name="scopes" label="Scopes">
             <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="留空表示不额外收窄" />
@@ -1463,7 +1506,7 @@ export function UserProfilePage() {
                       validator: (_, value) =>
                         validDateTime(value)
                           ? Promise.resolve()
-                          : Promise.reject(new Error('请输入有效的 RFC3339 时间')),
+                          : Promise.reject(new Error('请输入将来的 RFC3339 时间')),
                     },
                   ]}
                 >

@@ -1,6 +1,11 @@
+import { createGatewayCredential, rotateGatewayCredential } from './governed-credentials-api'
 import type { CreatedPersonalAccessToken, PersonalAccessToken } from '@/features/copilot'
 import { api } from '@/services/api-client'
 import type { ApiResponse, AuthProvider, UserProfile } from '@/types'
+import type {
+  TokenRotationInput,
+  TokenRotationRecordEnvelope,
+} from '@opensoha/contracts/gen/ts/sohaapi'
 
 export interface UpdateAuthProfileInput {
   displayName?: string
@@ -20,6 +25,7 @@ export interface CreateProfileGatewayTokenInput {
   permissionKeys: string[]
   scopes: string[]
   expiresAt?: string
+  metadata?: Record<string, unknown>
 }
 
 export const authProfileApi = {
@@ -35,11 +41,18 @@ export const authProfileApi = {
   listGatewayTokens: () =>
     api.get<ApiResponse<PersonalAccessToken[]>>('/ai-gateway/personal-access-tokens'),
   createGatewayToken: (values: CreateProfileGatewayTokenInput) =>
-    api.post<ApiResponse<CreatedPersonalAccessToken>>('/ai-gateway/personal-access-tokens', values),
+    createGatewayCredential<CreatedPersonalAccessToken>(
+      '/ai-gateway/personal-access-tokens',
+      values,
+    ),
   revokeGatewayToken: (tokenId: string) =>
     api.post(`/ai-gateway/personal-access-tokens/${tokenId}/revoke`),
-  rotateGatewayToken: (tokenId: string) =>
-    api.post<ApiResponse<CreatedPersonalAccessToken>>(
-      `/ai-gateway/personal-access-tokens/${tokenId}/rotate`,
-    ),
+  rotateGatewayToken: (tokenId: string, input: TokenRotationInput) =>
+    rotateGatewayCredential<CreatedPersonalAccessToken>(tokenId, input),
+  tokenRotation: async (requestId: string) => {
+    const response = await api.get<TokenRotationRecordEnvelope>(
+      `/ai-gateway/token-rotations/${encodeURIComponent(requestId)}`,
+    )
+    return response.data
+  },
 }

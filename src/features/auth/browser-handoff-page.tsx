@@ -8,6 +8,7 @@ import { useParams } from 'react-router-dom'
 import { completeBrowserHandoff, inspectBrowserHandoff } from './browser-handoff-api'
 import './browser-handoff-page.css'
 import { authKeys } from './keys'
+import { appBrowserPath } from '@/utils/app-base'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -44,7 +45,7 @@ export function BrowserHandoffPage({
     <main className="soha-browser-handoff-page">
       <Card className="soha-browser-handoff-card" variant="outlined">
         <div className="soha-browser-handoff-brand">
-          <img src="/logo.svg" alt="" />
+          <img src={appBrowserPath('/logo.svg')} alt="" />
           <Text strong>Soha 浏览器登录</Text>
         </div>
 
@@ -92,7 +93,7 @@ export function BrowserHandoffPage({
             </div>
 
             <div className="soha-browser-handoff-actions">
-              <Button href="/">取消</Button>
+              <Button href={appBrowserPath('/')}>取消</Button>
               <Button
                 type="primary"
                 loading={completion.isPending}

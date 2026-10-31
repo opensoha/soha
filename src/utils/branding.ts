@@ -1,4 +1,5 @@
 import type { BrandingSettings } from '@/types'
+import { appBrowserPath, defaultBrandAsset } from './app-base'
 
 const BRANDING_STORAGE_KEY = 'soha-branding'
 
@@ -6,18 +7,18 @@ export const defaultBrandingSettings: BrandingSettings = {
   appTitle: 'Soha',
   sidebarTitle: 'Soha',
   slogan: 'Soha 是一种能力！',
-  loginLogoUrl: '/logo.svg',
-  expandedLogoUrl: '/logo.svg',
-  collapsedLogoUrl: '/logo.svg',
+  loginLogoUrl: appBrowserPath('/logo.svg'),
+  expandedLogoUrl: appBrowserPath('/logo.svg'),
+  collapsedLogoUrl: appBrowserPath('/logo.svg'),
   darkExpandedLogoUrl: '',
   darkCollapsedLogoUrl: '',
-  faviconUrl: '/logo.svg',
+  faviconUrl: appBrowserPath('/logo.svg'),
 }
 
 export function normalizeBrandingSettings(
   value?: Partial<BrandingSettings> | null,
 ): BrandingSettings {
-  return {
+  const result = {
     appTitle:
       String(value?.appTitle ?? defaultBrandingSettings.appTitle).trim() ||
       defaultBrandingSettings.appTitle,
@@ -43,6 +44,15 @@ export function normalizeBrandingSettings(
       String(value?.faviconUrl ?? defaultBrandingSettings.faviconUrl).trim() ||
       defaultBrandingSettings.faviconUrl,
   }
+  for (const key of [
+    'loginLogoUrl',
+    'expandedLogoUrl',
+    'collapsedLogoUrl',
+    'faviconUrl',
+  ] as const) {
+    result[key] = defaultBrandAsset(result[key])
+  }
+  return result
 }
 
 export function resolveBrandingLogos(branding: BrandingSettings, themeMode: 'light' | 'dark') {

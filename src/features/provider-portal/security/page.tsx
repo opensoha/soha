@@ -42,23 +42,9 @@ import { providerPortalQueries } from '../queries'
 import { PortalAccountMenu, PortalUserAvatar } from '../shared/account-menu'
 import { PortalTagsOrEmpty } from '../shared/application-ui'
 import { formatPortalDateTime } from '../shared/formatters'
+import { decodeBase64Url, encodeBase64Url, requestPasskeyAssertion } from '../shared/webauthn'
 
 const { Text, Title } = Typography
-
-function decodeBase64Url(value: string) {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
-  const bytes = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='))
-  return Uint8Array.from(bytes, (character) => character.charCodeAt(0))
-}
-
-function encodeBase64Url(value: ArrayBuffer) {
-  const bytes = new Uint8Array(value)
-  let binary = ''
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte)
-  })
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
 
 export function PortalSecurityPage() {
   const navigate = useNavigate()
@@ -265,30 +251,9 @@ export function PortalSecurityPage() {
     try {
       const options = await authenticateWebAuthnMutation.mutateAsync({ purpose: 'step_up' })
       if (generation !== sensitiveGeneration.current) return
-      const credential = (await navigator.credentials.get({
-        publicKey: {
-          challenge: decodeBase64Url(options.challenge),
-          rpId: options.rpId,
-          timeout: options.timeoutMilliseconds,
-          userVerification: options.userVerification,
-          allowCredentials: options.allowCredentialIds?.map((id) => ({
-            id: decodeBase64Url(id),
-            type: 'public-key',
-          })),
-        },
-      })) as PublicKeyCredential | null
-      if (!credential || generation !== sensitiveGeneration.current) return
-      const response = credential.response as AuthenticatorAssertionResponse
-      await verifyWebAuthnMutation.mutateAsync({
-        challengeId: options.challengeId,
-        response: {
-          credentialId: credential.id,
-          clientDataJSON: encodeBase64Url(response.clientDataJSON),
-          authenticatorData: encodeBase64Url(response.authenticatorData),
-          signature: encodeBase64Url(response.signature),
-          userHandle: response.userHandle ? encodeBase64Url(response.userHandle) : undefined,
-        },
-      })
+      const response = await requestPasskeyAssertion(options)
+      if (!response || generation !== sensitiveGeneration.current) return
+      await verifyWebAuthnMutation.mutateAsync({ challengeId: options.challengeId, response })
     } catch (error) {
       if (!isApiError(error))
         setNativeError(error instanceof Error ? error : new Error('Passkey verification failed'))

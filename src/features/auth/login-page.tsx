@@ -1,5 +1,6 @@
 import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import {
+  API_BASE_URL,
   commitAuthResult,
   fetchAuthProviders,
   fetchLoginOptions,
@@ -13,6 +14,7 @@ import {
 } from '@/features/auth/auth-session-channel'
 import { authKeys } from '@/features/auth/keys'
 import { normalizeLocalReturnTo, shouldUseDocumentNavigation } from '@/features/auth/return-to'
+import { appBrowserPath } from '@/utils/app-base'
 import { findLandingPath } from '@/routes/meta'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
@@ -435,10 +437,10 @@ function routeLocationPath(
 
 function providerLoginPath(provider: { id?: string; loginUrl?: string }) {
   if (provider.id) {
-    return `/api/v1/auth/providers/${encodeURIComponent(provider.id)}/login`
+    return `${API_BASE_URL}/auth/providers/${encodeURIComponent(provider.id)}/login`
   }
   if (provider.loginUrl) {
-    return `/api/v1${provider.loginUrl}`
+    return `${API_BASE_URL}${provider.loginUrl}`
   }
   return null
 }
@@ -530,7 +532,7 @@ export function LoginPage() {
   const completeLoginNavigation = useCallback(
     (targetPath: string) => {
       if (shouldUseDocumentNavigation(targetPath)) {
-        window.location.assign(targetPath)
+        window.location.assign(appBrowserPath(targetPath))
         return
       }
       navigate(targetPath, { replace: true })
@@ -668,7 +670,7 @@ export function LoginPage() {
     }
     const loginURL = new URL(loginPath, window.location.origin)
     if (returnTo) {
-      loginURL.searchParams.set('return_to', returnTo)
+      loginURL.searchParams.set('return_to', appBrowserPath(returnTo))
     }
     const target = `${loginURL.pathname}${loginURL.search}`
     setProviderLoadingKey(target)
@@ -697,7 +699,7 @@ export function LoginPage() {
           <div className="soha-auth-panel-inner">
             <div className="soha-auth-brand">
               <img
-                src={logos.collapsedLogoUrl || '/logo.svg'}
+                src={logos.collapsedLogoUrl || appBrowserPath('/logo.svg')}
                 alt=""
                 className="soha-auth-brand-logo-img"
               />

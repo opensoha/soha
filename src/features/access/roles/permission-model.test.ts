@@ -104,6 +104,7 @@ describe('role permission tree model', () => {
   it('normalizes role permissions without inferring workbench entry access', () => {
     expect(normalizeRolePermissionKeys(['platform.pods.view'])).toEqual(['platform.pods.view'])
     expect(normalizeRolePermissionKeys(['docker.projects.view'])).toEqual(['docker.projects.view'])
+    expect(normalizeRolePermissionKeys(['docker.dlp-policy.update'])).toEqual(['docker.dlp-policy.update'])
     expect(normalizeRolePermissionKeys(['workspace.resource.view', 'platform.pods.view'])).toEqual([
       'platform.pods.view',
       'workspace.resource.view',
@@ -239,6 +240,12 @@ describe('role permission tree model', () => {
     ['virtualization.vm_access.update', 'virtualization-workbench-vms'],
     ['virtualization.operations.retry', 'compute-workbench-tasks-operations'],
     ['virtualization.sync.sync', 'compute-workbench-tasks-operations'],
+    ['docker.services.files', 'docker-workbench-projects'],
+    ['docker.dlp-appeals.review', 'docker-workbench-projects'],
+    ['docker.dlp-events.view', 'docker-workbench-projects'],
+    ['docker.dlp-policy.publish', 'docker-workbench-projects'],
+    ['docker.dlp-policy.update', 'docker-workbench-projects'],
+    ['docker.dlp-policy.view', 'docker-workbench-projects'],
     ['docker.services.logs', 'docker-workbench-projects'],
     ['docker.ports.update', 'docker-workbench-projects'],
     ['docker.operations.retry', 'compute-workbench-tasks-operations'],

@@ -147,6 +147,49 @@ const testState = vi.hoisted(() => ({
         },
       }
     }
+    if (path === '/docker/projects/project-1/runtime/volumes?serviceName=web') {
+      return {
+        data: [
+          {
+            name: 'fixture',
+            type: 'volume',
+            target: '/data',
+            readOnly: false,
+            browseSupported: true,
+          },
+        ],
+      }
+    }
+    if (
+      path ===
+      '/docker/projects/project-1/runtime/volume-files?serviceName=web&target=%2Fdata&path=%2F&limit=300'
+    ) {
+      return {
+        data: {
+          projectId: 'project-1',
+          serviceName: 'web',
+          target: '/data',
+          path: '/',
+          items: [{ name: 'readme.txt', path: '/readme.txt', kind: 'file', sizeBytes: 14 }],
+        },
+      }
+    }
+    if (
+      path ===
+      '/docker/projects/project-1/runtime/volume-file?serviceName=web&target=%2Fdata&path=%2Freadme.txt&limitBytes=262144'
+    ) {
+      return {
+        data: {
+          projectId: 'project-1',
+          serviceName: 'web',
+          target: '/data',
+          path: '/readme.txt',
+          content: 'synthetic file',
+          sizeBytes: 14,
+          truncated: false,
+        },
+      }
+    }
     if (path === '/docker/services?projectId=project-1&page=1&pageSize=100') {
       return {
         data: {
@@ -1290,6 +1333,85 @@ describe('docker pages', () => {
     expect(testState.apiGet.mock.calls.some(([path]) => String(path).includes('/runtime/'))).toBe(
       false,
     )
+  })
+
+  it.each([
+    ['view only', ['docker.projects.view', 'docker.services.view']],
+    [
+      'view and legacy manage',
+      ['docker.projects.view', 'docker.services.view', 'docker.services.manage'],
+    ],
+    ['files without inventory', ['docker.projects.view', 'docker.services.files']],
+  ])('does not load volume files with %s permissions', async (_name, permissionKeys) => {
+    testState.permissionSnapshot = {
+      permissionKeys: permissionKeys as string[],
+      visibleMenuIds: [],
+      visibleMenus: [],
+    }
+    const container = await renderWithProviders(
+      <Routes>
+        <Route path="/docker/projects/:projectId" element={<DockerProjectDetailPage />} />
+      </Routes>,
+      '/docker/projects/project-1',
+    )
+    expect(
+      Array.from(container.querySelectorAll('.ant-tabs-tab-btn')).map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).not.toContain('卷文件')
+    expect(
+      testState.apiGet.mock.calls.some(([path]) => String(path).includes('/runtime/volume')),
+    ).toBe(false)
+  })
+
+  it('opens volume files with explicit inventory and file permissions', async () => {
+    testState.permissionSnapshot = {
+      permissionKeys: ['docker.projects.view', 'docker.services.view', 'docker.services.files'],
+      visibleMenuIds: [],
+      visibleMenus: [],
+    }
+    const container = await renderWithProviders(
+      <Routes>
+        <Route path="/docker/projects/:projectId" element={<DockerProjectDetailPage />} />
+      </Routes>,
+      '/docker/projects/project-1',
+    )
+    const volumesTab = Array.from(
+      container.querySelectorAll<HTMLElement>('.ant-tabs-tab-btn'),
+    ).find((node) => node.textContent?.trim() === '卷文件')
+    expect(volumesTab).toBeDefined()
+    expect(
+      testState.apiGet.mock.calls.some(([path]) => String(path).includes('/runtime/volume')),
+    ).toBe(false)
+    await act(async () => volumesTab?.click())
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(testState.apiGet).toHaveBeenCalledWith(
+        '/docker/projects/project-1/runtime/volumes?serviceName=web',
+      )
+      expect(testState.apiGet).toHaveBeenCalledWith(
+        '/docker/projects/project-1/runtime/volume-files?serviceName=web&target=%2Fdata&path=%2F&limit=300',
+      )
+      expect(container.querySelector('.soha-docker-volume-file-row')?.textContent).toContain(
+        'readme.txt',
+      )
+    })
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.soha-docker-volume-file-row')?.click(),
+    )
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(testState.apiGet).toHaveBeenCalledWith(
+        '/docker/projects/project-1/runtime/volume-file?serviceName=web&target=%2Fdata&path=%2Freadme.txt&limitBytes=262144',
+      )
+      expect(
+        container.querySelector<HTMLTextAreaElement>('.soha-docker-volume-preview textarea')?.value,
+      ).toBe('synthetic file')
+    })
   })
 
   it('gates project overview services and log tabs with their matching permissions', async () => {

@@ -1,3 +1,7 @@
+import {
+  createGatewayCredential,
+  rotateGatewayCredential,
+} from '@/features/auth'
 import { api } from '@/services/api-client'
 import type {
   ToolInvocationRequest,
@@ -48,14 +52,11 @@ export const gatewayApi = {
           : '/ai-gateway/personal-access-tokens',
       ),
     create: (payload: GatewayPayload) =>
-      api.post<ApiResponse<CreatedPersonalAccessToken>>(
+      createGatewayCredential<CreatedPersonalAccessToken>(
         '/ai-gateway/personal-access-tokens',
         payload,
       ),
-    rotate: (id: string) =>
-      api.post<ApiResponse<CreatedPersonalAccessToken>>(
-        `/ai-gateway/personal-access-tokens/${id}/rotate`,
-      ),
+    rotate: (id: string) => rotateGatewayCredential<CreatedPersonalAccessToken>(id),
     revoke: (id: string) => api.post(`/ai-gateway/personal-access-tokens/${id}/revoke`),
   },
   serviceAccounts: {
@@ -63,17 +64,16 @@ export const gatewayApi = {
     create: (payload: GatewayPayload) =>
       api.post<ApiResponse<ServiceAccount>>('/ai-gateway/service-accounts', payload),
     createToken: (id: string, payload: GatewayPayload) =>
-      api.post<ApiResponse<CreatedServiceAccountToken>>(
-        `/ai-gateway/service-accounts/${id}/tokens`,
+      createGatewayCredential<CreatedServiceAccountToken>(
+        `/ai-gateway/service-accounts/${encodeURIComponent(id)}/tokens`,
         payload,
+        true,
       ),
   },
   serviceTokens: {
     list: () => api.get<ApiResponse<ServiceAccountToken[]>>('/ai-gateway/service-account-tokens'),
     rotate: (id: string) =>
-      api.post<ApiResponse<CreatedServiceAccountToken>>(
-        `/ai-gateway/service-account-tokens/${id}/rotate`,
-      ),
+      rotateGatewayCredential<CreatedServiceAccountToken>(id, undefined, true),
     revoke: (id: string) =>
       api.post<ApiResponse<{ status: string }>>(`/ai-gateway/service-account-tokens/${id}/revoke`),
   },

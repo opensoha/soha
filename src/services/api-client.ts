@@ -108,10 +108,15 @@ async function parseJsonStrictly<T>(response: Response, path: string, method: st
   }
 }
 
-async function throwApiError(response: Response, path: string, method: string): Promise<never> {
-  const body = await parseJsonSafely<ErrorEnvelope>(response)
+async function throwApiError(
+  response: Response,
+  path: string,
+  method: string,
+  prefetched?: { body: ErrorEnvelope | undefined },
+): Promise<never> {
+  const body = prefetched ? prefetched.body : await parseJsonSafely<ErrorEnvelope>(response)
   const error = createApiErrorFromResponse(response, body, { method, path })
-  if (error.status === 401) {
+  if (error.kind === 'auth') {
     clearAuthSession()
   }
   emitApiError(error)
@@ -124,18 +129,25 @@ async function requestResponse(path: string, options: RequestInit): Promise<Resp
 
   let res = await fetchApi(path, options, accessToken)
 
-  if (res.status === 401 && accessToken) {
+  let rejected: { body: ErrorEnvelope | undefined } | undefined
+  if (res.status === 401) rejected = { body: await parseJsonSafely<ErrorEnvelope>(res) }
+  if (
+    res.status === 401 &&
+    accessToken &&
+    rejected?.body?.error?.code !== 'mfa_verification_failed'
+  ) {
     const refreshStatus = await refreshToken()
     if (refreshStatus === 'authenticated') {
       const { accessToken: newToken } = useAuthStore.getState()
       res = await fetchApi(path, options, newToken)
+      rejected = undefined
     } else if (refreshStatus === 'unavailable') {
       throwRefreshUnavailableError()
     }
   }
 
   if (!res.ok) {
-    await throwApiError(res, path, method)
+    await throwApiError(res, path, method, rejected)
   }
   return res
 }
@@ -165,6 +177,12 @@ export const api = {
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
+  postVoid: async (path: string, body?: unknown): Promise<void> => {
+    await requestResponse(path, {
+      method: 'POST',
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  },
   postWithSignal: <T>(path: string, body: unknown, signal: AbortSignal) =>
     request<T>(path, {
       method: 'POST',

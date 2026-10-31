@@ -330,7 +330,7 @@ test('B3 plan approval preserves the receipt and blocks a second decision after 
   await expect(drawer).toContainText('b3-plan-write')
   await expect(drawer).toContainText('请求结果不明')
   await drawer.getByRole('button', { name: '刷新计划', exact: true }).click()
-  await expect(drawer.getByRole('button', { name: '批准此计划', exact: true })).toBeDisabled()
+  await expect(drawer.getByRole('button', { name: /批准此计划$/ })).toBeDisabled()
   expect(state.approvalWrites).toBe(1)
   verifyBrowserEvidence(evidence)
 })

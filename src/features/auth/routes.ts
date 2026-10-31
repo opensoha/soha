@@ -3,6 +3,25 @@ import { defineRoutes } from '@/routes/definitions'
 export const authRoutes = defineRoutes([
   {
     meta: {
+      id: 'cli-device',
+      path: '/auth/device',
+      title: 'CLI 登录确认',
+      description: '核对并批准终端登录请求',
+      icon: 'IconLock',
+      group: 'auth',
+      requiresAuth: false,
+      tabbar: false,
+      navVisible: false,
+      scopeMode: 'hidden',
+    },
+    shell: 'public',
+    load: async () => {
+      const module = await import('./cli-device-page')
+      return { default: module.CLIDevicePage }
+    },
+  },
+  {
+    meta: {
       id: 'login',
       path: '/login',
       title: '登录',

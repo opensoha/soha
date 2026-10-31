@@ -347,6 +347,7 @@ export function useDockerPermissions() {
     canDeleteProjects: hasDockerPermission('docker.projects.delete'),
     canDeployProjects: hasDockerPermission('docker.projects.deploy'),
     canViewServices: hasDockerPermission('docker.services.view'),
+    canReadServiceFiles: hasDockerPermission('docker.services.files'),
     canStartServices: hasDockerPermission('docker.services.start'),
     canStopServices: hasDockerPermission('docker.services.stop'),
     canRestartServices: hasDockerPermission('docker.services.restart'),

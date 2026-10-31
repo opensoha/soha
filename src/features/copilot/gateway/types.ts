@@ -26,18 +26,12 @@ import type {
 } from '@opensoha/contracts/gen/ts/sohaapi'
 
 export type GatewayTimeRangeValue =
-  | readonly [{ toISOString: () => string } | null, { toISOString: () => string } | null]
-  | null
+  readonly [{ toISOString: () => string } | null, { toISOString: () => string } | null] | null
 
 export type RiskLevel = ContractRiskLevel
 export type GatewayEffect = 'allow' | 'deny'
 export type GatewaySectionKey =
-  | 'relay'
-  | 'manifest'
-  | 'clients'
-  | 'tokens'
-  | 'governance'
-  | 'call-logs'
+  'relay' | 'manifest' | 'clients' | 'tokens' | 'governance' | 'call-logs'
 export type GatewayTabKey =
   | 'relay'
   | 'upstreams'
@@ -54,12 +48,7 @@ export type GatewayTabKey =
   | 'model-calls'
   | 'audit'
 export type ApprovalStrategy =
-  | 'none'
-  | 'allow'
-  | 'deny'
-  | 'require_approval'
-  | 'require_human_confirm'
-  | 'dry_run_only'
+  'none' | 'allow' | 'deny' | 'require_approval' | 'require_human_confirm' | 'dry_run_only'
 export type ApprovalRoutingMode = 'all' | 'any'
 
 export interface GatewayResourceScopes {
@@ -2142,7 +2131,11 @@ export function serviceTokenRecommendationRef(
     }
   }
   if (fallback) return fallback
-  return preferredRef.startsWith('sat-') || preferredRef.startsWith('soha_sat_') ? preferredRef : ''
+  return preferredRef.startsWith('sat-') ||
+    preferredRef.startsWith('soha_sat_') ||
+    preferredRef.startsWith('soha_gsat_')
+    ? preferredRef
+    : ''
 }
 
 export function approvalDrilldownFilters(id: string): ApprovalFilterState {

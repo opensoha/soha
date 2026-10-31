@@ -5,6 +5,7 @@ import {
   logoutAuthSession,
 } from '@/features/auth/auth-api'
 import { normalizeLocalReturnTo, shouldUseDocumentNavigation } from '@/features/auth/return-to'
+import { appBrowserPath, appRouterPath } from '@/utils/app-base'
 import { findLandingPath } from '@/routes/meta'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { App, Spin, theme, Typography } from 'antd'
@@ -53,7 +54,7 @@ export function OIDCCallbackPage() {
           '/'
         message.success('登录成功')
         if (shouldUseDocumentNavigation(nextPath)) {
-          window.location.assign(nextPath)
+          window.location.assign(appBrowserPath(nextPath))
           return
         }
         navigate(nextPath, { replace: true })
@@ -68,7 +69,7 @@ export function OIDCCallbackPage() {
   useEffect(() => {
     return () => {
       const url = new URL(window.location.href)
-      if (url.pathname === '/login/callback') {
+      if (appRouterPath(url.pathname) === '/login/callback') {
         url.search = ''
         window.history.replaceState({}, document.title, url.toString())
       }
@@ -94,7 +95,7 @@ export function OIDCCallbackPage() {
               {error}
             </Text>
             <a
-              href="/login"
+              href={appBrowserPath('/login')}
               className="mt-4"
               style={{ color: token.colorPrimary }}
               onClick={handleBackToLogin}

@@ -429,6 +429,8 @@ test('Task52 topology keyboard selection, relation highlight and viewport surviv
   await expect(node).not.toHaveClass(/selected/)
   await expect(page.locator('.soha-topology-evidence')).toHaveCount(0)
   await expect(unrelated).toHaveCSS('opacity', '1')
+  // React Flow blurs an unselected node on the next animation frame.
+  await expect(node).not.toBeFocused()
   await node.focus()
   await page.keyboard.press('Space')
   await expect(node).toHaveClass(/selected/)

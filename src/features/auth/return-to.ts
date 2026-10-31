@@ -1,3 +1,5 @@
+import { appBasePath, appRouterPath } from '@/utils/app-base'
+
 const SERVER_RETURN_PATHS = new Set(['/api/v1/provider/proxy/callback', '/oauth2/authorize'])
 
 function hasControlCharacter(value: string) {
@@ -45,7 +47,7 @@ function urlContainsBackslash(url: URL) {
   return containsDecodedBackslash(url.pathname)
 }
 
-export function normalizeLocalReturnTo(value: string | null | undefined) {
+export function normalizeLocalReturnTo(value: string | null | undefined, base = appBasePath) {
   if (!value) {
     return null
   }
@@ -79,13 +81,16 @@ export function normalizeLocalReturnTo(value: string | null | undefined) {
   ) {
     return null
   }
-  return normalized
+  return appRouterPath(normalized, base)
 }
 
-export function shouldUseDocumentNavigation(path: string) {
+export function shouldUseDocumentNavigation(path: string, base = appBasePath) {
   try {
     const parsed = new URL(path, window.location.origin)
-    return parsed.origin === window.location.origin && SERVER_RETURN_PATHS.has(parsed.pathname)
+    return (
+      parsed.origin === window.location.origin &&
+      SERVER_RETURN_PATHS.has(appRouterPath(parsed.pathname, base))
+    )
   } catch {
     return false
   }

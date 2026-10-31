@@ -3,8 +3,16 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8080'
+const base = process.env.VITE_BASE_PATH || '/'
+if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(base)) {
+  throw new Error(
+    'VITE_BASE_PATH must be a local path with leading/trailing slashes, such as /team/',
+  )
+}
+const prefix = base.slice(0, -1)
 
 export default defineConfig(() => ({
+  base,
   plugins: [react()],
   test: {
     exclude: [...configDefaults.exclude, 'e2e/**'],
@@ -43,10 +51,14 @@ export default defineConfig(() => ({
         changeOrigin: true,
         ws: true,
       },
-      '/api': {
+      [prefix + '/api']: {
         target: apiProxyTarget,
         changeOrigin: true,
         ws: true,
+        rewrite: (path) => path.slice(prefix.length),
+        cookiePathRewrite: prefix
+          ? { '/api/v1/auth': prefix + '/api/v1/auth', '/': prefix + '/' }
+          : undefined,
       },
     },
   },

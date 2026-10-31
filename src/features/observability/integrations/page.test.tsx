@@ -55,6 +55,7 @@ beforeAll(() => {
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getStyle(element))
 })
 beforeEach(() => {
+  vi.useFakeTimers()
   api.get.mockReset().mockResolvedValue({ data: [] })
   api.post.mockReset().mockResolvedValue({ data: result })
   container = document.createElement('div')
@@ -65,15 +66,23 @@ beforeEach(() => {
   })
 })
 afterEach(async () => {
-  await act(async () => root.unmount())
-  container.remove()
-  client.clear()
+  try {
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      root.unmount()
+      client.clear()
+      await vi.runOnlyPendingTimersAsync()
+    })
+    container.remove()
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 async function settle(action: () => void = () => {}) {
   await act(async () => {
     action()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await vi.advanceTimersByTimeAsync(0)
   })
 }
 function button(label: string) {

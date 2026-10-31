@@ -38,7 +38,7 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
     this.code = options.code
-    this.kind = classifyApiStatus(status)
+    this.kind = classifyApiStatus(status, options.code)
     this.method = options.method
     this.path = options.path
     this.requestId = options.requestId
@@ -78,7 +78,10 @@ export function claimApiErrorPresentation(error?: Error | null) {
   }
 }
 
-export function classifyApiStatus(status: number): ApiErrorKind {
+export function classifyApiStatus(status: number, code?: string): ApiErrorKind {
+  // A rejected factor is a failed challenge, not proof that the browser's
+  // authenticated session expired. Preserve the session and remaining attempts.
+  if (status === 401 && code === 'mfa_verification_failed') return 'client'
   if (status === 0) return 'network'
   if (status === 401) return 'auth'
   if (status === 403) return 'forbidden'

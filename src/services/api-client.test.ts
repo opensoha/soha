@@ -51,6 +51,33 @@ describe('api client error handling', () => {
     vi.clearAllMocks()
   })
 
+  it('keeps the browser session when an MFA response is incorrect', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(
+        { error: { code: 'mfa_verification_failed', message: 'Verification failed' } },
+        { status: 401 },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      api.post('/identity/mfa/challenges/test/verify', { response: '000000' }),
+    ).rejects.toMatchObject({ status: 401, code: 'mfa_verification_failed', kind: 'client' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(restoreAuthSession).not.toHaveBeenCalled()
+    expect(clearAuthSession).not.toHaveBeenCalled()
+    expect(events).toEqual([
+      expect.objectContaining({ kind: 'client', code: 'mfa_verification_failed' }),
+    ])
+    expect(JSON.stringify(events)).not.toContain('000000')
+  })
+
+  it('accepts an empty successful response only for an explicit void operation', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.postVoid('/auth/cli/sessions/session-1/revoke')).resolves.toBeUndefined()
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'POST' })
+  })
+
   it('refreshes an expired token before returning an unread download response', async () => {
     const archive = new Response('archive-bytes', {
       status: 200,
