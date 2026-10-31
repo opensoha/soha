@@ -23416,7 +23416,7 @@ export interface components {
             maxRetries?: number;
             attemptCount?: number;
             timeoutSeconds?: number;
-            /** @description Runner callback credential. Ordinary user task and nested runtime views always return an empty string; only authenticated runner claim/status paths return the real value. */
+            /** @description Runner callback credential. Ordinary user task and nested runtime views return the non-secret marker [redacted] when a callback is configured, or an empty string otherwise. Only authenticated runner claim/status paths return the real value; user views never expose a secret lease. */
             callbackToken: string;
             secretLease?: components["schemas"]["SecretLeaseGrant"];
             claimedByAgentId?: string;

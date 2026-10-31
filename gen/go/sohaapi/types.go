@@ -21421,7 +21421,7 @@ type ExecutionTask struct {
 	Artifacts                []ExecutionArtifact `json:"artifacts,omitempty"`
 	AttemptCount             int                 `json:"attemptCount,omitempty"`
 
-	// CallbackToken Runner callback credential. Ordinary user task and nested runtime views always return an empty string; only authenticated runner claim/status paths return the real value.
+	// CallbackToken Runner callback credential. Ordinary user task and nested runtime views return the non-secret marker [redacted] when a callback is configured, or an empty string otherwise. Only authenticated runner claim/status paths return the real value; user views never expose a secret lease.
 	CallbackToken        string            `json:"callbackToken"`
 	ClaimedByAgentID     string            `json:"claimedByAgentId,omitempty"`
 	CreatedAt            *time.Time        `json:"createdAt,omitempty"`
@@ -27874,7 +27874,7 @@ type ManifestExecutionTask struct {
 	Artifacts                []ExecutionArtifact `json:"artifacts,omitempty"`
 	AttemptCount             int                 `json:"attemptCount,omitempty"`
 
-	// CallbackToken Runner callback credential. Ordinary user task and nested runtime views always return an empty string; only authenticated runner claim/status paths return the real value.
+	// CallbackToken Runner callback credential. Ordinary user task and nested runtime views return the non-secret marker [redacted] when a callback is configured, or an empty string otherwise. Only authenticated runner claim/status paths return the real value; user views never expose a secret lease.
 	CallbackToken     string          `json:"callbackToken"`
 	ClaimedByAgentID  string          `json:"claimedByAgentId,omitempty"`
 	CreatedAt         *time.Time      `json:"createdAt,omitempty"`
