@@ -267,6 +267,9 @@ func runAddTarget(ctx context.Context, args []string, rt Runtime, target addTarg
 	if serverURL == "" {
 		return fmt.Errorf("soha API base URL is required")
 	}
+	if profileHasCredentials(profileConfig) && !sameServerURL(serverURL, profileConfig.ServerURL) {
+		return fmt.Errorf("server_mismatch: this profile already contains credentials for another server; log in to a new profile before configuring MCP")
+	}
 	updatedProfile := profileConfig
 	updatedProfile.ServerURL = serverURL
 	if strings.TrimSpace(updatedProfile.AIClientID) == "" || strings.TrimSpace(*aiClientIDFlag) != "" {
@@ -440,8 +443,7 @@ func runAddTarget(ctx context.Context, args []string, rt Runtime, target addTarg
 	}
 
 	if !profileExists || updatedProfile != profileConfig {
-		cfg.Profiles[profileNameValue] = updatedProfile
-		if err := saveConfig(rt.ConfigPath, cfg); err != nil {
+		if err := persistSetupProfile(ctx, rt, profileNameValue, updatedProfile, *aiClientIDFlag != "", *aiClientNameFlag != "", *skillIDFlag != ""); err != nil {
 			return err
 		}
 		out.Printf("Configured Soha profile %s with API base URL %s\n", profileNameValue, serverURL)

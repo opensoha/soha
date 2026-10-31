@@ -63,7 +63,7 @@ func (stdio *mcpTestIO) String() string {
 
 func TestRunLoginStoresProfileAndRedactsShow(t *testing.T) {
 	ctx := context.Background()
-	configPath := filepath.Join(t.TempDir(), "config.json")
+	configPath := filepath.Join(t.TempDir(), "private", "config.json")
 	accessToken := "access-token-value-12345"
 	refreshToken := "refresh-token-value-9999"
 
@@ -101,6 +101,7 @@ func TestRunLoginStoresProfileAndRedactsShow(t *testing.T) {
 	var out bytes.Buffer
 	code := Run(ctx, []string{
 		"login",
+		"--method", "legacy-password", "--credential-store", "file",
 		"--server", server.URL + "/",
 		"--login", "ada",
 		"--password", "secret",
@@ -119,7 +120,10 @@ func TestRunLoginStoresProfileAndRedactsShow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	profile := cfg.Profiles["dev"]
+	profile, err := hydrateProfile(Runtime{ConfigPath: configPath}, "dev", cfg.Profiles["dev"])
+	if err != nil {
+		t.Fatal(err)
+	}
 	if cfg.CurrentProfile != "dev" || profile.ServerURL != server.URL {
 		t.Fatalf("unexpected saved profile: %#v", cfg)
 	}
@@ -129,13 +133,7 @@ func TestRunLoginStoresProfileAndRedactsShow(t *testing.T) {
 	if profile.AIClientID != "codex-local" || profile.AIClientName != "Codex" {
 		t.Fatalf("AI client context was not stored: %#v", profile)
 	}
-	info, err := os.Stat(configPath)
-	if err != nil {
-		t.Fatalf("stat config: %v", err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("config permissions = %o, want 0600", info.Mode().Perm())
-	}
+	assertPrivateTestConfig(t, configPath)
 
 	var showOut bytes.Buffer
 	code = Run(ctx, []string{"profile", "show", "dev"}, Runtime{Out: &showOut, Err: &bytes.Buffer{}, ConfigPath: configPath})
@@ -145,13 +143,13 @@ func TestRunLoginStoresProfileAndRedactsShow(t *testing.T) {
 	if strings.Contains(showOut.String(), accessToken) || strings.Contains(showOut.String(), refreshToken) {
 		t.Fatalf("profile show leaked full token: %q", showOut.String())
 	}
-	if !strings.Contains(showOut.String(), "access-t...2345") {
-		t.Fatalf("profile show did not include redacted access token: %q", showOut.String())
+	if !strings.Contains(showOut.String(), "credentialRef") || strings.Contains(showOut.String(), "accessToken") || strings.Contains(showOut.String(), "refreshToken") {
+		t.Fatal("profile show must expose credential metadata without loading secret values")
 	}
 }
 
 func TestRunLoginReadsPasswordFromStdin(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config.json")
+	configPath := filepath.Join(t.TempDir(), "private", "config.json")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/auth/login" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -181,8 +179,9 @@ func TestRunLoginReadsPasswordFromStdin(t *testing.T) {
 	var errOut bytes.Buffer
 	code := Run(context.Background(), []string{
 		"login",
+		"--method", "legacy-password", "--credential-store", "file",
 		"--server", server.URL,
-		"--login", "ada",
+		"--login", "ada", "--password-stdin",
 	}, Runtime{
 		In:         strings.NewReader("secret-from-stdin\n"),
 		Out:        &out,
@@ -192,8 +191,8 @@ func TestRunLoginReadsPasswordFromStdin(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("login returned %d, stderr %q", code, errOut.String())
 	}
-	if !strings.Contains(errOut.String(), "Password: ") {
-		t.Fatalf("password prompt missing from stderr: %q", errOut.String())
+	if strings.Contains(errOut.String(), "Password: ") {
+		t.Fatal("explicit password-stdin must not emit an interactive prompt")
 	}
 	if strings.Contains(out.String()+errOut.String(), "secret-from-stdin") {
 		t.Fatalf("login output leaked password: stdout=%q stderr=%q", out.String(), errOut.String())
@@ -205,8 +204,8 @@ func TestHTTPTimeoutDefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("default timeout = %s, want %s", got, defaultHTTPTimeout)
 	}
 	custom := &http.Client{Timeout: 2 * time.Second}
-	if got := (APIClient{Client: custom}).httpClient(); got != custom {
-		t.Fatalf("custom non-zero timeout client should be reused")
+	if got := (APIClient{Client: custom}).httpClient(); got == custom || got.Timeout != custom.Timeout || got.Transport != custom.Transport {
+		t.Fatal("API client must preserve injected transport/timeout without mutating the caller's client")
 	}
 	overridden := (APIClient{Client: &http.Client{}, Timeout: 5 * time.Second}).httpClient()
 	if got := overridden.Timeout; got != 5*time.Second {
@@ -323,7 +322,13 @@ func TestExpiredProfileRefreshesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	profile := cfg.Profiles["dev"]
+	if cfg.Profiles["dev"].AccessToken != "" || cfg.Profiles["dev"].RefreshToken != "" || cfg.Profiles["dev"].CredentialRef == "" {
+		t.Fatal("refreshed credentials must migrate out of plaintext config")
+	}
+	profile, err := hydrateProfile(Runtime{ConfigPath: configPath}, "dev", cfg.Profiles["dev"])
+	if err != nil {
+		t.Fatal(err)
+	}
 	if profile.AccessToken != "access-new" || profile.RefreshToken != "refresh-new" {
 		t.Fatalf("profile tokens were not refreshed: %#v", profile)
 	}
@@ -427,7 +432,13 @@ func TestUnauthorizedProfileRefreshesRetriesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	profile := cfg.Profiles["dev"]
+	if cfg.Profiles["dev"].AccessToken != "" || cfg.Profiles["dev"].RefreshToken != "" || cfg.Profiles["dev"].CredentialRef == "" {
+		t.Fatal("refreshed credentials must migrate out of plaintext config")
+	}
+	profile, err := hydrateProfile(Runtime{ConfigPath: configPath}, "dev", cfg.Profiles["dev"])
+	if err != nil {
+		t.Fatal(err)
+	}
 	if profile.AccessToken != "access-new" || profile.RefreshToken != "refresh-new" {
 		t.Fatalf("profile tokens were not refreshed: %#v", profile)
 	}
@@ -2498,6 +2509,10 @@ func TestRunCompletionPrintsScript(t *testing.T) {
 		"plugin",
 		`plugin)`,
 		"search show install list enable disable upgrade config remove rm",
+		"auth)",
+		"revoke-session",
+		"token-rotate",
+		"rotation-status",
 		"docs",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -2518,6 +2533,16 @@ func TestRunDocsGeneratesMarkdown(t *testing.T) {
 		"Generated with `soha docs --format markdown`.",
 		"| `tool call` | `soha tool call <name> [--preview] [--yes] [options]` |",
 		"| `docs` | `soha docs [--format markdown]` |",
+		"| `auth sessions` |",
+		"| `auth mfa verify` |",
+		"| `network-access sessions` |",
+		"| `directory sync` |",
+		"| `observe healing-runs` |",
+		"| `auth revoke-session` |",
+		"| `token rotate` |",
+		"| `token rotation-status` |",
+		"| `service-account token-rotate` |",
+		"| `service-account rotation-status` |",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("docs output missing %q: %s", want, out.String())
@@ -2545,7 +2570,7 @@ func TestLoadMCPRuntimeProfileDefaultsToOfficialSaaS(t *testing.T) {
 	t.Setenv("SOHA_TOKEN", "ephemeral-token")
 	t.Setenv("SOHA_SERVER", "")
 	profile, err := loadMCPRuntimeProfile(context.Background(), Runtime{
-		ConfigPath: filepath.Join(t.TempDir(), "missing.json"),
+		ConfigPath: filepath.Join(t.TempDir(), "private", "missing.json"),
 	}, "", "", "")
 	if err != nil {
 		t.Fatalf("load MCP runtime profile: %v", err)
@@ -2741,7 +2766,7 @@ func TestRunMCPStartProxiesToolsToGateway(t *testing.T) {
 		In:         stdio,
 		Out:        stdio,
 		Err:        &stderr,
-		ConfigPath: writeTestConfig(t, "https://profile-address-must-not-be-used.invalid"),
+		ConfigPath: writeTestConfig(t, server.URL),
 	})
 	if code != 0 {
 		t.Fatalf("mcp returned %d: %s", code, stderr.String())
@@ -3019,7 +3044,7 @@ func TestRunKnowledgeSearchValidatesRequiredFlags(t *testing.T) {
 		{"knowledge", "search", "--base-ids", "runbooks", "--query", "rollback", "--top-k", "51"},
 	} {
 		var stderr bytes.Buffer
-		if code := Run(context.Background(), args, Runtime{Out: &bytes.Buffer{}, Err: &stderr, ConfigPath: filepath.Join(t.TempDir(), "missing.json")}); code == 0 {
+		if code := Run(context.Background(), args, Runtime{Out: &bytes.Buffer{}, Err: &stderr, ConfigPath: filepath.Join(t.TempDir(), "private", "missing.json")}); code == 0 {
 			t.Fatalf("expected validation failure for %v", args)
 		}
 	}
@@ -3209,7 +3234,7 @@ func TestRunSetupProjectScope(t *testing.T) {
 	code := Run(context.Background(), []string{
 		"setup", "--client", "codex", "--scope", "project", "--mode", "both",
 		"--source", source, "--skills", "delivery-developer", "--command", "/opt/bin/soha",
-	}, Runtime{Out: &bytes.Buffer{}, Err: &stderr, ConfigPath: filepath.Join(t.TempDir(), "soha.json")})
+	}, Runtime{Out: &bytes.Buffer{}, Err: &stderr, ConfigPath: filepath.Join(t.TempDir(), "private", "soha.json")})
 	if code != 0 {
 		t.Fatalf("project setup returned %d: %s", code, stderr.String())
 	}
@@ -3238,7 +3263,8 @@ func assertFileContent(t *testing.T, path, expected string) {
 func TestRunSetupMCPModeAndCheck(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	configPath := filepath.Join(t.TempDir(), "soha.json")
+	t.Setenv("USERPROFILE", home)
+	configPath := filepath.Join(t.TempDir(), "private", "soha.json")
 	codexConfig := filepath.Join(t.TempDir(), "config.toml")
 	args := []string{
 		"setup", "--client", "codex", "--mode", "mcp",
@@ -3282,7 +3308,7 @@ func TestRunSetupMCPModeAndCheck(t *testing.T) {
 func TestRunSetupSkillModeDoesNotWriteMCPConfig(t *testing.T) {
 	source := t.TempDir()
 	dest := t.TempDir()
-	configPath := filepath.Join(t.TempDir(), "soha.json")
+	configPath := filepath.Join(t.TempDir(), "private", "soha.json")
 	codexConfig := filepath.Join(t.TempDir(), "config.toml")
 	writeSohaAgentSkill(t, source)
 	writeSkill(t, source, "delivery-developer", "# Delivery Developer\n")
@@ -3477,7 +3503,7 @@ func TestRunAddCodexConfiguresProfileServer(t *testing.T) {
 	source := t.TempDir()
 	writeSohaAgentSkill(t, source)
 	writeSkill(t, source, "k8s-sre", "# K8s SRE\n")
-	configPath := filepath.Join(t.TempDir(), "config.json")
+	configPath := filepath.Join(t.TempDir(), "private", "config.json")
 	codexConfig := filepath.Join(t.TempDir(), "config.toml")
 
 	var out bytes.Buffer
@@ -3541,10 +3567,11 @@ func TestRunAddInteractiveSelectsTargets(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	source := t.TempDir()
 	writeSohaAgentSkill(t, source)
 	writeSkill(t, source, "k8s-sre", "# K8s SRE\n")
-	configPath := filepath.Join(t.TempDir(), "config.json")
+	configPath := filepath.Join(t.TempDir(), "private", "config.json")
 
 	var out bytes.Buffer
 	code := Run(ctx, []string{
@@ -3617,7 +3644,7 @@ func TestRunAddKiroUpdatesJSONCConfig(t *testing.T) {
 	}, Runtime{
 		Out:        &out,
 		Err:        &bytes.Buffer{},
-		ConfigPath: filepath.Join(t.TempDir(), "config.json"),
+		ConfigPath: filepath.Join(t.TempDir(), "private", "config.json"),
 	})
 	if code != 0 {
 		t.Fatalf("add kiro returned %d, output %q", code, out.String())
@@ -3662,7 +3689,7 @@ func writeTestConfig(t *testing.T, serverURL string) string {
 
 func writeTestConfigWithProfile(t *testing.T, profile ProfileConfig) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.json")
+	path := filepath.Join(t.TempDir(), "private", "config.json")
 	if err := saveConfig(path, Config{
 		CurrentProfile: "dev",
 		Profiles: map[string]ProfileConfig{

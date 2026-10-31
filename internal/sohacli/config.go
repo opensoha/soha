@@ -15,23 +15,30 @@ const (
 )
 
 type Config struct {
+	SchemaVersion  int                      `json:"schemaVersion,omitempty"`
 	CurrentProfile string                   `json:"currentProfile"`
 	Profiles       map[string]ProfileConfig `json:"profiles"`
 }
 
 type ProfileConfig struct {
-	ServerURL           string    `json:"serverUrl"`
-	AccessToken         string    `json:"accessToken,omitempty"`
-	RefreshToken        string    `json:"refreshToken,omitempty"`
-	ExpiresAt           time.Time `json:"expiresAt,omitempty"`
-	UserID              string    `json:"userId,omitempty"`
-	UserName            string    `json:"userName,omitempty"`
-	AIClientID          string    `json:"aiClientId,omitempty"`
-	AIClientName        string    `json:"aiClientName,omitempty"`
-	SkillID             string    `json:"skillId,omitempty"`
-	Source              string    `json:"source,omitempty"`
-	MarketplaceURL      string    `json:"marketplaceUrl,omitempty"`
-	MarketplaceSourceID string    `json:"marketplaceSourceId,omitempty"`
+	CredentialRef       string              `json:"credentialRef,omitempty"`
+	CredentialStore     string              `json:"credentialStore,omitempty"`
+	CredentialKind      string              `json:"credentialKind,omitempty"`
+	ProtocolVersion     int                 `json:"protocolVersion,omitempty"`
+	InsecureHTTP        bool                `json:"insecureHttp,omitempty"`
+	credential          *credentialEnvelope `json:"-"`
+	ServerURL           string              `json:"serverUrl"`
+	AccessToken         string              `json:"accessToken,omitempty"`
+	RefreshToken        string              `json:"refreshToken,omitempty"`
+	ExpiresAt           time.Time           `json:"expiresAt,omitempty"`
+	UserID              string              `json:"userId,omitempty"`
+	UserName            string              `json:"userName,omitempty"`
+	AIClientID          string              `json:"aiClientId,omitempty"`
+	AIClientName        string              `json:"aiClientName,omitempty"`
+	SkillID             string              `json:"skillId,omitempty"`
+	Source              string              `json:"source,omitempty"`
+	MarketplaceURL      string              `json:"marketplaceUrl,omitempty"`
+	MarketplaceSourceID string              `json:"marketplaceSourceId,omitempty"`
 
 	runtimeName    string `json:"-"`
 	refreshEnabled bool   `json:"-"`
@@ -51,6 +58,9 @@ func defaultConfigPath() string {
 
 func loadConfig(path string) (Config, error) {
 	cfg := Config{CurrentProfile: defaultProfile, Profiles: map[string]ProfileConfig{}}
+	if err := rejectConfigSymlink(path); err != nil {
+		return Config{}, err
+	}
 	// #nosec G304 -- path is the configured Soha profile file, including the documented SOHA_CONFIG override.
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -64,6 +74,9 @@ func loadConfig(path string) (Config, error) {
 	}
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return Config{}, err
+	}
+	if cfg.SchemaVersion > 2 {
+		return Config{}, fmt.Errorf("unsupported_config_version: this CLI cannot safely edit the newer configuration format")
 	}
 	if cfg.CurrentProfile == "" {
 		cfg.CurrentProfile = defaultProfile
@@ -81,14 +94,54 @@ func saveConfig(path string, cfg Config) error {
 	if cfg.Profiles == nil {
 		cfg.Profiles = map[string]ProfileConfig{}
 	}
+	// Copy before stripping secrets; runtime profiles may contain loaded envelopes.
+	sanitized := make(map[string]ProfileConfig, len(cfg.Profiles))
+	for name, p := range cfg.Profiles {
+		if p.CredentialRef != "" {
+			p.AccessToken = ""
+			p.RefreshToken = ""
+		}
+		sanitized[name] = p
+	}
+	cfg.Profiles = sanitized
 	raw, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
+	_, dirErr := os.Lstat(filepath.Dir(path))
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(raw, '\n'), 0o600)
+	if err := rejectConfigSymlink(path); err != nil {
+		return err
+	}
+	if err := requirePrivateConfigDirectory(filepath.Dir(path), os.IsNotExist(dirErr)); err != nil {
+		return err
+	}
+	return writeAtomicFile(path, append(raw, '\n'), 0o600)
+}
+
+func rejectConfigSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("profile config must be a regular file")
+	}
+	return nil
+}
+
+func sameServerURL(a, b string) bool {
+	x, err := canonicalCredentialURL(a)
+	if err != nil {
+		return false
+	}
+	y, err := canonicalCredentialURL(b)
+	return err == nil && x.String() == y.String()
 }
 
 func profileName(value string) string {
@@ -124,7 +177,7 @@ func resolveProfile(cfg Config, name string) (string, ProfileConfig, error) {
 	if strings.TrimSpace(profile.ServerURL) == "" {
 		return name, ProfileConfig{}, fmt.Errorf("profile %q has no server URL", name)
 	}
-	if strings.TrimSpace(profile.AccessToken) == "" {
+	if strings.TrimSpace(profile.AccessToken) == "" && profile.CredentialRef == "" {
 		return name, ProfileConfig{}, fmt.Errorf("profile %q has no access token; run soha login again", name)
 	}
 	return name, profile, nil

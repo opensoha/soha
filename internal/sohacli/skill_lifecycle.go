@@ -790,6 +790,12 @@ func writeAtomicFile(path string, raw []byte, mode os.FileMode) error {
 		_ = file.Close()
 		return err
 	}
+	if mode.Perm() == 0o600 {
+		if err := restrictPrivateFile(tempPath); err != nil {
+			_ = file.Close()
+			return err
+		}
+	}
 	if _, err := file.Write(raw); err != nil {
 		_ = file.Close()
 		return err
@@ -801,19 +807,7 @@ func writeAtomicFile(path string, raw []byte, mode os.FileMode) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tempPath, path); err == nil {
-		return nil
-	}
-	backupPath := path + ".bak"
-	_ = os.Remove(backupPath)
-	if err := os.Rename(path, backupPath); err != nil {
-		return err
-	}
-	if err := os.Rename(tempPath, path); err != nil {
-		_ = os.Rename(backupPath, path)
-		return err
-	}
-	return os.Remove(backupPath)
+	return atomicReplaceFile(tempPath, path)
 }
 
 func sortedUniqueSkillNames(names []string) []string {

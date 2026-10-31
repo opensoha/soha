@@ -118,7 +118,7 @@ func TestDeliveryRejectsInvalidRequestsBeforeSending(t *testing.T) {
 		{"batches", "create", "--input-json", `{"idempotencyKey":"key","workflowId":"flow"}`, "--yes"},
 		{"batches", "create", "--input-json", `{`, "--yes"},
 		{"workflows", "update", "flow", "--input-json", `{"definition":{}}`, "--yes"},
-		{"plans", "confirm", "plan", "--yes"},
+		{"plans", "confirm", "plan", "--input-json", `{}`, "--yes"},
 		{"batches", "get", "../plans"},
 		{"batches", "list", "--limit", "201"},
 		{"batches", "cancel", "batch"},

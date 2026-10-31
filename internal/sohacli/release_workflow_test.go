@@ -35,6 +35,11 @@ func readCLIReleaseWorkflow(t *testing.T) string {
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	content, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "release.yml"))
+	if os.IsNotExist(err) {
+		// A standalone, trimpath-built native test package uses the original
+		// package working directory and attested repository fixture files.
+		content, err = os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "release.yml"))
+	}
 	if err != nil {
 		t.Fatalf("read release workflow: %v", err)
 	}

@@ -13,11 +13,14 @@ import (
 )
 
 func runDelivery(ctx context.Context, args []string, rt Runtime) error {
+	if len(args) >= 2 && isDeliveryWorkbench(args[0], args[1]) {
+		return runDeliveryWorkbench(ctx, args[0], args[1], args[2:], rt)
+	}
 	if len(args) > 0 && args[0] == "documents" {
 		return runDeliveryDocuments(ctx, args[1:], rt)
 	}
 	if len(args) < 2 {
-		return fmt.Errorf("delivery requires batches, workflows, plans, documents, template-sources, or triggers and an action")
+		return fmt.Errorf("delivery requires a resource and action; use soha delivery --help for the supported workbench commands")
 	}
 	resource, action := args[0], args[1]
 	method, path, input, result, err := deliveryEndpoint(resource, action)

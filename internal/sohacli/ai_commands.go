@@ -11,9 +11,15 @@ import (
 
 func runAI(ctx context.Context, args []string, rt Runtime) error {
 	if len(args) == 0 {
-		return fmt.Errorf("ai requires a subcommand: task, evaluation, or memory")
+		return fmt.Errorf("ai requires a subcommand: chat, assistant, runs, task, inspection, evaluation, or memory")
 	}
 	switch args[0] {
+	case "chat":
+		return runAIChat(ctx, args[1:], rt)
+	case "assistant":
+		return runAIAssistant(ctx, args[1:], rt)
+	case "runs":
+		return runAIAgentRuns(ctx, args[1:], rt)
 	case "inspection":
 		return runInspection(ctx, args[1:], rt)
 	case "task":
@@ -28,6 +34,9 @@ func runAI(ctx context.Context, args []string, rt Runtime) error {
 }
 
 func runAIEvaluation(ctx context.Context, args []string, rt Runtime) error {
+	if len(args) > 0 && (args[0] == "datasets" || args[0] == "runs") {
+		return runEvaluationCatalog(ctx, args, rt)
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("ai evaluation requires a subcommand: run, replay, or gate")
 	}

@@ -25,9 +25,7 @@ func TestSkillDirectoryHashPreservesFormatAndRejectsExternalSymlinks(t *testing.
 	if err := os.WriteFile(outside, []byte("private"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(root, "outside.md")); err != nil {
-		t.Fatal(err)
-	}
+	createUnsafeSkillHashLink(t, root, outside)
 	if _, err := hashDirectory(root); err == nil {
 		t.Fatal("external symlink accepted")
 	}

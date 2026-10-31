@@ -10,10 +10,6 @@ import (
 	"golang.org/x/term"
 )
 
-func readPassword(rt Runtime) (string, error) {
-	return readHiddenLine(rt, true)
-}
-
 func readHiddenLine(rt Runtime, trimSpace bool) (string, error) {
 	if file, ok := rt.In.(*os.File); ok && term.IsTerminal(int(file.Fd())) {
 		raw, err := term.ReadPassword(int(file.Fd()))

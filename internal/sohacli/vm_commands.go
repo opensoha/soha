@@ -17,6 +17,9 @@ func runVMCompute(ctx context.Context, resource string, args []string, rt Runtim
 	if len(args) == 0 {
 		return fmt.Errorf("compute %s requires a subcommand", resource)
 	}
+	if resource == "vms" && vmWorkbenchAction(args[0]) {
+		return runVMWorkbench(ctx, args, rt)
+	}
 	action := args[0]
 	args = args[1:]
 	if action == "policy" || action == "access" {

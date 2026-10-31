@@ -61,7 +61,7 @@ func commandDocsFromSpecs() []commandDoc {
 
 func appendCommandDocs(docs []commandDoc, parent string, spec commandSpec) []commandDoc {
 	command := strings.TrimSpace(strings.TrimSpace(parent + " " + spec.Name))
-	if len(spec.Examples) > 0 {
+	if strings.TrimSpace(spec.Usage) != "" {
 		docs = append(docs, commandDoc{
 			Command:  command,
 			Usage:    spec.Usage,

@@ -384,10 +384,15 @@ func validateRemoteSkillReleaseURL(source string) error {
 }
 
 func sourcePathComponent(source string) string {
+	// Drive-letter paths are local files, even though net/url interprets the
+	// drive as a URI scheme. Normalize local separators before path.Base.
+	if filepath.IsAbs(source) {
+		return filepath.ToSlash(source)
+	}
 	if parsed, err := url.Parse(source); err == nil && parsed.Scheme != "" {
 		return parsed.Path
 	}
-	return source
+	return filepath.ToSlash(source)
 }
 
 func sourceBaseName(source string) string {

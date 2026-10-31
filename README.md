@@ -46,7 +46,7 @@ command for installed binaries.
 
 ## Build
 
-This module requires Go 1.27.2 or newer.
+This module requires Go 1.27.3 or newer.
 
 ```sh
 go test ./...
@@ -85,21 +85,33 @@ first, update this module in a dedicated commit, and run the consumer matrix for
 
 ## Configuration
 
+The v2 authentication features below are a **pending release combination**:
+they require matching contracts, Core and Web versions, with CLI authentication
+enabled by the administrator. Existing releases retain their v1 login behavior.
+
 Local profiles are stored under `~/.soha/config.json` by default with `0600`
-permissions. The file contains access and refresh tokens; keep it out of source
-control and shared logs.
+permissions (a protected current-user ACL on Windows). New v2 profiles contain
+metadata and a credential reference. `auto` uses the system keyring and fails
+explicitly if unavailable; it never silently falls back. Explicit `file` storage
+puts plaintext secrets in private files under the adjacent `credentials/`
+directory. Keep both configurations and credentials out of source control and logs.
 
 Profile `expiresAt` is the access token expiration time. Commands automatically
 refresh an expired access token with the stored refresh token and persist the
 rotated token set. If a profile has an expired access token and no refresh
-token, run `soha login` again. `SOHA_TOKEN` is a one-command access token
-override and is never written back to the profile.
+token, run `soha login` again. Legacy plaintext v1 profiles migrate to a private
+file envelope after a successful refresh; sign in again to choose keyring storage.
+`SOHA_TOKEN` overrides authentication without refreshing or changing the profile.
+With `SOHA_SERVER`, it works without a configuration file. Server identity includes
+scheme, host, port and deployment path; changing only the server cannot send old
+credentials to another instance. Long-running MCP processes coordinate credential
+refresh with short CLI processes using the same profile.
 
 | Name | Purpose |
 | --- | --- |
 | `SOHA_CONFIG` | Use another config file path. |
-| `SOHA_SERVER` | Override the configured server URL for a single invocation, or provide the default for `login`; otherwise new profiles default to `https://mcp.opensoha.com`. |
-| `SOHA_TOKEN` | Override the configured access token for a single invocation. |
+| `SOHA_SERVER` | Select an instance for login or environment authentication; stored credentials require the same canonical server. The login default is `https://mcp.opensoha.com`. |
+| `SOHA_TOKEN` | Supply a bearer credential without persistence or refresh; prefer a scoped PAT/service-account Key for CI. Logout cannot unset a shell variable. |
 | `SOHA_LOGIN` | Provide the default login name for `login`. |
 | `SOHA_PASSWORD` | Provide the login password non-interactively. Prefer short-lived shell scope or a secret manager. |
 | `SOHA_HTTP_TIMEOUT` | HTTP request timeout, such as `10s`, `1m`, or bare seconds like `15`. Defaults to `30s`. |
@@ -114,15 +126,43 @@ soha --timeout 10s capabilities
 soha capabilities --timeout 10s
 ```
 
-Interactive `soha login` reads the password with terminal echo disabled. In
-non-interactive use, pass `--password`, set `SOHA_PASSWORD`, or pipe a single
-line to stdin.
+`soha login` defaults to a browser link and a six-digit code, retaining leading
+zeroes. Open the complete request-bound link, sign in through the existing Web
+password/third-party/MFA flow, enter the code and explicitly approve the terminal.
+Remote/non-interactive terminals use `--device-code --no-browser`. Interrupted
+pending logins resume with the same request; `--restart` cancels before replacing it.
+
+Use `--with-token` to import a PAT or service-account Key from stdin. The CLI
+validates `/auth/context`, including service identities; it does not require
+`/auth/me`. Explicit password login uses `--method password --login NAME` and
+`--password-stdin`; interactive password entry hides terminal echo. Older Core
+requires an explicit `--method legacy-password`; there is no automatic downgrade.
+
+`--credential-store ephemeral` only validates credentials. Before normal exit it
+revokes a newly created session, preserving existing profiles and shared Keys.
+JSON reports `verified: true`, `authenticated: false`, `persisted: false`, and
+`temporarySessionRevoked: true` for sessions. Unconfirmed cleanup fails with
+`ephemeral_cleanup_unconfirmed`; review the session in Web. Use environment Key
+authentication for subsequent stateless commands.
+
+`auth status` checks the server; `--offline` reports unverified local metadata.
+`whoami` supports user and service-account identities. Session logout revokes the
+session before clearing local credentials; Key logout clears locally unless
+`--revoke` is explicit. `auth sessions` and `auth revoke-session --id ID` manage
+your CLI sessions. `profile remove NAME` only removes that local profile.
+
+New Key creation/rotation defaults to a future 90-day expiry. Key rotation immediately
+revokes the old Key and uses a durable request ID. Supply a separate same-instance
+`--auth-profile` for recovery; `token rotation-status --request-id ID` returns the
+replacement ID without replaying plaintext. Keep the one-time new value safely.
 
 ## Core Workflows
 
 ```sh
-soha login --server http://localhost:8080 --login ada
-soha login --server https://cloud.soha.run --login ada --profile cloud
+soha login --server http://localhost:8080 --profile local
+soha login --server https://cloud.soha.run --profile cloud --device-code --no-browser
+soha auth status --profile local
+soha whoami --profile local --json
 soha profile list
 soha context set --ai-client-id codex-local --ai-client Codex --source codex
 soha capabilities --output names
@@ -357,7 +397,9 @@ For the generated command reference, run `soha docs --format markdown` or read
 | Command | Purpose | Common examples |
 | --- | --- | --- |
 | `version` | Print build version information. | `soha version`, `soha version --json` |
-| `login` | Authenticate and store a local profile. | `soha login --server http://localhost:8080 --login ada` |
+| `login` | Authenticate through browser/device code, Key or explicit password. | `soha login --server http://localhost:8080 --profile local` |
+| `auth status`, `whoami`, `logout` | Check authentication, inspect the confirmed identity or revoke/clear credentials. | `soha auth status --profile local`, `soha whoami --profile local --json`, `soha logout --profile local` |
+| `auth sessions`, `auth revoke-session` | List or revoke your CLI sessions. | `soha auth sessions --profile local`, `soha auth revoke-session --id SESSION_ID --profile local` |
 | `capabilities` | Print the AI Gateway manifest. | `soha capabilities --output names`, `soha capabilities --output inputs` |
 | `logs query`, `logs tail` | Query or follow cluster, Docker project, and delivery environment logs. | `soha logs query --source cluster --cluster-id local --namespace default`, `soha logs tail --source docker --project-id project-1` |
 | `operation get`, `operation wait`, `operation cancel` | Inspect and control asynchronous compute operations. | `soha operation wait virtualization task-1`, `soha operation cancel container_runtime task-2 --yes` |
@@ -371,11 +413,13 @@ For the generated command reference, run `soha docs --format markdown` or read
 | `token list` | List personal access tokens. | `soha token list` |
 | `token create` | Create a personal access token. | `soha token create --name local --permission-keys ai.gateway.view` |
 | `token revoke` | Revoke a personal access token. | `soha token revoke pat_123` |
+| `token rotate`, `token rotation-status` | Replace a PAT and recover its recorded outcome using independent authentication. | `soha token rotate --id TOKEN_ID --auth-profile manager`, `soha token rotation-status --request-id REQUEST_ID --auth-profile manager` |
 | `service-account list` | List AI Gateway service accounts. | `soha service-account list` |
 | `service-account create` | Create a service account. | `soha service-account create --name runner --role-ids operator` |
 | `service-account token-list` | List service account tokens. | `soha service-account token-list` |
 | `service-account token-create` | Create a service account token. | `soha service-account token-create --service-account-id sa_123 --name ci` |
 | `service-account token-revoke` | Revoke a service account token. | `soha service-account token-revoke sat_123` |
+| `service-account token-rotate`, `service-account rotation-status` | Replace a service Key or query its outcome. | `soha service-account token-rotate --id TOKEN_ID --auth-profile manager` |
 | `audit list` | Query AI Gateway audit logs. | `soha audit list --tool-name k8s.pods.logs --limit 20` |
 | `approval list` | List approval requests. | `soha approval list --status pending` |
 | `approval timeline` | Show an approval timeline. | `soha approval timeline approval_123` |
@@ -387,6 +431,7 @@ For the generated command reference, run `soha docs --format markdown` or read
 | `profile list` | List local profiles. | `soha profile list` |
 | `profile show` | Show one local profile with tokens redacted. | `soha profile show default` |
 | `profile use` | Switch the current profile. | `soha profile use cloud` |
+| `profile remove` | Remove one local profile and its private stored credential. | `soha profile remove cloud` |
 | `context show` | Show AI client context headers. | `soha context show` |
 | `context set` | Update AI client context headers. | `soha context set --skill-id k8s-sre --source codex` |
 | `mcp` | Run the Soha MCP stdio server against official SaaS by default. | `soha mcp`, `soha mcp --skill-id k8s-sre` |

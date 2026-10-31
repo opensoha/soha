@@ -15,6 +15,8 @@ func runKnowledge(ctx context.Context, args []string, rt Runtime) error {
 		return fmt.Errorf("knowledge requires a subcommand: search, connectors, sync, or rebuild")
 	}
 	switch args[0] {
+	case "bases", "sources", "documents", "sync-runs", "index-revisions":
+		return runKnowledgeCatalog(ctx, args, rt)
 	case "search":
 		return runKnowledgeSearch(ctx, args[1:], rt)
 	case "connectors":

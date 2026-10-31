@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 )
@@ -208,7 +210,7 @@ func writeLogPage(out io.Writer, format string, page LogPage) error {
 		return nil
 	case "text":
 		for _, entry := range page.Entries {
-			if _, err := fmt.Fprintf(out, "%s\t%s\t%s\n", entry.Timestamp.UTC().Format(time.RFC3339Nano), logSourceLabel(entry), entry.Message); err != nil {
+			if _, err := fmt.Fprintf(out, "%s\t%s\t%s\n", entry.Timestamp.UTC().Format(time.RFC3339Nano), terminalDisplayText(logSourceLabel(entry)), terminalDisplayText(entry.Message)); err != nil {
 				return err
 			}
 		}
@@ -216,6 +218,21 @@ func writeLogPage(out io.Writer, format string, page LogPage) error {
 	default:
 		return fmt.Errorf("unsupported log output %q", format)
 	}
+}
+
+// Remote log text is data. Keep terminal controls and bidi overrides visible
+// without letting them change the terminal or forge additional output rows.
+func terminalDisplayText(value string) string {
+	var out strings.Builder
+	for _, r := range value {
+		if unicode.IsControl(r) || r >= '\u202a' && r <= '\u202e' || r >= '\u2066' && r <= '\u2069' {
+			quoted := strconv.QuoteRuneToASCII(r)
+			out.WriteString(quoted[1 : len(quoted)-1])
+		} else {
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 func tailLogs(ctx context.Context, out io.Writer, queryLogs logQueryFunc, query LogQuery, format string, interval time.Duration) error {

@@ -20,7 +20,7 @@ import (
 
 var (
 	sensitiveAuthorizationTextPattern = regexp.MustCompile(`(?i)(["']?)(authorization)(["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|Bearer\s+[^\s,;]+|[^\s,;]+)`)
-	sensitiveAssignmentTextPattern    = regexp.MustCompile(`(?i)(["']?)(token|password|passwd|secret|api[_-]?key)(["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)`)
+	sensitiveAssignmentTextPattern    = regexp.MustCompile(`(?i)(["']?)(token|password|passwd|secret|api[_-]?key|device[_-]?code|user[_-]?code|verification[_-]?handle|code[_-]?verifier|confirmation[_-]?id)(["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)`)
 	bearerCredentialTextPattern       = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
 )
 
@@ -31,6 +31,16 @@ type Runtime struct {
 	ConfigPath  string
 	HTTPClient  *http.Client
 	HTTPTimeout time.Duration
+	Keyring     SecretKeyring
+	OpenBrowser func(string) error
+	// Process signals are installed only while device login can cancel a grant.
+	DeviceLoginContext func(context.Context) (context.Context, context.CancelFunc)
+	// Terminal signals are scoped to an active native terminal so raw mode can restore.
+	TerminalContext func(context.Context) (context.Context, context.CancelFunc)
+	// Stream signals detach the reader without implicitly canceling a durable run.
+	StreamingContext func(context.Context) (context.Context, context.CancelFunc)
+	// Scoped fault injection for credential commit durability; production uses saveConfig.
+	credentialConfigWrite func(string, Config) error
 }
 
 func Run(ctx context.Context, args []string, rt Runtime) int {
@@ -49,7 +59,7 @@ func Run(ctx context.Context, args []string, rt Runtime) int {
 	var err error
 	args, rt.HTTPTimeout, err = resolveRuntimeTimeout(args, rt.HTTPTimeout)
 	if err != nil {
-		_, _ = fmt.Fprintln(rt.Err, "error:", redactSensitiveText(err.Error()))
+		_, _ = fmt.Fprintln(rt.Err, "error:", terminalDisplayText(redactSensitiveText(err.Error())))
 		return 2
 	}
 	if len(args) == 0 {
@@ -92,9 +102,13 @@ func Run(ctx context.Context, args []string, rt Runtime) int {
 			_, _ = fmt.Fprintln(rt.Err, "error: interrupted")
 			return 130
 		}
-		_, _ = fmt.Fprintln(rt.Err, "error:", redactSensitiveText(err.Error()))
+		_, _ = fmt.Fprintln(rt.Err, "error:", terminalDisplayText(redactSensitiveText(err.Error())))
 		if isUsageError(err) {
 			return 2
+		}
+		var remoteExit remoteProcessExitError
+		if errors.As(err, &remoteExit) && remoteExit.code > 0 && remoteExit.code <= 255 {
+			return int(remoteExit.code)
 		}
 		return 1
 	}
@@ -169,6 +183,9 @@ func flagOutput(args []string, rt Runtime) io.Writer {
 
 func hasHelpArg(args []string) bool {
 	for _, arg := range args {
+		if arg == "--" {
+			return false
+		}
 		if isHelpArg(arg) {
 			return true
 		}
@@ -188,69 +205,6 @@ func runVersion(args []string, rt Runtime) error {
 		return err
 	}
 	return writeVersion(rt.Out, *jsonOutput)
-}
-
-func runLogin(ctx context.Context, args []string, rt Runtime) error {
-	fs := newRuntimeFlagSet("login", args, rt)
-	server := fs.String("server", defaultServerFromEnv(), "soha server URL")
-	login := fs.String("login", env("SOHA_LOGIN"), "login name")
-	password := fs.String("password", env("SOHA_PASSWORD"), "login password")
-	profile := fs.String("profile", defaultProfile, "profile name")
-	aiClientID := fs.String("ai-client-id", env("SOHA_AI_CLIENT_ID"), "AI client id")
-	aiClientName := fs.String("ai-client", env("SOHA_AI_CLIENT"), "AI client display name")
-	source := fs.String("source", "soha", "request source label")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	serverURL := normalizeServerURL(*server)
-	if serverURL == "" {
-		return fmt.Errorf("--server is required")
-	}
-	if strings.TrimSpace(*login) == "" {
-		return fmt.Errorf("--login is required")
-	}
-	if strings.TrimSpace(*password) == "" {
-		if _, err := fmt.Fprint(rt.Err, "Password: "); err != nil {
-			return err
-		}
-		value, err := readPassword(rt)
-		if err != nil {
-			return err
-		}
-		*password = value
-	}
-	if strings.TrimSpace(*password) == "" {
-		return fmt.Errorf("password is required")
-	}
-	client := APIClient{ServerURL: serverURL, Client: rt.HTTPClient, Timeout: rt.HTTPTimeout}
-	result, err := client.Login(ctx, *login, *password)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(result.Data.Tokens.AccessToken) == "" {
-		return fmt.Errorf("login response did not include an access token")
-	}
-	cfg, err := loadConfig(rt.ConfigPath)
-	if err != nil {
-		return err
-	}
-	name := profileName(*profile)
-	cfg.CurrentProfile = name
-	profileConfig, err := profileFromAuthResult(ProfileConfig{
-		ServerURL:    serverURL,
-		AIClientID:   strings.TrimSpace(*aiClientID),
-		AIClientName: strings.TrimSpace(*aiClientName),
-		Source:       strings.TrimSpace(*source),
-	}, result, time.Now())
-	if err != nil {
-		return err
-	}
-	cfg.Profiles[name] = profileConfig
-	if err := saveConfig(rt.ConfigPath, cfg); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(rt.Out, "Logged in to %s as %s (profile %s)\n", cfg.Profiles[name].ServerURL, result.Data.User.UserName, name)
-	return err
 }
 
 func runCapabilities(ctx context.Context, args []string, rt Runtime) error {
@@ -690,26 +644,59 @@ func parseHTTPTimeout(source, value string) (time.Duration, error) {
 }
 
 func loadRuntimeProfile(ctx context.Context, rt Runtime, requested string) (Config, string, ProfileConfig, error) {
+	return loadRuntimeProfileForServer(ctx, rt, requested, env("SOHA_SERVER"))
+}
+
+func loadRuntimeProfileForServer(ctx context.Context, rt Runtime, requested, serverOverride string) (Config, string, ProfileConfig, error) {
+	return loadRuntimeProfileWithToken(ctx, rt, requested, serverOverride, env("SOHA_TOKEN"))
+}
+func loadRuntimeProfileWithToken(ctx context.Context, rt Runtime, requested, serverOverride, overrideToken string) (Config, string, ProfileConfig, error) {
+	token := strings.TrimSpace(overrideToken)
+	server := normalizeServerURL(serverOverride)
+	if server != "" && !sameServerURL(server, server) {
+		return Config{}, "", ProfileConfig{}, fmt.Errorf("invalid_server_url: use an HTTP(S) server URL without credentials, query or fragment")
+	}
+	if token != "" && server != "" {
+		name := profileName(requested)
+		return Config{CurrentProfile: name, Profiles: map[string]ProfileConfig{}}, name, ProfileConfig{ServerURL: server, AccessToken: token, Source: "soha", runtimeName: name}, nil
+	}
 	cfg, err := loadConfig(rt.ConfigPath)
 	if err != nil {
 		return Config{}, "", ProfileConfig{}, err
 	}
-	name, profile, err := resolveProfile(cfg, requested)
-	if err != nil {
-		return Config{}, "", ProfileConfig{}, err
-	}
-	token := strings.TrimSpace(env("SOHA_TOKEN"))
-	server := normalizeServerURL(env("SOHA_SERVER"))
-	if server != "" {
-		profile.ServerURL = server
-	}
+	name := profileName(firstNonEmptyString(requested, cfg.CurrentProfile))
+	profile := cfg.Profiles[name]
 	if token != "" {
+		profile.ServerURL = firstNonEmptyString(server, profile.ServerURL, defaultServerURL)
 		profile.AccessToken = token
-	} else if accessTokenExpired(profile, time.Now()) {
-		persist := server == ""
-		profile, err = refreshRuntimeProfile(ctx, rt, cfg, name, profile, persist)
+		profile.RefreshToken = ""
+		profile.ExpiresAt = time.Time{}
+		profile.UserID, profile.UserName = "", ""
+		profile.CredentialRef = ""
+		profile.CredentialStore = ""
+		profile.CredentialKind = ""
+		profile.ProtocolVersion = 0
+		profile.credential = nil
+	} else {
+		name, profile, err = resolveProfile(cfg, requested)
 		if err != nil {
 			return Config{}, "", ProfileConfig{}, err
+		}
+		if !sameServerURL(profile.ServerURL, profile.ServerURL) {
+			return Config{}, "", ProfileConfig{}, fmt.Errorf("invalid_server_url: profile server URL is not a valid credential origin")
+		}
+		if server != "" && !sameServerURL(server, profile.ServerURL) {
+			return Config{}, "", ProfileConfig{}, fmt.Errorf("server_mismatch: profile %q belongs to another server; select a matching profile or log in to the requested server", name)
+		}
+		profile, err = readStableProfile(ctx, rt, name, profile.ServerURL)
+		if err != nil {
+			return Config{}, "", ProfileConfig{}, err
+		}
+		if accessTokenExpired(profile, time.Now()) {
+			profile, err = refreshRuntimeProfile(ctx, rt, cfg, name, profile, true)
+			if err != nil {
+				return Config{}, "", ProfileConfig{}, err
+			}
 		}
 	}
 	if strings.TrimSpace(profile.Source) == "" {
@@ -717,7 +704,7 @@ func loadRuntimeProfile(ctx context.Context, rt Runtime, requested string) (Conf
 	}
 	profile.runtimeName = name
 	profile.refreshEnabled = token == "" && strings.TrimSpace(profile.RefreshToken) != ""
-	profile.refreshPersist = token == "" && server == ""
+	profile.refreshPersist = token == ""
 	return cfg, name, profile, nil
 }
 
@@ -726,24 +713,14 @@ func accessTokenExpired(profile ProfileConfig, now time.Time) bool {
 }
 
 func refreshRuntimeProfile(ctx context.Context, rt Runtime, cfg Config, name string, profile ProfileConfig, persist bool) (ProfileConfig, error) {
-	if strings.TrimSpace(profile.RefreshToken) == "" {
-		return ProfileConfig{}, fmt.Errorf("profile %q access token expired at %s and has no refresh token; run soha login again", name, profile.ExpiresAt.Format(time.RFC3339))
+	if persist {
+		return refreshStoredProfile(ctx, rt, name, profile, false)
 	}
 	result, err := (APIClient{ServerURL: profile.ServerURL, Client: rt.HTTPClient, Timeout: rt.HTTPTimeout}).Refresh(ctx, profile.RefreshToken)
 	if err != nil {
-		return ProfileConfig{}, fmt.Errorf("refresh profile %q: %w", name, err)
+		return ProfileConfig{}, refreshFailure(err)
 	}
-	updated, err := profileFromAuthResult(profile, result, time.Now())
-	if err != nil {
-		return ProfileConfig{}, fmt.Errorf("refresh profile %q: %w", name, err)
-	}
-	if persist {
-		cfg.Profiles[name] = updated
-		if err := saveConfig(rt.ConfigPath, cfg); err != nil {
-			return ProfileConfig{}, err
-		}
-	}
-	return updated, nil
+	return profileFromAuthResult(profile, result, time.Now())
 }
 
 func profileFromAuthResult(profile ProfileConfig, result loginResponse, now time.Time) (ProfileConfig, error) {
@@ -770,44 +747,19 @@ func tokenExpiresAt(expiresAt time.Time, expiresIn int64, now time.Time) time.Ti
 }
 
 func gatewayClient(rt Runtime, profile ProfileConfig) APIClient {
-	client := APIClient{
-		ServerURL:    profile.ServerURL,
-		Token:        profile.AccessToken,
-		RefreshToken: profile.RefreshToken,
-		Client:       rt.HTTPClient,
-		Timeout:      rt.HTTPTimeout,
-	}
+	client := APIClient{ServerURL: profile.ServerURL, Token: profile.AccessToken, RefreshToken: profile.RefreshToken, Client: rt.HTTPClient, Timeout: rt.HTTPTimeout}
 	if !profile.refreshEnabled {
 		return client
 	}
-	state := &apiClientAuthState{AccessToken: profile.AccessToken, RefreshToken: profile.RefreshToken}
-	client.authState = state
-	client.onRefresh = func(result refreshResponse) error {
-		updated, err := profileFromAuthResult(profile, result, time.Now())
+	client.authState = &apiClientAuthState{AccessToken: profile.AccessToken, RefreshToken: profile.RefreshToken}
+	client.refreshSession = func(ctx context.Context, sent string) (refreshResponse, error) {
+		expected := profile
+		expected.AccessToken = sent
+		updated, err := refreshStoredProfile(ctx, rt, profile.runtimeName, expected, true)
 		if err != nil {
-			return err
+			return refreshResponse{}, err
 		}
-		profile.AccessToken = updated.AccessToken
-		profile.RefreshToken = updated.RefreshToken
-		profile.ExpiresAt = updated.ExpiresAt
-		profile.UserID = updated.UserID
-		profile.UserName = updated.UserName
-		if !profile.refreshPersist {
-			return nil
-		}
-		cfg, err := loadConfig(rt.ConfigPath)
-		if err != nil {
-			return err
-		}
-		name := profileName(firstNonEmptyString(profile.runtimeName, cfg.CurrentProfile))
-		stored := cfg.Profiles[name]
-		stored.AccessToken = updated.AccessToken
-		stored.RefreshToken = updated.RefreshToken
-		stored.ExpiresAt = updated.ExpiresAt
-		stored.UserID = updated.UserID
-		stored.UserName = updated.UserName
-		cfg.Profiles[name] = stored
-		return saveConfig(rt.ConfigPath, cfg)
+		return authResultFromProfile(updated), nil
 	}
 	return client
 }
@@ -975,6 +927,8 @@ func yamlScalar(value any) string {
 		return strconv.FormatBool(typed)
 	case float64:
 		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case json.Number:
+		return typed.String()
 	case map[string]any:
 		if len(typed) == 0 {
 			return "{}"

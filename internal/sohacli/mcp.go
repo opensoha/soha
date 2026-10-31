@@ -58,41 +58,29 @@ func runMCPStart(ctx context.Context, args []string, rt Runtime) error {
 }
 
 func loadMCPRuntimeProfile(ctx context.Context, rt Runtime, requested, baseURL, serverAlias string) (ProfileConfig, error) {
-	if normalizeServerURL(baseURL) != "" && normalizeServerURL(serverAlias) != "" && normalizeServerURL(baseURL) != normalizeServerURL(serverAlias) {
+	if normalizeServerURL(baseURL) != "" && normalizeServerURL(serverAlias) != "" && !sameServerURL(baseURL, serverAlias) {
 		return ProfileConfig{}, fmt.Errorf("--base-url and --server must refer to the same server when both are set")
+	}
+	explicitServer := normalizeServerURL(firstNonEmptyString(baseURL, serverAlias, env("SOHA_SERVER")))
+	if strings.TrimSpace(env("SOHA_TOKEN")) != "" && explicitServer != "" {
+		_, _, profile, err := loadRuntimeProfileForServer(ctx, rt, requested, explicitServer)
+		return profile, err
 	}
 	cfg, err := loadConfig(rt.ConfigPath)
 	if err != nil {
 		return ProfileConfig{}, err
 	}
 	name := profileName(firstNonEmptyString(requested, cfg.CurrentProfile))
-	profile, configured := cfg.Profiles[name]
-	explicitServer := normalizeServerURL(firstNonEmptyString(baseURL, serverAlias, env("SOHA_SERVER")))
-	if configured && explicitServer == "" && env("SOHA_TOKEN") == "" && normalizeServerURL(profile.ServerURL) != "" && normalizeServerURL(profile.ServerURL) != defaultServerURL {
-		return ProfileConfig{}, fmt.Errorf("profile %q targets %s; pass --base-url %s to use that self-hosted deployment", name, profile.ServerURL, normalizeServerURL(profile.ServerURL))
+	stored, configured := cfg.Profiles[name]
+	if configured && explicitServer == "" && env("SOHA_TOKEN") == "" && !sameServerURL(stored.ServerURL, defaultServerURL) {
+		return ProfileConfig{}, fmt.Errorf("profile %q targets %s; pass --base-url %s to use that self-hosted deployment", name, stored.ServerURL, normalizeServerURL(stored.ServerURL))
 	}
-	if configured {
-		_, _, profile, err = loadRuntimeProfile(ctx, rt, name)
-		if err != nil {
-			return ProfileConfig{}, err
-		}
-	} else {
-		if strings.TrimSpace(requested) != "" {
-			return ProfileConfig{}, fmt.Errorf("profile %q is not configured; run soha login first", name)
-		}
-		profile = ProfileConfig{
-			AccessToken: strings.TrimSpace(env("SOHA_TOKEN")),
-			Source:      "soha",
-			runtimeName: name,
-		}
-		if profile.AccessToken == "" {
-			return ProfileConfig{}, fmt.Errorf("profile %q is not configured and SOHA_TOKEN is empty; run soha login or set SOHA_TOKEN", name)
-		}
+	target := firstNonEmptyString(explicitServer, stored.ServerURL, defaultServerURL)
+	_, _, profile, err := loadRuntimeProfileForServer(ctx, rt, name, target)
+	if err != nil {
+		return ProfileConfig{}, err
 	}
-	profile.ServerURL = normalizeServerURL(firstNonEmptyString(explicitServer, defaultServerURL))
-	if profile.ServerURL == "" {
-		profile.ServerURL = defaultServerURL
-	}
+	profile.ServerURL = normalizeServerURL(target)
 	return profile, nil
 }
 

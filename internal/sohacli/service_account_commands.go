@@ -9,7 +9,7 @@ import (
 
 func runServiceAccount(ctx context.Context, args []string, rt Runtime) error {
 	if len(args) == 0 {
-		return fmt.Errorf("service-account requires a subcommand: list, create, token-list, token-create, or token-revoke")
+		return fmt.Errorf("service-account requires a subcommand: list, create, token-list, token-create, token-revoke, token-rotate, or rotation-status")
 	}
 	switch args[0] {
 	case "list":
@@ -20,6 +20,10 @@ func runServiceAccount(ctx context.Context, args []string, rt Runtime) error {
 		return runServiceAccountTokenList(ctx, args[1:], rt)
 	case "token-create":
 		return runServiceAccountTokenCreate(ctx, args[1:], rt)
+	case "token-rotate":
+		return runTokenRotate(ctx, args[1:], rt, "service_account_token")
+	case "rotation-status":
+		return runTokenRotationStatus(ctx, args[1:], rt)
 	case "token-revoke":
 		return runServiceAccountTokenRevoke(ctx, args[1:], rt)
 	default:
@@ -124,6 +128,9 @@ func runServiceAccountTokenCreate(ctx context.Context, args []string, rt Runtime
 	permissionKeys := fs.String("permission-keys", "", "comma-separated permission keys")
 	expiresAt := fs.String("expires-at", "", "RFC3339 expiration time")
 	metadata := fs.String("metadata-json", "", "metadata JSON object")
+	governed := fs.Bool("governed-ai", false, "restrict this Key to a registered AI client, known skill and governed Gateway endpoints")
+	clientID := fs.String("ai-client-id", "", "registered AI client ID for --governed-ai")
+	skillID := fs.String("skill-id", "", "known skill ID for --governed-ai")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -143,19 +150,21 @@ func runServiceAccountTokenCreate(ctx context.Context, args []string, rt Runtime
 		"scopes":         splitCSV(*scopes),
 		"permissionKeys": splitCSV(*permissionKeys),
 	}
-	if *expiresAt != "" {
-		parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(*expiresAt))
-		if err != nil {
-			return fmt.Errorf("invalid --expires-at; use RFC3339")
-		}
-		payload["expiresAt"] = parsed.Format(time.RFC3339)
+	expiry, err := keyExpiry(*expiresAt)
+	if err != nil {
+		return err
 	}
+	payload["expiresAt"] = expiry.Format(time.RFC3339)
+
 	if *metadata != "" {
 		parsed, err := parseJSONObject([]byte(*metadata))
 		if err != nil {
 			return fmt.Errorf("invalid --metadata-json: %w", err)
 		}
 		payload["metadata"] = parsed
+	}
+	if err := applyGovernedCredentialInput(payload, *governed, *clientID, *skillID); err != nil {
+		return err
 	}
 	created, err := gatewayClient(rt, profile).CreateServiceAccountToken(ctx, saID, payload, gatewayHeaders(profile, "", "", "", ""))
 	if err != nil {
@@ -165,13 +174,22 @@ func runServiceAccountTokenCreate(ctx context.Context, args []string, rt Runtime
 }
 
 func runServiceAccountTokenRevoke(ctx context.Context, args []string, rt Runtime) error {
-	fs := newRuntimeFlagSet("service-account token-revoke", args, rt)
+	leading, rest := extractLeadingPositionals(args, 1)
+	fs := newRuntimeFlagSet("service-account token-revoke", rest, rt)
 	profileFlag := fs.String("profile", "", "profile name")
 	tokenID := fs.String("id", "", "token id")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	id := firstNonEmptyString(*tokenID, fs.Arg(0))
+	ids := append(leading, fs.Args()...)
+	if len(ids) > 1 {
+		return usageError{message: "service-account token-revoke accepts one token id"}
+	}
+	positional := ""
+	if len(ids) == 1 {
+		positional = ids[0]
+	}
+	id := firstNonEmptyString(*tokenID, positional)
 	if id == "" {
 		return fmt.Errorf("service-account token-revoke requires a token id")
 	}

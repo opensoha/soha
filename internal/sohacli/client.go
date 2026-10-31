@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
@@ -22,26 +23,31 @@ const (
 )
 
 type APIClient struct {
-	ServerURL    string
-	Token        string
-	RefreshToken string
-	Client       *http.Client
-	Timeout      time.Duration
-	authState    *apiClientAuthState
-	onRefresh    func(refreshResponse) error
+	ServerURL      string
+	Token          string
+	RefreshToken   string
+	Client         *http.Client
+	Timeout        time.Duration
+	authState      *apiClientAuthState
+	onRefresh      func(refreshResponse) error
+	refreshSession func(context.Context, string) (refreshResponse, error)
 }
 
 type apiClientAuthState struct {
+	mu           sync.Mutex
 	AccessToken  string
 	RefreshToken string
 }
 
 type httpStatusError struct {
-	Method     string
-	Path       string
-	Status     string
-	StatusCode int
-	Message    string
+	Method       string
+	Path         string
+	Status       string
+	StatusCode   int
+	Message      string
+	Code         string
+	RetryAfter   int
+	AuthRejected bool
 }
 
 func (e *httpStatusError) Error() string {
@@ -544,8 +550,20 @@ func (c APIClient) ListPersonalAccessTokens(ctx context.Context, headers map[str
 }
 
 func (c APIClient) CreatePersonalAccessToken(ctx context.Context, input map[string]any, headers map[string]string) (CreatedPersonalAccessToken, error) {
+	metadata, _ := input["metadata"].(map[string]any)
+	binding, err := governedBinding(metadata)
+	if err != nil {
+		return CreatedPersonalAccessToken{}, err
+	}
+	path, err := c.governedCredentialPath(ctx, "/api/v1/ai-gateway/personal-access-tokens", binding)
+	if err != nil {
+		return CreatedPersonalAccessToken{}, err
+	}
 	var out itemResponse[CreatedPersonalAccessToken]
-	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/ai-gateway/personal-access-tokens", c.Token, headers, input, &out); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, path, c.Token, headers, input, &out); err != nil {
+		return CreatedPersonalAccessToken{}, err
+	}
+	if err := c.verifyGovernedCredential(ctx, out.Data.Token.ID, out.Data.Value, out.Data.Token.TokenPrefix, out.Data.Token.Metadata, binding, false); err != nil {
 		return CreatedPersonalAccessToken{}, err
 	}
 	return out.Data, nil
@@ -581,9 +599,20 @@ func (c APIClient) CreateServiceAccount(ctx context.Context, input map[string]an
 }
 
 func (c APIClient) CreateServiceAccountToken(ctx context.Context, serviceAccountID string, input map[string]any, headers map[string]string) (CreatedServiceAccountToken, error) {
+	metadata, _ := input["metadata"].(map[string]any)
+	binding, err := governedBinding(metadata)
+	if err != nil {
+		return CreatedServiceAccountToken{}, err
+	}
+	path, err := c.governedCredentialPath(ctx, "/api/v1/ai-gateway/service-accounts/"+url.PathEscape(serviceAccountID)+"/tokens", binding)
+	if err != nil {
+		return CreatedServiceAccountToken{}, err
+	}
 	var out itemResponse[CreatedServiceAccountToken]
-	path := "/api/v1/ai-gateway/service-accounts/" + url.PathEscape(serviceAccountID) + "/tokens"
 	if err := c.doJSON(ctx, http.MethodPost, path, c.Token, headers, input, &out); err != nil {
+		return CreatedServiceAccountToken{}, err
+	}
+	if err := c.verifyGovernedCredential(ctx, out.Data.Token.ID, out.Data.Value, out.Data.Token.TokenPrefix, out.Data.Token.Metadata, binding, true); err != nil {
 		return CreatedServiceAccountToken{}, err
 	}
 	return out.Data, nil
@@ -771,6 +800,9 @@ func (c APIClient) doJSON(ctx context.Context, method, path, token string, heade
 	if base == "" {
 		return fmt.Errorf("server URL is required")
 	}
+	if !sameServerURL(base, base) {
+		return fmt.Errorf("invalid_server_url: API URL must not contain credentials, query or fragment")
+	}
 	var rawBody []byte
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -783,10 +815,10 @@ func (c APIClient) doJSON(ctx context.Context, method, path, token string, heade
 	raw, err := c.doRawJSON(ctx, method, path, token, headers, rawBody)
 	if err != nil {
 		var statusErr *httpStatusError
-		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusUnauthorized && token != "" && c.canRefresh() {
-			refreshedToken, refreshErr := c.refreshAfterUnauthorized(ctx)
+		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusUnauthorized && token != "" && c.canRefresh() && (method == http.MethodGet || method == http.MethodHead || statusErr.AuthRejected) {
+			refreshedToken, refreshErr := c.refreshAfterUnauthorized(ctx, token)
 			if refreshErr != nil {
-				return fmt.Errorf("%w; refresh failed: %v", err, refreshErr)
+				return refreshErr
 			}
 			raw, err = c.doRawJSON(ctx, method, path, refreshedToken, headers, rawBody)
 		}
@@ -840,11 +872,14 @@ func (c APIClient) doRawJSON(ctx context.Context, method, path, token string, he
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &httpStatusError{
-			Method:     method,
-			Path:       path,
-			Status:     resp.Status,
-			StatusCode: resp.StatusCode,
-			Message:    responseErrorMessage(resp.Status, raw),
+			Method:       method,
+			Path:         path,
+			Status:       resp.Status,
+			StatusCode:   resp.StatusCode,
+			Message:      safeAPIErrorMessage(resp.Status, raw, rawBody, token, c.RefreshToken),
+			Code:         responseErrorCode(raw),
+			RetryAfter:   retryAfterSeconds(resp.Header.Get("Retry-After")),
+			AuthRejected: strings.Contains(resp.Header.Get("WWW-Authenticate"), `error="invalid_token"`),
 		}
 	}
 	return raw, nil
@@ -852,67 +887,117 @@ func (c APIClient) doRawJSON(ctx context.Context, method, path, token string, he
 
 func (c APIClient) effectiveToken(token string) string {
 	if c.authState != nil && token == c.Token {
+		c.authState.mu.Lock()
+		defer c.authState.mu.Unlock()
 		return strings.TrimSpace(c.authState.AccessToken)
 	}
 	return strings.TrimSpace(token)
 }
 
-func (c APIClient) currentRefreshToken() string {
-	if c.authState != nil && strings.TrimSpace(c.authState.RefreshToken) != "" {
-		return strings.TrimSpace(c.authState.RefreshToken)
-	}
-	return strings.TrimSpace(c.RefreshToken)
-}
-
 func (c APIClient) canRefresh() bool {
-	return c.currentRefreshToken() != ""
-}
-
-func (c APIClient) refreshAfterUnauthorized(ctx context.Context) (string, error) {
-	refreshToken := c.currentRefreshToken()
-	if refreshToken == "" {
-		return "", fmt.Errorf("refresh token is not configured")
-	}
-	result, err := (APIClient{ServerURL: c.ServerURL, Client: c.Client, Timeout: c.Timeout}).Refresh(ctx, refreshToken)
-	if err != nil {
-		return "", err
-	}
-	accessToken := strings.TrimSpace(result.Data.Tokens.AccessToken)
-	if accessToken == "" {
-		return "", fmt.Errorf("auth response did not include an access token")
+	if c.refreshSession != nil {
+		return true
 	}
 	if c.authState != nil {
-		c.authState.AccessToken = accessToken
-		c.authState.RefreshToken = firstNonEmptyString(result.Data.Tokens.RefreshToken, refreshToken)
+		c.authState.mu.Lock()
+		defer c.authState.mu.Unlock()
+		return c.authState.RefreshToken != ""
+	}
+	return strings.TrimSpace(c.RefreshToken) != ""
+}
+func (c APIClient) refreshAfterUnauthorized(ctx context.Context, previous ...string) (string, error) {
+	sent := c.Token
+	if len(previous) > 0 {
+		sent = previous[0]
+	}
+	refreshToken := c.RefreshToken
+	if c.authState != nil {
+		c.authState.mu.Lock()
+		defer c.authState.mu.Unlock()
+		if c.authState.AccessToken != "" && c.authState.AccessToken != sent {
+			return c.authState.AccessToken, nil
+		}
+		refreshToken = firstNonEmptyString(c.authState.RefreshToken, refreshToken)
+	}
+	var result refreshResponse
+	var err error
+	if c.refreshSession != nil {
+		result, err = c.refreshSession(ctx, sent)
+	} else {
+		if refreshToken == "" {
+			return "", fmt.Errorf("refresh token is not configured")
+		}
+		result, err = (APIClient{ServerURL: c.ServerURL, Client: c.Client, Timeout: c.Timeout}).Refresh(ctx, refreshToken)
+	}
+	if err != nil {
+		return "", refreshFailure(err)
+	}
+	token := strings.TrimSpace(result.Data.Tokens.AccessToken)
+	if token == "" {
+		return "", fmt.Errorf("auth response did not include an access token")
 	}
 	if c.onRefresh != nil {
-		if err := c.onRefresh(result); err != nil {
+		if err = c.onRefresh(result); err != nil {
 			return "", err
 		}
 	}
-	return accessToken, nil
+	if c.authState != nil {
+		c.authState.AccessToken = token
+		c.authState.RefreshToken = firstNonEmptyString(result.Data.Tokens.RefreshToken, refreshToken)
+	}
+	return token, nil
+}
+func responseErrorCode(raw []byte) string {
+	var value struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	return firstNonEmptyString(value.Error.Code, value.Code)
+}
+func retryAfterSeconds(raw string) int {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
 }
 
 func (c APIClient) httpClient() *http.Client {
-	timeout := c.Timeout
-	if c.Client == nil {
-		if timeout <= 0 {
-			timeout = defaultHTTPTimeout
+	client := http.Client{}
+	if c.Client != nil {
+		client = *c.Client
+	}
+	if c.Timeout > 0 {
+		client.Timeout = c.Timeout
+	} else if client.Timeout <= 0 {
+		client.Timeout = defaultHTTPTimeout
+	}
+	base, err := url.Parse(normalizeServerURL(c.ServerURL))
+	if err != nil || base.Hostname() == "" {
+		return &client
+	}
+	original := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		fromOrigin := (&url.URL{Scheme: base.Scheme, Host: base.Host}).String()
+		toOrigin := (&url.URL{Scheme: req.URL.Scheme, Host: req.URL.Host}).String()
+		prefix := strings.TrimRight(base.Path, "/")
+		if !sameServerURL(fromOrigin, toOrigin) || prefix != "" && req.URL.Path != prefix && !strings.HasPrefix(req.URL.Path, prefix+"/") {
+			return fmt.Errorf("server_mismatch: API redirect left the configured server or base path")
 		}
-		return &http.Client{Timeout: timeout}
+		if original != nil {
+			return original(req, via)
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		return nil
 	}
-	if timeout <= 0 && c.Client.Timeout > 0 {
-		return c.Client
-	}
-	if timeout <= 0 {
-		timeout = defaultHTTPTimeout
-	}
-	if c.Client.Timeout == timeout {
-		return c.Client
-	}
-	clone := *c.Client
-	clone.Timeout = timeout
-	return &clone
+	return &client
 }
 
 func responseErrorMessage(status string, raw []byte) string {
