@@ -4,7 +4,7 @@ import type { TableColumnsType } from 'antd'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
 import { AdminTable } from '@/components/admin-table'
-import { BooleanTag } from '@/components/status-tag'
+import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 import { Alert, Button, Card, Input } from 'antd'
@@ -33,6 +33,153 @@ export interface ChildJob {
   ageSeconds: number
 }
 
+function controllerCount(detail: WorkloadMeta, field: string) {
+  const value = detail[field]
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+function controllerSummary(
+  detail: WorkloadMeta,
+  resource: WorkloadKind,
+  title: string,
+  zh: boolean,
+) {
+  const desired = controllerCount(
+    detail,
+    resource === 'daemonsets' ? 'desiredNumber' : 'desiredReplicas',
+  )
+  const ready = controllerCount(detail, resource === 'daemonsets' ? 'readyNumber' : 'readyReplicas')
+  const revisionsDiffer =
+    resource === 'statefulsets' &&
+    typeof detail.currentRevision === 'string' &&
+    Boolean(detail.currentRevision.trim()) &&
+    typeof detail.updateRevision === 'string' &&
+    Boolean(detail.updateRevision.trim()) &&
+    detail.currentRevision !== detail.updateRevision
+  if (resource === 'cronjobs') {
+    if (typeof detail.suspend !== 'boolean')
+      return {
+        type: 'info' as const,
+        status: 'unknown',
+        label: zh ? '调度状态未知' : 'Scheduling unknown',
+        title: zh ? 'CronJob 调度状态尚未返回' : 'CronJob scheduling status is unavailable',
+      }
+    return detail.suspend
+      ? {
+          type: 'info' as const,
+          status: 'disabled',
+          label: zh ? '已暂停' : 'Suspended',
+          title: zh ? 'CronJob 已暂停后续调度' : 'CronJob scheduling is suspended',
+        }
+      : {
+          type: 'info' as const,
+          status: 'enabled',
+          label: zh ? '调度已启用' : 'Scheduling enabled',
+          title: zh ? 'CronJob 调度已启用' : 'CronJob scheduling is enabled',
+        }
+  }
+  if (resource === 'jobs') {
+    const succeeded = controllerCount(detail, 'succeeded')
+    const completions = controllerCount(detail, 'completions')
+    const active = controllerCount(detail, 'active')
+    const failed = controllerCount(detail, 'failed')
+    if (
+      succeeded !== undefined &&
+      completions !== undefined &&
+      completions > 0 &&
+      succeeded >= completions
+    )
+      return {
+        type: 'success' as const,
+        status: 'completed',
+        label: zh ? '完成数达标' : 'Completion target met',
+        title: zh
+          ? `Job 已完成 ${succeeded} 个执行`
+          : `Job has ${succeeded} successful completions`,
+      }
+    if (active !== undefined && active > 0)
+      return {
+        type: 'info' as const,
+        status: 'progressing',
+        label: zh ? '执行中' : 'Executing',
+        title: zh ? `Job 当前有 ${active} 个活跃 Pod` : `Job has ${active} active Pods`,
+      }
+    if (failed !== undefined && failed > 0)
+      return {
+        type: 'warning' as const,
+        status: 'warning',
+        label: zh ? '有失败记录' : 'Failures recorded',
+        title: zh ? `Job 已记录 ${failed} 个失败 Pod` : `Job has recorded ${failed} failed Pods`,
+      }
+    return {
+      type: 'info' as const,
+      status: 'unknown',
+      label: zh ? '暂无完成结果' : 'No completion result',
+      title: zh ? 'Job 尚无完成结果' : 'Job has no completion result yet',
+    }
+  }
+  if (desired === 0)
+    return {
+      type: 'info' as const,
+      status: 'inactive',
+      label: zh ? '期望为 0' : 'Zero desired',
+      title: zh ? '期望数量为 0' : 'Desired count is zero',
+    }
+  if (desired === undefined || ready === undefined)
+    return {
+      type: 'info' as const,
+      status: 'unknown',
+      label: zh ? '就绪未知' : 'Readiness unknown',
+      title: zh ? `${title} 就绪数据尚未返回` : `${title} readiness is unavailable`,
+    }
+  if (ready < desired)
+    return {
+      type: 'warning' as const,
+      status: 'warning',
+      label: zh ? '副本未就绪' : 'Replicas not ready',
+      title: zh ? `${title} 仍有副本未就绪` : `${title} has replicas that are not ready`,
+    }
+  const updated = controllerCount(detail, 'updatedNumber')
+  if (resource === 'daemonsets' && updated !== undefined && updated < desired)
+    return {
+      type: 'warning' as const,
+      status: 'warning',
+      label: zh ? '部分未更新' : 'Update incomplete',
+      title: zh
+        ? `${title} 当前副本已就绪，仍有副本未更新`
+        : `${title} replicas are ready; some are not updated`,
+    }
+  if (revisionsDiffer)
+    return {
+      type: 'warning' as const,
+      status: 'warning',
+      label: zh ? '版本有差异' : 'Revisions differ',
+      title: zh
+        ? `${title} 当前副本已就绪，版本仍有差异`
+        : `${title} replicas are ready; revisions still differ`,
+    }
+  return {
+    type: 'success' as const,
+    status: 'ready',
+    label: zh ? '副本就绪' : 'Replicas ready',
+    title: zh ? `${title} 当前副本已就绪` : `${title} replicas are ready`,
+  }
+}
+
+export function ControllerStatusTag({
+  detail,
+  resource,
+  title,
+}: {
+  detail: WorkloadMeta
+  resource: WorkloadKind
+  title: string
+}) {
+  const { localeCode } = useI18n()
+  const summary = controllerSummary(detail, resource, title, localeCode === 'zh_CN')
+  return <StatusTag value={summary.status} label={summary.label} />
+}
+
 export function ControllerHeaderFacts({
   detail,
   resource,
@@ -42,36 +189,80 @@ export function ControllerHeaderFacts({
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
-  if (resource === 'cronjobs')
-    return typeof detail.suspend === 'boolean' ? (
-      <span>
-        {detail.suspend
+  const count = (field: string) => controllerCount(detail, field) ?? '—'
+  const text = (field: string) =>
+    typeof detail[field] === 'string' ? (detail[field] as string).trim() : ''
+  const revision = (field: string) => {
+    const full = text(field)
+    if (!full) return null
+    const prefix = `${detail.name}-`
+    const short = full.startsWith(prefix) ? full.slice(prefix.length) : full
+    return (
+      <span className="soha-controller-header-revision" title={full}>
+        {field === 'currentRevision'
           ? zh
-            ? '已暂停调度'
-            : 'Scheduling suspended'
+            ? '当前版本'
+            : 'Current revision'
           : zh
-            ? '调度中'
-            : 'Scheduling active'}
+            ? '目标版本'
+            : 'Target revision'}{' '}
+        <span>{short}</span>
       </span>
-    ) : null
-  const current =
-    resource === 'daemonsets'
-      ? detail.readyNumber
-      : resource === 'jobs'
-        ? detail.succeeded
-        : detail.readyReplicas
-  const desired =
-    resource === 'daemonsets'
-      ? detail.desiredNumber
-      : resource === 'jobs'
-        ? detail.completions
-        : detail.desiredReplicas
-  return typeof current === 'number' && typeof desired === 'number' ? (
-    <span>
-      {zh ? (resource === 'jobs' ? '完成' : '就绪') : resource === 'jobs' ? 'Completed' : 'Ready'}{' '}
-      {current} / {desired}
-    </span>
-  ) : null
+    )
+  }
+  if (resource === 'cronjobs')
+    return (
+      <>
+        <span title={text('schedule')}>
+          {zh ? '调度' : 'Schedule'} {text('schedule') || '—'}
+        </span>
+        <span>
+          {zh ? '活跃 Jobs' : 'Active Jobs'} {count('activeJobs')}
+        </span>
+        {text('timeZone') && <span>{text('timeZone')}</span>}
+      </>
+    )
+  if (resource === 'jobs')
+    return (
+      <>
+        <span>
+          {zh ? '完成' : 'Completed'} {count('succeeded')} / {count('completions')}
+        </span>
+        <span>
+          {zh ? '活跃' : 'Active'} {count('active')}
+        </span>
+        <span>
+          {zh ? '失败记录' : 'Failed Pods'} {count('failed')}
+        </span>
+        {text('completionMode') && <span>{text('completionMode')}</span>}
+      </>
+    )
+  return (
+    <>
+      <span>
+        {count(resource === 'daemonsets' ? 'readyNumber' : 'readyReplicas')} /{' '}
+        {count(resource === 'daemonsets' ? 'desiredNumber' : 'desiredReplicas')}{' '}
+        {zh ? '就绪' : 'ready'}
+      </span>
+      {resource === 'statefulsets' && (
+        <>
+          {revision('currentRevision')}
+          {text('updateRevision') !== text('currentRevision') && revision('updateRevision')}
+        </>
+      )}
+      {resource === 'replicasets' && detail.annotations?.['deployment.kubernetes.io/revision'] && (
+        <span title="deployment.kubernetes.io/revision">
+          {zh ? '版本' : 'Revision'} {detail.annotations['deployment.kubernetes.io/revision']}
+        </span>
+      )}
+      {resource === 'daemonsets' && (
+        <span>
+          {zh ? '已更新' : 'Updated'} {count('updatedNumber')} / {count('desiredNumber')}
+        </span>
+      )}
+      {text('updateStrategy') && <span>{text('updateStrategy')}</span>}
+    </>
+  )
 }
 
 export function WorkloadJobsCard({
@@ -187,12 +378,8 @@ export function ControllerOverview({
     typeof detail[field] === 'number' || typeof detail[field] === 'string'
       ? String(detail[field])
       : '—'
-  const number = (field: string) =>
-    typeof detail[field] === 'number' && Number.isFinite(detail[field])
-      ? (detail[field] as number)
-      : undefined
+  const number = (field: string) => controllerCount(detail, field)
   const desired = number(resource === 'daemonsets' ? 'desiredNumber' : 'desiredReplicas')
-  const ready = number(resource === 'daemonsets' ? 'readyNumber' : 'readyReplicas')
   const fields =
     resource === 'daemonsets'
       ? [
@@ -260,83 +447,7 @@ export function ControllerOverview({
           .join(', ')
       : ''
   const conditions = Array.isArray(detail.conditions) ? detail.conditions : []
-  const revisionsDiffer =
-    resource === 'statefulsets' &&
-    typeof detail.currentRevision === 'string' &&
-    Boolean(detail.currentRevision) &&
-    typeof detail.updateRevision === 'string' &&
-    Boolean(detail.updateRevision) &&
-    detail.currentRevision !== detail.updateRevision
-  let summary: { type: 'info' | 'success' | 'warning'; title: string } = {
-    type: 'info',
-    title: zh ? `${title} 就绪数据尚未返回` : `${title} readiness is unavailable`,
-  }
-  if (resource === 'cronjobs') {
-    summary = {
-      type: 'info',
-      title:
-        typeof detail.suspend !== 'boolean'
-          ? zh
-            ? 'CronJob 调度状态尚未返回'
-            : 'CronJob scheduling status is unavailable'
-          : detail.suspend
-            ? zh
-              ? 'CronJob 已暂停后续调度'
-              : 'CronJob scheduling is suspended'
-            : zh
-              ? 'CronJob 调度已启用'
-              : 'CronJob scheduling is enabled',
-    }
-  } else if (resource === 'jobs') {
-    const succeeded = number('succeeded')
-    const completions = number('completions')
-    const active = number('active')
-    const failed = number('failed')
-    summary =
-      succeeded !== undefined &&
-      completions !== undefined &&
-      completions > 0 &&
-      succeeded >= completions
-        ? {
-            type: 'success',
-            title: zh
-              ? `Job 已完成 ${succeeded} 个执行`
-              : `Job has ${succeeded} successful completions`,
-          }
-        : active !== undefined && active > 0
-          ? {
-              type: 'info',
-              title: zh ? `Job 当前有 ${active} 个活跃 Pod` : `Job has ${active} active Pods`,
-            }
-          : failed !== undefined && failed > 0
-            ? {
-                type: 'warning',
-                title: zh
-                  ? `Job 已记录 ${failed} 个失败 Pod`
-                  : `Job has recorded ${failed} failed Pods`,
-              }
-            : { type: 'info', title: zh ? 'Job 尚无完成结果' : 'Job has no completion result yet' }
-  } else if (desired === 0) {
-    summary = { type: 'info', title: zh ? '已缩容至 0 个副本' : 'Scaled to zero replicas' }
-  } else if (desired !== undefined && ready !== undefined) {
-    summary =
-      ready < desired
-        ? {
-            type: 'warning',
-            title: zh ? `${title} 仍有副本未就绪` : `${title} has replicas that are not ready`,
-          }
-        : revisionsDiffer
-          ? {
-              type: 'warning',
-              title: zh
-                ? `${title} 当前副本已就绪，版本仍有差异`
-                : `${title} replicas are ready; revisions still differ`,
-            }
-          : {
-              type: 'success',
-              title: zh ? `${title} 当前副本已就绪` : `${title} replicas are ready`,
-            }
-  }
+  const summary = controllerSummary(detail, resource, title, zh)
   const [, changeTab] = useResourceDetailTab()
   return (
     <WorkloadOverview
@@ -415,7 +526,17 @@ export function ControllerOverview({
               {zh ? '当前' : 'Current'} {value('currentNumber')}
             </span>
           )}
-          {resource === 'cronjobs' && <ControllerHeaderFacts detail={detail} resource={resource} />}
+          {resource === 'cronjobs' && typeof detail.suspend === 'boolean' && (
+            <span>
+              {detail.suspend
+                ? zh
+                  ? '已暂停调度'
+                  : 'Scheduling suspended'
+                : zh
+                  ? '调度中'
+                  : 'Scheduling active'}
+            </span>
+          )}
           <Button type="link" onClick={() => changeTab(resource === 'cronjobs' ? 'jobs' : 'pods')}>
             {zh
               ? resource === 'cronjobs'

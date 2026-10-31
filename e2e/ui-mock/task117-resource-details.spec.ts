@@ -171,6 +171,26 @@ for (const [kind, label, permission] of controllers)
     await expect(page.locator('.soha-workload-detail-header .soha-metadata-tag')).toHaveText(
       'monitoring',
     )
+    const header = page.locator('.soha-workload-detail-header')
+    await expect(header.locator('.soha-status-tag')).toHaveText(
+      kind === 'cronjobs' ? '调度已启用' : kind === 'jobs' ? '执行中' : '副本未就绪',
+    )
+    await expect(header).toContainText('已创建')
+    await expect(header).toContainText('读取于')
+    if (kind === 'statefulsets') {
+      await expect(header.locator(`[title="${detail.currentRevision}"]`)).toContainText('当前版本')
+      await expect(header.locator(`[title="${detail.updateRevision}"]`)).toContainText('目标版本')
+      await expect(header).toContainText('RollingUpdate')
+    } else if (kind === 'daemonsets') {
+      await expect(header).toContainText('已更新 3 / 4')
+      await expect(header).toContainText('RollingUpdate')
+    } else if (kind === 'cronjobs') {
+      await expect(header).toContainText('调度 */5 * * * *')
+      await expect(header).toContainText('活跃 Jobs 1')
+    } else if (kind === 'jobs') {
+      await expect(header).toContainText('完成 2 / 3')
+      await expect(header).toContainText('失败记录 0')
+    }
     await expectWorkloadDetailFrame(page)
     const overview = page.locator('.soha-workload-overview')
     await expect(overview.locator('aside')).toContainText('运行配置')
@@ -217,10 +237,28 @@ for (const [kind, label, permission] of controllers)
     await expect(panel.getByRole('link', { name: 'sample-079', exact: true })).toBeVisible()
     if (kind !== 'cronjobs') {
       const before = reads.filter((path) => path.startsWith(`${root}/workloads/pods?`)).length
+      if (kind === 'statefulsets') {
+        detail.readyReplicas = 3
+        detail.currentRevision = detail.updateRevision
+      } else if (kind === 'daemonsets') {
+        detail.readyNumber = 4
+        detail.updatedNumber = 4
+      }
       await page.getByRole('button', { name: `刷新 ${label}`, exact: true }).click()
       await expect
         .poll(() => reads.filter((path) => path.startsWith(`${root}/workloads/pods?`)).length)
         .toBe(before + 1)
+      if (kind === 'statefulsets' || kind === 'daemonsets') {
+        await expect(header.locator('.soha-status-tag')).toHaveText('副本就绪')
+        if (kind === 'statefulsets') {
+          await expect(header.locator('.soha-controller-header-revision')).toHaveCount(1)
+          await expect(header.locator(`[title="${detail.currentRevision}"]`)).toContainText(
+            '当前版本',
+          )
+        } else {
+          await expect(header).toContainText('已更新 4 / 4')
+        }
+      }
       await expect(panel.getByRole('link', { name: 'sample-079', exact: true })).toBeVisible()
     }
     await page.getByRole('tab', { name: '事件', exact: true }).click()

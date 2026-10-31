@@ -62,6 +62,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.soha-controller-header-revision {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  max-width: min(240px, 100%);
+  white-space: nowrap;
+}
+.soha-controller-header-revision > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Workload-only ownership of Antd Tabs framing; other resource families retain their layout. */
 .soha-workload-detail-frame > .soha-workload-detail-tabs > .ant-tabs-nav {
   padding-inline: 22px;

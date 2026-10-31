@@ -23,10 +23,14 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Pod, WorkloadRelation } from '@/types'
 import { WorkloadPodsCard, WorkloadRelationsCard } from './workload-relations'
-import { ControllerHeaderFacts, WorkloadJobsCard, type ChildJob } from './controller-overview'
+import {
+  ControllerHeaderFacts,
+  ControllerStatusTag,
+  WorkloadJobsCard,
+  type ChildJob,
+} from './controller-overview'
 import { WorkloadDetailHeader } from './workload-detail-header'
-import { StatusTag } from '@/components/status-tag'
-import { formatRelativeTime } from '@/utils/time'
+import { formatDateTime, formatRelativeTime } from '@/utils/time'
 import type { TabsProps } from 'antd'
 import { App, Button, Card, Segmented, Spin, Typography } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
@@ -254,15 +258,20 @@ export function WorkloadDetailShell({
             kind={title}
             name={detail.name}
             namespace={detail.namespace}
-            status={
-              typeof detail.status === 'string' ? <StatusTag value={detail.status} /> : undefined
-            }
+            status={<ControllerStatusTag detail={detail} resource={resource} title={title} />}
             facts={
               <>
                 <ControllerHeaderFacts detail={detail} resource={resource} />
                 {detail.createdAt && (
                   <Typography.Text type="secondary">
+                    {localeCode === 'zh_CN' ? '已创建' : 'Created'}{' '}
                     {formatRelativeTime(detail.createdAt)}
+                  </Typography.Text>
+                )}
+                {detailQuery.dataUpdatedAt > 0 && (
+                  <Typography.Text type="secondary">
+                    {localeCode === 'zh_CN' ? '读取于' : 'Read at'}{' '}
+                    {formatDateTime(new Date(detailQuery.dataUpdatedAt).toISOString())}
                   </Typography.Text>
                 )}
               </>

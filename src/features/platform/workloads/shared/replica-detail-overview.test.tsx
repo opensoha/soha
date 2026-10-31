@@ -162,7 +162,7 @@ describe('replica workload details', () => {
   })
 
   it.each([
-    [{ desiredReplicas: 0, currentReplicas: 0, readyReplicas: 0 }, '已缩容至 0 个副本', '0'],
+    [{ desiredReplicas: 0, currentReplicas: 0, readyReplicas: 0 }, '期望数量为 0', '0'],
     [{}, 'StatefulSet 就绪数据尚未返回', '—'],
     [{ desiredReplicas: 3, readyReplicas: 1 }, 'StatefulSet 仍有副本未就绪', '3'],
   ])(
