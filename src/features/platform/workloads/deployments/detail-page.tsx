@@ -240,8 +240,8 @@ export function DeploymentDetailPage() {
             backTo={`/workloads/deployments?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(namespace || '')}`}
             actions={
               <>
-                {actions.buttons}
                 <WorkloadRefresh
+                  beforeRefresh={actions.buttons}
                   resourceLabel="Deployment"
                   settings={detailRefresh}
                   queries={[

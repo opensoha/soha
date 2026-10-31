@@ -68,6 +68,9 @@
   align-items: center;
   flex-wrap: wrap;
 }
+.soha-deployment-history-row > div > .soha-metadata-tag {
+  align-self: center;
+}
 .soha-deployment-history-row > div > .ant-btn {
   margin-left: auto;
 }

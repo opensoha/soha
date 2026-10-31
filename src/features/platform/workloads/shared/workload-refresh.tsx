@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { Badge, Button, Tooltip } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useI18n } from '@/i18n'
@@ -29,6 +29,7 @@ export function WorkloadRefresh({
   label,
   compact = false,
   disabled = false,
+  beforeRefresh,
 }: {
   settings: ReturnType<typeof useWorkloadRefresh>
   queries: readonly RefreshQuery[]
@@ -37,6 +38,7 @@ export function WorkloadRefresh({
   label?: string
   compact?: boolean
   disabled?: boolean
+  beforeRefresh?: ReactNode
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
@@ -83,7 +85,7 @@ export function WorkloadRefresh({
     ? `${stateLabel} · ${zh ? '页面在后台' : 'Page is in the background'} · ${toggle}`
     : `${stateLabel} · ${toggle}`
   return (
-    <span className="soha-workload-refresh">
+    <span className={`soha-workload-refresh${beforeRefresh ? ' has-actions' : ''}`}>
       <Tooltip title={hint} trigger={['hover', 'focus']}>
         <Button
           type="text"
@@ -99,6 +101,7 @@ export function WorkloadRefresh({
           <Badge status={status[state]} aria-hidden />
         </Button>
       </Tooltip>
+      {beforeRefresh}
       <Tooltip title={label ?? (zh ? `刷新 ${resourceLabel}` : `Refresh ${resourceLabel}`)}>
         <Button
           type={compact ? 'text' : 'default'}

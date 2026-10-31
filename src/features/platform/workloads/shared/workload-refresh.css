@@ -9,3 +9,8 @@
   min-width: 28px;
   padding: 0;
 }
+.soha-workload-refresh.has-actions {
+  flex-wrap: wrap;
+  max-width: 100%;
+  gap: 8px;
+}

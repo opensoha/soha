@@ -721,3 +721,54 @@ test('Deployment refresh preserves an unsaved YAML draft', async ({ context, pag
   expect(state.writes).toHaveLength(0)
   verifyBrowserEvidence(evidence)
 })
+
+test('Deployment history aligns its current-template tag and keeps the refresh indicator first', async ({
+  context,
+  page,
+}) => {
+  const { evidence } = await setup(context, page)
+  await page.goto(`${path}&tab=revisions`)
+  const actions = page.locator('.soha-workload-detail-actions')
+  await expect(actions.locator('button').first()).toHaveAttribute('role', 'switch')
+  const toggle = actions.getByRole('switch', { name: /自动刷新/ })
+  const scale = actions.getByRole('button', { name: '扩缩容', exact: true })
+  const row = page.locator('.soha-deployment-history-row').first()
+  const tag = row.locator('.soha-metadata-tag')
+  const time = row.locator('.ant-typography-secondary').first()
+  for (const dark of [false, true]) {
+    if (dark) await page.getByLabel('切换到深色模式').click()
+    for (const width of [1373, 900, 320]) {
+      await page.setViewportSize({ width, height: 1502 })
+      await expect
+        .poll(async () => {
+          const indicator = await toggle.boundingBox(),
+            button = await scale.boundingBox()
+          return Boolean(
+            indicator && button && (indicator.y < button.y - 1 || indicator.x < button.x),
+          )
+        })
+        .toBe(true)
+      if (width > 320)
+        await expect
+          .poll(async () => {
+            const label = await tag.boundingBox(),
+              text = await time.boundingBox()
+            return label && text
+              ? Math.abs(label.y + label.height / 2 - text.y - text.height / 2)
+              : 100
+          })
+          .toBeLessThanOrEqual(1)
+      await expect
+        .poll(() =>
+          page.locator('.soha-deployment-detail').evaluate((el) => el.scrollWidth - el.clientWidth),
+        )
+        .toBeLessThanOrEqual(1)
+    }
+  }
+  await page.setViewportSize({ width: 1373, height: 1502 })
+  await page.getByLabel('切换到浅色模式').click()
+  await page.screenshot({
+    path: '../preview/runtime-private/wl01-header-feedback/history-aligned-mock.png',
+  })
+  verifyBrowserEvidence(evidence)
+})

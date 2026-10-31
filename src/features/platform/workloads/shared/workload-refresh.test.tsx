@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { WorkloadRefresh, useWorkloadRefresh } from './workload-refresh'
@@ -10,7 +10,15 @@ let root: ReturnType<typeof createRoot>
 let settings: ReturnType<typeof useWorkloadRefresh>
 let query = { isFetching: false, isError: false, isEnabled: true }
 const refresh = vi.fn()
-function Harness({ compact = false, disabled = false }: { compact?: boolean; disabled?: boolean }) {
+function Harness({
+  compact = false,
+  disabled = false,
+  beforeRefresh,
+}: {
+  compact?: boolean
+  disabled?: boolean
+  beforeRefresh?: ReactNode
+}) {
   settings = useWorkloadRefresh()
   return (
     <WorkloadRefresh
@@ -20,6 +28,7 @@ function Harness({ compact = false, disabled = false }: { compact?: boolean; dis
       resourceLabel="DaemonSet"
       compact={compact}
       disabled={disabled}
+      beforeRefresh={beforeRefresh}
     />
   )
 }
@@ -39,6 +48,21 @@ async function render(fields: Partial<typeof query> = {}) {
   return host.querySelector('[role="switch"]') as HTMLButtonElement
 }
 describe('shared workload refresh', () => {
+  it('places status before supplied resource actions in keyboard order and retains both callbacks', async () => {
+    await render()
+    const scale = vi.fn()
+    await act(async () =>
+      root.render(<Harness beforeRefresh={<button onClick={scale}>扩缩容</button>} />),
+    )
+    const buttons = Array.from(host.querySelectorAll('button'))
+    expect(buttons[0].getAttribute('role')).toBe('switch')
+    expect(buttons[1].textContent).toBe('扩缩容')
+    expect(buttons[2].getAttribute('aria-label')).toBe('刷新 DaemonSet')
+    await act(async () => buttons[1].click())
+    await act(async () => buttons[2].click())
+    expect(scale).toHaveBeenCalledOnce()
+    expect(refresh).toHaveBeenCalledOnce()
+  })
   it('keeps collection actions compact and disables controls without a readable scope', async () => {
     await render({ isEnabled: false })
     await act(async () => root.render(<Harness compact disabled />))
