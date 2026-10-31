@@ -249,6 +249,49 @@
       ]
     },
     {
+      "id": "k8s-operator",
+      "name": "K8s Operator",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Approval-bound Kubernetes changes against a reviewed UID and resourceVersion through Soha AI Gateway.",
+      "path": "skills/ai-gateway/k8s-operator/SKILL.md",
+      "capabilityRefs": [
+        "k8s.resources.identity.read",
+        "k8s.resources.conditional.preflight",
+        "k8s.resources.conditional.update",
+        "k8s.resources.conditional.delete",
+        "k8s.resources.conditional.assess",
+        "k8s.workloads.conditional.preflight",
+        "k8s.workloads.conditional.action",
+        "k8s.workloads.scale",
+        "k8s.workloads.scale.assess",
+        "k8s.deployments.rollout_status"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "k8s-pod-executor",
+      "name": "K8s Pod Executor",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Independently approved bounded Pod argv against a reviewed UID with original receipt recovery through Soha Gateway.",
+      "path": "skills/ai-gateway/k8s-pod-executor/SKILL.md",
+      "capabilityRefs": [
+        "k8s.resources.identity.read",
+        "k8s.pods.exec",
+        "k8s.pods.exec.receipt",
+        "k8s.pods.exec.assess"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace",
+        "pod"
+      ]
+    },
+    {
       "id": "k8s-resource-provisioner",
       "name": "K8s Resource Provisioner",
       "version": "0.1.0",

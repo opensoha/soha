@@ -7798,6 +7798,496 @@
         "registerPlatformRoutes",
         "registerAIGatewayRoutes"
       ]
+    },
+    {
+      "name": "k8s.resources.identity.read",
+      "title": "Read Kubernetes Resource Identity",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GenericResources",
+      "action": "read",
+      "riskLevel": "read",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.resources.identity.read",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator",
+        "k8s-pod-executor"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerPlatformRoutes",
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go"
+      ]
+    },
+    {
+      "name": "k8s.resources.conditional.preflight",
+      "title": "Preflight Conditional Resource Update",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GenericResources",
+      "action": "preflight",
+      "riskLevel": "analyze",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.resources.conditional.preflight",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [
+        "content"
+      ],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerPlatformRoutes",
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go"
+      ]
+    },
+    {
+      "name": "k8s.resources.conditional.update",
+      "title": "Update Reviewed Kubernetes Resource",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GenericResources",
+      "action": "update",
+      "riskLevel": "high",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.resources.conditional.update",
+      "requiresApproval": true,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [
+        "content"
+      ],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerPlatformRoutes",
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go"
+      ]
+    },
+    {
+      "name": "k8s.resources.conditional.delete",
+      "title": "Request Reviewed Resource Deletion",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GenericResources",
+      "action": "delete",
+      "riskLevel": "high",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.resources.conditional.delete",
+      "requiresApproval": true,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerPlatformRoutes",
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go"
+      ]
+    },
+    {
+      "name": "k8s.workloads.conditional.preflight",
+      "title": "Preflight Reviewed Workload Action",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GenericResources",
+      "action": "preflight",
+      "riskLevel": "analyze",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.workloads.conditional.preflight",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerPlatformRoutes",
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go"
+      ]
+    },
+    {
+      "name": "k8s.workloads.conditional.action",
+      "title": "Perform Reviewed Workload Action",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GenericResources",
+      "action": "execute",
+      "riskLevel": "high",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.workloads.conditional.action",
+      "requiresApproval": true,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerPlatformRoutes",
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go"
+      ]
+    },
+    {
+      "name": "k8s.pods.exec",
+      "title": "Execute Reviewed Pod Arguments",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GatewayPodExecutions",
+      "action": "execute",
+      "riskLevel": "high",
+      "permissionKeys": [
+        "ai.gateway.invoke",
+        "platform.pods.exec"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace",
+        "pod"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.pods.exec",
+      "requiresApproval": true,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-pod-executor"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [
+        "execution.argv",
+        "execution.stdinBase64",
+        "output.stdout",
+        "output.stderr"
+      ],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerAIGatewayRoutes",
+        "pod_execution_provider.go",
+        "pod_execution_gateway.go"
+      ]
+    },
+    {
+      "name": "k8s.pods.exec.receipt",
+      "title": "Read Original Pod Execution Receipt",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GatewayPodExecutions",
+      "action": "get",
+      "riskLevel": "read",
+      "permissionKeys": [
+        "ai.gateway.invoke",
+        "platform.pods.exec"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace",
+        "pod"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.pods.exec.receipt",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-pod-executor"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [
+        "execution.argv",
+        "execution.stdinBase64",
+        "output.stdout",
+        "output.stderr"
+      ],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerAIGatewayRoutes",
+        "pod_execution_provider.go",
+        "pod_execution_gateway.go"
+      ]
+    },
+    {
+      "name": "k8s.resources.conditional.assess",
+      "title": "Verify Original Conditional Resource Effect",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GatewayConditionalMutations",
+      "action": "assess",
+      "riskLevel": "read",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.resources.conditional.assess",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go",
+        "gateway_conditional_assessment.go",
+        "resource_presence.go",
+        "conditional_effect_observation.go"
+      ]
+    },
+    {
+      "name": "k8s.pods.exec.assess",
+      "title": "Assess Original Pod Process Completion",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GatewayPodExecutions",
+      "action": "assess",
+      "riskLevel": "read",
+      "permissionKeys": [
+        "ai.gateway.invoke",
+        "platform.pods.exec"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace",
+        "pod"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.pods.exec.assess",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-pod-executor"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [
+        "execution.argv",
+        "execution.stdinBase64",
+        "output.stdout",
+        "output.stderr"
+      ],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerAIGatewayRoutes",
+        "pod_execution_provider.go",
+        "pod_execution_assessment.go"
+      ]
+    },
+    {
+      "name": "k8s.workloads.scale",
+      "title": "Request Reviewed Workload Scale",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GatewayConditionalMutations",
+      "action": "execute",
+      "riskLevel": "high",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.workloads.scale",
+      "requiresApproval": true,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go",
+        "conditional_resource_assessment.go",
+        "workload_scale_assessment.go",
+        "gateway_conditional_dispatch.go",
+        "gateway_scale_assessment.go"
+      ]
+    },
+    {
+      "name": "k8s.workloads.scale.assess",
+      "title": "Verify Original Scale and Current Desired Replicas",
+      "domain": "k8s",
+      "owningWorkbench": "platform",
+      "owningService": "internal/application/resource.GatewayConditionalMutations",
+      "action": "assess",
+      "riskLevel": "read",
+      "permissionKeys": [
+        "ai.gateway.invoke"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ],
+      "mcpAdapterId": "k8s.v1",
+      "mcpToolName": "k8s.workloads.scale.assess",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": [
+        "k8s-operator"
+      ],
+      "resourceRefs": [
+        "soha://k8s/runtime"
+      ],
+      "promptRefs": [],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": []
+      },
+      "redaction": [],
+      "moduleId": "platform",
+      "routeEvidence": [
+        "registerAIGatewayRoutes",
+        "conditional_resource_provider.go",
+        "conditional_resource_assessment.go",
+        "workload_scale_assessment.go",
+        "gateway_conditional_dispatch.go",
+        "gateway_scale_assessment.go"
+      ]
     }
   ],
   "resources": [

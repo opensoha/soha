@@ -15,8 +15,8 @@
     "verification": "Verify the GitHub build provenance attestation, release manifest, checksum file, validation report, and embedded package manifest before activating a skills runtime."
   },
   "permissionReview": {
-    "reviewedAt": "2026-07-14",
-    "reviewer": "opensoha-maintainers",
+    "reviewedAt": "2026-10-29",
+    "reviewer": "Task115 scoped incremental implementation and independent agent review; prior maintainer approvals retained; not human release approval",
     "assets": [
       {
         "type": "skill",
@@ -1043,6 +1043,71 @@
           "no_direct_cluster_access",
           "no_secret_output",
           "preserve_audit_context"
+        ],
+        "reviewStatus": "approved"
+      },
+      {
+        "type": "skill",
+        "id": "k8s-operator",
+        "version": "0.1.0",
+        "riskLevel": "high",
+        "approvalRequired": true,
+        "gatewayCapabilityRefs": [
+          "k8s.resources.identity.read",
+          "k8s.resources.conditional.preflight",
+          "k8s.resources.conditional.update",
+          "k8s.resources.conditional.delete",
+          "k8s.workloads.conditional.preflight",
+          "k8s.workloads.conditional.action",
+          "k8s.deployments.rollout_status",
+          "k8s.resources.conditional.assess",
+          "k8s.workloads.scale",
+          "k8s.workloads.scale.assess"
+        ],
+        "platformCapabilityRefs": [],
+        "requiredScopes": [
+          "cluster",
+          "namespace"
+        ],
+        "guardrails": [
+          "reviewed_uid_and_resource_version",
+          "exact_approved_input",
+          "preflight_before_update",
+          "explicit_approval",
+          "no_agent_downgrade",
+          "no_automatic_unknown_retry",
+          "preserve_external_ownership_and_finalizers",
+          "no_secret_output"
+        ],
+        "reviewStatus": "approved"
+      },
+      {
+        "type": "skill",
+        "id": "k8s-pod-executor",
+        "version": "0.1.0",
+        "riskLevel": "high",
+        "approvalRequired": true,
+        "gatewayCapabilityRefs": [
+          "k8s.resources.identity.read",
+          "k8s.pods.exec",
+          "k8s.pods.exec.receipt",
+          "k8s.pods.exec.assess"
+        ],
+        "platformCapabilityRefs": [],
+        "requiredScopes": [
+          "cluster",
+          "namespace",
+          "pod"
+        ],
+        "guardrails": [
+          "credential_bound_delegation",
+          "exact_approved_argv_stdin_uid_and_key",
+          "independent_approval_even_with_allow_policy",
+          "current_permissions_scope_grants_policy_skill_and_approval",
+          "no_native_rest_fallback",
+          "no_automatic_unknown_retry",
+          "redacted_text_and_binary_withheld",
+          "no_secret_output"
         ],
         "reviewStatus": "approved"
       }
