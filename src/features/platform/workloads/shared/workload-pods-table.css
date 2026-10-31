@@ -1,0 +1,10 @@
+.soha-workload-pods-table .soha-k8s-detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.soha-workload-pods-table .soha-k8s-detail-toolbar > .ant-input-affix-wrapper {
+  max-width: 320px;
+}

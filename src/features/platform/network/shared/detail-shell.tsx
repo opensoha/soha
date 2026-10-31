@@ -1,3 +1,7 @@
+import {
+  ResourceDetailHeader,
+  ResourceDetailTabs,
+} from '@/features/platform/shared/resource-detail-header'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useYamlDraft } from '@/components/use-yaml-draft'
 import type { AIPageContext } from '@/features/copilot'
@@ -12,7 +16,7 @@ import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TabsProps } from 'antd'
-import { App, Card, Spin, Tabs } from 'antd'
+import { App, Card, Spin } from 'antd'
 import type { ReactNode } from 'react'
 import { lazy, Suspense } from 'react'
 import '../styles.css'
@@ -60,6 +64,7 @@ export function NetworkResourceOverview({
 }) {
   return (
     <PlatformResourceOverview
+      compact
       ageSeconds={detail.ageSeconds}
       annotations={detail.annotations}
       createdAtLabel={ageLabel}
@@ -211,7 +216,7 @@ export function NetworkDetailShell({
       ? [
           {
             key: 'relationships',
-            label: t('common.relationships', 'Relationships'),
+            label: t('common.relatedResources', '关联资源'),
             children: (
               <Suspense fallback={<Spin size="large" />}>
                 <ResourceGraphPanel kind={graphKind} name={detail.name} scope={target.scope} />
@@ -232,8 +237,15 @@ export function NetworkDetailShell({
   ]
 
   return (
-    <div className="soha-page soha-workload-detail-page">
-      <Tabs
+    <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
+      <ResourceDetailHeader
+        kind={label}
+        name={detail.name}
+        namespace={detail.namespace}
+        ageSeconds={detail.ageSeconds}
+        queryKey={networkQueries.detail(kind, target.scope, target.name, clusterScoped).queryKey}
+      />
+      <ResourceDetailTabs
         activeKey={activeTabKey}
         className="soha-resource-tabs soha-workload-detail-tabs"
         indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}

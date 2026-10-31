@@ -665,7 +665,7 @@ for (const scope of ['cluster', 'namespace'] as const) {
   })
 }
 
-test('topology unassociated resources stay collapsed and exclude nodes on every relationship page', async ({
+test('topology unassociated resources stay collapsed and exclude nodes during continuous relationship browsing', async ({
   context,
   page,
 }) => {
@@ -692,7 +692,14 @@ test('topology unassociated resources stay collapsed and exclude nodes on every 
     isolated.getByRole('button', { name: 'Unresolved reference', exact: true }),
   ).not.toBeVisible()
   await expect(page.getByText('节点入口（含独立节点）：', { exact: true })).toHaveCount(0)
-  await page.getByTitle('2', { exact: true }).click()
+  await expect(page.locator('.soha-topology-page .ant-pagination')).toHaveCount(0)
+  await page.locator('.soha-topology-page .ant-table-tbody-virtual-holder').evaluate((node) => {
+    node.scrollTop = node.scrollHeight
+    node.dispatchEvent(new Event('scroll', { bubbles: true }))
+  })
+  await expect(
+    page.locator('.soha-topology-page .ant-table-row[data-row-key="extra-pod-edge-20"]'),
+  ).toBeVisible()
   await expect(summary).toHaveText('未关联资源（1）')
   await summary.focus()
   await summary.press('Enter')
@@ -884,7 +891,8 @@ for (const mode of ['pdb', 'unavailable', 'state-denied'] as const) {
         writes.push(request.url())
     })
     await page.goto('/cluster-resources/nodes')
-    await page.getByRole('button', { name: '排空节点 cordoned-worker', exact: true }).click()
+    await page.getByRole('button', { name: '更多操作：cordoned-worker', exact: true }).click()
+    await page.getByRole('menuitem', { name: /排空节点/ }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('spinbutton', { name: '排水超时（秒）' }).fill('30')
     await dialog.getByRole('button', { name: '确认排空', exact: true }).click()
@@ -930,8 +938,8 @@ test('monitoring keeps gaps and zero samples, overcommit and unlimited values di
   await details.getByRole('button', { name: 'Samples', exact: true }).first().click()
   const samples = page.getByRole('dialog').filter({ hasText: 'no zero fill' })
   await expect(samples).toContainText('no zero fill')
-  await expect(samples.getByRole('cell', { name: '0 mCPU', exact: true })).toBeVisible()
-  await expect(samples.getByRole('cell', { name: '—', exact: true })).toBeVisible()
+  await expect(samples.getByText('0 mCPU', { exact: true })).toBeVisible()
+  await expect(samples.getByText('—', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(content.getByRole('tab')).toHaveCount(0)
   await page.keyboard.press('Escape')
@@ -1249,9 +1257,7 @@ for (const dark of [false, true]) {
       .click()
     const samples = page.getByRole('dialog', { name: 'host.cpu.used · Samples', exact: true })
     await expect(samples).toContainText('worker-10')
-    await expect(
-      samples.getByRole('cell', { name: '10.00 cores', exact: true }).first(),
-    ).toBeVisible()
+    await expect(samples.getByText('10.00 cores', { exact: true }).first()).toBeVisible()
     verifyBrowserEvidence(evidence)
   })
 }
@@ -1435,8 +1441,11 @@ for (const width of [320, 1238, 1275]) {
       await assertExpandAlignment()
       await content.getByRole('button', { name: '切换表格密度', exact: true }).click()
       await expect(
-        content.getByRole('button', { name: '编辑节点 cordoned-worker', exact: true }),
+        content.getByRole('button', { name: '更多操作：cordoned-worker', exact: true }),
       ).toBeInViewport()
+      await content.getByRole('button', { name: '更多操作：cordoned-worker', exact: true }).click()
+      await expect(page.getByRole('menuitem', { name: /编辑节点/ })).toBeVisible()
+      await page.keyboard.press('Escape')
     }
     await page.screenshot({ path: info.outputPath(`nodes-${width}.png`), fullPage: true })
     verifyBrowserEvidence(evidence)

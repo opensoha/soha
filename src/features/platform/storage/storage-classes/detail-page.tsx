@@ -1,3 +1,4 @@
+import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -13,7 +14,7 @@ import type { PersistentVolume, PersistentVolumeClaim } from '@/types/platform'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Descriptions, Spin } from 'antd'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   StorageDetailShell,
@@ -33,7 +34,7 @@ export function StorageClassDetailPage() {
   const { clusterId } = usePlatformScopeStore()
   const scope = toClusterStorageScope(clusterId)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useResourceDetailTab()
   const detailQuery = useQuery(storageClassQueries.detail(scope, name))
   const visibleDetailQueryData = readableQueryData(detailQuery)
   const yamlOptions = storageClassQueries.yaml(scope, name)
@@ -81,7 +82,12 @@ export function StorageClassDetailPage() {
   }
 
   return (
-    <StorageDetailShell kind="StorageClass" name={detail.name}>
+    <StorageDetailShell
+      kind="StorageClass"
+      name={detail.name}
+      detail={detail}
+      queryKey={storageClassQueries.detail(scope, name).queryKey}
+    >
       <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
       <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
 
@@ -147,7 +153,7 @@ export function StorageClassDetailPage() {
                   <AdminTable
                     dataSource={detail.volumes ?? []}
                     rowKey="name"
-                    pageSize={10}
+                    pagination={false}
                     tableSize="small"
                     enableColumnSelection={false}
                     columns={[
@@ -200,7 +206,7 @@ export function StorageClassDetailPage() {
                   <AdminTable
                     dataSource={detail.claims ?? []}
                     rowKey={(claim) => `${claim.namespace}/${claim.name}`}
-                    pageSize={10}
+                    pagination={false}
                     tableSize="small"
                     enableColumnSelection={false}
                     columns={[

@@ -579,7 +579,9 @@ describe('platform network port forward page', () => {
 
     const container = await renderWithProviders(<NetworkPortForwardPage />, '/network/port-forward')
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(container.querySelector('[data-testid="table-title"]')?.textContent).toBe(
+      '2 个 Port Forwards',
+    )
     expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
     expect(
       container.querySelector('input[placeholder="搜索会话 / Namespace / 目标 / 状态 / 端口"]'),

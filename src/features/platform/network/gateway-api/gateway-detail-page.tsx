@@ -1,3 +1,4 @@
+import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useI18n } from '@/i18n'
@@ -6,7 +7,6 @@ import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
 import { Card } from 'antd'
-import { useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { NetworkDetailShell } from '../shared/detail-shell'
 import { renderNetworkTextList } from '../shared/renderers'
@@ -22,7 +22,7 @@ export function GatewayDetailPage() {
   const [searchParams] = useSearchParams()
   const detailNamespace = resolveNetworkNamespace(namespace, searchParams.get('namespace'))
   const scope = toScopeKey(clusterId, detailNamespace)
-  const [activeTabKey, setActiveTabKey] = useState('overview')
+  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
   const query = useQuery(gatewayAPIQueries.detail<GatewayDetail>('gateways', scope, name))
   const visibleQueryData = readableQueryData(query)
   const detail = visibleQueryData

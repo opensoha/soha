@@ -1,3 +1,4 @@
+import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { BooleanTag } from '@/components/status-tag'
@@ -7,7 +8,6 @@ import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
 import { Card, Table } from 'antd'
-import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { NetworkDetailShell } from '../shared/detail-shell'
 import { buildNetworkRoutePath } from '../shared/paths'
@@ -20,7 +20,7 @@ export function IngressClassDetailPage() {
   const { clusterId } = usePlatformScopeStore()
   const name = (useParams().name as string | undefined) ?? ''
   const scope = toScopeKey(clusterId, null)
-  const [activeTabKey, setActiveTabKey] = useState('overview')
+  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
   const query = useQuery(
     networkCoreQueries.detail<IngressClassDetail>('ingressclasses', scope, name, true),
   )

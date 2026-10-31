@@ -177,6 +177,9 @@ async function renderDetail() {
 describe('node detail lazy YAML boundary', () => {
   it('uses the shared overview without duplicating metadata and summarizes scheduled namespaces', async () => {
     const container = await renderDetail()
+    const headers = Array.from(container.querySelectorAll<HTMLElement>('.ant-collapse-header'))
+    expect(headers).toHaveLength(2)
+    for (const header of headers) await act(async () => header.click())
     const content = container.textContent ?? ''
 
     expect(content).toContain('node-role.kubernetes.io/worker')

@@ -308,7 +308,6 @@ export function WorkloadsOverviewPage() {
         </span>
         <ManagementTableToolbar>
           <ResourceStreamStatus
-            showLabel
             status={workloadStream.status}
             lastEventAt={workloadStream.lastEventAt}
             localeCode={localeCode}

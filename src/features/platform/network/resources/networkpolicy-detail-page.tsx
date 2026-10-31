@@ -1,3 +1,4 @@
+import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -9,7 +10,6 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { Button, Card } from 'antd'
-import { useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { NetworkDetailShell } from '../shared/detail-shell'
 import { renderNetworkTextList } from '../shared/renderers'
@@ -56,7 +56,7 @@ export function NetworkPolicyDetailPage() {
   const [searchParams] = useSearchParams()
   const detailNamespace = resolveNetworkNamespace(namespace, searchParams.get('namespace'))
   const scope = toScopeKey(clusterId, detailNamespace)
-  const [activeTabKey, setActiveTabKey] = useState('overview')
+  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
   const query = useQuery(
     networkCoreQueries.detail<NetworkPolicyDetail>('networkpolicies', scope, name),
   )
@@ -141,9 +141,9 @@ export function NetworkPolicyDetailPage() {
                 rowKey={(record) =>
                   `${record.direction}/${renderPeers(record.peers)}/${renderPorts(record.ports)}`
                 }
-                pageSize={10}
+                pagination={false}
+                scroll={{ x: 800, y: 520 }}
                 tableSize="small"
-                scroll={{ x: 'max-content' }}
                 enableColumnSelection={false}
               />
             </Card>
@@ -155,9 +155,9 @@ export function NetworkPolicyDetailPage() {
                 columns={podColumns}
                 dataSource={detail.matchingPods ?? []}
                 rowKey={(record) => `${record.namespace}/${record.name}`}
-                pageSize={10}
+                pagination={false}
+                scroll={{ x: 800, y: 520 }}
                 tableSize="small"
-                scroll={{ x: 'max-content' }}
                 enableColumnSelection={false}
               />
             </Card>

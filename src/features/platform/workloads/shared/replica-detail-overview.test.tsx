@@ -3,8 +3,8 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { ReplicationControllerDetailPage } from '../replicationcontrollers/detail-page'
-import { ReplicaSetDetailPage } from '../replicasets/detail-page'
+import { ControllerOverview } from './controller-overview'
+import { MemoryRouter } from 'react-router-dom'
 
 const details = vi.hoisted(() => ({
   replicasets: {
@@ -31,7 +31,10 @@ const details = vi.hoisted(() => ({
 }))
 
 vi.mock('@/i18n', () => ({
-  useI18n: () => ({ localeCode: 'zh_CN' as const }),
+  useI18n: () => ({
+    localeCode: 'zh_CN' as const,
+    t: (_key: string, fallback?: string) => fallback ?? _key,
+  }),
 }))
 
 vi.mock('./detail-shell', () => ({
@@ -80,28 +83,40 @@ async function render(node: React.ReactNode) {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  await act(async () => root?.render(node))
+  await act(async () => root?.render(<MemoryRouter>{node}</MemoryRouter>))
   return container
 }
 
 describe('replica workload details', () => {
   it('renders ReplicaSet status and relationships', async () => {
-    const view = await render(<ReplicaSetDetailPage />)
+    const view = await render(
+      <ControllerOverview
+        detail={{ ...details.replicasets, createdAt: '2026-01-01' }}
+        resource="replicasets"
+        title="ReplicaSet"
+      />,
+    )
 
     expect(view.textContent).toContain('ReplicaSet 状态')
-    expect(view.textContent).toContain('2/3')
+    expect(view.querySelector('dl')?.textContent).toContain('期望3')
+    expect(view.querySelector('dl')?.textContent).toContain('就绪2')
     expect(view.textContent).toContain('app=web')
     expect(view.textContent).toContain('Pods 1')
-    expect(view.textContent).toContain('Relations 1')
   })
 
   it('renders ReplicationController current replicas and relationships', async () => {
-    const view = await render(<ReplicationControllerDetailPage />)
+    const view = await render(
+      <ControllerOverview
+        detail={{ ...details.replicationcontrollers, createdAt: '2026-01-01' }}
+        resource="replicationcontrollers"
+        title="ReplicationController"
+      />,
+    )
 
     expect(view.textContent).toContain('ReplicationController 状态')
-    expect(view.textContent).toContain('当前副本')
-    expect(view.textContent).toContain('1/2')
+    expect(view.textContent).toContain('当前2')
+    expect(view.querySelector('dl')?.textContent).toContain('期望2')
+    expect(view.querySelector('dl')?.textContent).toContain('就绪1')
     expect(view.textContent).toContain('Pods 2')
-    expect(view.textContent).toContain('Relations 1')
   })
 })

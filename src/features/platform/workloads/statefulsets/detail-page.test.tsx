@@ -80,17 +80,19 @@ vi.mock('@/i18n', async (importOriginal) => ({
 vi.mock('@/features/platform/cluster-capabilities', () => ({
   useClusterCapability: () => ({ disabled: false, reason: '', status: 'available' }),
 }))
-vi.mock('@/components/resource-events-timeline', () => ({
-  ResourceEventsTimeline: () => <div data-testid="events-panel">events-panel</div>,
+vi.mock('../shared/detail-events', () => ({
+  WorkloadDetailEvents: () => <div data-testid="events-panel">events-panel</div>,
 }))
-vi.mock('@/components/resource-metrics-panel', () => ({
-  ResourceMetricsPanel: () => <div data-testid="metrics-panel">metrics-panel</div>,
+vi.mock('../shared/detail-metrics', () => ({
+  WorkloadDetailMetrics: () => <div data-testid="metrics-panel">metrics-panel</div>,
 }))
 vi.mock('@/components/k8s-yaml-editor', () => ({
   K8sYamlEditor: () => <div data-testid="yaml-editor">yaml-editor</div>,
 }))
 vi.mock('@/components/status-tag', () => ({
   StatusTag: ({ value }: { value?: string }) => <span>{value}</span>,
+  BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
+  MetadataTag: ({ label }: { label: string }) => <span>{label}</span>,
 }))
 
 const mountedRoots: Root[] = []

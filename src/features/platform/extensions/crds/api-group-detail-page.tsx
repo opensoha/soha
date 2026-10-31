@@ -1,3 +1,4 @@
+import { ResourceDetailHeader } from '@/features/platform/shared/resource-detail-header'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useAIPageContext } from '@/features/copilot'
@@ -51,7 +52,13 @@ export function CRDApiGroupDetailPage() {
   }, [groupCRDs, selectedCRDName])
 
   return (
-    <div className="soha-page">
+    <div className="soha-page soha-k8s-detail-page">
+      <ResourceDetailHeader
+        hideBack
+        kind="API Group"
+        name={decodedGroupName || 'API Group'}
+        facts={groupSummary ? <span>{groupCRDs.length} CRDs</span> : undefined}
+      />
       <ReadFeedback canRead={catalogQuery.isEnabled} query={catalogQuery} label="资源目录" />
 
       {!clusterId ? (

@@ -1,3 +1,9 @@
+import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
+import {
+  ResourceDetailHeader,
+  ResourceDetailTabs,
+  useResourceDetailTab,
+} from '@/features/platform/shared/resource-detail-header'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { OperationalPlanModal } from '@/components/operational-plan-modal'
@@ -9,7 +15,6 @@ import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/featur
 import { useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import '@/features/platform/extensions/styles.css'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -22,8 +27,8 @@ import { formatDateTime } from '@/utils/time'
 import { DiffOutlined, HistoryOutlined, RollbackOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
-import { Alert, Button, Card, Descriptions, Space, Spin, Tabs } from 'antd'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Alert, Card, Descriptions, Space, Spin } from 'antd'
+import { lazy, Suspense, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { planHelmReleaseRollback } from '../api'
 import { helmMutations } from '../mutations'
@@ -48,9 +53,13 @@ export function HelmReleaseDetailPage() {
   )
   const capability = useClusterCapability('helm.releases', localeCode)
   const detailNamespace = searchParams.get('namespace') || namespace || ''
-  const requestedTab =
-    searchParams.get('tab') === 'history' || !canViewValues ? 'history' : 'values'
-  const [activeTab, setActiveTab] = useState(requestedTab)
+  const [requestedTab, setActiveTab] = useResourceDetailTab()
+  const activeTab =
+    requestedTab === 'values' && !canViewValues
+      ? 'history'
+      : ['overview', 'history', ...(canViewValues ? ['values'] : [])].includes(requestedTab)
+        ? requestedTab
+        : 'overview'
   const [selectedRevision, setSelectedRevision] = useState<string | null>(null)
   const [pendingRollback, setPendingRollback] = useState<HelmReleaseRollbackVariables | null>(null)
   const target: HelmReleaseTarget | null = clusterId
@@ -106,7 +115,6 @@ export function HelmReleaseDetailPage() {
     namespace: detailNamespace || undefined,
   })
 
-  useEffect(() => setActiveTab(requestedTab), [requestedTab])
   const valuesState = useYamlDraft(
     JSON.stringify([clusterId, detailNamespace, releaseName]),
     visibleValuesQueryData?.content,
@@ -159,41 +167,49 @@ export function HelmReleaseDetailPage() {
     {
       title: '',
       key: 'actions',
-      width: 112,
+      width: 64,
+      fixed: 'right',
       align: 'center',
       render: (_value, record) => {
         const isCurrent = record.revision === detail?.revision
         const canRollback = hasAllowedAction(record.allowedActions, 'rollback') && !isCurrent
         return (
-          <Space size={2}>
-            {canViewValues ? (
-              <Button
-                aria-label={
-                  localeCode === 'zh_CN'
-                    ? `比较 revision ${record.revision}`
-                    : `Compare revision ${record.revision}`
-                }
-                icon={<DiffOutlined />}
-                size="small"
-                type={selectedRevision === record.revision ? 'primary' : 'text'}
-                onClick={() => setSelectedRevision(record.revision)}
-              />
-            ) : null}
-            {canRollback ? (
-              <Button
-                aria-label={
-                  localeCode === 'zh_CN'
-                    ? `回滚到 revision ${record.revision}`
-                    : `Rollback to revision ${record.revision}`
-                }
-                disabled={mutationsDisabled}
-                icon={<RollbackOutlined />}
-                size="small"
-                type="text"
-                onClick={() => requestRollback(record)}
-              />
-            ) : null}
-          </Space>
+          <KubernetesResourceActionsMenu
+            resourceLabel="Revision"
+            name={record.revision}
+            localeCode={localeCode}
+            items={[
+              ...(canViewValues
+                ? [
+                    {
+                      key: 'compare',
+                      label:
+                        localeCode === 'zh_CN'
+                          ? `比较 revision ${record.revision}`
+                          : `Compare revision ${record.revision}`,
+                      icon: <DiffOutlined aria-hidden />,
+                    },
+                  ]
+                : []),
+              ...(canRollback
+                ? [
+                    {
+                      key: 'rollback',
+                      label:
+                        localeCode === 'zh_CN'
+                          ? `回滚到 revision ${record.revision}`
+                          : `Rollback to revision ${record.revision}`,
+                      icon: <RollbackOutlined aria-hidden />,
+                      disabled: platformWriteBlocked || mutationsDisabled,
+                    },
+                  ]
+                : []),
+            ]}
+            onSelect={(key) => {
+              if (key === 'compare') setSelectedRevision(record.revision)
+              else if (key === 'rollback') requestRollback(record)
+            }}
+          />
         )
       },
     },
@@ -245,7 +261,7 @@ export function HelmReleaseDetailPage() {
       key: 'history',
       label: (
         <Space size={6}>
-          <HistoryOutlined />
+          <HistoryOutlined aria-hidden />
           <span>{t('page.extensions.helm.historyTitle', 'Revision History')}</span>
         </Space>
       ),
@@ -257,7 +273,7 @@ export function HelmReleaseDetailPage() {
               columns={historyColumns}
               dataSource={visibleHistoryQueryData ?? []}
               rowKey={(record) => record.revision}
-              pageSize={K8S_TABLE_PAGE_SIZE}
+              pagination={false}
               tableSize="small"
               localSorting
               viewportScroll
@@ -292,7 +308,7 @@ export function HelmReleaseDetailPage() {
   const visibleTabs = canViewValues ? tabs : tabs.filter((tab) => tab.key !== 'values')
 
   return (
-    <div className="soha-page">
+    <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
       <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
       <ReadFeedback canRead={valuesQuery.isEnabled} query={valuesQuery} label="Helm Values" />
       <ReadFeedback canRead={historyQuery.isEnabled} query={historyQuery} label="Helm 历史" />
@@ -323,47 +339,81 @@ export function HelmReleaseDetailPage() {
         </Card>
       ) : (
         <>
-          <Card className="soha-detail-card" style={{ marginTop: 0 }}>
-            <Descriptions
-              column={{ xs: 1, sm: 2, lg: 4 }}
-              items={[
-                { key: 'name', label: 'Release', children: detail.name },
-                { key: 'namespace', label: 'Namespace', children: detail.namespace },
-                { key: 'revision', label: 'Revision', children: detail.revision || '-' },
-                {
-                  key: 'status',
-                  label: 'Status',
-                  children: detail.status ? <StatusTag value={detail.status} /> : '-',
-                },
-                { key: 'chart', label: 'Chart', children: detail.chart || '-' },
-                { key: 'appVersion', label: 'App Version', children: detail.appVersion || '-' },
-                { key: 'storageDriver', label: 'Storage', children: detail.storageDriver || '-' },
-                {
-                  key: 'updatedAt',
-                  label: localeCode === 'zh_CN' ? '更新时间' : 'Updated',
-                  children: detail.updatedAt ? formatDateTime(detail.updatedAt) : '-',
-                },
-              ]}
-            />
-            {detail.description ? (
-              <Alert
-                style={{ marginTop: 16 }}
-                type="info"
-                showIcon
-                description={detail.description}
-              />
-            ) : null}
-            {capabilityReason ? (
-              <Alert
-                style={{ marginTop: 16 }}
-                type="warning"
-                showIcon
-                title="Helm writes limited"
-                description={capabilityReason}
-              />
-            ) : null}
-          </Card>
-          <Tabs activeKey={activeTab} onChange={setActiveTab} items={visibleTabs} />
+          <ResourceDetailHeader
+            kind="Helm Release"
+            name={detail.name}
+            namespace={detail.namespace}
+            status={detail.status}
+            facts={<span>Revision {detail.revision || '—'}</span>}
+            queryKey={helmQueries.releaseDetail(target).queryKey}
+            onRefresh={() =>
+              Promise.all([
+                detailQuery.refetch(),
+                ...(activeTab === 'history' ? [historyQuery.refetch()] : []),
+                ...(activeTab === 'values' && canViewValues ? [valuesQuery.refetch()] : []),
+              ])
+            }
+          />
+          <ResourceDetailTabs
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            items={[
+              {
+                key: 'overview',
+                label: localeCode === 'zh_CN' ? '概览' : 'Overview',
+                children: (
+                  <Card className="soha-detail-card" style={{ marginTop: 0 }}>
+                    <Descriptions
+                      column={{ xs: 1, sm: 2, lg: 4 }}
+                      items={[
+                        { key: 'revision', label: 'Revision', children: detail.revision || '-' },
+                        {
+                          key: 'status',
+                          label: 'Status',
+                          children: detail.status ? <StatusTag value={detail.status} /> : '-',
+                        },
+                        { key: 'chart', label: 'Chart', children: detail.chart || '-' },
+                        {
+                          key: 'appVersion',
+                          label: 'App Version',
+                          children: detail.appVersion || '-',
+                        },
+                        {
+                          key: 'storageDriver',
+                          label: 'Storage',
+                          children: detail.storageDriver || '-',
+                        },
+                        {
+                          key: 'updatedAt',
+                          label: localeCode === 'zh_CN' ? '更新时间' : 'Updated',
+                          children: detail.updatedAt ? formatDateTime(detail.updatedAt) : '-',
+                        },
+                      ]}
+                    />
+                    {detail.description ? (
+                      <Alert
+                        style={{ marginTop: 16 }}
+                        type="info"
+                        showIcon
+                        description={detail.description}
+                      />
+                    ) : null}
+                    {capabilityReason ? (
+                      <Alert
+                        style={{ marginTop: 16 }}
+                        type="warning"
+                        showIcon
+                        title="Helm writes limited"
+                        description={capabilityReason}
+                      />
+                    ) : null}
+                  </Card>
+                ),
+              },
+              ...visibleTabs.filter((tab) => tab.key === 'history'),
+              ...visibleTabs.filter((tab) => tab.key !== 'history'),
+            ]}
+          />
         </>
       )}
       <OperationalPlanModal

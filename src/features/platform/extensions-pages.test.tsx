@@ -995,6 +995,33 @@ describe('CRD catalog page', () => {
     expect(apiGetMock.mock.calls.some(([path]) => path.includes('/yaml'))).toBe(false)
   })
 
+  it('keeps an unread Chart total unknown instead of displaying zero', async () => {
+    setResponses({
+      '/clusters/cluster-a/helm/charts?limit=15&offset=0': new Error('Catalog unavailable'),
+    })
+    const container = await renderWithProviders(<HelmChartsPage />, '/helm/charts')
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="table-error"]')?.textContent).toContain(
+        'Catalog unavailable',
+      ),
+    )
+    expect(container.querySelector('[data-testid="table-title"]')?.textContent).toBe(
+      'Charts 未加载',
+    )
+  })
+
+  it('does not assert a zero CRD count when the API Group catalog failed', async () => {
+    setResponses({ '/clusters/cluster-a/extensions/crds': new Error('Catalog unavailable') })
+    const container = await renderWithProviders(
+      <Routes>
+        <Route path="/extensions/apis/:groupName" element={<CRDApiGroupDetailPage />} />
+      </Routes>,
+      '/extensions/apis/example.io',
+    )
+    await vi.waitFor(() => expect(container.textContent).toContain('API Group 加载失败'))
+    expect(container.querySelector('.soha-k8s-detail-header')?.textContent).not.toContain('0 CRDs')
+  })
+
   it('renders Helm charts from the backend catalog and filters within the table shell', async () => {
     const catalog = {
       repository: {
@@ -1081,7 +1108,9 @@ describe('CRD catalog page', () => {
 
     const container = await renderWithProviders(<HelmChartsPage />, '/helm/charts')
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(container.querySelector('[data-testid="table-title"]')?.textContent).toBe(
+      '17,043 个 Charts',
+    )
     expect(container.querySelector('[data-testid="table-toolbar"]')).not.toBeNull()
     expect(container.textContent).toContain('Artifact Hub')
     expect(container.textContent).toContain('仅 Helm packages')
@@ -1095,9 +1124,9 @@ describe('CRD catalog page', () => {
       '当前 1-2 / 总计 17,043 条',
     )
 
-    expect(container.querySelector('[data-testid="header-extra"]')).toBeNull()
+    expect(container.querySelector('[data-testid="toolbar-extra"]')).toBeNull()
     const toolbarButtons = Array.from(
-      container.querySelectorAll('[data-testid="toolbar-extra"] button'),
+      container.querySelectorAll('[data-testid="header-extra"] button'),
     ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
     expect(toolbarButtons).toEqual(['切换表格密度', '刷新'])
 

@@ -96,7 +96,10 @@ vi.mock('@/components/overview-visuals', () => ({
     </div>
   ),
 }))
-vi.mock('@/components/status-tag', () => ({ StatusTag: () => <span /> }))
+vi.mock('@/components/status-tag', async (original) => ({
+  ...(await original<typeof import('@/components/status-tag')>()),
+  StatusTag: () => <span />,
+}))
 vi.mock('../shared/list-controls', () => ({
   useWorkloadTableDensity: () => ({ densityButton: null, tableSize: 'small' }),
   WorkloadRefreshButton: ({ label, onRefresh }: { label: string; onRefresh: () => void }) => (

@@ -1,3 +1,5 @@
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
+import { useKubernetesResourceActions } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
@@ -12,7 +14,6 @@ import {
   capabilityActionTooltip,
   useClusterCapability,
 } from '@/features/platform/cluster-capabilities'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -31,7 +32,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Tag,
@@ -109,9 +109,13 @@ export function NetworkPortForwardPage() {
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
   const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
   const rawItems = visibleQueryData ?? []
+  const scopedItems = useMemo(
+    () => (namespace ? rawItems.filter((item) => item.namespace === namespace) : rawItems),
+    [rawItems, namespace],
+  )
   const filteredItems = useMemo(
     () =>
-      rawItems.filter((item) =>
+      scopedItems.filter((item) =>
         includesSearch(
           [
             item.sessionId,
@@ -125,7 +129,7 @@ export function NetworkPortForwardPage() {
           normalizedKeyword,
         ),
       ),
-    [normalizedKeyword, rawItems],
+    [normalizedKeyword, scopedItems],
   )
   const effectiveEmpty = !clusterId
     ? localeCode === 'zh_CN'
@@ -144,6 +148,39 @@ export function NetworkPortForwardPage() {
   const portForwardCapabilityReason = portForwardCapability.reason
   const createPortForwardLabel = localeCode === 'zh_CN' ? '新建 Port Forward' : 'New Port Forward'
   const stopPortForwardLabel = localeCode === 'zh_CN' ? '停止 Port Forward' : 'Stop port forward'
+
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: 'port-forwards',
+    resourceLabel: 'Port Forward',
+    records: rawItems,
+    getName: (item) => item.sessionId,
+    getKey: (item) => item.sessionId,
+    actions: (item) =>
+      canDelete && !portForwardUnsupported
+        ? [
+            {
+              key: 'stop',
+              label: stopPortForwardLabel,
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: platformWriteBlocked,
+              loading:
+                stopMutation.isPending && stopMutation.variables?.sessionId === item.sessionId,
+              prepare: () => stopMutation.reset(),
+              feedback: stopMutation.feedback,
+              confirm: {
+                title:
+                  localeCode === 'zh_CN' ? '确认停止该 Port Forward？' : 'Stop this port forward?',
+                description:
+                  localeCode === 'zh_CN'
+                    ? '这只会停止 Soha 中登记的转发会话记录。'
+                    : 'This stops the registered forward session record in Soha.',
+              },
+              run: () => stopMutation.mutateAsync({ scope, sessionId: item.sessionId }),
+            },
+          ]
+        : [],
+  })
 
   const columns: TableColumnsType<PortForwardSession> = [
     {
@@ -172,44 +209,7 @@ export function NetworkPortForwardPage() {
       dataIndex: 'createdAt',
       render: (value: string) => formatDateTime(value),
     },
-    {
-      title: localeCode === 'zh_CN' ? '操作' : 'Actions',
-      dataIndex: 'sessionId',
-      key: 'actions',
-      fixed: 'right',
-      align: 'center',
-      width: 64,
-      render: (value: string) =>
-        canDelete ? (
-          <Popconfirm
-            title={localeCode === 'zh_CN' ? '确认停止该 Port Forward？' : 'Stop this port forward?'}
-            description={
-              localeCode === 'zh_CN'
-                ? '这只会停止 Soha 中登记的转发会话记录。'
-                : 'This stops the registered forward session record in Soha.'
-            }
-            okText={localeCode === 'zh_CN' ? '停止' : 'Stop'}
-            cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-            okButtonProps={{
-              disabled: platformWriteBlocked,
-              danger: true,
-              loading: stopMutation.isPending && stopMutation.variables?.sessionId === value,
-            }}
-            placement="topRight"
-            onConfirm={() => stopMutation.mutate({ scope, sessionId: value }, {})}
-          >
-            <Button
-              aria-label={stopPortForwardLabel}
-              size="small"
-              type="text"
-              danger
-              disabled={portForwardUnsupported}
-              icon={<DeleteOutlined />}
-              loading={stopMutation.isPending && stopMutation.variables?.sessionId === value}
-            />
-          </Popconfirm>
-        ) : null,
-    },
+    resourceActions.column,
   ]
 
   return (
@@ -241,80 +241,91 @@ export function NetworkPortForwardPage() {
           />
         ),
       }}
-      table={{
-        error: query.isEnabled === false ? null : query.error,
-        hasReadData: query.data !== undefined,
-        onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-        className: 'soha-platform-table',
-        columnSettingIconOnly: true,
-        columnSettingPlacement: 'header',
-        headerExtra: (
-          <ManagementTableToolbar>
-            {canCreate ? (
-              <Tooltip
-                title={
-                  !clusterId
-                    ? localeCode === 'zh_CN'
-                      ? '请先选择集群'
-                      : 'Select a cluster first'
-                    : capabilityActionTooltip(createPortForwardLabel, portForwardCapability)
-                }
-              >
-                <span>
-                  <Button
-                    autoInsertSpace={false}
-                    size="small"
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    disabled={!clusterId || portForwardUnsupported}
-                    onClick={() => {
-                      setForm(createPortForwardDraft(namespace))
-                      setModalVisible(true)
-                    }}
+      tableNode={
+        <KubernetesResourceTable
+          resourceKey="port-forwards"
+          resourceLabel="Port Forwards"
+          allRows={scopedItems}
+          filterKey={normalizedKeyword}
+          {...{
+            error: query.isEnabled === false ? null : query.error,
+            hasReadData: query.data !== undefined,
+            onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
+            className: 'soha-platform-table',
+            columnSettingIconOnly: true,
+            columnSettingPlacement: 'header',
+            headerExtra: (
+              <ManagementTableToolbar>
+                {canCreate ? (
+                  <Tooltip
+                    title={
+                      !clusterId
+                        ? localeCode === 'zh_CN'
+                          ? '请先选择集群'
+                          : 'Select a cluster first'
+                        : capabilityActionTooltip(createPortForwardLabel, portForwardCapability)
+                    }
                   >
-                    {createPortForwardLabel}
-                  </Button>
-                </span>
-              </Tooltip>
-            ) : null}
-            <ManagementDensityButton
-              aria-label={densityLabel}
-              title={densityLabel}
-              tooltip={densityLabel}
-              onClick={() => setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))}
-            />
-            <ManagementRefreshButton
-              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              disabled={!clusterId}
-              loading={query.isFetching}
-              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              onClick={() => {
-                if (clusterId) {
-                  void query.refetch()
-                }
-              }}
-            />
-          </ManagementTableToolbar>
-        ),
-        columns: canShowActions ? columns : columns.filter((column) => column.key !== 'actions'),
-        dataSource: clusterId ? filteredItems : [],
-        rowKey: 'sessionId',
-        loading: query.isLoading,
-        localSorting: true,
-        pageSize: K8S_TABLE_PAGE_SIZE,
-        tableSize,
-        scroll: { x: 'max-content' },
-        viewportScroll: true,
-        empty: (
-          <PlatformTableState
-            description={effectiveEmpty}
-            kind={!clusterId ? 'select-scope' : 'empty'}
-          />
-        ),
-      }}
+                    <span>
+                      <Button
+                        autoInsertSpace={false}
+                        size="small"
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        disabled={!clusterId || portForwardUnsupported}
+                        onClick={() => {
+                          setForm(createPortForwardDraft(namespace))
+                          setModalVisible(true)
+                        }}
+                      >
+                        {createPortForwardLabel}
+                      </Button>
+                    </span>
+                  </Tooltip>
+                ) : null}
+                <ManagementDensityButton
+                  aria-label={densityLabel}
+                  title={densityLabel}
+                  tooltip={densityLabel}
+                  onClick={() =>
+                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
+                  }
+                />
+                <ManagementRefreshButton
+                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  disabled={!clusterId}
+                  loading={query.isFetching}
+                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  onClick={() => {
+                    if (clusterId) {
+                      void query.refetch()
+                    }
+                  }}
+                />
+              </ManagementTableToolbar>
+            ),
+            columns: canShowActions
+              ? columns
+              : columns.filter((column) => column.key !== 'actions'),
+            dataSource: clusterId ? filteredItems : [],
+            rowKey: 'sessionId',
+            loading: query.isLoading,
+            localSorting: true,
+            tableSize,
+            scroll: { x: 'max-content' },
+            empty: (
+              <PlatformTableState
+                description={effectiveEmpty}
+                kind={!clusterId ? 'select-scope' : 'empty'}
+              />
+            ),
+          }}
+        />
+      }
     >
       {registerMutation.feedback}
-      {stopMutation.feedback}
+      {resourceActions.isConfirming ? null : stopMutation.feedback}
+      {resourceActions.confirmation}
 
       {portForwardCapabilityReason ? (
         <Alert

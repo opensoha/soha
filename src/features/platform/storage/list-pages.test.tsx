@@ -54,7 +54,8 @@ vi.mock('@/features/auth', () => ({
   hasAllowedAction: (actions: string[] | undefined, action: string) =>
     actions?.includes(action) ?? false,
 }))
-vi.mock('@/components/status-tag', () => ({
+vi.mock('@/components/status-tag', async (original) => ({
+  ...(await original<typeof import('@/components/status-tag')>()),
   BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
   StatusTag: ({ value }: { value: string }) => <span>{value}</span>,
 }))

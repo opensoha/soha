@@ -192,7 +192,9 @@ function Trend({
             },
           ]}
           dataSource={rows}
-          pageSize={30}
+          pagination={false}
+          virtual
+          scroll={{ x: 640, y: 520 }}
           enableColumnSelection={false}
         />
       </Drawer>
@@ -938,7 +940,9 @@ function MonitoringSection({
                 rowKey={(node) => node.nodeRef.uid || node.nodeRef.name}
                 columns={columns}
                 dataSource={ranked}
-                pageSize={20}
+                pagination={false}
+                virtual
+                scroll={{ x: 1200, y: 520 }}
                 enableColumnSelection={false}
               />
             </Card>

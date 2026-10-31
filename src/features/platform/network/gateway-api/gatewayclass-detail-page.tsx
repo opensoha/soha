@@ -1,3 +1,4 @@
+import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
@@ -7,7 +8,6 @@ import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
 import { Card } from 'antd'
-import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { NetworkDetailShell } from '../shared/detail-shell'
 import { ConditionsSection, GatewaysSection } from './detail-sections'
@@ -19,7 +19,7 @@ export function GatewayClassDetailPage() {
   const { clusterId } = usePlatformScopeStore()
   const name = (useParams().name as string | undefined) ?? ''
   const scope = toScopeKey(clusterId, null)
-  const [activeTabKey, setActiveTabKey] = useState('overview')
+  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
   const query = useQuery(
     gatewayAPIQueries.detail<GatewayClassDetail>('gatewayclasses', scope, name, true),
   )

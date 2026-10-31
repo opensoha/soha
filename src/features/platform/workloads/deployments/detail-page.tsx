@@ -17,7 +17,7 @@ import { WorkloadDetailShell } from '../shared/detail-shell'
 import { WorkloadDetailEvents } from '../shared/detail-events'
 import { workloadKeys } from '../shared/keys'
 import { deploymentQueries } from './queries'
-import { podQueries } from '../pods/queries'
+import { usePodObservations } from '../shared/use-pod-observations'
 import { buildDeploymentRelationships } from './deployment-detail-model'
 import { DeploymentDetailOverview, deploymentDetailState } from './deployment-detail-overview'
 import { DeploymentDetailPods } from './deployment-detail-pods'
@@ -86,25 +86,11 @@ export function DeploymentDetailPage() {
   const detail =
     rawDetail?.name === deploymentName && rawDetail.namespace === namespace ? rawDetail : undefined
   const canReadPods = canRead && hasPermission(permissionData, 'platform.pods.view')
-  const podListOptions = podQueries.list(scope)
-  const podListQuery = useQuery({
-    ...podListOptions,
-    enabled: Boolean(detail && canReadPods && active === 'pods' && podListOptions.enabled),
-  })
-  const podList = canReadPods && active === 'pods' ? readableQueryData(podListQuery) : undefined
-  const usageByPod = new Map((podList || []).map((pod) => [`${pod.namespace}/${pod.name}`, pod]))
-  const completePods = (detail?.pods || []).map((pod) => {
-    const sampled = usageByPod.get(`${pod.namespace}/${pod.name}`)
-    return sampled
-      ? {
-          ...pod,
-          cpu: sampled.cpu,
-          memory: sampled.memory,
-          requests: sampled.requests || pod.requests,
-          limits: sampled.limits || pod.limits,
-        }
-      : pod
-  })
+  const { query: podListQuery, pods: completePods } = usePodObservations(
+    scope,
+    detail?.pods || [],
+    Boolean(detail && canReadPods && active === 'pods'),
+  )
   const statusOptions = deploymentQueries.rolloutStatus(scope, deploymentName)
   const statusQuery = useQuery({
     ...statusOptions,

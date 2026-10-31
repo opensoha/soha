@@ -4,6 +4,11 @@ import { useYamlDraft } from '@/components/use-yaml-draft'
 import { useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { ResourceGitOpsStatus } from '@/features/platform/shared/resource-gitops-status'
+import {
+  ResourceDetailHeader,
+  ResourceDetailTabs,
+  useResourceDetailTab,
+} from '@/features/platform/shared/resource-detail-header'
 import { PlatformResourceOverview } from '@/features/platform/shared/resource-overview'
 import {
   platformResourceTarget,
@@ -16,11 +21,14 @@ import type { WorkloadKind } from '@/features/platform/workloads/shared/types'
 import '@/features/platform/workloads/styles.css'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
-import { useQuery } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { Pod, WorkloadRelation } from '@/types'
+import { WorkloadPodsCard, WorkloadRelationsCard } from './workload-relations'
+import { ControllerHeaderFacts, WorkloadJobsCard, type ChildJob } from './controller-overview'
 import type { TabsProps } from 'antd'
-import { App, Card, Spin, Tabs } from 'antd'
+import { App, Card, Spin } from 'antd'
 import type { ReactNode } from 'react'
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 
 const K8sYamlEditor = lazy(async () => {
@@ -100,10 +108,13 @@ export function WorkloadDetailShell({
   const params = useParams()
   const name = params[paramKey] as string
   const { clusterId, namespace: detailNamespace } = useWorkloadDetailScope()
-  const [internalActiveTabKey, setInternalActiveTabKey] = useState('overview')
+  const [internalActiveTabKey, setInternalActiveTabKey] = useResourceDetailTab()
   const resolvedActiveTabKey = activeTabKey ?? internalActiveTabKey
+  const queryClient = useQueryClient()
 
   const detailScope = { clusterId, namespace: detailNamespace }
+  const podListKey = workloadQueries.list('pods', detailScope).queryKey
+  const podsFetching = useIsFetching({ queryKey: podListKey })
   const detailQuery = useQuery({
     ...workloadQueries.detail<WorkloadMeta>(resource, detailScope, name),
     refetchOnMount: detailRefetchOnMount,
@@ -189,22 +200,84 @@ export function WorkloadDetailShell({
   const resolvedExtraTabPanes =
     typeof extraTabPanes === 'function' ? extraTabPanes(detail) : (extraTabPanes ?? [])
   const graphKind = RESOURCE_GRAPH_KINDS[resource]
+  const enhanced = resource !== 'pods' && resource !== 'deployments'
+  const controllerTabs: NonNullable<TabsProps['items']> = enhanced
+    ? [
+        ...(resource !== 'cronjobs'
+          ? [
+              {
+                key: 'pods',
+                label: 'Pods',
+                children:
+                  resolvedActiveTabKey === 'pods' ? (
+                    <WorkloadPodsCard
+                      key={JSON.stringify([resource, clusterId, detail.namespace, detail.name])}
+                      pods={Array.isArray(detail.pods) ? (detail.pods as Pod[]) : []}
+                      namespace={detail.namespace}
+                    />
+                  ) : null,
+              },
+            ]
+          : []),
+        ...(resource === 'cronjobs'
+          ? [
+              {
+                key: 'jobs',
+                label: 'Jobs',
+                children:
+                  resolvedActiveTabKey === 'jobs' ? (
+                    <WorkloadJobsCard
+                      key={JSON.stringify([resource, clusterId, detail.namespace, detail.name])}
+                      jobs={Array.isArray(detail.jobs) ? (detail.jobs as ChildJob[]) : []}
+                    />
+                  ) : null,
+              },
+            ]
+          : []),
+      ]
+    : []
 
   return (
-    <div className="soha-page soha-workload-detail-page">
+    <div
+      className={`soha-page soha-workload-detail-page ${enhanced ? 'soha-k8s-detail-page' : ''}`}
+    >
       <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
       <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
 
       {applyYamlMutation.feedback}
 
-      {header}
+      {header ??
+        (enhanced ? (
+          <ResourceDetailHeader
+            kind={title}
+            name={detail.name}
+            namespace={detail.namespace}
+            status={typeof detail.status === 'string' ? detail.status : undefined}
+            facts={<ControllerHeaderFacts detail={detail} resource={resource} />}
+            createdAt={detail.createdAt}
+            queryKey={workloadQueries.detail(resource, detailScope, name).queryKey}
+            refreshing={
+              detailQuery.isFetching || (resolvedActiveTabKey === 'pods' && podsFetching > 0)
+            }
+            onRefresh={() =>
+              Promise.all([
+                queryClient.invalidateQueries({
+                  queryKey: workloadQueries.detail(resource, detailScope, name).queryKey,
+                }),
+                ...(resolvedActiveTabKey === 'pods'
+                  ? [queryClient.invalidateQueries({ queryKey: podListKey })]
+                  : []),
+              ])
+            }
+          />
+        ) : null)}
 
-      <Tabs
+      <ResourceDetailTabs
         activeKey={resolvedActiveTabKey}
         className="soha-resource-tabs soha-workload-detail-tabs"
         onChange={(nextActiveKey) => {
-          setInternalActiveTabKey(nextActiveKey)
-          onTabChange?.(nextActiveKey)
+          if (onTabChange) onTabChange(nextActiveKey)
+          else setInternalActiveTabKey(nextActiveKey)
         }}
         indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
         size="small"
@@ -215,8 +288,10 @@ export function WorkloadDetailShell({
             label: t('common.overview', 'Overview'),
             children: (
               <div className="soha-detail-stack">
+                {enhanced && resolvedExtraOverview}
                 {!hideMetadataOverview && (
                   <PlatformResourceOverview
+                    compact={enhanced}
                     annotations={detail.annotations}
                     createdAt={detail.createdAt}
                     labels={detail.labels}
@@ -230,11 +305,12 @@ export function WorkloadDetailShell({
                   name={detail.name}
                   namespace={detail.namespace}
                 />
-                {resolvedExtraOverview}
+                {!enhanced && resolvedExtraOverview}
               </div>
             ),
           },
-          ...(graphKind && !hideRelationshipsTab
+          ...controllerTabs,
+          ...(graphKind && !hideRelationshipsTab && !enhanced
             ? [
                 {
                   key: 'relationships',
@@ -248,6 +324,36 @@ export function WorkloadDetailShell({
               ]
             : []),
           ...(yamlLast ? resolvedExtraTabPanes : []),
+          ...(enhanced
+            ? [
+                {
+                  key: 'relationships',
+                  label: localeCode === 'zh_CN' ? '关联资源' : 'Related resources',
+                  children:
+                    resolvedActiveTabKey === 'relationships' ? (
+                      <div className="soha-detail-stack">
+                        {graphKind && (
+                          <Suspense fallback={<Spin />}>
+                            <ResourceGraphPanel
+                              kind={graphKind}
+                              name={detail.name}
+                              scope={detailScope}
+                            />
+                          </Suspense>
+                        )}
+                        <WorkloadRelationsCard
+                          resources={
+                            Array.isArray(detail.relatedResources)
+                              ? (detail.relatedResources as WorkloadRelation[])
+                              : []
+                          }
+                          namespace={detail.namespace}
+                        />
+                      </div>
+                    ) : null,
+                },
+              ]
+            : []),
           {
             key: 'yaml',
             label: t('common.yaml', 'YAML'),

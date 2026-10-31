@@ -1,3 +1,4 @@
+import { ResourceDetailHeader } from '@/features/platform/shared/resource-detail-header'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -108,7 +109,14 @@ export function ClusterDetailPage() {
   }
 
   return (
-    <div className="soha-page soha-cluster-detail-page">
+    <div className="soha-page soha-cluster-detail-page soha-k8s-detail-page">
+      <ResourceDetailHeader
+        kind="Cluster"
+        name={summary.name}
+        status={summary.health?.status}
+        queryKey={clusterQueries.detail(detailScope).queryKey}
+        onRefresh={() => Promise.all([clusterDetailQuery.refetch(), nodesQuery.refetch()])}
+      />
       <ReadFeedback
         canRead={clusterDetailQuery.isEnabled}
         query={clusterDetailQuery}
@@ -328,7 +336,8 @@ export function ClusterDetailPage() {
             dataSource={visibleNodesQueryData ?? []}
             rowKey="name"
             loading={nodesQuery.isLoading}
-            pageSize={10}
+            pagination={false}
+            scroll={{ x: 800, y: 520 }}
             enableColumnSelection={false}
           />
         )}

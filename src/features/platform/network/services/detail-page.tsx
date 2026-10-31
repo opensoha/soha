@@ -1,3 +1,4 @@
+import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -11,7 +12,7 @@ import { formatAgeSeconds } from '@/utils/time'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
 import { Button, Card, Spin } from 'antd'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { NetworkDetailShell } from '../shared/detail-shell'
 import { resolveNetworkNamespace } from '../shared/scope'
@@ -39,9 +40,7 @@ export function ServiceDetailPage() {
   const serviceName = (params.serviceName as string | undefined) ?? ''
   const detailNamespace = resolveNetworkNamespace(namespace, searchParams.get('namespace'))
   const scope = toScopeKey(clusterId, detailNamespace)
-  const [activeTabKey, setActiveTabKey] = useState(() =>
-    searchParams.get('tab') === 'yaml' ? 'yaml' : 'overview',
-  )
+  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
   const detailQuery = useQuery(serviceQueries.detail(scope, serviceName))
   const visibleDetailQueryData = readableQueryData(detailQuery)
   const service = visibleDetailQueryData
@@ -232,7 +231,8 @@ export function ServiceDetailPage() {
                 columns={endpointColumns}
                 dataSource={service.endpoints ?? []}
                 rowKey={(record) => `${record.address}/${record.targetRef ?? ''}`}
-                pageSize={10}
+                pagination={false}
+                scroll={{ x: 800, y: 520 }}
                 tableSize="small"
                 enableColumnSelection={false}
               />
@@ -246,9 +246,9 @@ export function ServiceDetailPage() {
                 columns={backendPodColumns}
                 dataSource={service.backendPods ?? []}
                 rowKey={(record) => `${record.namespace}/${record.name}`}
-                pageSize={10}
+                pagination={false}
+                scroll={{ x: 800, y: 520 }}
                 tableSize="small"
-                scroll={{ x: 'max-content' }}
                 enableColumnSelection={false}
               />
             </Card>

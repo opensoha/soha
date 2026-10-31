@@ -308,7 +308,10 @@ describe('network core pages', () => {
     expect(container.textContent).toContain('Port: http · 80/TCP')
     expect(container.textContent).toContain('TargetPort: 8080')
     expect(container.querySelectorAll('.soha-service-port-arrow')).toHaveLength(2)
-    expect(container.querySelectorAll('.soha-metadata-tag')).toHaveLength(5)
+    expect(
+      container.querySelectorAll('.soha-metadata-tag:not(.soha-namespace-scope-tag)'),
+    ).toHaveLength(5)
+    expect(container.querySelectorAll('.soha-namespace-scope-tag')).toHaveLength(2)
     expect(container.querySelectorAll('.ant-tag-gold')).toHaveLength(2)
     expect(container.querySelectorAll('.ant-tag-cyan')).toHaveLength(1)
     const input = container.querySelector(

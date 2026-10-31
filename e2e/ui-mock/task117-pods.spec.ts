@@ -877,7 +877,7 @@ test('adaptive column layout supports pointer, keyboard, menu, persistence and r
   page,
 }) => {
   const { state, evidence } = await setup(context, page)
-  await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toHaveCount(1)
   const nameHeader = page.getByRole('columnheader', { name: 'Pod', exact: true })
   const width = () => nameHeader.evaluate((node) => node.getBoundingClientRect().width)
   const handle = page.getByRole('separator', { name: '调整Pod列宽', exact: true })
@@ -905,6 +905,8 @@ test('adaptive column layout supports pointer, keyboard, menu, persistence and r
   await expect(nameHeader).toBeVisible()
   await expect.poll(width).toBe(dragged)
   await page.getByRole('button', { name: '列设置', exact: true }).click()
+  await page.getByRole('checkbox', { name: '命名空间', exact: true }).uncheck()
+  await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toHaveCount(0)
   await page.getByRole('checkbox', { name: '命名空间', exact: true }).check()
   await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toBeVisible()
   await page.getByRole('combobox', { name: '调整列宽的列', exact: true }).click()
@@ -919,7 +921,7 @@ test('adaptive column layout supports pointer, keyboard, menu, persistence and r
     )
     .toBe(144)
   await page.getByRole('button', { name: '恢复默认', exact: true }).click()
-  await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toHaveCount(1)
   await expect.poll(width).toBeLessThan(dragged)
   verifyBrowserEvidence(evidence)
 })

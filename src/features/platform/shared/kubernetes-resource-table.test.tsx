@@ -60,7 +60,7 @@ afterEach(async () => {
   container.remove()
   vi.unstubAllGlobals()
 })
-it('owns continuous browsing, full-result count, namespace folding and per-resource user preferences', async () => {
+it('owns continuous browsing, full-result count, visible namespace and per-resource user preferences', async () => {
   await render({ dataSource: rows.slice(0, 1), rowSelection: { selectedRowKeys: [] } })
   expect(container.querySelector('.soha-kubernetes-resource-count')?.getAttribute('role')).toBe(
     'status',
@@ -69,7 +69,7 @@ it('owns continuous browsing, full-result count, namespace folding and per-resou
   expect(table.virtual).toBe(true)
   expect(table.viewportScroll).toBe(true)
   expect(container.textContent).toBe('匹配 1 / 共 2 个 Deployments')
-  expect(table.defaultHiddenColumnKeys).toEqual(['namespace'])
+  expect(table.defaultHiddenColumnKeys).toEqual([])
   expect(table.columnLayoutKey).toBe('deployments:user-a:zh_CN')
   expect(table.rowSelection.getTitleCheckboxProps()['aria-label']).toBe(
     '选择全部匹配的 1 个 Deployments',
@@ -99,11 +99,11 @@ it('keeps initial widths on refresh and refits explicitly from the full scope', 
   await act(async () => table.onResetColumns?.())
   expect(table.columns[0].width).toBe(initialName)
 })
-it('lets a resource keep its namespace column visible in a selected namespace', async () => {
-  await render({ hideNamespaceWhenScoped: false })
+it('keeps namespace visible by default and supports an explicit scoped fold', async () => {
+  await render()
   expect(table.defaultHiddenColumnKeys).toEqual([])
   expect(table.columnLayoutKey).toBe('deployments:user-a:zh_CN')
-  await render()
+  await render({ hideNamespaceWhenScoped: true })
   expect(table.defaultHiddenColumnKeys).toEqual(['namespace'])
 })
 it('preserves row operations and reports failed reads instead of an empty successful list', async () => {

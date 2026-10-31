@@ -3,7 +3,6 @@ import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -191,7 +190,9 @@ export function ServiceAccountEffectiveAccessPanel({
         dataSource={rows}
         loading={query.isLoading}
         rowKey="key"
-        pageSize={K8S_TABLE_PAGE_SIZE}
+        pagination={false}
+        virtual
+        scroll={{ x: 1000, y: 520 }}
         tableSize="small"
         localSorting
         viewportScroll

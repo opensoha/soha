@@ -1,3 +1,4 @@
+import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
@@ -11,7 +12,7 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Spin } from 'antd'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   StorageDetailShell,
@@ -31,7 +32,7 @@ export function StoragePvDetailPage() {
   const { clusterId } = usePlatformScopeStore()
   const scope = toClusterStorageScope(clusterId)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useResourceDetailTab()
   const detailQuery = useQuery(persistentVolumeQueries.detail(scope, name))
   const visibleDetailQueryData = readableQueryData(detailQuery)
   const yamlOptions = persistentVolumeQueries.yaml(scope, name)
@@ -79,7 +80,12 @@ export function StoragePvDetailPage() {
   }
 
   return (
-    <StorageDetailShell kind="PV" name={detail.name}>
+    <StorageDetailShell
+      kind="PV"
+      name={detail.name}
+      detail={detail}
+      queryKey={persistentVolumeQueries.detail(scope, name).queryKey}
+    >
       <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
       <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
 

@@ -1,3 +1,8 @@
+import {
+  ResourceDetailHeader,
+  ResourceDetailTabs,
+  useResourceDetailTab,
+} from '@/features/platform/shared/resource-detail-header'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -17,9 +22,9 @@ import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
-import { App, Card, Spin, Tabs } from 'antd'
+import { App, Card, Spin } from 'antd'
 import type { ReactNode } from 'react'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense } from 'react'
 import '../styles.css'
 import { configurationMutations } from './mutations'
 import { configurationQueries } from './queries'
@@ -45,6 +50,7 @@ export function ConfigurationResourceOverview({
 }) {
   return (
     <PlatformResourceOverview
+      compact
       ageSeconds={detail.ageSeconds}
       annotations={detail.annotations}
       createdAt={detail.createdAt}
@@ -212,7 +218,7 @@ export function ConfigurationDetailShell<TDetail extends ConfigurationDetailBase
   target: ConfigurationTarget
 }) {
   const { t, localeCode } = useI18n()
-  const [activeTabKey, setActiveTabKey] = useState('overview')
+  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
   useAIPageContext({
     sourceWorkbench: 'platform',
     sourceTitle: label,
@@ -251,7 +257,7 @@ export function ConfigurationDetailShell<TDetail extends ConfigurationDetailBase
       ? [
           {
             key: 'relationships',
-            label: localeCode === 'zh_CN' ? '关联关系' : 'Relationships',
+            label: localeCode === 'zh_CN' ? '关联资源' : 'Related resources',
             children:
               activeTabKey === 'relationships' ? (
                 <ConfigurationReferencesTab kind={kind} target={target} />
@@ -270,8 +276,16 @@ export function ConfigurationDetailShell<TDetail extends ConfigurationDetailBase
   ]
 
   return (
-    <div className="soha-page soha-workload-detail-page">
-      <Tabs
+    <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
+      <ResourceDetailHeader
+        kind={label}
+        name={detail.name}
+        namespace={detail.namespace}
+        createdAt={detail.createdAt}
+        ageSeconds={detail.ageSeconds}
+        queryKey={configurationQueries.detail(kind, target.scope, target.name, scopeMode).queryKey}
+      />
+      <ResourceDetailTabs
         activeKey={activeTabKey}
         className="soha-resource-tabs soha-workload-detail-tabs"
         indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}

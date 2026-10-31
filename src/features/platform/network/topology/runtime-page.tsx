@@ -575,7 +575,9 @@ export function NetworkTopologyRuntimePage() {
               columns={columns}
               dataSource={filtered.edges}
               enableColumnSelection={false}
-              pageSize={20}
+              pagination={false}
+              virtual
+              scroll={{ x: 1200, y: 520 }}
             />
           )}
           {mode === 'table' && unassociatedNodes.length > 0 && (

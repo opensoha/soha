@@ -4,6 +4,7 @@ import { AdminTable, type AdminTableProps } from '@/components/admin-table'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
+import { NamespaceScopeTag } from './namespace-scope-tag'
 import { useResourceListViewport } from './use-resource-list-viewport'
 import '../platform-shared.css'
 
@@ -70,7 +71,7 @@ export function KubernetesResourceTable({
   allRows,
   filterKey = '',
   scopeMode = 'namespace',
-  hideNamespaceWhenScoped = true,
+  hideNamespaceWhenScoped = false,
   columns,
   dataSource,
   rowKey,
@@ -121,6 +122,11 @@ export function KubernetesResourceTable({
   const primary = columns.findIndex((column) => !isAction(column))
   const activeColumns = columns.map((column, index) => ({
     ...column,
+    render:
+      column.render ??
+      (column.dataIndex === 'namespace'
+        ? (value: string) => <NamespaceScopeTag namespace={value} />
+        : undefined),
     key: columnId(column, index),
     ellipsis: column.ellipsis ?? (index === primary ? true : undefined),
     width:

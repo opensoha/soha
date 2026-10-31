@@ -28,6 +28,7 @@ vi.mock('@/components/admin-table', () => ({
     columns,
     dataSource,
     empty,
+    title,
   }: {
     columns: Array<{
       key?: string
@@ -37,8 +38,10 @@ vi.mock('@/components/admin-table', () => ({
     }>
     dataSource: Array<Record<string, unknown>>
     empty?: ReactNode
+    title?: ReactNode
   }) => (
     <div>
+      <div data-testid="manifest-total">{title}</div>
       {columns
         .filter((column) => column.key !== 'actions')
         .map((column, index) => (
@@ -225,4 +228,27 @@ it('shows the application source, desired and observed manifest state', async ()
   })
   expect(container.textContent).not.toContain('实际 v2')
   expect(container.textContent).toContain('Deployment evidence denied')
+})
+
+it('does not turn a failed manifest read into a successful zero total', async () => {
+  testState.scope = { clusterId: 'cluster-1', namespace: 'demo' }
+  testState.apiGet.mockRejectedValueOnce(
+    new ApiError(503, 'Manifest service unavailable', { method: 'GET' }),
+  )
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  await act(async () =>
+    root.render(
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <PlatformManifestsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    ),
+  )
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="manifest-total"]')?.textContent).toBe(
+      '清单未加载',
+    ),
+  )
+  client.clear()
 })

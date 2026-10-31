@@ -1,16 +1,7 @@
-import { WorkloadDetailShell } from '../shared/detail-shell'
-import { ReplicaDetailOverview } from '../shared/replica-detail-overview'
-import type { ReplicaSetDetail } from './types'
+import { ControllerDetailPage } from '../shared/controller-detail-page'
 
 export function ReplicaSetDetailPage() {
   return (
-    <WorkloadDetailShell
-      paramKey="replicaSetName"
-      resource="replicasets"
-      title="ReplicaSet"
-      extraOverview={(detail) => (
-        <ReplicaDetailOverview detail={detail as unknown as ReplicaSetDetail} title="ReplicaSet" />
-      )}
-    />
+    <ControllerDetailPage resource="replicasets" title="ReplicaSet" paramKey="replicaSetName" />
   )
 }

@@ -1,16 +1,13 @@
+import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { hasAllowedAction } from '@/features/auth'
-import {
-  capabilityActionTooltip,
-  useClusterCapability,
-} from '@/features/platform/cluster-capabilities'
+import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import '@/features/platform/extensions/styles.css'
 import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import { useI18n } from '@/i18n'
@@ -161,56 +158,63 @@ export function HelmChartsPage() {
       },
       { title: localeCode === 'zh_CN' ? '版本数' : 'Versions', dataIndex: 'versionCount' },
       {
-        title: localeCode === 'zh_CN' ? '操作' : 'Actions',
+        title: '',
         key: 'actions',
-        width: 112,
+        width: 64,
         fixed: 'right',
         align: 'center',
-        render: (_value, record) => {
-          const viewLabel =
-            localeCode === 'zh_CN'
-              ? '查看 Chart 详情、README 和默认 values'
-              : 'View chart details, README, and default values'
-          const installLabel =
-            localeCode === 'zh_CN'
-              ? '安装 Chart 到当前集群'
-              : 'Install chart to the current cluster'
-          return (
-            <Space size={2} className="soha-row-action-icons">
-              {record.artifactHubUrl ? (
-                <ManagementIconButton
-                  href={record.artifactHubUrl}
-                  icon={<LinkOutlined />}
-                  target="_blank"
-                  tooltip="Open Artifact Hub package page"
-                  aria-label="Open Artifact Hub package page"
-                  onClick={(event) => event.stopPropagation()}
-                />
-              ) : null}
-              <ManagementIconButton
-                icon={<RocketOutlined />}
-                tooltip={viewLabel}
-                aria-label={viewLabel}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  openDrawer(record)
-                }}
-              />
-              {hasAllowedAction(record.allowedActions, 'create') ? (
-                <ManagementIconButton
-                  icon={<CloudDownloadOutlined />}
-                  disabled={mutationsDisabled}
-                  tooltip={capabilityActionTooltip(installLabel, capability)}
-                  aria-label={installLabel}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    openDrawer(record, 'install')
-                  }}
-                />
-              ) : null}
-            </Space>
-          )
-        },
+        render: (_value, record) => (
+          <KubernetesResourceActionsMenu
+            resourceLabel="Helm Chart"
+            name={record.name}
+            localeCode={localeCode}
+            items={[
+              {
+                key: 'view',
+                label: localeCode === 'zh_CN' ? '查看详情' : 'View details',
+                icon: <RocketOutlined aria-hidden />,
+              },
+              ...(record.artifactHubUrl
+                ? [
+                    {
+                      key: 'hub',
+                      label: (
+                        <a href={record.artifactHubUrl} target="_blank" rel="noreferrer">
+                          Artifact Hub
+                        </a>
+                      ),
+                      icon: <LinkOutlined aria-hidden />,
+                    },
+                  ]
+                : []),
+              ...(hasAllowedAction(record.allowedActions, 'create')
+                ? [
+                    {
+                      key: 'install',
+                      label: mutationsDisabled ? (
+                        <span>
+                          {localeCode === 'zh_CN' ? '安装 Chart' : 'Install Chart'}
+                          <span className="soha-kubernetes-action-menu-reason">
+                            {capabilityReason}
+                          </span>
+                        </span>
+                      ) : localeCode === 'zh_CN' ? (
+                        '安装 Chart'
+                      ) : (
+                        'Install Chart'
+                      ),
+                      disabled: mutationsDisabled,
+                      icon: <CloudDownloadOutlined aria-hidden />,
+                    },
+                  ]
+                : []),
+            ]}
+            onSelect={(key) => {
+              if (key === 'view') openDrawer(record)
+              else if (key === 'install') openDrawer(record, 'install')
+            }}
+          />
+        ),
       },
     ],
     [capability, localeCode, mutationsDisabled],
@@ -253,9 +257,28 @@ export function HelmChartsPage() {
         error={chartsQuery.isEnabled === false ? null : chartsQuery.error}
         hasReadData={chartsQuery.data !== undefined}
         onRetry={chartsQuery.isEnabled === false ? undefined : () => chartsQuery.refetch()}
+        title={
+          <span className="soha-kubernetes-resource-count" role="status">
+            {!clusterId
+              ? localeCode === 'zh_CN'
+                ? '请选择集群'
+                : 'Select a cluster'
+              : catalog === undefined
+                ? chartsQuery.isLoading
+                  ? localeCode === 'zh_CN'
+                    ? '正在加载 Charts'
+                    : 'Loading Charts'
+                  : localeCode === 'zh_CN'
+                    ? 'Charts 未加载'
+                    : 'Charts not loaded'
+                : localeCode === 'zh_CN'
+                  ? `${formattedTotal} 个 Charts`
+                  : `${formattedTotal} Charts`}
+          </span>
+        }
         className="soha-platform-table"
         columnSettingIconOnly
-        columnSettingPlacement="toolbar"
+        columnSettingPlacement="header"
         shellClassName="soha-management-table-shell soha-helm-chart-table-shell"
         columns={columns}
         dataSource={clusterId && !chartsQuery.isError ? rawItems : []}
@@ -304,7 +327,7 @@ export function HelmChartsPage() {
           onClick: () => openDrawer(record),
           style: { cursor: 'pointer' },
         })}
-        toolbarExtra={
+        headerExtra={
           <ManagementTableToolbar>
             <ManagementDensityButton
               aria-label={densityLabel}

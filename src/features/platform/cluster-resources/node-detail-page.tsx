@@ -1,3 +1,8 @@
+import {
+  ResourceDetailHeader,
+  ResourceDetailTabs,
+  useResourceDetailTab,
+} from '@/features/platform/shared/resource-detail-header'
 import { ResourceMonitoringLink } from '../resource-monitoring'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementDetailHeader, ManagementState } from '@/components/management-list'
@@ -23,8 +28,8 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Card, Form, Input, Space, Spin, Tabs, Tag, Typography } from 'antd'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { Button, Card, Form, Input, Space, Spin, Tag, Typography } from 'antd'
+import { lazy, Suspense, useEffect, useMemo } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useClusterCapabilityForCluster } from '../cluster-capabilities'
 import { nodeMutations } from './mutations'
@@ -36,9 +41,10 @@ const { Text } = Typography
 
 const NodeYAMLPanel = lazy(() => import('./node-yaml-panel'))
 
-function buildPodDetailPath(name: string, namespace: string) {
+function buildPodDetailPath(name: string, namespace: string, clusterId?: string | null) {
   const params = new URLSearchParams()
   if (namespace) params.set('namespace', namespace)
+  if (clusterId) params.set('clusterId', clusterId)
   const query = params.toString()
   const path = `/workloads/pods/${encodeURIComponent(name)}`
   return query ? `${path}?${query}` : path
@@ -54,7 +60,7 @@ export function NodeDetailPage() {
   const requestedClusterId = searchParams.get('clusterId')
   const clusterId = requestedClusterId || scopedClusterId
   const scope = toClusterScope(clusterId)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useResourceDetailTab()
   const nodeDetailQuery = useQuery(nodeQueries.detail(scope, nodeName))
   const visibleNodeDetailQueryData = readableQueryData(nodeDetailQuery)
   const updateNodeMutation = usePlatformMutation(nodeMutations.update(queryClient), {
@@ -93,7 +99,10 @@ export function NodeDetailPage() {
       title: 'Pod',
       dataIndex: 'name',
       render: (value: string, record) => (
-        <Button type="text" onClick={() => navigate(buildPodDetailPath(value, record.namespace))}>
+        <Button
+          type="text"
+          onClick={() => navigate(buildPodDetailPath(value, record.namespace, clusterId))}
+        >
           {value}
         </Button>
       ),
@@ -211,13 +220,21 @@ export function NodeDetailPage() {
   const namespaceCount = new Set((nodeDetail.pods ?? []).map((pod) => pod.namespace)).size
 
   return (
-    <div className="soha-page">
+    <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
+      <ResourceDetailHeader
+        kind="Node"
+        name={nodeDetail.name}
+        status={nodeDetail.status}
+        ageSeconds={nodeDetail.ageSeconds}
+        queryKey={nodeQueries.detail(scope, nodeName).queryKey}
+      />
       <ReadFeedback canRead={nodeDetailQuery.isEnabled} query={nodeDetailQuery} label="节点详情" />
       <ResourceMonitoringLink clusterId={clusterId || ''} nodeName={nodeName} />
 
       {updateNodeMutation.feedback}
 
-      <Tabs
+      <ResourceDetailTabs
+        className="soha-resource-tabs soha-workload-detail-tabs"
         activeKey={activeTab}
         destroyOnHidden
         onChange={setActiveTab}
@@ -228,6 +245,7 @@ export function NodeDetailPage() {
             children: (
               <div className="soha-detail-stack">
                 <PlatformResourceOverview
+                  compact
                   name={nodeDetail.name}
                   ageSeconds={nodeDetail.ageSeconds}
                   labels={nodeDetail.labels}
@@ -335,39 +353,52 @@ export function NodeDetailPage() {
                     </Form>
                   </Card>
                 </div>
-
-                <Card
-                  className="soha-detail-card"
-                  title={
-                    localeCode === 'zh_CN'
-                      ? `承载 Pods (${nodeDetail.pods?.length ?? 0})`
-                      : `Scheduled Pods (${nodeDetail.pods?.length ?? 0})`
-                  }
-                >
-                  <AdminTable
-                    shellClassName="soha-management-table-shell"
-                    columns={podColumns}
-                    dataSource={nodeDetail.pods ?? []}
-                    rowKey={(record) => `${record.namespace}/${record.name}`}
-                    pageSize={10}
-                    enableColumnSelection={false}
-                  />
-                </Card>
-
-                <Card
-                  className="soha-detail-card"
-                  title={localeCode === 'zh_CN' ? '节点 Conditions' : 'Node Conditions'}
-                >
-                  <AdminTable
-                    shellClassName="soha-management-table-shell"
-                    columns={conditionColumns}
-                    dataSource={nodeDetail.conditions ?? []}
-                    rowKey={(record) => `${record.type}:${record.lastTransitionTime || ''}`}
-                    pageSize={10}
-                    enableColumnSelection={false}
-                  />
-                </Card>
               </div>
+            ),
+          },
+          {
+            key: 'pods',
+            label: `Pods (${nodeDetail.pods?.length ?? 0})`,
+            children: (
+              <Card
+                className="soha-detail-card"
+                title={
+                  localeCode === 'zh_CN'
+                    ? `承载 Pods (${nodeDetail.pods?.length ?? 0})`
+                    : `Scheduled Pods (${nodeDetail.pods?.length ?? 0})`
+                }
+              >
+                <AdminTable
+                  shellClassName="soha-management-table-shell"
+                  columns={podColumns}
+                  dataSource={nodeDetail.pods ?? []}
+                  rowKey={(record) => `${record.namespace}/${record.name}`}
+                  pagination={false}
+                  virtual
+                  scroll={{ x: 1200, y: 520 }}
+                  enableColumnSelection={false}
+                />
+              </Card>
+            ),
+          },
+          {
+            key: 'conditions',
+            label: localeCode === 'zh_CN' ? '运行条件' : 'Conditions',
+            children: (
+              <Card
+                className="soha-detail-card"
+                title={localeCode === 'zh_CN' ? '节点 Conditions' : 'Node Conditions'}
+              >
+                <AdminTable
+                  shellClassName="soha-management-table-shell"
+                  columns={conditionColumns}
+                  dataSource={nodeDetail.conditions ?? []}
+                  rowKey={(record) => `${record.type}:${record.lastTransitionTime || ''}`}
+                  pagination={false}
+                  scroll={{ x: 900, y: 520 }}
+                  enableColumnSelection={false}
+                />
+              </Card>
             ),
           },
           {

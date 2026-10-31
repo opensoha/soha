@@ -65,7 +65,11 @@ beforeEach(() => {
   })
 })
 afterEach(async () => {
-  await act(async () => root.unmount())
+  await act(async () => {
+    root.unmount()
+    // Antd Form debounces cleared validation values for 10ms, even after unmount.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
   container.remove()
   client.clear()
 })

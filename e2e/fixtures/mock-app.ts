@@ -44,8 +44,12 @@ export async function installMocks(context: BrowserContext, page: Page, resolve?
     const selected = resolve?.(url, request.method(), request)
     const body = baselineResponse(url.pathname)
     const scoped =
-      !url.pathname.includes('/workloads/deployments/api/') ||
-      url.searchParams.get('namespace') === 'monitoring'
+      url.pathname === '/api/v1/clusters/cluster-a/resources/graph'
+        ? url.searchParams.get('namespace') === 'monitoring' &&
+          url.searchParams.get('kind') === 'Deployment' &&
+          url.searchParams.get('name') === 'api'
+        : !url.pathname.includes('/workloads/deployments/api/') ||
+          url.searchParams.get('namespace') === 'monitoring'
     const response =
       selected ?? (body && scoped && request.method() === 'GET' ? { body } : undefined)
     // Refresh is POST in the actual API client; mock authentication never proves real login.

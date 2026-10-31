@@ -1,8 +1,10 @@
+import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
+import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
@@ -22,7 +24,7 @@ import { formatDateTime } from '@/utils/time'
 import { CodeOutlined, ExportOutlined } from '@ant-design/icons'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Descriptions, Drawer, Space, Table, Tabs, Typography } from 'antd'
+import { Button, Descriptions, Drawer, Space, Tabs, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './styles.css'
@@ -142,7 +144,11 @@ export function PlatformManifestsPage() {
       render: (value) => <MetadataTag label={value} />,
     },
     { title: t('common.cluster', '集群'), dataIndex: 'clusterId' },
-    { title: t('common.namespace', '命名空间'), dataIndex: 'namespace' },
+    {
+      title: t('common.namespace', '命名空间'),
+      dataIndex: 'namespace',
+      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+    },
     {
       title: t('common.version', '版本'),
       key: 'revision',
@@ -178,28 +184,36 @@ export function PlatformManifestsPage() {
       render: formatDateTime,
     },
     {
-      title: t('common.actions', '操作'),
+      title: '',
       key: 'actions',
       fixed: 'right',
+      width: 64,
+      align: 'center',
       render: (_value, item) => (
-        <Space size={4}>
-          <ManagementIconButton
-            aria-label={t('common.viewYaml', '查看 YAML')}
-            icon={<CodeOutlined />}
-            tooltip={t('common.viewYaml', '查看 YAML')}
-            onClick={() => setSelectedKey(runtimeRowKey(item))}
-          />
-          <ManagementIconButton
-            aria-label={t('common.openManifestLibrary', '查看扩展资源')}
-            icon={<ExportOutlined />}
-            tooltip={t('common.openManifestLibrary', '查看扩展资源')}
-            onClick={() =>
+        <KubernetesResourceActionsMenu
+          resourceLabel={localeCode === 'zh_CN' ? '应用清单' : 'Manifest'}
+          name={item.manifest.name}
+          localeCode={localeCode}
+          items={[
+            {
+              key: 'yaml',
+              label: t('common.viewYaml', '查看 YAML'),
+              icon: <CodeOutlined aria-hidden />,
+            },
+            {
+              key: 'library',
+              label: t('common.openManifestLibrary', '查看扩展资源'),
+              icon: <ExportOutlined aria-hidden />,
+            },
+          ]}
+          onSelect={(key) => {
+            if (key === 'yaml') setSelectedKey(runtimeRowKey(item))
+            else if (key === 'library')
               navigate(
                 `/applications/${encodeURIComponent(item.manifest.applicationId)}?tab=resources`,
               )
-            }
-          />
-        </Space>
+          }}
+        />
       ),
     },
   ]
@@ -224,6 +238,25 @@ export function PlatformManifestsPage() {
           <h1 className="soha-platform-manifests-heading">{t('common.manifest', '应用清单')}</h1>
         }
         table={{
+          title: (
+            <span className="soha-kubernetes-resource-count" role="status">
+              {!clusterId
+                ? localeCode === 'zh_CN'
+                  ? '请选择集群'
+                  : 'Select a cluster'
+                : visibleManifestsQueryData === undefined
+                  ? manifestsQuery.isLoading
+                    ? localeCode === 'zh_CN'
+                      ? '正在加载清单'
+                      : 'Loading manifests'
+                    : localeCode === 'zh_CN'
+                      ? '清单未加载'
+                      : 'Manifests not loaded'
+                  : localeCode === 'zh_CN'
+                    ? `${visibleManifestsQueryData.total} 份清单`
+                    : `${visibleManifestsQueryData.total} manifests`}
+            </span>
+          ),
           error: manifestsQuery.isEnabled === false ? null : manifestsQuery.error,
           hasReadData: manifestsQuery.data !== undefined,
           onRetry: manifestsQuery.isEnabled === false ? undefined : () => manifestsQuery.refetch(),
@@ -305,7 +338,11 @@ export function PlatformManifestsPage() {
       <Drawer
         open={Boolean(selected)}
         size={760}
-        title={selected?.manifest.name}
+        title={
+          selected ? (
+            <Text copyable={{ text: selected.manifest.name }}>{selected.manifest.name}</Text>
+          ) : undefined
+        }
         onClose={() => setSelectedKey('')}
       >
         {selected ? (
@@ -365,22 +402,26 @@ export function PlatformManifestsPage() {
                   key: 'actual',
                   label: `实际资源 (${selected.deployment?.status.inventory?.length ?? 0})`,
                   children: (
-                    <Table<ManifestResourceInventory>
-                      size="small"
+                    <AdminTable
+                      enableColumnSelection={false}
+                      scroll={{ x: 680, y: 520 }}
+                      tableSize="small"
                       pagination={false}
                       rowKey={(item) =>
                         `${item.apiVersion}:${item.kind}:${item.namespace}:${item.name}`
                       }
                       dataSource={selected.deployment?.status.inventory ?? []}
-                      columns={[
-                        { title: '资源', render: (_value, item) => `${item.kind}/${item.name}` },
-                        { title: '命名空间', dataIndex: 'namespace' },
-                        {
-                          title: '健康状态',
-                          dataIndex: 'health',
-                          render: (value: string) => <StatusTag value={value || 'unknown'} />,
-                        },
-                      ]}
+                      columns={
+                        [
+                          { title: '资源', render: (_value, item) => `${item.kind}/${item.name}` },
+                          { title: '命名空间', dataIndex: 'namespace' },
+                          {
+                            title: '健康状态',
+                            dataIndex: 'health',
+                            render: (value: string) => <StatusTag value={value || 'unknown'} />,
+                          },
+                        ] satisfies TableColumnsType<ManifestResourceInventory>
+                      }
                     />
                   ),
                 },
@@ -388,25 +429,29 @@ export function PlatformManifestsPage() {
                   key: 'diff',
                   label: `差异 (${selectedDiff.length})`,
                   children: (
-                    <Table<ManifestDiffRow>
-                      size="small"
+                    <AdminTable
+                      enableColumnSelection={false}
+                      scroll={{ x: 680, y: 520 }}
+                      tableSize="small"
                       pagination={false}
                       rowKey="key"
                       dataSource={selectedDiff}
-                      columns={[
-                        { title: '资源', dataIndex: 'resource' },
-                        { title: '字段', dataIndex: 'path' },
-                        {
-                          title: '期望值',
-                          dataIndex: 'desiredValue',
-                          render: formatManifestValue,
-                        },
-                        {
-                          title: '实际值',
-                          dataIndex: 'observedValue',
-                          render: formatManifestValue,
-                        },
-                      ]}
+                      columns={
+                        [
+                          { title: '资源', dataIndex: 'resource' },
+                          { title: '字段', dataIndex: 'path' },
+                          {
+                            title: '期望值',
+                            dataIndex: 'desiredValue',
+                            render: formatManifestValue,
+                          },
+                          {
+                            title: '实际值',
+                            dataIndex: 'observedValue',
+                            render: formatManifestValue,
+                          },
+                        ] satisfies TableColumnsType<ManifestDiffRow>
+                      }
                     />
                   ),
                 },

@@ -63,7 +63,8 @@ vi.mock('@/i18n', async (importOriginal) => ({
   }),
 }))
 
-vi.mock('@/components/status-tag', () => ({
+vi.mock('@/components/status-tag', async (original) => ({
+  ...(await original<typeof import('@/components/status-tag')>()),
   BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
 }))
 
@@ -292,7 +293,7 @@ describe('platform access-control leaf pages', () => {
     expect(requestedPaths()).toEqual([
       '/clusters/cluster-a/access-control/roles/reader/detail?namespace=team-a',
     ])
-    await clickTab(container, '关联关系')
+    await clickTab(container, '关联资源')
     expect(container.textContent).toContain('RoleBinding team-a/reader-binding')
     expect(requestedPaths()).toContain(
       '/clusters/cluster-a/access-control/rolebindings?namespace=team-a',
@@ -328,7 +329,7 @@ describe('platform access-control leaf pages', () => {
       '/platform-access-control/serviceaccounts/builder',
       '/platform-access-control/serviceaccounts/:name',
     )
-    await clickTab(container, '关联关系')
+    await clickTab(container, '关联资源')
 
     expect(container.textContent).toContain('RoleBinding team-a/builder-role')
     expect(container.textContent).toContain('ClusterRoleBinding builder-cluster-role')

@@ -378,7 +378,7 @@ describe('configuration leaf pages', () => {
     expect(requestedPaths()).toEqual([
       '/clusters/cluster-a/configuration/configmaps/app-config/detail?namespace=team-a',
     ])
-    await clickTab(container, '关联关系')
+    await clickTab(container, '关联资源')
     expect(requestedPaths().some((path) => path.includes('/references?namespace=team-a'))).toBe(
       true,
     )

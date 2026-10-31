@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 /** @vitest-environment jsdom */
 
 import { act, type ReactNode } from 'react'
@@ -26,14 +27,25 @@ const testDetail = vi.hoisted(() => ({
 
 vi.mock('@/i18n', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/i18n')>()),
-  useI18n: () => ({ localeCode: 'en_US' as const }),
+  useI18n: () => ({
+    localeCode: 'en_US' as const,
+    t: (_key: string, fallback?: string) => fallback ?? _key,
+  }),
 }))
 vi.mock('@/stores/platform-scope-store', () => ({
   usePlatformScopeStore: () => ({ clusterId: 'cluster-a' }),
 }))
 vi.mock('@/features/platform/workloads/shared/workload-relations', () => ({
   WorkloadRelationsCard: () => null,
+  WorkloadPodsCard: () => null,
 }))
+vi.mock('@/features/auth', async (original) => ({
+  ...(await original<typeof import('@/features/auth')>()),
+  usePermissionSnapshot: () => ({
+    data: { data: { permissionKeys: ['platform.workloads.jobs.view'] } },
+  }),
+}))
+
 vi.mock('@/features/platform/workloads/shared/detail-shell', () => ({
   WorkloadDetailShell: ({
     extraOverview,
@@ -66,17 +78,24 @@ describe('CronJobDetailPage', () => {
 
     await act(async () => {
       root.render(
-        <MemoryRouter>
-          <CronJobDetailPage />
-        </MemoryRouter>,
+        <QueryClientProvider
+          client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+        >
+          <MemoryRouter>
+            <CronJobDetailPage />
+          </MemoryRouter>
+        </QueryClientProvider>,
       )
     })
 
-    expect(container.querySelectorAll('.soha-related-pod-item')).toHaveLength(1)
+    expect(container.querySelector('.ant-pagination')).toBeNull()
+    expect(container.querySelector('a')?.getAttribute('href')).toContain(
+      '/workloads/jobs/nightly-report-123?',
+    )
     expect(container.textContent).toContain('nightly-report-123')
-    expect(container.textContent).toContain('Succeeded 1')
-    expect(container.textContent).toContain('Failed 0')
-    expect(container.textContent).toContain('Active 0')
+    expect(container.textContent).toContain('Succeeded')
+    expect(container.textContent).toContain('Failed')
+    expect(container.textContent).toContain('Active')
 
     await act(async () => root.unmount())
   })
