@@ -54,6 +54,37 @@ function fixture(): KubernetesResourceGraph {
   }
 }
 describe('Pod detail relationship composition', () => {
+  it('uses an explicit direct owner from Pod detail when graph collection omits the controller', () => {
+    const owner = {
+      kind: 'StatefulSet',
+      name: 'database',
+      namespace: 'team-a',
+      relations: ['owner'],
+    }
+    expect(
+      buildPodRelationships({ ...pod, relatedResources: [owner] }, 'cluster-a').ancestors,
+    ).toMatchObject([
+      { resource: { kind: 'StatefulSet', name: 'database' }, evidence: 'pod-related-resources' },
+    ])
+    expect(
+      buildPodRelationships(
+        { ...pod, relatedResources: [{ ...owner, namespace: undefined }] },
+        'cluster-a',
+      ).ancestors[0].resource.namespace,
+    ).toBe('team-a')
+    expect(
+      buildPodRelationships(
+        { ...pod, relatedResources: [{ ...owner, relations: ['selected-by'] }] },
+        'cluster-a',
+      ).ancestors,
+    ).toEqual([])
+    expect(
+      buildPodRelationships(
+        { ...pod, relatedResources: [{ ...owner, namespace: 'other-team' }] },
+        'cluster-a',
+      ).ancestors,
+    ).toEqual([])
+  })
   it('uses the actual owner chain and supplements scheduled node and service account from Pod fields', () => {
     const graph = fixture()
     const model = buildPodRelationships(pod, 'cluster-a', graph)

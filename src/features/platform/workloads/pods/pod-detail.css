@@ -38,19 +38,6 @@
   outline: 2px solid var(--soha-primary);
   outline-offset: 3px;
 }
-.soha-pod-detail-overview-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 20px;
-  align-items: start;
-}
-.soha-pod-detail-overview-main,
-.soha-pod-detail-overview-aside {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
 .soha-pod-detail-card {
   border-radius: var(--soha-radius-panel);
   overflow: hidden;
@@ -140,27 +127,6 @@
 .soha-pod-detail-condition-summary .is-warning > .anticon {
   color: var(--soha-warning);
 }
-.soha-pod-detail-metadata {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.soha-pod-detail-metadata > div {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(0, 1fr);
-  gap: 12px;
-}
-.soha-pod-detail-metadata dt {
-  color: var(--soha-text-secondary);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.soha-pod-detail-metadata dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
 .soha-pod-detail-usage {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -231,10 +197,6 @@
   min-height: 0;
 }
 @media (max-width: 1399px) {
-  .soha-pod-detail-overview-grid {
-    grid-template-columns: minmax(0, 1fr) 270px;
-    gap: 16px;
-  }
   .soha-pod-detail-container-label {
     gap: 8px;
   }
@@ -242,23 +204,7 @@
     min-width: 100px;
   }
 }
-@media (max-width: 1279px) {
-  .soha-pod-detail-overview-grid {
-    grid-template-columns: 1fr;
-  }
-  .soha-pod-detail-overview-aside {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-}
 @media (max-width: 760px) {
-  .soha-pod-detail-overview-aside {
-    display: flex;
-  }
-  .soha-pod-detail-metadata > div {
-    grid-template-columns: 1fr;
-    gap: 3px;
-  }
   .soha-pod-detail-condition-summary {
     gap: 12px;
   }
@@ -267,9 +213,6 @@
   }
   .soha-pod-detail-container-label > strong {
     min-width: 0;
-  }
-  .soha-pod-detail-container-label > .ant-typography {
-    display: none;
   }
 }
 .soha-pod-detail.is-tab-logs .soha-log-card {
@@ -519,4 +462,24 @@
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+.soha-pod-storage-source,
+.soha-pod-storage-mounts,
+.soha-pod-storage-mounts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.soha-pod-storage-mounts {
+  gap: 12px;
+}
+.soha-pod-storage-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.soha-pod-storage-container strong {
+  font-weight: 500;
 }

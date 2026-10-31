@@ -1,9 +1,13 @@
-import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
-import { ReadFeedback } from '@/components/request-feedback'
+import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import { PodDetailEvents } from './pod-detail-events'
-import { PodContainerSquare, PodDetailOverview } from './pod-detail-overview'
+import {
+  PodContainerSquare,
+  PodDetailOverview,
+  podContainerTerminated,
+} from './pod-detail-overview'
 import { PodResourceCell } from './pod-resource-cell'
+import { PodDetailStorage } from './pod-detail-storage'
 import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import './pod-detail.css'
 import { StatusTag } from '@/components/status-tag'
@@ -11,29 +15,24 @@ import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/featur
 import { useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { useRealtimeSessionDock } from '@/features/platform/session-dock'
-import {
-  buildRelatedResourcePath,
-  buildVolumeDetailPath,
-  formatVolumeTypeLabel,
-} from '@/features/platform/workloads-model'
+import { buildRelatedResourcePath } from '@/features/platform/workloads-model'
 import '@/features/platform/workloads/styles.css'
 import { useI18n } from '@/i18n'
-import type { PodVolume, PodVolumeMount } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatRelativeTime } from '@/utils/time'
 import { WorkloadDetailHeader } from '../shared/workload-detail-header'
 import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import { CodeOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import type { TableColumnsType, TabsProps } from 'antd'
-import { Button, Card, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd'
+import type { TabsProps } from 'antd'
+import { Button, Card, Select, Space, Spin, Tooltip, Typography } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkloadDetailScope } from '../shared/detail-scope'
 import { WorkloadDetailShell } from '../shared/detail-shell'
 import { podQueries } from './queries'
 
-const { Link, Text } = Typography
+const { Text } = Typography
 
 const PodLogViewer = lazy(async () => {
   const mod = await import('@/components/pod-log-viewer')
@@ -54,65 +53,6 @@ const PodDetailResources = lazy(async () => {
   const mod = await import('./pod-detail-resources')
   return { default: mod.PodDetailResources }
 })
-
-/* ─── shared helpers ─── */
-
-function renderVolumeMounts(mounts: PodVolumeMount[] | undefined) {
-  if (!mounts || mounts.length === 0) {
-    return <Text type="secondary">N/A</Text>
-  }
-  return (
-    <div className="soha-volume-mount-list">
-      {mounts.map((mount) => (
-        <div
-          key={`${mount.name}:${mount.mountPath}:${mount.subPath || '-'}`}
-          className="soha-volume-mount-item"
-        >
-          <Text className="soha-volume-mount-name">{mount.name}</Text>
-          <Text type="secondary" className="soha-volume-mount-path">
-            {mount.subPath ? `${mount.mountPath} (${mount.subPath})` : mount.mountPath}
-          </Text>
-          {mount.readOnly ? <Tag className="soha-volume-mount-badge">RO</Tag> : null}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function summarizeVolumeDetail(volume: PodVolume, localeCode: 'zh_CN' | 'en_US') {
-  if (volume.sourceName && ['ConfigMap', 'Secret', 'PersistentVolumeClaim'].includes(volume.type)) {
-    return volume.sourceName
-  }
-  const preferredDetail =
-    (volume.details ?? []).find(
-      (item) =>
-        item.startsWith('Sources:') || item.startsWith('Medium:') || item.startsWith('SizeLimit:'),
-    ) ?? volume.details?.[0]
-  return preferredDetail || (localeCode === 'zh_CN' ? '无' : 'N/A')
-}
-
-function renderVolumeDetail(
-  volume: PodVolume,
-  localeCode: 'zh_CN' | 'en_US',
-  detailNamespace: string | null,
-  navigate: ReturnType<typeof useNavigate>,
-  clusterId: string | null,
-) {
-  const targetPath = buildVolumeDetailPath(volume, detailNamespace, clusterId)
-  const summary = summarizeVolumeDetail(volume, localeCode)
-  if (!targetPath) {
-    return (
-      <Text type="secondary" className="soha-volume-detail-value">
-        {summary}
-      </Text>
-    )
-  }
-  return (
-    <Link className="soha-volume-detail-link" onClick={() => navigate(targetPath)}>
-      {summary}
-    </Link>
-  )
-}
 
 export function PodDetailPage() {
   const { localeCode } = useI18n()
@@ -221,6 +161,13 @@ export function PodDetailPage() {
     Boolean(podEventsQueryOptions.enabled) && activeTabKey === 'events'
       ? readableQueryData(podEventsQuery)
       : undefined
+  useInlineApiError(
+    activeTabKey === 'metrics'
+      ? podMetricsQuery.error
+      : activeTabKey === 'events'
+        ? podEventsQuery.error
+        : null,
+  )
 
   const containerOptions = useMemo(
     () =>
@@ -245,9 +192,13 @@ export function PodDetailPage() {
     setTerminalConnection('')
   }, [identity])
   useEffect(() => {
-    if (activeTabKey !== 'terminal') setTerminalConnection('')
-  }, [activeTabKey])
+    setTerminalConnection('')
+  }, [activeTabKey, connectionKey])
   const podDetail = visiblePodDetailQueryData
+  const selectedContainer = podDetail?.containers?.find((item) => item.name === container)
+  const containerTerminated = Boolean(
+    selectedContainer && podContainerTerminated(selectedContainer),
+  )
   const logsAllowedByPolicy = hasAllowedAction(podDetail?.allowedActions, 'logs')
   const logsDisabled =
     podLogsCapability.isLoading || podLogsCapability.disabled || !logsAllowedByPolicy
@@ -276,6 +227,10 @@ export function PodDetailPage() {
           ? '当前环境或资源范围不允许打开 Pod 终端。'
           : 'Pod terminal access is not allowed in the current environment or resource scope.'
 
+  useEffect(() => {
+    if (terminalDisabled || containerTerminated) setTerminalConnection('')
+  }, [terminalDisabled, containerTerminated])
+
   function openLogSession() {
     if (!clusterId || !detailNamespace || !canViewPodLogs || logsDisabled) return
     openSession({
@@ -289,13 +244,7 @@ export function PodDetailPage() {
   }
 
   function openTerminalSession() {
-    if (
-      !clusterId ||
-      !detailNamespace ||
-      !canExecPod ||
-      terminalDisabled ||
-      podDetail?.containers?.find((item) => item.name === container)?.state === 'terminated'
-    )
+    if (!clusterId || !detailNamespace || !canExecPod || terminalDisabled || containerTerminated)
       return
     openSession({
       clusterId,
@@ -342,44 +291,6 @@ export function PodDetailPage() {
     }
   }, [podDetail])
 
-  const volumeColumns: TableColumnsType<PodVolume> = [
-    {
-      title: localeCode === 'zh_CN' ? '卷名' : 'Volume',
-      dataIndex: 'name',
-      width: 220,
-      render: (value: string, record: PodVolume) => {
-        const targetPath = buildVolumeDetailPath(record, detailNamespace, clusterId)
-        if (!targetPath) {
-          return <Text className="soha-volume-name-text">{value}</Text>
-        }
-        return (
-          <Link className="soha-volume-name-link" onClick={() => navigate(targetPath)}>
-            {value}
-          </Link>
-        )
-      },
-    },
-    {
-      title: 'Type',
-      dataIndex: 'type',
-      width: 130,
-      render: (value: string) => (
-        <Tag className="soha-volume-type-tag">{formatVolumeTypeLabel(value)}</Tag>
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '详情' : 'Details',
-      width: 300,
-      render: (_: unknown, record: PodVolume) =>
-        renderVolumeDetail(record, localeCode, detailNamespace, navigate, clusterId),
-    },
-    {
-      title: localeCode === 'zh_CN' ? 'Volume Mounts' : 'Volume Mounts',
-      dataIndex: 'volumeMounts',
-      render: (value?: PodVolumeMount[]) => renderVolumeMounts(value),
-    },
-  ]
-
   const nodeLink =
     podDetail?.nodeName &&
     !['-', '—'].includes(podDetail.nodeName) &&
@@ -402,7 +313,15 @@ export function PodDetailPage() {
     podDetail?.namespace || detailNamespace || '—'
   )
   const owner = podRelatedResources.find((item) =>
-    ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'ReplicaSet'].includes(item.kind),
+    [
+      'Deployment',
+      'StatefulSet',
+      'DaemonSet',
+      'Job',
+      'CronJob',
+      'ReplicaSet',
+      'ReplicationController',
+    ].includes(item.kind),
   )
   const ownerPath = owner ? buildRelatedResourcePath(owner, detailNamespace, clusterId) : null
   const account = podRelatedResources.find(
@@ -451,7 +370,7 @@ export function PodDetailPage() {
       onEvents={() => setActiveTabKey('events')}
       metrics={
         <Card
-          className="soha-pod-detail-card"
+          className="soha-detail-card soha-pod-detail-card"
           title={localeCode === 'zh_CN' ? '资源使用' : 'Resource usage'}
           extra={
             <Button type="link" size="small" onClick={() => setActiveTabKey('metrics')}>
@@ -459,6 +378,16 @@ export function PodDetailPage() {
             </Button>
           }
         >
+          <ReadFeedback
+            canRead={podMetricsQuery.isEnabled}
+            query={podMetricsQuery}
+            label="Pod 指标"
+          />
+          {visiblePodMetricsQueryData?.configured === false && (
+            <Text type="secondary">
+              {localeCode === 'zh_CN' ? '尚未接入监控' : 'Monitoring is not configured'}
+            </Text>
+          )}
           <div className="soha-pod-detail-usage">
             {(['cpu', 'memory'] as const).map((resource) => (
               <div key={resource}>
@@ -482,6 +411,7 @@ export function PodDetailPage() {
           <ResourceMetricsPanel
             data={visiblePodMetricsQueryData}
             loading={podMetricsQuery.isLoading}
+            refreshing={podMetricsQuery.isFetching}
             rangeMinutes={metricsRangeMinutes}
             onRangeChange={setMetricsRangeMinutes}
             errorMessage={
@@ -519,24 +449,12 @@ export function PodDetailPage() {
     key: 'volumes',
     label: localeCode === 'zh_CN' ? '存储与挂载' : 'Storage and mounts',
     children: (
-      <Card className="soha-detail-card">
-        <AdminTable
-          className="soha-pod-volumes-table"
-          shellClassName="soha-management-table-shell"
-          columns={volumeColumns}
-          dataSource={podVolumes}
-          rowKey={(record) => record.name}
-          pagination={false}
-          enableColumnSelection={false}
-          empty={
-            <ManagementState
-              bordered={false}
-              compact
-              title={localeCode === 'zh_CN' ? '当前 Pod 没有关联卷' : 'No pod volumes found'}
-            />
-          }
-        />
-      </Card>
+      <PodDetailStorage
+        volumes={podVolumes}
+        namespace={detailNamespace}
+        clusterId={clusterId}
+        zh={localeCode === 'zh_CN'}
+      />
     ),
   }
 
@@ -604,17 +522,17 @@ export function PodDetailPage() {
     ),
     disabled: logsDisabled,
     children:
-      activeTabKey !== 'logs' ? null : logDock ? (
-        dockNotice('logs', logDock.id)
-      ) : podLogsCapability.isLoading ? (
+      activeTabKey !== 'logs' ? null : podLogsCapability.isLoading ? (
         <ManagementState compact kind="loading" />
-      ) : podLogsCapability.disabled ? (
+      ) : logsDisabled ? (
         <ManagementState
           compact
           kind="unsupported"
-          title={localeCode === 'zh_CN' ? '当前集群不支持 Pod 日志' : 'Pod logs are not supported'}
-          description={podLogsCapability.reason}
+          title={localeCode === 'zh_CN' ? '当前无法查看日志' : 'Logs unavailable'}
+          description={logsDisabledReason}
         />
+      ) : logDock ? (
+        dockNotice('logs', logDock.id)
       ) : (
         <Suspense fallback={<Spin size="large" />}>
           <PodLogViewer
@@ -653,7 +571,16 @@ export function PodDetailPage() {
     ),
     disabled: terminalDisabled,
     children:
-      activeTabKey !== 'terminal' ? null : terminalDock ? (
+      activeTabKey !== 'terminal' ? null : podExecCapability.isLoading ? (
+        <ManagementState compact kind="loading" />
+      ) : terminalDisabled ? (
+        <ManagementState
+          compact
+          kind="unsupported"
+          title={localeCode === 'zh_CN' ? '当前无法连接终端' : 'Terminal unavailable'}
+          description={terminalDisabledReason}
+        />
+      ) : terminalDock ? (
         dockNotice('terminal', terminalDock.id)
       ) : (
         <div className="soha-pod-detail-terminal">
@@ -683,15 +610,12 @@ export function PodDetailPage() {
               icon={<CodeOutlined />}
               size="small"
               onClick={openTerminalSession}
-              disabled={
-                podDetail?.containers?.find((item) => item.name === container)?.state ===
-                'terminated'
-              }
+              disabled={containerTerminated}
             >
               {localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'}
             </Button>
           </div>
-          {terminalConnection === connectionKey ? (
+          {terminalConnection === connectionKey && !containerTerminated ? (
             <Suspense fallback={<Spin />}>
               <PodTerminal
                 clusterId={clusterId}
@@ -713,12 +637,7 @@ export function PodDetailPage() {
               actions={
                 <Button
                   type="primary"
-                  disabled={
-                    terminalDisabled ||
-                    !container ||
-                    podDetail?.containers?.find((item) => item.name === container)?.state ===
-                      'terminated'
-                  }
+                  disabled={terminalDisabled || !container || containerTerminated}
                   onClick={() => setTerminalConnection(connectionKey)}
                 >
                   {localeCode === 'zh_CN' ? '连接终端' : 'Connect'}
@@ -821,8 +740,6 @@ export function PodDetailPage() {
 
   return (
     <div className={`soha-pod-detail is-tab-${activeTabKey}`}>
-      <ReadFeedback canRead={podDetailQuery.isEnabled} query={podDetailQuery} label="Pod 详情" />
-      <ReadFeedback canRead={podMetricsQuery.isEnabled} query={podMetricsQuery} label="Pod 指标" />
       <WorkloadDetailShell
         title="Pod"
         resource="pods"

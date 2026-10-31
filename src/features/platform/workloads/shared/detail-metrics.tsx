@@ -19,6 +19,7 @@ export function podMetricLatest(series: MetricSeries | undefined) {
 export function WorkloadDetailMetrics({
   data,
   loading,
+  refreshing,
   errorMessage,
   rangeMinutes,
   onRangeChange,
@@ -31,6 +32,7 @@ export function WorkloadDetailMetrics({
 }: {
   data?: ResourceMetrics
   loading?: boolean
+  refreshing?: boolean
   errorMessage?: string
   rangeMinutes: number
   onRangeChange: (value: number) => void
@@ -109,7 +111,7 @@ export function WorkloadDetailMetrics({
             {scopeDescription}
           </Typography.Text>
         )}
-        {mode === 'workload' && data?.source && (
+        {data?.source && (
           <Typography.Text type="secondary" title={data.generatedAt}>
             {data.source === 'prometheus' ? 'Prometheus' : data.source}
           </Typography.Text>
@@ -125,15 +127,13 @@ export function WorkloadDetailMetrics({
             { value: 1440, label: zh ? '24 小时' : '24 hours' },
           ]}
         />
-        {scopeDescription && (
-          <Button
-            type="text"
-            icon={<ReloadOutlined />}
-            loading={loading}
-            aria-label={zh ? '刷新指标' : 'Refresh metrics'}
-            onClick={onRefresh}
-          />
-        )}
+        <Button
+          type="text"
+          icon={<ReloadOutlined />}
+          loading={refreshing ?? loading}
+          aria-label={zh ? '刷新指标' : 'Refresh metrics'}
+          onClick={onRefresh}
+        />
       </div>
       {problem ? (
         <ManagementState

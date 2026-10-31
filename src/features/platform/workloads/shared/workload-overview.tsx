@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Collapse } from 'antd'
+import { Collapse, Typography } from 'antd'
 import { useI18n } from '@/i18n'
 import './workload-overview.css'
 
@@ -78,9 +78,11 @@ export function WorkloadOverviewConfiguration({
 export function WorkloadOverviewMetadata({
   labels,
   annotations,
+  copyable = false,
 }: {
   labels?: Record<string, string>
   annotations?: Record<string, string>
+  copyable?: boolean
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
@@ -98,7 +100,7 @@ export function WorkloadOverviewMetadata({
             {Object.entries(entries || {}).map(([name, value]) => (
               <div key={name}>
                 <dt>{name}:</dt>
-                <dd>{value}</dd>
+                <dd>{copyable ? <Typography.Text copyable>{value}</Typography.Text> : value}</dd>
               </div>
             ))}
           </dl>

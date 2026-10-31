@@ -92,6 +92,30 @@ export function buildPodRelationships(
     ancestors.unshift({ ...parent, relation: 'owns', evidence: 'resource-graph' })
     child = parent
   }
+  if (!ancestors.length) {
+    const owners = (pod.relatedResources ?? []).filter(
+      (item) =>
+        controllers.has(item.kind) &&
+        validName(item.name) &&
+        (!item.namespace || item.namespace === pod.namespace) &&
+        item.relations?.includes('owner'),
+    )
+    // The detail API supplies actual OwnerReferences for controllers omitted by the graph.
+    if (owners.length === 1) {
+      const owner = owners[0]
+      ancestors.push({
+        ...make(
+          owner.kind,
+          owner.name,
+          owner.namespace || pod.namespace,
+          'owns',
+          'pod-related-resources',
+        ),
+        details: owner.details,
+        relations: owner.relations,
+      })
+    }
+  }
   const references = new Map<string, PodRelationNode>()
   for (const edge of graph?.edges ?? []) {
     if (!graphRoot || ![edge.sourceId, edge.targetId].includes(graphRoot.id)) continue
