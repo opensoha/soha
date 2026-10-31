@@ -1,4 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useId, useLayoutEffect, useMemo, useRef } from 'react'
+import type { editor } from 'monaco-editor'
+import { releaseOwnedDiffModels } from './yaml-diff-model-lifecycle'
 import Editor, { DiffEditor, loader, useMonaco } from '@monaco-editor/react'
 import { CloudUploadOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Button, Card, Space, Tag, Typography, theme } from 'antd'
@@ -97,12 +99,22 @@ function YamlDraftDiffEditorContent({
     ensureYamlLanguage(monaco)
   }, [monaco])
 
-  const editorPath = useMemo(() => 'file:///helm-values-draft.yaml', [])
+  const id = useId()
+  const diffEditorRef = useRef<editor.IStandaloneDiffEditor | null>(null)
+  const editorPath = `file:///yaml-compare/${encodeURIComponent(id)}/draft.yaml`
   const diffPaths = useMemo(
     () => ({
-      modified: 'file:///helm-values-runtime.yaml',
-      original: 'file:///helm-values-draft-for-diff.yaml',
+      modified: `file:///yaml-compare/${encodeURIComponent(id)}/runtime.yaml`,
+      original: `file:///yaml-compare/${encodeURIComponent(id)}/original.yaml`,
     }),
+    [id],
+  )
+  // The wrapper otherwise disposes models before its diff widget. Do this in layout cleanup
+  // so the widget is detached before the child wrapper's passive cleanup runs.
+  useLayoutEffect(
+    () => () => {
+      if (diffEditorRef.current) releaseOwnedDiffModels(diffEditorRef.current)
+    },
     [],
   )
   const changed = modified !== original
@@ -198,6 +210,11 @@ function YamlDraftDiffEditorContent({
           </div>
           <div className="soha-yaml-pane-body">
             <DiffEditor
+              onMount={(instance) => {
+                diffEditorRef.current = instance
+              }}
+              keepCurrentOriginalModel
+              keepCurrentModifiedModel
               theme={editorTheme}
               height="100%"
               language="yaml"

@@ -30,6 +30,8 @@ async function setup(
     reads: [] as string[],
     ranges: [] as string[],
     writes: [] as { path: string; body: unknown }[],
+    failTemplate: false,
+    wrongTemplate: false,
     failScale: false,
     failMetrics: false,
     failDelivery: false,
@@ -48,12 +50,16 @@ async function setup(
       const body = baselineResponse(url.pathname)!
       if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
       body.data.permissionKeys = body.data.permissionKeys!.filter(
-        (key) => !key.startsWith('platform.deployment.') && !key.startsWith('delivery.'),
+        (key) =>
+          !key.startsWith('platform.deployment.') &&
+          !key.startsWith('delivery.') &&
+          key !== 'platform.workloads.replica-sets.view',
       )
       body.data.permissionKeys.push(
         'platform.deployment.view',
         'platform.pods.view',
         'platform.nodes.view',
+        ...(options.readonly ? [] : ['platform.workloads.replica-sets.view']),
         'platform.configuration.config-maps.view',
         ...(options.readonly
           ? []
@@ -150,6 +156,45 @@ async function setup(
           })),
         },
       }
+    if (endpoint.match(/\/replicasets\/[^/]+\/yaml$/)) {
+      const name = endpoint.split('/').at(-2)!
+      const revision =
+        name === 'api-new'
+          ? '12'
+          : name === 'api-old'
+            ? '11'
+            : String(12 - Number(name.split('-').at(-1)))
+      if (state.failTemplate)
+        return {
+          status: 503,
+          body: { error: { code: 'unavailable', message: 'Synthetic template unavailable' } },
+        }
+      return {
+        body: {
+          data: {
+            content: `apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: ${name}
+  namespace: ${state.wrongTemplate ? 'other' : 'monitoring'}
+  annotations:
+    deployment.kubernetes.io/revision: "${revision}"
+    kubernetes.io/change-cause: "Upgrade to v${revision}"
+spec:
+  template:
+    metadata:
+      labels:
+        app: api
+        pod-template-hash: ${name}
+    spec:
+      containers:
+        - name: app
+          image: registry/api:v${revision}
+`,
+          },
+        },
+      }
+    }
     if (endpoint === '/clusters/cluster-a/resources/graph')
       return {
         body: {
@@ -397,6 +442,8 @@ test('Deployment metrics keep four cards, range scope and true empty Events', as
   const { state, evidence } = await setup(context, page)
   await page.goto(`${path}&tab=metrics&range=15`)
   await expect(page.locator('.soha-pod-detail-metric-card')).toHaveCount(4)
+  await expect(page.locator('.soha-workload-metric-scope')).toContainText('monitoring / api')
+  await page.getByRole('button', { name: '刷新指标', exact: true }).click()
   await expect(page.locator('.soha-pod-detail-metric-card').first()).toContainText('420 mCPU')
   await expect.poll(() => state.ranges).toContain('15')
   await page
@@ -435,6 +482,14 @@ test('Deployment delivery reads exact binding, selects latest records and preser
     await expect(panel).not.toContainText(`${prefix}-older`)
     await expect(panel).not.toContainText(`${prefix}-unrelated`)
   }
+  await expect(panel.getByRole('link', { name: '绑定的应用', exact: true })).toHaveAttribute(
+    'href',
+    '/applications/app-a',
+  )
+  await expect(panel.getByRole('link', { name: 'builds-latest', exact: true })).toHaveAttribute(
+    'href',
+    '/builds/builds-latest',
+  )
   state.failDelivery = true
   await page.getByRole('button', { name: '刷新 Deployment', exact: true }).click()
   await expect(panel).toContainText('Synthetic builds unavailable')
@@ -548,6 +603,121 @@ test('Deployment readonly and zero-replica states do not fabricate write capabil
       ),
     ),
   ).toBe(false)
+  expect(state.writes).toHaveLength(0)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Deployment revision templates load on demand, compare real retained templates and preserve selection', async ({
+  context,
+  page,
+}) => {
+  page.on('pageerror', (error) => console.log('REVISION_RUNTIME_ERROR', error.message, error.stack))
+  const { state, evidence } = await setup(context, page)
+  await page.goto(`${path}&tab=revisions`)
+  await expect(page.locator('.soha-deployment-history-row')).toHaveCount(8)
+  expect(state.reads.some((item) => item.includes('/replicasets/') && item.endsWith('/yaml'))).toBe(
+    false,
+  )
+  await page.getByRole('button', { name: '查看版本 11 模板与差异', exact: true }).click()
+  const drawer = page.getByRole('dialog')
+  await expect(drawer).toContainText('Upgrade to v11')
+  const panes = drawer.locator('.soha-yaml-pane')
+  await expect(panes.nth(0)).toContainText('registry/api:v11')
+  await expect(panes.nth(1)).toContainText('registry/api:v12')
+  await expect(drawer.getByRole('button', { name: /应用|保存草稿/ })).toHaveCount(0)
+  await expect(drawer).toContainText('对比版本 12')
+  await drawer.getByRole('combobox', { name: '对比版本', exact: true }).click()
+  await page.getByText('版本 10 · api-history-2', { exact: true }).click()
+  await expect(drawer).toContainText('对比版本 10')
+  await expect(panes.nth(1)).toContainText('registry/api:v10')
+  await drawer.getByRole('button', { name: '刷新模板', exact: true }).click()
+  await expect(drawer).toContainText('Upgrade to v11')
+  state.failTemplate = true
+  await drawer.getByRole('button', { name: '刷新模板', exact: true }).click()
+  await expect(drawer).toContainText('Synthetic template unavailable')
+  state.failTemplate = false
+  await drawer.getByRole('button', { name: '重试读取所选版本模板', exact: true }).click()
+  await drawer.getByRole('button', { name: '重试读取对比版本模板', exact: true }).click()
+  await expect(drawer).not.toContainText('Synthetic template unavailable')
+  await expect(drawer).toContainText('Upgrade to v11')
+  await drawer.getByRole('button', { name: /Close|关闭/ }).click()
+  await page.getByLabel('切换到深色模式').click()
+  await page.getByRole('button', { name: '查看版本 11 模板与差异', exact: true }).click()
+  await expect(drawer).toContainText('Upgrade to v11')
+  await page.screenshot({
+    path: '../preview/runtime-private/wl01-deployment/revision-dark-mock.png',
+  })
+  await page.setViewportSize({ width: 320, height: 900 })
+  await expect
+    .poll(() => drawer.evaluate((el) => el.getBoundingClientRect().width))
+    .toBeLessThanOrEqual(320)
+  await drawer.getByRole('button', { name: /Close|关闭/ }).click()
+  expect(state.writes).toHaveLength(0)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Deployment revision templates respect ReplicaSet permission', async ({ context, page }) => {
+  const { state, evidence } = await setup(context, page, { readonly: true })
+  await page.goto(`${path}&tab=revisions`)
+  await page.getByRole('button', { name: '查看版本 11 模板与差异', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('需要 ReplicaSet 查看权限')
+  expect(state.reads.some((item) => item.includes('/replicasets/') && item.endsWith('/yaml'))).toBe(
+    false,
+  )
+  expect(state.writes).toHaveLength(0)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Deployment revision templates reject cross-namespace data', async ({ context, page }) => {
+  const { state, evidence } = await setup(context, page)
+  state.wrongTemplate = true
+  await page.goto(`${path}&tab=revisions`)
+  await page.getByRole('button', { name: '查看版本 11 模板与差异', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('identity or revision does not match')
+  await expect(page.getByRole('dialog')).not.toContainText('Upgrade to v11')
+  expect(state.writes).toHaveLength(0)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Deployment automatic reads preserve an open scale input', async ({ context, page }) => {
+  const { state, evidence } = await setup(context, page)
+  await page.clock.install()
+  await page.goto(path)
+  await page.getByRole('button', { name: '扩缩容', exact: true }).click()
+  const input = page.getByRole('spinbutton', { name: '期望副本数', exact: true })
+  await input.fill('17')
+  const before = state.reads.filter((item) => item.endsWith('/deployments/api/detail')).length
+  await page.clock.fastForward(15_100)
+  await expect
+    .poll(() => state.reads.filter((item) => item.endsWith('/deployments/api/detail')).length)
+    .toBeGreaterThan(before)
+  await expect(input).toHaveValue('17')
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  expect(state.writes).toHaveLength(0)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Deployment refresh preserves an unsaved YAML draft', async ({ context, page }) => {
+  const { state, evidence } = await setup(context, page)
+  await page.goto(`${path}&tab=yaml`)
+  const editor = page.getByRole('textbox', { name: 'YAML 草稿编辑器', exact: true })
+  await expect(page.locator('.soha-k8s-yaml-editor .view-lines:visible').first()).toContainText(
+    'apiVersion',
+  )
+  await editor.press('ControlOrMeta+Home')
+  await editor.pressSequentially('# task117-unsaved-draft')
+  await editor.press('Enter')
+  await expect(page.locator('.soha-k8s-yaml-editor .view-lines:visible').first()).toContainText(
+    'task117-unsaved-draft',
+  )
+  const before = state.reads.filter((item) => item.endsWith('/deployments/api/yaml')).length
+  await page.getByRole('button', { name: '刷新 Deployment', exact: true }).click()
+  await expect
+    .poll(() => state.reads.filter((item) => item.endsWith('/deployments/api/yaml')).length)
+    .toBeGreaterThan(before)
+  await expect(page.locator('.soha-k8s-yaml-editor .view-lines:visible').first()).toContainText(
+    'task117-unsaved-draft',
+  )
   expect(state.writes).toHaveLength(0)
   verifyBrowserEvidence(evidence)
 })

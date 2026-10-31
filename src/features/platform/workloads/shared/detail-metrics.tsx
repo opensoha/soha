@@ -4,7 +4,7 @@ import { formatMetricValue } from '@/components/resource-metrics-format'
 import { useI18n } from '@/i18n'
 import { parseCpuValue, parseMemoryValue } from '@/features/platform/workloads-model'
 import type { MetricSeries, ResourceMetrics, ResourceQuantity } from '@/types'
-import { InfoCircleOutlined } from '@ant-design/icons'
+import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { LineChart } from '@visactor/react-vchart'
 import { Button, Card, Segmented, Tooltip, Typography } from 'antd'
 
@@ -27,6 +27,7 @@ export function WorkloadDetailMetrics({
   onRefresh,
   mode = 'pod',
   emptyDescription,
+  scopeDescription,
 }: {
   data?: ResourceMetrics
   loading?: boolean
@@ -38,6 +39,7 @@ export function WorkloadDetailMetrics({
   onRefresh: () => void
   mode?: 'pod' | 'workload'
   emptyDescription?: string
+  scopeDescription?: string
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
@@ -102,6 +104,11 @@ export function WorkloadDetailMetrics({
       className={`soha-pod-detail-metrics ${mode === 'workload' ? 'soha-workload-detail-metrics' : ''}`}
     >
       <div className="soha-pod-detail-metrics-toolbar">
+        {scopeDescription && (
+          <Typography.Text type="secondary" className="soha-workload-metric-scope">
+            {scopeDescription}
+          </Typography.Text>
+        )}
         {mode === 'workload' && data?.source && (
           <Typography.Text type="secondary" title={data.generatedAt}>
             {data.source === 'prometheus' ? 'Prometheus' : data.source}
@@ -118,6 +125,15 @@ export function WorkloadDetailMetrics({
             { value: 1440, label: zh ? '24 小时' : '24 hours' },
           ]}
         />
+        {scopeDescription && (
+          <Button
+            type="text"
+            icon={<ReloadOutlined />}
+            loading={loading}
+            aria-label={zh ? '刷新指标' : 'Refresh metrics'}
+            onClick={onRefresh}
+          />
+        )}
       </div>
       {problem ? (
         <ManagementState

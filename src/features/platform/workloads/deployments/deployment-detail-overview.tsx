@@ -1,5 +1,5 @@
 import { AdminTable } from '@/components/admin-table'
-import { BooleanTag } from '@/components/status-tag'
+import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import type { DeploymentDetail, DeploymentRolloutStatus, ScopeKey } from '@/types'
 import { formatDateTime } from '@/utils/time'
@@ -14,15 +14,22 @@ import { DeploymentDetailPods } from './deployment-detail-pods'
 import type { buildDeploymentRelationships } from './deployment-detail-model'
 
 export function deploymentDetailState(detail: DeploymentDetail, status?: DeploymentRolloutStatus) {
-  if (detail.desiredReplicas === 0) return 'scaled-to-zero'
-  return (
-    status?.status ||
-    (detail.updatedReplicas < detail.desiredReplicas
-      ? 'progressing'
-      : detail.readyReplicas < detail.desiredReplicas
-        ? 'degraded'
-        : 'ready')
+  const counts = [
+    detail.desiredReplicas,
+    detail.updatedReplicas,
+    detail.readyReplicas,
+    detail.availableReplicas,
+  ]
+  if (!counts.every((value) => Number.isFinite(value) && value >= 0)) return 'unknown'
+  if (detail.desiredReplicas === 0) return detail.pods?.length ? 'progressing' : 'scaled-to-zero'
+  if (status?.status && !['ready', 'healthy'].includes(status.status)) return status.status
+  if (detail.updatedReplicas < detail.desiredReplicas) return 'progressing'
+  if (
+    detail.readyReplicas < detail.desiredReplicas ||
+    detail.availableReplicas < detail.desiredReplicas
   )
+    return 'degraded'
+  return 'healthy'
 }
 export function DeploymentDetailOverview({
   detail,
@@ -39,10 +46,10 @@ export function DeploymentDetailOverview({
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
-  const zero = detail.desiredReplicas === 0
-  const healthy =
-    detail.readyReplicas >= detail.desiredReplicas &&
-    detail.updatedReplicas >= detail.desiredReplicas
+  const state = deploymentDetailState(detail, status)
+  const zero = state === 'scaled-to-zero'
+  const healthy = state === 'healthy'
+  const unknown = state === 'unknown'
   const current = model.sets.find((set) => set.record?.revision === status?.revision)
   return (
     <WorkloadOverview
@@ -96,19 +103,23 @@ export function DeploymentDetailOverview({
     >
       <Alert
         showIcon
-        type={zero ? 'info' : healthy ? 'success' : 'warning'}
+        type={zero || unknown ? 'info' : healthy ? 'success' : 'warning'}
         title={
-          zero
+          unknown
             ? zh
-              ? '已缩容至 0 个副本'
-              : 'Scaled to zero replicas'
-            : healthy
+              ? '副本状态尚不完整'
+              : 'Replica status is incomplete'
+            : zero
               ? zh
-                ? 'Deployment 当前副本已就绪'
-                : 'Deployment replicas are ready'
-              : zh
-                ? 'Deployment 正在更新或仍有副本未就绪'
-                : 'Deployment is updating or replicas are not ready'
+                ? '已缩容至 0 个副本'
+                : 'Scaled to zero replicas'
+              : healthy
+                ? zh
+                  ? 'Deployment 当前副本已就绪'
+                  : 'Deployment replicas are ready'
+                : zh
+                  ? 'Deployment 正在更新或仍有副本未就绪'
+                  : 'Deployment is updating or replicas are not ready'
         }
         description={!healthy && !zero ? status?.message : undefined}
         action={
@@ -159,7 +170,11 @@ export function DeploymentDetailOverview({
         title={zh ? '当前模板' : 'Current template'}
         extra={
           <Typography.Text type="secondary">
-            {detail.containers?.length ?? 0} {zh ? '个容器' : 'containers'}
+            {detail.containers
+              ? `${detail.containers.length} ${zh ? '个容器' : 'containers'}`
+              : zh
+                ? '模板未返回'
+                : 'Template unavailable'}
           </Typography.Text>
         }
       >
@@ -189,17 +204,26 @@ export function DeploymentDetailOverview({
       <Card className="soha-detail-card" title={zh ? '运行条件' : 'Conditions'}>
         <details>
           <summary>
-            {(status?.conditions || detail.conditions)?.map((condition) => (
-              <span key={condition.type}>
-                {condition.type} <BooleanTag value={condition.status === 'True'} />
-              </span>
-            )) || (zh ? '未返回运行条件' : 'No conditions returned')}
+            {(status?.conditions?.length ? status.conditions : detail.conditions)?.map(
+              (condition) => (
+                <span key={condition.type}>
+                  {condition.type}{' '}
+                  {['True', 'False'].includes(condition.status) ? (
+                    <BooleanTag value={condition.status === 'True'} />
+                  ) : (
+                    <StatusTag value={condition.status} />
+                  )}
+                </span>
+              ),
+            )}
+            {!(status?.conditions?.length || detail.conditions?.length) &&
+              (zh ? '未返回运行条件' : 'No conditions returned')}
           </summary>
           <AdminTable
             pagination={false}
             enableColumnSelection={false}
             rowKey="type"
-            dataSource={status?.conditions || detail.conditions || []}
+            dataSource={status?.conditions?.length ? status.conditions : detail.conditions || []}
             columns={[
               { title: zh ? '条件' : 'Condition', dataIndex: 'type', width: 230 },
               { title: zh ? '状态' : 'Status', dataIndex: 'status', width: 100 },

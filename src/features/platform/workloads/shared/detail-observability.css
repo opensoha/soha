@@ -166,3 +166,9 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+
+.soha-workload-metric-scope {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

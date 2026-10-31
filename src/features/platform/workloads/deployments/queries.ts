@@ -1,3 +1,6 @@
+import { getWorkloadYAML } from '../shared/api'
+import { readDeploymentRevisionTemplate } from './deployment-revision-template'
+import { deploymentDetailKeys } from './keys'
 import { queryOptions } from '@tanstack/react-query'
 import type { ScopeKey } from '@/types'
 import { workloadKeys } from '@/features/platform/workloads/shared/keys'
@@ -30,6 +33,15 @@ function hasDeploymentReference(scope: ScopeKey, name: string) {
 }
 
 export const deploymentQueries = {
+  revisionTemplate: (scope: ScopeKey, record: RolloutHistory) =>
+    queryOptions({
+      queryKey: deploymentDetailKeys.revisionTemplate(scope, record.name, record.revision),
+      enabled: hasDeploymentReference(scope, record.name) && record.namespace === scope.namespace,
+      queryFn: async () => {
+        const yaml = await getWorkloadYAML('replicasets', scope, record.name)
+        return readDeploymentRevisionTemplate(yaml.content, record)
+      },
+    }),
   list: (scope: ScopeKey) =>
     queryOptions<Deployment[]>({
       queryKey: workloadKeys.list('deployments', scope),

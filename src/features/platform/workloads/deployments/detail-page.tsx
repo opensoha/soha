@@ -250,6 +250,8 @@ export function DeploymentDetailPage() {
                     historyQuery,
                     graphQuery,
                     ...(active === 'pods' ? [podListQuery] : []),
+                    ...(active === 'metrics' ? [metricsQuery] : []),
+                    ...(active === 'events' ? [eventsQuery] : []),
                   ]}
                   onRefresh={() => {
                     void client.invalidateQueries({
@@ -267,7 +269,11 @@ export function DeploymentDetailPage() {
               <StatusTag
                 value={deploymentDetailState(detail, status)}
                 label={
-                  detail.desiredReplicas === 0 ? (zh ? '已缩容至 0' : 'Scaled to zero') : undefined
+                  deploymentDetailState(detail, status) === 'scaled-to-zero'
+                    ? zh
+                      ? '已缩容至 0'
+                      : 'Scaled to zero'
+                    : undefined
                 }
               />
             }
@@ -318,6 +324,7 @@ export function DeploymentDetailPage() {
               active === 'revisions' ? (
                 <DeploymentDetailHistory
                   key={identity}
+                  scope={scope}
                   records={history || []}
                   currentRevision={status?.revision}
                   loading={historyQuery.isLoading}
@@ -353,6 +360,11 @@ export function DeploymentDetailPage() {
                 <Suspense fallback={<Spin />}>
                   <Metrics
                     mode="workload"
+                    scopeDescription={
+                      zh
+                        ? `Deployment 所属 Pods 聚合 · ${detail.namespace} / ${detail.name}`
+                        : `Aggregate of Deployment Pods · ${detail.namespace} / ${detail.name}`
+                    }
                     data={metrics}
                     rangeMinutes={range}
                     onRangeChange={changeRange}

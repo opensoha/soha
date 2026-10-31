@@ -1,12 +1,17 @@
 import { ManagementState } from '@/components/management-list'
 import { MetadataTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
-import type { RolloutHistory } from '@/types'
+import type { RolloutHistory, ScopeKey } from '@/types'
 import { formatDateTime } from '@/utils/time'
-import { Button, Card, Input, Typography } from 'antd'
-import { useState } from 'react'
+import { Button, Card, Drawer, Input, Spin, Typography } from 'antd'
+import { lazy, Suspense, useState } from 'react'
+
+const Revision = lazy(async () => ({
+  default: (await import('./deployment-detail-revision')).DeploymentDetailRevision,
+}))
 
 export function DeploymentDetailHistory({
+  scope,
   records,
   currentRevision,
   loading,
@@ -16,6 +21,7 @@ export function DeploymentDetailHistory({
   onRollback,
   onRefresh,
 }: {
+  scope: ScopeKey
   records: RolloutHistory[]
   currentRevision?: string
   loading: boolean
@@ -27,6 +33,7 @@ export function DeploymentDetailHistory({
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
+  const [selected, setSelected] = useState<RolloutHistory | null>(null)
   const [search, setSearch] = useState('')
   const [onlyActive, setOnlyActive] = useState(false)
   const sorted = [...records]
@@ -112,6 +119,12 @@ export function DeploymentDetailHistory({
               <Typography.Text type="secondary">
                 {record.createdAt ? formatDateTime(record.createdAt) : '—'}
               </Typography.Text>
+              <Button
+                onClick={() => setSelected(record)}
+                aria-label={`${zh ? '查看版本' : 'View revision'} ${record.revision} ${zh ? '模板与差异' : 'template and differences'}`}
+              >
+                {zh ? '模板与差异' : 'Template and differences'}
+              </Button>
               {canRollback && (
                 <Button
                   disabled={blocked || record.revision === currentRevision}
@@ -144,6 +157,25 @@ export function DeploymentDetailHistory({
           </article>
         ))}
       </div>
+      <Drawer
+        title={`${zh ? '版本' : 'Revision'} ${selected?.revision || ''} · ${zh ? '模板与差异' : 'Template and differences'}`}
+        size="min(1100px, 100vw)"
+        open={Boolean(selected)}
+        onClose={() => setSelected(null)}
+        destroyOnHidden
+      >
+        {selected && (
+          <Suspense fallback={<Spin />}>
+            <Revision
+              key={`${selected.namespace}/${selected.name}/${selected.revision}`}
+              record={selected}
+              records={records}
+              currentRevision={currentRevision}
+              scope={scope}
+            />
+          </Suspense>
+        )}
+      </Drawer>
     </Card>
   )
 }

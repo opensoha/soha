@@ -177,3 +177,8 @@
     padding: 20px 12px;
   }
 }
+
+.soha-deployment-toolbar > .ant-select {
+  flex: 1 1 220px;
+  min-width: 0;
+}

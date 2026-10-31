@@ -9,8 +9,9 @@ import type { ScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import { useQuery } from '@tanstack/react-query'
-import { Card, Typography } from 'antd'
+import { Button, Card, Typography } from 'antd'
 import { useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 
 export function DeploymentDetailDelivery({
   scope,
@@ -130,14 +131,37 @@ export function DeploymentDetailDelivery({
           <Card
             key={binding.id}
             className="soha-detail-card"
-            title={app?.name || binding.applicationId}
-            extra={binding.environmentKey || binding.environmentId}
+            title={
+              <Link to={`/applications/${encodeURIComponent(binding.applicationId)}`}>
+                {app?.name || binding.applicationId}
+              </Link>
+            }
+            extra={
+              <span>
+                {binding.environmentKey || binding.environmentId}{' '}
+                <Button
+                  type="text"
+                  aria-label={zh ? '刷新交付记录' : 'Refresh delivery records'}
+                  loading={
+                    bindings.isFetching ||
+                    applications.isFetching ||
+                    builds.isFetching ||
+                    workflows.isFetching ||
+                    releases.isFetching
+                  }
+                  onClick={() => refresh.current()}
+                >
+                  {zh ? '刷新' : 'Refresh'}
+                </Button>
+              </span>
+            }
           >
             <div className="soha-deployment-delivery-grid">
               {[
                 {
                   label: zh ? '最近应用构建' : 'Latest application build',
                   record: build,
+                  path: '/builds/',
                   allowed: canRead,
                   loading: builds.isLoading,
                   error: builds.isError,
@@ -145,6 +169,7 @@ export function DeploymentDetailDelivery({
                 {
                   label: zh ? '最近工作流' : 'Latest workflow',
                   record: workflow,
+                  path: '/workflows/',
                   allowed: canWorkflow,
                   loading: workflows.isLoading,
                   error: workflows.isError,
@@ -152,18 +177,19 @@ export function DeploymentDetailDelivery({
                 {
                   label: zh ? '最近应用发布' : 'Latest application release',
                   record: release,
+                  path: '/releases/',
                   allowed: canRelease,
                   loading: releases.isLoading,
                   error: releases.isError,
                 },
-              ].map(({ label, record: item, allowed, loading, error }) => {
+              ].map(({ label, record: item, path, allowed, loading, error }) => {
                 return (
                   <article key={label}>
                     <span>{label}</span>
                     {allowed ? (
                       item ? (
                         <>
-                          <strong>{item.id}</strong>
+                          <Link to={`${path}${encodeURIComponent(item.id)}`}>{item.id}</Link>
                           <StatusTag value={item.status} />
                           <Typography.Text type="secondary">
                             {item.createdAt ? formatDateTime(item.createdAt) : '—'}
