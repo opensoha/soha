@@ -70,6 +70,7 @@ const consumers = [
 const args = process.argv.slice(2);
 const requireAll = args.includes("--require-all") || process.env.SOHA_CONSUMER_REQUIRE_ALL === "1";
 const dryRun = args.includes("--dry-run");
+const declaredSDK = args.includes("--declared");
 const listOnly = args.includes("--list");
 const outputPath = valueArg("--out");
 const selected = selectedConsumers(args);
@@ -88,7 +89,8 @@ if (unknown.length > 0) {
 let checked = 0;
 let skipped = 0;
 const results = [];
-for (const consumer of targets) {
+for (const target of targets) {
+  const consumer = declaredSDK ? { ...target, commands: target.commands.filter(([, values]) => !values.includes(contractsTarballPlaceholder)) } : target;
   const dir = resolve(consumerRoot, consumer.path);
   if (!existsSync(dir)) {
     const message = `consumer ${consumer.name} not found at ${dir}`;
@@ -123,8 +125,9 @@ for (const consumer of targets) {
   }
 
   console.log(`checking consumer ${consumer.name} in ${dir}`);
-  const env = consumer.kind === "go" ? await goWorkspaceEnv(dir) : process.env;
-  const packageDir = consumer.kind === "npm" ? await packContracts() : undefined;
+  const env = consumer.kind === "go" ? (declaredSDK ? { ...process.env, GOWORK: "off", GOFLAGS: "-mod=readonly" } : await goWorkspaceEnv(dir)) : process.env;
+  if (declaredSDK && consumer.kind === "go") verifyDeclaredGoSDK(dir, env);
+  const packageDir = consumer.kind === "npm" && !declaredSDK ? await packContracts() : undefined;
   try {
     for (const [command, commandArgs] of consumer.commands) {
       const resolvedArgs = commandArgs.map((arg) =>
@@ -133,7 +136,7 @@ for (const consumer of targets) {
       run(command, resolvedArgs, dir, env);
     }
   } finally {
-    if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1" && env !== process.env && env.GOWORK) {
+    if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1" && !declaredSDK && env !== process.env && env.GOWORK) {
       await rm(dirname(env.GOWORK), { recursive: true, force: true });
     }
     if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1" && packageDir) {
@@ -163,6 +166,7 @@ if (outputPath) {
     `${JSON.stringify(
       {
         schemaVersion: 1,
+        dependencyMode: declaredSDK ? "declared" : "candidate-source",
         contractsVersion: packageVersion(),
         contractsRoot,
         consumerRoot,
@@ -252,4 +256,17 @@ function run(command, args, cwd, env) {
   if (result.status !== 0) {
     throw new Error(`${label} failed with status ${result.status}`);
   }
+}
+
+
+function verifyDeclaredGoSDK(dir, env) {
+  const result = spawnSync("go", ["list", "-m", "-json", "github.com/opensoha/soha-contracts"], { cwd: dir, env, encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`cannot resolve declared contracts module for ${basename(dir)}`);
+  const module = JSON.parse(result.stdout);
+  if (module.Replace || !module.Version) throw new Error(`declared contracts module must have a version and checksum without replacement: ${basename(dir)}`);
+  const downloaded = spawnSync("go", ["mod", "download", "-json", "github.com/opensoha/soha-contracts"], { cwd: dir, env, encoding: "utf8" });
+  if (downloaded.status !== 0) throw new Error(`cannot download declared contracts module for ${basename(dir)}`);
+  const resolved = JSON.parse(downloaded.stdout);
+  if (!resolved.Sum || resolved.Version !== module.Version || (module.Sum && resolved.Sum !== module.Sum)) throw new Error("declared SDK checksum/version mismatch");
+  console.log(`declared SDK: ${resolved.Version} ${resolved.Sum}; GOWORK=off, readonly modules`);
 }

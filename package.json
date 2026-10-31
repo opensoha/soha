@@ -25,7 +25,7 @@
     "release:artifacts": "node scripts/prepare-release-artifacts.mjs",
     "release:verify": "node scripts/prepare-release-artifacts.mjs --verify",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run check:version-sync && npm run check:generated && npm run validate && npm run lint:openapi && npm run check:openapi-breaking && npm run check:openapi-loose-boundaries && npm run check:json-schema-compat && npm run typecheck && go test ./..."
+    "test": "node --test scripts/check-consumer-dependency-mode.checks.mjs && npm run check:version-sync && npm run check:generated && npm run validate && npm run lint:openapi && npm run check:openapi-breaking && npm run check:openapi-loose-boundaries && npm run check:json-schema-compat && npm run typecheck && go test ./..."
   },
   "exports": {
     "./delivery/document.schema.json": "./delivery/document.schema.json",
