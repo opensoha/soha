@@ -57,7 +57,7 @@
 .soha-deployment-detail
   .soha-workload-detail-tabs
   > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
-  padding: 20px 22px;
+  padding: 20px 0;
   min-width: 0;
 }
 .soha-deployment-detail .soha-detail-stack {
@@ -249,7 +249,7 @@
   .soha-deployment-detail
     .soha-workload-detail-tabs
     > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
-    padding: 14px;
+    padding: 14px 0;
   }
   .soha-deployment-delivery-grid {
     display: flex;

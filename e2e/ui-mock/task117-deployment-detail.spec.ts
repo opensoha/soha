@@ -345,6 +345,25 @@ test('Deployment detail connects eight tabs, four header actions, continuous his
   const { state, evidence } = await setup(context, page)
   await page.goto(path)
   await expect(page.getByRole('heading', { name: 'api', exact: true })).toBeVisible()
+  for (const width of [1440, 900, 320]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const header = document.querySelector('.soha-deployment-header')!.getBoundingClientRect()
+          const overview = document
+            .querySelector('.soha-deployment-overview')!
+            .getBoundingClientRect()
+          return {
+            leftAligned: Math.abs(header.left - overview.left) <= 1,
+            rightAligned: Math.abs(header.right - overview.right) <= 1,
+            pageOverflow: document.documentElement.scrollWidth > innerWidth,
+          }
+        }),
+      )
+      .toEqual({ leftAligned: true, rightAligned: true, pageOverflow: false })
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 })
   const actions = page.locator('.soha-deployment-actions')
   await expect(actions.getByRole('button')).toHaveCount(4)
   await expect(actions).not.toContainText('YAML')
