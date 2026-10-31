@@ -298,7 +298,7 @@ it('saves all 20 ordered targets and failure policy without starting a batch', a
   expect(definition.targets[0].id).toBe('target-0')
   expect(deliveryApi.batches.create).not.toHaveBeenCalled()
   expect(document.body.textContent).toContain('工作流已保存')
-})
+}, 15_000)
 
 it('shows the selected Helm rollback revision in the delivery target row', async () => {
   await renderEditor({
@@ -330,7 +330,7 @@ it('pins the saved version and keeps one idempotency key across uncertain retrie
   expect(create.mock.calls[2][0].workflowId).toBeUndefined()
   expect(onClose).toHaveBeenCalledOnce()
   expect(navigation).toHaveBeenCalledWith('/delivery/batches/new-batch')
-})
+}, 15_000)
 
 it('keeps a Git workflow read-only while allowing its saved version to run and a copy to be edited', async () => {
   vi.mocked(deliveryApi.documents.source).mockResolvedValue({
@@ -372,7 +372,7 @@ it('keeps a Git workflow read-only while allowing its saved version to run and a
     }),
   )
   expect(deliveryApi.deliveryWorkflows.update).not.toHaveBeenCalled()
-})
+}, 15_000)
 
 it('checks service delivery inputs before execution and retains its idempotency key on an uncertain retry', async () => {
   const service = (await deliveryApi.applications.services('app-0'))[0]

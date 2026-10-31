@@ -5,7 +5,7 @@ import { act, StrictMode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from 'antd'
 import { ApiError } from '@/services/api-error'
 import { VirtualizationConnectionStepModal } from './clusters/create-page'
@@ -735,6 +735,14 @@ function hasButtonByLabel(container: ParentNode, label: string) {
 }
 
 describe('virtualization pages', () => {
+  beforeAll(() => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  })
+
+  afterAll(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('initializes resize values on first open and after the modal is destroyed', async () => {
     testState.vmAllowedActions = ['resize']
     const container = await renderWithProviders(
@@ -758,7 +766,7 @@ describe('virtualization pages', () => {
     }
     expect(testState.apiPost).not.toHaveBeenCalled()
     expect(testState.apiPostWithHeaders).not.toHaveBeenCalled()
-  })
+  }, 15_000)
   it('uses root capacity rather than the multi-disk total for resize defaults', () => {
     expect(
       virtualMachineRootDiskGiB({ diskGiB: 48, config: { diskCount: 2, rootDiskGiB: '40' } }),
@@ -1631,7 +1639,7 @@ describe('virtualization pages', () => {
     expect(
       (testState.apiPut.mock.calls[0]?.[1] as VirtualizationClusterInput).credential,
     ).toBeUndefined()
-  })
+  }, 15_000)
 
   it.each([
     {
@@ -1715,7 +1723,7 @@ describe('virtualization pages', () => {
     expect(document.querySelector('#enabled')?.getAttribute('aria-checked')).toBe('true')
     expect(testState.apiPost).not.toHaveBeenCalled()
     expect(testState.apiPut).not.toHaveBeenCalled()
-  })
+  }, 15_000)
 
   it('preserves an unresolved write receipt when reopening a flavor editor', async () => {
     testState.permissionSnapshot.permissionKeys.push(

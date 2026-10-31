@@ -1,3 +1,4 @@
+import { ManagementProofAction } from './management-proof'
 import { ManagementDataPage } from '@/components/management-data-page'
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
 import { operationModalStyles } from '@/components/modal-styles'
@@ -12,6 +13,8 @@ import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined } from '@ant-de
 import type {
   EndpointDevice,
   EndpointDeviceInput,
+  EndpointDeviceManagementState,
+  NetworkDeviceGovernanceMode,
   EndpointDeviceOwnershipType,
   EndpointDevicePostureStatus,
   EndpointDeviceStatus,
@@ -55,6 +58,7 @@ import {
   EndpointDeviceDetailDrawer,
   endpointDeviceTypeLabel,
   endpointOwnershipLabel,
+  endpointManagementLabel,
 } from './device-detail-drawer'
 import { NetworkEnrollmentPane } from './enrollment-pane'
 import { NetworkMihomoPane } from './mihomo-pane'
@@ -65,6 +69,7 @@ import {
   NetworkSiteProfileBindingsPane,
 } from './nac-pane'
 import { NetworkPolicyPane } from './policy-pane'
+import { NetworkWorkloadsPane } from './workloads-pane'
 import { networkAccessQueries } from './queries'
 import { TablePane } from './table-pane'
 import {
@@ -113,6 +118,9 @@ interface EditorValues {
   mtu?: number
   name: string
   ownershipType?: EndpointDeviceOwnershipType
+  managementState?: EndpointDeviceManagementState
+  managementIssuerKey?: string
+  deviceGovernance?: NetworkDeviceGovernanceMode
   overlayCidr?: string
   pathMode?: NetworkPathMode
   persistentKeepaliveSeconds?: number
@@ -306,6 +314,7 @@ export function NetworkAccessPage() {
         name: next.record.name,
         deviceType: next.record.deviceType,
         ownershipType: next.record.ownershipType,
+        managementState: next.record.managementState ?? 'unknown',
         siteId: next.record.siteId,
         status: next.record.status,
         postureStatus: next.record.postureStatus,
@@ -313,7 +322,11 @@ export function NetworkAccessPage() {
       return
     }
     if (next.kind === 'site') {
-      editorForm.setFieldsValue(next.record ?? { name: '', status: 'active' })
+      editorForm.setFieldsValue({
+        ...(next.record ?? { name: '', status: 'active' as const }),
+        deviceGovernance: next.record?.deviceGovernance ?? 'legacy',
+        managementIssuerKey: next.record?.managementIssuerKey ?? '',
+      })
       return
     }
     if (next.kind === 'space') {
@@ -391,12 +404,23 @@ export function NetworkAccessPage() {
         status: values.status as EndpointDeviceStatus,
         ...(values.deviceType ? { deviceType: values.deviceType } : {}),
         ...(values.ownershipType ? { ownershipType: values.ownershipType } : {}),
+        ...(values.managementState &&
+        values.managementState !== (editor.record.managementState ?? 'unknown')
+          ? { managementState: values.managementState }
+          : {}),
         ...(values.postureStatus ? { postureStatus: values.postureStatus } : {}),
         ...(values.siteId?.trim() ? { siteId: values.siteId.trim() } : {}),
       }
       await deviceUpdate.mutateAsync({ deviceId: editor.record.id, input })
     } else if (editor.kind === 'site') {
       const input: NetworkSiteInput = {
+        ...(values.managementIssuerKey?.trim() !== (editor.record?.managementIssuerKey ?? '')
+          ? { managementIssuerKey: values.managementIssuerKey?.trim() ?? '' }
+          : {}),
+        ...(!editor.record ||
+        values.deviceGovernance !== (editor.record.deviceGovernance ?? 'legacy')
+          ? { deviceGovernance: values.deviceGovernance ?? 'legacy' }
+          : {}),
         name: values.name.trim(),
         status: values.status as NetworkSiteStatus,
         ...(values.description?.trim() ? { description: values.description.trim() } : {}),
@@ -507,6 +531,12 @@ export function NetworkAccessPage() {
       render: (value) => <MetadataTag label={endpointOwnershipLabel(value, localeCode)} />,
     },
     {
+      title: t('networkAccess.device.managementState', '受管状态'),
+      dataIndex: 'managementState',
+      width: 120,
+      render: (value) => <MetadataTag label={endpointManagementLabel(value, localeCode)} />,
+    },
+    {
       title: t('networkAccess.device.os', '操作系统'),
       key: 'os',
       width: 170,
@@ -515,6 +545,12 @@ export function NetworkAccessPage() {
         record.platform,
     },
     { title: t('networkAccess.owner', '用户'), dataIndex: 'ownerUserId', width: 220 },
+    {
+      title: t('networkAccess.device.proofExpiry', '可信证明有效期'),
+      dataIndex: 'managementVerifiedUntil',
+      width: 180,
+      render: (value?: string) => (value ? formatDateTime(value) : '—'),
+    },
     {
       title: t('networkAccess.device.lastSeen', '最近活跃'),
       dataIndex: 'lastSeenAt',
@@ -531,6 +567,9 @@ export function NetworkAccessPage() {
             tooltip={t('common.view', '查看')}
             onClick={() => setDeviceDetail(record)}
           />
+          {canUpdateDevices ? (
+            <ManagementProofAction device={record} disabled={operationBlocked} />
+          ) : null}
           {canUpdateDevices ? (
             <ManagementIconButton
               aria-label={t('networkAccess.edit.device', '编辑设备')}
@@ -1107,10 +1146,25 @@ export function NetworkAccessPage() {
       ? {
           key: 'policy',
           children: (
-            <NetworkPolicyPane
-              canCreate={canCreatePolicies}
-              canUpdate={canUpdatePolicies}
-              canDelete={canDeletePolicies}
+            <Tabs
+              items={[
+                {
+                  key: 'policies',
+                  label: t('networkAccess.workloads.policies', '访问策略'),
+                  children: (
+                    <NetworkPolicyPane
+                      canCreate={canCreatePolicies}
+                      canUpdate={canUpdatePolicies}
+                      canDelete={canDeletePolicies}
+                    />
+                  ),
+                },
+                {
+                  key: 'workloads',
+                  label: t('networkAccess.workloads.title', '工作负载绑定'),
+                  children: <NetworkWorkloadsPane canUpdate={canUpdatePolicies} />,
+                },
+              ]}
             />
           ),
         }
@@ -1246,6 +1300,20 @@ export function NetworkAccessPage() {
                   }))}
                 />
               </Form.Item>
+              <Form.Item
+                name="managementState"
+                label={t('networkAccess.device.managementState', '受管状态')}
+                extra={t(
+                  'networkAccess.device.managementHelp',
+                  '管理员分类；设备归属和终端上报不能作为受管证明。',
+                )}
+              >
+                <Select
+                  options={(
+                    ['managed', 'unmanaged', 'unknown'] as EndpointDeviceManagementState[]
+                  ).map((value) => ({ value, label: endpointManagementLabel(value, localeCode) }))}
+                />
+              </Form.Item>
               <Form.Item name="siteId" label={t('networkAccess.siteId', '站点 ID')}>
                 <Input maxLength={128} />
               </Form.Item>
@@ -1285,6 +1353,62 @@ export function NetworkAccessPage() {
                 <Select
                   options={['active', 'disabled'].map((value) => ({ value, label: value }))}
                 />
+              </Form.Item>
+              <Form.Item
+                name="deviceGovernance"
+                label={t('networkAccess.site.deviceGovernance', '设备治理')}
+                extra={t(
+                  'networkAccess.site.governanceHelp',
+                  '启用后可能收窄现有会话；非受管设备仅可按明确策略访问未保护资源级 ZTNA 或受限准入网络。',
+                )}
+              >
+                <Select
+                  options={[
+                    {
+                      value: 'legacy',
+                      label: t('networkAccess.site.governanceLegacy', '兼容模式（治理关闭）'),
+                    },
+                    {
+                      value: 'managed_only',
+                      label: t('networkAccess.site.governanceManaged', '仅受管设备'),
+                    },
+                    {
+                      value: 'verified_managed_only',
+                      label: t('networkAccess.site.governanceVerified', '仅持有有效管理证明的设备'),
+                    },
+                    {
+                      value: 'restricted_unmanaged',
+                      label: t('networkAccess.site.governanceRestricted', '受限非受管访问'),
+                    },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item
+                name="managementIssuerKey"
+                label={t('networkAccess.site.managementIssuerKey', 'MDM 发行者公钥')}
+                extra={t(
+                  'networkAccess.site.managementIssuerHelp',
+                  '仅接受该发行者的短期签名证明；轮换或清空后旧证明失效。人工受管状态不能满足证明模式。',
+                )}
+                dependencies={['deviceGovernance']}
+                rules={[
+                  {
+                    validator: (_, value) =>
+                      editorForm.getFieldValue('deviceGovernance') !== 'verified_managed_only' ||
+                      /^[A-Za-z0-9+/]{43}=$/.test(String(value ?? ''))
+                        ? Promise.resolve()
+                        : Promise.reject(
+                            new Error(
+                              t(
+                                'networkAccess.site.managementIssuerRequired',
+                                '证明模式需要有效的 Ed25519 公钥',
+                              ),
+                            ),
+                          ),
+                  },
+                ]}
+              >
+                <Input maxLength={44} autoComplete="off" />
               </Form.Item>
               <Form.Item name="location" label={t('networkAccess.location', '位置')}>
                 <Input maxLength={200} />

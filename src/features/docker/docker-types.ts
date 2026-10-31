@@ -1,9 +1,12 @@
-import type { OperationState } from '@opensoha/contracts/gen/ts/sohaapi'
+import type { DockerVolumeDLPDecision, OperationState } from '@opensoha/contracts/gen/ts/sohaapi'
 
 export type DockerPayloadPrimitive = string | number | boolean | null
 
 export type DockerPayloadValue =
-  DockerPayloadPrimitive | DockerPayloadMap | DockerPayloadValue[] | undefined
+  | DockerPayloadPrimitive
+  | DockerPayloadMap
+  | DockerPayloadValue[]
+  | undefined
 
 export interface DockerPayloadMap {
   [key: string]: DockerPayloadValue
@@ -226,6 +229,7 @@ export interface DockerProjectVolumeFileList {
 }
 
 export interface DockerProjectVolumeFileContent {
+  dlp?: DockerVolumeDLPDecision
   projectId: string
   serviceName?: string
   target: string

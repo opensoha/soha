@@ -52,6 +52,7 @@ const proxy = {
   observedRevision: 3,
   lastSeenAt: '2026-10-16T01:00:00Z',
   runtimeVersion: '1.0',
+  capabilities: [],
 }
 const provider = {
   id: 'provider-main',

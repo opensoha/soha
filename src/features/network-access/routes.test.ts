@@ -5,6 +5,33 @@ import type { PermissionSnapshot } from '@/types'
 import { networkAccessRoutes } from './routes'
 
 describe('network access routes', () => {
+  it('allows maintenance-only staff into endpoint response with the security workbench entry', () => {
+    const routes = resolveRouteDefinitions(networkAccessRoutes)
+    const snapshot = {
+      permissionKeys: [
+        'workbench.security.view',
+        'network_access.endpoint_response_events.maintenance',
+      ],
+      visibleMenuIds: ['network-access-endpoint-response'],
+      visibleMenus: [],
+    } as PermissionSnapshot
+    for (const id of ['network-access', 'network-access-endpoint-response']) {
+      const route = routes.find(({ meta }) => meta.id === id)!
+      expect(canAccessRoute(route.meta, snapshot)).toBe(true)
+      expect(
+        canAccessRoute(route.meta, { ...snapshot, permissionKeys: ['workbench.security.view'] }),
+      ).toBe(false)
+      expect(
+        canAccessRoute(route.meta, {
+          ...snapshot,
+          permissionKeys: ['network_access.endpoint_response_events.maintenance'],
+        }),
+      ).toBe(false)
+    }
+    const devices = routes.find(({ meta }) => meta.id === 'network-access-devices')!
+    expect(canAccessRoute(devices.meta, snapshot)).toBe(false)
+  })
+
   it('exposes one permission-scoped route per global menu item', () => {
     const routes = resolveRouteDefinitions(networkAccessRoutes)
     expect(routes[0].meta).toMatchObject({
@@ -14,8 +41,22 @@ describe('network access routes', () => {
       workbenchId: 'security',
     })
     expect(
+      routes.find(({ meta }) => meta.id === 'network-access-content-transfers')?.meta
+        .permissionKeysAny,
+    ).toEqual([
+      'network_access.content_transfers.view',
+      'network_access.content_destinations.view',
+      'network_access.content_transfer_events.view',
+    ])
+    expect(
       routes.slice(1).map(({ meta }) => [meta.id, meta.path, meta.menuId, meta.permissionKey]),
     ).toEqual([
+      [
+        'network-access-content-transfers',
+        '/network-access/content-transfers',
+        'network-access-content-transfers',
+        undefined,
+      ],
       [
         'network-access-devices',
         '/network-access/devices',
@@ -64,6 +105,12 @@ describe('network access routes', () => {
         '/network-access/radius-services',
         'network-access-radius-services',
         'network_access.enrollments.view',
+      ],
+      [
+        'network-access-endpoint-response',
+        '/network-access/endpoint-response',
+        'network-access-endpoint-response',
+        undefined,
       ],
       [
         'network-access-site-profile-bindings',

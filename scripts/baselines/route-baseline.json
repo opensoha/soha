@@ -54,14 +54,14 @@
     ]
   },
   "summary": {
-    "runtimePaths": 293,
-    "metadataPaths": 293,
-    "overlappingPaths": 293,
+    "runtimePaths": 295,
+    "metadataPaths": 295,
+    "overlappingPaths": 295,
     "runtimeOnlyPaths": 0,
     "metadataOnlyPaths": 0,
     "inlineJsxPaths": 0,
-    "lazyRouteLoads": 240,
-    "lazySourceModules": 226
+    "lazyRouteLoads": 242,
+    "lazySourceModules": 228
   },
   "paths": {
     "runtime": [
@@ -221,7 +221,9 @@
       "/network",
       "/network-access",
       "/network-access/access-grants",
+      "/network-access/content-transfers",
       "/network-access/devices",
+      "/network-access/endpoint-response",
       "/network-access/enrollments",
       "/network-access/gateways",
       "/network-access/mihomo-profiles",
@@ -516,7 +518,9 @@
       "/network",
       "/network-access",
       "/network-access/access-grants",
+      "/network-access/content-transfers",
       "/network-access/devices",
+      "/network-access/endpoint-response",
       "/network-access/enrollments",
       "/network-access/gateways",
       "/network-access/mihomo-profiles",
@@ -811,7 +815,9 @@
       "/network",
       "/network-access",
       "/network-access/access-grants",
+      "/network-access/content-transfers",
       "/network-access/devices",
+      "/network-access/endpoint-response",
       "/network-access/enrollments",
       "/network-access/gateways",
       "/network-access/mihomo-profiles",
@@ -1606,6 +1612,16 @@
         "source": "@/features/observability/overview/page"
       },
       {
+        "exportName": "network-access-content-transfers:default",
+        "moduleExport": "default",
+        "source": "@/features/network-access/content-transfers/page"
+      },
+      {
+        "exportName": "network-access-endpoint-response:default",
+        "moduleExport": "default",
+        "source": "@/features/network-access/endpoint-response/page"
+      },
+      {
         "exportName": "network-access-nas-bindings:default",
         "moduleExport": "default",
         "source": "@/features/network-access/admission-settings-redirect"
@@ -2244,6 +2260,8 @@
       "@/features/identity/providers/list-page",
       "@/features/identity/software/page",
       "@/features/network-access/admission-settings-redirect",
+      "@/features/network-access/content-transfers/page",
+      "@/features/network-access/endpoint-response/page",
       "@/features/network-access/proxy-runtime/connections-page",
       "@/features/network-access/proxy-runtime/instances-page",
       "@/features/network-access/proxy-runtime/overview-page",
@@ -2478,6 +2496,12 @@
         "network-access-radius-services:default",
         "network-access-ssids:default"
       ],
+      "@/features/network-access/content-transfers/page": [
+        "network-access-content-transfers:default"
+      ],
+      "@/features/network-access/endpoint-response/page": [
+        "network-access-endpoint-response:default"
+      ],
       "@/features/network-access/proxy-runtime/connections-page": [
         "network-access-proxy-connections:default"
       ],
@@ -2711,5 +2735,5 @@
       "@/features/virtualization/virtual-machines/list-page": ["VirtualizationVmsPage"]
     }
   },
-  "generatedAt": "2026-10-23T06:19:02.166Z"
+  "generatedAt": "2026-10-31T07:11:30.049Z"
 }

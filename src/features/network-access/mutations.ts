@@ -1,5 +1,6 @@
 import { mutationOptions, type QueryClient } from '@tanstack/react-query'
 import {
+  putNetworkWorkloadBinding,
   analyzeNetworkAccessConflicts,
   compileNetworkAccessPolicySnapshot,
   createNetworkAccessGrant,
@@ -20,6 +21,7 @@ import {
   deleteNetworkSiteProfileBinding,
   deleteNetworkSpace,
   previewNetworkAccessPolicy,
+  previewNetworkAdmission,
   executeNetworkSessionAction,
   planNetworkSessionAction,
   revokeNetworkRuntimeEnrollment,
@@ -40,6 +42,7 @@ const invalidate = (queryClient: QueryClient) =>
   queryClient.invalidateQueries({ queryKey: networkAccessKeys.all })
 
 export const networkAccessMutations = {
+ workloadBindings:{put:(queryClient:QueryClient)=>mutationOptions({mutationKey:['network-access','workload-bindings','put'],mutationFn:putNetworkWorkloadBinding,onSuccess:()=>invalidate(queryClient)})},
   devices: {
     update: (queryClient: QueryClient) =>
       mutationOptions({
@@ -254,6 +257,11 @@ export const networkAccessMutations = {
       mutationOptions({
         mutationKey: networkAccessMutationKeys.policyPreview,
         mutationFn: previewNetworkAccessPolicy,
+      }),
+    admissionPreview: () =>
+      mutationOptions({
+        mutationKey: networkAccessMutationKeys.admissionPreview,
+        mutationFn: previewNetworkAdmission,
       }),
     analyzeConflicts: () =>
       mutationOptions({

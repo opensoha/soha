@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import {
+  listNetworkWorkloadBindings,
   getNetworkAccessPolicySnapshot,
   getNetworkTelemetrySummary,
   listNetworkAccessGrants,
@@ -33,6 +34,7 @@ import type {
 import { networkAccessKeys } from './keys'
 
 export const networkAccessQueries = {
+ workloadBindings:(enabled=true)=>queryOptions({queryKey:networkAccessKeys.workloadBindings,queryFn:listNetworkWorkloadBindings,enabled}),
   devices: (filters: EndpointDeviceFilters, enabled = true) =>
     queryOptions({
       queryKey: networkAccessKeys.devices.list(filters),

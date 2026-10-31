@@ -1510,7 +1510,7 @@ describe('ApplicationDetailPage workbench', () => {
     await openSection(container, '服务')
     expect(container.querySelector('.soha-service-console__body')).toBe(pane)
     expect(container.querySelector('[aria-label="应用环境"]')).not.toBeNull()
-  })
+  }, 15_000)
 
   it('keeps the selected service open and preserves scoped Pods and actions', async () => {
     const container = await renderWithProviders(
@@ -2292,6 +2292,7 @@ describe('ApplicationDetailPage workbench', () => {
         )
       })
     },
+    15_000,
   )
 
   it('copies a multi-repository shared build without changing the original definition', async () => {

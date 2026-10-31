@@ -16,6 +16,7 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import {
+  Alert,
   Button,
   Divider,
   Form,
@@ -296,6 +297,14 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
       )}
 
       <h1 className="soha-proxy-sr-only">{t('networkAccess.mihomo.pageTitle', '代理隧道')}</h1>
+      <Alert
+        type="info"
+        showIcon
+        description={t(
+          'networkAccess.mihomo.protectionBoundary',
+          '受保护目标优先于直连列表和自选订阅。端点需声明 mihomo-policy-v1 才能运行代理；旧端点停用代理后需升级并重新登记能力。当前仅约束进入 App Mihomo 的流量。',
+        )}
+      />
       <TablePane
         columns={columns}
         items={visibleProfilesData}

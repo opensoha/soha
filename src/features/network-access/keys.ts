@@ -18,6 +18,7 @@ const text = (value?: string) => value?.trim() ?? ''
 
 export const networkAccessKeys = {
   all: ['network-access'] as const,
+  workloadBindings: ['network-access', 'workload-bindings'] as const,
   devices: {
     all: ['network-access', 'devices'] as const,
     list: (filters: EndpointDeviceFilters) =>
@@ -226,6 +227,7 @@ export const networkAccessMutationKeys = {
   policyDelete: ['network-access', 'mutation', 'policy-delete'] as const,
   policyCompile: ['network-access', 'mutation', 'policy-compile'] as const,
   policyPreview: ['network-access', 'mutation', 'policy-preview'] as const,
+  admissionPreview: ['network-access', 'mutation', 'admission-preview'] as const,
   policyConflictAnalysis: ['network-access', 'mutation', 'policy-conflict-analysis'] as const,
   enrollmentCreate: ['network-access', 'mutation', 'enrollment-create'] as const,
   enrollmentRevoke: ['network-access', 'mutation', 'enrollment-revoke'] as const,
@@ -246,6 +248,13 @@ export const vpnKeys = {
   documents: (kind: 'profiles' | 'selection-policies') => ['network-access', 'vpn', kind] as const,
   dashboard: (filters: Record<string, string>) => [...vpnKeys.all, 'dashboard', filters] as const,
   decision: (id: string) => [...vpnKeys.all, 'decision', id] as const,
+  revocation: (id: string) => [...vpnKeys.all, 'revocation', id] as const,
   revisions: (kind: 'profiles' | 'selection-policies', id: string | undefined) =>
     [...vpnKeys.documents(kind), 'revisions', id] as const,
+}
+
+export const endpointControlKeys = {
+  project: (id: string) => ['network-access', 'endpoint-controls', id] as const,
+  detail: (id: string, viewer: string, scope: string) =>
+    [...endpointControlKeys.project(id), viewer, scope] as const,
 }

@@ -14,7 +14,7 @@ import { webcrypto } from 'node:crypto'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemoryPolicy } from '../memory/types'
 import {
   forgetNativeRequest,
@@ -1176,7 +1176,13 @@ function externalAgentRun(events: WorkbenchStreamEvent[], status = 'running'): W
   }
 }
 
-describe('AIWorkbenchPage', () => {
+// Full workbench renders wait for multiple queries and Ant Design effects to settle.
+describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
+  const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollIntoView',
+  )
+
   beforeAll(() => {
     class ResizeObserverMock {
       observe() {}
@@ -1218,6 +1224,20 @@ describe('AIWorkbenchPage', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     vi.stubGlobal('IntersectionObserver', IntersectionObserverMock)
+    // jsdom has no scrolling layout; message navigation is asserted through its state.
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    })
+  })
+
+  afterAll(() => {
+    if (originalScrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView)
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    }
   })
 
   beforeEach(() => {
@@ -1988,7 +2008,34 @@ describe('AIWorkbenchPage', () => {
       background.click()
       await flushAsyncWork()
     })
-    expect(document.body.querySelector('[aria-label="添加文本附件"]')).toBeTruthy()
+    const fileInput = document.body.querySelector<HTMLInputElement>('[aria-label="添加文本附件"]')!
+    let finishParsing!: (buffer: ArrayBuffer) => void
+    const file = new File(['背景'], 'background.txt', { type: 'text/plain' })
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: () => new Promise<ArrayBuffer>((resolve) => (finishParsing = resolve)),
+    })
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+      await flushAsyncWork()
+    })
+    const popup = tools.closest('.ant-popover')!
+    expect(popup.className).not.toMatch(/ant-popover-hidden|ant-zoom-big-leave/)
+    expect(senderInput(container)?.disabled).toBe(true)
+    for (const button of tools.querySelectorAll<HTMLButtonElement>('button')) {
+      expect(button.disabled, button.textContent || button.getAttribute('aria-label') || '').toBe(
+        true,
+      )
+    }
+    expect(fileInput.disabled).toBe(true)
+    await act(async () => {
+      finishParsing(new TextEncoder().encode('背景').buffer)
+      await flushAsyncWork()
+    })
+    expect(container.textContent).toContain('background.txt')
+    expect(senderInput(container)?.disabled).toBe(false)
+    expect(popup.className).not.toMatch(/ant-popover-hidden|ant-zoom-big-leave/)
+    expect(background.disabled).toBe(false)
     expect(senderInput(container)?.value).toBe('保留这份草稿')
     expect(streamWorkbenchMessageMock).not.toHaveBeenCalled()
   })

@@ -2,21 +2,24 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { ReadFeedback } from '@/components/request-feedback'
 
 import { useEffect, useState } from 'react'
-import { DownloadOutlined, FileOutlined, FolderOutlined, ReloadOutlined } from '@ant-design/icons'
+import { FileOutlined, FolderOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Button, Card, Input, Select, Space, Spin, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { ManagementState } from '@/components/management-list'
 import { MetadataTag } from '@/components/status-tag'
 import '@/components/resource-operation-panels.css'
-import { downloadText } from '@/utils/download'
+import { useAuthStore } from '@/stores/auth-store'
+import { usePermissionSnapshot } from '@/features/auth'
+import { VolumeContentPreview } from './volume-content-preview'
 import { dockerQueries } from '../queries'
+import { DockerContentDLP } from '../content-dlp'
+import { DockerDLPActivity } from '../content-dlp-activity'
 import { localeText, useI18n } from '@/i18n'
 import type { DockerProjectVolumeFileEntry } from '../docker-types'
 import { runtimeServiceSelector, type DockerRuntimePanelProps } from './shared'
 import './styles.css'
 
 const { Text } = Typography
-const { TextArea } = Input
 
 export function DockerProjectVolumesPanel({
   enabled,
@@ -28,6 +31,9 @@ export function DockerProjectVolumesPanel({
   onServiceChange,
 }: DockerRuntimePanelProps) {
   const { localeCode } = useI18n()
+  const viewer = useAuthStore((s) => s.user?.userId ?? '')
+  const permissions = usePermissionSnapshot()
+  const permissionScope = JSON.stringify(readableQueryData(permissions)?.data ?? null)
   const [target, setTarget] = useState('')
   const [currentPath, setCurrentPath] = useState('/')
   const [previewPath, setPreviewPath] = useState('')
@@ -46,13 +52,6 @@ export function DockerProjectVolumesPanel({
       canBrowseRuntime && Boolean(target),
     ),
   )
-  const fileQuery = useQuery(
-    dockerQueries.projectVolumeFile(
-      projectId,
-      { serviceName, target, path: previewPath, limitBytes: 262144 },
-      canBrowseRuntime && Boolean(target && previewPath),
-    ),
-  )
 
   useEffect(() => {
     setTarget('')
@@ -67,7 +66,6 @@ export function DockerProjectVolumesPanel({
 
   const selectedVolume = volumes.find((item) => item.target === target)
   const entries = readableQueryData(filesQuery)?.items ?? []
-  const preview = readableQueryData(fileQuery)
   const goParent = () => {
     const clean = currentPath.replace(/\/+$/, '')
     const parent = clean.includes('/') ? clean.slice(0, clean.lastIndexOf('/')) || '/' : '/'
@@ -86,6 +84,7 @@ export function DockerProjectVolumesPanel({
   if (!enabled) {
     return (
       <Card className="soha-detail-card" size="small">
+        <DockerDLPActivity projectId={projectId} />
         <ManagementState
           compact
           kind="no-permission"
@@ -103,6 +102,7 @@ export function DockerProjectVolumesPanel({
   if (serviceOptions.length === 0) {
     return (
       <Card className="soha-detail-card" size="small">
+        <DockerDLPActivity projectId={projectId} />
         <ManagementState
           compact
           kind={servicesLoading ? 'loading' : servicesError ? 'error' : 'empty'}
@@ -186,12 +186,6 @@ export function DockerProjectVolumesPanel({
           label={localeText(localeCode, '卷目录', 'Volume directory')}
         />
       ) : null}
-      {previewPath ? (
-        <ReadFeedback
-          query={fileQuery}
-          label={localeText(localeCode, '文件预览', 'File preview')}
-        />
-      ) : null}
       {!canBrowseRuntime ? (
         <ManagementState
           compact
@@ -268,36 +262,17 @@ export function DockerProjectVolumesPanel({
               )}
             </div>
             <div className="soha-docker-volume-preview">
-              <div className="soha-docker-volume-preview-toolbar">
-                <Text type="secondary">
-                  {fileQuery.isFetching
-                    ? localeText(localeCode, '正在读取文件...', 'Reading file...')
-                    : previewPath ||
-                      localeText(localeCode, '选择文件预览', 'Select a file to preview')}
-                </Text>
-                <Button
-                  disabled={!preview}
-                  icon={<DownloadOutlined />}
-                  size="small"
-                  onClick={() =>
-                    preview &&
-                    downloadText(
-                      preview.path.split('/').pop() || 'volume-file.txt',
-                      preview.content,
-                    )
-                  }
-                >
-                  {localeText(localeCode, '下载', 'Download')}
-                </Button>
-              </div>
-              <TextArea
-                readOnly
-                rows={18}
-                spellCheck={false}
-                value={
-                  preview
-                    ? `${preview.truncated ? localeText(localeCode, '[内容已截断]\n', '[Content truncated]\n') : ''}${preview.content}`
-                    : ''
+              <DockerContentDLP projectId={projectId} />
+              <VolumeContentPreview
+                key={`${projectId}:${serviceName}:${target}:${previewPath}:${viewer}:${permissionScope}:${canBrowseRuntime}`}
+                projectId={projectId}
+                viewer={viewer}
+                input={{ serviceName, target, path: previewPath, limitBytes: 262144 }}
+                enabled={
+                  canBrowseRuntime &&
+                  Boolean(target && previewPath) &&
+                  permissions.isSuccess &&
+                  !permissions.isFetching
                 }
               />
             </div>

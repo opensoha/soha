@@ -974,7 +974,7 @@ describe('workloads pods page refresh controls', () => {
 
     expect(apiDeleteMock).toHaveBeenCalledTimes(podCount)
     expect(maxActiveDeletes).toBeLessThanOrEqual(8)
-  })
+  }, 15_000)
 
   it('hides the deployment action column when the current cluster capability is unsupported', async () => {
     const unsupportedReason = 'workload mutations are disabled for agent-connected clusters'

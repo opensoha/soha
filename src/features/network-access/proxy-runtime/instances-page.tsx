@@ -15,7 +15,7 @@ import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import { PlusOutlined } from '@ant-design/icons'
 import type {
-  NetworkProxyConfigurationInput,
+  NetworkProxyConfigurationPatchInput,
   NetworkProxyEngine,
   NetworkProxyInstance,
   NetworkProxyInstanceInput,
@@ -24,7 +24,7 @@ import type {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { Alert, App, Button, Form, Input, Modal, Select, Space, Switch, Typography } from 'antd'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { MetadataTag } from '@/components/status-tag'
 import { NetworkStatusTag } from '../network-status-tag'
 import '../styles.css'
@@ -32,9 +32,11 @@ import { networkAccessKeys } from '../keys'
 import { createEnrollment, createInstance, updateConfiguration } from './api'
 import { proxyKeys, proxyQueries } from './queries'
 import './styles.css'
+import { ProxyConfigurationHistory } from './history'
 const engines: NetworkProxyEngine[] = ['mihomo', 'sing-box', 'v2ray']
 export default function ProxyInstancesPage() {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
+  const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissions = usePermissionSnapshot()
@@ -54,7 +56,21 @@ export default function ProxyInstancesPage() {
   const [configurationTarget, setConfigurationTarget] = useState<NetworkProxyInstance>()
   const [secret, setSecret] = useState<NetworkRuntimeEnrollmentSecret>()
   const [createForm] = Form.useForm<NetworkProxyInstanceInput>()
-  const [configurationForm] = Form.useForm<NetworkProxyConfigurationInput>()
+  const [configurationForm] = Form.useForm<NetworkProxyConfigurationPatchInput>()
+  const readDenied = instances.isEnabled !== false && queryAccessDenied(instances)
+  useEffect(() => {
+    if (!canUpdate || readDenied) {
+      setConfigurationTarget(undefined)
+      configurationForm.resetFields()
+    }
+    if (!canCreate || readDenied) {
+      setCreateOpen(false)
+      createForm.resetFields()
+    }
+    if (!canEnroll || readDenied) setSecret(undefined)
+  }, [canUpdate, canCreate, canEnroll, readDenied, configurationForm, createForm])
+  const configurationEnabled = Form.useWatch('enabled', configurationForm)
+  const clearingBinding = Form.useWatch('clearBinding', configurationForm)
   const refresh = () => void queryClient.invalidateQueries({ queryKey: proxyKeys.all })
   const create = useOperationMutation(
     {
@@ -69,7 +85,7 @@ export default function ProxyInstancesPage() {
   )
   const configure = useOperationMutation(
     {
-      mutationFn: ({ id, input }: { id: string; input: NetworkProxyConfigurationInput }) =>
+      mutationFn: ({ id, input }: { id: string; input: NetworkProxyConfigurationPatchInput }) =>
         updateConfiguration(id, input),
       onSuccess: () => {
         setConfigurationTarget(undefined)
@@ -119,7 +135,14 @@ export default function ProxyInstancesPage() {
       title: t('networkAccess.proxyRuntime.status', '状态'),
       dataIndex: 'status',
       width: 100,
-      render: (status: NetworkProxyInstance['status']) => <NetworkStatusTag value={status} />,
+      render: (status: NetworkProxyInstance['status'], item) => (
+        <Space orientation="vertical" size={4}>
+          <NetworkStatusTag value={status} />
+          {item.securityRestricted ? (
+            <MetadataTag label={text('DLP 限制', 'DLP restricted')} />
+          ) : null}
+        </Space>
+      ),
     },
     {
       title: t('networkAccess.proxyRuntime.version', '版本'),
@@ -128,9 +151,49 @@ export default function ProxyInstancesPage() {
       render: (value?: string) => value || '—',
     },
     {
-      title: t('networkAccess.proxyRuntime.revisions', '配置版本'),
+      title: text('已应用 / 期望配置', 'Applied / desired configuration'),
       width: 115,
-      render: (_, item) => `${item.observedRevision} / ${item.desiredRevision}`,
+      render: (_, item) => `${item.observedRevision || '—'} / ${item.desiredRevision || '—'}`,
+    },
+    {
+      title: text('站点 / 宿主设备', 'Site / host device'),
+      width: 180,
+      render: (_, item) =>
+        item.binding
+          ? `${item.binding.siteId} / ${item.binding.deviceId}`
+          : text('未绑定', 'Unbound'),
+    },
+    {
+      title: text('已应用 / 期望策略', 'Applied / desired policy'),
+      width: 115,
+      render: (_, item) => `${item.observedPolicyVersion || '—'} / ${item.policyVersion || '—'}`,
+    },
+    {
+      title: text('运行时应用证据', 'Runtime application evidence'),
+      width: 160,
+      render: (_, item) =>
+        item.status !== 'online' ||
+        item.observedRevision !== item.desiredRevision ||
+        !item.observedPolicyVersion
+          ? text('待确认', 'Pending')
+          : item.capabilities.includes('protection_rules_readback')
+            ? text('引擎规则回读', 'Engine rule readback')
+            : item.capabilities.includes('protected_destinations_v1')
+              ? text('文件与进程检查', 'File and process checks')
+              : text('无保护证据', 'No protection evidence'),
+    },
+    {
+      title: text('最近声明能力', 'Last declared capabilities'),
+      dataIndex: 'capabilities',
+      width: 210,
+      render: (values: string[]) =>
+        values.length ? values.join(', ') : text('未声明', 'Not declared'),
+    },
+    {
+      title: text('诊断原因', 'Diagnostic reason'),
+      dataIndex: 'reasonCode',
+      ellipsis: true,
+      render: (value?: string) => value || '—',
     },
     {
       title: t('networkAccess.proxyRuntime.lastSeen', '最近联系'),
@@ -142,10 +205,15 @@ export default function ProxyInstancesPage() {
       title: t('common.actions', '操作'),
       key: 'actions',
       className: 'soha-table-actions-column',
-      width: 185,
+      width: 245,
       fixed: 'right',
       render: (_, item) => (
         <Space size={4}>
+          <ProxyConfigurationHistory
+            instance={item}
+            canUpdate={canUpdate}
+            disabled={operationBlocked}
+          />
           {canUpdate ? (
             <Button
               size="small"
@@ -155,6 +223,8 @@ export default function ProxyInstancesPage() {
                   expectedRevision: item.desiredRevision,
                   enabled: item.enabled,
                   content: '',
+                  binding: item.binding,
+                  clearBinding: false,
                 })
               }}
             >
@@ -181,8 +251,7 @@ export default function ProxyInstancesPage() {
     <main className="soha-server-proxy-page">
       {!(
         (createOpen && !(instances.isEnabled !== false && queryAccessDenied(instances))) ||
-        (Boolean(configurationTarget) &&
-          !(instances.isEnabled !== false && queryAccessDenied(instances))) ||
+        (canUpdate && Boolean(configurationTarget) && !readDenied) ||
         (Boolean(secret) && !(instances.isEnabled !== false && queryAccessDenied(instances)))
       ) && (
         <>
@@ -202,6 +271,14 @@ export default function ProxyInstancesPage() {
           '管理服务器上的 Mihomo、sing-box 与 V2Ray 实例。配置保存后由已登记的 Linux 运行时拉取并应用。',
         )}
       </Typography.Text>
+      <Alert
+        type="info"
+        showIcon
+        title={text(
+          '受管代理仅覆盖经过本实例的 TCP 流量；UDP、TUN、非代理应用不在此拦截范围。受保护资源须由网关 ACL 和 VPN/ZTNA 控制，系统代理开关不能替代网络隔离。',
+          'Managed proxy enforcement covers TCP passing through this instance. UDP, TUN and applications bypassing the proxy need gateway ACL and VPN/ZTNA enforcement. A system proxy setting does not provide network isolation.',
+        )}
+      />
       <ManagementQueryPanel
         onFinish={() => {
           setKeyword(draft.trim())
@@ -245,7 +322,7 @@ export default function ProxyInstancesPage() {
       ) : null}
       <AdminTable
         columns={columns}
-        scroll={{ x: 1160 }}
+        scroll={{ x: 1640 }}
         dataSource={visibleInstancesData ?? []}
         rowKey="id"
         loading={instances.isLoading}
@@ -273,13 +350,16 @@ export default function ProxyInstancesPage() {
         styles={operationModalStyles}
         style={{ top: 32 }}
         title={t('networkAccess.proxyRuntime.add', '新增实例')}
-        open={createOpen && !(instances.isEnabled !== false && queryAccessDenied(instances))}
+        open={canCreate && createOpen && !readDenied}
         destroyOnHidden
         confirmLoading={create.isPending}
         onCancel={() => {
           if (!operationBlocked) (() => setCreateOpen(false))()
         }}
-        onOk={() => void createForm.validateFields().then((values) => create.mutate(values))}
+        onOk={() => {
+          if (canCreate && !readDenied)
+            void createForm.validateFields().then((values) => create.mutate(values))
+        }}
         closable={!operationBlocked}
         cancelButtonProps={{ disabled: operationBlocked }}
         okButtonProps={{ disabled: operationBlocked }}
@@ -323,10 +403,7 @@ export default function ProxyInstancesPage() {
             ? `${t('networkAccess.proxyRuntime.configure', '配置')} · ${configurationTarget.name}`
             : ''
         }
-        open={
-          Boolean(configurationTarget) &&
-          !(instances.isEnabled !== false && queryAccessDenied(instances))
-        }
+        open={canUpdate && Boolean(configurationTarget) && !readDenied}
         destroyOnHidden
         width={760}
         confirmLoading={configure.isPending}
@@ -334,10 +411,29 @@ export default function ProxyInstancesPage() {
           if (!operationBlocked) (() => setConfigurationTarget(undefined))()
         }}
         onOk={() => {
-          if (!configurationTarget) return
-          void configurationForm
-            .validateFields()
-            .then((input) => configure.mutate({ id: configurationTarget.id, input }))
+          if (!configurationTarget || !canUpdate || readDenied) return
+          void configurationForm.validateFields().then((input) => {
+            if (!input.content?.trim()) delete input.content
+            if (input.clearBinding) delete input.binding
+            if (
+              input.binding &&
+              !input.binding.siteId &&
+              !input.binding.deviceId &&
+              !input.binding.resourceIds?.length
+            )
+              delete input.binding
+            const previous = configurationTarget.binding
+            if (
+              input.binding &&
+              previous &&
+              input.binding.siteId === previous.siteId &&
+              input.binding.deviceId === previous.deviceId &&
+              JSON.stringify([...input.binding.resourceIds].sort()) ===
+                JSON.stringify([...previous.resourceIds].sort())
+            )
+              delete input.binding
+            configure.mutate({ id: configurationTarget.id, input })
+          })
         }}
         closable={!operationBlocked}
         cancelButtonProps={{ disabled: operationBlocked }}
@@ -352,15 +448,98 @@ export default function ProxyInstancesPage() {
           showIcon
           title={t(
             'networkAccess.proxyRuntime.contentWriteOnly',
-            '配置内容只写且不回显。请粘贴完整引擎配置；运行时会在本机注入 loopback controller 与密钥。',
+            '配置内容只写且不回显。首次提交完整配置；之后留空保留原内容，绑定和停用操作无需重新粘贴。',
           )}
         />
         <Form
           form={configurationForm}
           layout="vertical"
           className="soha-server-proxy-config-form"
-          disabled={operationBlocked}
+          disabled={operationBlocked || !canUpdate}
         >
+          <Alert
+            type="info"
+            showIcon
+            title={text(
+              '绑定只标识管理范围，不授予资源访问权。三引擎将优先拒绝已发布的受保护目标，资源访问请使用 VPN/ZTNA。',
+              'Bindings identify administrative scope and do not grant access. All three engines reject published protected destinations before user rules; use VPN/ZTNA for resource access.',
+            )}
+          />
+          <Form.Item
+            name="clearBinding"
+            label={text('停用并解除绑定', 'Disable and remove binding')}
+            valuePropName="checked"
+          >
+            <Switch
+              onChange={(value) => {
+                if (value) configurationForm.setFieldValue('enabled', false)
+              }}
+            />
+          </Form.Item>
+          <Form.Item
+            name={['binding', 'siteId']}
+            label={text('站点 ID', 'Site ID')}
+            rules={
+              clearingBinding
+                ? []
+                : [
+                    {
+                      required: Boolean(configurationEnabled || configurationTarget?.binding),
+                      pattern: /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/,
+                    },
+                  ]
+            }
+          >
+            <Input maxLength={128} disabled={clearingBinding} />
+          </Form.Item>
+          <Form.Item
+            name={['binding', 'deviceId']}
+            label={text('宿主设备 ID', 'Host device ID')}
+            rules={
+              clearingBinding
+                ? []
+                : [
+                    {
+                      required: Boolean(configurationEnabled || configurationTarget?.binding),
+                      pattern: /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/,
+                    },
+                  ]
+            }
+          >
+            <Input maxLength={128} disabled={clearingBinding} />
+          </Form.Item>
+          <Form.Item
+            name={['binding', 'resourceIds']}
+            initialValue={[]}
+            label={text('关联受保护资源 ID', 'Related protected resource IDs')}
+            extra={text(
+              '资源必须属于该站点；此列表不会缩小全局保护清单。绑定需具备关联对象的查看权限。',
+              'Resources must belong to this site. This list does not narrow the global protection set. Binding requires permission to view the related objects.',
+            )}
+            rules={
+              clearingBinding
+                ? []
+                : [
+                    {
+                      validator: (_, value: string[] | undefined) =>
+                        !value ||
+                        (value.length <= 128 &&
+                          value.every((id) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id)))
+                          ? Promise.resolve()
+                          : Promise.reject(
+                              new Error(
+                                text(
+                                  '最多填写 128 个合法资源 ID',
+                                  'Enter at most 128 valid resource IDs',
+                                ),
+                              ),
+                            ),
+                    },
+                  ]
+            }
+          >
+            <Select mode="tags" tokenSeparators={[',', ' ', '\n']} disabled={clearingBinding} />
+          </Form.Item>
           <Form.Item name="expectedRevision" hidden>
             <Input />
           </Form.Item>
@@ -369,12 +548,16 @@ export default function ProxyInstancesPage() {
             label={t('networkAccess.proxyRuntime.enabled', '启用引擎')}
             valuePropName="checked"
           >
-            <Switch />
+            <Switch disabled={clearingBinding} />
           </Form.Item>
           <Form.Item
             name="content"
             label={t('networkAccess.proxyRuntime.content', '完整配置')}
-            rules={[{ required: true, whitespace: true }]}
+            rules={[{ required: configurationTarget?.desiredRevision === 0, whitespace: true }]}
+            extra={text(
+              '首次必须提交完整配置；之后留空保留已加密保存的内容。应用回执不等于真实流量阻断证明。',
+              'Provide the full configuration initially; leave blank later to retain the encrypted content. Application receipts do not establish data-plane blocking.',
+            )}
           >
             <Input.TextArea rows={14} maxLength={1048576} spellCheck={false} />
           </Form.Item>

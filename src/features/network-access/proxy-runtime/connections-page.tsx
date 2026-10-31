@@ -16,14 +16,15 @@ import { ReloadOutlined } from '@ant-design/icons'
 import type { NetworkProxyConnection } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Card, Popconfirm, Typography } from 'antd'
+import { Alert, Button, Card, Popconfirm, Typography } from 'antd'
 import { useState } from 'react'
 import { closeConnection } from './api'
 import { ProxyInstanceHeader, useProxyContext } from './context'
 import { proxyKeys, proxyQueries } from './queries'
 import './styles.css'
 export default function ProxyConnectionsPage() {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
+  const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
 
   const queryClient = useQueryClient()
   const context = useProxyContext('network_access.proxy_instances.view')
@@ -44,21 +45,41 @@ export default function ProxyConnectionsPage() {
   const latest = samples[samples.length - 1]
   const [draft, setDraft] = useState('')
   const [keyword, setKeyword] = useState('')
+  const [lastCommand, setLastCommand] = useState<{ instanceId: string; commandId: string }>()
+  const currentCommand = lastCommand?.instanceId === selected?.id ? lastCommand : undefined
+  const command = useQuery(
+    proxyQueries.closeCommand(selected?.id, currentCommand?.commandId, canView),
+  )
+  const receipt = command.isEnabled === false ? undefined : readableQueryData(command)
   const close = useOperationMutation(
     {
-      mutationFn: (connectionId: string) => closeConnection(selected!.id, connectionId),
-      onSuccess: () => {
-        if (selected)
-          void queryClient.invalidateQueries({ queryKey: proxyKeys.connections(selected.id) })
+      mutationFn: (target: { instanceId: string; connectionId: string }) =>
+        closeConnection(target.instanceId, target.connectionId),
+      onSuccess: (result, target) => {
+        setLastCommand({ instanceId: target.instanceId, commandId: result.commandId })
+        queryClient.setQueryData(
+          proxyKeys.closeCommand(target.instanceId, result.commandId),
+          result,
+        )
+        void queryClient.invalidateQueries({ queryKey: proxyKeys.connections(target.instanceId) })
       },
     },
     {
       label: ['执行会话命令 代理连接', 'Execute session command proxy connection'],
-      target: (v) => v,
+      target: (v) => v.connectionId,
+      receipt: (result) => ({
+        message: text(
+          '关闭命令已排队，等待运行时回执。',
+          'Close command queued; waiting for the runtime receipt.',
+        ),
+        evidence: result.commandId,
+      }),
     },
   )
   const operationBlocked =
-    close.blocked || (snapshot.isEnabled !== false && queryAccessDenied(snapshot))
+    close.blocked ||
+    Boolean(currentCommand && (!receipt || receipt.status === 'pending' || command.isError)) ||
+    (snapshot.isEnabled !== false && queryAccessDenied(snapshot))
   const rows = (visibleSnapshotData?.connections ?? []).filter(
     (item) =>
       !keyword ||
@@ -104,13 +125,15 @@ export default function ProxyConnectionsPage() {
                 description={record.destination}
                 okText={t('networkAccess.proxyRuntime.disconnect', '断开')}
                 okButtonProps={{ ...{ danger: true }, disabled: operationBlocked }}
-                onConfirm={() => close.mutate(record.id)}
+                onConfirm={() =>
+                  close.mutate({ instanceId: selected!.id, connectionId: record.id })
+                }
                 disabled={operationBlocked}
               >
                 <Button
                   danger
                   size="small"
-                  loading={close.isPending && close.variables === record.id}
+                  loading={close.isPending && close.variables?.connectionId === record.id}
                 >
                   {t('networkAccess.proxyRuntime.disconnect', '断开')}
                 </Button>
@@ -149,6 +172,41 @@ export default function ProxyConnectionsPage() {
   return (
     <main className="soha-server-proxy-page">
       {close.feedback}
+      {currentCommand && (
+        <>
+          <ReadFeedback
+            canRead={command.isEnabled}
+            query={command}
+            label={text('关闭命令回执', 'Close command receipt')}
+          />
+          <Alert
+            showIcon
+            type={
+              receipt?.status === 'closed' || receipt?.status === 'not-found'
+                ? 'success'
+                : receipt?.status === 'failed' || receipt?.status === 'expired'
+                  ? 'warning'
+                  : 'info'
+            }
+            title={`${text('关闭命令', 'Close command')} · ${receipt?.status ?? text('未知', 'Unknown')}`}
+            description={
+              <>
+                {currentCommand.commandId} · {receipt?.connectionId} ·{' '}
+                {receipt?.reasonCode ||
+                  text(
+                    '等待运行时确认；连接采样不替代回执。',
+                    'Waiting for runtime confirmation; a connection sample does not replace the receipt.',
+                  )}
+              </>
+            }
+            action={
+              <Button loading={command.isFetching} onClick={() => void command.refetch()}>
+                {t('networkAccess.refresh', '刷新')}
+              </Button>
+            }
+          />
+        </>
+      )}
 
       <ReadFeedback canRead={snapshot.isEnabled} query={snapshot} label="连接采样" />
       <ReadFeedback canRead={traffic.isEnabled} query={traffic} label="流量采样" />

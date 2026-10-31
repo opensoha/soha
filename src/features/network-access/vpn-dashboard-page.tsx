@@ -38,6 +38,7 @@ import {
 } from 'antd'
 import { useState } from 'react'
 import { previewVPN, vpnDashboard, vpnDecision, vpnDocuments, vpnKeys } from './vpn-api'
+import { VPNSessionRevocation } from './vpn-session-revocation'
 import './styles.css'
 export default function VPNDashboardPage() {
   const { localeCode } = useI18n()
@@ -49,6 +50,7 @@ export default function VPNDashboardPage() {
     to: new Date().toISOString(),
   }))
   const [decisionID, setDecisionID] = useState('')
+  const [revocationSessionId, setRevocationSessionId] = useState('')
   const [previewOpen, setPreviewOpen] = useState(false)
   const [form] = Form.useForm<Record<string, string>>()
   const query = useQuery({
@@ -254,9 +256,16 @@ export default function VPNDashboardPage() {
           title: text('操作', 'Action'),
           key: 'detail',
           render: (_: unknown, s: NetworkVPNConnectionView) => (
-            <Button onClick={() => setDecisionID(s.decisionId)}>
-              {text('连接详情', 'Connection details')}
-            </Button>
+            <Space>
+              <Button onClick={() => setDecisionID(s.decisionId)}>
+                {text('连接详情', 'Connection details')}
+              </Button>
+              {can('network_access.vpn_sessions.view') && (
+                <Button onClick={() => setRevocationSessionId(s.sessionId)}>
+                  {text('撤销与限制', 'Revocation and restrictions')}
+                </Button>
+              )}
+            </Space>
           ),
         },
       ]}
@@ -455,6 +464,23 @@ export default function VPNDashboardPage() {
       <ReadFeedback canRead={profiles.isEnabled} query={profiles} label="连接方案" />
       <ReadFeedback canRead={decision.isEnabled} query={decision} label="策略决策" />
 
+      <Drawer
+        title={text('VPN 会话撤销', 'VPN session revocation')}
+        open={Boolean(revocationSessionId)}
+        onClose={() => setRevocationSessionId('')}
+        size="large"
+        destroyOnHidden
+      >
+        {revocationSessionId && (
+          <VPNSessionRevocation
+            key={revocationSessionId}
+            sessionId={revocationSessionId}
+            canView={can('network_access.vpn_sessions.view')}
+            canRevoke={can('network_access.vpn_sessions.revoke')}
+            canRelease={can('network_access.vpn_sessions.release')}
+          />
+        )}
+      </Drawer>
       <Drawer
         open={!!decisionID && !(query.isEnabled !== false && queryAccessDenied(query))}
         onClose={() => {

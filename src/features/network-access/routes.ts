@@ -17,6 +17,9 @@ export const networkAccessRoutes = defineRoutes([
       navVisible: false,
       permissionKeysAny: [
         'network_access.endpoint_devices.view',
+        'network_access.content_transfers.view',
+        'network_access.content_destinations.view',
+        'network_access.content_transfer_events.view',
         'network_access.sites.view',
         'network_access.spaces.view',
         'network_access.resources.view',
@@ -26,6 +29,9 @@ export const networkAccessRoutes = defineRoutes([
         'network_access.enrollments.view',
         'network_access.access_grants.view',
         'network_access.policy.view',
+        'network_access.endpoint_response_policies.view',
+        'network_access.endpoint_response_events.view',
+        'network_access.endpoint_response_events.maintenance',
         'network_access.vpn_profiles.view',
         'network_access.vpn_selection_policies.view',
         'network_access.vpn_dashboard.view',
@@ -35,6 +41,23 @@ export const networkAccessRoutes = defineRoutes([
     },
     shell: 'app',
     load: loadNetworkAccessPage,
+  },
+  {
+    meta: {
+      id: 'network-access-content-transfers',
+      path: '/network-access/content-transfers',
+      title: '受管内容传输',
+      navVisible: true,
+      menuId: 'network-access-content-transfers',
+      permissionKeysAny: [
+        'network_access.content_transfers.view',
+        'network_access.content_destinations.view',
+        'network_access.content_transfer_events.view',
+      ],
+    },
+    shell: 'app',
+    inheritMetaFrom: 'network-access',
+    load: () => import('./content-transfers/page'),
   },
   {
     meta: {
@@ -152,6 +175,23 @@ export const networkAccessRoutes = defineRoutes([
     shell: 'app',
     inheritMetaFrom: 'network-access',
     load: () => import('./admission-settings-redirect'),
+  },
+  {
+    meta: {
+      id: 'network-access-endpoint-response',
+      path: '/network-access/endpoint-response',
+      title: '终端联动',
+      navVisible: true,
+      menuId: 'network-access-endpoint-response',
+      permissionKeysAny: [
+        'network_access.endpoint_response_policies.view',
+        'network_access.endpoint_response_events.view',
+        'network_access.endpoint_response_events.maintenance',
+      ],
+    },
+    shell: 'app',
+    inheritMetaFrom: 'network-access',
+    load: () => import('./endpoint-response/page'),
   },
   {
     meta: {

@@ -174,22 +174,6 @@ const testState = vi.hoisted(() => ({
         },
       }
     }
-    if (
-      path ===
-      '/docker/projects/project-1/runtime/volume-file?serviceName=web&target=%2Fdata&path=%2Freadme.txt&limitBytes=262144'
-    ) {
-      return {
-        data: {
-          projectId: 'project-1',
-          serviceName: 'web',
-          target: '/data',
-          path: '/readme.txt',
-          content: 'synthetic file',
-          sizeBytes: 14,
-          truncated: false,
-        },
-      }
-    }
     if (path === '/docker/services?projectId=project-1&page=1&pageSize=100') {
       return {
         data: {
@@ -370,7 +354,11 @@ const testState = vi.hoisted(() => ({
     }
     throw new Error(`Unhandled GET ${path}`)
   }),
-  apiPost: vi.fn(async (_path: string, _body?: unknown) => ({ data: { id: 'operation-1' } })),
+  apiPost: vi.fn(
+    async (_path: string, _body?: unknown): Promise<{ data: unknown }> => ({
+      data: { id: 'operation-1' },
+    }),
+  ),
   apiPostWithHeaders: vi.fn(async (_path: string, _body?: unknown, _headers?: HeadersInit) => ({
     data: { id: 'operation-1' },
   })),
@@ -397,7 +385,14 @@ vi.mock('@/features/auth', () => ({
   usePermissionSnapshot: () => ({
     data: { data: testState.permissionSnapshot },
     isLoading: false,
+    isSuccess: true,
+    isFetching: false,
   }),
+}))
+
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (select: (state: { user: { userId: string } }) => unknown) =>
+    select({ user: { userId: 'viewer-1' } }),
 }))
 
 vi.mock('@/services/api-client', async () => ({
@@ -1362,9 +1357,28 @@ describe('docker pages', () => {
     expect(
       testState.apiGet.mock.calls.some(([path]) => String(path).includes('/runtime/volume')),
     ).toBe(false)
+    expect(
+      testState.apiPost.mock.calls.some(([path]) =>
+        String(path).includes('/runtime/volume-file/read'),
+      ),
+    ).toBe(false)
   })
 
   it('opens volume files with explicit inventory and file permissions', async () => {
+    testState.apiPost.mockResolvedValueOnce({
+      data: {
+        file: {
+          projectId: 'project-1',
+          serviceName: 'web',
+          target: '/data',
+          path: '/readme.txt',
+          content: 'synthetic file',
+          sizeBytes: 14,
+          truncated: false,
+        },
+      },
+    })
+
     testState.permissionSnapshot = {
       permissionKeys: ['docker.projects.view', 'docker.services.view', 'docker.services.files'],
       visibleMenuIds: [],
@@ -1405,9 +1419,16 @@ describe('docker pages', () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
-      expect(testState.apiGet).toHaveBeenCalledWith(
-        '/docker/projects/project-1/runtime/volume-file?serviceName=web&target=%2Fdata&path=%2Freadme.txt&limitBytes=262144',
+      expect(testState.apiPost).toHaveBeenCalledWith(
+        '/docker/projects/project-1/runtime/volume-file/read',
+        { serviceName: 'web', target: '/data', path: '/readme.txt', limitBytes: 262144 },
       )
+      expect(testState.apiPost).toHaveBeenCalledTimes(1)
+      expect(
+        testState.apiGet.mock.calls.some(([path]) =>
+          String(path).includes('/runtime/volume-file?'),
+        ),
+      ).toBe(false)
       expect(
         container.querySelector<HTMLTextAreaElement>('.soha-docker-volume-preview textarea')?.value,
       ).toBe('synthetic file')

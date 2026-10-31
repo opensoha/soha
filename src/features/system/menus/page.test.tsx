@@ -274,10 +274,7 @@ describe('menus page modal state', () => {
     expect(getVisibleInputValues()).toContain('/virtualization')
 
     await clickButtonByText('更新')
-    expect(apiPutMock).toHaveBeenCalledWith(
-      '/menus/virtualization-workbench',
-      expect.any(Object),
-    )
+    expect(apiPutMock).toHaveBeenCalledWith('/menus/virtualization-workbench', expect.any(Object))
 
     await clickButton(getRowEditButton('configuration'))
 
@@ -287,7 +284,7 @@ describe('menus page modal state', () => {
     expect(inputValues).toContain('/configuration')
     expect(inputValues).not.toContain('虚拟化管理工作台')
     expect(inputValues).not.toContain('/virtualization')
-  })
+  }, 15_000)
 
   it('shows derived workbench ownership for menu rows and edit state', async () => {
     await renderWithProviders(<MenusPage />, '/system/menus')

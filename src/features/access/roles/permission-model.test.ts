@@ -247,6 +247,11 @@ describe('role permission tree model', () => {
     ['docker.dlp-policy.update', 'docker-workbench-projects'],
     ['docker.dlp-policy.view', 'docker-workbench-projects'],
     ['docker.services.logs', 'docker-workbench-projects'],
+    ['docker.dlp-appeals.review', 'docker-workbench-projects'],
+    ['docker.dlp-events.view', 'docker-workbench-projects'],
+    ['docker.dlp-policy.publish', 'docker-workbench-projects'],
+    ['docker.dlp-policy.update', 'docker-workbench-projects'],
+    ['docker.dlp-policy.view', 'docker-workbench-projects'],
     ['docker.ports.update', 'docker-workbench-projects'],
     ['docker.operations.retry', 'compute-workbench-tasks-operations'],
   ])('places compute permission %s under its owning page', (permissionKey, routeID) => {

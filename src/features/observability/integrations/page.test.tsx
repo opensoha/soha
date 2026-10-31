@@ -67,22 +67,21 @@ beforeEach(() => {
 })
 afterEach(async () => {
   try {
-    await act(async () => {
-      await vi.runOnlyPendingTimersAsync()
-      root.unmount()
-      client.clear()
-      await vi.runOnlyPendingTimersAsync()
-    })
-    container.remove()
+    await act(async () => root.unmount())
+    client.clear()
+    // Run delayed form feedback while jsdom still owns its window.
+    await act(async () => vi.runOnlyPendingTimersAsync())
+    expect(vi.getTimerCount()).toBe(0)
   } finally {
     vi.useRealTimers()
+    container.remove()
   }
 })
 
 async function settle(action: () => void = () => {}) {
   await act(async () => {
     action()
-    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(20)
   })
 }
 function button(label: string) {
