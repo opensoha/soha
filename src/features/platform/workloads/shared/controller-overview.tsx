@@ -162,26 +162,34 @@ function controllerSummary(
     detail,
     resource === 'daemonsets' ? 'currentNumber' : 'currentReplicas',
   )
-  const available = controllerCount(detail, 'availableNumber')
-  if (resource === 'daemonsets' && available !== undefined && available < desired)
+  const available = controllerCount(
+    detail,
+    resource === 'daemonsets' ? 'availableNumber' : 'availableReplicas',
+  )
+  const checksAvailability = ['daemonsets', 'replicasets', 'replicationcontrollers'].includes(
+    resource,
+  )
+  if (checksAvailability && available !== undefined && available < desired)
     return {
       type: 'warning' as const,
       status: 'warning',
       label: zh ? '部分不可用' : 'Availability incomplete',
       title: zh ? `${title} 仍有副本不可用` : `${title} has replicas that are not available`,
     }
+  const fullyAvailable = available !== undefined && available >= desired
   const healthy =
-    current !== undefined &&
-    current >= desired &&
-    (resource === 'statefulsets'
-      ? typeof detail.currentRevision === 'string' &&
+    (resource === 'replicasets' && fullyAvailable) ||
+    (current !== undefined &&
+      current >= desired &&
+      ((resource === 'statefulsets' &&
+        typeof detail.currentRevision === 'string' &&
         Boolean(detail.currentRevision.trim()) &&
-        detail.currentRevision === detail.updateRevision
-      : resource === 'daemonsets' &&
-        updated !== undefined &&
-        updated >= desired &&
-        available !== undefined &&
-        available >= desired)
+        detail.currentRevision === detail.updateRevision) ||
+        (resource === 'daemonsets' &&
+          updated !== undefined &&
+          updated >= desired &&
+          fullyAvailable) ||
+        (resource === 'replicationcontrollers' && fullyAvailable)))
   if (healthy)
     return {
       type: 'success' as const,

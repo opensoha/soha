@@ -1,3 +1,4 @@
+import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
@@ -21,7 +22,6 @@ import {
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
-  WorkloadRefreshButton,
   workloadRowAIContext,
   WorkloadSearchInput,
   WorkloadTableEmpty,
@@ -54,7 +54,12 @@ export function WorkloadsCronJobsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { clusterId, namespace } = usePlatformScopeStore()
-  const cronJobsQuery = useQuery(cronJobQueries.list(toScopeKey(clusterId, namespace)))
+  const listRefresh = useWorkloadRefresh()
+  const cronJobsQuery = useQuery({
+    ...cronJobQueries.list(toScopeKey(clusterId, namespace)),
+    refetchInterval: listRefresh.interval,
+    refetchIntervalInBackground: false,
+  })
   const visibleCronJobsQueryData = readableQueryData(cronJobsQuery)
   const suspendMutation = usePlatformMutation(cronJobMutations.suspend(queryClient), {
     label: ['调整定时任务', 'Change CronJob'],
@@ -273,10 +278,13 @@ export function WorkloadsCronJobsPage() {
           <ManagementTableToolbar>
             <WorkloadCreateEntry kind="CronJob" />
             {densityButton}
-            <WorkloadRefreshButton
+            <WorkloadRefresh
+              compact
+              settings={listRefresh}
+              queries={[cronJobsQuery]}
+              resourceLabel="CronJobs"
               disabled={!clusterId}
               label={t('common.refresh', 'Refresh')}
-              loading={cronJobsQuery.isFetching}
               onRefresh={() => void cronJobsQuery.refetch()}
             />
           </ManagementTableToolbar>

@@ -1,3 +1,4 @@
+import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
@@ -21,7 +22,6 @@ import {
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
-  WorkloadRefreshButton,
   workloadRowAIContext,
   WorkloadSearchInput,
   WorkloadTableEmpty,
@@ -66,7 +66,12 @@ export function WorkloadsStatefulSetsPage() {
   const queryClient = useQueryClient()
   const { clusterId, namespace } = usePlatformScopeStore()
   const listScope = toScopeKey(clusterId, namespace)
-  const statefulSetsQuery = useQuery(statefulSetQueries.list(listScope))
+  const listRefresh = useWorkloadRefresh()
+  const statefulSetsQuery = useQuery({
+    ...statefulSetQueries.list(listScope),
+    refetchInterval: listRefresh.interval,
+    refetchIntervalInBackground: false,
+  })
   const visibleStatefulSetsQueryData = readableQueryData(statefulSetsQuery)
   const restartMutation = usePlatformMutation(statefulSetMutations.restart(queryClient), {
     label: ['重启工作负载', 'Restart workload'],
@@ -278,10 +283,13 @@ export function WorkloadsStatefulSetsPage() {
           <ManagementTableToolbar>
             <WorkloadCreateEntry kind="StatefulSet" />
             {densityButton}
-            <WorkloadRefreshButton
+            <WorkloadRefresh
+              compact
+              settings={listRefresh}
+              queries={[statefulSetsQuery]}
+              resourceLabel="StatefulSets"
               disabled={!clusterId}
               label={t('common.refresh', 'Refresh')}
-              loading={statefulSetsQuery.isFetching}
               onRefresh={() => void statefulSetsQuery.refetch()}
             />
           </ManagementTableToolbar>

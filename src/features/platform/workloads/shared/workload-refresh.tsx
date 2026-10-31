@@ -3,11 +3,12 @@ import { Badge, Button, Tooltip } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useI18n } from '@/i18n'
 import { useDocumentHidden } from '@/utils/use-document-hidden'
+import './workload-refresh.css'
 
 const INTERVAL = 15_000
 
 /** Only the resource owner attaches this cadence to its named queries. */
-export function useWorkloadDetailRefresh() {
+export function useWorkloadRefresh() {
   const [enabled, setEnabled] = useState(true)
   const hidden = useDocumentHidden()
   const interval = useCallback(
@@ -20,18 +21,22 @@ export function useWorkloadDetailRefresh() {
 
 type RefreshQuery = { isFetching?: boolean; isError?: boolean; isEnabled?: boolean }
 
-export function WorkloadDetailRefresh({
+export function WorkloadRefresh({
   settings,
   queries,
   onRefresh,
   resourceLabel,
   label,
+  compact = false,
+  disabled = false,
 }: {
-  settings: ReturnType<typeof useWorkloadDetailRefresh>
+  settings: ReturnType<typeof useWorkloadRefresh>
   queries: readonly RefreshQuery[]
   onRefresh: () => unknown
   resourceLabel: string
   label?: string
+  compact?: boolean
+  disabled?: boolean
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
@@ -42,7 +47,7 @@ export function WorkloadDetailRefresh({
     ? 'refreshing'
     : failed
       ? 'failed'
-      : !settings.enabled || settings.hidden || !active.length
+      : disabled || !settings.enabled || settings.hidden || !active.length
         ? 'paused'
         : 'live'
   const status = {
@@ -65,8 +70,8 @@ export function WorkloadDetailRefresh({
             ? '自动刷新已暂停'
             : 'Auto-refresh paused'
           : zh
-            ? '资源摘要自动刷新正常，每 15 秒'
-            : 'Resource summary auto-refresh active, every 15 seconds'
+            ? '自动刷新正常，每 15 秒'
+            : 'Auto-refresh active, every 15 seconds'
   const toggle = settings.enabled
     ? zh
       ? '关闭自动刷新'
@@ -78,31 +83,37 @@ export function WorkloadDetailRefresh({
     ? `${stateLabel} · ${zh ? '页面在后台' : 'Page is in the background'} · ${toggle}`
     : `${stateLabel} · ${toggle}`
   return (
-    <span className="soha-workload-detail-refresh">
+    <span className="soha-workload-refresh">
       <Tooltip title={hint} trigger={['hover', 'focus']}>
         <Button
           type="text"
           size="small"
+          disabled={disabled}
           role="switch"
           aria-checked={settings.enabled}
           aria-label={`${zh ? '自动刷新' : 'Auto-refresh'}：${hint}`}
           data-refresh-state={state}
-          className="soha-workload-detail-refresh-dot"
+          className="soha-workload-refresh-dot"
           onClick={() => settings.setEnabled((value) => !value)}
         >
           <Badge status={status[state]} aria-hidden />
         </Button>
       </Tooltip>
-      <Button
-        icon={<ReloadOutlined />}
-        loading={fetching}
-        aria-label={label ?? (zh ? `刷新 ${resourceLabel}` : `Refresh ${resourceLabel}`)}
-        onClick={() => {
-          void onRefresh()
-        }}
-      >
-        {zh ? '刷新' : 'Refresh'}
-      </Button>
+      <Tooltip title={label ?? (zh ? `刷新 ${resourceLabel}` : `Refresh ${resourceLabel}`)}>
+        <Button
+          type={compact ? 'text' : 'default'}
+          size={compact ? 'small' : undefined}
+          disabled={disabled}
+          icon={<ReloadOutlined />}
+          loading={fetching}
+          aria-label={label ?? (zh ? `刷新 ${resourceLabel}` : `Refresh ${resourceLabel}`)}
+          onClick={() => {
+            void onRefresh()
+          }}
+        >
+          {compact ? null : zh ? '刷新' : 'Refresh'}
+        </Button>
+      </Tooltip>
     </span>
   )
 }

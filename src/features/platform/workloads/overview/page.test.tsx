@@ -15,6 +15,7 @@ const testState = vi.hoisted(() => ({
   events: [] as Array<Record<string, unknown>>,
   resourceError: null as Error | null,
   resourceData: [] as unknown[] | undefined,
+  fetchingKey: '',
   permissionKeys: ['platform.workloads.overview.view', 'platform.pods.view'],
 }))
 
@@ -41,7 +42,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => ({
       isEnabled: options.enabled !== false,
       error: testState.resourceError,
       isError: Boolean(testState.resourceError),
-      isFetching: false,
+      isFetching: Boolean(testState.fetchingKey && queryKey.includes(testState.fetchingKey)),
       isLoading: false,
       refetch,
     }
@@ -117,6 +118,7 @@ afterEach(() => {
   testState.adminTableProps = null
   testState.resourceError = null
   testState.resourceData = []
+  testState.fetchingKey = ''
   testState.events = []
   testState.permissionKeys = ['platform.workloads.overview.view', 'platform.pods.view']
   vi.clearAllMocks()
@@ -137,6 +139,22 @@ function renderPage() {
 }
 
 describe('workloads overview permissions', () => {
+  it('reflects actual reads in its compact indicator and keeps partial failure visible', () => {
+    testState.fetchingKey = 'pods'
+    let view = renderPage()
+    let indicator = view.container.querySelector('.soha-workload-overview-toolbar [role="status"]')!
+    expect(indicator.getAttribute('aria-label')).toContain('刷新中')
+    expect(indicator.querySelector('.ant-badge-status-warning')).not.toBeNull()
+    act(() => view.root.unmount())
+    testState.fetchingKey = ''
+    testState.resourceError = new ApiError(503, 'partial read unavailable')
+    view = renderPage()
+    indicator = view.container.querySelector('.soha-workload-overview-toolbar [role="status"]')!
+    expect(indicator.getAttribute('aria-label')).toContain('刷新失败')
+    expect(indicator.querySelector('.ant-badge-status-error')).not.toBeNull()
+    expect(view.container.textContent).toContain('partial read unavailable')
+    act(() => view.root.unmount())
+  })
   it('only enables resource queries covered by exact leaf permissions', () => {
     const { container, root } = renderPage()
 

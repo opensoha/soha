@@ -22,7 +22,7 @@ import type { PodVolume, PodVolumeMount } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatRelativeTime } from '@/utils/time'
 import { WorkloadDetailHeader } from '../shared/workload-detail-header'
-import { WorkloadDetailRefresh, useWorkloadDetailRefresh } from '../shared/workload-detail-refresh'
+import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import { CodeOutlined, FileTextOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
@@ -195,7 +195,7 @@ export function PodDetailPage() {
       ? '正在读取当前集群的终端能力。'
       : 'Reading terminal capability for the current cluster.'
   const detailScope = { clusterId, namespace: detailNamespace }
-  const detailRefresh = useWorkloadDetailRefresh()
+  const detailRefresh = useWorkloadRefresh()
   const podDetailQuery = useQuery({
     ...podQueries.detail(detailScope, podName),
     refetchInterval: detailRefresh.interval,
@@ -740,7 +740,7 @@ export function PodDetailPage() {
       backTo={`/workloads/pods?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(detailNamespace || '')}`}
       actions={
         <>
-          <WorkloadDetailRefresh
+          <WorkloadRefresh
             resourceLabel="Pod"
             label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
             settings={detailRefresh}

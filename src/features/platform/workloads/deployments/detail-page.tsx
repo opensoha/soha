@@ -13,7 +13,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { useWorkloadDetailScope } from '../shared/detail-scope'
 import { WorkloadDetailShell } from '../shared/detail-shell'
 import { WorkloadDetailHeader } from '../shared/workload-detail-header'
-import { WorkloadDetailRefresh, useWorkloadDetailRefresh } from '../shared/workload-detail-refresh'
+import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import { WorkloadDetailEvents } from '../shared/detail-events'
 import { workloadKeys } from '../shared/keys'
 import { deploymentQueries } from './queries'
@@ -77,7 +77,7 @@ export function DeploymentDetailPage() {
       },
       { replace: true },
     )
-  const detailRefresh = useWorkloadDetailRefresh()
+  const detailRefresh = useWorkloadRefresh()
   const detailOptions = deploymentQueries.detail(scope, deploymentName)
   const detailQuery = useQuery({
     ...detailOptions,
@@ -241,7 +241,7 @@ export function DeploymentDetailPage() {
             actions={
               <>
                 {actions.buttons}
-                <WorkloadDetailRefresh
+                <WorkloadRefresh
                   resourceLabel="Deployment"
                   settings={detailRefresh}
                   queries={[

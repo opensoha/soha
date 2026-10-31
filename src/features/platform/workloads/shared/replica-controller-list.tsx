@@ -1,3 +1,4 @@
+import { WorkloadRefresh, useWorkloadRefresh } from './workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
@@ -23,7 +24,6 @@ import {
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
-  WorkloadRefreshButton,
   workloadRowAIContext,
   WorkloadSearchInput,
   WorkloadTableEmpty,
@@ -52,7 +52,12 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
   const { clusterId, namespace } = usePlatformScopeStore()
   const scope = toScopeKey(clusterId, namespace)
   const queryClient = useQueryClient()
-  const listQuery = useQuery(workloadQueries.list<T>(kind, scope))
+  const listRefresh = useWorkloadRefresh()
+  const listQuery = useQuery({
+    ...workloadQueries.list<T>(kind, scope),
+    refetchInterval: listRefresh.interval,
+    refetchIntervalInBackground: false,
+  })
   const visibleListQueryData = readableQueryData(listQuery)
   const removeMutation = usePlatformMutation(workloadMutations.remove(kind, queryClient), {
     label: ['删除资源', 'Delete resource'],
@@ -164,10 +169,13 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
         headerExtra={
           <ManagementTableToolbar>
             {densityButton}
-            <WorkloadRefreshButton
+            <WorkloadRefresh
+              compact
+              settings={listRefresh}
+              queries={[listQuery]}
+              resourceLabel={label}
               disabled={!clusterId}
               label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              loading={listQuery.isFetching}
               onRefresh={() => void listQuery.refetch()}
             />
           </ManagementTableToolbar>

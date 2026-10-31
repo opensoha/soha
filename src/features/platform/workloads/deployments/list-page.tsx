@@ -724,6 +724,8 @@ export function WorkloadsDeploymentsPage() {
         </Text>
       ) : null}
       <ResourceStreamStatus
+        refreshing={deploymentsQuery.isFetching}
+        refreshFailed={deploymentsQuery.isError}
         status={deploymentStream.status}
         lastEventAt={deploymentStream.lastEventAt}
         localeCode={localeCode}

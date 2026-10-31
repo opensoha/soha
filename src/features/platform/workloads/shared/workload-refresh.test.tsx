@@ -2,22 +2,24 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { WorkloadDetailRefresh, useWorkloadDetailRefresh } from './workload-detail-refresh'
+import { WorkloadRefresh, useWorkloadRefresh } from './workload-refresh'
 
 vi.mock('@/i18n', () => ({ useI18n: () => ({ localeCode: 'zh_CN' }) }))
 let host: HTMLDivElement
 let root: ReturnType<typeof createRoot>
-let settings: ReturnType<typeof useWorkloadDetailRefresh>
+let settings: ReturnType<typeof useWorkloadRefresh>
 let query = { isFetching: false, isError: false, isEnabled: true }
 const refresh = vi.fn()
-function Harness() {
-  settings = useWorkloadDetailRefresh()
+function Harness({ compact = false, disabled = false }: { compact?: boolean; disabled?: boolean }) {
+  settings = useWorkloadRefresh()
   return (
-    <WorkloadDetailRefresh
+    <WorkloadRefresh
       settings={settings}
       queries={[query]}
       onRefresh={refresh}
       resourceLabel="DaemonSet"
+      compact={compact}
+      disabled={disabled}
     />
   )
 }
@@ -36,7 +38,19 @@ async function render(fields: Partial<typeof query> = {}) {
   await act(async () => root.render(<Harness />))
   return host.querySelector('[role="switch"]') as HTMLButtonElement
 }
-describe('workload detail refresh', () => {
+describe('shared workload refresh', () => {
+  it('keeps collection actions compact and disables controls without a readable scope', async () => {
+    await render({ isEnabled: false })
+    await act(async () => root.render(<Harness compact disabled />))
+    const toggle = host.querySelector<HTMLButtonElement>('[role="switch"]')!
+    const manual = host.querySelector<HTMLButtonElement>('[aria-label="刷新 DaemonSet"]')!
+    expect(toggle.disabled).toBe(true)
+    expect(manual.disabled).toBe(true)
+    expect(manual.textContent).toBe('')
+    expect(toggle.dataset.refreshState).toBe('paused')
+    await act(async () => manual.click())
+    expect(refresh).not.toHaveBeenCalled()
+  })
   it.each([
     [{}, 'live', 'success'],
     [{ isFetching: true }, 'refreshing', 'warning'],

@@ -1,3 +1,4 @@
+import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
@@ -20,7 +21,6 @@ import {
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
-  WorkloadRefreshButton,
   workloadRowAIContext,
   WorkloadSearchInput,
   WorkloadTableEmpty,
@@ -47,7 +47,12 @@ export function WorkloadsJobsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { clusterId, namespace } = usePlatformScopeStore()
-  const jobsQuery = useQuery(jobQueries.list(toScopeKey(clusterId, namespace)))
+  const listRefresh = useWorkloadRefresh()
+  const jobsQuery = useQuery({
+    ...jobQueries.list(toScopeKey(clusterId, namespace)),
+    refetchInterval: listRefresh.interval,
+    refetchIntervalInBackground: false,
+  })
   const visibleJobsQueryData = readableQueryData(jobsQuery)
   const removeMutation = usePlatformMutation(jobMutations.remove(queryClient), {
     label: ['删除资源', 'Delete resource'],
@@ -188,10 +193,13 @@ export function WorkloadsJobsPage() {
           <ManagementTableToolbar>
             <WorkloadCreateEntry kind="Job" />
             {densityButton}
-            <WorkloadRefreshButton
+            <WorkloadRefresh
+              compact
+              settings={listRefresh}
+              queries={[jobsQuery]}
+              resourceLabel="Jobs"
               disabled={!clusterId}
               label={t('common.refresh', 'Refresh')}
-              loading={jobsQuery.isFetching}
               onRefresh={() => void jobsQuery.refetch()}
             />
           </ManagementTableToolbar>

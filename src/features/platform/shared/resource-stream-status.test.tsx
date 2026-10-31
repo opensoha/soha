@@ -90,4 +90,30 @@ describe('ResourceStreamStatus', () => {
     expect(captured.badgeStatus).toBe('error')
     await act(async () => root.unmount())
   })
+
+  it.each([
+    [true, true, 'warning', 'Refreshing'],
+    [false, true, 'error', 'Refresh failed; retry'],
+  ] as const)(
+    'prioritizes actual read feedback while retaining the stream state',
+    async (refreshing, refreshFailed, tone, label) => {
+      const container = document.createElement('div')
+      const root = createRoot(container)
+      await act(async () =>
+        root.render(
+          <ResourceStreamStatus
+            status="live"
+            localeCode="en_US"
+            refreshing={refreshing}
+            refreshFailed={refreshFailed}
+          />,
+        ),
+      )
+      expect(captured.badgeStatus).toBe(tone)
+      expect(captured.tooltipTitle).toContain(label)
+      expect(captured.tooltipTitle).toContain('Live')
+      expect(container.textContent).toBe('')
+      await act(async () => root.unmount())
+    },
+  )
 })

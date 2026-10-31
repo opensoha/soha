@@ -763,6 +763,8 @@ export function WorkloadsPodsPage() {
         />
       </div>
       <ResourceStreamStatus
+        refreshing={podsQuery.isFetching}
+        refreshFailed={podsQuery.isError}
         status={podStream.status}
         lastEventAt={podStream.lastEventAt}
         localeCode={localeCode}

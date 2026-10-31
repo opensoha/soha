@@ -1,3 +1,4 @@
+import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
@@ -20,7 +21,6 @@ import {
   useWorkloadListAIContext,
   useWorkloadTableDensity,
   WorkloadQueryPanel,
-  WorkloadRefreshButton,
   workloadRowAIContext,
   WorkloadSearchInput,
   WorkloadTableEmpty,
@@ -63,7 +63,12 @@ export function WorkloadsDaemonSetsPage() {
   const queryClient = useQueryClient()
   const { clusterId, namespace } = usePlatformScopeStore()
   const listScope = toScopeKey(clusterId, namespace)
-  const daemonSetsQuery = useQuery(daemonSetQueries.list(listScope))
+  const listRefresh = useWorkloadRefresh()
+  const daemonSetsQuery = useQuery({
+    ...daemonSetQueries.list(listScope),
+    refetchInterval: listRefresh.interval,
+    refetchIntervalInBackground: false,
+  })
   const visibleDaemonSetsQueryData = readableQueryData(daemonSetsQuery)
   const restartMutation = usePlatformMutation(daemonSetMutations.restart(queryClient), {
     label: ['重启工作负载', 'Restart workload'],
@@ -247,10 +252,13 @@ export function WorkloadsDaemonSetsPage() {
           <ManagementTableToolbar>
             <WorkloadCreateEntry kind="DaemonSet" />
             {densityButton}
-            <WorkloadRefreshButton
+            <WorkloadRefresh
+              compact
+              settings={listRefresh}
+              queries={[daemonSetsQuery]}
+              resourceLabel="DaemonSets"
               disabled={!clusterId}
               label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              loading={daemonSetsQuery.isFetching}
               onRefresh={() => void daemonSetsQuery.refetch()}
             />
           </ManagementTableToolbar>

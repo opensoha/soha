@@ -309,6 +309,8 @@ export function WorkloadsOverviewPage() {
         <ManagementTableToolbar>
           <ResourceStreamStatus
             status={workloadStream.status}
+            refreshing={refreshingOverview}
+            refreshFailed={overviewReads.some((query) => query.isEnabled && query.isError)}
             lastEventAt={workloadStream.lastEventAt}
             localeCode={localeCode}
           />

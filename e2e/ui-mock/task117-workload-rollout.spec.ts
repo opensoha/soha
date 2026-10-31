@@ -166,6 +166,78 @@ for (const [kind, label] of kinds)
     })
     verifyBrowserEvidence(evidence)
   })
+for (const [kind, label] of kinds)
+  test(`${label}: shared automatic refresh pauses, preserves position and stops after failure`, async ({
+    context,
+    page,
+  }) => {
+    const { state, evidence } = await setup(context, page, kind)
+    let held: Promise<void> | undefined
+    await context.route(`**/api/v1/clusters/cluster-a/workloads/${kind}?*`, async (route) => {
+      state.reads++
+      if (held) await held
+      await route.fulfill({
+        status: state.readStatus,
+        json:
+          state.readStatus === 200
+            ? { data: state.rows }
+            : { error: { code: 'unavailable', message: 'Synthetic workload refresh failed' } },
+      })
+    })
+    await page.goto(`/workloads/${kind}`)
+    await expect(page.getByRole('status').filter({ hasText: `120 个 ${label}` })).toBeVisible()
+    const toggle = page.getByRole('switch', { name: /自动刷新/ })
+    const manual = page.getByRole('button', { name: '刷新', exact: true })
+    await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
+    const region = page.getByRole('region', { name: '资源列表，可连续滚动', exact: true })
+    await region.evaluate((node) => {
+      node.scrollTop = 1800
+      node.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    const top = await region.evaluate((node) => node.scrollTop)
+    await page.clock.install()
+    await toggle.focus()
+    await page.keyboard.press('Space')
+    await expect(toggle).not.toBeChecked()
+    await expect(toggle).toHaveAttribute('data-refresh-state', 'paused')
+    let before = state.reads
+    await page.clock.fastForward(30_100)
+    expect(state.reads).toBe(before)
+    await toggle.click()
+    await page.clock.fastForward(15_100)
+    await expect.poll(() => state.reads).toBeGreaterThan(before)
+    await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
+    await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBe(top)
+    let release!: () => void
+    held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await manual.click()
+    await expect(toggle).toHaveAttribute('data-refresh-state', 'refreshing')
+    await expect(toggle.locator('.ant-badge-status-warning')).toHaveCount(1)
+    state.readStatus = 503
+    release()
+    held = undefined
+    await expect(toggle).toHaveAttribute('data-refresh-state', 'failed')
+    await expect(toggle.locator('.ant-badge-status-error')).toHaveCount(1)
+    await expect(page.getByRole('status').filter({ hasText: `120 个 ${label}` })).toBeVisible()
+    await expect(
+      page.getByText('Synthetic workload refresh failed', { exact: false }).first(),
+    ).toBeVisible()
+    before = state.reads
+    await page.clock.fastForward(60_100)
+    expect(state.reads).toBe(before)
+    state.readStatus = 200
+    await manual.click()
+    await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
+    before = state.reads
+    await page.clock.fastForward(15_100)
+    await expect.poll(() => state.reads).toBeGreaterThan(before)
+    await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBe(top)
+    expect(state.writes).toEqual([])
+    verifyBrowserEvidence(evidence)
+  })
+
 test('read-only workload has no mutation menu', async ({ context, page }) => {
   const { state, evidence } = await setup(context, page, 'cronjobs', true)
   await page.goto('/workloads/cronjobs')

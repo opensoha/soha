@@ -245,19 +245,22 @@ for (const [kind, label, permission] of controllers)
         detail.readyNumber = 4
         detail.updatedNumber = 4
         detail.availableNumber = 4
+      } else if (kind === 'replicasets' || kind === 'replicationcontrollers') {
+        detail.readyReplicas = 3
+        detail.availableReplicas = 3
       }
       await page.getByRole('button', { name: `刷新 ${label}`, exact: true }).click()
       await expect
         .poll(() => reads.filter((path) => path.startsWith(`${root}/workloads/pods?`)).length)
         .toBe(before + 1)
-      if (kind === 'statefulsets' || kind === 'daemonsets') {
+      if (kind !== 'jobs') {
         await expect(header.locator('.soha-status-tag')).toHaveText('健康')
         if (kind === 'statefulsets') {
           await expect(header.locator('.soha-controller-header-revision')).toHaveCount(1)
           await expect(header.locator(`[title="${detail.currentRevision}"]`)).toContainText(
             '当前版本',
           )
-        } else {
+        } else if (kind === 'daemonsets') {
           await expect(header).toContainText('已更新 4 / 4')
         }
       }

@@ -30,7 +30,7 @@ import {
   type ChildJob,
 } from './controller-overview'
 import { WorkloadDetailHeader } from './workload-detail-header'
-import { WorkloadDetailRefresh, useWorkloadDetailRefresh } from './workload-detail-refresh'
+import { WorkloadRefresh, useWorkloadRefresh } from './workload-refresh'
 import { formatRelativeTime } from '@/utils/time'
 import type { TabsProps } from 'antd'
 import { App, Card, Segmented, Spin, Typography } from 'antd'
@@ -120,7 +120,7 @@ export function WorkloadDetailShell({
   const resolvedActiveTabKey = activeTabKey ?? internalActiveTabKey
   const queryClient = useQueryClient()
 
-  const detailRefresh = useWorkloadDetailRefresh()
+  const detailRefresh = useWorkloadRefresh()
   const enhanced = resource !== 'pods' && resource !== 'deployments'
   const detailScope = { clusterId, namespace: detailNamespace }
   const podListKey = workloadQueries.list('pods', detailScope).queryKey
@@ -274,7 +274,7 @@ export function WorkloadDetailShell({
               </>
             }
             actions={
-              <WorkloadDetailRefresh
+              <WorkloadRefresh
                 resourceLabel={title}
                 settings={detailRefresh}
                 queries={[

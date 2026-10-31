@@ -47,6 +47,11 @@ describe('controller header observations', () => {
       'daemonsets',
       { desiredNumber: 2, currentNumber: 2, readyNumber: 2, updatedNumber: 2, availableNumber: 2 },
     ],
+    ['replicasets', { desiredReplicas: 2, readyReplicas: 2, availableReplicas: 2 }],
+    [
+      'replicationcontrollers',
+      { desiredReplicas: 2, currentReplicas: 2, readyReplicas: 2, availableReplicas: 2 },
+    ],
   ] as const)(
     'uses the shared healthy label for complete %s observations',
     async (resource, fields) => {
@@ -64,6 +69,28 @@ describe('controller header observations', () => {
       availableNumber: 1,
     })
     expect(view.querySelector('.soha-status-tag')?.textContent).toBe('部分不可用')
+  })
+
+  it.each(['replicasets', 'replicationcontrollers'] as const)(
+    'keeps %s availability separate from readiness',
+    async (resource) => {
+      const view = await render(resource, {
+        desiredReplicas: 2,
+        currentReplicas: 2,
+        readyReplicas: 2,
+        availableReplicas: 1,
+      })
+      expect(view.querySelector('.soha-status-tag')?.textContent).toBe('部分不可用')
+    },
+  )
+
+  it('does not claim ReplicationController health without a current count', async () => {
+    const view = await render('replicationcontrollers', {
+      desiredReplicas: 2,
+      readyReplicas: 2,
+      availableReplicas: 2,
+    })
+    expect(view.querySelector('.soha-status-tag')?.textContent).toBe('副本就绪')
   })
 
   it.each([

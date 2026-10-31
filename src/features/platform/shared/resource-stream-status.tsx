@@ -16,11 +16,15 @@ export function ResourceStreamStatus({
   lastEventAt,
   localeCode,
   showLabel = false,
+  refreshing = false,
+  refreshFailed = false,
 }: {
   status: KubernetesResourceStreamStatus
   lastEventAt?: string
   localeCode: 'zh_CN' | 'en_US'
   showLabel?: boolean
+  refreshing?: boolean
+  refreshFailed?: boolean
 }) {
   const statusLabel =
     status === 'live' && showLabel
@@ -38,9 +42,20 @@ export function ResourceStreamStatus({
           hour12: false,
         }).format(eventDate)
       : null
-  const detail = eventTime
+  const streamDetail = eventTime
     ? `${statusLabel} · ${localeCode === 'zh_CN' ? '更新于' : 'Updated at'} ${eventTime}`
     : statusLabel
+
+  const readLabel = refreshing
+    ? localeCode === 'zh_CN'
+      ? '刷新中'
+      : 'Refreshing'
+    : refreshFailed
+      ? localeCode === 'zh_CN'
+        ? '刷新失败，请重试'
+        : 'Refresh failed; retry'
+      : null
+  const detail = readLabel ? `${readLabel} · ${streamDetail}` : streamDetail
 
   return (
     <Tooltip title={detail}>
@@ -58,8 +73,10 @@ export function ResourceStreamStatus({
         }}
       >
         <Badge
-          status={badgeStatusByStreamStatus[status]}
-          text={showLabel ? statusLabel : undefined}
+          status={
+            refreshing ? 'warning' : refreshFailed ? 'error' : badgeStatusByStreamStatus[status]
+          }
+          text={showLabel ? (readLabel ?? statusLabel) : undefined}
         />
       </span>
     </Tooltip>
