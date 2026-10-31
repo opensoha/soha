@@ -162,6 +162,7 @@ vi.mock('@/components/k8s-yaml-editor', () => ({
 }))
 
 vi.mock('@/components/status-tag', () => ({
+  MetadataTag: ({ label }: { label: React.ReactNode }) => <span>{label}</span>,
   BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
   StatusTag: ({ value }: { value?: string }) => <span>{value}</span>,
 }))

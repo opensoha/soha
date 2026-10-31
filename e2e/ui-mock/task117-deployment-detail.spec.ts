@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 import { baselineResponse } from '../fixtures/baseline-data'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
+import { expectWorkloadDetailFrame } from '../fixtures/workload-detail-geometry'
 
 const path = '/workloads/deployments/api?clusterId=cluster-a&namespace=monitoring'
 async function setup(
@@ -345,26 +346,8 @@ test('Deployment detail connects eight tabs, four header actions, continuous his
   const { state, evidence } = await setup(context, page)
   await page.goto(path)
   await expect(page.getByRole('heading', { name: 'api', exact: true })).toBeVisible()
-  for (const width of [1440, 900, 320]) {
-    await page.setViewportSize({ width, height: 1000 })
-    await expect
-      .poll(() =>
-        page.evaluate(() => {
-          const header = document.querySelector('.soha-deployment-header')!.getBoundingClientRect()
-          const overview = document
-            .querySelector('.soha-deployment-overview')!
-            .getBoundingClientRect()
-          return {
-            leftAligned: Math.abs(header.left - overview.left) <= 1,
-            rightAligned: Math.abs(header.right - overview.right) <= 1,
-            pageOverflow: document.documentElement.scrollWidth > innerWidth,
-          }
-        }),
-      )
-      .toEqual({ leftAligned: true, rightAligned: true, pageOverflow: false })
-  }
-  await page.setViewportSize({ width: 1440, height: 1000 })
-  const actions = page.locator('.soha-deployment-actions')
+  await expectWorkloadDetailFrame(page)
+  const actions = page.locator('.soha-workload-detail-actions')
   await expect(actions.getByRole('button')).toHaveCount(4)
   await expect(actions).not.toContainText('YAML')
   await expect(actions).not.toContainText('回滚')
@@ -547,7 +530,7 @@ test('Deployment readonly and zero-replica states do not fabricate write capabil
 }) => {
   const { state, evidence } = await setup(context, page, { readonly: true, zero: true })
   await page.goto(`${path}&tab=metrics`)
-  await expect(page.locator('.soha-deployment-actions').getByRole('button')).toHaveCount(1)
+  await expect(page.locator('.soha-workload-detail-actions').getByRole('button')).toHaveCount(1)
   await expect(page.locator('.soha-pod-detail-metric-missing')).toHaveCount(4)
   await expect(page.locator('.soha-pod-detail-metrics')).toContainText('当前没有 Pod，暂无指标')
   await page.getByRole('tab', { name: '交付联动', exact: true }).click()

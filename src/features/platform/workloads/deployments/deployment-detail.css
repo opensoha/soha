@@ -1,68 +1,6 @@
 .soha-deployment-detail {
   min-width: 0;
 }
-.soha-deployment-detail .soha-workload-detail-page {
-  padding: 0;
-  gap: 0;
-}
-.soha-deployment-header {
-  padding: 20px 22px 16px;
-  background: var(--soha-bg-surface);
-  border-bottom: 1px solid var(--soha-border-color);
-}
-.soha-deployment-title-row,
-.soha-deployment-title,
-.soha-deployment-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.soha-deployment-title-row {
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-}
-.soha-deployment-title {
-  min-width: 0;
-}
-.soha-deployment-title h1 {
-  margin: 0;
-  font-size: 21px;
-  line-height: 30px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.soha-deployment-actions {
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-left: auto;
-  max-width: 100%;
-}
-.soha-deployment-meta {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-  font-size: 12px;
-}
-.soha-deployment-detail .soha-workload-detail-tabs > .ant-tabs-nav {
-  padding-inline: 22px;
-  margin: 0;
-  background: var(--soha-bg-surface);
-  position: sticky;
-  top: 0;
-  z-index: 5;
-}
-.soha-deployment-detail
-  .soha-workload-detail-tabs
-  > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
-  padding: 20px 0;
-  min-width: 0;
-}
-.soha-deployment-detail .soha-detail-stack {
-  gap: 16px;
-}
 .soha-deployment-detail .soha-detail-card > .ant-card-head {
   min-height: 46px;
   padding-inline: 18px;
@@ -230,27 +168,7 @@
   color: var(--soha-text-secondary);
   font-size: 12px;
 }
-@media (max-width: 1050px) {
-  .soha-deployment-actions {
-    flex-basis: 100%;
-    margin-left: 0;
-  }
-}
 @media (max-width: 760px) {
-  .soha-deployment-header {
-    padding: 16px 14px;
-  }
-  .soha-deployment-title h1 {
-    font-size: 18px;
-  }
-  .soha-deployment-detail .soha-workload-detail-tabs > .ant-tabs-nav {
-    padding-inline: 14px;
-  }
-  .soha-deployment-detail
-    .soha-workload-detail-tabs
-    > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
-    padding: 14px 0;
-  }
   .soha-deployment-delivery-grid {
     display: flex;
     flex-direction: column;

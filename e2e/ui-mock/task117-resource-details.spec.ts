@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 import { baselineResponse } from '../fixtures/baseline-data'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
+import { expectWorkloadDetailFrame } from '../fixtures/workload-detail-geometry'
 
 const root = '/api/v1/clusters/cluster-a'
 const controllers = [
@@ -101,7 +102,14 @@ for (const [kind, label, permission] of controllers)
       schedule: '*/5 * * * *',
       suspend: false,
       activeJobs: 1,
-      relatedResources: [],
+      relatedResources: [
+        {
+          kind: 'ConfigMap',
+          name: 'sample-config',
+          namespace: 'monitoring',
+          relation: 'uses-config',
+        },
+      ],
       ...(kind === 'cronjobs' ? { jobs } : { pods }),
     }
     const { reads, evidence } = await setup(
@@ -115,6 +123,25 @@ for (const [kind, label, permission] of controllers)
       ],
       {
         [`${root}/workloads/${kind}/sample/detail`]: detail,
+        [`${root}/workloads/${kind}/sample/metrics`]: {
+          configured: true,
+          available: true,
+          source: 'prometheus',
+          rangeMinutes: 60,
+          series: [{ key: 'cpu', unit: 'cores', latest: 0.125, points: [] }],
+        },
+        [`${root}/workloads/${kind}/sample/yaml`]: {
+          yaml: `apiVersion: v1\nkind: ${label}\nmetadata:\n  name: sample\n`,
+        },
+        [`${root}/resources/graph?namespace=monitoring&kind=ReplicaSet&name=sample`]: {
+          rootId: 'sample',
+          clusterId: 'cluster-a',
+          generatedAt: '2026-10-31T00:00:00Z',
+          nodes: [],
+          edges: [],
+          warnings: [],
+          evidence: [],
+        },
         [`${root}/workloads/pods`]: pods.map((pod) => ({
           ...pod,
           cpu: '125m',
@@ -140,10 +167,11 @@ for (const [kind, label, permission] of controllers)
       },
     )
     await page.goto(`/workloads/${kind}/sample?clusterId=cluster-a&namespace=monitoring`)
-    await expect(page.locator('.soha-k8s-detail-header h1')).toHaveText('sample')
-    await expect(page.locator('.soha-k8s-detail-header .soha-metadata-tag')).toHaveText(
+    await expect(page.locator('.soha-workload-detail-header h1')).toHaveText('sample')
+    await expect(page.locator('.soha-workload-detail-header .soha-metadata-tag')).toHaveText(
       'monitoring',
     )
+    await expectWorkloadDetailFrame(page)
     const overview = page.locator('.soha-workload-overview')
     await expect(overview.locator('aside')).toContainText('运行配置')
     await expect(overview.locator('.soha-k8s-detail-metadata')).toHaveCount(1)
@@ -200,11 +228,49 @@ for (const [kind, label, permission] of controllers)
       'Synthetic controller event',
     )
     expect(reads.some((path) => path.includes('/events?namespace=monitoring'))).toBe(true)
+    const eventReads = reads.filter((path) => path.startsWith(`${root}/events?`)).length
+    await page.getByRole('button', { name: `刷新 ${label} 事件`, exact: true }).click()
+    await expect
+      .poll(() => reads.filter((path) => path.startsWith(`${root}/events?`)).length)
+      .toBeGreaterThan(eventReads)
     await page.reload()
     await expect(page.getByRole('tab', { name: '事件', exact: true })).toHaveAttribute(
       'aria-selected',
       'true',
     )
+
+    if (kind === 'statefulsets' || kind === 'daemonsets') {
+      await page.getByRole('tab', { name: '指标', exact: true }).click()
+      await expect(page.locator('.soha-pod-detail-metric-card')).toHaveCount(4)
+      await expect(page.locator('.soha-pod-detail-metric-card').first()).toContainText('125 mCPU')
+    } else {
+      await expect(page.getByRole('tab', { name: '指标', exact: true })).toHaveCount(0)
+    }
+    await page.getByRole('tab', { name: '关联资源', exact: true }).click()
+    if (kind === 'replicasets') {
+      await expect(page.getByRole('button', { name: '刷新资源关系', exact: true })).toBeVisible()
+      expect(
+        reads.some((path) =>
+          path.includes('/resources/graph?namespace=monitoring&kind=ReplicaSet&name=sample'),
+        ),
+      ).toBe(true)
+      await page
+        .getByRole('radiogroup', { name: '关联资源视图' })
+        .getByText('列表', { exact: true })
+        .click()
+      await expect(page.getByRole('radio', { name: '列表', exact: true })).toBeChecked()
+    }
+    await expect(page.getByRole('tabpanel', { name: '关联资源' })).toContainText('sample-config')
+    await expect(
+      page.getByRole('tabpanel', { name: '关联资源' }).locator('.ant-pagination'),
+    ).toHaveCount(0)
+    await page.getByRole('tab', { name: 'YAML', exact: true }).click()
+    await expect
+      .poll(() =>
+        reads.some((path) => path.includes(`/workloads/${kind}/sample/yaml?namespace=monitoring`)),
+      )
+      .toBe(true)
+    await expect(page.getByRole('tabpanel', { name: 'YAML' })).toBeVisible()
     if (kind === 'statefulsets') {
       await page.getByRole('tab', { name: '概览', exact: true }).click()
       await page.setViewportSize({ width: 900, height: 850 })

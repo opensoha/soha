@@ -7,13 +7,14 @@ import { resourceInsightQueries } from '@/features/platform/shared/resource-insi
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
-import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons'
+import { ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Spin, Typography } from 'antd'
 import { lazy, Suspense, useMemo, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useWorkloadDetailScope } from '../shared/detail-scope'
 import { WorkloadDetailShell } from '../shared/detail-shell'
+import { WorkloadDetailHeader } from '../shared/workload-detail-header'
 import { WorkloadDetailEvents } from '../shared/detail-events'
 import { workloadKeys } from '../shared/keys'
 import { deploymentQueries } from './queries'
@@ -227,19 +228,14 @@ export function DeploymentDetailPage() {
         hideRelationshipsTab
         yamlLast
         header={
-          <header className="soha-deployment-header">
-            <div className="soha-deployment-title-row">
-              <div className="soha-deployment-title">
-                <Link
-                  aria-label={zh ? '返回 Deployments' : 'Back to Deployments'}
-                  to={`/workloads/deployments?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(namespace || '')}`}
-                >
-                  <ArrowLeftOutlined />
-                </Link>
-                <h1>{detail.name}</h1>
-                <Typography.Text copyable={{ text: detail.name }} />
-              </div>
-              <div className="soha-deployment-actions">
+          <WorkloadDetailHeader
+            kind="Deployment"
+            name={detail.name}
+            namespace={detail.namespace}
+            backLabel={zh ? '返回 Deployments' : 'Back to Deployments'}
+            backTo={`/workloads/deployments?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(namespace || '')}`}
+            actions={
+              <>
                 {actions.buttons}
                 <Button
                   icon={<ReloadOutlined />}
@@ -257,29 +253,33 @@ export function DeploymentDetailPage() {
                   {zh ? '刷新' : 'Refresh'}
                 </Button>
                 {actions.deleteButton}
-              </div>
-            </div>
-            <div className="soha-deployment-meta">
+              </>
+            }
+            status={
               <StatusTag
                 value={deploymentDetailState(detail, status)}
                 label={
                   detail.desiredReplicas === 0 ? (zh ? '已缩容至 0' : 'Scaled to zero') : undefined
                 }
               />
-              <span>
-                {detail.readyReplicas} / {detail.desiredReplicas} {zh ? '就绪' : 'ready'}
-              </span>
-              <span>
-                {zh ? '版本' : 'Revision'} {status?.revision || '—'}
-              </span>
-              <span>{detail.namespace}</span>
-              <span>{detail.strategy}</span>
-              <Typography.Text type="secondary">
-                {zh ? '读取于' : 'Read at'}{' '}
-                {formatDateTime(new Date(detailQuery.dataUpdatedAt).toISOString())}
-              </Typography.Text>
-            </div>
-          </header>
+            }
+            facts={
+              <>
+                <span>
+                  {detail.readyReplicas} / {detail.desiredReplicas} {zh ? '就绪' : 'ready'}
+                </span>
+                <span>
+                  {zh ? '版本' : 'Revision'} {status?.revision || '—'}
+                </span>
+
+                <span>{detail.strategy}</span>
+                <Typography.Text type="secondary">
+                  {zh ? '读取于' : 'Read at'}{' '}
+                  {formatDateTime(new Date(detailQuery.dataUpdatedAt).toISOString())}
+                </Typography.Text>
+              </>
+            }
+          />
         }
         extraOverview={
           model ? (

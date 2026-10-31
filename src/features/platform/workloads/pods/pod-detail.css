@@ -2,42 +2,6 @@
   min-width: 0;
   height: 100%;
 }
-.soha-pod-detail .soha-workload-detail-page {
-  padding: 0;
-  gap: 0;
-}
-.soha-pod-detail-header {
-  padding: 20px 22px 16px;
-  background: var(--soha-bg-surface);
-  border-bottom: 1px solid var(--soha-border-color);
-}
-.soha-pod-detail-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-.soha-pod-detail-title-row > div:first-child {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.soha-pod-detail-title-row h1 {
-  font-size: 21px;
-  line-height: 30px;
-  font-weight: 600;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.soha-pod-detail-meta {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-  font-size: 12px;
-}
 .soha-pod-detail-squares {
   display: flex;
   gap: 5px;
@@ -73,24 +37,6 @@
 .soha-pod-detail-text-link:focus-visible {
   outline: 2px solid var(--soha-primary);
   outline-offset: 3px;
-}
-.soha-pod-detail .soha-workload-detail-tabs {
-  min-width: 0;
-}
-.soha-pod-detail .soha-workload-detail-tabs > .ant-tabs-nav {
-  padding: 0 22px;
-  margin: 0;
-  background: var(--soha-bg-surface);
-  position: sticky;
-  top: 0;
-  z-index: 5;
-}
-.soha-pod-detail .soha-workload-detail-tabs > .ant-tabs-content-holder {
-  padding: 20px 22px;
-  min-width: 0;
-}
-.soha-pod-detail .soha-detail-stack {
-  gap: 16px;
 }
 .soha-pod-detail-overview-grid {
   display: grid;
@@ -304,29 +250,8 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
-  .soha-pod-detail-title-row h1 {
-    font-size: 19px;
-  }
 }
 @media (max-width: 760px) {
-  .soha-pod-detail-header {
-    padding: 16px 14px;
-  }
-  .soha-pod-detail-title-row {
-    gap: 8px;
-  }
-  .soha-pod-detail-title-row h1 {
-    font-size: 17px;
-  }
-  .soha-pod-detail-meta {
-    gap: 12px;
-  }
-  .soha-pod-detail .soha-workload-detail-tabs > .ant-tabs-nav {
-    padding-inline: 14px;
-  }
-  .soha-pod-detail .soha-workload-detail-tabs > .ant-tabs-content-holder {
-    padding: 14px;
-  }
   .soha-pod-detail-overview-aside {
     display: flex;
   }

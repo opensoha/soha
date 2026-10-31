@@ -21,12 +21,8 @@ import { useI18n } from '@/i18n'
 import type { PodVolume, PodVolumeMount } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatRelativeTime } from '@/utils/time'
-import {
-  ArrowLeftOutlined,
-  CodeOutlined,
-  FileTextOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons'
+import { WorkloadDetailHeader } from '../shared/workload-detail-header'
+import { CodeOutlined, FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
 import { Button, Card, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd'
@@ -728,19 +724,16 @@ export function PodDetailPage() {
       ),
   }
   const header = (
-    <header className="soha-pod-detail-header">
-      <div className="soha-pod-detail-title-row">
-        <div>
-          <RouterLink
-            aria-label={localeCode === 'zh_CN' ? '返回 Pods' : 'Back to Pods'}
-            to={`/workloads/pods?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(detailNamespace || '')}`}
-          >
-            <ArrowLeftOutlined />
-          </RouterLink>
-          <h1>{podName}</h1>
-          <Text copyable={{ text: podName }} />
-        </div>
-        <Space>
+    <WorkloadDetailHeader
+      kind="Pod"
+      name={podName}
+      namespace={podDetail?.namespace || detailNamespace}
+      namespaceContent={namespaceLink}
+      status={<StatusTag value={podDetail?.phase} />}
+      backLabel={localeCode === 'zh_CN' ? '返回 Pods' : 'Back to Pods'}
+      backTo={`/workloads/pods?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(detailNamespace || '')}`}
+      actions={
+        <>
           <Button
             icon={<ReloadOutlined />}
             loading={podDetailQuery.isFetching}
@@ -787,32 +780,33 @@ export function PodDetailPage() {
             ]}
             onSelect={setActiveTabKey}
           />
-        </Space>
-      </div>
-      <div className="soha-pod-detail-meta">
-        <StatusTag value={podDetail?.phase} />
-        <span className="soha-pod-detail-squares">
-          {[...(podDetail?.containers ?? [])]
-            .sort((a, b) => Number(b.role === 'init') - Number(a.role === 'init'))
-            .map((item) => (
-              <PodContainerSquare
-                key={item.name}
-                item={item}
-                onClick={() => {
-                  setExpanded([item.name])
-                  openContainerTab('overview', item.name)
-                }}
-              />
-            ))}
-        </span>
-        <span>
-          {localeCode === 'zh_CN' ? '重启' : 'Restarts'} {containerSummary.restarts}
-        </span>
-        {namespaceLink}
-        <span>{podDetail?.qosClass || '—'}</span>
-        <Text type="secondary">{formatRelativeTime(podDetail?.createdAt)}</Text>
-      </div>
-    </header>
+        </>
+      }
+      facts={
+        <>
+          <span className="soha-pod-detail-squares">
+            {[...(podDetail?.containers ?? [])]
+              .sort((a, b) => Number(b.role === 'init') - Number(a.role === 'init'))
+              .map((item) => (
+                <PodContainerSquare
+                  key={item.name}
+                  item={item}
+                  onClick={() => {
+                    setExpanded([item.name])
+                    openContainerTab('overview', item.name)
+                  }}
+                />
+              ))}
+          </span>
+          <span>
+            {localeCode === 'zh_CN' ? '重启' : 'Restarts'} {containerSummary.restarts}
+          </span>
+
+          <span>{podDetail?.qosClass || '—'}</span>
+          <Text type="secondary">{formatRelativeTime(podDetail?.createdAt)}</Text>
+        </>
+      }
+    />
   )
 
   return (

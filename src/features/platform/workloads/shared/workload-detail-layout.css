@@ -1,0 +1,104 @@
+.soha-page.soha-workload-detail-frame {
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+}
+.soha-workload-detail-header {
+  min-width: 0;
+  padding: 20px 22px 16px;
+  background: var(--soha-bg-surface);
+  border-bottom: 1px solid var(--soha-border-color);
+}
+.soha-workload-detail-title-row,
+.soha-workload-detail-title,
+.soha-workload-detail-actions,
+.soha-workload-detail-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.soha-workload-detail-title-row {
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.soha-workload-detail-title {
+  flex: 1 1 280px;
+  gap: 12px;
+}
+.soha-workload-detail-title h1 {
+  min-width: 0;
+  margin: 0;
+  font-size: 21px;
+  line-height: 30px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.soha-workload-detail-title > a {
+  flex: none;
+}
+.soha-workload-detail-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.soha-workload-detail-meta {
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.soha-workload-detail-meta .soha-metadata-tag {
+  margin-inline-end: 0;
+}
+.soha-workload-detail-namespace {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(280px, 100%);
+}
+.soha-workload-detail-namespace > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Workload-only ownership of Antd Tabs framing; other resource families retain their layout. */
+.soha-workload-detail-frame > .soha-workload-detail-tabs > .ant-tabs-nav {
+  padding-inline: 22px;
+  margin: 0;
+  background: var(--soha-bg-surface);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.soha-workload-detail-frame
+  > .soha-workload-detail-tabs
+  > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
+  padding: 20px 0;
+  min-width: 0;
+}
+.soha-workload-detail-frame .soha-detail-stack {
+  gap: 16px;
+}
+@media (max-width: 760px) {
+  .soha-workload-detail-header {
+    padding: 16px 14px;
+  }
+  .soha-workload-detail-title-row {
+    gap: 8px;
+  }
+  .soha-workload-detail-title h1 {
+    font-size: 18px;
+  }
+  .soha-workload-detail-meta {
+    gap: 12px;
+  }
+  .soha-workload-detail-frame > .soha-workload-detail-tabs > .ant-tabs-nav {
+    padding-inline: 14px;
+  }
+  .soha-workload-detail-frame
+    > .soha-workload-detail-tabs
+    > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
+    padding: 14px 0;
+  }
+}

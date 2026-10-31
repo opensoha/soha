@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 import { baselineResponse } from '../fixtures/baseline-data'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
+import { expectWorkloadDetailFrame } from '../fixtures/workload-detail-geometry'
 
 const podName = 'api-7d9-with-a-long-pod-name'
 const path = `/workloads/pods/${podName}?clusterId=cluster-a&namespace=monitoring`
@@ -261,6 +262,7 @@ test('Pod detail connects overview, init containers, six metric cards and scoped
   const { state, evidence } = await setup(context, page)
   await page.goto(path)
   await expect(page.getByRole('heading', { name: podName, exact: true })).toBeVisible()
+  await expectWorkloadDetailFrame(page)
   const overview = page.getByRole('tabpanel', { name: '概览', exact: true })
   await expect(overview.getByText('Pod 运行正常', { exact: true })).toBeVisible()
   const containers = overview.locator('.soha-pod-detail-container-label')

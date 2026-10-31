@@ -130,4 +130,27 @@ describe('Pod detail real-data panels', () => {
     )
     expect(container.textContent).not.toContain('Initialized')
   })
+  it('keeps event refresh available after success and distinguishes unavailable counts', async () => {
+    const refresh = vi.fn()
+    const container = await render(
+      <PodDetailEvents events={[]} observedAt={Date.now()} loading={false} onRefresh={refresh} />,
+    )
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="刷新 Pod 事件"]')!.click(),
+    )
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('0 条返回记录')
+    const failed = await render(
+      <PodDetailEvents
+        events={[]}
+        observedAt={Date.now()}
+        loading={false}
+        error="read failed"
+        onRefresh={refresh}
+      />,
+    )
+    expect(failed.textContent).toContain('— 条返回记录')
+    expect(failed.textContent).toContain('read failed')
+    expect(failed.textContent).not.toContain('没有匹配')
+  })
 })

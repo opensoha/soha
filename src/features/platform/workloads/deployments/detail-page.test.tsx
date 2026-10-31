@@ -287,7 +287,7 @@ describe('deployment detail page boundaries', () => {
     expect(
       Array.from(container.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent),
     ).toEqual(['Overview', 'Pods', '版本历史', '事件', '指标', '关联资源', '交付联动', 'YAML'])
-    const actions = container.querySelector('.soha-deployment-actions')!
+    const actions = container.querySelector('.soha-workload-detail-actions')!
     expect(actions.textContent).toContain('扩缩容')
     expect(actions.querySelector('[aria-label="重启"]')).not.toBeNull()
     expect(actions.querySelector('[aria-label="删除"]')).not.toBeNull()
@@ -365,8 +365,10 @@ describe('deployment detail page boundaries', () => {
   it('does not expose write actions or request Delivery data for a K8s-only reader', async () => {
     testState.permissions = ['platform.deployment.view', 'platform.pods.view']
     const container = await renderDetail()
-    expect(container.querySelector('.soha-deployment-actions')?.textContent).not.toContain('扩缩容')
-    expect(container.querySelector('.soha-deployment-actions [aria-label="删除"]')).toBeNull()
+    expect(container.querySelector('.soha-workload-detail-actions')?.textContent).not.toContain(
+      '扩缩容',
+    )
+    expect(container.querySelector('.soha-workload-detail-actions [aria-label="删除"]')).toBeNull()
     await act(async () => clickTab(container, '交付联动'))
     await flushAsyncWork()
     expect(

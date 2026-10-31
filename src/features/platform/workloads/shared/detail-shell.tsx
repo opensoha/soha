@@ -5,7 +5,6 @@ import { useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { ResourceGitOpsStatus } from '@/features/platform/shared/resource-gitops-status'
 import {
-  ResourceDetailHeader,
   ResourceDetailTabs,
   useResourceDetailTab,
 } from '@/features/platform/shared/resource-detail-header'
@@ -25,10 +24,14 @@ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Pod, WorkloadRelation } from '@/types'
 import { WorkloadPodsCard, WorkloadRelationsCard } from './workload-relations'
 import { ControllerHeaderFacts, WorkloadJobsCard, type ChildJob } from './controller-overview'
+import { WorkloadDetailHeader } from './workload-detail-header'
+import { StatusTag } from '@/components/status-tag'
+import { formatRelativeTime } from '@/utils/time'
 import type { TabsProps } from 'antd'
-import { App, Card, Spin } from 'antd'
+import { App, Button, Card, Segmented, Spin, Typography } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
 import type { ReactNode } from 'react'
-import { lazy, Suspense, useMemo } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 const K8sYamlEditor = lazy(async () => {
@@ -104,6 +107,7 @@ export function WorkloadDetailShell({
   detailRefetchOnMount?: boolean
 }) {
   const { t, localeCode } = useI18n()
+  const [relationshipView, setRelationshipView] = useState('graph')
   const { message } = App.useApp()
   const params = useParams()
   const name = params[paramKey] as string
@@ -238,9 +242,7 @@ export function WorkloadDetailShell({
     : []
 
   return (
-    <div
-      className={`soha-page soha-workload-detail-page ${enhanced ? 'soha-k8s-detail-page' : ''}`}
-    >
+    <div className="soha-page soha-workload-detail-page soha-workload-detail-frame">
       <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
       <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
 
@@ -248,26 +250,43 @@ export function WorkloadDetailShell({
 
       {header ??
         (enhanced ? (
-          <ResourceDetailHeader
+          <WorkloadDetailHeader
             kind={title}
             name={detail.name}
             namespace={detail.namespace}
-            status={typeof detail.status === 'string' ? detail.status : undefined}
-            facts={<ControllerHeaderFacts detail={detail} resource={resource} />}
-            createdAt={detail.createdAt}
-            queryKey={workloadQueries.detail(resource, detailScope, name).queryKey}
-            refreshing={
-              detailQuery.isFetching || (resolvedActiveTabKey === 'pods' && podsFetching > 0)
+            status={
+              typeof detail.status === 'string' ? <StatusTag value={detail.status} /> : undefined
             }
-            onRefresh={() =>
-              Promise.all([
-                queryClient.invalidateQueries({
-                  queryKey: workloadQueries.detail(resource, detailScope, name).queryKey,
-                }),
-                ...(resolvedActiveTabKey === 'pods'
-                  ? [queryClient.invalidateQueries({ queryKey: podListKey })]
-                  : []),
-              ])
+            facts={
+              <>
+                <ControllerHeaderFacts detail={detail} resource={resource} />
+                {detail.createdAt && (
+                  <Typography.Text type="secondary">
+                    {formatRelativeTime(detail.createdAt)}
+                  </Typography.Text>
+                )}
+              </>
+            }
+            actions={
+              <Button
+                icon={<ReloadOutlined />}
+                aria-label={localeCode === 'zh_CN' ? `刷新 ${title}` : `Refresh ${title}`}
+                loading={
+                  detailQuery.isFetching || (resolvedActiveTabKey === 'pods' && podsFetching > 0)
+                }
+                onClick={() =>
+                  Promise.all([
+                    queryClient.invalidateQueries({
+                      queryKey: workloadQueries.detail(resource, detailScope, name).queryKey,
+                    }),
+                    ...(resolvedActiveTabKey === 'pods'
+                      ? [queryClient.invalidateQueries({ queryKey: podListKey })]
+                      : []),
+                  ])
+                }
+              >
+                {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              </Button>
             }
           />
         ) : null)}
@@ -333,6 +352,24 @@ export function WorkloadDetailShell({
                     resolvedActiveTabKey === 'relationships' ? (
                       <div className="soha-detail-stack">
                         {graphKind && (
+                          <div className="soha-k8s-detail-toolbar">
+                            <Segmented
+                              aria-label={
+                                localeCode === 'zh_CN' ? '关联资源视图' : 'Related resource view'
+                              }
+                              value={relationshipView}
+                              onChange={setRelationshipView}
+                              options={[
+                                {
+                                  value: 'graph',
+                                  label: localeCode === 'zh_CN' ? '关系图' : 'Graph',
+                                },
+                                { value: 'list', label: localeCode === 'zh_CN' ? '列表' : 'List' },
+                              ]}
+                            />
+                          </div>
+                        )}
+                        {graphKind && relationshipView === 'graph' && (
                           <Suspense fallback={<Spin />}>
                             <ResourceGraphPanel
                               kind={graphKind}
@@ -341,14 +378,16 @@ export function WorkloadDetailShell({
                             />
                           </Suspense>
                         )}
-                        <WorkloadRelationsCard
-                          resources={
-                            Array.isArray(detail.relatedResources)
-                              ? (detail.relatedResources as WorkloadRelation[])
-                              : []
-                          }
-                          namespace={detail.namespace}
-                        />
+                        {(!graphKind || relationshipView === 'list') && (
+                          <WorkloadRelationsCard
+                            resources={
+                              Array.isArray(detail.relatedResources)
+                                ? (detail.relatedResources as WorkloadRelation[])
+                                : []
+                            }
+                            namespace={detail.namespace}
+                          />
+                        )}
                       </div>
                     ) : null,
                 },

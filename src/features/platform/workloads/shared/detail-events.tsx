@@ -1,8 +1,19 @@
 import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
-import { SearchOutlined, WarningOutlined } from '@ant-design/icons'
-import { Button, Card, Input, Segmented, Select, Tag, Timeline, Tooltip, Typography } from 'antd'
+import { ReloadOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons'
+import {
+  Button,
+  Card,
+  Input,
+  Segmented,
+  Select,
+  Space,
+  Tag,
+  Timeline,
+  Tooltip,
+  Typography,
+} from 'antd'
 import { useMemo, useState } from 'react'
 import type { WorkloadEvent } from './types'
 import './detail-observability.css'
@@ -62,9 +73,19 @@ export function WorkloadDetailEvents({
       title={zh ? '事件时间轴' : 'Event timeline'}
       loading={loading}
       extra={
-        <Typography.Text type="secondary">
-          {events.length} {zh ? '条返回记录' : 'returned records'}
-        </Typography.Text>
+        <Space wrap>
+          <Typography.Text type="secondary">
+            {loading || error ? '—' : events.length} {zh ? '条返回记录' : 'returned records'}
+          </Typography.Text>
+          <Button
+            icon={<ReloadOutlined />}
+            aria-label={zh ? `刷新 ${resourceLabel} 事件` : `Refresh ${resourceLabel} events`}
+            loading={loading}
+            onClick={onRefresh}
+          >
+            {zh ? '刷新' : 'Refresh'}
+          </Button>
+        </Space>
       }
     >
       <div className="soha-pod-detail-event-toolbar">

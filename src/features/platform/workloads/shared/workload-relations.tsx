@@ -1,6 +1,7 @@
 import { ReadFeedback } from '@/components/request-feedback'
 import { usePodObservations } from './use-pod-observations'
-import { Button, Card, Tag } from 'antd'
+import { Button, Card } from 'antd'
+import { MetadataTag } from '@/components/status-tag'
 import { AdminTable } from '@/components/admin-table'
 import { WorkloadPodsTable } from './workload-pods-table'
 import { useWorkloadDetailScope } from './detail-scope'
@@ -63,7 +64,9 @@ export function WorkloadRelationsCard({
       title: localeCode === 'zh_CN' ? '资源类型' : 'Kind',
       dataIndex: 'kind',
       width: 150,
-      render: (value: string) => <Tag>{localizeRelatedResourceKind(value, localeCode)}</Tag>,
+      render: (value: string) => (
+        <MetadataTag label={localizeRelatedResourceKind(value, localeCode)} />
+      ),
     },
     {
       title: localeCode === 'zh_CN' ? '名称' : 'Name',
@@ -83,14 +86,15 @@ export function WorkloadRelationsCard({
       title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
       dataIndex: 'namespace',
       width: 160,
-      render: (value?: string) => value || namespace || '-',
+      render: (value?: string) =>
+        value || namespace ? <MetadataTag tone="blue" label={value || namespace} /> : '—',
     },
     {
       title: localeCode === 'zh_CN' ? '关联关系' : 'Relation',
       dataIndex: 'relation',
       width: 200,
       render: (value?: string) =>
-        value ? <Tag>{localizeRelatedRelation(value, localeCode)}</Tag> : '-',
+        value ? <MetadataTag label={localizeRelatedRelation(value, localeCode)} /> : '—',
     },
   ]
 
@@ -98,7 +102,7 @@ export function WorkloadRelationsCard({
     <Card
       className="soha-detail-card"
       size="small"
-      title={localeCode === 'zh_CN' ? '关联资源' : 'Related Resources'}
+      title={`${localeCode === 'zh_CN' ? '关联资源' : 'Related resources'} ${resources.length}`}
     >
       <AdminTable
         columns={columns}
