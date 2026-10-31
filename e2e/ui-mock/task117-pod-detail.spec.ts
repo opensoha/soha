@@ -19,6 +19,12 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
     yamlFault: '' as '' | 'read' | 'identity',
     containerArgument: '--config=/etc/api/config.yaml',
     referencePermissions: true,
+    deletePermission: false,
+    deleteStatus: 200,
+    deleted: false,
+    deletes: [] as string[],
+    mutationUnavailable: false,
+    connectionMode: 'direct_kubeconfig',
   }
   await context.addInitScript(() =>
     localStorage.setItem(
@@ -37,6 +43,7 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
         'platform.pods.view',
         'platform.nodes.view',
         'platform.namespaces.view',
+        ...(state.deletePermission ? ['platform.pods.delete'] : []),
         ...(state.referencePermissions
           ? [
               'platform.configuration.config-maps.view',
@@ -62,7 +69,7 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
             {
               id: 'cluster-a',
               name: 'Pod 详情样板',
-              connectionMode: 'direct_kubeconfig',
+              connectionMode: state.connectionMode,
               environment: 'testing',
               health: { status: 'healthy' },
             },
@@ -74,13 +81,35 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
         body: {
           data: ['pod.logs', 'pod.exec', 'workload.mutations'].map((key) => ({
             key,
-            direct: { status: 'available' },
+            direct: {
+              status:
+                key === 'workload.mutations' && state.mutationUnavailable
+                  ? 'unsupported'
+                  : 'available',
+            },
             agent: { status: 'partial' },
           })),
         },
       }
+    if (url.pathname.endsWith(`/pods/${podName}`) && method === 'DELETE') {
+      state.deletes.push(url.pathname + url.search)
+      if (state.deleteStatus !== 200)
+        return {
+          status: state.deleteStatus,
+          body: { error: { code: 'conflict', message: 'Synthetic Pod delete rejected' } },
+        }
+      state.deleted = true
+      return { body: { data: null } }
+    }
+    if (url.pathname === '/api/v1/clusters/cluster-a/workloads/pods' && method === 'GET')
+      return { body: { data: [] } }
     if (url.pathname.endsWith(`/pods/${podName}/detail`)) {
       state.detailReads += 1
+      if (state.deleted)
+        return {
+          status: 404,
+          body: { error: { code: 'not_found', message: 'Synthetic Pod deleted' } },
+        }
       return {
         body: {
           data: {
@@ -824,5 +853,90 @@ test('Pod container details keep read errors recoverable and gate reference navi
   await expect(page.getByRole('alert')).toContainText('Pod YAML identity does not match')
   await expect(app).toContainText('Exit Code 137')
   await expect(app).not.toContainText(state.containerArgument)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Pod header deletion confirms the scoped target, keeps errors and returns to its list', async ({
+  context,
+  page,
+}, testInfo) => {
+  const { state, evidence } = await setup(context, page)
+  state.deletePermission = true
+  state.allowedActions.push('delete')
+  await page.goto(path)
+  const header = page.locator('.soha-workload-detail-header')
+  const remove = header.getByRole('button', { name: '删除', exact: true })
+  await expect(remove).toBeEnabled()
+  for (const width of [1373, 900, 320]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await expect(remove).toBeVisible()
+    expect(await header.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+  }
+  await page.setViewportSize({ width: 1373, height: 1000 })
+  await page.getByLabel('切换到深色模式').click()
+  await remove.click()
+  const dialog = page.getByRole('dialog', { name: `确认删除 Pod ${podName}？` })
+  await expect(dialog).toContainText(`cluster-a / monitoring / ${podName}`)
+  await expect(dialog).toContainText('受控制器管理的 Pod 可能会自动创建替代实例')
+  expect(state.deletes).toHaveLength(0)
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(state.deletes).toHaveLength(0)
+  await page.screenshot({
+    path: testInfo.outputPath('pod-header-delete-dark.png'),
+    animations: 'disabled',
+  })
+  state.deleteStatus = 409
+  await remove.click()
+  await dialog.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(dialog).toContainText('Synthetic Pod delete rejected')
+  await expect(dialog.getByRole('button', { name: '删除', exact: true })).toBeEnabled()
+  expect(state.deletes).toEqual([
+    `/api/v1/clusters/cluster-a/workloads/pods/${podName}?namespace=monitoring`,
+  ])
+  state.deleteStatus = 200
+  await dialog.getByRole('button', { name: '删除', exact: true }).dblclick()
+  await expect(page).toHaveURL('/workloads/pods?clusterId=cluster-a&namespace=monitoring')
+  expect(state.deletes).toHaveLength(2)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Pod header deletion requires permission, allowed action and supported cluster capability', async ({
+  context,
+  page,
+}) => {
+  await page.clock.install()
+  const { state, evidence } = await setup(context, page)
+  state.allowedActions.push('delete')
+  await page.goto(path)
+  const header = page.locator('.soha-workload-detail-header')
+  const remove = header.getByRole('button', { name: '删除', exact: true })
+  await expect(header).toBeVisible()
+  await expect(remove).toHaveCount(0)
+  state.deletePermission = true
+  state.allowedActions = ['get']
+  await page.reload()
+  await expect(header).toBeVisible()
+  await expect(remove).toHaveCount(0)
+  state.allowedActions.push('delete')
+  state.mutationUnavailable = true
+  await page.reload()
+  await expect(remove).toBeDisabled()
+  state.mutationUnavailable = false
+  state.connectionMode = 'agent'
+  await page.reload()
+  await expect(remove).toBeDisabled()
+  state.connectionMode = 'direct_kubeconfig'
+  await page.reload()
+  await expect(remove).toBeEnabled()
+  await remove.click()
+  const dialog = page.getByRole('dialog', { name: `确认删除 Pod ${podName}？` })
+  state.allowedActions = ['get']
+  const reads = state.detailReads
+  await page.clock.runFor(15_100)
+  await expect.poll(() => state.detailReads).toBeGreaterThan(reads)
+  await expect(dialog.getByRole('button', { name: '删除', exact: true })).toBeDisabled()
+  await expect(dialog).toContainText('资源或操作权限已变化')
+  expect(state.deletes).toHaveLength(0)
   verifyBrowserEvidence(evidence)
 })

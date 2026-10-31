@@ -32,6 +32,7 @@ import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'rea
 import { useWorkloadDetailScope } from '../shared/detail-scope'
 import { WorkloadDetailShell } from '../shared/detail-shell'
 import { podQueries } from './queries'
+import { usePodDetailDelete } from './use-pod-detail-delete'
 
 const { Text } = Typography
 
@@ -143,6 +144,7 @@ export function PodDetailPage() {
     refetchIntervalInBackground: false,
   })
   const visiblePodDetailQueryData = readableQueryData(podDetailQuery)
+  const podDelete = usePodDetailDelete(visiblePodDetailQueryData, detailScope)
   const readsContainerConfiguration =
     activeTabKey === 'overview' &&
     expanded.length > 0 &&
@@ -738,6 +740,7 @@ export function PodDetailPage() {
               if (activeTabKey === 'events') void podEventsQuery.refetch()
             }}
           />
+          {podDelete.button}
           <KubernetesResourceActionsMenu
             resourceLabel="Pod"
             name={podName}
@@ -804,6 +807,8 @@ export function PodDetailPage() {
 
   return (
     <div className={`soha-pod-detail is-tab-${activeTabKey}`}>
+      {podDelete.feedback}
+      {podDelete.confirmation}
       <WorkloadDetailShell
         title="Pod"
         resource="pods"

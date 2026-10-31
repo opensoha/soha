@@ -106,6 +106,12 @@ vi.mock('@/features/auth/permission-snapshot', () => ({
 }))
 
 vi.mock('@/features/platform/cluster-capabilities', () => ({
+  useClusterCapabilityForCluster: () => ({
+    disabled: false,
+    isLoading: false,
+    reason: '',
+    status: 'available',
+  }),
   useClusterCapability: () => ({
     disabled: false,
     isLoading: false,
