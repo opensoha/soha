@@ -18,6 +18,7 @@ import (
 	apierrors "github.com/opensoha/soha/internal/api/errors"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domain "github.com/opensoha/soha/internal/domain/directorysync"
@@ -78,11 +79,12 @@ type ConnectorFactory interface {
 }
 
 type Handler struct {
-	repository Repository
-	service    Service
-	connectors ConnectorFactory
-	now        func() time.Time
-	audit      interface {
+	permissionResolver *appaccess.PermissionResolver
+	repository         Repository
+	service            Service
+	connectors         ConnectorFactory
+	now                func() time.Time
+	audit              interface {
 		Record(context.Context, domainaudit.Entry) error
 	}
 	operations interface {
@@ -163,19 +165,20 @@ type policyResponse struct {
 }
 
 type runResponse struct {
-	ID            string         `json:"id"`
-	ConnectionID  string         `json:"connectionId"`
-	Trigger       string         `json:"trigger"`
-	Status        string         `json:"status"`
-	StartedAt     *time.Time     `json:"startedAt,omitempty"`
-	FinishedAt    *time.Time     `json:"finishedAt,omitempty"`
-	Error         string         `json:"error,omitempty"`
-	Organizations map[string]int `json:"organizations,omitempty"`
-	People        map[string]int `json:"people,omitempty"`
+	ID              string         `json:"id"`
+	ConnectionID    string         `json:"connectionId"`
+	Trigger         string         `json:"trigger"`
+	Status          string         `json:"status"`
+	StartedAt       *time.Time     `json:"startedAt,omitempty"`
+	FinishedAt      *time.Time     `json:"finishedAt,omitempty"`
+	CancelRequested bool           `json:"cancelRequested,omitempty"`
+	Error           string         `json:"error,omitempty"`
+	Organizations   map[string]int `json:"organizations,omitempty"`
+	People          map[string]int `json:"people,omitempty"`
 }
 
 func runView(run domain.Run) runResponse {
-	return runResponse{ID: run.ID, ConnectionID: run.ConnectionID, Trigger: run.Trigger, Status: run.Status, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, Error: run.ErrorSummary,
+	return runResponse{ID: run.ID, ConnectionID: run.ConnectionID, Trigger: run.Trigger, Status: run.Status, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, CancelRequested: run.CancelRequested, Error: run.ErrorSummary,
 		Organizations: map[string]int{"create": run.Stats.OrganizationsCreated, "update": run.Stats.OrganizationsUpdated, "move": run.Stats.OrganizationsMoved, "archive": run.Stats.OrganizationsArchived},
 		People:        map[string]int{"create": run.Stats.PeopleCreated, "update": run.Stats.PeopleUpdated, "archive": run.Stats.PeopleArchived, "conflict": run.Stats.Conflicts}}
 }
@@ -402,6 +405,14 @@ func (h *Handler) Cancel(c *gin.Context) {
 	}
 	if err != nil {
 		writeError(c, err)
+		return
+	}
+	if run.ConnectionID != c.Param("connectionID") {
+		writeError(c, apperrors.ErrNotFound)
+		return
+	}
+	if run.RequestCredentialID != "" {
+		h.cancelOriginalSync(c, run.ID)
 		return
 	}
 	if !domain.CanTransitionRun(run.Status, domain.RunCanceled) {

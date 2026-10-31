@@ -17,6 +17,7 @@ import (
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	clusterrepo "github.com/opensoha/soha/internal/repository/cluster"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -28,10 +29,10 @@ func TestApplicationAndClusterDeletionWithPostgres(t *testing.T) {
 	}
 	port, err := strconv.Atoi(portText)
 	requireApplicationIntegrationNoError(t, err)
-	store, err := dbstore.New(config.DatabaseConfig{
+	store, err := dbstore.New(testpostgres.Configure(t, config.DatabaseConfig{
 		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable",
 		MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
-	}, zap.NewNop())
+	}), zap.NewNop())
 	requireApplicationIntegrationNoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	requireApplicationIntegrationNoError(t, store.MigrateFromFile(t.Context(), filepath.Join("..", "..", "..", "migrations", "postgres")))

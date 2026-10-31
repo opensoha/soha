@@ -165,7 +165,7 @@ func (s *Service) createNativeMessage(ctx context.Context, run domaincopilot.Age
 }
 
 func validateNativeMessage(input domaincopilot.WorkbenchSendMessageInput) error {
-	if strings.TrimSpace(input.Content) == "" || utf8.RuneCountInString(input.Content) > 16384 || len(input.RequestID) > 128 {
+	if strings.TrimSpace(input.Content) == "" || utf8.RuneCountInString(input.Content) > 16384 || !workbenchRequestIDWithinLimit(input.RequestID) {
 		return fmt.Errorf("%w: invalid bounded Native request", apperrors.ErrInvalidArgument)
 	}
 	return validateNativeTaskIntent(input.TaskIntent)
@@ -385,6 +385,12 @@ func (s *Service) nativeModelStep(ctx context.Context, store NativeRunStore, lea
 			return saveErr == nil
 		}}
 		response, err = stream.InvokeWorkbenchModelStream(modelCtx, principal, request, func(delta appaigateway.WorkbenchRelayStreamDelta) bool {
+			// A model can mention arguments before emitting its tool call. Buffer
+			// public text until the protected call is known; never stream a prefix
+			// that can expose a private argument across delta boundaries.
+			if nativeHasProtectedCapability(lease.Run) {
+				return modelCtx.Err() == nil
+			}
 			return delta.ContentDelta == "" || filtered.push(delta.ContentDelta)
 		})
 		if err == nil {
@@ -422,17 +428,20 @@ func (s *Service) nativeModelStep(ctx context.Context, store NativeRunStore, lea
 		lease.Run.Status = "completed"
 		return lease, err
 	}
-	if err := queueNativeModelToolCalls(cp, lease.Run, response); err != nil {
+	if err := s.queueNativeModelToolCalls(ctx, principal, cp, lease, response); err != nil {
 		return lease, err
 	}
 	return saveNativeCheckpoint(ctx, store, lease, *cp, "tools", nil)
 }
 
-func queueNativeModelToolCalls(cp *nativeCheckpoint, run domaincopilot.AgentRun, response appaigateway.WorkbenchRelayResponse) error {
-	cp.Messages = append(cp.Messages, appaigateway.WorkbenchRelayMessage{Role: "assistant", Content: response.Content, ToolCalls: response.ToolCalls})
+func (s *Service) queueNativeModelToolCalls(ctx context.Context, principal domainidentity.Principal, cp *nativeCheckpoint, lease domaincopilot.NativeLease, response appaigateway.WorkbenchRelayResponse) error {
+	// Validate the complete batch before adding arguments to either checkpoint
+	// copy. A rejected call must not survive as a pending call or model message.
+	calls := make([]appaigateway.WorkbenchToolCall, 0, len(response.ToolCalls))
+	pending := make([]nativeCall, 0, len(response.ToolCalls))
 	for _, call := range response.ToolCalls {
 		name := ""
-		for _, binding := range run.ToolBindings {
+		for _, binding := range lease.Run.ToolBindings {
 			if nativeFunctionName(binding.ToolName) == call.Name {
 				name = binding.ToolName
 				break
@@ -441,8 +450,28 @@ func queueNativeModelToolCalls(cp *nativeCheckpoint, run domaincopilot.AgentRun,
 		if name == "" {
 			return fmt.Errorf("%w: model selected an unavailable tool", apperrors.ErrAccessDenied)
 		}
-		cp.Pending = append(cp.Pending, nativeCall{Call: call, ToolName: name, State: "prepared"})
+		call.Arguments = append(json.RawMessage(nil), call.Arguments...)
+		if name == "harness.request_task" {
+			preview := *cp // Preparation only changes the copied usage counter.
+			prepared, err := s.prepareNativeTask(ctx, principal, lease, &preview, call.Arguments)
+			if err != nil {
+				return err
+			}
+			// Canonical server-normalized input excludes duplicate JSON properties
+			// and ignored caller-owned idempotency keys from the saved arguments.
+			arguments, err := json.Marshal(struct {
+				Plan domainaigateway.CapabilityPlan `json:"plan"`
+			}{Plan: prepared.Input.Plan})
+			if err != nil {
+				return apperrors.ErrInvalidArgument
+			}
+			call.Arguments = arguments
+		}
+		calls = append(calls, call)
+		pending = append(pending, nativeCall{Call: call, ToolName: name, State: "prepared"})
 	}
+	cp.Messages = append(cp.Messages, appaigateway.WorkbenchRelayMessage{Role: "assistant", Content: response.Content, ToolCalls: calls})
+	cp.Pending = append(cp.Pending, pending...)
 	return nil
 }
 
@@ -559,6 +588,10 @@ func (s *Service) nativeToolStep(ctx context.Context, store NativeRunStore, leas
 		return lease, err
 	}
 	execution := domaincopilot.ToolExecution{ID: lease.Run.ID + ":" + pending.Call.ID, ToolName: pending.ToolName, AdapterID: binding.AdapterID, Status: "running", StartedAt: time.Now().UTC(), Input: map[string]any{"input": json.RawMessage(pending.Call.Arguments)}}
+	execution, err = appaigateway.ProtectedWorkbenchExecution(execution)
+	if err != nil {
+		return lease, err
+	}
 	lease, err = saveNativeCheckpoint(ctx, store, lease, *cp, "tools", []domaincopilot.WorkbenchStreamEvent{{Type: "tool.started", ToolCall: nativeWorkbenchCall(execution)}})
 	if err != nil {
 		return lease, err
@@ -592,6 +625,11 @@ func (s *Service) nativeToolStep(ctx context.Context, store NativeRunStore, leas
 }
 
 func completeNativeTool(ctx context.Context, store NativeRunStore, lease domaincopilot.NativeLease, cp *nativeCheckpoint, callID string, execution domaincopilot.ToolExecution, callErr error) (domaincopilot.NativeLease, error) {
+	var projectionErr error
+	execution, projectionErr = appaigateway.ProtectedWorkbenchExecution(execution)
+	if projectionErr != nil {
+		return lease, projectionErr
+	}
 	if artifact, ok := execution.Output["artifact"]; ok && callErr == nil {
 		raw, err := json.Marshal(artifact)
 		if err != nil {
@@ -623,6 +661,10 @@ func nativeWorkbenchCall(execution domaincopilot.ToolExecution) *domaincopilot.W
 }
 
 func saveNativeCheckpoint(ctx context.Context, store NativeRunStore, lease domaincopilot.NativeLease, cp nativeCheckpoint, phase string, events []domaincopilot.WorkbenchStreamEvent) (domaincopilot.NativeLease, error) {
+	lease.Run = nativePublicRun(lease.Run)
+	for i, event := range events {
+		events[i] = nativePrivateEvent(cp, nativePublicEvent(event))
+	}
 	checkpoint, err := json.Marshal(cp)
 	if err != nil {
 		return lease, err
@@ -635,7 +677,8 @@ func saveNativeCheckpoint(ctx context.Context, store NativeRunStore, lease domai
 }
 
 func (s *Service) commitNativeResult(ctx context.Context, store NativeRunStore, lease domaincopilot.NativeLease, cp nativeCheckpoint, status, reason, content string) error {
-	run := lease.Run
+	run := nativePublicRun(lease.Run)
+	content = nativePrivateText(cp, content)
 	run.Status = status
 	run.Output["answer"] = content
 	run.Output["usageKnown"] = cp.UsageKnown

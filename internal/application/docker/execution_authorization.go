@@ -53,6 +53,9 @@ func (s *Service) sealOperationAuthorization(ctx context.Context, principal doma
 }
 
 func (s *Service) authorizeQueuedOperation(ctx context.Context, item domain.Operation) error {
+	if err := s.checkRuntimeOperationIdentity(ctx, item); err != nil {
+		return err
+	}
 	if item.ExecutionAuthorization == "" {
 		return nil
 	} // Existing queue records have no recoverable token evidence.

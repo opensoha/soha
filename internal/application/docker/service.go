@@ -139,6 +139,12 @@ func WithRuntimeBearerToken(token string) Option {
 	}
 }
 
+// Enable only after every Core and Docker runner supports the protocol.
+// Disabling prevents new opt-ins; existing bound projects never downgrade.
+func WithRuntimeIdentityV1(enabled bool) Option {
+	return func(s *Service) { s.runtimeIdentityV1 = enabled }
+}
+
 func WithCredentialEncryptionKeys(keys keyring.Ring) Option {
 	return func(s *Service) {
 		s.credentialEncryptionKeys = keys
@@ -176,6 +182,7 @@ type Service struct {
 	logStreamTickets          LogStreamTicketIssuer
 	hostProvisioner           HostProvisioner
 	runtimeBearerToken        string
+	runtimeIdentityV1         bool
 	credentialEncryptionKeys  keyring.Ring
 	accessURL                 AccessURLResolver
 	composeSourceFetcher      ComposeSourceFetcher
@@ -521,8 +528,16 @@ func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "create")); err != nil {
 		return domaindocker.Project{}, err
 	}
+	input.RuntimeIdentityVersion = 0
+	if s.runtimeIdentityV1 {
+		input.RuntimeIdentityVersion = 1
+	}
 	if input.IdempotencyKey != "" {
 		return s.createProjectIdempotent(ctx, principal, input)
+	}
+	writer, ok := s.repo.(ProjectConfigurationWriter)
+	if !ok {
+		return domaindocker.Project{}, fmt.Errorf("%w: atomic Docker project configuration writer unavailable", apperrors.ErrUnsupportedOperation)
 	}
 	if err := s.resolveRemoteCompose(ctx, &input); err != nil {
 		return domaindocker.Project{}, err
@@ -533,11 +548,8 @@ func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Pr
 	if _, err := s.repo.GetHost(ctx, input.HostID); err != nil {
 		return domaindocker.Project{}, fmt.Errorf("%w: docker host %s", apperrors.ErrNotFound, strings.TrimSpace(input.HostID))
 	}
-	item, err := s.repo.CreateProject(ctx, input)
+	item, err := writer.CreateProjectConfiguration(ctx, input, composeServiceNames(input.ComposeContent))
 	if err != nil {
-		return domaindocker.Project{}, err
-	}
-	if err := s.upsertServicesFromCompose(ctx, item); err != nil {
 		return domaindocker.Project{}, err
 	}
 	s.recordOperation(ctx, principal, "docker.project.create", item.ID, item.Name, "success", "created docker compose project", nil)
@@ -552,17 +564,18 @@ func (s *Service) UpdateProject(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "update")); err != nil {
 		return domaindocker.Project{}, err
 	}
+	writer, ok := s.repo.(ProjectConfigurationWriter)
+	if !ok {
+		return domaindocker.Project{}, fmt.Errorf("%w: atomic Docker project configuration writer unavailable", apperrors.ErrUnsupportedOperation)
+	}
 	if err := s.resolveRemoteCompose(ctx, &input); err != nil {
 		return domaindocker.Project{}, err
 	}
 	if err := validateProjectInput(input); err != nil {
 		return domaindocker.Project{}, err
 	}
-	item, err := s.repo.UpdateProject(ctx, id, input)
+	item, err := writer.UpdateProjectConfiguration(ctx, id, input, composeServiceNames(input.ComposeContent))
 	if err != nil {
-		return domaindocker.Project{}, err
-	}
-	if err := s.upsertServicesFromCompose(ctx, item); err != nil {
 		return domaindocker.Project{}, err
 	}
 	s.recordOperation(ctx, principal, "docker.project.update", item.ID, item.Name, "success", "updated docker compose project", nil)
@@ -592,13 +605,18 @@ func (s *Service) PlanProjectDeploy(ctx context.Context, principal domainidentit
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
+	conditions, err := s.projectDeployPlanBinding(ctx, project)
+	if err != nil {
+		return domainoperation.Plan{}, err
+	}
+	input.Action, input.Preconditions = action, conditions
 	_, inputHash, err := idempotency.Derive("docker.project.deploy.plan:"+project.ID, "", "plan", input)
 	if err != nil {
 		return domainoperation.Plan{}, fmt.Errorf("hash Docker project deploy plan: %w", err)
 	}
 	return domainoperation.Plan{
 		Capability: "docker.projects.deploy.trigger", Target: project.ID, Ready: true,
-		RiskLevel: "execute", RequiresApproval: true, InputHash: inputHash,
+		RiskLevel: "execute", RequiresApproval: true, InputHash: inputHash, DockerProjectDeploy: conditions,
 		Changes: []domainoperation.PlanChange{{Action: action, Resource: "docker.compose.project", Summary: action + " project " + project.Name, SensitiveValuesRedacted: strings.TrimSpace(project.EnvContent) != ""}},
 	}, nil
 }
@@ -609,6 +627,9 @@ func (s *Service) DeployProject(ctx context.Context, principal domainidentity.Pr
 	}()
 	if err := s.authorize(ctx, principal, appaccess.PermDockerProjectsDeploy); err != nil {
 		return domaindocker.Operation{}, err
+	}
+	if input.Preconditions != nil {
+		return s.deployReviewedProject(ctx, principal, id, input)
 	}
 	project, normalizedAction, err := s.prepareProjectDeploy(ctx, id, input.Action)
 	if err != nil {
@@ -636,6 +657,11 @@ func (s *Service) prepareProjectDeploy(ctx context.Context, id, action string) (
 	}
 	if !slices.Contains([]string{"deploy", "redeploy", "start", "stop", "restart", "down", "pull", "build", "destroy"}, normalizedAction) {
 		return domaindocker.Project{}, "", fmt.Errorf("%w: unsupported compose action %s", apperrors.ErrInvalidArgument, normalizedAction)
+	}
+	if project.RuntimeIdentityVersion != 0 {
+		if _, err := s.bindProjectRuntimePayload(ctx, project.HostID, project.ID, buildProjectDeployPayload(project, normalizedAction)); err != nil {
+			return domaindocker.Project{}, "", fmt.Errorf("%w: identity-bound Compose configuration is unsupported", apperrors.ErrInvalidArgument)
+		}
 	}
 	return project, normalizedAction, nil
 }
@@ -712,6 +738,9 @@ func (s *Service) prepareContainerStart(ctx context.Context, principal domainide
 		return domaindocker.ContainerStartCreateInput{}, err
 	}
 	project := buildContainerStartProject(plan)
+	if s.runtimeIdentityV1 {
+		project.RuntimeIdentityVersion = 1
+	}
 	service := buildContainerStartService(plan)
 	return domaindocker.ContainerStartCreateInput{
 		Project:      project,
@@ -882,6 +911,9 @@ func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Pr
 		return domaindocker.Operation{}, err
 	}
 	payload := map[string]any{"action": normalizedAction, "serviceName": service.Name, "composeContent": project.ComposeContent, "envContent": project.EnvContent, "projectSlug": project.Slug}
+	if project.RuntimeIdentityVersion != 0 {
+		payload["runtimeContainerId"] = service.ContainerID
+	}
 	task, err := s.enqueueIdempotentOperation(ctx, "docker.service.action:"+service.ID, principal, input.IdempotencyKey, input, OperationKindServiceAction, service.HostID, service.ProjectID, service.ID, payload)
 	if err != nil {
 		return domaindocker.Operation{}, err
@@ -1236,18 +1268,12 @@ func (s *Service) replayedDockerOperationMutation(ctx context.Context, operation
 }
 
 func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.OperationClaimInput) (_ domaindocker.Operation, retErr error) {
-	s.reconcileHostProvisionOperations(ctx)
-	if input.Authorization.HostBound() {
-		if !runnerIdentityMatches(input.WorkerID, input.Authorization.HostID) || !runnerIdentityMatches(input.AgentID, input.Authorization.AgentID) || !runnerHostsMatch(input.HostIDs, input.Authorization.HostID) {
-			return domaindocker.Operation{}, fmt.Errorf("%w: Docker runner credential is bound to another host", apperrors.ErrAccessDenied)
-		}
-		input.WorkerID = input.Authorization.HostID
-		input.AgentID = input.Authorization.AgentID
-		input.HostIDs = []string{input.Authorization.HostID}
-		if err := s.repo.HeartbeatHost(ctx, input.Authorization.HostID, input.Authorization.AgentID); err != nil {
-			return domaindocker.Operation{}, err
-		}
+	var prepareErr error
+	input, prepareErr = s.prepareRuntimeClaimInput(ctx, input)
+	if prepareErr != nil {
+		return domaindocker.Operation{}, prepareErr
 	}
+	s.reconcileHostProvisionOperations(ctx)
 	workerID := firstNonEmpty(input.WorkerID, input.AgentID)
 	principal := runnerPrincipal(workerID)
 	defer func() {
@@ -1280,7 +1306,7 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 			return domaindocker.Operation{}, tokenErr
 		}
 	}
-	item, err := s.repo.ClaimOperation(ctx, workerID, input.AgentID, input.HostIDs, kinds, callbackToken, time.Now().UTC())
+	item, err := s.claimRuntimeOperation(ctx, input, workerID, kinds, callbackToken)
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -1334,11 +1360,8 @@ func (s *Service) GetOperationForRunner(ctx context.Context, id string, authoriz
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
 
-func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocker.OperationCallbackInput) (_ domaindocker.Operation, retErr error) {
+func (s *Service) recordOperationCallback(ctx context.Context, input domaindocker.OperationCallbackInput) (_ domaindocker.Operation, retErr error) {
 	principal := runnerPrincipal(input.WorkerID)
-	defer func() {
-		s.recordMutationFailure(ctx, principal, "docker.operation.callback", input.OperationID, input.OperationID, retErr, map[string]any{"callbackStatus": input.Status})
-	}()
 	item, err := s.repo.GetOperation(ctx, input.OperationID)
 	if err != nil {
 		return domaindocker.Operation{}, err
@@ -1387,7 +1410,9 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	if updated.HostID != "" {
 		s.touchHostFromCallback(ctx, updated.HostID, workerID, updated.OperationKind, status, input.Payload)
 	}
-	s.applyCallbackRuntimeState(ctx, updated, status, input.Payload)
+	if err := s.applyCallbackRuntimeState(ctx, updated, status, input.Payload); err != nil {
+		return domaindocker.Operation{}, err
+	}
 	s.recordOperation(ctx, principal, "docker.operation.callback", updated.ID, updated.OperationKind, "success", "accepted docker operation callback", map[string]any{"callbackStatus": status, "attemptCount": updated.AttemptCount})
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
 }
@@ -1495,6 +1520,13 @@ func (s *Service) enqueueIdempotentOperation(ctx context.Context, scope string, 
 }
 
 func (s *Service) enqueueClaimedOperation(ctx context.Context, principal domainidentity.Principal, kind, hostID, projectID, serviceID string, payload map[string]any, claim operationClaim) (domaindocker.Operation, error) {
+	var bindErr error
+	if kind == OperationKindProjectDeploy || kind == OperationKindContainerStart || kind == OperationKindServiceAction {
+		payload, bindErr = s.bindProjectRuntimePayload(ctx, hostID, projectID, payload)
+	}
+	if bindErr != nil {
+		return domaindocker.Operation{}, bindErr
+	}
 	if err := domaindocker.CheckScope(ctx, operationScope(domaindocker.Operation{ID: claim.id, HostID: hostID, ProjectID: projectID, ServiceID: serviceID, Payload: payload})); err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -1590,7 +1622,11 @@ func (s *Service) touchHostFromCallback(ctx context.Context, hostID, workerID, o
 	})
 }
 
-func (s *Service) applyCallbackRuntimeState(ctx context.Context, item domaindocker.Operation, status string, payload map[string]any) {
+func (s *Service) applyCallbackRuntimeState(ctx context.Context, item domaindocker.Operation, status string, payload map[string]any) error {
+	return s.applyIdentityCallback(ctx, item, status, payload)
+}
+
+func (s *Service) applyCallbackRuntimeStateUnchecked(ctx context.Context, item domaindocker.Operation, status string, payload map[string]any) {
 	if status == OperationStatusRunning || stringValue(item.Payload, "action") == "validate" {
 		return
 	}
@@ -1605,6 +1641,9 @@ func (s *Service) applyCallbackRuntimeState(ctx context.Context, item domaindock
 		if nextStatus != "" || desired != "" || deployedAt != nil {
 			_, _ = s.repo.UpdateProjectRuntime(ctx, item.ProjectID, nextStatus, desired, deployedAt)
 		}
+	}
+	if item.Payload["runtimeBinding"] != nil {
+		return
 	}
 	if item.ServiceID != "" {
 		if current, err := s.repo.GetService(ctx, item.ServiceID); err == nil {
@@ -1947,22 +1986,6 @@ func hostProvisionStatusForCallbackStatus(status string) string {
 	default:
 		return strings.TrimSpace(status)
 	}
-}
-
-func (s *Service) upsertServicesFromCompose(ctx context.Context, project domaindocker.Project) error {
-	names := composeServiceNames(project.ComposeContent)
-	for _, name := range names {
-		_, err := s.repo.UpsertService(ctx, domaindocker.ServiceInput{
-			ProjectID: project.ID,
-			HostID:    project.HostID,
-			Name:      name,
-			Status:    "defined",
-		})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Service) validatePortMapping(ctx context.Context, input domaindocker.PortMappingInput, excludeID string) error {

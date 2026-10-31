@@ -20,7 +20,7 @@ func (s *Service) authorizeTool(ctx context.Context, principal domainidentity.Pr
 			return err
 		}
 	}
-	return nil
+	return s.authorizeProtectedWorkbenchInput(ctx, tool.Name)
 }
 func (s *Service) authorizeResource(ctx context.Context, principal domainidentity.Principal, resource domainaigateway.ResourceCapability) error {
 	for _, permissionKey := range resource.PermissionKeys {
@@ -185,6 +185,12 @@ func (s *Service) authorizeAccessPolicy(ctx context.Context, principal domainide
 	if policyDecision.Strategy != "" {
 		decision = policyDecision
 	}
+	// Arbitrary Pod argv is an independently approved capability. An allow
+	// policy may narrow its scope, but cannot waive the execution approval.
+	if tool.Name == protectedPodExecTool && gatewayRiskStrictness(decision.Strategy) < gatewayRiskStrictness(gatewayRiskRequireApproval) {
+		decision.Strategy = gatewayRiskRequireApproval
+		decision.Reason = "Pod execution requires independent approval"
+	}
 	if decision.requiresApproval() {
 		tool.RequiresApproval = true
 	}
@@ -301,6 +307,9 @@ func (s *Service) filterToolsByAccessPolicies(ctx context.Context, principal dom
 			if decision.Strategy != "" {
 				tool.RequiresApproval = decision.requiresApproval()
 			}
+			if tool.Name == protectedPodExecTool {
+				tool.RequiresApproval = true
+			}
 			out = append(out, tool)
 			continue
 		}
@@ -344,6 +353,9 @@ func (s *Service) activeAccessPolicies(ctx context.Context, principal domainiden
 	}, func(item domainaigateway.AccessPolicy) string { return item.ID })
 }
 func (s *Service) authorizeSkillBinding(ctx context.Context, principal domainidentity.Principal, aiClientID, skillID string, tool domainaigateway.ToolCapability) error {
+	if err := s.authorizeGovernedAITool(principal, tool); err != nil {
+		return err
+	}
 	bindings, err := s.activeSkillBindings(ctx, principal, aiClientID)
 	if err != nil {
 		return err
@@ -1790,6 +1802,7 @@ func gatewayScopeAliases() []gatewayScopeAlias {
 		{key: "environmentId", aliases: []string{"environmentId", "environmentID", "environment", "environmentIds", "environmentIDs"}},
 		{key: "clusterId", aliases: []string{"clusterId", "clusterID", "cluster", "clusterIds", "clusterIDs"}},
 		{key: "namespace", aliases: []string{"namespace", "namespaces"}},
+		{key: "podName", aliases: []string{"podName", "pod"}},
 		{key: "releaseBundleId", aliases: []string{"releaseBundleId", "releaseBundleID", "releaseBundle", "releaseBundleIds", "releaseBundleIDs", "bundleId", "bundleID"}},
 		{key: "executionTaskId", aliases: []string{"executionTaskId", "executionTaskID", "executionTask", "executionTaskIds", "executionTaskIDs", "taskId", "taskID"}},
 		{key: "runtimeId", aliases: []string{"runtimeId", "runtimeID"}},

@@ -2041,20 +2041,13 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 }
 
 func agentResponseError(path string, resp *http.Response) error {
-	if strings.HasPrefix(path, basicMutationPath+"/infrastructure/nodes/") && strings.HasSuffix(path, "/drain") && resp.StatusCode == http.StatusConflict {
-		var envelope struct {
-			Error struct {
-				Code string `json:"code"`
-			} `json:"error"`
-		}
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 8193))
-		if err == nil && len(body) <= 8192 && json.Unmarshal(body, &envelope) == nil && contractresource.IsNodeDrainErrorCode(envelope.Error.Code) {
-			return &contractresource.NodeDrainError{Code: envelope.Error.Code}
-		}
+	if err := unsupportedAgentProtocol(path, resp); err != nil {
+		return err
 	}
-	if (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed) && (strings.HasPrefix(path, "/api/v1/platform/ownership-v2/") || strings.HasSuffix(path, "/custom-resources/access") || strings.HasSuffix(path, "/metrics/prometheus/query")) && !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
-		return fmt.Errorf("%w: upgrade the Agent to support ownership-protected resource mutations", apperrors.ErrUnsupportedOperation)
+	if err := nodeDrainResponseError(path, resp); err != nil {
+		return err
 	}
+
 	switch resp.StatusCode {
 	case http.StatusBadRequest:
 		return fmt.Errorf("%w: Agent rejected invalid input or an immutable resource", apperrors.ErrInvalidArgument)
@@ -2070,6 +2063,46 @@ func agentResponseError(path string, resp *http.Response) error {
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("agent request failed with status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func unsupportedAgentProtocol(path string, resp *http.Response) error {
+	if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed {
+		return nil
+	}
+	if strings.HasPrefix(path, resourcePresencePath+"?") {
+		return fmt.Errorf("%w: Agent versioned resource presence is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	if strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+		return nil
+	}
+	var feature string
+	switch {
+	case strings.HasPrefix(path, podExecutionPath+"/"):
+		feature = "the bounded Pod argv protocol"
+	case strings.HasPrefix(path, "/api/v1/platform/preconditions-v1/"):
+		feature = "UID/resourceVersion preconditions"
+	case strings.HasPrefix(path, "/api/v1/platform/ownership-v2/"), strings.HasSuffix(path, "/custom-resources/access"), strings.HasSuffix(path, "/metrics/prometheus/query"):
+		feature = "ownership-protected resource mutations"
+	default:
+		return nil
+	}
+	return fmt.Errorf("%w: upgrade the Agent to support %s", apperrors.ErrUnsupportedOperation, feature)
+}
+
+func nodeDrainResponseError(path string, resp *http.Response) error {
+	if !strings.HasPrefix(path, basicMutationPath+"/infrastructure/nodes/") || !strings.HasSuffix(path, "/drain") || resp.StatusCode != http.StatusConflict {
+		return nil
+	}
+	var envelope struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8193))
+	if err == nil && len(body) <= 8192 && json.Unmarshal(body, &envelope) == nil && contractresource.IsNodeDrainErrorCode(envelope.Error.Code) {
+		return &contractresource.NodeDrainError{Code: envelope.Error.Code}
 	}
 	return nil
 }

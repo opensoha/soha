@@ -47,6 +47,16 @@ func (r *Repository) GetPersonalEnvironment(ctx context.Context, owner, assistan
 	return scanPersonalEnvironment(dbtx.DB(ctx, r.db).Raw(`SELECT `+personalEnvironmentColumns+` FROM ai_personal_environments WHERE created_by=? AND assistant_id=?`, owner, assistantID).Row())
 }
 
+// FindPersonalTaskEnvironment only observes a task's existing owned lease. It
+// never activates Personal Agent or creates an assistant as part of cleanup.
+func (r *Repository) FindPersonalTaskEnvironment(ctx context.Context, owner, taskID string) (domain.PersonalEnvironmentRecord, error) {
+	if owner == "" || taskID == "" {
+		return domain.PersonalEnvironmentRecord{}, apperrors.ErrInvalidArgument
+	}
+	return scanPersonalEnvironment(dbtx.DB(ctx, r.db).Raw(`SELECT `+personalEnvironmentColumns+` FROM ai_personal_environments
+ WHERE created_by=? AND active_task_id=? AND assistant_id=(SELECT id FROM ai_personal_assistants WHERE created_by=?)`, owner, taskID, owner).Row())
+}
+
 func (r *Repository) BindPersonalEnvironment(ctx context.Context, candidate domain.PersonalEnvironmentRecord) (domain.PersonalEnvironmentRecord, error) {
 	if err := validatePersonalBinding(candidate); err != nil {
 		return domain.PersonalEnvironmentRecord{}, err

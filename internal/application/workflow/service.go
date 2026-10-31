@@ -339,7 +339,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		"triggerRelease":  input.TriggerRelease,
 	}, input)
 	item := domainworkflow.Run{
-		ID:             "workflow:" + uuid.NewString(),
+		ID:             requestedWorkflowRunID(input),
 		ApplicationID:  input.ApplicationID,
 		WorkflowName:   strings.TrimSpace(input.WorkflowName),
 		ClusterID:      strings.TrimSpace(input.ClusterID),
@@ -492,7 +492,7 @@ func (s *Service) ExecuteSystemDAG(ctx context.Context, principal domainidentity
 	}
 	runMetadata = withGatewayApprovalWorkflowMetadata(runMetadata, input)
 	run := domainworkflow.Run{
-		ID:             "workflow:" + uuid.NewString(),
+		ID:             requestedWorkflowRunID(input),
 		ApplicationID:  applicationID,
 		WorkflowName:   workflowName,
 		ClusterID:      strings.TrimSpace(input.ClusterID),
@@ -704,7 +704,7 @@ func (s *Service) prepareBoundDAGRun(ctx context.Context, app domainapp.App, inp
 		"edges":                definition.Edges,
 	}, input)
 	run := domainworkflow.Run{
-		ID:             "workflow:" + uuid.NewString(),
+		ID:             requestedWorkflowRunID(input),
 		ApplicationID:  input.ApplicationID,
 		WorkflowName:   workflowName,
 		ClusterID:      strings.TrimSpace(input.ClusterID),

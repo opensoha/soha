@@ -254,6 +254,7 @@ const (
 	PermDockerProjectsManage               = "docker.projects.manage"
 	PermDockerProjectsDeploy               = "docker.projects.deploy"
 	PermDockerServicesView                 = "docker.services.view"
+	PermDockerServicesFiles                = "docker.services.files"
 	PermDockerServicesManage               = "docker.services.manage"
 	PermDockerPortsView                    = "docker.ports.view"
 	PermDockerPortsManage                  = "docker.ports.manage"
@@ -515,6 +516,7 @@ var allPermissionKeySet = []string{
 	PermDockerProjectsManage,
 	PermDockerProjectsDeploy,
 	PermDockerServicesView,
+	PermDockerServicesFiles,
 	PermDockerServicesManage,
 	PermDockerPortsView,
 	PermDockerPortsManage,
@@ -786,6 +788,7 @@ var opsRolePermissionKeys = []string{
 	PermDockerProjectsManage,
 	PermDockerProjectsDeploy,
 	PermDockerServicesView,
+	PermDockerServicesFiles,
 	PermDockerServicesManage,
 	PermDockerPortsView,
 	PermDockerPortsManage,
@@ -889,6 +892,7 @@ var developerRolePermissionKeys = []string{
 	PermDockerProjectsManage,
 	PermDockerProjectsDeploy,
 	PermDockerServicesView,
+	PermDockerServicesFiles,
 	PermDockerServicesManage,
 	PermDockerPortsView,
 	PermDockerPortsManage,

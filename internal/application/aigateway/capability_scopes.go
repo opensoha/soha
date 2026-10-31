@@ -78,6 +78,7 @@ func mergeCapabilityScope(base, resolved map[string]string) (map[string]string, 
 		if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
 			return nil, fmt.Errorf("%w: invalid domain scope", apperrors.ErrInvalidArgument)
 		}
+		key = canonicalCapabilityScopeDimension(key)
 		if supplied, exists := scope[key]; exists && supplied != value {
 			return nil, fmt.Errorf("%w: input scope contradicts the owning domain", apperrors.ErrAccessDenied)
 		}

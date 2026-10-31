@@ -10,18 +10,25 @@ import (
 
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
+	"github.com/opensoha/soha/internal/platform/protectedpayload"
 	"gorm.io/gorm"
 )
 
 type Repository struct {
-	db *gorm.DB
+	db          *gorm.DB
+	storageKeys keyring.Ring
 }
 
 const workflowColumns = `id, application_id, workflow_name, cluster_id, namespace, deployment_name, status, steps, metadata, created_at, updated_at,
     scope, COALESCE(delivery_batch_id, ''), version, lease_owner, lease_until, fencing_token, stop_reason, stop_summary`
 
-func New(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func New(db *gorm.DB, keys ...keyring.Ring) *Repository {
+	r := &Repository{db: db}
+	if len(keys) > 0 {
+		r.storageKeys = keys[0]
+	}
+	return r
 }
 
 func (r *Repository) List(ctx context.Context, applicationID, applicationEnvironmentID string, limit int) ([]domainworkflow.Run, error) {
@@ -47,7 +54,7 @@ func (r *Repository) List(ctx context.Context, applicationID, applicationEnviron
 	defer func() { _ = rows.Close() }()
 	items := make([]domainworkflow.Run, 0, limit)
 	for rows.Next() {
-		item, err := scanWorkflow(rows)
+		item, err := r.scanWorkflow(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +68,7 @@ func (r *Repository) Get(ctx context.Context, runID string) (domainworkflow.Run,
 		WHERE id = ?
 		LIMIT 1
 	`, runID).Row()
-	return scanWorkflowRow(row)
+	return r.scanWorkflowRow(row)
 }
 
 func (r *Repository) Create(ctx context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
@@ -81,7 +88,7 @@ func (r *Repository) createRun(ctx context.Context, item domainworkflow.Run) (do
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow steps: %w", err)
 	}
-	metadata, err := json.Marshal(storedMetadata)
+	metadata, err := r.marshalWorkflowMetadata(item)
 	item.Metadata = storedMetadata
 	delete(item.Metadata, "gatewayAuthorizationCredential")
 	if err != nil {
@@ -105,7 +112,7 @@ func (r *Repository) Update(ctx context.Context, item domainworkflow.Run) (domai
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow steps: %w", err)
 	}
-	metadata, err := json.Marshal(storedMetadata)
+	metadata, err := r.marshalWorkflowMetadata(item)
 	item.Metadata = storedMetadata
 	delete(item.Metadata, "gatewayAuthorizationCredential")
 	if err != nil {
@@ -258,7 +265,7 @@ func extractWorkflowNodeRuns(metadata map[string]any) []domainworkflow.NodeRun {
 			return nil
 		}
 		var items []domainworkflow.NodeRun
-		if err := json.Unmarshal(encoded, &items); err != nil {
+		if err := protectedpayload.Decode(encoded, &items); err != nil {
 			return nil
 		}
 		return items

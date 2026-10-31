@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
@@ -24,15 +25,16 @@ type Entry struct {
 }
 
 type Plan struct {
-	Capability               string                                 `json:"capability"`
-	Target                   string                                 `json:"target"`
-	Ready                    bool                                   `json:"ready"`
-	RiskLevel                string                                 `json:"riskLevel"`
-	RequiresApproval         bool                                   `json:"requiresApproval"`
-	InputHash                string                                 `json:"inputHash,omitempty"`
-	Changes                  []PlanChange                           `json:"changes"`
-	Warnings                 []string                               `json:"warnings"`
-	KubernetesResourceUpdate *domainresource.ResourceUpdateAnalysis `json:"kubernetesResourceUpdate,omitempty"`
+	Capability               string                                   `json:"capability"`
+	Target                   string                                   `json:"target"`
+	Ready                    bool                                     `json:"ready"`
+	RiskLevel                string                                   `json:"riskLevel"`
+	RequiresApproval         bool                                     `json:"requiresApproval"`
+	InputHash                string                                   `json:"inputHash,omitempty"`
+	Changes                  []PlanChange                             `json:"changes"`
+	Warnings                 []string                                 `json:"warnings"`
+	KubernetesResourceUpdate *domainresource.ResourceUpdateAnalysis   `json:"kubernetesResourceUpdate,omitempty"`
+	DockerProjectDeploy      *domaindocker.ProjectDeployPreconditions `json:"dockerProjectDeploy,omitempty"`
 }
 
 type PlanChange struct {

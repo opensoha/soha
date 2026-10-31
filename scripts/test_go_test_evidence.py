@@ -49,6 +49,42 @@ class EvidenceTests(unittest.TestCase):
         for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
             with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
 
+    def test_workflow_request_scope_requires_every_no_replay_scenario(self):
+        scope = evidence.WORKFLOW_REQUEST_SCOPE
+        names = [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 6)
+        for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
+    def test_protected_storage_scope_requires_all_encryption_paths(self):
+        scope = evidence.PROTECTED_STORAGE_SCOPE
+        names = [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 7)
+        for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
+    def test_docker_runtime_identity_requires_fences_and_atomic_creation(self):
+        scope = evidence.DOCKER_RUNTIME_IDENTITY_SCOPE
+        names = [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 11)
+        for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
+    def test_docker_configuration_requires_all_atomicity_scenarios(self):
+        scope = evidence.DOCKER_CONFIGURATION_SCOPE
+        names = [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 13)
+        for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
     def test_missing_empty_corrupt_process_and_package_only(self):
         for raw, code in (("", 0), ("{broken", 0), ("[]", 0), (self.raw(self.events()), 1), (self.raw([self.events()[-1]]), 0)):
             with self.subTest(raw=raw[:20], code=code), self.assertRaises(ValueError):

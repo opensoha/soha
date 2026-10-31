@@ -329,7 +329,7 @@ func assistantImageFailure(err error) string {
 }
 
 func validateAssistantAppearanceRequest(input domain.WorkbenchSendMessageInput, task domain.WorkbenchAssistantTask) error {
-	if len(input.RequestID) > 128 {
+	if !workbenchRequestIDWithinLimit(input.RequestID) {
 		return apperrors.ErrInvalidArgument
 	}
 	if task.Kind != "avatar" && task.Kind != "undo" {

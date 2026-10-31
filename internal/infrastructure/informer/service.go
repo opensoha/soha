@@ -99,6 +99,7 @@ func (s *resourceState) diagnostic(resource string) domaincluster.CacheResourceD
 }
 
 type clusterCache struct {
+	bundle            *k8sinfra.Bundle
 	factory           informers.SharedInformerFactory
 	namespaceLister   corelisters.NamespaceLister
 	nodeLister        corelisters.NodeLister
@@ -139,17 +140,17 @@ func (s *Service) Start(ctx context.Context) error {
 }
 
 func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
-	s.mu.RLock()
-	_, exists := s.caches[clusterID]
-	s.mu.RUnlock()
-	if exists {
-		return nil
-	}
-
 	bundle, err := s.manager.Bundle(ctx, clusterID)
 	if err != nil {
+		s.UnregisterCluster(clusterID)
 		s.recordRegistrationError(clusterID, err)
 		return err
+	}
+	s.mu.RLock()
+	current := s.caches[clusterID]
+	s.mu.RUnlock()
+	if current != nil && current.bundle == bundle {
+		return nil
 	}
 	factory := informers.NewSharedInformerFactoryWithOptions(bundle.Typed, 2*time.Minute)
 	nsInformer := factory.Core().V1().Namespaces()
@@ -167,6 +168,7 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 	endpointSliceInformer := factory.Discovery().V1().EndpointSlices()
 	networkPolicyInformer := factory.Networking().V1().NetworkPolicies()
 	entry := &clusterCache{
+		bundle:            bundle,
 		factory:           factory,
 		namespaceLister:   nsInformer.Lister(),
 		nodeLister:        nodeInformer.Lister(),
@@ -207,7 +209,7 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 		if err := item.informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
 			message := redaction.Text(err.Error())
 			state.transition("degraded", message, state.diagnostic("").Ready)
-			s.publish(domainresource.ResourceStreamEvent{
+			s.publishFromEntry(entry, domainresource.ResourceStreamEvent{
 				Type: "error", ClusterID: clusterID, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
 				Source: "informer", CacheStatus: "degraded", Message: message, ResyncRequired: true,
 			})
@@ -216,7 +218,7 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 		}
 		if _, err := item.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj any) {
-				s.publishInformerObject(clusterID, item.apiVersion, item.kind, item.namespaced, "added", obj)
+				s.publishInformerObject(entry, clusterID, item.apiVersion, item.kind, item.namespaced, "added", obj)
 				state.transition("ready", "", true)
 			},
 			UpdateFunc: func(oldObj, newObj any) {
@@ -225,11 +227,11 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 				if oldErr == nil && newErr == nil && oldAccessor.GetResourceVersion() != "" && oldAccessor.GetResourceVersion() == newAccessor.GetResourceVersion() {
 					return
 				}
-				s.publishInformerObject(clusterID, item.apiVersion, item.kind, item.namespaced, "modified", newObj)
+				s.publishInformerObject(entry, clusterID, item.apiVersion, item.kind, item.namespaced, "modified", newObj)
 				state.transition("ready", "", true)
 			},
 			DeleteFunc: func(obj any) {
-				s.publishInformerObject(clusterID, item.apiVersion, item.kind, item.namespaced, "deleted", deletedObject(obj))
+				s.publishInformerObject(entry, clusterID, item.apiVersion, item.kind, item.namespaced, "deleted", deletedObject(obj))
 				state.transition("ready", "", true)
 			},
 		}); err != nil {
@@ -238,10 +240,14 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 	}
 
 	s.mu.Lock()
-	if _, exists := s.caches[clusterID]; exists {
-		s.mu.Unlock()
-		close(entry.stopCh)
-		return nil
+	if current := s.caches[clusterID]; current != nil {
+		if current.bundle == bundle {
+			s.mu.Unlock()
+			close(entry.stopCh)
+			return nil
+		}
+		close(current.stopCh)
+		s.closeClusterSubscriptionsLocked(clusterID)
 	}
 	s.caches[clusterID] = entry
 	delete(s.registrationErrors, clusterID)
@@ -418,7 +424,7 @@ func resourceStreamCacheStatus(diagnostic domaincluster.CacheDiagnostic) string 
 	return "warming"
 }
 
-func (s *Service) publishInformerObject(clusterID, apiVersion, kind string, namespaced bool, eventType string, obj any) {
+func (s *Service) publishInformerObject(entry *clusterCache, clusterID, apiVersion, kind string, namespaced bool, eventType string, obj any) {
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		return
@@ -431,7 +437,7 @@ func (s *Service) publishInformerObject(clusterID, apiVersion, kind string, name
 		ClusterID: clusterID, APIVersion: apiVersion, Kind: kind, Name: accessor.GetName(),
 		Namespace: accessor.GetNamespace(), ScopeMode: scopeMode, UID: string(accessor.GetUID()),
 	}
-	s.publish(domainresource.ResourceStreamEvent{
+	s.publishFromEntry(entry, domainresource.ResourceStreamEvent{
 		Type: eventType, ClusterID: clusterID, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		Source: "informer", Resource: resource, ResourceVersion: accessor.GetResourceVersion(), CacheStatus: "live",
 	})
@@ -447,6 +453,19 @@ func deletedObject(obj any) any {
 func (s *Service) publish(event domainresource.ResourceStreamEvent) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	s.publishLocked(event)
+}
+
+func (s *Service) publishFromEntry(entry *clusterCache, event domainresource.ResourceStreamEvent) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.caches[event.ClusterID] != entry {
+		return
+	}
+	s.publishLocked(event)
+}
+
+func (s *Service) publishLocked(event domainresource.ResourceStreamEvent) {
 	for _, subscriber := range s.subscribers[event.ClusterID] {
 		if !subscriber.matches(event) {
 			continue
@@ -664,7 +683,25 @@ func (s *Service) ListEvents(clusterID, namespace string) ([]corev1.Event, error
 
 func (s *Service) entry(clusterID string) (*clusterCache, bool) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	entry, ok := s.caches[clusterID]
-	return entry, ok
+	s.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	// A cache is tied to the exact client generation, including changes made on
+	// another Core replica. Never serve it while the database is unavailable.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	bundle, err := s.manager.Bundle(ctx, clusterID)
+	if err == nil && bundle == entry.bundle {
+		return entry, true
+	}
+	s.mu.Lock()
+	if s.caches[clusterID] == entry {
+		close(entry.stopCh)
+		delete(s.caches, clusterID)
+		s.closeClusterSubscriptionsLocked(clusterID)
+	}
+	s.mu.Unlock()
+	return nil, false
 }

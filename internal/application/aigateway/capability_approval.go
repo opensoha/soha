@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"time"
 
@@ -120,5 +119,5 @@ func matchingCapabilityApprovalNode(run domainworkflow.Run, intent domainworkflo
 }
 
 func capabilityApprovalMatchesCall(request domainaigateway.ApprovalRequest, call domainaigateway.ToolInvocationRequest) bool {
-	return call.RequestID == request.RequestID && capabilityApprovalID(call.RequestID) == request.ID && call.ToolName == request.ToolName && reflect.DeepEqual(call.Input, request.ToolInput) && maps.Equal(call.SecretRefs, request.SecretRefs)
+	return call.RequestID == request.RequestID && capabilityApprovalID(call.RequestID) == request.ID && call.ToolName == request.ToolName && approvalInputMatchesCall(request, call.Input) && maps.Equal(call.SecretRefs, request.SecretRefs)
 }

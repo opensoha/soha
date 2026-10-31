@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -122,6 +123,9 @@ func (s *Service) ListCapabilityTasks(ctx context.Context, principal domainident
 	items := []domainaigateway.CapabilityTask{}
 	for _, run := range runs {
 		item, err := s.capabilityRuntime.VisibleCapabilityTask(ctx, principal, run)
+		if errors.Is(err, apperrors.ErrNotFound) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

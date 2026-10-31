@@ -27,6 +27,7 @@ type AIGatewayCapabilityService interface {
 }
 
 type AIGatewayPersonalTokenService interface {
+	GetTokenRotation(context.Context, domainidentity.Principal, string) (domainaigateway.TokenRotationRecord, error)
 	ListPersonalAccessTokens(context.Context, domainidentity.Principal, domainaigateway.PersonalAccessTokenListRequest) ([]domainaigateway.PersonalAccessToken, error)
 	CreatePersonalAccessToken(context.Context, domainidentity.Principal, domainaigateway.PersonalAccessTokenInput) (domainaigateway.CreatedPersonalAccessToken, error)
 	RevokePersonalAccessToken(context.Context, domainidentity.Principal, string) error
@@ -343,6 +344,7 @@ func (h *aiGatewayPersonalTokenHandler) CreatePersonalAccessToken(c *gin.Context
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid personal access token payload")
 		return
 	}
+	req.GovernedOnly = strings.Contains(c.FullPath(), "/ai-gateway/governed-credentials/")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.CreatePersonalAccessToken(c.Request.Context(), principal, req)
 	if err != nil {
@@ -367,6 +369,7 @@ func (h *aiGatewayPersonalTokenHandler) RotatePersonalAccessToken(c *gin.Context
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid personal access token rotation payload")
 		return
 	}
+	req.GovernedOnly = strings.Contains(c.FullPath(), "/ai-gateway/governed-credentials/")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.RotatePersonalAccessToken(c.Request.Context(), principal, c.Param("tokenID"), req)
 	if err != nil {
@@ -417,6 +420,7 @@ func (h *aiGatewayServiceAccountHandler) CreateServiceAccountToken(c *gin.Contex
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid service account token payload")
 		return
 	}
+	req.GovernedOnly = strings.Contains(c.FullPath(), "/ai-gateway/governed-credentials/")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.CreateServiceAccountToken(c.Request.Context(), principal, c.Param("serviceAccountID"), req)
 	if err != nil {
@@ -441,6 +445,7 @@ func (h *aiGatewayServiceAccountHandler) RotateServiceAccountToken(c *gin.Contex
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid service account token rotation payload")
 		return
 	}
+	req.GovernedOnly = strings.Contains(c.FullPath(), "/ai-gateway/governed-credentials/")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.RotateServiceAccountToken(c.Request.Context(), principal, c.Param("tokenID"), req)
 	if err != nil {

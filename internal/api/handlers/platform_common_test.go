@@ -39,6 +39,16 @@ func TestWriteErrorRedactsInternalServerErrorMessage(t *testing.T) {
 	}
 }
 
+func TestWriteErrorPreservesCapacityConflictWithoutProviderCause(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	pending := apperrors.NewBusiness(apperrors.ErrConflict, "virtualization_capacity_unconfirmed", "Capacity observation is pending; retry the original key.", "容量观测尚未确认。")
+	writeError(ctx, fmt.Errorf("%w: %w", pending, errors.New("private-provider-detail")))
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "virtualization_capacity_unconfirmed") || !strings.Contains(recorder.Body.String(), "retry the original key") || strings.Contains(recorder.Body.String(), "private-provider-detail") {
+		t.Fatalf("capacity error boundary = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestWriteErrorUsesStableClientFacingMessageAndRecordsCause(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)

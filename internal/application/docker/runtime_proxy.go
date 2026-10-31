@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,6 +88,9 @@ func (s *Service) getProjectLogs(ctx context.Context, principal domainidentity.P
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, serviceName)
 	if err != nil {
+		if errors.Is(err, apperrors.ErrUnsupportedOperation) {
+			return s.getBoundProjectLogs(ctx, principal, projectID, serviceName, tailLines, sinceSeconds)
+		}
 		return domaindocker.ProjectRuntimeLogs{}, err
 	}
 	req := target.runtimeRequest()
@@ -214,7 +218,7 @@ func (s *Service) ListProjectVolumes(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) ListProjectVolumeFiles(ctx context.Context, principal domainidentity.Principal, projectID string, input domaindocker.ProjectVolumeFileListInput) (domaindocker.ProjectVolumeFileList, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesFiles); err != nil {
 		return domaindocker.ProjectVolumeFileList{}, err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, input.ServiceName)
@@ -229,7 +233,7 @@ func (s *Service) ListProjectVolumeFiles(ctx context.Context, principal domainid
 }
 
 func (s *Service) ReadProjectVolumeFile(ctx context.Context, principal domainidentity.Principal, projectID string, input domaindocker.ProjectVolumeFileReadInput) (domaindocker.ProjectVolumeFileContent, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesFiles); err != nil {
 		return domaindocker.ProjectVolumeFileContent{}, err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, input.ServiceName)
@@ -269,6 +273,12 @@ func (s *Service) projectRuntimeTarget(ctx context.Context, projectID, requested
 	project, err := s.repo.GetProject(ctx, projectID)
 	if err != nil {
 		return dockerRuntimeTarget{}, err
+	}
+	if err := checkProjectScope(ctx, project); err != nil {
+		return dockerRuntimeTarget{}, err
+	}
+	if project.RuntimeIdentityVersion != 0 {
+		return dockerRuntimeTarget{}, fmt.Errorf("%w: identity-bound Docker runtime requires the versioned runtime API", apperrors.ErrUnsupportedOperation)
 	}
 	if strings.TrimSpace(project.ComposeContent) == "" {
 		return dockerRuntimeTarget{}, fmt.Errorf("%w: composeContent is required for docker runtime access", apperrors.ErrInvalidArgument)

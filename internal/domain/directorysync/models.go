@@ -199,6 +199,8 @@ type RunStats struct {
 
 type Run struct {
 	ID, ConnectionID, Trigger, Mode, Status, CursorBefore, CursorAfter, IdempotencyKey string
+	RequestCredentialID                                                                string `json:"-"`
+	CancelRequested                                                                    bool   `json:"cancelRequested,omitempty"`
 	IncludePeople                                                                      bool
 	Stats                                                                              RunStats
 	ErrorCode, ErrorSummary, RequestedBy                                               string

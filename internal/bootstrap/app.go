@@ -44,6 +44,12 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
+	cliAuth, err := apiHandlers.NewCLIAuthHandler(core.identityService, core.identityService)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	handlers.deps.CLIAuth = cliAuth
 	guestServer, guestPreparation, err := newPersonalGuestServer(cfg.PersonalGuest, core, delivery, repos)
 	if err != nil {
 		infra.cancel()
@@ -52,8 +58,15 @@ func New(ctx context.Context) (*App, error) {
 	handlers.deps.PersonalGuestPreparation = apiHandlers.NewPersonalGuestPreparationHandler(guestPreparation)
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
 	core.runtimeConfigService.Start(infra.lifecycleCtx, 0)
+	startCLIAuthCleanup(infra.lifecycleCtx, core.identityService, infra.logger)
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podExecutionRepository, infra.logger, "platform.pod.execution.cleanup.failed")
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podTerminalRepository, infra.logger, "platform.pod.execution.cleanup.failed")
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.dockerTerminalRepository, infra.logger, "docker.native.terminal.cleanup.failed")
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.conditionalMutationRepository, infra.logger, "platform.resource.mutation.cleanup.failed")
 
 	return &App{
+		PodTerminals:          core.resourceService.PodTerminals(),
+		DockerTerminals:       delivery.dockerTerminals,
 		Config:                cfg,
 		Logger:                infra.logger.Named("server"),
 		Database:              infra.databaseStore,

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -27,7 +28,7 @@ func networkNavigationTestStore(t *testing.T) *dbstore.Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := cfgpkg.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "postgres", User: "pgsql", Password: "test-only", SSLMode: "disable"}
+	cfg := testpostgres.Configure(t, cfgpkg.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "postgres", User: "pgsql", Password: "test-only", SSLMode: "disable"})
 	admin, err := dbstore.New(cfg, zap.NewNop())
 	if err != nil {
 		t.Fatal(err)

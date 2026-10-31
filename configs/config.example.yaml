@@ -127,6 +127,20 @@ network_ingest_query:
   max_response_bytes: 1048576
 
 auth:
+  cli:
+    enabled: false
+    public_url: "" # Browser URL, including the deployment base path; HTTPS outside loopback.
+    allow_password: true # Per-account MFA and existing verification policy still apply.
+    device_ttl: 5m
+    poll_interval: 5s
+    access_ttl: 15m
+    idle_ttl: 168h
+    absolute_ttl: 720h
+    create_limit: 10
+    source_pending_limit: 5
+    active_grant_limit: 1000
+    source_attempt_limit: 20
+    user_attempt_limit: 5
   enable_dev_auth: false
   login_verification:
     slider_enabled: true

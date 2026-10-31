@@ -42,7 +42,11 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
-	encoded, err := json.Marshal(request)
+	return resourceUpdatePlan(connection.Summary.ID, request, analysis, request)
+}
+
+func resourceUpdatePlan(clusterID string, request domainresource.ResourceUpdatePlanRequest, analysis domainresource.ResourceUpdateAnalysis, input any) (domainoperation.Plan, error) {
+	encoded, err := json.Marshal(input)
 	if err != nil {
 		return domainoperation.Plan{}, fmt.Errorf("hash resource update plan: %w", err)
 	}
@@ -57,7 +61,7 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 	if sensitive {
 		warnings = append(warnings, "Secret values are redacted from the change summary.")
 	}
-	target := strings.Join([]string{connection.Summary.ID, request.Namespace, request.Kind, request.Name}, "/")
+	target := strings.Join([]string{clusterID, request.Namespace, request.Kind, request.Name}, "/")
 	return domainoperation.Plan{
 		Capability: "k8s.resources.update", Target: target, Ready: ready,
 		RiskLevel: risk, RequiresApproval: approval, InputHash: hex.EncodeToString(digest[:]),

@@ -67,6 +67,8 @@ type Store interface {
 	FindActiveNASBinding(context.Context, string, string) (domainnetworkaccess.NASBinding, error)
 	FindSiteProfileBinding(context.Context, string, string) (domainnetworkaccess.SiteProfileBinding, error)
 	CreateSessionCommand(context.Context, domainnetworkaccess.SessionCommand) (domainnetworkaccess.SessionCommand, error)
+	GetSessionCommandForSession(context.Context, string, string) (domainnetworkaccess.SessionCommand, error)
+	GetSessionCommandForPlan(context.Context, string, string) (domainnetworkaccess.SessionCommand, error)
 	GetSubject(context.Context, string) (domainnetworkaccess.Subject, error)
 	ListPolicies(context.Context, domainnetworkaccess.PolicyFilter) ([]domainnetworkaccess.Policy, error)
 	GetPolicy(context.Context, string) (domainnetworkaccess.Policy, error)

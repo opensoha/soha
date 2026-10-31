@@ -39,6 +39,10 @@ func TestVMActionExplicitAdmissionWithUnconfiguredPolicy(t *testing.T) {
 	if _, err = service.VMAction(t.Context(), testPrincipal(), vm.ID, input); !errors.Is(err, domain.ErrCapacityUnknown) || len(repo.tasks) != 1 {
 		t.Fatalf("unknown allocation enqueued another task: %v", err)
 	}
+	var pending *apperrors.BusinessError
+	if !errors.Is(err, apperrors.ErrConflict) || !errors.As(err, &pending) || pending.Code() != "virtualization_capacity_unconfirmed" {
+		t.Fatalf("unconfirmed capacity did not produce an explicit recoverable conflict: %v", err)
+	}
 }
 
 func TestAdditionalDiskAdmissionRetainsOriginalAllocation(t *testing.T) {

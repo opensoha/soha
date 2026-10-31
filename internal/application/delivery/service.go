@@ -569,7 +569,7 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 			continue
 		}
 		if err := s.authorizeRuntimeScope(ctx, principal, item.ApplicationID, item.ApplicationEnvironmentID); err == nil {
-			filtered = append(filtered, item)
+			filtered = append(filtered, domaindelivery.PublicExecutionTask(item))
 		} else if !isHiddenRuntimeScopeError(err) {
 			return nil, err
 		}
@@ -595,7 +595,7 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 	if artifactErr == nil && len(artifacts) > 0 {
 		task.Artifacts = artifacts
 	}
-	return domaindelivery.WithOperationState(task, time.Now().UTC()), nil
+	return domaindelivery.WithOperationState(domaindelivery.PublicExecutionTask(task), time.Now().UTC()), nil
 }
 
 func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentity.Principal, taskID string, limit int) ([]domaindelivery.ExecutionLog, error) {
@@ -2464,7 +2464,8 @@ func (s *Service) GetExecutionTaskForRunner(ctx context.Context, taskID string) 
 }
 
 func (s *Service) CancelExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "cancel")); err != nil {
+	permission := appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "cancel")
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permission); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	if s.execution == nil {
@@ -2474,20 +2475,42 @@ func (s *Service) CancelExecutionTask(ctx context.Context, principal domainident
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if err := s.authorizeExecutionTaskScope(ctx, principal, task, permission); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
 	if task.TaskKind == "vm_ssh_command" {
 		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
 	}
-	return s.execution.CancelExecutionTask(ctx, strings.TrimSpace(taskID), input)
+	result, err := s.execution.CancelExecutionTask(ctx, strings.TrimSpace(taskID), input)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	return domaindelivery.PublicExecutionTask(result), nil
 }
 
 func (s *Service) RetryExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "retry")); err != nil {
+	permission := appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "retry")
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permission); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	if s.execution == nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("execution task controller is not configured")
 	}
-	return s.execution.RetryExecutionTask(ctx, strings.TrimSpace(taskID), input)
+	task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if err := s.authorizeExecutionTaskScope(ctx, principal, task, permission); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if task.TaskKind == "vm_ssh_command" {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
+	}
+	result, err := s.execution.RetryExecutionTask(ctx, strings.TrimSpace(taskID), input)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	return domaindelivery.PublicExecutionTask(result), nil
 }
 
 func ensureMap(value map[string]any) map[string]any {
@@ -2864,7 +2887,7 @@ func latestBundleForApplication(applicationID string, items []domaindelivery.Rel
 func latestExecutionTaskForApplication(applicationID string, items []domaindelivery.ExecutionTask) *domaindelivery.ExecutionTask {
 	for _, item := range items {
 		if item.ApplicationID == applicationID {
-			copyItem := item
+			copyItem := domaindelivery.PublicExecutionTask(item)
 			return &copyItem
 		}
 	}
@@ -2938,7 +2961,7 @@ func latestExecutionTaskForBinding(binding domaincatalog.ApplicationEnvironment,
 			continue
 		}
 		if strings.TrimSpace(item.ApplicationEnvironmentID) == binding.ID {
-			copyItem := item
+			copyItem := domaindelivery.PublicExecutionTask(item)
 			return &copyItem
 		}
 	}

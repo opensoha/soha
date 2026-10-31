@@ -16,6 +16,12 @@ type ToolRecoveryProvider interface {
 	RecoverTool(context.Context, domainidentity.Principal, domainaigateway.ToolCapability, map[string]any) (any, bool, error)
 }
 
+// Original-call recovery receives the stable server request identity as well
+// as the frozen input. Input-only recovery cannot identify a YAML mutation.
+type OriginalToolRecoveryProvider interface {
+	RecoverOriginalTool(context.Context, domainidentity.Principal, domainaigateway.ToolCapability, domainaigateway.ToolInvocationRequest) (any, bool, error)
+}
+
 type dockerCapabilityRecovery interface {
 	FindQuickCreateOperation(context.Context, domainidentity.Principal, domaindocker.QuickCreateHostInput) (domaindocker.Operation, error)
 	FindProjectDeployOperation(context.Context, domainidentity.Principal, string, domaindocker.ProjectDeployInput) (domaindocker.Operation, error)
@@ -31,13 +37,18 @@ func (s *Service) recoverCapabilityCall(ctx context.Context, principal domainide
 	if err != nil {
 		return nil, err
 	}
+	if call.ToolName == protectedPodExecTool {
+		return s.recoverProtectedPodExecution(ctx, principal, call)
+	}
 	var output any
 	var found bool
 	for _, provider := range s.gatewayRegistry().providers {
 		if !providerHasTool(provider, tool.Name) {
 			continue
 		}
-		if recovery, ok := provider.(ToolRecoveryProvider); ok {
+		if recovery, ok := provider.(OriginalToolRecoveryProvider); ok {
+			output, found, err = recovery.RecoverOriginalTool(ctx, principal, tool, call)
+		} else if recovery, ok := provider.(ToolRecoveryProvider); ok {
 			output, found, err = recovery.RecoverTool(ctx, principal, tool, call.Input)
 		} else if _, builtin := provider.(BuiltinCapabilityProvider); builtin {
 			output, found, err = s.recoverDockerCapability(ctx, principal, call)
@@ -52,6 +63,42 @@ func (s *Service) recoverCapabilityCall(ctx context.Context, principal domainide
 		return nil, err
 	}
 	return &domainaigateway.ToolInvocationResult{ToolName: tool.Name, CapabilityVersion: tool.Version, Result: "success", Output: visible, Task: s.gatewayRegistry().TaskReference(tool, output, visible), Assessment: visibleCapabilityAssessment(tool, visible)}, nil
+}
+
+// A lost response is resolved by the existing original-key receipt read. This
+// path never calls ExecutePodArgv or creates another approval or process.
+func (s *Service) recoverProtectedPodExecution(ctx context.Context, principal domainidentity.Principal, call domainaigateway.ToolInvocationRequest) (*domainaigateway.ToolInvocationResult, error) {
+	lookup := map[string]any{}
+	for _, key := range []string{"clusterId", "namespace", "podName", "idempotencyKey"} {
+		lookup[key] = call.Input[key]
+	}
+	observation := capabilityInvocationCall(domainaigateway.CapabilityCall{ToolName: "k8s.pods.exec.receipt", CapabilityVersion: "1", Input: lookup}, call)
+	ctx, err := s.authorizeCapabilityCall(ctx, principal, observation)
+	if err != nil {
+		return nil, err
+	}
+	tool, _ := s.toolByName(call.ToolName)
+	readTool, _ := s.toolByName(observation.ToolName)
+	ctx = domainaigateway.WithExecutionAuthorization(ctx, domainaigateway.ExecutionAuthorization{ActorID: principal.UserID, ActorTokenID: principal.AccessTokenID, Call: observation, ResourceScope: resolvedCapabilityAuditScope(ctx, readTool, lookup, nil)})
+	for _, provider := range s.gatewayRegistry().providers {
+		if !providerHasTool(provider, tool.Name) {
+			continue
+		}
+		recovery, ok := provider.(ToolRecoveryProvider)
+		if !ok {
+			return nil, apperrors.ErrUnsupportedOperation
+		}
+		output, found, err := recovery.RecoverTool(ctx, principal, tool, call.Input)
+		if err != nil || !found {
+			return nil, err
+		}
+		visible, _, err := s.sanitizeToolOutputByAccessPolicy(ctx, principal, call.AIClientID, call.SkillID, tool, capabilityGatewayScope(tool, call.Input), output)
+		if err != nil {
+			return nil, err
+		}
+		return &domainaigateway.ToolInvocationResult{ToolName: tool.Name, CapabilityVersion: tool.Version, Result: "success", Output: visible, Task: s.gatewayRegistry().TaskReference(tool, output, visible)}, nil
+	}
+	return nil, apperrors.ErrUnsupportedOperation
 }
 
 func (s *Service) recoverDockerCapability(ctx context.Context, principal domainidentity.Principal, call domainaigateway.ToolInvocationRequest) (any, bool, error) {

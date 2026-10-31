@@ -97,7 +97,7 @@ func (h *CatalogHandler) ListEnvironments(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *CatalogHandler) ListApplicationEnvironments(c *gin.Context) {
@@ -107,7 +107,15 @@ func (h *CatalogHandler) ListApplicationEnvironments(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	// Narrow only the service-authorized rows; query filters never grant scope.
+	applicationID, environmentID := c.Query("applicationId"), c.Query("environmentId")
+	filtered := make([]domaincatalog.ApplicationEnvironment, 0, len(items))
+	for _, item := range items {
+		if (applicationID == "" || item.ApplicationID == applicationID) && (environmentID == "" || item.EnvironmentID == environmentID) {
+			filtered = append(filtered, item)
+		}
+	}
+	writeDeliveryList(c, filtered)
 }
 
 func (h *CatalogHandler) GetApplicationEnvironment(c *gin.Context) {

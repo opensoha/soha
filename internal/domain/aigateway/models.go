@@ -10,8 +10,11 @@ import (
 )
 
 const (
-	PersonalAccessTokenPrefix = "soha_pat_"
-	ServiceAccountTokenPrefix = "soha_sat_"
+	PersonalAccessTokenPrefix         = "soha_pat_"
+	ServiceAccountTokenPrefix         = "soha_sat_"
+	GovernedPersonalAccessTokenPrefix = "soha_gpat_"
+	// #nosec G101 -- public token type discriminator; the actual secret suffix is generated separately.
+	GovernedServiceAccountTokenPrefix = "soha_gsat_"
 )
 
 type RiskLevel string
@@ -365,39 +368,42 @@ type AuditLogFilter struct {
 }
 
 type ApprovalRequest struct {
-	ID                string            `json:"id"`
-	Status            string            `json:"status"`
-	Strategy          string            `json:"strategy"`
-	PolicyID          string            `json:"policyId,omitempty"`
-	ApprovalPolicyRef string            `json:"approvalPolicyRef,omitempty"`
-	ActorType         string            `json:"actorType"`
-	ActorID           string            `json:"actorId"`
-	ActorSessionID    string            `json:"-"`
-	ActorName         string            `json:"actorName,omitempty"`
-	ActorRoles        []string          `json:"actorRoles,omitempty"`
-	ActorTeams        []string          `json:"actorTeams,omitempty"`
-	AIClientID        string            `json:"aiClientId,omitempty"`
-	AIClientName      string            `json:"aiClientName,omitempty"`
-	SkillID           string            `json:"skillId,omitempty"`
-	ToolName          string            `json:"toolName"`
-	RiskLevel         RiskLevel         `json:"riskLevel"`
-	RequiresApproval  bool              `json:"requiresApproval"`
-	ResourceScope     map[string]any    `json:"resourceScope,omitempty"`
-	ToolInput         map[string]any    `json:"toolInput,omitempty"`
-	SecretRefs        map[string]string `json:"secretRefs,omitempty"`
-	RelatedIDs        map[string]any    `json:"relatedIds,omitempty"`
-	ApprovalTrace     *ApprovalTrace    `json:"approvalTrace,omitempty"`
-	Output            any               `json:"output,omitempty"`
-	Summary           string            `json:"summary"`
-	RequestID         string            `json:"requestId,omitempty"`
-	SourceIP          string            `json:"sourceIp,omitempty"`
-	DecidedBy         string            `json:"decidedBy,omitempty"`
-	DecidedByName     string            `json:"decidedByName,omitempty"`
-	DecidedAt         *time.Time        `json:"decidedAt,omitempty"`
-	DecisionComment   string            `json:"decisionComment,omitempty"`
-	ExpiresAt         *time.Time        `json:"expiresAt,omitempty"`
-	CreatedAt         time.Time         `json:"createdAt"`
-	UpdatedAt         time.Time         `json:"updatedAt"`
+	ID                     string            `json:"id"`
+	Status                 string            `json:"status"`
+	Strategy               string            `json:"strategy"`
+	PolicyID               string            `json:"policyId,omitempty"`
+	ApprovalPolicyRef      string            `json:"approvalPolicyRef,omitempty"`
+	ActorType              string            `json:"actorType"`
+	ActorID                string            `json:"actorId"`
+	ActorSessionID         string            `json:"-"`
+	ActorTokenID           string            `json:"-"`
+	ActorPermissionCeiling []string          `json:"-"`
+	ProtectedToolInput     string            `json:"-"`
+	ActorName              string            `json:"actorName,omitempty"`
+	ActorRoles             []string          `json:"actorRoles,omitempty"`
+	ActorTeams             []string          `json:"actorTeams,omitempty"`
+	AIClientID             string            `json:"aiClientId,omitempty"`
+	AIClientName           string            `json:"aiClientName,omitempty"`
+	SkillID                string            `json:"skillId,omitempty"`
+	ToolName               string            `json:"toolName"`
+	RiskLevel              RiskLevel         `json:"riskLevel"`
+	RequiresApproval       bool              `json:"requiresApproval"`
+	ResourceScope          map[string]any    `json:"resourceScope,omitempty"`
+	ToolInput              map[string]any    `json:"toolInput,omitempty"`
+	SecretRefs             map[string]string `json:"secretRefs,omitempty"`
+	RelatedIDs             map[string]any    `json:"relatedIds,omitempty"`
+	ApprovalTrace          *ApprovalTrace    `json:"approvalTrace,omitempty"`
+	Output                 any               `json:"output,omitempty"`
+	Summary                string            `json:"summary"`
+	RequestID              string            `json:"requestId,omitempty"`
+	SourceIP               string            `json:"sourceIp,omitempty"`
+	DecidedBy              string            `json:"decidedBy,omitempty"`
+	DecidedByName          string            `json:"decidedByName,omitempty"`
+	DecidedAt              *time.Time        `json:"decidedAt,omitempty"`
+	DecisionComment        string            `json:"decisionComment,omitempty"`
+	ExpiresAt              *time.Time        `json:"expiresAt,omitempty"`
+	CreatedAt              time.Time         `json:"createdAt"`
+	UpdatedAt              time.Time         `json:"updatedAt"`
 }
 
 type ApprovalRequestFilter struct {
@@ -747,6 +753,7 @@ type PersonalAccessTokenListRequest struct {
 }
 
 type PersonalAccessTokenInput struct {
+	GovernedOnly   bool           `json:"-"`
 	Name           string         `json:"name"`
 	Scopes         []string       `json:"scopes"`
 	PermissionKeys []string       `json:"permissionKeys"`
@@ -804,6 +811,7 @@ type ServiceAccountToken struct {
 }
 
 type ServiceAccountTokenInput struct {
+	GovernedOnly   bool           `json:"-"`
 	Name           string         `json:"name"`
 	Scopes         []string       `json:"scopes"`
 	PermissionKeys []string       `json:"permissionKeys"`
@@ -817,7 +825,9 @@ type CreatedServiceAccountToken struct {
 }
 
 type TokenRotationInput struct {
-	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	GovernedOnly      bool       `json:"-"`
+	RotationRequestID string     `json:"rotationRequestId,omitempty"`
+	ExpiresAt         *time.Time `json:"expiresAt,omitempty"`
 }
 
 type LLMTokenMetadata struct {
@@ -1204,4 +1214,18 @@ type RateLimitState struct {
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+// TokenRotationRecord is the durable outcome of a Key rotation. Secret values
+// are deliberately absent; recovery uses another authenticated credential.
+type TokenRotationRecord struct {
+	RotationRequestID   string    `json:"rotationRequestId"`
+	TokenKind           string    `json:"tokenKind"`
+	PreviousTokenID     string    `json:"previousTokenId"`
+	ReplacementTokenID  string    `json:"replacementTokenId"`
+	Status              string    `json:"status"`
+	RotatedAt           time.Time `json:"rotatedAt"`
+	NewValueRetrievable bool      `json:"newValueRetrievable"`
+	OwnerID             string    `json:"-"`
+	ActorID             string    `json:"-"`
 }

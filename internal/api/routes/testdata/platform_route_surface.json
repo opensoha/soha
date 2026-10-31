@@ -1017,6 +1017,31 @@
       "classification": "public"
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/conditional",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/conditional/actions/:action",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/conditional/yaml",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/conditional/yaml/preflight",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/identity",
+      "classification": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/resources/graph",
       "classification": "public"
@@ -1303,6 +1328,21 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/executions",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/executions",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/executions/:executionID",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/logs",
       "classification": "public"
     },
@@ -1320,6 +1360,26 @@
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal",
       "classification": "stream-only"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal-sessions",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal-sessions/:sessionID",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal-sessions/:sessionID",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal-sessions/:sessionID/stream",
+      "classification": "public"
     },
     {
       "method": "GET",

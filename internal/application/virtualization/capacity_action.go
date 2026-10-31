@@ -2,6 +2,7 @@ package virtualization
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -34,7 +35,7 @@ func (s *Service) admitVMAction(ctx context.Context, task domain.Task, retry boo
 	}
 	demand, err := capacityActionDemand(snapshot, vm, task)
 	if err != nil {
-		return domain.Task{}, err
+		return domain.Task{}, capacityActionObservationError(err)
 	}
 	for _, allocation := range snapshot.VMs {
 		if allocation.ProviderVMID == vm.ExternalID && allocation.Node == vm.NodeName && allocation.Name == vm.Name {
@@ -49,6 +50,16 @@ func (s *Service) admitVMAction(ctx context.Context, task domain.Task, retry boo
 		return s.tasks.RetryTaskWithCapacity(ctx, task, snapshot, demand)
 	}
 	return s.tasks.CreateTaskWithCapacity(ctx, task, snapshot, demand)
+}
+
+func capacityActionObservationError(err error) error {
+	if !errors.Is(err, domain.ErrCapacityUnknown) {
+		return err
+	}
+	pending := apperrors.NewBusiness(apperrors.ErrConflict, "virtualization_capacity_unconfirmed",
+		"Provider capacity for this VM is not yet confirmed. Refresh its capacity and inspect the original request or task before retrying.",
+		"提供商尚未确认该虚拟机的容量。请刷新容量并核对原请求或原任务，再选择对应的重试操作。")
+	return fmt.Errorf("%w: %w", pending, err)
 }
 
 func capacityActionDemand(snapshot domain.CapacitySnapshot, vm domain.VM, task domain.Task) (domain.CapacityDemand, error) {

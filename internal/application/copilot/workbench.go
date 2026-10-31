@@ -51,7 +51,7 @@ func normalizeStringList(items []string) []string {
 }
 
 func sessionMetadataMap(metadata domaincopilot.SessionMetadata) map[string]any {
-	return map[string]any{
+	result := map[string]any{
 		"modelPreferences": metadata.ModelPreferences,
 		"conversationKind": metadata.ConversationKind,
 		"mode":             metadata.Mode,
@@ -63,10 +63,13 @@ func sessionMetadataMap(metadata domaincopilot.SessionMetadata) map[string]any {
 		"analysisRunRefs":  metadata.AnalysisRunRefs,
 		"summary":          metadata.Summary,
 		"tags":             metadata.Tags,
-		"archivedAt":       metadata.ArchivedAt,
 		"source":           metadata.Source,
 		"knowledgeContext": metadata.KnowledgeContext,
 	}
+	if metadata.ArchivedAt != "" {
+		result["archivedAt"] = metadata.ArchivedAt
+	}
+	return result
 }
 
 func parseSessionMetadata(input map[string]any) domaincopilot.SessionMetadata {

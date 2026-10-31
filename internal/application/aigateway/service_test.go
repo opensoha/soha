@@ -52,6 +52,7 @@ func (r *captureOperationRecorder) Record(_ context.Context, entry domainoperati
 
 type memoryGatewayRepository struct {
 	personalTokens       []domainaigateway.PersonalAccessToken
+	tokenRotations       map[string]domainaigateway.TokenRotationRecord
 	serviceAccounts      map[string]domainaigateway.ServiceAccount
 	serviceAccountTokens []domainaigateway.ServiceAccountToken
 	aiClients            map[string]domainaigateway.AIClient
@@ -91,6 +92,7 @@ func newTestServiceWithRelay(permissions *appaccess.PermissionResolver, audit Au
 			return domainidentity.Principal{}, apperrors.ErrUnauthorized
 		})
 		deps.PersonalTokens = repo
+		deps.TokenRotations = repo
 		deps.ServiceAccounts = repo
 		deps.Clients = repo
 		deps.ToolGrants = repo

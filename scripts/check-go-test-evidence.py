@@ -25,6 +25,44 @@ IDENTITY_SCOPE = {
                  "revoked_session_cannot_refresh"],
 }
 
+WORKFLOW_REQUEST_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/workflow",
+    "parent": "TestWorkflowRequestReceiptsWithPostgres",
+    "children": ["concurrent_original_claim", "changed_input_conflicts", "restart_preserves_unknown_and_original_id",
+                 "completion_is_immutable_and_idempotent", "actor_isolation", "missing_run_keeps_tombstone"],
+}
+
+
+DOCKER_CONFIGURATION_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/docker",
+    "parent": "TestDockerConditionalConfigurationWithPostgres",
+    "children": ["concurrent_cas_one_winner", "restart_replay_and_changed_input", "legacy_writer_and_aba_conflict",
+                 "partial_preserves_runtime_precision_and_expiry", "explicit_zero_empty_and_large_object", "host_move_uid_and_scope_fences",
+                 "definition_failure_rolls_back_receipt_and_revision", "delete_tombstone_survives_recreation",
+                 "children_and_runtime_history_block_deregistration", "registration_is_metadata_only_and_replayable",
+                 "key_ceiling_denies_without_mutation", "receipt_failure_rolls_back_deletion", "reviewed_deploy_configuration_fence"],
+}
+
+
+DOCKER_RUNTIME_IDENTITY_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/docker",
+    "parent": "TestDockerRuntimeIdentityWithPostgres",
+    "children": ["legacy_default_and_explicit_opt_in", "service_opt_in_and_disable_preserves_existing", "version_update_rejected", "legacy_runner_cannot_claim_bound",
+                 "capable_claim_preserves_original_binding", "unknown_protocol_is_not_claimed", "callback_fence_required",
+                 "atomic_container_start_binds_database_uids", "callback_transaction_rollback_and_recreation_fence",
+                 "confirmed_inventory_removal_and_atomic_callback", "queued_project_freezes_registered_container_set"],
+}
+
+
+PROTECTED_STORAGE_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/copilot",
+    "parent": "TestPrivateDurableStorageWithPostgres",
+    "children": ["workflow_intent_prepared_and_revision_ciphertext", "workflow_revision_cas_retains_sealed_state",
+                 "native_checkpoint_and_journal_ciphertext", "native_resume_reseals_without_losing_budget",
+                 "native_public_observation_copies_never_store_private_input_or_output",
+                 "native_missing_key_and_corruption_rejected", "native_personal_cleanup_lookup_is_read_only_and_task_bound"],
+}
+
 
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
@@ -56,11 +94,23 @@ if __name__ == "__main__":
     parser.add_argument("--exit-code", type=int, required=True)
     parser.add_argument("--main-chat", action="store_true")
     parser.add_argument("--identity", action="store_true")
+    parser.add_argument("--workflow-requests", action="store_true")
+    parser.add_argument("--protected-storage", action="store_true")
+    parser.add_argument("--docker-configuration-mutations", action="store_true")
+    parser.add_argument("--docker-runtime-identity", action="store_true")
     args = parser.parse_args()
     try:
         scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": "TestMainSessionWithPostgres", "children": ["personal_assistant_identity"]} if args.main_chat else {}
         if args.identity:
             scope = IDENTITY_SCOPE
+        if args.workflow_requests:
+            scope = WORKFLOW_REQUEST_SCOPE
+        if args.protected_storage:
+            scope = PROTECTED_STORAGE_SCOPE
+        if args.docker_configuration_mutations:
+            scope = DOCKER_CONFIGURATION_SCOPE
+        if args.docker_runtime_identity:
+            scope = DOCKER_RUNTIME_IDENTITY_SCOPE
         print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
     except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")

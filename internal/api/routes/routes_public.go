@@ -23,6 +23,16 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	v1.GET("/readyz", deps.System.Readyz)
 	v1.GET("/auth/providers", deps.Auth.ListProviders)
 	v1.GET("/auth/login-options", deps.Auth.LoginOptions)
+	if deps.CLIAuth != nil {
+		cli := v1.Group("/auth/cli", limits.Middleware("cli-auth-public", 120, time.Minute, nil))
+		cli.GET("/options", deps.CLIAuth.Options)
+		cli.POST("/device-authorizations", deps.CLIAuth.Create)
+		cli.POST("/device-authorizations/cancel", deps.CLIAuth.Cancel)
+		cli.POST("/device-token", deps.CLIAuth.Exchange)
+		cli.POST("/password", deps.CLIAuth.Password)
+		cli.POST("/refresh", deps.CLIAuth.Refresh)
+		cli.POST("/logout", deps.CLIAuth.Logout)
+	}
 	v1.POST("/auth/login", deps.Auth.Login)
 	v1.POST("/auth/refresh", deps.Auth.Refresh)
 	v1.GET("/auth/oidc/login", deps.Auth.OIDCLogin)

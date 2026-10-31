@@ -108,7 +108,7 @@ func (h *ManifestHandler) ListRevisions(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *ManifestHandler) SaveRevision(c *gin.Context) {

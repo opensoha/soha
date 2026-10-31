@@ -37,6 +37,14 @@ type ServiceAccountRepository interface {
 	ServiceAccountTokenStore
 }
 
+// TokenRotationRepository commits replacement, revocation and recovery record
+// together. Implementations must serialize competing rotations of the old Key.
+type TokenRotationRepository interface {
+	RotatePersonalToken(context.Context, string, domainaigateway.PersonalAccessToken, domainaigateway.TokenRotationRecord) (domainaigateway.PersonalAccessToken, error)
+	RotateServiceToken(context.Context, string, domainaigateway.ServiceAccountToken, domainaigateway.TokenRotationRecord) (domainaigateway.ServiceAccountToken, error)
+	GetTokenRotation(context.Context, string) (domainaigateway.TokenRotationRecord, error)
+}
+
 type AIClientRepository interface {
 	ListAIClients(context.Context) ([]domainaigateway.AIClient, error)
 	GetAIClient(context.Context, string) (domainaigateway.AIClient, error)
@@ -154,6 +162,7 @@ type ServiceDeps struct {
 	Audit       AuditRecorder
 
 	PersonalTokens  PersonalAccessTokenRepository
+	TokenRotations  TokenRotationRepository
 	ServiceAccounts ServiceAccountRepository
 	Clients         AIClientRepository
 	ToolGrants      ToolGrantRepository
@@ -164,6 +173,8 @@ type ServiceDeps struct {
 	Approvals       ApprovalRepository
 	LLMRelay        LLMRelayRepository
 	Secrets         SecretReferenceResolver
+	// Enabled only after every durable worker can read the encrypted format.
+	ProtectedDurableStorage bool
 
 	RateLimitBackend RateLimitBackend
 	RelayConfig      LLMRelayConfig

@@ -44,6 +44,12 @@ func bindChatSummarySource(metadata domaincopilot.SessionMetadata, patch map[str
 }
 
 func (s *Service) visibleSessionSummary(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session) domaincopilot.Session {
+	// Older records persist an empty string for an unset optional date-time.
+	// Normalize only the response projection, preserving the stored map.
+	if archived, present := session.Metadata["archivedAt"].(string); present && archived == "" {
+		session.Metadata = maps.Clone(session.Metadata)
+		delete(session.Metadata, "archivedAt")
+	}
 	metadata := parseSessionMetadata(session.Metadata)
 	if metadata.Summary == "" {
 		return session

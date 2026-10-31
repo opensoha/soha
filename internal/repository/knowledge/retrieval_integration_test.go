@@ -17,6 +17,7 @@ import (
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 )
 
@@ -76,7 +77,7 @@ func newKnowledgePostgresRepository(t *testing.T) (*Repository, *dbstore.Store, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 12, MaxIdleConns: 4}
+	cfg := testpostgres.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 12, MaxIdleConns: 4})
 	admin, err := dbstore.New(cfg, zap.NewNop())
 	if err != nil {
 		t.Fatal(err)

@@ -606,7 +606,7 @@ func (r *Repository) ListHealingRuns(ctx context.Context, filter domainalert.Hea
 		args = append(args, strings.ToLower(strings.TrimSpace(filter.Status)))
 	}
 	query := `
-		SELECT id, policy_id, event_id, status, approval_status, approval_comment, requested_by, approved_by, workflow_run_id, result, started_at, completed_at, created_at, updated_at
+		SELECT id, policy_id, event_id, status, approval_status, approval_comment, requested_by, approved_by, workflow_run_id, result, started_at, completed_at, created_at, updated_at, execution_generation, submission_status, intent_digest
 		FROM healing_runs
 	`
 	if len(conditions) > 0 {
@@ -633,7 +633,7 @@ func (r *Repository) ListHealingRuns(ctx context.Context, filter domainalert.Hea
 
 func (r *Repository) GetHealingRun(ctx context.Context, runID string) (domainalert.HealingRun, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, policy_id, event_id, status, approval_status, approval_comment, requested_by, approved_by, workflow_run_id, result, started_at, completed_at, created_at, updated_at
+		SELECT id, policy_id, event_id, status, approval_status, approval_comment, requested_by, approved_by, workflow_run_id, result, started_at, completed_at, created_at, updated_at, execution_generation, submission_status, intent_digest
 		FROM healing_runs
 		WHERE id = ?
 		LIMIT 1
@@ -649,10 +649,10 @@ func (r *Repository) CreateHealingRun(ctx context.Context, input domainalert.Hea
 	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO healing_runs (
-			id, policy_id, event_id, status, approval_status, approval_comment, requested_by, approved_by, workflow_run_id, result, started_at, completed_at, created_at, updated_at
+			id, policy_id, event_id, status, approval_status, approval_comment, requested_by, approved_by, workflow_run_id, result, started_at, completed_at, created_at, updated_at, execution_generation, submission_status, intent_digest
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.PolicyID, nullableString(item.EventID), item.Status, nullableString(item.ApprovalStatus), nullableString(item.ApprovalComment), nullableString(item.RequestedBy), nullableString(item.ApprovedBy), nullableString(item.WorkflowRunID), string(result), nullableTime(item.StartedAt), nullableTime(item.CompletedAt), item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.PolicyID, nullableString(item.EventID), item.Status, nullableString(item.ApprovalStatus), nullableString(item.ApprovalComment), nullableString(item.RequestedBy), nullableString(item.ApprovedBy), nullableString(item.WorkflowRunID), string(result), nullableTime(item.StartedAt), nullableTime(item.CompletedAt), item.CreatedAt, item.UpdatedAt, item.ExecutionGeneration, item.SubmissionStatus, item.IntentDigest).Error; err != nil {
 		return domainalert.HealingRun{}, fmt.Errorf("create healing run: %w", err)
 	}
 	return item, nil
@@ -1313,7 +1313,7 @@ func scanHealingRun(rows *sql.Rows) (domainalert.HealingRun, error) {
 	var result []byte
 	var startedAt sql.NullTime
 	var completedAt sql.NullTime
-	if err := rows.Scan(&item.ID, &item.PolicyID, &eventID, &item.Status, &approvalStatus, &approvalComment, &requestedBy, &approvedBy, &workflowRunID, &result, &startedAt, &completedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := rows.Scan(&item.ID, &item.PolicyID, &eventID, &item.Status, &approvalStatus, &approvalComment, &requestedBy, &approvedBy, &workflowRunID, &result, &startedAt, &completedAt, &item.CreatedAt, &item.UpdatedAt, &item.ExecutionGeneration, &item.SubmissionStatus, &item.IntentDigest); err != nil {
 		return domainalert.HealingRun{}, fmt.Errorf("scan healing run: %w", err)
 	}
 	if eventID.Valid {
@@ -1355,7 +1355,7 @@ func scanHealingRunRow(row *sql.Row, runID string) (domainalert.HealingRun, erro
 	var result []byte
 	var startedAt sql.NullTime
 	var completedAt sql.NullTime
-	if err := row.Scan(&item.ID, &item.PolicyID, &eventID, &item.Status, &approvalStatus, &approvalComment, &requestedBy, &approvedBy, &workflowRunID, &result, &startedAt, &completedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.PolicyID, &eventID, &item.Status, &approvalStatus, &approvalComment, &requestedBy, &approvedBy, &workflowRunID, &result, &startedAt, &completedAt, &item.CreatedAt, &item.UpdatedAt, &item.ExecutionGeneration, &item.SubmissionStatus, &item.IntentDigest); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domainalert.HealingRun{}, alertNotFound("healing run", runID)
 		}
@@ -1598,21 +1598,30 @@ func normalizeHealingRunInput(input domainalert.HealingRunInput, now time.Time) 
 	if approvalStatus == "" {
 		approvalStatus = "pending"
 	}
+	if input.ExecutionGeneration < 1 {
+		input.ExecutionGeneration = 1
+	}
+	if input.SubmissionStatus == "" {
+		input.SubmissionStatus = "not_submitted"
+	}
 	return domainalert.HealingRun{
-		ID:              id,
-		PolicyID:        strings.TrimSpace(input.PolicyID),
-		EventID:         strings.TrimSpace(input.EventID),
-		Status:          status,
-		ApprovalStatus:  approvalStatus,
-		ApprovalComment: strings.TrimSpace(input.ApprovalComment),
-		RequestedBy:     strings.TrimSpace(input.RequestedBy),
-		ApprovedBy:      strings.TrimSpace(input.ApprovedBy),
-		WorkflowRunID:   strings.TrimSpace(input.WorkflowRunID),
-		Result:          input.Result,
-		StartedAt:       input.StartedAt,
-		CompletedAt:     input.CompletedAt,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ExecutionGeneration: input.ExecutionGeneration,
+		SubmissionStatus:    input.SubmissionStatus,
+		IntentDigest:        input.IntentDigest,
+		ID:                  id,
+		PolicyID:            strings.TrimSpace(input.PolicyID),
+		EventID:             strings.TrimSpace(input.EventID),
+		Status:              status,
+		ApprovalStatus:      approvalStatus,
+		ApprovalComment:     strings.TrimSpace(input.ApprovalComment),
+		RequestedBy:         strings.TrimSpace(input.RequestedBy),
+		ApprovedBy:          strings.TrimSpace(input.ApprovedBy),
+		WorkflowRunID:       strings.TrimSpace(input.WorkflowRunID),
+		Result:              input.Result,
+		StartedAt:           input.StartedAt,
+		CompletedAt:         input.CompletedAt,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 }
 

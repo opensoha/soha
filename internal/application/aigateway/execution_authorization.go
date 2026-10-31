@@ -20,7 +20,7 @@ type queuedAuthorizationKey struct{}
 
 func withGatewayExecutionAuthorization(ctx context.Context, principal domainidentity.Principal, tool domain.ToolCapability, call domain.ToolInvocationRequest, approvalID string, decision gatewayRiskDecision) context.Context {
 	call.CapabilityVersion = tool.Version
-	return domain.WithExecutionAuthorization(ctx, domain.ExecutionAuthorization{ActorID: principal.UserID, Call: call, ResourceScope: resolvedCapabilityAuditScope(ctx, tool, call.Input, nil), ApprovalID: approvalID, ApprovalPolicy: executionApprovalPolicy(decision)})
+	return domain.WithExecutionAuthorization(ctx, domain.ExecutionAuthorization{ActorID: principal.UserID, ActorTokenID: principal.AccessTokenID, Call: call, ResourceScope: resolvedCapabilityAuditScope(ctx, tool, call.Input, nil), ApprovalID: approvalID, ApprovalPolicy: executionApprovalPolicy(decision)})
 }
 
 func executionApprovalPolicy(decision gatewayRiskDecision) string {
@@ -33,6 +33,11 @@ func executionApprovalPolicy(decision gatewayRiskDecision) string {
 func (s *Service) CheckExecutionAuthorization(ctx context.Context, principal domainidentity.Principal, authorization domain.ExecutionAuthorization) error {
 	if authorization.ActorID == "" || authorization.ActorID != principal.UserID {
 		return fmt.Errorf("%w: queued gateway actor changed", apperrors.ErrAccessDenied)
+	}
+	// Old sealed domain records did not carry this field. New credential-bound
+	// capabilities additionally require a nonempty binding at their admission.
+	if authorization.ActorTokenID != "" && authorization.ActorTokenID != principal.AccessTokenID {
+		return fmt.Errorf("%w: queued gateway credential changed", apperrors.ErrAccessDenied)
 	}
 	call := authorization.Call
 	ctx = context.WithValue(ctx, queuedAuthorizationKey{}, true)
@@ -91,6 +96,11 @@ func (s *Service) checkExecutionApproval(ctx context.Context, principal domainid
 	if request.ActorType != actorType || request.ActorID != actorID || request.ToolName != tool.Name || request.AIClientID != call.AIClientID || request.SkillID != call.SkillID || request.Status != "approved" && request.Status != "executed" || request.ExpiresAt != nil && !request.ExpiresAt.After(time.Now()) {
 		return fmt.Errorf("%w: queued approval is no longer valid", apperrors.ErrAccessDenied)
 	}
+	executionInput, err := s.approvalExecutionInput(request)
+	if err != nil {
+		return err
+	}
+	request.ToolInput = executionInput
 	if validateApprovedCapability(tool, request) != nil || !matchesApprovedCapabilityScopes(ctx, tool.Name, request.ResourceScope) || !executionJSONEqual(gatewayApprovalReplayInput(request), call.Input) || !maps.Equal(request.SecretRefs, call.SecretRefs) {
 		return fmt.Errorf("%w: queued call differs from approved request", apperrors.ErrAccessDenied)
 	}

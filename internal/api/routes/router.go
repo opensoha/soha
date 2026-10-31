@@ -32,6 +32,7 @@ const (
 )
 
 type Dependencies struct {
+	CLIAuth                  *apiHandlers.CLIAuthHandler
 	System                   *apiHandlers.SystemHandler
 	Platform                 *apiHandlers.PlatformHandler
 	AgentConnections         *apiHandlers.AgentConnectionHandler
@@ -106,7 +107,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	router.Use(apiMiddleware.RequestID())
 	router.Use(apiMiddleware.RequestLogger(logger))
 	router.Use(apiMiddleware.CORS(cfg.HTTP.CORSAllowedOrigins))
-	router.Use(apiMiddleware.BuildPrincipalMiddleware(cfg.Auth, deps.Authn))
+	router.Use(apiMiddleware.BuildPrincipalMiddleware(cfg.Auth, deps.Authn, cfg.HTTP.BasePath))
 
 	router.GET("/healthz", deps.System.Healthz)
 	router.GET("/readyz", deps.System.Readyz)

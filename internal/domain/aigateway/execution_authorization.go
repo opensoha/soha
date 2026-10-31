@@ -7,6 +7,7 @@ import "context"
 // It records the accepted call, never a permission snapshot or resolved secret.
 type ExecutionAuthorization struct {
 	ActorID        string                `json:"actorId"`
+	ActorTokenID   string                `json:"actorTokenId,omitempty"`
 	Call           ToolInvocationRequest `json:"call"`
 	ResourceScope  map[string]any        `json:"resourceScope"`
 	ApprovalID     string                `json:"approvalId,omitempty"`

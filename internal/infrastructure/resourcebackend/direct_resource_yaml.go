@@ -128,39 +128,26 @@ func (d *Direct) DryRunResourceYAML(ctx context.Context, clusterID, namespace, k
 	return analysis, err
 }
 
-func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string, dryRun bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string, dryRun bool, expected ...contractresource.ResourceMutationPreconditions) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+	if len(expected) > 0 {
+		if err := expected[0].Validate(); err != nil || len(content) > 4<<20 {
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: valid preconditions and bounded YAML are required", apperrors.ErrInvalidArgument)
+		}
+	}
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
-	var object map[string]any
-	if err := yaml.Unmarshal([]byte(content), &object); err != nil {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
-	}
-	item := &unstructured.Unstructured{Object: object}
-	item.SetKind(kind)
-	if item.GetName() == "" {
-		item.SetName(name)
-	}
-	if item.GetNamespace() == "" {
-		item.SetNamespace(namespace)
-	}
-	if item.GetName() != name {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
+	item, err := decodeResourceEditManifest(namespace, name, content)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	gvr, namespaceScoped, err := resourceGVRForKind(kind)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
-	if namespaceScoped {
-		if item.GetNamespace() != namespace {
-			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.namespace does not match target resource", apperrors.ErrInvalidArgument)
-		}
-	} else {
-		if strings.TrimSpace(item.GetNamespace()) != "" {
-			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.namespace must be empty for cluster-scoped resource", apperrors.ErrInvalidArgument)
-		}
-		item.SetNamespace("")
+	if err := validateResourceEditScope(item, namespace, namespaceScoped, len(expected) > 0); err != nil {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -169,6 +156,12 @@ func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, ki
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
+	if len(expected) > 0 {
+		if err := contractruntime.ValidateResourceEditPreconditions(current, item, expected[0]); err != nil {
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, conditionalResourceError(err)
+		}
+	}
+	item.SetKind(kind)
 	if err := validateResourceMutation(current); err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
@@ -183,7 +176,11 @@ func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, ki
 	updated, err := contractruntime.ApplyResourceEdit(queryCtx, resource, current, item, resourceEditFieldManager, dryRun)
 	if err != nil {
 		if dryRun && apierrors.IsConflict(err) {
-			analysis.Conflicts = conflictsFromError(err.Error(), analysis)
+			message := err.Error()
+			if len(expected) > 0 {
+				message = "Kubernetes reported a field ownership conflict; reconcile the reviewed manifest with its current owners"
+			}
+			analysis.Conflicts = conflictsFromError(message, analysis)
 			return domainresource.ResourceYAMLView{}, analysis, nil
 		}
 		if apierrors.IsConflict(err) {
@@ -239,4 +236,39 @@ func resourceMutationError(err error) error {
 		return fmt.Errorf("%w: %v", apperrors.ErrConflict, err)
 	}
 	return err
+}
+
+func decodeResourceEditManifest(namespace, name, content string) (*unstructured.Unstructured, error) {
+	var object map[string]any
+	if err := yaml.Unmarshal([]byte(content), &object); err != nil {
+		return nil, fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
+	}
+	item := &unstructured.Unstructured{Object: object}
+	if item.GetName() == "" {
+		item.SetName(name)
+	}
+	if item.GetNamespace() == "" {
+		item.SetNamespace(namespace)
+	}
+	if item.GetName() != name {
+		return nil, fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
+	}
+	return item, nil
+}
+
+func validateResourceEditScope(item *unstructured.Unstructured, namespace string, namespaced, conditional bool) error {
+	if namespaced {
+		if conditional && strings.TrimSpace(namespace) == "" {
+			return fmt.Errorf("%w: namespace is required", apperrors.ErrInvalidArgument)
+		}
+		if item.GetNamespace() != namespace {
+			return fmt.Errorf("%w: yaml metadata.namespace does not match target resource", apperrors.ErrInvalidArgument)
+		}
+		return nil
+	}
+	if strings.TrimSpace(item.GetNamespace()) != "" {
+		return fmt.Errorf("%w: yaml metadata.namespace must be empty for cluster-scoped resource", apperrors.ErrInvalidArgument)
+	}
+	item.SetNamespace("")
+	return nil
 }

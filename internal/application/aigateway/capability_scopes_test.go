@@ -73,6 +73,9 @@ func TestCapabilityTaskScopeIsCheckedBeforePreparingAnApproval(t *testing.T) {
 	if issues := validateCapabilityScopeConstraints([]domainaigateway.CapabilityScopeConstraint{{Dimension: "clusterID", Value: "one"}, {Dimension: "clusterId", Value: "two"}}); len(issues) != 1 {
 		t.Fatal("conflicting scope aliases accepted")
 	}
+	if issues := validateCapabilityScopeConstraints([]domainaigateway.CapabilityScopeConstraint{{Dimension: "pod", Value: "one"}, {Dimension: "podName", Value: "two"}}); len(issues) != 1 {
+		t.Fatal("conflicting Pod scope aliases accepted")
+	}
 }
 
 func TestCapabilityTaskScopeIsCheckedOnHistoricalReads(t *testing.T) {

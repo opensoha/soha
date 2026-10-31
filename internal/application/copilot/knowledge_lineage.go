@@ -190,7 +190,7 @@ func agentRunKnowledgeMessage(run domaincopilot.AgentRun) domaincopilot.Message 
 
 func (s *Service) visibleKnowledgeAgentRun(ctx context.Context, principal domainidentity.Principal, run domaincopilot.AgentRun) domaincopilot.AgentRun {
 	if _, err := s.validateMessageKnowledge(ctx, principal, agentRunKnowledgeMessage(run)); err == nil {
-		return run
+		return nativePublicRun(run)
 	}
 	// Keep durable identity and lifecycle visible while withholding every
 	// projection that may contain an answer derived from a revoked source.
@@ -208,6 +208,10 @@ func (s *Service) visibleKnowledgeAgentRun(ctx context.Context, principal domain
 
 func (s *Service) visibleKnowledgeEvents(ctx context.Context, principal domainidentity.Principal, run domaincopilot.AgentRun, page domaincopilot.NativeEventPage) domaincopilot.NativeEventPage {
 	if _, err := s.validateMessageKnowledge(ctx, principal, agentRunKnowledgeMessage(run)); err == nil || len(page.Items) == 0 {
+		page.Items = slices.Clone(page.Items)
+		for i, event := range page.Items {
+			page.Items[i] = nativePublicEvent(event)
+		}
 		return page
 	}
 	last := page.Items[len(page.Items)-1]

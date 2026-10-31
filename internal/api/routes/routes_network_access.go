@@ -60,6 +60,8 @@ func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/network-access/sessions", handler.ListSessions)
 	protected.GET("/network-access/telemetry/summary", handler.GetTelemetrySummary)
 	protected.GET("/network-access/sessions/:sessionID", handler.GetSession)
+	protected.GET("/network-access/sessions/:sessionID/commands/:commandID", handler.GetSessionCommand)
+	protected.GET("/network-access/sessions/:sessionID/command-request", handler.GetOriginalSessionCommand)
 	protected.POST("/network-access/sessions/:sessionID/actions/plan", handler.PlanSessionAction)
 	protected.POST("/network-access/sessions/:sessionID/actions/execute", handler.ExecuteSessionAction)
 	protected.GET("/network-access/access-grants", handler.ListAccessGrants)

@@ -29,8 +29,11 @@ func platformMutationSecuritySurface(method, path string) (platformMutationSecur
 	}
 
 	action := platformMutationAction(method, path)
-	dynamicPermission := strings.Contains(path, "/resource-creation/")
+	dynamicPermission := strings.Contains(path, "/resource-creation/") || strings.Contains(path, "/resources/:kind/:name/conditional")
 	permissionKey := appaccess.PermPlatformResourceCreationUse
+	if strings.Contains(path, "/resources/:kind/:name/conditional") {
+		permissionKey = "platform.<group>.<kind>." + action
+	}
 	if !dynamicPermission {
 		permissionKey = appaccess.PlatformActionPermission(platformMutationResourceGroup(path), resourceKind, action)
 	}
@@ -50,6 +53,7 @@ func isReadOnlyPOST(method, path string) bool {
 		strings.HasSuffix(path, "/resource-creation/workload-snapshot") ||
 		strings.HasSuffix(path, "/resource-creation/preflight") ||
 		strings.HasSuffix(path, "/resources/update-plan") ||
+		strings.HasSuffix(path, "/conditional/yaml/preflight") ||
 		strings.HasSuffix(path, "/rollback/plan") ||
 		strings.HasSuffix(path, "/access-control/access-reviews") ||
 		strings.HasSuffix(path, "/network-access/policy/preview") ||
@@ -214,6 +218,11 @@ func companionMutationSecuritySurface(_ string, path string) (nonPlatformMutatio
 }
 
 func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if method == "POST" && strings.HasPrefix(path, "/api/v1/delivery/execution-tasks/") && strings.HasSuffix(path, "/control") {
+		// The application resolves the allowlisted action and checks that exact
+		// permission against the original task's application/environment scope.
+		return nonPlatformMutationSecuritySurfaceEntry{ResourceKind: "ExecutionTask", Action: "control", PermissionKey: "delivery.execution-tasks.<action>", DynamicPermission: true, ScopeRequired: true}, true
+	}
 	if strings.HasPrefix(path, "/api/v1/delivery/triggers") && !strings.HasSuffix(path, "/webhook") {
 		permission := appaccess.PermDeliveryTriggersCreate
 		if method == "PUT" {
@@ -315,6 +324,7 @@ var deliveryMutationRules = []deliveryMutationRule{
 	{method: "POST", prefix: "/api/v1/delivery-batches", resourceKind: "DeliveryBatch", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/delivery-workflows", resourceKind: "DeliveryWorkflow", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/workflows/trigger", resourceKind: "Workflow", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/workflow-requests", resourceKind: "WorkflowRequest", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/workflows/", suffix: "/approve", resourceKind: "WorkflowApproval", action: "approve", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/workflows/", suffix: "/reject", resourceKind: "WorkflowApproval", action: "reject", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/registries", resourceKind: "RegistryConnection", permission: appaccess.PermDeliveryRegistriesManage},
@@ -429,7 +439,14 @@ func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 }
 
 func dockerRuntimeMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if entry, ok := dockerNativeTerminalSecuritySurface(path); ok {
+		return entry, true
+	}
 	switch {
+	case strings.HasPrefix(path, "/api/v1/docker/hosts/") && strings.HasSuffix(path, "/configuration-deletion"):
+		return nonPlatformMutationEntry("DockerHost", "delete", appaccess.PermDockerHostsManage, false), true
+	case strings.HasPrefix(path, "/api/v1/docker/projects/") && strings.HasSuffix(path, "/configuration-deletion"):
+		return nonPlatformMutationEntry("DockerProject", "delete", appaccess.PermDockerProjectsManage, false), true
 	case path == "/api/v1/docker/hosts/quick-create/plan":
 		return nonPlatformMutationEntry("DockerHostPlan", "plan", appaccess.PermDockerHostsView, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/hosts/") && strings.HasSuffix(path, "/agent-installation"):
@@ -454,6 +471,13 @@ func dockerRuntimeMutationSecuritySurface(method, path string) (nonPlatformMutat
 		return nonPlatformMutationEntry("DockerTemplate", nonPlatformMutationAction(method, path), appaccess.PermDockerTemplatesManage, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/operations/"):
 		return nonPlatformMutationEntry("DockerOperation", nonPlatformMutationAction(method, path), appaccess.PermDockerOperationsManage, false), true
+	}
+	return nonPlatformMutationSecuritySurfaceEntry{}, false
+}
+
+func dockerNativeTerminalSecuritySurface(path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if strings.HasPrefix(path, "/api/v1/docker/projects/") && (strings.HasSuffix(path, "/terminal-sessions") || strings.HasSuffix(path, "/terminal-sessions/:sessionID")) {
+		return nonPlatformMutationEntry("DockerNativeTerminal", "terminal", appaccess.PermDockerServicesManage, false), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }
@@ -573,6 +597,9 @@ func accessMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 }
 
 func aiGatewayMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	// Governed minting uses the same permission, audit and operation boundaries
+	// as ordinary minting, with an additional mandatory binding in the service.
+	path = strings.Replace(path, "/api/v1/ai-gateway/governed-credentials/", "/api/v1/ai-gateway/", 1)
 	switch {
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/llm/"):
 		return nonPlatformMutationEntry("AIGatewayLLMRelayInvocation", "invoke", appaccess.PermAIGatewayRelayInvoke, true), true
@@ -804,6 +831,8 @@ func platformMutationAction(method, path string) string {
 
 func platformPathMutationAction(path string) string {
 	switch {
+	case strings.HasSuffix(path, "/conditional/actions/:action"):
+		return "<action>"
 	case strings.HasSuffix(path, "/agent-installation"), strings.HasSuffix(path, "/agent-upgrade"):
 		return "update"
 	case strings.Contains(path, "/exec"):
@@ -844,6 +873,10 @@ func platformMutationResourceGroup(path string) string {
 
 func platformMutationCapabilityKey(path string) string {
 	switch {
+	case strings.HasSuffix(path, "/conditional/actions/:action"):
+		return "workload.mutations"
+	case strings.Contains(path, "/resources/:kind/:name/conditional"):
+		return "resource.yaml.apply"
 	case strings.Contains(path, "/namespaces"):
 		return "namespace.lifecycle"
 	case strings.Contains(path, "/resource-creation/"):
@@ -883,6 +916,9 @@ func platformMutationCapabilityKey(path string) string {
 }
 
 func platformMutationResourceKind(path string) string {
+	if strings.Contains(path, "/resources/:kind/:name/conditional") {
+		return "Resource"
+	}
 	if strings.HasSuffix(path, "/agent-installation") || strings.HasSuffix(path, "/agent-upgrade") {
 		return "Cluster"
 	}

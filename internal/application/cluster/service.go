@@ -153,7 +153,7 @@ func (s *Service) restoreRuntimeRegistrations(ctx context.Context) {
 		if connection.Summary.ConnectionMode != domaincluster.ConnectionModeDirectKubeconfig && connection.Summary.ConnectionMode != "" {
 			continue
 		}
-		cfg, err := runtimeClusterConfig(connection)
+		cfg, err := RuntimeClusterConfig(connection)
 		if err != nil {
 			s.logWarnCtx(ctx, "cluster runtime config invalid", zap.String("event", "cluster.runtime_config.invalid"),
 				zap.String("cluster_id", connection.Summary.ID), zap.String("error", redaction.LogText(err.Error(), 2048)))
@@ -472,14 +472,10 @@ func (s *Service) syncAll(ctx context.Context) (int, error) {
 	}
 	connections, err := s.repo.ListConnections(ctx)
 	if err != nil {
+		s.reconcileDirectRegistrations(nil)
 		return 0, err
 	}
-	if len(connections) == 0 {
-		ids := s.manager.ClusterIDs()
-		return len(ids), s.runSyncJobs(ctx, len(ids), func(jobIndex int) error {
-			return s.syncOne(ctx, ids[jobIndex])
-		})
-	}
+	s.reconcileDirectRegistrations(connections)
 	return len(connections), s.runSyncJobs(ctx, len(connections), func(jobIndex int) error {
 		return s.syncConnection(ctx, connections[jobIndex])
 	})
@@ -600,6 +596,7 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
+		s.retireDirectRegistration(connection.Summary.ID)
 		if s.agents == nil {
 			summary.Health = domaincluster.Health{Status: "degraded", Message: "agent registry is not configured", LastChecked: time.Now().UTC()}
 			break
@@ -633,8 +630,9 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 			summary.Health = domaincluster.Health{Status: "healthy", LastChecked: time.Now().UTC()}
 		}
 	case domaincluster.ConnectionModeDirectKubeconfig, "":
-		cfg, cfgErr := runtimeClusterConfig(connection)
+		cfg, cfgErr := RuntimeClusterConfig(connection)
 		if cfgErr != nil {
+			s.retireDirectRegistration(connection.Summary.ID)
 			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(cfgErr, "cluster configuration unavailable"), LastChecked: time.Now().UTC()}
 			break
 		}
@@ -648,6 +646,7 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 		summary = observed
 		summary.ConnectionMode = domaincluster.ConnectionModeDirectKubeconfig
 	default:
+		s.retireDirectRegistration(connection.Summary.ID)
 		summary.Health = domaincluster.Health{Status: "degraded", Message: fmt.Sprintf("unsupported connection mode %s", connection.Summary.ConnectionMode), LastChecked: time.Now().UTC()}
 	}
 	if summary.ConnectionMode == "" {
@@ -688,7 +687,11 @@ func clusterHealthMessage(err error, fallback string) string {
 	return fallback
 }
 
-func runtimeClusterConfig(connection domaincluster.Connection) (*appconfig.Cluster, error) {
+// RuntimeClusterConfig maps a persisted connection to its direct client configuration.
+func RuntimeClusterConfig(connection domaincluster.Connection) (*appconfig.Cluster, error) {
+	if mode := connection.Summary.ConnectionMode; mode != "" && mode != domaincluster.ConnectionModeDirectKubeconfig {
+		return nil, apperrors.ErrUnsupportedOperation
+	}
 	kubeconfigData, _ := connection.Metadata["kubeconfig_data"].(string)
 	kubeconfigValue, _ := connection.Metadata["kubeconfig"].(string)
 	contextName, _ := connection.Metadata["context"].(string)

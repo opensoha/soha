@@ -69,6 +69,7 @@ func (h *genericResourceHandler) genericResourceDeleteWithParam(kind, nameParam 
 // RegisterGenericResourceRoutes wires delete + yaml view/apply endpoints for
 // platform resources backed by the generic dynamic-client path.
 func (h *genericResourceHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
+	h.registerConditionalResourceRoutes(group)
 	kinds := []struct {
 		path      string
 		kind      string

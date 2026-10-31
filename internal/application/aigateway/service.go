@@ -210,14 +210,16 @@ type ComputeReadService interface {
 }
 
 type Service struct {
-	permissions     *appaccess.PermissionResolver
-	identity        CurrentPrincipalReader
-	audit           AuditRecorder
-	operations      OperationRecorder
-	capabilityGuard CapabilityApprovalGuard
-	nativeTaskGuard NativeTaskGuard
+	permissions             *appaccess.PermissionResolver
+	identity                CurrentPrincipalReader
+	audit                   AuditRecorder
+	operations              OperationRecorder
+	capabilityGuard         CapabilityApprovalGuard
+	nativeTaskGuard         NativeTaskGuard
+	protectedDurableStorage bool
 
 	personalTokens  PersonalAccessTokenRepository
+	tokenRotations  TokenRotationRepository
 	serviceAccounts ServiceAccountRepository
 	clients         AIClientRepository
 	toolGrants      ToolGrantRepository
@@ -261,26 +263,28 @@ func NewWithDeps(deps ServiceDeps) *Service {
 	httpClient := normalizedHTTPClient(deps.HTTPClient)
 	credentials := newRelayCredentialCodec(relayConfig)
 	service := &Service{
-		permissions:      deps.Permissions,
-		identity:         deps.Identity,
-		audit:            deps.Audit,
-		personalTokens:   deps.PersonalTokens,
-		serviceAccounts:  deps.ServiceAccounts,
-		clients:          deps.Clients,
-		toolGrants:       deps.ToolGrants,
-		accessPolicies:   deps.AccessPolicies,
-		skillBindings:    deps.SkillBindings,
-		auditLogs:        deps.AuditLogs,
-		approvals:        deps.Approvals,
-		rateLimitRepo:    deps.RateLimits,
-		llmRelayRepo:     deps.LLMRelay,
-		secrets:          deps.Secrets,
-		rateLimits:       deps.RateLimitBackend,
-		relayConfig:      relayConfig,
-		httpClient:       httpClient,
-		relaySelector:    newRelaySelector(deps.LLMRelay),
-		relayCredentials: credentials,
-		registry:         newDefaultCapabilityRegistry(),
+		protectedDurableStorage: deps.ProtectedDurableStorage && relayConfig.CredentialEncryptionKeys.Active().ID() != "",
+		permissions:             deps.Permissions,
+		identity:                deps.Identity,
+		audit:                   deps.Audit,
+		personalTokens:          deps.PersonalTokens,
+		tokenRotations:          deps.TokenRotations,
+		serviceAccounts:         deps.ServiceAccounts,
+		clients:                 deps.Clients,
+		toolGrants:              deps.ToolGrants,
+		accessPolicies:          deps.AccessPolicies,
+		skillBindings:           deps.SkillBindings,
+		auditLogs:               deps.AuditLogs,
+		approvals:               deps.Approvals,
+		rateLimitRepo:           deps.RateLimits,
+		llmRelayRepo:            deps.LLMRelay,
+		secrets:                 deps.Secrets,
+		rateLimits:              deps.RateLimitBackend,
+		relayConfig:             relayConfig,
+		httpClient:              httpClient,
+		relaySelector:           newRelaySelector(deps.LLMRelay),
+		relayCredentials:        credentials,
+		registry:                newDefaultCapabilityRegistry(),
 	}
 	service.relayTransport = newRelayHTTPTransport(httpClient, relayConfig, credentials)
 	service.relayCache = newRelayResponseCache(deps.LLMRelay, credentials, relayConfig)

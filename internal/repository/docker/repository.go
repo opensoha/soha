@@ -81,7 +81,7 @@ func (r *Repository) CreateHost(ctx context.Context, input domaindocker.HostInpu
 		string(labels), string(config), item.LastHeartbeatAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domaindocker.Host{}, fmt.Errorf("create docker host: %w", err)
 	}
-	return item, nil
+	return r.GetHost(ctx, item.ID)
 }
 
 func (r *Repository) UpdateHost(ctx context.Context, id string, input domaindocker.HostInput) (domaindocker.Host, error) {
@@ -114,7 +114,7 @@ func (r *Repository) UpdateHost(ctx context.Context, id string, input domaindock
 	if result.RowsAffected == 0 {
 		return domaindocker.Host{}, ErrNotFound
 	}
-	return item, nil
+	return r.GetHost(ctx, item.ID)
 }
 
 func (r *Repository) HeartbeatHost(ctx context.Context, id, agentID string) error {
@@ -195,7 +195,7 @@ func (r *Repository) TouchHostRuntime(ctx context.Context, id string, input doma
 	if result.RowsAffected == 0 {
 		return domaindocker.Host{}, ErrNotFound
 	}
-	return item, nil
+	return r.GetHost(ctx, item.ID)
 }
 
 func (r *Repository) DeleteHost(ctx context.Context, id string) error {
@@ -236,16 +236,16 @@ func (r *Repository) CreateProject(ctx context.Context, input domaindocker.Proje
 		INSERT INTO docker_projects (
 			id, host_id, name, slug, description, environment, owner, team, source_kind, source_ref,
 			compose_content, env_content, status, desired_state, template_id, ttl_seconds, expires_at,
-			last_deployed_at, labels, config, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
+			last_deployed_at, labels, config, created_at, updated_at, runtime_identity_version
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?)
 	`, item.ID, item.HostID, item.Name, item.Slug, nullableString(item.Description), nullableString(item.Environment),
 		nullableString(item.Owner), nullableString(item.Team), nullableString(item.SourceKind), nullableString(item.SourceRef),
 		nullableString(item.ComposeContent), nullableString(item.EnvContent), item.Status, nullableString(item.DesiredState),
 		nullableString(item.TemplateID), item.TTLSeconds, item.ExpiresAt, item.LastDeployedAt, string(labels), string(config),
-		item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		item.CreatedAt, item.UpdatedAt, input.RuntimeIdentityVersion).Error; err != nil {
 		return domaindocker.Project{}, fmt.Errorf("create docker project: %w", err)
 	}
-	return item, nil
+	return r.GetProject(ctx, item.ID)
 }
 
 func (r *Repository) UpdateProject(ctx context.Context, id string, input domaindocker.ProjectInput) (domaindocker.Project, error) {
@@ -263,12 +263,13 @@ func (r *Repository) UpdateProject(ctx context.Context, id string, input domaind
 	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE docker_projects
 		SET host_id = ?, name = ?, slug = ?, description = ?, environment = ?, owner = ?, team = ?,
-			source_kind = ?, source_ref = ?, compose_content = ?, env_content = ?, status = ?, desired_state = ?,
+			source_kind = ?, source_ref = ?, compose_content = ?, env_content = ?,
+			status = COALESCE(NULLIF(?, ''), status), desired_state = COALESCE(NULLIF(?, ''), desired_state),
 			template_id = ?, ttl_seconds = ?, expires_at = ?, labels = ?::jsonb, config = ?::jsonb, updated_at = ?
 		WHERE id = ?
 	`, item.HostID, item.Name, item.Slug, nullableString(item.Description), nullableString(item.Environment),
 		nullableString(item.Owner), nullableString(item.Team), nullableString(item.SourceKind), nullableString(item.SourceRef),
-		nullableString(item.ComposeContent), nullableString(item.EnvContent), item.Status, nullableString(item.DesiredState),
+		nullableString(item.ComposeContent), nullableString(item.EnvContent), strings.TrimSpace(input.Status), strings.TrimSpace(input.DesiredState),
 		nullableString(item.TemplateID), item.TTLSeconds, item.ExpiresAt, string(labels), string(config), item.UpdatedAt, item.ID)
 	if result.Error != nil {
 		return domaindocker.Project{}, fmt.Errorf("update docker project: %w", result.Error)
@@ -276,7 +277,7 @@ func (r *Repository) UpdateProject(ctx context.Context, id string, input domaind
 	if result.RowsAffected == 0 {
 		return domaindocker.Project{}, ErrNotFound
 	}
-	return item, nil
+	return r.GetProject(ctx, item.ID)
 }
 
 func (r *Repository) UpdateProjectRuntime(ctx context.Context, id string, status string, desiredState string, lastDeployedAt *time.Time) (domaindocker.Project, error) {
@@ -330,6 +331,26 @@ func (r *Repository) GetService(ctx context.Context, id string) (domaindocker.Se
 }
 
 func (r *Repository) UpsertService(ctx context.Context, input domaindocker.ServiceInput) (domaindocker.Service, error) {
+	var result domaindocker.Service
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		repo := New(tx)
+		project, err := repo.lockProject(ctx, input.ProjectID)
+		if err != nil {
+			return err
+		}
+		if project.HostID != strings.TrimSpace(input.HostID) {
+			return fmt.Errorf("%w: Docker runtime inventory host does not match its project", apperrors.ErrConflict)
+		}
+		result, err = repo.upsertServiceRuntime(ctx, input)
+		return err
+	})
+	if err != nil {
+		return domaindocker.Service{}, err
+	}
+	return result, nil
+}
+
+func (r *Repository) upsertServiceRuntime(ctx context.Context, input domaindocker.ServiceInput) (domaindocker.Service, error) {
 	item := serviceFromInput(input)
 	config, err := marshalJSON(item.Config)
 	if err != nil {
@@ -360,7 +381,7 @@ func (r *Repository) UpsertService(ctx context.Context, input domaindocker.Servi
 	}
 	stored, err := r.getServiceByProjectName(ctx, item.ProjectID, item.Name)
 	if err != nil {
-		return item, nil
+		return domaindocker.Service{}, err
 	}
 	return stored, nil
 }
@@ -389,7 +410,7 @@ func (r *Repository) GetPortMapping(ctx context.Context, id string) (domaindocke
 	return scanPortMappingRow(row)
 }
 
-func (r *Repository) CreatePortMapping(ctx context.Context, input domaindocker.PortMappingInput) (domaindocker.PortMapping, error) {
+func (r *Repository) createPortMapping(ctx context.Context, input domaindocker.PortMappingInput) (domaindocker.PortMapping, error) {
 	item := portMappingFromInput(input)
 	config, err := marshalJSON(item.Config)
 	if err != nil {
@@ -410,7 +431,7 @@ func (r *Repository) CreatePortMapping(ctx context.Context, input domaindocker.P
 	return item, nil
 }
 
-func (r *Repository) UpdatePortMapping(ctx context.Context, id string, input domaindocker.PortMappingInput) (domaindocker.PortMapping, error) {
+func (r *Repository) updatePortMapping(ctx context.Context, id string, input domaindocker.PortMappingInput) (domaindocker.PortMapping, error) {
 	item := portMappingFromInput(input)
 	item.ID = strings.TrimSpace(id)
 	item.CreatedAt = fetchCreatedAt(ctx, r.db, "docker_port_mappings", item.ID)
@@ -481,6 +502,16 @@ func (r *Repository) CreateContainerStart(ctx context.Context, input domaindocke
 		operationInput.ServiceID = service.ID
 		if operationInput.HostID == "" {
 			operationInput.HostID = project.HostID
+		}
+		if project.RuntimeIdentityVersion != 0 {
+			host, err := txRepo.GetHost(ctx, project.HostID)
+			if err != nil {
+				return err
+			}
+			operationInput.Payload, err = domaindocker.BindProjectRuntimePayload(project, host, operationInput.Payload)
+			if err != nil {
+				return err
+			}
 		}
 		operation, err := txRepo.CreateOperation(ctx, operationInput)
 		if err != nil {
@@ -574,17 +605,28 @@ func (r *Repository) CreateOperation(ctx context.Context, input domaindocker.Ope
 			return item, apperrors.ErrConflict
 		}
 		item.MaxRetries = 0
-		err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+	}
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if item.Payload["deliveryPlanId"] != nil {
 			applicationID, _ := item.Payload["applicationId"].(string)
 			environmentID, _ := item.Payload["applicationEnvironmentId"].(string)
 			if err := repoworkflow.LockDeliveryNode(ctx, tx, applicationID, environmentID); err != nil {
 				return err
 			}
-			return insertOperation(tx, item)
-		})
-		return item, err
-	}
-	if err := insertOperation(dbtx.DB(ctx, r.db), item); err != nil {
+		}
+		project, err := New(tx).lockProjectReference(ctx, item.HostID, item.ProjectID, item.ServiceID)
+		if err != nil {
+			return err
+		}
+		if project.ID != "" {
+			item.HostID, item.ProjectID = project.HostID, project.ID
+			if err := New(tx).freezeRuntimeContainers(ctx, project, &item); err != nil {
+				return err
+			}
+		}
+		return insertOperation(tx, item)
+	})
+	if err != nil {
 		return domaindocker.Operation{}, err
 	}
 	return item, nil
@@ -614,7 +656,7 @@ func insertOperation(db *gorm.DB, item domaindocker.Operation) error {
 	return nil
 }
 
-func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Operation) (domaindocker.Operation, error) {
+func (r *Repository) updateOperation(ctx context.Context, item domaindocker.Operation) (domaindocker.Operation, error) {
 	expectedUpdatedAt := item.UpdatedAt
 	payload, err := marshalOperationPayload(item)
 	if err != nil {
@@ -645,6 +687,14 @@ func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Oper
 }
 
 func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentID string, hostIDs []string, operationKinds []string, callbackToken string, now time.Time) (domaindocker.Operation, error) {
+	return r.claimOperation(ctx, workerID, agentID, hostIDs, operationKinds, callbackToken, now, false)
+}
+
+func (r *Repository) ClaimIdentityOperation(ctx context.Context, workerID string, agentID string, hostIDs []string, operationKinds []string, callbackToken string, now time.Time) (domaindocker.Operation, error) {
+	return r.claimOperation(ctx, workerID, agentID, hostIDs, operationKinds, callbackToken, now, callbackToken != "")
+}
+
+func (r *Repository) claimOperation(ctx context.Context, workerID string, agentID string, hostIDs []string, operationKinds []string, callbackToken string, now time.Time, identityV1 bool) (domaindocker.Operation, error) {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {
 		return domaindocker.Operation{}, ErrNotFound
@@ -655,6 +705,7 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 	var task domaindocker.Operation
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		clauses := []string{claimableOperationClause()}
+		clauses = append(clauses, runtimeIdentityClaimClause(identityV1))
 		clauses = append(clauses, `(project_id IS NULL OR NOT EXISTS (
 			SELECT 1 FROM docker_operations active WHERE active.project_id = docker_operations.project_id
 			AND active.id <> docker_operations.id AND active.status IN ('running', 'canceling')))`)
@@ -1073,7 +1124,7 @@ func scanHost(rows scanner) (domaindocker.Host, error) {
 		&item.DockerVersion, &item.ComposeVersion, &item.Architecture, &item.Environment, &item.Owner, &item.Team,
 		&item.VirtualizationConnectionID, &item.VMID, &item.VMName, &item.IPAddress, &item.CPUCoreCount,
 		&item.MemoryBytes, &item.DiskBytes, &item.AvailablePortStart, &item.AvailablePortEnd, &labels, &config,
-		&item.LastHeartbeatAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&item.LastHeartbeatAt, &item.CreatedAt, &item.UpdatedAt, &item.ResourceUID, &item.ConfigurationRevision); err != nil {
 		return domaindocker.Host{}, fmt.Errorf("scan docker host: %w", err)
 	}
 	unmarshalMap(labels, &item.Labels)
@@ -1098,7 +1149,7 @@ func scanProject(rows scanner) (domaindocker.Project, error) {
 	if err := rows.Scan(&item.ID, &item.HostID, &item.Name, &item.Slug, &item.Description, &item.Environment,
 		&item.Owner, &item.Team, &item.SourceKind, &item.SourceRef, &item.ComposeContent, &item.EnvContent,
 		&item.Status, &item.DesiredState, &item.TemplateID, &item.TTLSeconds, &item.ExpiresAt, &item.LastDeployedAt,
-		&labels, &config, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&labels, &config, &item.CreatedAt, &item.UpdatedAt, &item.ResourceUID, &item.ConfigurationRevision, &item.RuntimeIdentityVersion); err != nil {
 		return domaindocker.Project{}, fmt.Errorf("scan docker project: %w", err)
 	}
 	unmarshalMap(labels, &item.Labels)
@@ -1231,11 +1282,11 @@ type scanner interface {
 }
 
 func hostSelect() string {
-	return `SELECT id, name, status, COALESCE(endpoint, ''), COALESCE(agent_id, ''), COALESCE(agent_version, ''), COALESCE(docker_version, ''), COALESCE(compose_version, ''), COALESCE(architecture, ''), COALESCE(environment, ''), COALESCE(owner, ''), COALESCE(team, ''), COALESCE(virtualization_connection_id, ''), COALESCE(vm_id, ''), COALESCE(vm_name, ''), COALESCE(ip_address, ''), cpu_core_count, memory_bytes, disk_bytes, available_port_start, available_port_end, labels, config, last_heartbeat_at, created_at, updated_at FROM docker_hosts`
+	return `SELECT id, name, status, COALESCE(endpoint, ''), COALESCE(agent_id, ''), COALESCE(agent_version, ''), COALESCE(docker_version, ''), COALESCE(compose_version, ''), COALESCE(architecture, ''), COALESCE(environment, ''), COALESCE(owner, ''), COALESCE(team, ''), COALESCE(virtualization_connection_id, ''), COALESCE(vm_id, ''), COALESCE(vm_name, ''), COALESCE(ip_address, ''), cpu_core_count, memory_bytes, disk_bytes, available_port_start, available_port_end, labels, config, last_heartbeat_at, created_at, updated_at, resource_uid::text, configuration_revision::text FROM docker_hosts`
 }
 
 func projectSelect() string {
-	return `SELECT id, host_id, name, slug, COALESCE(description, ''), COALESCE(environment, ''), COALESCE(owner, ''), COALESCE(team, ''), COALESCE(source_kind, ''), COALESCE(source_ref, ''), COALESCE(compose_content, ''), COALESCE(env_content, ''), status, COALESCE(desired_state, ''), COALESCE(template_id, ''), ttl_seconds, expires_at, last_deployed_at, labels, config, created_at, updated_at FROM docker_projects`
+	return `SELECT id, host_id, name, slug, COALESCE(description, ''), COALESCE(environment, ''), COALESCE(owner, ''), COALESCE(team, ''), COALESCE(source_kind, ''), COALESCE(source_ref, ''), COALESCE(compose_content, ''), COALESCE(env_content, ''), status, COALESCE(desired_state, ''), COALESCE(template_id, ''), ttl_seconds, expires_at, last_deployed_at, labels, config, created_at, updated_at, resource_uid::text, configuration_revision::text, runtime_identity_version FROM docker_projects`
 }
 
 func serviceSelect() string {

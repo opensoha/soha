@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,6 +17,50 @@ import (
 type personalCleanupStore struct {
 	PersonalEnvironmentStore
 	item domain.PersonalEnvironmentRecord
+}
+
+func (s *personalCleanupStore) FindPersonalTaskEnvironment(_ context.Context, owner, task string) (domain.PersonalEnvironmentRecord, error) {
+	if owner != s.item.CreatedBy || task != s.item.ActiveTaskID {
+		return domain.PersonalEnvironmentRecord{}, apperrors.ErrNotFound
+	}
+	return s.item, nil
+}
+
+type noPersonalEnvironmentStore struct {
+	PersonalEnvironmentStore
+	err error
+}
+
+func (s noPersonalEnvironmentStore) FindPersonalTaskEnvironment(context.Context, string, string) (domain.PersonalEnvironmentRecord, error) {
+	return domain.PersonalEnvironmentRecord{}, s.err
+}
+
+func TestNativeDomainTaskWithoutPersonalLeaseCanFinish(t *testing.T) {
+	for _, missing := range []bool{true, false} {
+		t.Run(fmt.Sprint(missing), func(t *testing.T) {
+			service, loop, _, _ := nativeLoopFixture(t)
+			capture := &nativeQueueCapture{nativeLoopStore: loop, inspectionAuthzTestRepository: &inspectionAuthzTestRepository{}}
+			service.agentRuns = &personalCleanupParentStore{nativeTaskStoreFixture: &nativeTaskStoreFixture{nativeQueueCapture: capture}}
+			cause := apperrors.ErrNotFound
+			if !missing {
+				cause = apperrors.ErrAccessDenied
+			}
+			service.personalEnvironment = &PersonalEnvironmentDependencies{Store: noPersonalEnvironmentStore{err: cause}}
+			// Any attempt to activate Personal Agent or create an assistant panics.
+			service.sessions = nil
+			cp := initialNativeCheckpoint(loop.lease.Run)
+			cp.Usage.ToolCalls = 3
+			if err := service.finishNativeRun(t.Context(), loop, loop.lease, cp, "completed", "answer_accepted", "verified result"); err != nil {
+				t.Fatal(err)
+			}
+			if missing && (loop.lease.Run.Status != "completed" || len(loop.final) != 1) {
+				t.Fatal("unrelated Personal Agent activation blocked completion")
+			}
+			if !missing && (len(loop.final) != 0 || loop.lease.Phase != "cancelling") {
+				t.Fatal("ambiguous lease lookup claimed cleanup")
+			}
+		})
+	}
 }
 
 func (s *personalCleanupStore) GetPersonalEnvironment(_ context.Context, owner, assistant string) (domain.PersonalEnvironmentRecord, error) {

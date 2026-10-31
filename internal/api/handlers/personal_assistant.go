@@ -75,5 +75,10 @@ func (h *copilotPersonalAssistantHandler) ListPersonalAssistantArtifacts(c *gin.
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	if items == nil {
+		items = []domain.PersonalArtifact{}
+	}
+	// Preserve the existing list key while supplying the published SDK's data
+	// envelope. Both aliases contain the same already-authorized projection.
+	apiresponse.JSON(c, http.StatusOK, gin.H{"data": items, "items": items})
 }

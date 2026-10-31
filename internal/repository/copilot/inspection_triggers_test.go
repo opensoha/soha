@@ -23,6 +23,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 )
 
@@ -285,7 +286,7 @@ func newCopilotPostgresTestRepository(t *testing.T) (*Repository, *dbstore.Store
 	if err != nil {
 		t.Fatal(err)
 	}
-	dbConfig := config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 12, MaxIdleConns: 4}
+	dbConfig := testpostgres.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 12, MaxIdleConns: 4})
 	admin, err := dbstore.New(dbConfig, zap.NewNop())
 	if err != nil {
 		t.Fatal(err)

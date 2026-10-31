@@ -36,6 +36,9 @@ func (s *Service) RequestToolApproval(ctx context.Context, principal domainident
 }
 
 func (s *Service) invokeTool(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, approvalOnly bool) (domainaigateway.ToolInvocationResult, error) {
+	if err := s.authorizeGovernedAICaller(ctx, principal, input.AIClientID, input.SkillID); err != nil {
+		return domainaigateway.ToolInvocationResult{}, err
+	}
 	ctx, ceilingErr := s.withWorkbenchAuthorization(ctx, principal, input)
 	if ceilingErr != nil {
 		tool, _ := s.toolByName(strings.TrimSpace(input.ToolName))
@@ -46,6 +49,11 @@ func (s *Service) invokeTool(ctx context.Context, principal domainidentity.Princ
 	tool, ok := s.toolByName(toolName)
 	if !ok {
 		return domainaigateway.ToolInvocationResult{}, fmt.Errorf("%w: unknown AI Gateway tool %s", apperrors.ErrInvalidArgument, toolName)
+	}
+	// Reject outside-skill tools before resolving any domain resource scope.
+	if err := s.authorizeGovernedAITool(principal, tool); err != nil {
+		_ = s.recordToolAudit(ctx, principal, input, tool, "deny", err.Error(), nil)
+		return domainaigateway.ToolInvocationResult{}, err
 	}
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayInvoke); err != nil {
 		_ = s.recordToolAudit(ctx, principal, input, tool, "deny", err.Error(), nil)
@@ -147,6 +155,9 @@ func (s *Service) executeToolInvocation(ctx context.Context, principal domainide
 	}, nil
 }
 func (s *Service) ReadResource(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ResourceReadRequest) (domainaigateway.ResourceReadResult, error) {
+	if err := s.authorizeGovernedAICaller(ctx, principal, input.AIClientID, input.SkillID); err != nil {
+		return domainaigateway.ResourceReadResult{}, err
+	}
 	resourceName := normalizeGatewayResourceURI(firstNonEmpty(input.Name, input.URI))
 	input.Name = resourceName
 	input.URI = resourceName
@@ -180,6 +191,9 @@ func (s *Service) ReadResource(ctx context.Context, principal domainidentity.Pri
 	toolRefs := s.resourceToolRefs(resource.Name)
 	promptRefs := s.resourcePromptRefs(resource.Name)
 	skillRefs := s.resourceSkillRefs(resource.Name)
+	if err := authorizeResourceSkillBindingWithRefs(resource, governedSkillCeiling(principal), input.SkillID, toolRefs, s.gatewaySkills()); err != nil {
+		return domainaigateway.ResourceReadResult{}, err
+	}
 	if err := authorizeResourceSkillBindingWithRefs(resource, bindings, input.SkillID, toolRefs, s.gatewaySkills()); err != nil {
 		_ = s.recordResourceAudit(ctx, principal, input, resource, "deny", err.Error(), nil)
 		return domainaigateway.ResourceReadResult{}, err
@@ -215,6 +229,9 @@ func (s *Service) ReadResource(ctx context.Context, principal domainidentity.Pri
 	}, nil
 }
 func (s *Service) GetPrompt(ctx context.Context, principal domainidentity.Principal, input domainaigateway.PromptGetRequest) (domainaigateway.PromptGetResult, error) {
+	if err := s.authorizeGovernedAICaller(ctx, principal, input.AIClientID, input.SkillID); err != nil {
+		return domainaigateway.PromptGetResult{}, err
+	}
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Arguments == nil {
 		input.Arguments = map[string]any{}
@@ -249,6 +266,9 @@ func (s *Service) GetPrompt(ctx context.Context, principal domainidentity.Princi
 	}
 	if err := authorizePromptSkillBindingWithCapabilities(prompt, bindings, input.SkillID, s.gatewayResources(), s.gatewayResourceCapabilityRefs(), s.gatewaySkills()); err != nil {
 		_ = s.recordPromptAudit(ctx, principal, input, prompt, "deny", err.Error(), nil)
+		return domainaigateway.PromptGetResult{}, err
+	}
+	if err := authorizePromptSkillBindingWithCapabilities(prompt, governedSkillCeiling(principal), input.SkillID, s.gatewayResources(), s.gatewayResourceCapabilityRefs(), s.gatewaySkills()); err != nil {
 		return domainaigateway.PromptGetResult{}, err
 	}
 	if skill != nil {

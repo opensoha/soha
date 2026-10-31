@@ -41,7 +41,14 @@ type StreamTicketParser interface {
 	ParseStreamTicket(context.Context, string, string) (domainidentity.Principal, domainidentity.AccessContext, error)
 }
 
-func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) gin.HandlerFunc {
+func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser, configuredBasePath ...string) gin.HandlerFunc {
+	basePath := "/api/v1"
+	if len(configuredBasePath) > 0 {
+		basePath = "/" + strings.Trim(configuredBasePath[0], "/")
+		if basePath == "/" {
+			basePath = ""
+		}
+	}
 	return func(c *gin.Context) {
 		token, validHeader := accessTokenFromRequest(c)
 		if !validHeader {
@@ -62,8 +69,14 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 					return
 				}
 				_ = c.Error(err)
+				// This marker is emitted before any protected handler runs. Clients may
+				// safely renew authentication and replay the original request once.
+				c.Header("WWW-Authenticate", `Bearer realm="soha", error="invalid_token"`)
 				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid authentication token")
 				c.Abort()
+				return
+			}
+			if !allowGovernedAIRequest(c, principal, basePath) {
 				return
 			}
 			c.Set(principalKey, principal)
@@ -84,6 +97,9 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 				_ = c.Error(err)
 				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid stream ticket")
 				c.Abort()
+				return
+			}
+			if !allowGovernedAIRequest(c, principal, basePath) {
 				return
 			}
 			c.Set(principalKey, principal)

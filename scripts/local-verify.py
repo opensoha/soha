@@ -336,10 +336,15 @@ def verify(arguments, image=False, keep_image=False, nested=False, go_build=Fals
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=['status', 'maintain', 'run', 'image', 'build-image',
-                                       'go-build', 'docker-command', 'docker-image'])
+                                       'go-build', 'docker-command', 'docker-image', 'remote-image'])
     parser.add_argument('arguments', nargs=argparse.REMAINDER)
     options = parser.parse_args()
     arguments = options.arguments[1:] if options.arguments[:1] == ['--'] else options.arguments
+    if options.mode == 'remote-image':
+        import local_verify_remote
+        nested = nested_run()
+        with nullcontext() if nested else locked():
+            return local_verify_remote.run(arguments, sys.modules[__name__], nested)
     if options.mode not in ('status', 'maintain') and any(
             os.environ.get(key, '').lower() in ('1', 'true', 'yes')
             for key in ('CI', 'GITHUB_ACTIONS', 'OPENSOHA_VERIFY_RELEASE')):

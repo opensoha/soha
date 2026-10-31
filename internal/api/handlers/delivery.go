@@ -348,7 +348,7 @@ func (h *DeliveryHandler) ListExecutionTasks(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *DeliveryHandler) GetExecutionTask(c *gin.Context) {
@@ -388,7 +388,7 @@ func (h *DeliveryHandler) ListArtifacts(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *DeliveryHandler) ListExecutionArtifacts(c *gin.Context) {
@@ -398,7 +398,7 @@ func (h *DeliveryHandler) ListExecutionArtifacts(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *DeliveryHandler) GetBuildRuntimeDetail(c *gin.Context) {
@@ -458,7 +458,7 @@ func (h *DeliveryHandler) ListReleaseBundleArtifacts(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *DeliveryHandler) ListDeliveryBlueprints(c *gin.Context) {
@@ -468,7 +468,7 @@ func (h *DeliveryHandler) ListDeliveryBlueprints(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *DeliveryHandler) CreateDeliveryBlueprint(c *gin.Context) {

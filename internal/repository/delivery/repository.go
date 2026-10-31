@@ -744,6 +744,9 @@ func (r *Repository) ListExecutionLogs(ctx context.Context, taskID string, limit
 	if limit <= 0 {
 		limit = 200
 	}
+	if limit > 1000 {
+		limit = 1000
+	}
 	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, execution_task_id, log_level, message, metadata, created_at
 		FROM execution_logs

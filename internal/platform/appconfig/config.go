@@ -10,6 +10,7 @@ import (
 
 // Auth contains the authentication settings consumed by the identity application service.
 type Auth struct {
+	CLI               CLIAuth           `mapstructure:"cli"`
 	EnableDevAuth     bool              `mapstructure:"enable_dev_auth"`
 	LoginVerification LoginVerification `mapstructure:"login_verification"`
 	DevPrincipal      DevPrincipal      `mapstructure:"dev_principal"`

@@ -62,6 +62,8 @@ type NetworkAccessService interface {
 	GetSession(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Session, error)
 	PlanSessionAction(context.Context, domainidentity.Principal, string, domainnetworkaccess.SessionActionInput) (domainnetworkaccess.SessionActionPlan, error)
 	ExecuteSessionAction(context.Context, domainidentity.Principal, string, domainnetworkaccess.SessionActionInput) (domainnetworkaccess.SessionCommand, error)
+	GetSessionCommand(context.Context, domainidentity.Principal, string, string) (domainnetworkaccess.SessionCommand, error)
+	GetOriginalSessionCommand(context.Context, domainidentity.Principal, string, string) (domainnetworkaccess.SessionCommand, error)
 	ListPolicies(context.Context, domainidentity.Principal, domainnetworkaccess.PolicyFilter) ([]domainnetworkaccess.Policy, error)
 	GetPolicy(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Policy, error)
 	CreatePolicy(context.Context, domainidentity.Principal, domainnetworkaccess.PolicyInput) (domainnetworkaccess.Policy, error)

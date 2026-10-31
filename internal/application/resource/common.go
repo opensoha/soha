@@ -135,8 +135,12 @@ func (s *resourceAccess) loadConnection(ctx context.Context, clusterID string) (
 			if connection.Summary.ConnectionMode == "" {
 				connection.Summary.ConnectionMode = domaincluster.ConnectionModeDirectKubeconfig
 			}
+			if domaincluster.VerifyExecutionConnection(ctx, connection) != nil {
+				return domaincluster.Connection{}, apperrors.ErrConflict
+			}
 			return connection, nil
 		}
+		return domaincluster.Connection{}, err
 	}
 	if s.directClusters == nil {
 		return domaincluster.Connection{}, fmt.Errorf("%w: direct cluster provider is not configured", apperrors.ErrClusterUnready)
@@ -145,7 +149,11 @@ func (s *resourceAccess) loadConnection(ctx context.Context, clusterID string) (
 	if err != nil {
 		return domaincluster.Connection{}, fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
 	}
-	return domaincluster.Connection{Summary: summary}, nil
+	connection := domaincluster.Connection{Summary: summary}
+	if domaincluster.VerifyExecutionConnection(ctx, connection) != nil {
+		return domaincluster.Connection{}, apperrors.ErrConflict
+	}
+	return connection, nil
 }
 func (s *resourceAccess) authorize(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
 	return s.authorizeResourceGroup(ctx, principal, clusterID, namespace, resourceGroupForKind(kind), kind, action)

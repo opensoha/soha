@@ -113,7 +113,7 @@ func (r *Repository) CreateRun(ctx context.Context, run domain.Run) (domain.Run,
 func (r *Repository) GetRun(ctx context.Context, id string) (domain.Run, error) {
 	var x domain.Run
 	var stats []byte
-	err := r.db.WithContext(ctx).Raw(`SELECT id,connection_id,trigger,mode,include_people,status,cursor_before,cursor_after,COALESCE(idempotency_key,''),stats,error_code,error_summary,requested_by,started_at,heartbeat_at,finished_at,created_at FROM directory_sync_runs WHERE id=?`, id).Row().Scan(&x.ID, &x.ConnectionID, &x.Trigger, &x.Mode, &x.IncludePeople, &x.Status, &x.CursorBefore, &x.CursorAfter, &x.IdempotencyKey, &stats, &x.ErrorCode, &x.ErrorSummary, &x.RequestedBy, &x.StartedAt, &x.HeartbeatAt, &x.FinishedAt, &x.CreatedAt)
+	err := r.db.WithContext(ctx).Raw(`SELECT id,connection_id,trigger,mode,include_people,status,cursor_before,cursor_after,COALESCE(idempotency_key,''),stats,error_code,error_summary,requested_by,started_at,heartbeat_at,finished_at,created_at,request_credential_id,cancel_requested FROM directory_sync_runs WHERE id=?`, id).Row().Scan(&x.ID, &x.ConnectionID, &x.Trigger, &x.Mode, &x.IncludePeople, &x.Status, &x.CursorBefore, &x.CursorAfter, &x.IdempotencyKey, &stats, &x.ErrorCode, &x.ErrorSummary, &x.RequestedBy, &x.StartedAt, &x.HeartbeatAt, &x.FinishedAt, &x.CreatedAt, &x.RequestCredentialID, &x.CancelRequested)
 	_ = json.Unmarshal(stats, &x.Stats)
 	return x, err
 }

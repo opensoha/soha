@@ -224,7 +224,7 @@ type ExecutionTask struct {
 	ID                       string                   `json:"id"`
 	ReleaseBundleID          string                   `json:"releaseBundleId,omitempty"`
 	ApplicationID            string                   `json:"applicationId"`
-	ApplicationEnvironmentID string                   `json:"applicationEnvironmentId,omitempty"`
+	ApplicationEnvironmentID string                   `json:"applicationEnvironmentId"`
 	TaskKind                 string                   `json:"taskKind"`
 	ProviderKind             string                   `json:"providerKind"`
 	TargetKind               string                   `json:"targetKind"`
@@ -234,7 +234,7 @@ type ExecutionTask struct {
 	MaxRetries               int                      `json:"maxRetries"`
 	AttemptCount             int                      `json:"attemptCount"`
 	TimeoutSeconds           int                      `json:"timeoutSeconds"`
-	CallbackToken            string                   `json:"callbackToken,omitempty"`
+	CallbackToken            string                   `json:"callbackToken"`
 	SecretLease              *domainsecret.LeaseGrant `json:"secretLease,omitempty" gorm:"-"`
 	SecretRefs               []domainsecret.Reference `json:"-" gorm:"-"`
 	SecretPrincipal          domainidentity.Principal `json:"-" gorm:"-"`
@@ -243,7 +243,7 @@ type ExecutionTask struct {
 	RuntimeEndpoint          string                   `json:"runtimeEndpoint,omitempty"`
 	RuntimeClusterID         string                   `json:"runtimeClusterId,omitempty"`
 	StopTransport            string                   `json:"stopTransport,omitempty"`
-	Payload                  map[string]any           `json:"payload,omitempty"`
+	Payload                  map[string]any           `json:"payload"`
 	Result                   map[string]any           `json:"result,omitempty"`
 	OperationState           *OperationState          `json:"operationState,omitempty" gorm:"-"`
 	Artifacts                []ExecutionArtifact      `json:"artifacts,omitempty"`

@@ -330,6 +330,7 @@ type SecurityPostureService interface {
 
 // ResourceServices wires independently replaceable capability contracts.
 type ResourceServices struct {
+	PodTerminals           PodTerminalService
 	PodReader              PodReader
 	PodEditor              PodResourceEditor
 	PodDiagnostics         PodDiagnostics

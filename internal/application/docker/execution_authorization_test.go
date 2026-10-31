@@ -19,6 +19,7 @@ func TestDockerQueueRechecksIdentityAndGatewayBeforeDispatchAndCommandStart(t *t
 	for _, scenario := range []string{"allowed", "token-revoked", "role-revoked", "gateway-revoked", "missing-resolver", "corrupt-proof", "revoked-after-claim"} {
 		t.Run(scenario, func(t *testing.T) {
 			repo := newMemoryDockerRepo()
+			repo.projects["project"] = domain.Project{ID: "project", HostID: "host"}
 			key, _ := keyring.NewKey("test", "docker-execution-test-key", time.Now().Add(-time.Hour), nil)
 			keys, _ := keyring.New(key, nil)
 			service := New(repo, dockerTestPermissions(), nil, WithCredentialEncryptionKeys(keys))
@@ -124,6 +125,7 @@ func verifyDeniedDockerDispatch(t *testing.T, service *Service, repo *memoryDock
 
 func TestDockerGatewayQueueRequiresEncryption(t *testing.T) {
 	repo := newMemoryDockerRepo()
+	repo.projects["project"] = domain.Project{ID: "project", HostID: "host"}
 	service := New(repo, dockerTestPermissions(), nil)
 	principal := dockerTestPrincipal()
 	ctx := domainai.WithExecutionAuthorization(context.Background(), domainai.ExecutionAuthorization{ActorID: principal.UserID})

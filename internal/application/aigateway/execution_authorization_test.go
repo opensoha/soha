@@ -32,7 +32,7 @@ func (p *executionAuthorizationProvider) InvokeTool(ctx context.Context, princip
 }
 
 func TestQueuedGatewayAuthorizationRechecksWithoutRateConsumption(t *testing.T) {
-	for _, scenario := range []string{"unchanged", "grant", "policy", "scope", "version", "actor", "approval-required", "dry-run"} {
+	for _, scenario := range []string{"unchanged", "legacy", "grant", "policy", "scope", "version", "actor", "token", "missing-token", "approval-required", "dry-run"} {
 		t.Run(scenario, func(t *testing.T) {
 			service, repo, scopeProvider, call := capabilityScopesFixture()
 			provider := &executionAuthorizationProvider{scopeProviderFixture: scopeProvider}
@@ -41,8 +41,14 @@ func TestQueuedGatewayAuthorizationRechecksWithoutRateConsumption(t *testing.T) 
 			policy.Conditions = map[string]any{"rateLimit": map[string]any{"maxCallsPerMinute": 1}}
 			repo.accessPolicies = []domain.AccessPolicy{policy}
 			actor := testPrincipal("developer")
+			if scenario != "legacy" {
+				actor.AccessTokenID = "accepted-credential"
+			}
 			if _, err := service.InvokeTool(context.Background(), actor, call); err != nil {
 				t.Fatal(err)
+			}
+			if provider.authorization.ActorTokenID != actor.AccessTokenID {
+				t.Fatal("accepted credential binding was lost in domain persistence")
 			}
 			before, _ := json.Marshal(repo.rateLimitCounters)
 			switch scenario {
@@ -56,6 +62,10 @@ func TestQueuedGatewayAuthorizationRechecksWithoutRateConsumption(t *testing.T) 
 				provider.tools[0].Version = "2"
 			case "actor":
 				actor.UserID = "other"
+			case "token":
+				actor.AccessTokenID = "other-credential"
+			case "missing-token":
+				actor.AccessTokenID = ""
 			case "approval-required":
 				repo.accessPolicies[0].ApprovalPolicy = map[string]any{"strategy": "require_approval"}
 			case "dry-run":
@@ -63,7 +73,7 @@ func TestQueuedGatewayAuthorizationRechecksWithoutRateConsumption(t *testing.T) 
 			}
 			for range 2 {
 				err := service.CheckExecutionAuthorization(context.Background(), actor, provider.authorization)
-				if (err == nil) != (scenario == "unchanged") {
+				if (err == nil) != (scenario == "unchanged" || scenario == "legacy") {
 					t.Fatalf("queued authorization %s: %v", scenario, err)
 				}
 			}

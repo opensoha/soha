@@ -834,3 +834,7 @@ func TestRotatePersonalAccessTokenBindsOptionalExpiration(t *testing.T) {
 		t.Fatalf("expiresAt = %#v, want %v", service.rotatePATReq.ExpiresAt, expiresAt)
 	}
 }
+
+func (s *stubAIGatewayService) GetTokenRotation(context.Context, domainidentity.Principal, string) (domainaigateway.TokenRotationRecord, error) {
+	return domainaigateway.TokenRotationRecord{}, nil
+}

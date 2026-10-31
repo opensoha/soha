@@ -1499,7 +1499,7 @@ func chatHistoryExclusionReason(item domaincopilot.Message, currentID string) st
 }
 
 func markLegacyPlatformContextMessages(messages []domaincopilot.Message) []domaincopilot.Message {
-	out := append([]domaincopilot.Message(nil), messages...)
+	out := append(make([]domaincopilot.Message, 0, len(messages)), messages...)
 	for index := range out {
 		if !isLegacyPlatformContextMessage(out[index]) {
 			continue

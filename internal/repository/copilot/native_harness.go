@@ -16,7 +16,7 @@ import (
 func (r *Repository) CreateNativeRun(ctx context.Context, run domaincopilot.AgentRun, message domaincopilot.Message, key, hash string) (domaincopilot.AgentRun, error) {
 	var saved domaincopilot.AgentRun
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		repo := &Repository{db: tx}
+		repo := &Repository{db: tx, storageKeys: r.storageKeys}
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, run.CreatedBy+":"+run.SessionID+":"+key).Error; err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func (r *Repository) ClaimNativeRun(ctx context.Context, worker string) (domainc
 			return err
 		}
 		var err error
-		lease, err = (&Repository{db: tx}).ReadNativeLease(ctx, "", id)
+		lease, err = (&Repository{db: tx, storageKeys: r.storageKeys}).ReadNativeLease(ctx, "", id)
 		return err
 	})
 	return lease, err
@@ -97,7 +97,11 @@ func (r *Repository) ReadNativeLease(ctx context.Context, user, id string) (doma
 	if result.RowsAffected != 1 {
 		return domaincopilot.NativeLease{}, nativeBudgetConflict()
 	}
-	return domaincopilot.NativeLease{Run: run, Version: row.NativeVersion, Fence: row.NativeFence, Phase: row.NativePhase, Sequence: row.NativeEventSequence, Checkpoint: row.NativeCheckpoint, RequestHash: row.NativeRequestHash, LeaseUntil: row.NativeLeaseUntil, CancelRequested: row.NativeCancelAt != nil, ToolUsage: domaincopilot.NativeToolUsage{WorkCalls: row.WorkCalls, CleanupCalls: row.CleanupCalls, WorkLimit: row.WorkLimit, CleanupLimit: row.CleanupLimit}}, nil
+	checkpoint, err := r.decodeNativeCheckpoint(run, row.NativeCheckpoint)
+	if err != nil {
+		return domaincopilot.NativeLease{}, err
+	}
+	return domaincopilot.NativeLease{Run: run, Version: row.NativeVersion, Fence: row.NativeFence, Phase: row.NativePhase, Sequence: row.NativeEventSequence, Checkpoint: checkpoint, RequestHash: row.NativeRequestHash, LeaseUntil: row.NativeLeaseUntil, CancelRequested: row.NativeCancelAt != nil, ToolUsage: domaincopilot.NativeToolUsage{WorkCalls: row.WorkCalls, CleanupCalls: row.CleanupCalls, WorkLimit: row.WorkLimit, CleanupLimit: row.CleanupLimit}}, nil
 }
 
 func (r *Repository) RenewNativeLease(ctx context.Context, lease domaincopilot.NativeLease) (bool, error) {
@@ -107,8 +111,12 @@ func (r *Repository) RenewNativeLease(ctx context.Context, lease domaincopilot.N
 }
 
 func (r *Repository) AdvanceNativeRun(ctx context.Context, lease domaincopilot.NativeLease, next domaincopilot.NativeAdvance) (domaincopilot.NativeLease, error) {
+	checkpoint, err := r.encodeNativeCheckpoint(lease.Run, next.Checkpoint)
+	if err != nil {
+		return domaincopilot.NativeLease{}, err
+	}
 	var saved domaincopilot.NativeLease
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		seq := lease.Sequence
 		now := time.Now().UTC()
 		for i := range next.Events {
@@ -156,14 +164,14 @@ func (r *Repository) AdvanceNativeRun(ctx context.Context, lease domaincopilot.N
 		result := tx.Exec(`UPDATE ai_agent_runs SET native_version=native_version+1,native_phase=?,native_checkpoint=?,native_event_sequence=?,native_lease_until=?,
    status=?,output=?,tool_executions=?,analysis_artifacts=?,error_message=?,completed_at=?,updated_at=?
    WHERE id=? AND native_version=? AND native_fence=? AND native_lease_until>now() AND status='running' AND (native_cancel_at IS NULL OR ?='canceled' OR (?='cancelling' AND ?='running'))`,
-			next.Phase, string(next.Checkpoint), seq, leaseUntil, next.Run.Status, string(outputJSON), string(tools), string(artifacts), next.Run.ErrorMessage, completedAt, now, lease.Run.ID, lease.Version, lease.Fence, next.Run.Status, next.Phase, next.Run.Status)
+			next.Phase, string(checkpoint), seq, leaseUntil, next.Run.Status, string(outputJSON), string(tools), string(artifacts), next.Run.ErrorMessage, completedAt, now, lease.Run.ID, lease.Version, lease.Fence, next.Run.Status, next.Phase, next.Run.Status)
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("%w: stale native worker", apperrors.ErrConflict)
 		}
-		if err = tx.Exec(`INSERT INTO ai_agent_run_steps(run_id,sequence,attempt,phase,checkpoint) VALUES (?,?,?,?,?)`, lease.Run.ID, lease.Version+1, lease.Fence, next.Phase, string(next.Checkpoint)).Error; err != nil {
+		if err = tx.Exec(`INSERT INTO ai_agent_run_steps(run_id,sequence,attempt,phase,checkpoint) VALUES (?,?,?,?,?)`, lease.Run.ID, lease.Version+1, lease.Fence, next.Phase, string(checkpoint)).Error; err != nil {
 			return err
 		}
 		if next.FinalMessage != nil {
@@ -180,7 +188,7 @@ func (r *Repository) AdvanceNativeRun(ctx context.Context, lease domaincopilot.N
 			}
 		}
 		var readErr error
-		saved, readErr = (&Repository{db: tx}).ReadNativeLease(ctx, "", lease.Run.ID)
+		saved, readErr = (&Repository{db: tx, storageKeys: r.storageKeys}).ReadNativeLease(ctx, "", lease.Run.ID)
 		return readErr
 	})
 	return saved, err
@@ -215,9 +223,25 @@ func (r *Repository) ResumeNativeRun(ctx context.Context, user, id, input string
 	if lease.Run.StopReason != "waiting_input" {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: only a task waiting for user input can resume here", apperrors.ErrConflict)
 	}
-	result := r.db.WithContext(ctx).Exec(`UPDATE ai_agent_runs SET native_phase='preparing',native_checkpoint=jsonb_set(native_checkpoint,'{userInput}',to_jsonb(?::text)),native_version=native_version+1,native_lease_until=NULL,
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(lease.Checkpoint, &data); err != nil || data == nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("%w: native checkpoint unavailable", apperrors.ErrConflict)
+	}
+	data["userInput"], err = json.Marshal(input)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	checkpoint, err := r.encodeNativeCheckpoint(lease.Run, raw)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	result := r.db.WithContext(ctx).Exec(`UPDATE ai_agent_runs SET native_phase='preparing',native_checkpoint=?::jsonb,native_version=native_version+1,native_lease_until=NULL,
   output=(jsonb_set(jsonb_set(output::jsonb,'{phase}','"preparing"'),'{stopReason}','""')-'pendingQuestion')::json,updated_at=now()
-  WHERE id=? AND created_by=? AND native_version=? AND native_phase='paused' AND output->>'stopReason'='waiting_input' AND native_cancel_at IS NULL`, input, id, user, lease.Version)
+  WHERE id=? AND created_by=? AND native_version=? AND native_phase='paused' AND output->>'stopReason'='waiting_input' AND native_cancel_at IS NULL`, string(checkpoint), id, user, lease.Version)
 	if result.Error != nil {
 		return domaincopilot.AgentRun{}, result.Error
 	}

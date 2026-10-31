@@ -117,32 +117,42 @@ type DockerService interface {
 }
 
 type DockerServices struct {
-	Hosts            DockerHostService
-	HostInstallation DockerHostInstallationService
-	Projects         DockerProjectService
-	ProjectRuntime   DockerProjectRuntimeService
-	ProjectStorage   DockerProjectStorageService
-	Services         DockerServiceRuntimeService
-	PortMappings     DockerPortMappingService
-	Templates        DockerTemplateService
-	Operations       DockerOperationService
-	RunnerOperations DockerRunnerOperationService
-	Planning         DockerPlanningService
+	DeploymentRequests DockerDeploymentRequests
+	VersionedRuntime   DockerVersionedRuntimeService
+	NativeTerminals    DockerNativeTerminalService
+	Configuration      DockerConfigurationService
+	Identities         DockerIdentityService
+	Hosts              DockerHostService
+	HostInstallation   DockerHostInstallationService
+	Projects           DockerProjectService
+	ProjectRuntime     DockerProjectRuntimeService
+	ProjectStorage     DockerProjectStorageService
+	Services           DockerServiceRuntimeService
+	PortMappings       DockerPortMappingService
+	Templates          DockerTemplateService
+	Operations         DockerOperationService
+	RunnerOperations   DockerRunnerOperationService
+	Planning           DockerPlanningService
 }
 
 type DockerHandler struct {
-	hosts            DockerHostService
-	hostInstallation DockerHostInstallationService
-	projects         DockerProjectService
-	projectRuntime   DockerProjectRuntimeService
-	projectStorage   DockerProjectStorageService
-	services         DockerServiceRuntimeService
-	portMappings     DockerPortMappingService
-	templates        DockerTemplateService
-	operations       DockerOperationService
-	runnerOperations DockerRunnerOperationService
-	planning         DockerPlanningService
-	runnerKeys       keyring.Ring
+	deploymentRequests DockerDeploymentRequests
+	versionedRuntime   DockerVersionedRuntimeService
+	nativeTerminals    DockerNativeTerminalService
+	configuration      DockerConfigurationService
+	identities         DockerIdentityService
+	hosts              DockerHostService
+	hostInstallation   DockerHostInstallationService
+	projects           DockerProjectService
+	projectRuntime     DockerProjectRuntimeService
+	projectStorage     DockerProjectStorageService
+	services           DockerServiceRuntimeService
+	portMappings       DockerPortMappingService
+	templates          DockerTemplateService
+	operations         DockerOperationService
+	runnerOperations   DockerRunnerOperationService
+	planning           DockerPlanningService
+	runnerKeys         keyring.Ring
 }
 
 func NewDockerHandler(service DockerService, runnerToken ...string) *DockerHandler {
@@ -155,16 +165,42 @@ func NewDockerHandler(service DockerService, runnerToken ...string) *DockerHandl
 
 func NewDockerHandlerWithRunnerKeys(service DockerService, keys keyring.Ring) *DockerHandler {
 	planning, _ := any(service).(DockerPlanningService)
+	identities, _ := any(service).(DockerIdentityService)
+	configuration, _ := any(service).(DockerConfigurationService)
+	versionedRuntime, _ := any(service).(DockerVersionedRuntimeService)
+	deploymentRequests, _ := any(service).(DockerDeploymentRequests)
 	return NewDockerHandlerWithServices(DockerServices{
-		Hosts: service, HostInstallation: service, Projects: service, ProjectRuntime: service,
+		DeploymentRequests: deploymentRequests,
+		VersionedRuntime:   versionedRuntime,
+		Hosts:              service, HostInstallation: service, Projects: service, ProjectRuntime: service,
 		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
-		Operations: service, RunnerOperations: service, Planning: planning,
+		Operations: service, RunnerOperations: service, Planning: planning, Identities: identities, Configuration: configuration,
 	}, keys)
 }
 
 func NewDockerHandlerWithServices(services DockerServices, keys keyring.Ring) *DockerHandler {
+	if dockerDeploymentRequestsMissing(services.DeploymentRequests) {
+		services.DeploymentRequests = nil
+	}
+	if dockerVersionedRuntimeMissing(services.VersionedRuntime) {
+		services.VersionedRuntime = nil
+	}
+	if dockerConfigurationServiceMissing(services.Configuration) {
+		services.Configuration = nil
+	}
+	if dockerNativeTerminalsMissing(services.NativeTerminals) {
+		services.NativeTerminals = nil
+	}
+	if dockerIdentityServiceMissing(services.Identities) {
+		services.Identities = nil
+	}
 	return &DockerHandler{
-		hosts: services.Hosts, hostInstallation: services.HostInstallation, projects: services.Projects,
+		deploymentRequests: services.DeploymentRequests,
+		versionedRuntime:   services.VersionedRuntime,
+		nativeTerminals:    services.NativeTerminals,
+		configuration:      services.Configuration,
+		hosts:              services.Hosts, hostInstallation: services.HostInstallation, projects: services.Projects,
+		identities:     services.Identities,
 		projectRuntime: services.ProjectRuntime, projectStorage: services.ProjectStorage,
 		services: services.Services, portMappings: services.PortMappings, templates: services.Templates,
 		operations: services.Operations, runnerOperations: services.RunnerOperations, planning: services.Planning, runnerKeys: keys,
@@ -380,8 +416,10 @@ func (h *DockerHandler) DeleteProject(c *gin.Context) {
 }
 
 func (h *DockerHandler) DeployProject(c *gin.Context) {
-	var req domaindocker.ProjectDeployInput
-	_ = c.ShouldBindJSON(&req)
+	req, ok := decodeDockerProjectDeploy(c)
+	if !ok {
+		return
+	}
 	key, ok := requiredIdempotencyKey(c)
 	if !ok {
 		return
@@ -400,8 +438,10 @@ func (h *DockerHandler) PlanProjectDeploy(c *gin.Context) {
 		apiresponse.Error(c, http.StatusServiceUnavailable, "unavailable", "Docker planning is unavailable")
 		return
 	}
-	var req domaindocker.ProjectDeployInput
-	_ = c.ShouldBindJSON(&req)
+	req, ok := decodeDockerProjectDeploy(c)
+	if !ok {
+		return
+	}
 	plan, err := h.planning.PlanProjectDeploy(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)

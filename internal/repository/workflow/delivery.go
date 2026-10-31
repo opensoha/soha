@@ -91,7 +91,7 @@ func (r *Repository) CreateDeliveryBatch(ctx context.Context, batch domainworkfl
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, batch.CreatedBy+":"+key).Error; err != nil {
 			return err
 		}
-		repo := New(tx)
+		repo := New(tx, r.storageKeys)
 		var existingID, existingDigest string
 		err := tx.Raw(`SELECT id, request_digest FROM delivery_batches WHERE created_by = ? AND idempotency_key = ?`, batch.CreatedBy, key).Row().Scan(&existingID, &existingDigest)
 		if err == nil {
@@ -200,14 +200,14 @@ func (r *Repository) ClaimManagedRun(ctx context.Context, owner string, ttl time
     ) UPDATE workflow_runs SET lease_owner = ?, lease_until = NOW() + (? * INTERVAL '1 millisecond'),
           fencing_token = fencing_token + 1, version = version + 1
       WHERE id = (SELECT id FROM candidate) RETURNING ` + workflowColumns
-	return scanWorkflowRow(r.db.WithContext(ctx).Raw(query, owner, ttl.Milliseconds()).Row())
+	return r.scanWorkflowRow(r.db.WithContext(ctx).Raw(query, owner, ttl.Milliseconds()).Row())
 }
 
 func (r *Repository) SaveManagedRun(ctx context.Context, run domainworkflow.Run, releaseLease bool) (domainworkflow.Run, error) {
 	if run.Scope != domainworkflow.ScopeDeliveryBatch && run.Scope != domainworkflow.ScopeCapabilityTask {
 		return run, apperrors.ErrInvalidArgument
 	}
-	metadata, err := json.Marshal(persistWorkflowMetadata(run.Metadata, run.NodeRuns, run.GatewayAuthorization))
+	metadata, err := r.marshalWorkflowMetadata(run)
 	if err != nil {
 		return run, err
 	}
@@ -220,7 +220,7 @@ func (r *Repository) SaveManagedRun(ctx context.Context, run domainworkflow.Run,
 		query += `, lease_owner = '', lease_until = NULL`
 	}
 	query += ` WHERE id = ? AND scope = ? AND version = ? AND fencing_token = ? AND lease_owner = ? AND lease_until > NOW() RETURNING ` + workflowColumns
-	updated, err := scanWorkflowRow(r.db.WithContext(ctx).Raw(query, run.Status, string(steps), string(metadata), run.ID, run.Scope, run.Version, run.FencingToken, run.LeaseOwner).Row())
+	updated, err := r.scanWorkflowRow(r.db.WithContext(ctx).Raw(query, run.Status, string(steps), string(metadata), run.ID, run.Scope, run.Version, run.FencingToken, run.LeaseOwner).Row())
 	if errors.Is(err, apperrors.ErrNotFound) {
 		return run, fmt.Errorf("%w: delivery run changed or its execution lease expired", apperrors.ErrConflict)
 	}
@@ -236,7 +236,7 @@ func (r *Repository) StopManagedRun(ctx context.Context, runID, reason, summary 
 	query := `UPDATE workflow_runs SET stop_reason = CASE WHEN stop_reason = '' THEN ? ELSE stop_reason END, stop_summary = CASE WHEN stop_reason = '' THEN ? ELSE stop_summary END, status = 'canceling', version = version + 1, updated_at = NOW()
         WHERE id = ? AND scope IN ('delivery_batch', 'capability_task') AND (stop_reason = '' OR status = 'blocked')
           AND status NOT IN ('completed', 'partially_completed', 'failed', 'canceled', 'inconclusive') RETURNING ` + workflowColumns
-	run, err := scanWorkflowRow(r.db.WithContext(ctx).Raw(query, reason, summary, runID).Row())
+	run, err := r.scanWorkflowRow(r.db.WithContext(ctx).Raw(query, reason, summary, runID).Row())
 	if errors.Is(err, apperrors.ErrNotFound) {
 		return r.Get(ctx, runID)
 	}

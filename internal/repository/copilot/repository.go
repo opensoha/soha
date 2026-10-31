@@ -15,17 +15,23 @@ import (
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	"gorm.io/gorm"
 )
 
 type Repository struct {
-	db *gorm.DB
+	db          *gorm.DB
+	storageKeys keyring.Ring
 }
 
 const maxAgentRunWorkbenchEvents = 200
 
-func New(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func New(db *gorm.DB, keys ...keyring.Ring) *Repository {
+	r := &Repository{db: db}
+	if len(keys) > 0 {
+		r.storageKeys = keys[0]
+	}
+	return r
 }
 
 func (r *Repository) ListSessions(ctx context.Context, createdBy string, limit int) ([]domaincopilot.Session, error) {

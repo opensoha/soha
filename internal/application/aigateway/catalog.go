@@ -2016,6 +2016,15 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			RequiredScopes: []string{"cluster", "namespace"},
 		},
 		{
+			ID:             "k8s-operator",
+			Name:           "K8s Operator",
+			Category:       "platform",
+			Description:    "Approval-bound Kubernetes changes against a reviewed UID and resourceVersion; separate from read-only diagnosis.",
+			CapabilityRefs: []string{"k8s.resources.identity.read", "k8s.resources.conditional.preflight", "k8s.resources.conditional.update", "k8s.resources.conditional.delete", "k8s.resources.conditional.assess", "k8s.workloads.conditional.preflight", "k8s.workloads.conditional.action", "k8s.workloads.scale", "k8s.workloads.scale.assess", "k8s.deployments.rollout_status"},
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
+			RequiredScopes: []string{"cluster", "namespace"},
+		},
+		{
 			ID:             "compute-sre",
 			Name:           "Compute SRE",
 			Category:       "platform",
