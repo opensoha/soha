@@ -10,7 +10,14 @@ import (
 // Validation uses a private temporary directory, so a preflight cannot replace
 // the live project's Compose or .env files before approval.
 func (r *Runner) validateDeliveryCompose(ctx context.Context, operation DockerOperation) ([]string, error) {
+	if err := validateBoundProjectNamespace(ctx, operation); err != nil {
+		return nil, err
+	}
 	payload, err := decodeDockerComposePayload(operation.Payload)
+	if err != nil {
+		return nil, err
+	}
+	payload.ComposeContent, err = boundComposeContent(operation, payload.ComposeContent)
 	if err != nil {
 		return nil, err
 	}
@@ -29,6 +36,6 @@ func (r *Runner) validateDeliveryCompose(ctx context.Context, operation DockerOp
 	if err != nil {
 		return logs, fmt.Errorf("docker preflight requires a reachable daemon: %w", err)
 	}
-	output, err := runCommand(ctx, dir, "docker", composeArgsForAction("validate")...)
+	output, err := runComposeOperation(ctx, dir, operation, composeArgsForAction("validate"))
 	return append(logs, output...), err
 }

@@ -6,10 +6,12 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 )
 
@@ -26,6 +28,36 @@ type Config struct {
 	ControlPlane        ControlPlaneConfig        `mapstructure:"control_plane"`
 	Kubernetes          KubernetesConfig          `mapstructure:"kubernetes"`
 	PersonalEnvironment PersonalEnvironmentConfig `mapstructure:"personal_environment"`
+	DockerRuntime       DockerRuntimeConfig       `mapstructure:"docker_runtime"`
+}
+
+type DockerRuntimeConfig struct {
+	VolumeReaderImage         string   `mapstructure:"volume_reader_image"`
+	VolumeReaderOwner         string   `mapstructure:"volume_reader_owner"`
+	VolumeReaderCleanupImages []string `mapstructure:"volume_reader_cleanup_images"`
+}
+
+var readerImagePattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+
+func validateDockerRuntime(cfg DockerRuntimeConfig) error {
+	if cfg.VolumeReaderImage == "" && cfg.VolumeReaderOwner == "" && len(cfg.VolumeReaderCleanupImages) == 0 {
+		return nil
+	}
+	id, err := uuid.Parse(cfg.VolumeReaderOwner)
+	if !readerImagePattern.MatchString(cfg.VolumeReaderImage) || err != nil || id == uuid.Nil || id.String() != cfg.VolumeReaderOwner {
+		return fmt.Errorf("docker_runtime safe volume reader requires a fixed image ID and canonical nonzero owner UUID")
+	}
+	if len(cfg.VolumeReaderCleanupImages) > 4 {
+		return fmt.Errorf("docker_runtime safe reader allows at most four cleanup-only image IDs")
+	}
+	seen := map[string]bool{cfg.VolumeReaderImage: true}
+	for _, old := range cfg.VolumeReaderCleanupImages {
+		if !readerImagePattern.MatchString(old) || seen[old] {
+			return fmt.Errorf("docker_runtime safe reader cleanup image IDs must be pinned and distinct")
+		}
+		seen[old] = true
+	}
+	return nil
 }
 
 type PersonalEnvironmentConfig struct {
@@ -217,6 +249,9 @@ func readConfig(v *viper.Viper) error {
 }
 
 func Validate(cfg Config) error {
+	if err := validateDockerRuntime(cfg.DockerRuntime); err != nil {
+		return err
+	}
 	if err := validateListenSecurity(cfg.HTTP.Addr, cfg.Auth.BearerToken); err != nil {
 		return err
 	}
@@ -335,6 +370,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.bearer_token", "")
 	v.SetDefault("auth.bearer_token_file", "")
 	v.SetDefault("security.allowed_actions", []string{})
+	v.SetDefault("docker_runtime.volume_reader_image", "")
+	v.SetDefault("docker_runtime.volume_reader_owner", "")
+	v.SetDefault("docker_runtime.volume_reader_cleanup_images", []string{})
 	v.SetDefault("personal_environment.enabled", false)
 	v.SetDefault("personal_environment.image", "")
 	v.SetDefault("personal_environment.quota_helper_image", "")
@@ -513,7 +551,8 @@ func knownAction(action string) bool {
 		"runtime.personal_environments.execute",
 		"runtime.personal_environments.release",
 		"runtime.personal_environments.delete_data", "runtime.personal_environments.export_data",
-		"docker.runtime.terminal":
+		"docker.runtime.terminal", "docker.runtime.terminal.v1", "docker.runtime.logs", "docker.runtime.files",
+		"docker.runtime.logs.v1", "docker.runtime.files.v1":
 		return true
 	default:
 		return false

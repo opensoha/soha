@@ -69,6 +69,9 @@ jobs:
       - name: Hermes runner Docker build
         working-directory: soha-agent
         run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile.hermes-agent-runner -t ghcr.io/opensoha/soha-hermes-agent:test .
+      - name: Safe Docker volume reader image build
+        working-directory: soha-agent
+        run: docker build --build-context contracts=../soha-contracts --target volume-reader-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-docker-volume-reader:test .
       - name: Buildpacks runner Docker build
         working-directory: soha-agent
         run: docker build --build-context contracts=../soha-contracts --target buildpacks-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:test .

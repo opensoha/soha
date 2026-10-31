@@ -11,6 +11,7 @@ import (
 
 	agentbootstrap "github.com/opensoha/soha-agent/internal/agent/bootstrap"
 	"github.com/opensoha/soha-agent/internal/agent/buildinfo"
+	"github.com/opensoha/soha-agent/internal/agent/dockerruntime"
 	"go.uber.org/zap"
 )
 
@@ -19,6 +20,12 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) > 0 && args[0] == "volume-reader" {
+		if len(args) != 1 {
+			return 2
+		}
+		return dockerruntime.VolumeReaderMain(os.Stdin, os.Stdout)
+	}
 	if shouldPrintVersion(args) {
 		fmt.Println(buildinfo.Human())
 		return 0

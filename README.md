@@ -57,6 +57,46 @@ security:
 
 Docker runner operation kinds are a separate allowlist under `control_plane.docker.operation_kinds`; keep it to the exact kinds the control plane should claim, for example `host_provision`, `project_deploy`, or `service_action`.
 
+### Versioned Docker logs and mount reads
+
+`docker.runtime.logs.v1` and `docker.runtime.files.v1` are separate explicit
+actions, disabled in the supplied configuration. They authorize only versioned
+reads. The legacy Compose log/file routes retain the separate, default-disabled
+`docker.runtime.logs` and `docker.runtime.files` actions; neither set of actions
+authorizes the other protocol. Versioned reads require the Core's
+registered Host/Project UID, derived Compose namespace and full immutable
+container ID. They never accept Compose content or a host source path as read
+authority, and never fall back to a legacy Compose read. Core installations
+must explicitly enable the identity-v1 feature for new bound projects; existing
+legacy projects are not silently adopted.
+
+Logs need no helper image. Safe mount browsing is disabled until both
+`docker_runtime.volume_reader_image` and `volume_reader_owner` are configured.
+Build target `volume-reader-runtime` produces the separate scratch image
+`ghcr.io/opensoha/soha-docker-volume-reader` when its matching Agent release is
+published. It contains the static Agent executable, no environment variables,
+anonymous volumes, shell or control-plane configuration. Verify the published
+artifact and protocol label, then pin the exact local `sha256:` image ID; a tag
+or registry reference is not accepted by this setting. The owner must be a
+canonical nonzero UUID and must remain stable across Agent restarts.
+
+The helper joins only the original running Linux container's private PID
+namespace. It has a read-only root, no network or host mounts, dropped default
+capabilities, two explicit read capabilities, resource limits and a deadline.
+It reads only an exact inspected volume/bind target with kernel mount-ID and
+`openat2` fences. Symlink traversal, hardlinks, special files, binary content
+and crossing a nested mount are refused. Text reads and directory listings are
+bounded and report truncation; file source size and returned bytes are separate.
+Unsupported container/kernel configurations return an explicit failure.
+
+Helpers are removed after success or failure. Periodic collection reclaims
+expired helpers only after checking their image, owner, nonce, lease and full
+isolation configuration. During an image upgrade, retain the same owner and
+list at most four exact previous image IDs in
+`docker_runtime.volume_reader_cleanup_images`; these grants permit cleanup only
+and never select an old image for new execution. Unknown images or changed
+ownership are retained for operator inspection.
+
 Structured action audit is always written to the configured logger. To persist high-risk action decisions as JSON Lines, set:
 
 ```yaml

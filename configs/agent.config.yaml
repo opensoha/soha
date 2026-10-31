@@ -21,6 +21,14 @@ auth:
   bearer_token: demo-agent-token
   bearer_token_file: ""
 
+docker_runtime:
+  # Optional preinstalled scratch reader image ID and stable non-secret UUID.
+  # Empty disables file browsing. Never use a floating tag or auto-pull here.
+  volume_reader_image: ""
+  volume_reader_owner: ""
+  # During upgrades, explicitly retain previous pinned IDs for cleanup only.
+  volume_reader_cleanup_images: []
+
 security:
   allowed_actions:
     - platform.nodes.drain
@@ -50,6 +58,11 @@ security:
     - platform.helm_releases.rollback
     - runtime.execution_tasks.cancel
     - docker.runtime.terminal
+    # Explicit opt-in for versioned full-container-ID reads and native terminal.
+    # These do not authorize the separately gated legacy Compose read routes.
+    # - docker.runtime.logs.v1
+    # - docker.runtime.files.v1
+    # - docker.runtime.terminal.v1
     # Enable after configuring an enrolled control-plane identity and VM SSH access.
     # - runtime.vm_ssh.connect
     # - runtime.vm_ssh.execute

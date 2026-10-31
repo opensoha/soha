@@ -273,6 +273,40 @@ func TestValidateRequiresProductionDockerTerminalOriginAllowlist(t *testing.T) {
 	}
 }
 
+func TestValidateNativeDockerTerminalIsSeparateAndRejectsBrowserAtRoute(t *testing.T) {
+	// Native routes always reject Origin, so only the legacy browser terminal
+	// requires an origin allowlist. The new action is opt-in and not inherited.
+	err := Validate(Config{App: AppConfig{Env: "production"}, Auth: AuthConfig{BearerToken: productionAgentToken}, Security: SecurityConfig{AllowedActions: []string{"docker.runtime.terminal.v1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateVersionedDockerReadActions(t *testing.T) {
+	for _, action := range []string{"docker.runtime.logs.v1", "docker.runtime.files.v1"} {
+		if err := Validate(Config{App: AppConfig{Env: "production"}, Auth: AuthConfig{BearerToken: productionAgentToken}, Security: SecurityConfig{AllowedActions: []string{action}}}); err != nil {
+			t.Fatalf("action=%s: %v", action, err)
+		}
+	}
+}
+
+func TestSuppliedConfigDoesNotEnableDockerReadOrNativeTerminalActions(t *testing.T) {
+	configPath, err := filepath.Abs("../../../configs/agent.config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SOHA_AGENT_CONFIG_FILE", configPath)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{"docker.runtime.logs", "docker.runtime.files", "docker.runtime.logs.v1", "docker.runtime.files.v1", "docker.runtime.terminal.v1"} {
+		if containsNormalized(cfg.Security.AllowedActions, action) {
+			t.Fatalf("supplied config unexpectedly enables %s", action)
+		}
+	}
+}
+
 func TestValidateRejectsProductionDockerOperationWildcard(t *testing.T) {
 	err := Validate(Config{
 		App:  AppConfig{Env: "production"},

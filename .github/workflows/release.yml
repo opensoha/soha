@@ -146,6 +146,23 @@ jobs:
             VERSION=${{ github.event.inputs.version || github.ref_name }}
             COMMIT=${{ github.sha }}
             DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+      - name: Build safe Docker volume reader image
+        uses: docker/build-push-action@v6
+        with:
+          context: soha-agent
+          file: soha-agent/deploy/Dockerfile
+          target: volume-reader-runtime
+          platforms: linux/amd64,linux/arm64
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: ghcr.io/opensoha/soha-docker-volume-reader:${{ github.event.inputs.version || github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-contexts: |
+            contracts=./soha-contracts
+          build-args: |
+            VERSION=${{ github.event.inputs.version || github.ref_name }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
       - name: Build Hermes runner image
         uses: docker/build-push-action@v6
         with:

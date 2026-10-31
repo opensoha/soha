@@ -22,6 +22,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	"github.com/opensoha/soha-agent/internal/agent/dockerruntime"
 	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
 	domaindocker "github.com/opensoha/soha-agent/internal/domain/docker"
 	"go.uber.org/zap"
@@ -89,7 +90,7 @@ func (w dockerRuntimeFlushWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func registerDockerRuntimeRoutes(router *gin.Engine, cfg cfgpkg.Config, logger *zap.Logger, actions actionPolicy) {
+func registerDockerRuntimeRoutes(router *gin.Engine, cfg cfgpkg.Config, logger *zap.Logger, actions actionPolicy) *dockerruntime.VolumeReader {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -101,14 +102,17 @@ func registerDockerRuntimeRoutes(router *gin.Engine, cfg cfgpkg.Config, logger *
 	upgrader := websocket.Upgrader{CheckOrigin: origins.Check}
 	group := router.Group(fmt.Sprintf("%s/docker/runtime", cfg.HTTP.BasePath))
 	group.Use(authRequiredAnyMiddleware(cfg.Auth.BearerToken, cfg.ControlPlane.BearerToken))
+	reader := dockerruntime.NewVolumeReader(cfg.DockerRuntime.VolumeReaderImage, cfg.DockerRuntime.VolumeReaderOwner, cfg.DockerRuntime.VolumeReaderCleanupImages...)
+	registerDockerVersionedReadRoutes(group, actions, reader)
 	{
-		group.POST("/logs", handleDockerRuntimeLogs)
-		group.POST("/logs/stream", handleDockerRuntimeLogStream)
+		group.POST("/logs", actions.Require(actionDockerRuntimeLogs), handleDockerRuntimeLogs)
+		group.POST("/logs/stream", actions.Require(actionDockerRuntimeLogs), handleDockerRuntimeLogStream)
 		group.GET("/terminal", actions.Require(actionDockerRuntimeTerminal), handleDockerRuntimeTerminal(upgrader))
-		group.POST("/volumes", handleDockerRuntimeVolumes)
-		group.POST("/volume-files", handleDockerRuntimeVolumeFiles)
-		group.POST("/volume-file", handleDockerRuntimeVolumeFile)
+		group.POST("/volumes", actions.Require(actionDockerRuntimeFiles), handleDockerRuntimeVolumes)
+		group.POST("/volume-files", actions.Require(actionDockerRuntimeFiles), handleDockerRuntimeVolumeFiles)
+		group.POST("/volume-file", actions.Require(actionDockerRuntimeFiles), handleDockerRuntimeVolumeFile)
 	}
+	return reader
 }
 
 func handleDockerRuntimeLogs(c *gin.Context) {

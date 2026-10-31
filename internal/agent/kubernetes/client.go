@@ -834,7 +834,15 @@ func (c *Client) DryRunResourceYAML(ctx context.Context, namespace, kind, name, 
 	return analysis, err
 }
 
-func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, content string, dryRun bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, content string, dryRun bool, expected ...contractresource.ResourceMutationPreconditions) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+	if len(expected) > 0 {
+		if err := expected[0].Validate(); err != nil {
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest(err.Error())
+		}
+		if len(content) > 4<<20 {
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest("resource YAML exceeds the conditional edit limit")
+		}
+	}
 	if strings.TrimSpace(content) == "" {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("yaml content is required")
 	}
@@ -847,12 +855,14 @@ func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, c
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("invalid yaml: %w", err)
 	}
 	item := &unstructured.Unstructured{Object: object}
-	item.SetKind(canonicalKind)
 	if item.GetName() == "" {
 		item.SetName(name)
 	}
 	if item.GetName() != name {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("yaml metadata.name does not match target resource")
+	}
+	if len(expected) > 0 && namespaceScoped && strings.TrimSpace(namespace) == "" {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest("namespace is required for conditional resource edits")
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -864,6 +874,12 @@ func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, c
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
+	if len(expected) > 0 {
+		if err := contractruntime.ValidateResourceEditPreconditions(current, item, expected[0]); err != nil {
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
+		}
+	}
+	item.SetKind(canonicalKind)
 	if err := contractruntime.ValidateDirectManifestOwner(current); err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
@@ -878,7 +894,11 @@ func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, c
 	updated, err := contractruntime.ApplyResourceEdit(queryCtx, resource, current, item, resourceEditFieldManager, dryRun)
 	if err != nil {
 		if dryRun && apierrors.IsConflict(err) {
-			analysis.Conflicts = conflictsFromError(err.Error(), analysis)
+			message := err.Error()
+			if len(expected) > 0 {
+				message = "Kubernetes reported a field ownership conflict; reconcile the reviewed manifest with its current owners"
+			}
+			analysis.Conflicts = conflictsFromError(message, analysis)
 			return domainresource.ResourceYAMLView{}, analysis, nil
 		}
 		return domainresource.ResourceYAMLView{}, analysis, err

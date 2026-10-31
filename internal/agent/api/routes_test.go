@@ -36,15 +36,56 @@ func TestNewRegistersRouteFamilies(t *testing.T) {
 	}
 	sort.Strings(signatures)
 	routeDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(signatures, "\n"))))
-	if len(signatures) != 269 {
-		t.Fatalf("route count = %d, want 269", len(signatures))
+	if len(signatures) != 285 {
+		t.Fatalf("route count = %d, want 285", len(signatures))
 	}
-	const expectedRouteDigest = "d246061fec36ccb61f873a1a7d50bebbdb610fd54b292f1c45658f49347ba478"
-	if routeDigest != expectedRouteDigest {
-		t.Fatalf("route digest = %s, want %s", routeDigest, expectedRouteDigest)
+	// Only these eleven reviewed protocol routes are new. Preserve the complete
+	// previous route digest after removing exactly this addition.
+	newRoutes := map[string]bool{
+		"GET /api/v1/docker/runtime/v1/terminal/capabilities":          true,
+		"GET /api/v1/docker/runtime/v1/terminal/stream":                true,
+		"GET /api/v1/platform/resource-presence-v1/resources":          true,
+		"POST /api/v1/docker/runtime/v1/files/list":                    true,
+		"POST /api/v1/docker/runtime/v1/files/read":                    true,
+		"POST /api/v1/docker/runtime/v1/logs":                          true,
+		"POST /api/v1/docker/runtime/v1/volumes":                       true,
+		"GET /api/v1/platform/pod-execution-v1/pods/:podName/terminal": true,
+		"GET /api/v1/platform/pod-execution-v1/capabilities":           true,
+		"GET /api/v1/platform/pod-execution-v1/pods/:podName/target":   true,
+		"POST /api/v1/platform/pod-execution-v1/pods/:podName/argv":    true,
+	}
+	previous := make([]string, 0, 274)
+	for _, signature := range signatures {
+		if !newRoutes[signature] {
+			previous = append(previous, signature)
+		}
+	}
+	if len(previous) != 274 {
+		t.Fatalf("previous route count changed: %d", len(previous))
+	}
+	previousDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(previous, "\n"))))
+	const expectedRouteDigest = "33de9d7b7f814ffb6133f1076daa398a16a5f32d25b471ac7b3e18835f4da205"
+	if previousDigest != expectedRouteDigest {
+		t.Fatalf("previous route digest = %s, want %s (new surface %s)", previousDigest, expectedRouteDigest, routeDigest)
 	}
 
 	expected := []string{
+		"GET /api/v1/docker/runtime/v1/terminal/capabilities",
+		"GET /api/v1/docker/runtime/v1/terminal/stream",
+		"GET /api/v1/platform/resource-presence-v1/resources",
+		"POST /api/v1/docker/runtime/v1/files/list",
+		"POST /api/v1/docker/runtime/v1/files/read",
+		"POST /api/v1/docker/runtime/v1/logs",
+		"POST /api/v1/docker/runtime/v1/volumes",
+		"GET /api/v1/platform/pod-execution-v1/pods/:podName/terminal",
+		"GET /api/v1/platform/pod-execution-v1/capabilities",
+		"GET /api/v1/platform/pod-execution-v1/pods/:podName/target",
+		"POST /api/v1/platform/pod-execution-v1/pods/:podName/argv",
+		http.MethodPost + " /api/v1/platform/preconditions-v1/resources/:kind/:name/actions/:action",
+		http.MethodGet + " /api/v1/platform/preconditions-v1/resources/identity",
+		http.MethodPost + " /api/v1/platform/preconditions-v1/resources/yaml/preflight",
+		http.MethodPut + " /api/v1/platform/preconditions-v1/resources/yaml",
+		http.MethodDelete + " /api/v1/platform/preconditions-v1/resources",
 		http.MethodGet + " /api/v1/platform/infrastructure/resource-monitoring",
 		http.MethodPost + " /api/v1/platform/network/topology/snapshot",
 		http.MethodGet + " /api/v1/diagnostics/actions",

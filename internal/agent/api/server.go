@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/opensoha/soha-agent/internal/agent/buildinfo"
 	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	"github.com/opensoha/soha-agent/internal/agent/dockerruntime"
 	"github.com/opensoha/soha-agent/internal/agent/environment"
 	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
 	runnerpkg "github.com/opensoha/soha-agent/internal/agent/runner"
@@ -24,12 +25,15 @@ import (
 )
 
 type Server struct {
-	sshSessions         *sshSessions
-	httpServer          *http.Server
-	personalEnvironment *environment.DockerExecutor
-	cleanupContext      context.Context
-	cleanupCancel       context.CancelFunc
-	logger              *zap.Logger
+	volumeReader          *dockerruntime.VolumeReader
+	nativeTerminals       *nativePodTerminals
+	nativeDockerTerminals *nativePodTerminals
+	sshSessions           *sshSessions
+	httpServer            *http.Server
+	personalEnvironment   *environment.DockerExecutor
+	cleanupContext        context.Context
+	cleanupCancel         context.CancelFunc
+	logger                *zap.Logger
 }
 
 type RuntimeTaskController interface {
@@ -68,11 +72,12 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 	auditSink := newActionAuditSink(cfg.Audit, logger)
 	actions := newActionPolicy(cfg.Security, logger, auditSink)
 	registerSystemRoutes(router, cfg, client, runtime)
-	registerPlatformRoutes(router, cfg, client, actions)
+	nativeTerminals := registerPlatformRoutes(router, cfg, client, actions)
 	registerRuntimeRoutes(router, cfg, runtime, actions)
 	sshSessions := registerSSHRoutes(router, cfg, actions)
 	registerAgentToolRoutes(router, cfg, runtime)
-	registerDockerRuntimeRoutes(router, cfg, logger, actions)
+	volumeReader := registerDockerRuntimeRoutes(router, cfg, logger, actions)
+	nativeDockerTerminals := registerNativeDockerTerminalRoutes(router, cfg, actions)
 	registerOutpostRoutes(router, cfg, runtime)
 	personalEnvironment := registerPersonalEnvironmentRoutes(router, cfg, logger, actions)
 
@@ -88,7 +93,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 	)
 
 	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
-	return &Server{sshSessions: sshSessions, personalEnvironment: personalEnvironment, cleanupContext: cleanupContext, cleanupCancel: cleanupCancel, logger: logger, httpServer: &http.Server{
+	return &Server{volumeReader: volumeReader, nativeTerminals: nativeTerminals, nativeDockerTerminals: nativeDockerTerminals, sshSessions: sshSessions, personalEnvironment: personalEnvironment, cleanupContext: cleanupContext, cleanupCancel: cleanupCancel, logger: logger, httpServer: &http.Server{
 		Addr:              cfg.HTTP.Addr,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -97,9 +102,9 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 	}}
 }
 
-func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sagent.Client, actions actionPolicy) {
+func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sagent.Client, actions actionPolicy) *nativePodTerminals {
 	if client == nil {
-		return
+		return nil
 	}
 	platform := router.Group(fmt.Sprintf("%s/platform", cfg.HTTP.BasePath))
 	platform.Use(authMiddleware(cfg.Auth.BearerToken))
@@ -124,6 +129,11 @@ func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sag
 	registerPlatformConfigurationRoutes(platform, client, actions)
 	registerConfigurationObjectReadRoutes(platform.Group("/ownership-v2"), client)
 	registerBasicResourceMutationRoutes(platform.Group("/ownership-v2"), client, actions)
+	registerConditionalResourceRoutes(platform, client, actions)
+	registerConditionalWorkloadActionRoute(platform, client, actions)
+	registerPodExecutionRoutes(platform, client, actions)
+	nativeTerminals := newNativePodTerminals()
+	registerNativePodTerminalRoute(platform, client, actions, nativeTerminals)
 	registerPlatformRBACRoutes(platform, client)
 	registerPlatformNetworkRoutes(platform, client)
 	registerTopologySnapshotRoute(platform, client, actions)
@@ -139,9 +149,15 @@ func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sag
 		registerPlatformWorkloadMutationRoutes(owned, client, actions)
 	}
 	registerManifestRolloutRoutes(platform.Group("/ownership-v2"), client, cfg.Kubernetes.ID, actions)
+	return nativeTerminals
 }
 
 func (s *Server) Run() error {
+	if s.volumeReader.Enabled() {
+		done := make(chan struct{})
+		go func() { defer close(done); s.collectVolumeReaders() }()
+		defer func() { s.cleanupCancel(); <-done }()
+	}
 	if s.personalEnvironment != nil {
 		done := make(chan struct{})
 		go func() {
@@ -162,7 +178,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.sshSessions.Close()
 	}
 	s.cleanupCancel()
-	return s.httpServer.Shutdown(ctx)
+	var terminalErr error
+	if s.nativeTerminals != nil {
+		terminalErr = s.nativeTerminals.shutdown(ctx)
+	}
+	if s.nativeDockerTerminals != nil {
+		terminalErr = errors.Join(terminalErr, s.nativeDockerTerminals.shutdown(ctx))
+	}
+	return errors.Join(terminalErr, s.httpServer.Shutdown(ctx))
 }
 
 func (s *Server) collectPersonalEnvironments() {

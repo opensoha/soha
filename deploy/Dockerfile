@@ -11,7 +11,7 @@ RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./soha-agent/
 COPY --from=contracts go.mod go.sum ./soha-contracts/
 RUN for attempt in 1 2 3; do \
-      printf 'go 1.27.2\n\nuse (\n\t./soha-agent\n\t./soha-contracts\n)\n' > go.work; \
+      printf 'go 1.27.3\n\nuse (\n\t./soha-agent\n\t./soha-contracts\n)\n' > go.work; \
       (cd soha-agent && go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \
@@ -24,7 +24,17 @@ ENV GOMAXPROCS=$GOMAXPROCS
 RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     cd soha-agent && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=${VERSION} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=${COMMIT} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=${DATE}" -o /out/soha-agent ./cmd/agent
 
-FROM docker:29.4.0-cli@sha256:2efe7c8e806b35050def6ba1ba0ddad67b521a0a6d37f4910b3d88f11b495d03 AS buildpacks-runtime
+FROM scratch AS volume-reader-runtime
+LABEL io.opensoha.volume-reader-protocol="docker-runtime-read-v1"
+COPY --from=agent-build /out/soha-agent /soha-agent
+USER 0:0
+WORKDIR /
+ENTRYPOINT ["/soha-agent"]
+CMD ["volume-reader"]
+
+FROM docker:29.4.0-cli@sha256:2efe7c8e806b35050def6ba1ba0ddad67b521a0a6d37f4910b3d88f11b495d03 AS docker-cli
+
+FROM docker-cli AS buildpacks-runtime
 ARG TARGETARCH
 RUN apk add --no-cache ca-certificates git openssh-client tzdata \
     && case "$TARGETARCH" in \
@@ -52,6 +62,8 @@ USER 0:0
 RUN apk add --no-cache podman=5.7.0-r6 fuse-overlayfs=1.16-r0
 
 FROM alpine:3.20 AS agent-runtime
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 RUN addgroup -S -g 10001 soha && adduser -S -D -H -u 10001 -G soha soha && apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=agent-build /out/soha-agent /app/soha-agent

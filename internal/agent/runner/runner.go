@@ -606,6 +606,7 @@ func (r *Runner) claimDockerOperation(ctx context.Context) (DockerOperation, boo
 		HostIDs:                r.cfg.Docker.HostIDs,
 		OperationKinds:         operationKinds,
 		CallbackTokenSupported: true,
+		RuntimeProtocols:       supportedDockerRuntimeProtocols(),
 	})
 	if err != nil {
 		r.metrics.markClaim(metricScopeDocker, false)
@@ -990,6 +991,15 @@ func (r *Runner) executeDockerOperation(ctx context.Context, operation DockerOpe
 		if serviceErr == nil && len(services) > 0 {
 			payload["services"] = services
 		}
+		if _, bound, _ := dockerOperationBinding(operation); bound {
+			payload["runtimeInventoryConfirmed"] = serviceErr == nil
+			if serviceErr == nil {
+				payload["services"] = services
+			}
+			if serviceErr != nil {
+				payload["runtimeInventoryMessage"] = "Container identity observation is unconfirmed; no inventory adoption was performed"
+			}
+		}
 	}
 	r.dockerCallback(ctx, operation, "completed", payload, logs)
 	r.metrics.markOutcome(metricScopeDocker, "completed")
@@ -1302,6 +1312,9 @@ func (r *Runner) executeComposeAction(ctx context.Context, operation DockerOpera
 	if action == "validate" {
 		return r.validateDeliveryCompose(ctx, operation)
 	}
+	if err := validateBoundProjectNamespace(ctx, operation); err != nil {
+		return nil, err
+	}
 	dir, logs, err := r.prepareComposeWorkspace(operation)
 	if err != nil {
 		return logs, err
@@ -1328,7 +1341,7 @@ func (r *Runner) executeComposeAction(ctx context.Context, operation DockerOpera
 		}
 		return logs, fmt.Errorf("unsupported compose action %q", action)
 	}
-	commandLogs, err := runCommand(ctx, dir, "docker", args...)
+	commandLogs, err := runComposeOperation(ctx, dir, operation, args)
 	logs = append(logs, commandLogs...)
 	logs = appendGitBuildCleanupLogs(logs, buildWorkspace, err != nil)
 	return logs, err
@@ -1344,19 +1357,19 @@ func (r *Runner) executeSingleContainerRedeploy(ctx context.Context, dir string,
 		}
 		buildWorkspace = workspace
 	} else {
-		pullLogs, err := runCommand(ctx, dir, "docker", "compose", "-f", "compose.yaml", "pull")
+		pullLogs, err := runComposeOperation(ctx, dir, operation, []string{"compose", "-f", "compose.yaml", "pull"})
 		logs = append(logs, pullLogs...)
 		if err != nil {
 			return logs, err
 		}
 	}
 
-	downLogs, err := runCommand(ctx, dir, "docker", "compose", "-f", "compose.yaml", "down", "--remove-orphans")
+	downLogs, err := runComposeOperation(ctx, dir, operation, []string{"compose", "-f", "compose.yaml", "down", "--remove-orphans"})
 	logs = append(logs, downLogs...)
 	if err != nil {
 		return appendGitBuildCleanupLogs(logs, buildWorkspace, true), err
 	}
-	upLogs, err := runCommand(ctx, dir, "docker", "compose", "-f", "compose.yaml", "up", "-d", "--force-recreate")
+	upLogs, err := runComposeOperation(ctx, dir, operation, []string{"compose", "-f", "compose.yaml", "up", "-d", "--force-recreate"})
 	logs = append(logs, upLogs...)
 	return appendGitBuildCleanupLogs(logs, buildWorkspace, err != nil), err
 }
@@ -1380,6 +1393,12 @@ func appendGitBuildCleanupLogs(logs []string, workspace string, preserveResolved
 }
 
 func (r *Runner) executeComposeServiceAction(ctx context.Context, operation DockerOperation) ([]string, error) {
+	if _, bound, err := boundServiceTarget(operation); err != nil || bound {
+		if err != nil {
+			return nil, err
+		}
+		return executeBoundServiceAction(ctx, operation)
+	}
 	action := strings.TrimSpace(fmt.Sprint(operation.Payload["action"]))
 	serviceName := strings.TrimSpace(fmt.Sprint(operation.Payload["serviceName"]))
 	if serviceName == "" {
@@ -1393,7 +1412,7 @@ func (r *Runner) executeComposeServiceAction(ctx context.Context, operation Dock
 	if len(args) == 0 {
 		return logs, fmt.Errorf("unsupported docker service action %q", action)
 	}
-	commandLogs, err := runCommand(ctx, dir, "docker", args...)
+	commandLogs, err := runComposeOperation(ctx, dir, operation, args)
 	logs = append(logs, commandLogs...)
 	return logs, err
 }
@@ -1408,6 +1427,13 @@ func (r *Runner) prepareComposeWorkspace(operation DockerOperation) (string, []s
 		return "", nil, fmt.Errorf("resolve docker compose root: %w", err)
 	}
 	slug := firstNonEmpty(strings.TrimSpace(fmt.Sprint(operation.Payload["projectSlug"])), operation.ProjectID, operation.ID)
+	binding, bound, bindErr := dockerOperationBinding(operation)
+	if bindErr != nil {
+		return "", nil, bindErr
+	}
+	if bound {
+		slug = binding.Namespace
+	}
 	dir, err := resolveWorkspacePath(absRoot, slug)
 	if err != nil {
 		return "", nil, err
@@ -1418,6 +1444,10 @@ func (r *Runner) prepareComposeWorkspace(operation DockerOperation) (string, []s
 	composeContent := strings.TrimSpace(fmt.Sprint(operation.Payload["composeContent"]))
 	if composeContent == "" {
 		return dir, nil, fmt.Errorf("composeContent is required")
+	}
+	composeContent, err = boundComposeContent(operation, composeContent)
+	if err != nil {
+		return dir, nil, err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(composeContent+"\n"), 0o600); err != nil {
 		return dir, nil, fmt.Errorf("write compose.yaml: %w", err)
@@ -1475,11 +1505,18 @@ func composeServiceArgsForAction(action, serviceName string) []string {
 }
 
 func (r *Runner) collectComposeServices(ctx context.Context, operation DockerOperation) ([]map[string]any, error) {
+	if binding, bound, err := dockerOperationBinding(operation); err != nil || bound {
+		if err != nil {
+			return nil, err
+		}
+		return collectBoundServices(ctx, binding)
+	}
 	dir, _, err := r.prepareComposeWorkspace(operation)
 	if err != nil {
 		return nil, err
 	}
-	commandLogs, err := runCommand(ctx, dir, "docker", "compose", "-f", "compose.yaml", "ps", "--format", "json")
+	args := []string{"compose", "-f", "compose.yaml", "ps", "--format", "json"}
+	commandLogs, err := runComposeOperation(ctx, dir, operation, args)
 	if err != nil {
 		return nil, err
 	}

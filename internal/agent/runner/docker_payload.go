@@ -15,6 +15,9 @@ type dockerComposePayload struct {
 }
 
 func validateDockerOperationPayload(operation DockerOperation) error {
+	if _, _, err := dockerOperationBinding(operation); err != nil {
+		return err
+	}
 	switch operation.OperationKind {
 	case "container_start", "project_deploy", "service_action":
 		payload, err := decodeDockerComposePayload(operation.Payload)
@@ -25,6 +28,9 @@ func validateDockerOperationPayload(operation DockerOperation) error {
 			return fmt.Errorf("composeContent is required for %s", operation.OperationKind)
 		}
 		if operation.OperationKind == "service_action" {
+			if _, _, err := boundServiceTarget(operation); err != nil {
+				return err
+			}
 			if strings.TrimSpace(payload.ServiceName) == "" {
 				return fmt.Errorf("serviceName is required for docker service action")
 			}
