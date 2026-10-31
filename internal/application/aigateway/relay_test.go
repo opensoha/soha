@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -4988,6 +4989,31 @@ func TestRelayLLMHTTPDoesNotRetryStreamingUpstreamStatus(t *testing.T) {
 	}
 }
 
+// This HTTP test scripts counts in one logical quota window. The real
+// counter backend's calendar keying must not make this decision test depend
+// on whether its two requests happen to straddle a wall-clock minute.
+type relaySingleWindowCounter struct {
+	fakeRateLimitBackend
+	requests []domainaigateway.RateLimitCounter
+}
+
+func (b *relaySingleWindowCounter) IncrementRateLimitCounter(_ context.Context, item domainaigateway.RateLimitCounter) (domainaigateway.RateLimitCounter, error) {
+	b.counterCalls++
+	b.requests = append(b.requests, item)
+	item.Count = b.counterCalls
+	return item, nil
+}
+
+func TestGatewayRateLimitWindowSeparatesMinuteBoundary(t *testing.T) {
+	boundary := time.Date(2026, 11, 1, 12, 31, 0, 0, time.UTC)
+	beforeStart, beforeEnd := gatewayRateLimitWindow(boundary.Add(-time.Nanosecond), time.Minute)
+	afterStart, afterEnd := gatewayRateLimitWindow(boundary, time.Minute)
+	if !beforeStart.Equal(boundary.Add(-time.Minute)) || !beforeEnd.Equal(boundary) ||
+		!afterStart.Equal(boundary) || !afterEnd.Equal(boundary.Add(time.Minute)) {
+		t.Fatalf("minute boundary windows = [%v,%v), [%v,%v)", beforeStart, beforeEnd, afterStart, afterEnd)
+	}
+}
+
 func TestRelayLLMHTTPEnforcesTokenRateLimit(t *testing.T) {
 	const upstreamKey = "sk-openai-upstream-test"
 	upstreamCalls := 0
@@ -4999,6 +5025,8 @@ func TestRelayLLMHTTPEnforcesTokenRateLimit(t *testing.T) {
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	service := newRelayRuntimeTestService(repo, upstream.Client())
+	counter := &relaySingleWindowCounter{}
+	service.rateLimits = counter
 	accessCtx := relayTestAccessContext(map[string]any{
 		"purpose":   LLMRelayTokenPurpose,
 		"rateLimit": map[string]any{"rpm": 1, "mode": "counter"},
@@ -5020,6 +5048,21 @@ func TestRelayLLMHTTPEnforcesTokenRateLimit(t *testing.T) {
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("upstream calls = %d, want 1", upstreamCalls)
+	}
+	if len(counter.requests) != 2 {
+		t.Fatalf("counter requests = %d, want 2", len(counter.requests))
+	}
+	first, second := counter.requests[0], counter.requests[1]
+	if first.Key == "" || second.Key == "" {
+		t.Fatal("counter keys must be nonempty")
+	}
+	if first.WindowStart.Equal(second.WindowStart) != (first.Key == second.Key) {
+		t.Fatal("counter keys must match within a window and differ across windows")
+	}
+	first.Key, second.Key = "", ""
+	first.WindowStart, first.WindowEnd = second.WindowStart, second.WindowEnd
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("counter identity changed between the same token requests: %#v / %#v", first, second)
 	}
 }
 
