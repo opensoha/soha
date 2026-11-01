@@ -104,6 +104,47 @@ async function setup(context: BrowserContext, page: Page, kind: string, readonly
   })
   return { state, evidence }
 }
+
+test('DaemonSets: virtual text, namespace and actions stay centered at both densities', async ({
+  context,
+  page,
+}) => {
+  const { evidence } = await setup(context, page, 'daemonsets')
+  await page.goto('/workloads/daemonsets')
+  await expect(page.getByRole('status').filter({ hasText: '120 个 DaemonSets' })).toBeVisible()
+  const row = page.locator('.ant-table-row[data-row-key]').first()
+  const measure = () =>
+    row.evaluate((element) => {
+      const rowRect = element.getBoundingClientRect()
+      return {
+        height: rowRect.height,
+        cells: Array.from(element.children).flatMap((cell) => {
+          if (!cell.textContent?.trim() && !cell.querySelector('button')) return []
+          const range = document.createRange()
+          range.selectNodeContents(cell)
+          const rect = range.getBoundingClientRect()
+          return [
+            {
+              text: cell.textContent,
+              offset: rect.y + rect.height / 2 - (rowRect.y + rowRect.height / 2),
+            },
+          ]
+        }),
+      }
+    })
+  const compact = await measure()
+  expect(compact.cells.length).toBeGreaterThanOrEqual(8)
+  for (const cell of compact.cells)
+    expect(Math.abs(cell.offset), cell.text ?? 'actions').toBeLessThanOrEqual(2)
+  await page.getByRole('button', { name: '切换表格密度', exact: true }).click()
+  await expect.poll(async () => (await measure()).height).toBeGreaterThan(compact.height)
+  for (const cell of (await measure()).cells)
+    expect(Math.abs(cell.offset), cell.text ?? 'actions').toBeLessThanOrEqual(2)
+  await page.getByRole('button', { name: '切换表格密度', exact: true }).click()
+  await expect.poll(async () => (await measure()).height).toBe(compact.height)
+  verifyBrowserEvidence(evidence)
+})
+
 for (const [kind, label] of kinds)
   test(`${label}: continuous list, stable refresh, fixed menu and exact deletion`, async ({
     context,

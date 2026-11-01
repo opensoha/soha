@@ -356,6 +356,12 @@
   width: 100%;
 }
 
+/* Antd virtual rows stretch block cells to the tallest control. Center their
+   contents without changing the block layout used for text ellipsis. */
+.soha-kubernetes-resource-table .ant-table-tbody-virtual .ant-table-cell {
+  align-content: center;
+}
+
 /* K8s resource counts share the approved Pods supporting-text hierarchy. */
 .soha-kubernetes-resource-count {
   color: var(--soha-text-secondary);
