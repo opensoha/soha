@@ -4,12 +4,20 @@ import {
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
-  ManagementDensityButton,
-  ManagementRefreshButton,
+  ManagementQueryField,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { StatusTag } from '@/components/status-tag'
+import { ReadFeedback } from '@/components/request-feedback'
+import { TableCellLink } from '@/components/table-cell-content'
+import { podQueries } from '../workloads/pods/queries'
+import {
+  WorkloadQueryPanel,
+  WorkloadSearchInput,
+  useWorkloadTableDensity,
+} from '../workloads/shared/list-controls'
+import { WorkloadRefresh, useWorkloadRefresh } from '../workloads/shared/workload-refresh'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
 import { parseStringMap, stringifyMap } from '@/features/platform/node-resource-utils'
@@ -22,6 +30,7 @@ import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { tableColumnPresets } from '@/utils/table-columns'
+import { formatAgeSeconds } from '@/utils/time'
 import {
   ApartmentOutlined,
   DeleteOutlined,
@@ -31,27 +40,78 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Form, Input, Modal } from 'antd'
+import { Button, Form, Input, Modal, Select, Tooltip, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { namespaceMutations } from './mutations'
 import { namespaceQueries } from './queries'
 import { toClusterScope } from './scope'
 import type { ClusterNamespace } from './types'
+import { filterNamespaces, namespaceRows, type NamespaceListRow } from './namespace-list-model'
+import { NamespaceLabelsCell } from './namespace-labels-cell'
+import './namespaces-list.css'
 
 export function ClusterNamespacesPage() {
   const { t, localeCode } = useI18n()
+  const zh = localeCode === 'zh_CN'
+  const nameCollator = useMemo(
+    () => new Intl.Collator(zh ? 'zh-CN' : 'en-US', { numeric: true, sensitivity: 'base' }),
+    [zh],
+  )
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { clusterId, setNamespace } = usePlatformScopeStore()
   const scope = toClusterScope(clusterId)
   const [editingNamespace, setEditingNamespace] = useState<ClusterNamespace | null>(null)
   const [namespaceModalVisible, setNamespaceModalVisible] = useState(false)
-  const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
-  const namespacesQuery = useQuery(namespaceQueries.list(scope))
+  const [keyword, setKeyword] = useState('')
+  const [status, setStatus] = useState('')
+  const { tableSize, densityButton } = useWorkloadTableDensity(localeCode)
+  const refresh = useWorkloadRefresh()
+  const namespacesQuery = useQuery({
+    ...namespaceQueries.list(scope),
+    refetchInterval: refresh.interval,
+  })
   const visibleNamespacesQueryData = readableQueryData(namespacesQuery)
   const permissionSnapshot = usePermissionSnapshot().data?.data
   const canCreate = hasPermission(permissionSnapshot, 'platform.namespaces.create')
+  const canReadPods =
+    Boolean(clusterId) &&
+    hasPermission(permissionSnapshot, 'platform.namespaces.view') &&
+    hasPermission(permissionSnapshot, 'platform.pods.view')
+  const podsQuery = useQuery({
+    ...podQueries.list({ clusterId, namespace: null }),
+    enabled: canReadPods,
+    refetchInterval: refresh.interval,
+  })
+  const visiblePods = canReadPods && !podsQuery.isError ? readableQueryData(podsQuery) : undefined
+  const rows = useMemo(
+    () => namespaceRows(visibleNamespacesQueryData ?? [], visiblePods),
+    [visibleNamespacesQueryData, visiblePods],
+  )
+  const filteredRows = useMemo(
+    () => filterNamespaces(rows, keyword, status),
+    [rows, keyword, status],
+  )
+  const openNamespace = (name: string, path = '/workloads/overview') => {
+    if (!clusterId) return
+    setNamespace(name)
+    navigate({
+      pathname: path,
+      search: new URLSearchParams({ clusterId, namespace: name }).toString(),
+    })
+  }
+  const statsHint = !canReadPods
+    ? zh
+      ? '需要命名空间与 Pod 查看权限'
+      : 'Namespace and Pod view permissions are required'
+    : podsQuery.isError
+      ? zh
+        ? 'Pod 统计未获取到，请重试刷新'
+        : 'Pod counts unavailable; retry refresh'
+      : zh
+        ? '当前权限可见的 Pods，包含已完成的 Pods'
+        : 'Pods visible to your permissions, including completed Pods'
   const createNamespaceMutation = usePlatformMutation(namespaceMutations.create(queryClient), {
     label: ['创建命名空间', 'Create namespace'],
     target: (v) => platformResourceTarget({ scope: v.scope, name: v.input.name }),
@@ -80,6 +140,7 @@ export function ClusterNamespacesPage() {
       namespaceCount: visibleNamespacesQueryData?.length ?? 0,
       editingNamespace: editingNamespace?.name,
     },
+    visibleFilters: { keyword: keyword || undefined, status: status || undefined },
   })
 
   const closeModal = () => {
@@ -100,6 +161,10 @@ export function ClusterNamespacesPage() {
     setNamespaceModalVisible(false)
     setEditingNamespace(null)
   }, [clusterId])
+  useEffect(() => {
+    setKeyword('')
+    setStatus('')
+  }, [clusterId])
   const resourceActions = useKubernetesResourceActions<ClusterNamespace>({
     resourceKey: 'namespaces',
     resourceLabel: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
@@ -113,8 +178,7 @@ export function ClusterNamespacesPage() {
         label: localeCode === 'zh_CN' ? '查看资源' : 'View resources',
         icon: <SendOutlined />,
         run: () => {
-          setNamespace(record.name)
-          navigate('/workloads/overview')
+          openNamespace(record.name)
         },
       },
       {
@@ -122,8 +186,7 @@ export function ClusterNamespacesPage() {
         label: 'Helm',
         icon: <ApartmentOutlined />,
         run: () => {
-          setNamespace(record.name)
-          navigate('/helm/releases')
+          openNamespace(record.name, '/helm/releases')
         },
       },
       ...(hasAllowedAction(record.allowedActions, 'update')
@@ -168,32 +231,97 @@ export function ClusterNamespacesPage() {
     ],
   })
 
-  const columns: TableColumnsType<ClusterNamespace> = [
-    { title: '名称', dataIndex: 'name' },
+  const columns: TableColumnsType<NamespaceListRow> = [
+    {
+      title: zh ? '名称' : 'Name',
+      dataIndex: 'name',
+      defaultSortOrder: 'ascend',
+      sorter: (a, b) => nameCollator.compare(a.name, b.name),
+      render: (name: string) => <TableCellLink label={name} onClick={() => openNamespace(name)} />,
+    },
     {
       ...tableColumnPresets.status,
-      title: '状态',
+      title: zh ? '状态' : 'Status',
       dataIndex: 'status',
       render: (status: string) => <StatusTag value={status} />,
     },
     {
-      title: '标签',
+      title: zh ? '可见 Pods' : 'Visible Pods',
+      onHeaderCell: () => ({ title: statsHint }),
+      dataIndex: 'podCount',
+      width: 112,
+      render: (count: number | undefined, record) =>
+        count === undefined ? (
+          <Tooltip title={statsHint}>
+            <span>—</span>
+          </Tooltip>
+        ) : (
+          <TableCellLink
+            label={String(count)}
+            onClick={() => openNamespace(record.name, '/workloads/pods')}
+          />
+        ),
+    },
+    {
+      title: zh ? '待就绪 / 异常' : 'Not ready / abnormal',
+      onHeaderCell: () => ({
+        title: zh
+          ? '未就绪或异常的可见 Pods；已完成的 Pods 不计入'
+          : 'Visible Pods that are not ready or abnormal; completed Pods are excluded',
+      }),
+      dataIndex: 'attentionCount',
+      width: 136,
+      render: (count: number | undefined, record) => {
+        const unknown = record.unknownReadiness ?? 0
+        const label =
+          count === undefined || (unknown > 0 && count === 0)
+            ? '—'
+            : `${unknown ? '≥ ' : ''}${count}`
+        return (
+          <Tooltip
+            title={
+              count === undefined
+                ? statsHint
+                : unknown
+                  ? zh
+                    ? `${unknown} 个 Pod 缺少就绪信息，仅统计已知异常`
+                    : `${unknown} Pods have unknown readiness; only known issues are counted`
+                  : zh
+                    ? 'Pending、Failed、Unknown 或容器未就绪；已完成不计入'
+                    : 'Pending, Failed, Unknown or containers not ready; completed Pods excluded'
+            }
+          >
+            <Typography.Text type={count ? 'warning' : undefined}>{label}</Typography.Text>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      title: zh ? '创建时长' : 'Age',
+      dataIndex: 'ageSeconds',
+      width: 112,
+      render: (age: number | undefined) =>
+        typeof age === 'number' && Number.isFinite(age) && age >= 0 ? formatAgeSeconds(age) : '—',
+    },
+    {
+      title: zh ? '标签' : 'Labels',
       dataIndex: 'labels',
-      render: (labels: Record<string, string>) =>
-        labels
-          ? Object.entries(labels)
-              .slice(0, 3)
-              .map(([key, value]) => <MetadataTag key={key} label={`${key}=${value}`} />)
-          : '-',
+      width: 320,
+      render: (labels: Record<string, string>) => <NamespaceLabelsCell labels={labels} zh={zh} />,
     },
   ]
 
   return (
-    <div className="soha-page">
+    <div className="soha-page soha-namespaces-list">
       {createNamespaceMutation.feedback}
       {updateNamespaceMutation.feedback}
       {resourceActions.confirmation}
       {!resourceActions.isConfirming && deleteNamespaceMutation.feedback}
+      <ReadFeedback
+        query={{ ...podsQuery, data: undefined }}
+        label={zh ? 'Pod 统计' : 'Pod counts'}
+        canRead={canReadPods}
+      />
 
       {!clusterId ? (
         <ManagementState
@@ -202,62 +330,92 @@ export function ClusterNamespacesPage() {
           title={t('common.pleaseSelectClusterShort', 'Select a cluster')}
         />
       ) : (
-        <KubernetesResourceTable
-          resourceKey={'namespaces'}
-          resourceLabel={'Namespaces'}
-          allRows={visibleNamespacesQueryData ?? []}
-          filterKey={''}
-          scopeMode={'cluster'}
-          error={namespacesQuery.isEnabled === false ? null : namespacesQuery.error}
-          hasReadData={namespacesQuery.data !== undefined}
-          onRetry={
-            namespacesQuery.isEnabled === false ? undefined : () => namespacesQuery.refetch()
-          }
-          columnSettingIconOnly
-          columnSettingPlacement="header"
-          shellClassName="soha-management-table-shell"
-          columns={[...columns, resourceActions.column]}
-          dataSource={visibleNamespacesQueryData ?? []}
-          rowKey="name"
-          loading={namespacesQuery.isLoading || namespacesQuery.isFetching}
-          localSorting
-          tableSize={tableSize}
-          scroll={{ x: 'max-content' }}
-          headerExtra={
-            <ManagementTableToolbar>
-              {canCreate ? (
-                <Button
-                  autoInsertSpace={false}
-                  disabled={platformWriteBlocked}
-                  icon={<PlusOutlined />}
-                  size="small"
-                  type="primary"
-                  onClick={() => {
-                    setEditingNamespace(null)
-                    setNamespaceModalVisible(true)
-                  }}
-                >
-                  {t('common.create', 'Create')}
-                </Button>
-              ) : null}
-              <ManagementDensityButton
-                aria-label={t('common.tableDensity', '切换表格密度')}
-                title={t('common.tableDensity', '切换表格密度')}
-                tooltip={t('common.tableDensity', '切换表格密度')}
-                onClick={() =>
-                  setTableSize((current) => (current === 'small' ? 'middle' : 'small'))
-                }
+        <>
+          <WorkloadQueryPanel
+            localeCode={localeCode}
+            hasActiveFilters={Boolean(keyword || status)}
+            onReset={() => {
+              setKeyword('')
+              setStatus('')
+            }}
+          >
+            <WorkloadSearchInput
+              label={zh ? '关键词' : 'Keyword'}
+              placeholder={zh ? '搜索命名空间 / 标签' : 'Search namespace / label'}
+              value={keyword}
+              onChange={setKeyword}
+              width={280}
+            />
+            <ManagementQueryField label={zh ? '状态' : 'Status'} width={200}>
+              <Select
+                aria-label={zh ? '命名空间状态' : 'Namespace status'}
+                size="small"
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: '', label: zh ? '全部状态' : 'All statuses' },
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Terminating', label: 'Terminating' },
+                ]}
               />
-              <ManagementRefreshButton
-                aria-label={t('common.refresh', '刷新')}
-                loading={namespacesQuery.isFetching}
-                title={t('common.refresh', '刷新')}
-                tooltip={t('common.refresh', '刷新')}
-                onClick={() => void namespacesQuery.refetch()}
-              />
-            </ManagementTableToolbar>
-          }
-        />
+            </ManagementQueryField>
+          </WorkloadQueryPanel>
+          <KubernetesResourceTable
+            resourceKey={'namespaces'}
+            resourceLabel={'Namespaces'}
+            allRows={rows}
+            filterKey={`${keyword}\u0000${status}`}
+            scopeMode={'cluster'}
+            error={namespacesQuery.isEnabled === false ? null : namespacesQuery.error}
+            hasReadData={namespacesQuery.data !== undefined}
+            onRetry={
+              namespacesQuery.isEnabled === false ? undefined : () => namespacesQuery.refetch()
+            }
+            columnSettingIconOnly
+            columnSettingPlacement="header"
+            shellClassName="soha-management-table-shell"
+            columns={[...columns, resourceActions.column]}
+            dataSource={filteredRows}
+            rowKey="name"
+            loading={namespacesQuery.isLoading}
+            localSorting
+            tableSize={tableSize}
+            scroll={{ x: 'max-content' }}
+            headerExtra={
+              <ManagementTableToolbar>
+                {canCreate ? (
+                  <Button
+                    autoInsertSpace={false}
+                    disabled={platformWriteBlocked}
+                    icon={<PlusOutlined />}
+                    size="small"
+                    type="primary"
+                    onClick={() => {
+                      setEditingNamespace(null)
+                      setNamespaceModalVisible(true)
+                    }}
+                  >
+                    {t('common.create', 'Create')}
+                  </Button>
+                ) : null}
+                {densityButton}
+                <WorkloadRefresh
+                  settings={refresh}
+                  queries={[namespacesQuery, podsQuery]}
+                  resourceLabel={zh ? '命名空间' : 'Namespaces'}
+                  label={t('common.refresh', '刷新')}
+                  compact
+                  onRefresh={() =>
+                    Promise.all([
+                      namespacesQuery.refetch(),
+                      ...(canReadPods ? [podsQuery.refetch()] : []),
+                    ])
+                  }
+                />
+              </ManagementTableToolbar>
+            }
+          />
+        </>
       )}
 
       <Modal

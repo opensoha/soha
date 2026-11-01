@@ -85,6 +85,7 @@ export interface ClusterNodeDetail extends ClusterNode {
 export interface ClusterNamespace {
   name: string
   status: string
+  ageSeconds?: number
   labels: Record<string, string>
   annotations?: Record<string, string>
   allowedActions?: string[]

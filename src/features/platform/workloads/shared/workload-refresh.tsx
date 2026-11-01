@@ -86,7 +86,11 @@ export function WorkloadRefresh({
     : `${stateLabel} · ${toggle}`
   return (
     <span className={`soha-workload-refresh${beforeRefresh ? ' has-actions' : ''}`}>
-      <Tooltip title={hint} trigger={['hover', 'focus']}>
+      <Tooltip
+        title={hint}
+        trigger={['hover', 'focus']}
+        styles={{ root: { pointerEvents: 'none' } }}
+      >
         <Button
           type="text"
           size="small"
@@ -102,7 +106,10 @@ export function WorkloadRefresh({
         </Button>
       </Tooltip>
       {beforeRefresh}
-      <Tooltip title={label ?? (zh ? `刷新 ${resourceLabel}` : `Refresh ${resourceLabel}`)}>
+      <Tooltip
+        title={label ?? (zh ? `刷新 ${resourceLabel}` : `Refresh ${resourceLabel}`)}
+        styles={{ root: { pointerEvents: 'none' } }}
+      >
         <Button
           type={compact ? 'text' : 'default'}
           size={compact ? 'small' : undefined}

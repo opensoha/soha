@@ -92,7 +92,8 @@ vi.mock('@/components/admin-table', () => ({
     </div>
   ),
 }))
-vi.mock('@/components/management-list', () => ({
+vi.mock('@/components/management-list', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/management-list')>()),
   ManagementDensityButton: ({
     'aria-label': ariaLabel,
     onClick,
