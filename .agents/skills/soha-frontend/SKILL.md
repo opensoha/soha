@@ -95,14 +95,26 @@ description: Implement or review soha-web React and Ant Design UI, shared tables
 
 ## Verification
 
-- Run targeted tests and lint; after antd changes, run
+- The implementer runs the smallest effective self-check: affected tests where behavior needs
+  proof, scoped lint/format checks and necessary page inspection. Copy or local styling does not
+  automatically require new tests, a full Vitest run, E2E, build or independent audit.
+  Use [testing entry points](../../../docs/testing.md) for scoped commands and resource constraints.
+  After antd changes, run
   `antd lint <changed-path> --format json` (one path per invocation).
-- Verify actual visual changes against soha-design, including themes, viewports,
-  long values, zoom, keyboard/IME, data/console truthfulness and error/permission states.
+- Verify actual visual changes against soha-design using the themes, viewports, long values,
+  zoom, keyboard/IME and error/permission states affected by the change; new or redesigned pages
+  cover their applicable state/interaction matrix. Preserve data/console truthfulness.
   Test/build success does not establish visual acceptance; report unavailable checks explicitly.
-- `package.json` and `.github/workflows/*.yml` are the executable gate source. Code completion
-  includes lint, tests, and build; broad changes also require coverage and relevant route,
-  boundary, and bundle gates from the architecture reference.
+- Independent tests and review happen at an agreed batch boundary, formal commit/integration
+  preparation or explicit request, not after every development subtask or preview. Complex
+  behavior needs success/failure/boundary scenarios before or early in implementation; use a
+  suitable test-design role when helpful. Parallel developers need disjoint file ownership;
+  parallel tests also need isolated runtime resources and stable acceptance inputs.
+- `package.json` and `.github/workflows/*.yml` remain the executable gate source. Select lint,
+  tests and build by impact and the required stage; a commit does not itself require full regression.
+  Route, shared-boundary, dependency, architecture and release changes retain their applicable full
+  gates, including coverage, route, boundary and bundle checks. Reuse unchanged evidence and rerun
+  only affected checks after fixes unless a specific risk or mandatory gate requires more.
 - Documentation-only changes require metadata, link, source-agreement, and diff checks, not
   application builds. Report failing gates separately from completed work; do not suppress type
   errors or change contracts/dependencies to finish an unrelated UI task.

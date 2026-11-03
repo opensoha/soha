@@ -17,7 +17,10 @@ Identify the task, object, important state, main action and supporting facts bef
 controls. Keep Ant Design and reuse mature capabilities while preserving API, permissions,
 query and professional engine lifecycle. The current task determines scope; no fixed pilot pages.
 
-Validate actual light/dark pages, long values, narrow views, loading/empty/error/permission
-states, mouse and keyboard separately. Use soha-web-testing for executable evidence. Produce
+Validate the actual themes, viewports, long values, states and interaction paths affected by the
+change. New or redesigned pages cover applicable light/dark, narrow views,
+loading/empty/error/permission states, and mouse/keyboard paths separately; local copy or style
+adjustments do not automatically rerun the entire matrix. Use soha-web-testing when executable
+browser acceptance is needed, not as an automatic full-E2E step for every visual adjustment. Produce
 candidate screenshots when approval is missing; never update accepted baselines or sign user
 approval to make a check green. Report design gaps separately from compilation and test results.
