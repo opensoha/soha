@@ -1,4 +1,8 @@
 import { defineConfig } from '@playwright/test'
+import { join } from 'node:path'
+import { runContext } from './scripts/e2e-run-context.mjs'
+
+const run = runContext()
 
 export default defineConfig({
   testDir: './e2e',
@@ -9,15 +13,13 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   timeout: 30_000,
-  reporter: [
-    ['list'],
-    ['./e2e/fixtures/result-reporter.ts'],
-    ['json', { outputFile: 'test-results/playwright.json' }],
-  ],
-  outputDir: 'test-results/browser',
+  reporter: run.listOnly
+    ? [['list']]
+    : [['list'], ['./e2e/fixtures/result-reporter.ts'], ['json', { outputFile: run.jsonReport }]],
+  outputDir: join(run.root, 'browser'),
   use: {
     browserName: 'chromium',
-    baseURL: 'http://127.0.0.1:4179',
+    baseURL: run.baseURL,
     viewport: { width: 1440, height: 1000 },
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
@@ -25,9 +27,6 @@ export default defineConfig({
     trace: 'off',
     screenshot: 'only-on-failure',
   },
-  webServer: {
-    command: 'npm run preview -- --host 127.0.0.1 --port 4179 --strictPort',
-    url: 'http://127.0.0.1:4179',
-    reuseExistingServer: false,
-  },
+  // The managed entry owns preview directly, including its IPC readiness and shutdown.
+  // It never probes/reuses someone else's HTTP server; Vite still enforces strictPort.
 })

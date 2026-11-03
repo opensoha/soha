@@ -6,6 +6,7 @@ import {
   type Request,
 } from '@playwright/test'
 import { baselineResponse } from './baseline-data'
+import { runContext } from '../../scripts/e2e-run-context.mjs'
 
 export type BrowserEvidence = {
   fatal: string[]
@@ -35,7 +36,7 @@ export async function installMocks(context: BrowserContext, page: Page, resolve?
   await context.route('**/*', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
-    if (url.origin !== 'http://127.0.0.1:4179') {
+    if (url.origin !== runContext().baseURL) {
       evidence.missing.push('external origin blocked')
       return route.abort('blockedbyclient')
     }
@@ -70,7 +71,7 @@ export function verifyBrowserEvidence(evidence: BrowserEvidence) {
 }
 
 export async function verifyPage(page: Page, route: string, texts: string[]) {
-  await expect(page).toHaveURL(`http://127.0.0.1:4179${route}`)
+  await expect(page).toHaveURL(new URL(route, runContext().baseURL).href)
   await expect(page.locator('#root > *').first(), 'React root rendered').toBeVisible()
   for (const text of texts) await expect(page.locator('body')).toContainText(text)
 }

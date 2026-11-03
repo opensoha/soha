@@ -1,10 +1,13 @@
 import { spawn } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { aiPreflight } from './quality-guards.mjs'
 import { createModelProxy } from './model-proxy.mjs'
 import { randomUUID } from 'node:crypto'
+import { isolatedRuntimeEnv, runContext, runIdentity } from './e2e-run-context.mjs'
 
-mkdirSync('test-results', { recursive: true })
+const run = runContext()
+if (!run.executionId || process.env.SOHA_E2E_MANAGED_RUN !== run.executionId)
+  throw new Error('BLOCKED: use npm run test:e2e:ai to acquire run resources')
 let result = { result: 'NOT_RUN' }
 let proxy
 let timer
@@ -22,11 +25,7 @@ try {
       capability,
     )
     await new Promise((resolve) => proxy.server.listen(0, '127.0.0.1', resolve))
-    const env = Object.fromEntries(
-      ['PATH', 'TMPDIR', 'USERPROFILE', 'LOCALAPPDATA', 'SystemRoot', 'CI']
-        .filter((key) => process.env[key])
-        .map((key) => [key, process.env[key]]),
-    )
+    const env = isolatedRuntimeEnv(process.env)
     // Only this fixed endpoint/key reaches the SDK. Real credentials remain in the proxy.
     Object.assign(env, {
       MIDSCENE_MODEL_BASE_URL: `http://127.0.0.1:${proxy.server.address().port}/v1`,
@@ -36,10 +35,21 @@ try {
       MIDSCENE_MODEL_NAME: process.env.MIDSCENE_MODEL_NAME,
       MIDSCENE_MODEL_FAMILY: process.env.MIDSCENE_MODEL_FAMILY,
       SOHA_TEST_MODE: 'ai-ui-mock',
+      SOHA_E2E_EXECUTION_ID: run.executionId,
+      SOHA_E2E_MANAGED_RUN: run.executionId,
+      SOHA_E2E_PORT: String(run.port),
+      MIDSCENE_RUN_DIR: run.midscene,
     })
+    if (run.taskId) env.SOHA_E2E_TASK_ID = run.taskId
     const child = spawn(
       process.execPath,
-      ['node_modules/@playwright/test/cli.js', 'test', '--config', 'playwright.ai.config.ts'],
+      [
+        'node_modules/@playwright/test/cli.js',
+        'test',
+        '--config',
+        'playwright.ai.config.ts',
+        ...process.argv.slice(2),
+      ],
       { env, stdio: 'inherit' },
     )
     timer = setTimeout(() => child.kill('SIGTERM'), 930_000)
@@ -48,8 +58,15 @@ try {
       child.once('exit', resolve)
     })
     clearTimeout(timer)
+    const manifest = JSON.parse(readFileSync(run.manifest, 'utf8'))
     result = {
-      result: code === 0 && proxy.summary().rejected === 0 ? 'PASS' : 'FAIL',
+      result:
+        code === 0 &&
+        proxy.summary().rejected === 0 &&
+        manifest.executionId === run.executionId &&
+        manifest.result === 'PASS'
+          ? 'PASS'
+          : 'FAIL',
       ...proxy.summary(),
       approvalId: process.env.SOHA_AI_APPROVAL_ID,
     }
@@ -64,6 +81,13 @@ try {
     proxy.server.closeAllConnections()
     await new Promise((resolve) => proxy.server.close(resolve))
   }
-  writeFileSync('test-results/ai-run.json', JSON.stringify(result, null, 2))
+  result = { ...runIdentity(run), ...result }
+  writeFileSync(run.aiReport, JSON.stringify(result, null, 2), { mode: 0o600 })
+  if (result.result === 'NOT_RUN' || result.result === 'BLOCKED')
+    writeFileSync(
+      run.manifest,
+      JSON.stringify({ ...result, mode: 'ai-ui-mock', tests: [] }, null, 2),
+      { mode: 0o600 },
+    )
   console.log(JSON.stringify(result))
 }

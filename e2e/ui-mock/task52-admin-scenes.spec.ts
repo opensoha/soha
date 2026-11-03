@@ -614,7 +614,7 @@ test('plugin type scope displays all initially and after reset, and submits the 
   await expect(page.getByRole('heading', { name: plugin.name, level: 2 })).toBeVisible()
   expect(
     evidence.requests.some(
-      (path) => new URL(path, 'http://127.0.0.1:4179').searchParams.get('type') === 'skill',
+      (path) => new URL(path, test.info().project.use.baseURL).searchParams.get('type') === 'skill',
     ),
   ).toBe(true)
   await page.getByRole('button', { name: /重\s*置/ }).click()
@@ -647,7 +647,8 @@ test('plugin marketplace preserves query, local pagination, installation filters
   await expect(page.getByText('5 个插件', { exact: true })).toBeVisible()
   expect(
     evidence.requests.some(
-      (path) => new URL(path, 'http://127.0.0.1:4179').searchParams.get('q') === `${plugin.name} 1`,
+      (path) =>
+        new URL(path, test.info().project.use.baseURL).searchParams.get('q') === `${plugin.name} 1`,
     ),
   ).toBe(true)
   await page.getByRole('button', { name: /重\s*置/ }).click()

@@ -205,7 +205,7 @@ for (const width of [1440, 390])
         body: events.map((event) => 'data: ' + JSON.stringify(event) + '\n\n').join(''),
       })
     })
-    await page.goto('http://127.0.0.1:4179/heya')
+    await page.goto('/heya')
     const composer = page.getByPlaceholder('消息')
     await expect(composer).toBeVisible()
     if (width < 992) await page.getByRole('button', { name: '我的', exact: true }).click()
@@ -271,7 +271,7 @@ for (const width of [1440, 390])
       avatar.avatarUrl,
     )
     await page.screenshot({
-      path: '.tmp/quality/assistant-chat-appearance-' + width + '.png',
+      path: test.info().outputPath('assistant-chat-appearance-' + width + '.png'),
       fullPage: true,
     })
     await verifyBrowserEvidence(evidence)

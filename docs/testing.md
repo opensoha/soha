@@ -27,15 +27,51 @@ Vitest 排除 `e2e/**`，普通 Playwright 只收集 `ui-mock/` 与 `visual/`，
 主代理在现有计划/对话指定受测提交/快照/产物、目标、资源身份、读写/独占方式与准备/清理责任人。
 测试和只读审查可使用同一稳定候选，验收期间不修改其源码、依赖或产物；后续开发隔离或错开时段。
 
-当前普通/AI 配置固定使用 `127.0.0.1:4179`、strictPort 且不复用现有 server；同一 checkout 的
-普通/AI 还共用报告路径，real/AI/普通 reporter 共用 `test-results/run-manifest.json`。
-因此相关运行安排独占时段：独立 browser context、`workers: 1`、仅传 `--output` 或另建 worktree
-都不足以同时解决全部冲突。端口、所有报告/manifest、数据和会话均已隔离时才可并行；当前不假设
-存在端口或 manifest 的环境覆盖参数，也不为一次测试搭建另一套基础设施。运行前核对占用，
-不抢占端口、杀他人服务或覆盖认证状态；保留共享工具缓存和现有验证锁。
+所有 npm 浏览器入口经 `scripts/run-e2e.mjs`，在 Playwright 加载配置和清理输出前取得资源。
+设置 `SOHA_E2E_TASK_ID` 后，每次自动生成 `SOHA_E2E_EXECUTION_ID`，普通/AI 自动分配 loopback
+端口；也可显式指定 `SOHA_E2E_PORT`（1024–65535）。显式端口被占用即失败，strictPort 和禁止
+复用已有 server 保留。任务/执行 ID 只能为1–64位字母数字、下划线或连字符，首位为字母数字。
+
+在 Web checkout 中运行单项定向任务：
+
+```sh
+rtk proxy env SOHA_E2E_TASK_ID=task-a opensoha-verify run -- \
+  npm run test:e2e -- e2e/ui-mock/baseline.spec.ts
+```
+
+本机容量锁仍串行管理独立验证调用。需要同时运行多个任务时，由主代理在一个验证批次内调度，
+最多同时运行两个浏览器进程，其余排队；不绕过容量锁或给每个任务复制工具缓存：
+
+```sh
+rtk proxy opensoha-verify run -- npm run test:e2e:parallel -- \
+  task-a=e2e/ui-mock/baseline.spec.ts task-b=e2e/ui-mock/crd.spec.ts
+```
+
+报告根为 `test-results/tasks/<taskId>/<executionId>/`，manifest、JSON、附件/截图、AI摘要和
+Midscene 报告均归本次执行；目录已存在时拒绝复用。需要调用方定位报告时，可提供新的执行 ID，
+不得重用旧证据目录。`--list` 只列用例，不创建/改写报告或取得端口。配置、reporter 与输出由入口
+统一管理，不接受低层 `--config/--reporter/--output` 覆盖；直接运行 Playwright 不能代替此入口。
+未设置任务 ID 时保留旧4179端口与报告路径，但同一 checkout 使用独占锁，仅供串行兼容。
+
+mock 数据和 localStorage/会话在每测试独立 context/fixture 内，合成资源可同名；严格出站检查只
+允许本次 origin，另一任务的 localhost 端口也不放行。真实测试必须提供各自批准的独立环境、账号
+及数据；按真实 runId/容器身份互斥，指向同环境的不同 target 文件不能并行。direct/Agent 可能共用
+底层集群，CRD为集群级资源，不以 namespace 或 clusterId 不同冒充数据隔离；它们保留 workers=1、
+retries=0 和已有顺序。Core quality-lab 每次传入独立任务/执行 ID 并只读取自己的报告。
+
+构建 `dist` 在整个批次中保持不变；不同源码版本使用隔离 checkout，先构建再验收，不在测试中重建
+共享产物。报告分别记录测试源码证据及 index/Vite manifest 摘要；摘要只标识实际产物，不证明它由
+当前 checkout 构建。构建失败时复用已有产物，只能证明明确限定的测试基础设施行为，不能代替页面
+变更验收。运行前核对资源占用，不抢端口、覆盖会话或杀他人服务。SIGINT/SIGTERM 只停止本轮子进程并释放自己的资源占用，报告保留；异常退出留下的
+锁不自动抢占。锁位于系统临时目录的 `soha-e2e-<uid>/`，失败提示给出准确 owner 路径；确认该 PID
+及其子进程均已结束、身份属于本次后才按准确路径恢复，禁止按名称前缀批量删锁或杀进程。
 
 仅清理本轮创建且已无人使用的准确资源；中断、清理失败或仍被使用时交回资源身份与责任。
 环境或输入变化只使受影响证据失效，修复后复验相关项；不因测试代理数量增加而重复同一套验收。
+
+修改并行入口本身时，可定向运行 `node scripts/check-e2e-parallel.mjs`（双进程隔离）和
+`node scripts/check-e2e-lifecycle.mjs`（零用例、退出及占用回收）；两者同样放在
+`opensoha-verify run --` 下执行。普通页面小改动只选择相关 spec，不附带运行这两套基础设施检查。
 
 ## 浏览器覆盖与证据范围
 
@@ -94,9 +130,10 @@ mock fixture 限制到本地 origin。两个场景只操作合成页面（只读
 
 ## 证据与 CI
 
-`test-results/run-manifest.json` 记录来源 commit/dirty digest、模式、测试结果，
+本次报告目录的 `run-manifest.json` 记录 taskId/executionId、来源 commit/dirty digest、模式、测试结果，
 `playwright.json` 和失败截图仅保存合成数据。真实模式关闭截图/trace；不输出token/请求正文。
-`test-results/`、`.auth/`、`midscene_run/` 被忽略；原始 AI/认证/trace/HAR 不上传公共artifact。
+`test-results/`、`.auth/`、旧 `midscene_run/` 被忽略；新 Midscene 输出位于本次私有报告根，
+原始 AI/认证/trace/HAR 不上传公共artifact。
 本地报告按7天保留约定人工清理，不能当正式设计基线。CI只上传原有构建manifest。
 
 真实环境可由 Core 的 [quality-lab 入口](../../soha/docs/testing.md) 准备，并由该脚本从私有文件

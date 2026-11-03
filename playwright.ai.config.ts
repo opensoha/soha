@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test'
 import basic from './playwright.config'
+import { join } from 'node:path'
+import { runContext } from './scripts/e2e-run-context.mjs'
 
 export default defineConfig({
   ...basic,
@@ -10,5 +12,5 @@ export default defineConfig({
   globalTimeout: 900_000,
   workers: 1,
   retries: 0,
-  outputDir: 'test-results/ai-browser',
+  outputDir: join(runContext().root, 'ai-browser'),
 })

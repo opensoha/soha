@@ -463,7 +463,10 @@ for (const theme of ['light', 'dark'])
       expect(ringBox.y + ringBox.height).toBeLessThanOrEqual(senderBox.y + senderBox.height)
       if (width <= 390) expect(ringBox.width).toBeGreaterThanOrEqual(44)
       if (theme === 'light' && [1440, 390].includes(width)) {
-        await page.screenshot({ path: `.tmp/quality/composer-ring-${width}.png`, fullPage: true })
+        await page.screenshot({
+          path: test.info().outputPath(`composer-ring-${width}.png`),
+          fullPage: true,
+        })
       }
       await contextEntry.click()
       const contextPopover = page.locator('.soha-ai-workbench__context-popover:visible')
@@ -482,7 +485,10 @@ for (const theme of ['light', 'dark'])
       await expect(contextPopover).not.toContainText('50K')
       await verifyMenuGeometry(page, contextPopover)
       if (theme === 'light' && [1440, 390].includes(width)) {
-        await page.screenshot({ path: `.tmp/quality/context-usage-${width}.png`, fullPage: true })
+        await page.screenshot({
+          path: test.info().outputPath(`context-usage-${width}.png`),
+          fullPage: true,
+        })
       }
       await contextPopover.getByRole('tab', { name: '最近实际使用' }).press('Escape')
       await expect(contextPopover).toBeHidden()
@@ -518,7 +524,10 @@ for (const theme of ['light', 'dark'])
       await verifyGeometry(page, contextTools)
       await verifyGeometry(page, attachment)
       if (theme === 'light' && width === 1440)
-        await page.screenshot({ path: '.tmp/quality/composer-context-desktop.png', fullPage: true })
+        await page.screenshot({
+          path: test.info().outputPath('composer-context-desktop.png'),
+          fullPage: true,
+        })
       await attachment.getByRole('button', { name: '关闭', exact: true }).click()
       await expect(attachment).toHaveCount(0)
       await expect(composer).toHaveValue('背景选择不改变草稿')
@@ -539,7 +548,10 @@ for (const theme of ['light', 'dark'])
         ).toBeVisible()
       }
       if (theme === 'light' && width === 1440)
-        await page.screenshot({ path: '.tmp/quality/analysis-task-desktop.png', fullPage: true })
+        await page.screenshot({
+          path: test.info().outputPath('analysis-task-desktop.png'),
+          fullPage: true,
+        })
       await page.keyboard.press('Escape')
       await analysis.getByRole('button', { name: /^取\s*消$/ }).click()
       await expect(analysis).toBeHidden()
@@ -593,7 +605,7 @@ for (const theme of ['light', 'dark'])
         if (width < 992) await page.getByRole('button', { name: '任务', exact: true }).click()
         if (theme === 'light' && [1440, 390].includes(width))
           await page.screenshot({
-            path: `.tmp/quality/assistant-profile-${width}.png`,
+            path: test.info().outputPath(`assistant-profile-${width}.png`),
             fullPage: true,
           })
         const feed = page.locator('.soha-ai-activity-feed')
@@ -632,7 +644,7 @@ for (const theme of ['light', 'dark'])
         await expect(detail.getByText(completedTask.input.question, { exact: true })).toBeHidden()
         if (theme === 'light' && [1440, 390].includes(width))
           await page.screenshot({
-            path: `.tmp/quality/assistant-detail-overview-${width}.png`,
+            path: test.info().outputPath(`assistant-detail-overview-${width}.png`),
             fullPage: true,
             animations: 'disabled',
           })
@@ -664,7 +676,7 @@ for (const theme of ['light', 'dark'])
         await verifyGeometry(page, detail)
         if (theme === 'light' && [1440, 390].includes(width))
           await page.screenshot({
-            path: `.tmp/quality/activity-detail-${width}.png`,
+            path: test.info().outputPath(`activity-detail-${width}.png`),
             fullPage: true,
             animations: 'disabled',
           })
@@ -696,7 +708,7 @@ for (const theme of ['light', 'dark'])
         await task.locator('strong').click()
         if (theme === 'light' && [1440, 390].includes(width))
           await page.screenshot({
-            path: `.tmp/quality/activity-minimal-${width}.png`,
+            path: test.info().outputPath(`activity-minimal-${width}.png`),
             fullPage: true,
             animations: 'disabled',
           })
@@ -881,7 +893,7 @@ for (const theme of ['light', 'dark'])
       await verifyGeometry(page, rename)
       if (theme === 'light' && width === 1440)
         await page.screenshot({
-          path: '.tmp/quality/session-classification-retired.png',
+          path: test.info().outputPath('session-classification-retired.png'),
           fullPage: true,
           animations: 'disabled',
         })

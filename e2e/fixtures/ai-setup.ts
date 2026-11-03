@@ -1,5 +1,6 @@
 import setup from './run-manifest'
 import { writeFileSync } from 'node:fs'
+import { runContext, runIdentity } from '../../scripts/e2e-run-context.mjs'
 
 export default function aiSetup() {
   setup()
@@ -11,8 +12,9 @@ export default function aiSetup() {
     !/^soha-proxy-[a-f0-9]{32}$/.test(process.env.MIDSCENE_MODEL_API_KEY || '')
   ) {
     writeFileSync(
-      'test-results/run-manifest.json',
+      runContext().manifest,
       JSON.stringify({
+        ...runIdentity(),
         mode: 'ai-ui-mock',
         result: 'BLOCKED',
         reason: 'Use the guarded run-ai entry; direct SDK endpoints are forbidden',

@@ -17,11 +17,12 @@ runs at an agreed batch boundary or explicit request. Select affected specs, not
 merely because a file changed or a commit is being prepared. Preserve actual CI/release gates.
 
 Before running, confirm the candidate source/artifact, target, data/session/port/output ownership
-and preparation/cleanup owner. Current ordinary/AI Playwright runs share fixed port 4179 and
-reports; real runs also share the manifest in the same checkout. Serialize conflicting runs;
-`workers: 1` or separate browser contexts do not isolate multiple processes. Do not change inputs
-under acceptance or overwrite another run's evidence. Follow the entry document for constraints;
-parallelize only with all conflicting resources isolated, using existing project mechanisms.
+and preparation/cleanup owner. Use the managed npm entry with a task ID for isolated ports and
+execution directories; use the documented parallel batch entry to share one local verification
+capacity lease without bypassing cache locks. Keep the candidate dist stable. Legacy unscoped
+runs remain serial; real targets sharing a run/container remain exclusive even across roles or
+cluster IDs. Mock data stays in per-test contexts and fixtures. Do not change inputs under
+acceptance or overwrite another run's evidence; follow the entry document for recovery limits.
 
 Use isolated browser contexts and synthetic data for mock tests. Unknown mocks fail. Real
 runs require exact versions, an approved disposable target identity and role; no fallback to mock.

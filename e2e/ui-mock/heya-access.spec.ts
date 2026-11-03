@@ -165,6 +165,9 @@ for (const width of [1440, 390])
           path.includes('/assistant/environment'),
       ),
     ).toBe(false)
-    await page.screenshot({ path: `test-results/heya-access-${width}.png`, fullPage: true })
+    await page.screenshot({
+      path: test.info().outputPath(`heya-access-${width}.png`),
+      fullPage: true,
+    })
     verifyBrowserEvidence(evidence)
   })

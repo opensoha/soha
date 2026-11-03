@@ -504,7 +504,7 @@ for (const [route, target, label] of [
   test(`Task52 final utility route: ${route}`, async ({ page, context }) => {
     const { evidence } = await mocks(context, page)
     await page.goto(route)
-    await expect(page).toHaveURL(`http://127.0.0.1:4179${target}`)
+    await expect(page).toHaveURL(new URL(target, test.info().project.use.baseURL).href)
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
     verifyBrowserEvidence(evidence)
   })

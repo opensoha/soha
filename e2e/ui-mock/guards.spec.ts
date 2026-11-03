@@ -24,3 +24,16 @@ test('blank render and forbidden origin cannot pass', async ({ page, context }) 
   expect(evidence.missing).toContain('external origin blocked')
   expect(() => verifyBrowserEvidence(evidence)).toThrow()
 })
+
+test('another localhost port is not part of this task origin', async ({ page, context }, info) => {
+  const evidence = await installMocks(context, page)
+  await page.goto('/clusters')
+  const other = new URL(info.project.use.baseURL!)
+  other.port = other.port === '65535' ? '65534' : String(Number(other.port) + 1)
+  await page.evaluate(
+    (origin) => fetch(`${origin}/must-not-egress`).catch(() => undefined),
+    other.origin,
+  )
+  expect(evidence.missing).toContain('external origin blocked')
+  expect(() => verifyBrowserEvidence(evidence)).toThrow()
+})

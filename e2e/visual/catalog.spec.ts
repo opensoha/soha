@@ -191,11 +191,13 @@ test('V03/M05/M06: controlled obstruction is detected without a model', async ({
 })
 
 test('M03: popup and native select keep browser semantics', async ({ page, context }) => {
-  await context.route('http://127.0.0.1:4179/synthetic-controls', (route) =>
-    route.fulfill({
-      contentType: 'text/html',
-      body: '<a target="_blank" href="/synthetic-controls?popup=1">Open new tab</a><select aria-label="Native selection"><option>A</option><option>B</option></select>',
-    }),
+  await context.route(
+    new URL('/synthetic-controls', test.info().project.use.baseURL).href,
+    (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<a target="_blank" href="/synthetic-controls?popup=1">Open new tab</a><select aria-label="Native selection"><option>A</option><option>B</option></select>',
+      }),
   )
   await page.goto('/synthetic-controls')
   const original = page.url()

@@ -125,7 +125,7 @@ for (const width of [1440, 390])
         body: `data: ${JSON.stringify({ id: 'done', type: 'message.done', sequence: 1, sessionId: 'main-chat', messageId: reply.id, role: 'assistant', content: reply.content, metadata: reply.metadata })}\n\ndata: ${JSON.stringify({ id: 'status', type: 'agent.status', sequence: 2, sessionId: 'main-chat', status: 'succeeded' })}\n\n`,
       })
     })
-    await page.goto('http://127.0.0.1:4179/ai-workbench/chat')
+    await page.goto('/ai-workbench/chat')
     const composer = page.getByPlaceholder('消息')
     await expect(composer).toBeVisible()
     await composer.fill('分析这张图片')
@@ -185,6 +185,9 @@ for (const width of [1440, 390])
     await expect(composer).toHaveValue('原草稿保持')
     await composer.press('Enter')
     expect(requests).toHaveLength(3)
-    await page.screenshot({ path: `.tmp/quality/chat-image-reaction-${width}.png`, fullPage: true })
+    await page.screenshot({
+      path: test.info().outputPath(`chat-image-reaction-${width}.png`),
+      fullPage: true,
+    })
     await verifyBrowserEvidence(evidence)
   })

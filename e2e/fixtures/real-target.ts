@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { validateTarget } from '../../scripts/quality-guards.mjs'
+import { runContext, runIdentity } from '../../scripts/e2e-run-context.mjs'
 
 export function loadTarget() {
   if (!process.env.SOHA_E2E_TARGET_FILE)
@@ -10,6 +11,11 @@ export function loadTarget() {
     execFileSync('docker', ['inspect', target.containerId], { encoding: 'utf8' }),
   )[0]
   validateTarget(target, inspected)
+  if (
+    target.runId !== process.env.SOHA_E2E_REAL_RUN_ID ||
+    target.containerId !== process.env.SOHA_E2E_REAL_CONTAINER_ID
+  )
+    throw new Error('BLOCKED: target changed after acquiring exclusive environment ownership')
   if (
     !['e2e-direct', 'e2e-agent'].includes(target.mode) ||
     !target.clusterId ||
@@ -24,14 +30,16 @@ export function loadTarget() {
 }
 
 export default function setup() {
-  mkdirSync('test-results', { recursive: true })
-  const path = 'test-results/run-manifest.json'
+  const run = runContext()
+  mkdirSync(run.root, { recursive: true })
+  const path = run.manifest
   try {
     const target = loadTarget()
     writeFileSync(
       path,
       JSON.stringify(
         {
+          ...runIdentity(run),
           runId: target.runId,
           mode: target.mode,
           sources: target.sources,
@@ -50,7 +58,12 @@ export default function setup() {
     writeFileSync(
       path,
       JSON.stringify(
-        { mode: 'e2e-real', result: 'BLOCKED', reason: (error as Error).message },
+        {
+          ...runIdentity(run),
+          mode: 'e2e-real',
+          result: 'BLOCKED',
+          reason: (error as Error).message,
+        },
         null,
         2,
       ),

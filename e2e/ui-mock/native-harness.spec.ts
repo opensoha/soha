@@ -206,7 +206,10 @@ for (const width of [1440, 390]) {
     await expect(start).toBeEnabled()
     await verifyGeometry(page, dialog)
     await verifyGeometry(page, start)
-    await page.screenshot({ path: `.tmp/quality/native-professional-${width}.png`, fullPage: true })
+    await page.screenshot({
+      path: test.info().outputPath(`native-professional-${width}.png`),
+      fullPage: true,
+    })
     await start.click()
     await expect
       .poll(() => requests[0]?.taskIntent)
@@ -486,7 +489,7 @@ for (const width of [1440, 390]) {
     await expect(page.getByRole('button', { name: '补充并继续', exact: true })).toBeEnabled()
     await verifyGeometry(page, input)
     await page.screenshot({
-      path: `.tmp/quality/native-harness-waiting-${width}.png`,
+      path: test.info().outputPath(`native-harness-waiting-${width}.png`),
       fullPage: true,
     })
     await page.getByRole('button', { name: '补充并继续', exact: true }).click()
@@ -512,7 +515,10 @@ for (const width of [1440, 390]) {
       )
       .toBe(true)
     await verifyGeometry(page, approval)
-    await page.screenshot({ path: `.tmp/quality/native-approval-${width}.png`, fullPage: true })
+    await page.screenshot({
+      path: test.info().outputPath(`native-approval-${width}.png`),
+      fullPage: true,
+    })
     await page
       .locator('.ant-segmented-item')
       .filter({ has: page.getByRole('radio', { name: /任务活动/ }) })
@@ -529,7 +535,10 @@ for (const width of [1440, 390]) {
     run.phase = 'canceled'
     await page.reload()
     await expect(page.locator('body')).toContainText('已取消本次任务。')
-    await page.screenshot({ path: `.tmp/quality/native-harness-${width}.png`, fullPage: true })
+    await page.screenshot({
+      path: test.info().outputPath(`native-harness-${width}.png`),
+      fullPage: true,
+    })
     verifyBrowserEvidence(evidence)
   })
 }

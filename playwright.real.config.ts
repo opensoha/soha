@@ -1,4 +1,8 @@
 import { defineConfig } from '@playwright/test'
+import { join } from 'node:path'
+import { runContext } from './scripts/e2e-run-context.mjs'
+
+const run = runContext()
 
 // Playwright 1.63's failure ARIA snapshot includes password input values.
 // Disable it before workers start; real auth must never enter error-context artifacts.
@@ -12,8 +16,8 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   timeout: 60_000,
-  reporter: [['list'], ['./e2e/fixtures/result-reporter.ts']],
-  outputDir: 'test-results/real-private',
+  reporter: run.listOnly ? [['list']] : [['list'], ['./e2e/fixtures/result-reporter.ts']],
+  outputDir: join(run.root, 'real-private'),
   use: {
     browserName: 'chromium',
     serviceWorkers: 'block',
