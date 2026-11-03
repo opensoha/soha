@@ -25,7 +25,10 @@ import paths.
    structural compatibility alone does not establish behavioral compatibility.
 4. Run `npm run generate` when OpenAPI source changes affect generated artifacts. Review generated diffs;
    never patch generated DTOs to bypass the source schema.
-5. Update consumers one repository at a time after the contract gate passes.
+5. Stabilize the source contract and generated artifacts and pass the applicable contract checks
+   before updating consumers. Independent consumers may then proceed in parallel with explicit
+   file and test-resource ownership; dependent steps remain ordered. Verify the final candidate
+   combination with the complete consumer matrix; parallel implementation does not waive it.
 6. For public contract changes, run focused compatibility checks, `npm test`, and
    the complete consumer matrix defined by `.github/workflows/ci.yml` and the
    consumer checker. Collaboration prose changes do not regenerate SDKs or run consumers.
