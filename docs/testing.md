@@ -59,6 +59,10 @@ Kubernetes RBAC 仅授予定义读取/删除及节点/命名空间读取，不�
 登录密码，结果 manifest 不含凭据。禁止打印或上传该目录。`seed` 创建本次 CRD/实例并记录 UID；
 Git/Docker忽略该私有目录，源码打包另外无条件排除所有`.tmp`，避免认证进入构建输入。
 认证API及Kubernetes请求拒绝重定向；测试包装器拒绝缺失、旧结果、skip或身份不符的manifest。
+每次 `test` 按 lab runId 的哈希生成合法 `SOHA_E2E_TASK_ID`，并生成新的 `SOHA_E2E_EXECUTION_ID`；
+仅消费 Web `test-results/tasks/<taskId>/<executionId>/run-manifest.json`，不删除或读取全局及其他执行的报告。
+manifest 的 taskId/executionId 必须匹配本次调用，真实 runId、环境、源码与用例结果校验继续保留；
+报告隔离不改变专用 lab 的资源归属或允许共享可变环境并行执行。
 同名替换使用 Kubernetes UID precondition，校验 run/id/UID 不符就拒绝。flow 会删除本次 CRD，
 所以验收成功后不能直接重跑同一 lease；先核验旧对象已消失，再准备新的专用 lease。
 环境保留供后续验收，停止或移除时仍须核对完整容器 ID/run label/镜像和精确卷归属。
