@@ -71,6 +71,32 @@ SERVICE_REFERENCE_CANDIDATES_SCOPE = {
 }
 
 
+# Each scope must independently prove its parent and every mandatory descendant.
+TEMPLATE_ADOPTION_RECOVERY_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/application/delivery",
+    "parent": "TestTemplateAdoptionRecoveryWithPostgres",
+    "children": ["known_rollback_releases_source_guard", "ambiguous_failure_preserves_source_guard", "committed_receipt_not_rolled_back",
+                 "production_adapter_recovery_fence", "production_adapter_recovery_fence/valid_owned_claim",
+                 "production_adapter_recovery_fence/canceled_worker", "production_adapter_recovery_fence/lost_lease",
+                 "production_adapter_recovery_fence/newer_claim", "production_adapter_recovery_fence/confirmed_receipt"],
+}
+
+SERVICE_REFERENCES_SCOPES = [
+    {"package": "github.com/opensoha/soha/internal/repository/delivery", "parent": "TestServiceReferencesPostgres",
+     "children": ["ActivationAndRestart", "CASAndABA", "SourceLifecycle", "ConsumerSlotAndDirectSource",
+                  "BusyPublication", "ConcurrentActivation", "ConsumerCleanup", "Pagination",
+                  "TransactionRollback", "BoundCompleteSet", "RebindVsDetachCAS", "ActivationVsSourceMutation"]},
+    {"package": "github.com/opensoha/soha/internal/repository/delivery", "parent": "TestServiceReferenceImpactsPostgres",
+     "children": ["explicit_empty_snapshot_roundtrip", "missing_snapshot_fails_closed", "atomic_plan_snapshot_rollback",
+                  "persisted_snapshot_not_replaced", "application_scope_serializes_capture", "plan_delete_cascades_snapshot",
+                  "prepared_preflight_atomic_claim_barrier", "prepared_preflight_rollback_has_no_orphan"]},
+]
+
+
+def validate_service_references(raw, exit_code=0):
+    return {"result": "PASS", "scopes": [validate(raw, exit_code, **scope) for scope in SERVICE_REFERENCES_SCOPES]}
+
+
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
         raise ValueError("Go process did not succeed")
@@ -103,8 +129,10 @@ if __name__ == "__main__":
     parser.add_argument("--identity", action="store_true")
     parser.add_argument("--kubernetes-import", action="store_true")
     parser.add_argument("--service-reference-candidates", action="store_true")
+    parser.add_argument("--service-references", action="store_true")
     parser.add_argument("--relation-rules", action="store_true")
     parser.add_argument("--template-adoption", action="store_true")
+    parser.add_argument("--template-adoption-recovery", action="store_true")
     parser.add_argument("--template-migration", action="store_true")
     parser.add_argument("--manifest-migration", action="store_true")
     parser.add_argument("--manifest-control", action="store_true")
@@ -121,12 +149,17 @@ if __name__ == "__main__":
             scope = RELATION_RULES_SCOPE
         if args.template_adoption:
             scope = TEMPLATE_ADOPTION_SCOPE
+        if args.template_adoption_recovery:
+            scope = TEMPLATE_ADOPTION_RECOVERY_SCOPE
         if args.template_migration:
             scope = TEMPLATE_MIGRATION_SCOPE
         if args.manifest_migration:
             scope = MANIFEST_MIGRATION_SCOPE
         if args.manifest_control:
             scope = MANIFEST_CONTROL_SCOPE
-        print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
+        if args.service_references:
+            print(json.dumps(validate_service_references(args.log.read_text(), args.exit_code)))
+        else:
+            print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
     except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")

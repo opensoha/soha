@@ -147,6 +147,15 @@ func (s *DeclarativeService) validateManifestTaskAdmission(ctx context.Context, 
 	if err := s.validateCurrentDeliveryContext(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID, *operation.DeliveryContext); err != nil {
 		return task, err
 	}
+	impact, ok := s.delivery.(interface {
+		ValidateDeliveryPlanServiceReferenceImpact(context.Context, domainidentity.Principal, string) error
+	})
+	if !ok {
+		return task, apperrors.ErrUnsupportedOperation
+	}
+	if err := impact.ValidateDeliveryPlanServiceReferenceImpact(ctx, principal, operation.DeliveryContext.PlanID); err != nil {
+		return task, err
+	}
 	if payload.Action != domainmanifest.TaskActionPreflight {
 		err = s.validatePlannedManifestOperation(ctx, principal, task, payload, *operation.DeliveryContext)
 	}

@@ -23,7 +23,8 @@ func TestManifestApprovalChecksCurrentControlWithoutRequiringPublisherRole(t *te
 			if scenario != "approve" {
 				runtime.controlError = apperrors.ErrConflict
 			}
-			s := &Service{applications: stubApplicationReader{app: domainapp.App{ID: "app"}}, catalog: stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding", ApplicationID: "app"}}}, repository: repo, manifestDelivery: runtime, permissions: deliveryActionPermissions(appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationEnvApprove)}
+			s := &Service{applications: stubApplicationReader{app: domainapp.App{ID: "app"}}, catalog: stubCatalogReader{envs: []domaincatalog.Environment{{ID: "env", Enabled: true}}, bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding", ApplicationID: "app", EnvironmentID: "env"}}}, repository: repo, manifestDelivery: runtime, permissions: deliveryActionPermissions(appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationEnvApprove)}
+			seedPlanReferenceSnapshot(t, s, repo)
 			action := "approve"
 			if scenario == "reject-stale" {
 				action = "reject"
@@ -45,6 +46,7 @@ func TestManifestApprovalChecksCurrentControlWithoutRequiringPublisherRole(t *te
 func manifestContextFixture(t *testing.T) referenceFixture {
 	t.Helper()
 	f := newReferenceFixture(t)
+	f.service.repository = stubRepository{}
 	binding := f.catalog.bindings["test-b"]
 	binding.Targets[0].Enabled = true
 	binding.Targets[0].ExecutorKind, binding.Targets[0].ConfigRef = "manifest_ssa", "manifest-binding"

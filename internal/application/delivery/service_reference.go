@@ -37,6 +37,10 @@ func (s *Service) PreviewEnvironmentServiceReference(ctx context.Context, princi
 }
 
 func (s *Service) previewReferenceWithContext(ctx context.Context, principal domainidentity.Principal, consumerID string, input domaindelivery.ServiceReferencePreviewInput) (domaindelivery.ServiceReferencePreview, referenceContext, error) {
+	return s.previewReferenceWithAccess(ctx, principal, consumerID, input, true)
+}
+
+func (s *Service) previewReferenceWithAccess(ctx context.Context, principal domainidentity.Principal, consumerID string, input domaindelivery.ServiceReferencePreviewInput, requireUpdate bool) (domaindelivery.ServiceReferencePreview, referenceContext, error) {
 	var empty domaindelivery.ServiceReferencePreview
 	var emptyContext referenceContext
 	if err := validateReferencePreviewInput(consumerID, input); err != nil {
@@ -44,7 +48,7 @@ func (s *Service) previewReferenceWithContext(ctx context.Context, principal dom
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	state, err := s.loadReferenceContext(ctx, principal, consumerID, input)
+	state, err := s.loadReferenceContextWithAccess(ctx, principal, consumerID, input, requireUpdate)
 	if err != nil {
 		return empty, emptyContext, err
 	}
@@ -75,21 +79,13 @@ func (s *Service) previewReferenceWithContext(ctx context.Context, principal dom
 		return empty, emptyContext, fmt.Errorf("%w: local target group exceeds preview limit", apperrors.ErrUnsupportedOperation)
 	}
 	slices.Sort(result.CurrentLocalTargetIDs)
-	group, queryCtx := errgroup.WithContext(ctx)
-	group.SetLimit(4)
-	for i, target := range targets {
-		group.Go(func() error {
-			var readErr error
-			result.Targets[i], readErr = s.previewReferenceTarget(queryCtx, principal, target)
-			return readErr
-		})
-	}
-	if err := group.Wait(); err != nil {
+	result.Targets, err = s.observeReferenceTargets(ctx, principal, targets)
+	if err != nil {
 		return empty, emptyContext, err
 	}
 	// A preview is not an atomic cluster snapshot, but must not return a DB
 	// configuration that changed while its bounded live observations ran.
-	current, err := s.loadReferenceContext(ctx, principal, consumerID, input)
+	current, err := s.loadReferenceContextWithAccess(ctx, principal, consumerID, input, requireUpdate)
 	if err != nil {
 		return empty, emptyContext, err
 	}
@@ -130,6 +126,10 @@ func validateReferencePreviewInput(consumerID string, input domaindelivery.Servi
 }
 
 func (s *Service) loadReferenceContext(ctx context.Context, principal domainidentity.Principal, consumerID string, input domaindelivery.ServiceReferencePreviewInput) (referenceContext, error) {
+	return s.loadReferenceContextWithAccess(ctx, principal, consumerID, input, true)
+}
+
+func (s *Service) loadReferenceContextWithAccess(ctx context.Context, principal domainidentity.Principal, consumerID string, input domaindelivery.ServiceReferencePreviewInput, requireUpdate bool) (referenceContext, error) {
 	var state referenceContext
 	var err error
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
@@ -139,9 +139,11 @@ func (s *Service) loadReferenceContext(ctx context.Context, principal domainiden
 	if err != nil {
 		return state, err
 	}
-	permission := appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update")
-	if _, err = s.catalog.AuthorizeApplicationEnvironmentPermission(ctx, principal, consumerID, permission); err != nil {
-		return state, err
+	if requireUpdate {
+		permission := appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update")
+		if _, err = s.catalog.AuthorizeApplicationEnvironmentPermission(ctx, principal, consumerID, permission); err != nil {
+			return state, err
+		}
 	}
 	state.source, err = s.catalog.GetApplicationEnvironment(ctx, principal, input.SourceApplicationEnvironmentID)
 	if err != nil {
@@ -153,7 +155,7 @@ func (s *Service) loadReferenceContext(ctx context.Context, principal domainiden
 	if !state.consumer.UpdatedAt.Equal(input.ExpectedConsumerUpdatedAt) || !state.source.UpdatedAt.Equal(input.ExpectedSourceUpdatedAt) {
 		return state, fmt.Errorf("%w: application environment changed; reload before preview", apperrors.ErrConflict)
 	}
-	state.service, err = s.authorizeReferenceService(ctx, principal, state.consumer.ApplicationID, input.ServiceID)
+	state.service, err = s.authorizeReferenceServiceWithAccess(ctx, principal, state.consumer.ApplicationID, input.ServiceID, requireUpdate)
 	if err != nil {
 		return state, err
 	}
@@ -162,15 +164,21 @@ func (s *Service) loadReferenceContext(ctx context.Context, principal domainiden
 }
 
 func (s *Service) authorizeReferenceService(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string) (domainapp.Service, error) {
+	return s.authorizeReferenceServiceWithAccess(ctx, principal, applicationID, serviceID, true)
+}
+
+func (s *Service) authorizeReferenceServiceWithAccess(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string, requireUpdate bool) (domainapp.Service, error) {
 	if _, err := s.applications.Get(ctx, principal, applicationID); err != nil {
 		return domainapp.Service{}, err
 	}
-	apps, ok := s.applications.(importApplicationAuthorizer)
-	if !ok {
-		return domainapp.Service{}, fmt.Errorf("%w: service association authorization is unavailable", apperrors.ErrUnsupportedOperation)
-	}
-	if err := apps.AuthorizeServiceImport(ctx, principal, applicationID, domainapp.UpsertInput{}, []domainapp.ServiceInput{{ID: serviceID}}); err != nil {
-		return domainapp.Service{}, err
+	if requireUpdate {
+		apps, ok := s.applications.(importApplicationAuthorizer)
+		if !ok {
+			return domainapp.Service{}, fmt.Errorf("%w: service association authorization is unavailable", apperrors.ErrUnsupportedOperation)
+		}
+		if err := apps.AuthorizeServiceImport(ctx, principal, applicationID, domainapp.UpsertInput{}, []domainapp.ServiceInput{{ID: serviceID}}); err != nil {
+			return domainapp.Service{}, err
+		}
 	}
 	services, err := s.applications.ListServices(ctx, principal, applicationID)
 	if err != nil {
@@ -325,4 +333,85 @@ func referenceSourceRevision(state referenceContext, targets []domaincatalog.Rel
 func validReferenceDigest(value string) bool {
 	decoded, err := hex.DecodeString(value)
 	return err == nil && len(decoded) == sha256.Size && strings.ToLower(value) == value
+}
+
+// observeReferenceTargets shares the existing bounded, authorized runtime reader.
+func (s *Service) observeReferenceTargets(ctx context.Context, principal domainidentity.Principal, targets []domaincatalog.ReleaseTarget) ([]domaindelivery.ServiceReferenceTarget, error) {
+	result := make([]domaindelivery.ServiceReferenceTarget, len(targets))
+	group, queryCtx := errgroup.WithContext(ctx)
+	group.SetLimit(4)
+	for i, target := range targets {
+		group.Go(func() error {
+			var err error
+			result[i], err = s.previewReferenceTarget(queryCtx, principal, target)
+			return err
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// observeSourceReferenceGroup checks the physical source independently of a
+// consumer's visibility. It grants no publication or consumer read authority.
+func (s *Service) observeSourceReferenceGroup(ctx context.Context, principal domainidentity.Principal, sourceID, serviceID string) (domaindelivery.ServiceReferencePreview, error) {
+	var empty domaindelivery.ServiceReferencePreview
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	state, err := s.loadSourceReferenceContext(ctx, principal, sourceID, serviceID)
+	if err != nil {
+		return empty, err
+	}
+	before, err := referenceContextSnapshot(state)
+	if err != nil {
+		return empty, err
+	}
+	targets, err := referenceServiceTargets(state.source, serviceID)
+	if err != nil {
+		return empty, err
+	}
+	observed, err := s.observeReferenceTargets(ctx, principal, targets)
+	if err != nil {
+		return empty, err
+	}
+	current, err := s.loadSourceReferenceContext(ctx, principal, sourceID, serviceID)
+	if err != nil {
+		return empty, err
+	}
+	after, err := referenceContextSnapshot(current)
+	if err != nil {
+		return empty, err
+	}
+	if string(before) != string(after) {
+		return empty, fmt.Errorf("%w: source configuration changed during observation", apperrors.ErrConflict)
+	}
+	revision, err := referenceSourceRevision(state, targets, observed)
+	if err != nil {
+		return empty, err
+	}
+	return domaindelivery.ServiceReferencePreview{ApplicationID: state.source.ApplicationID, ServiceID: serviceID,
+		Consumer: referenceScope(state.source, state.sourceEnvironment), Source: referenceScope(state.source, state.sourceEnvironment),
+		Targets: observed, CurrentLocalTargetIDs: []string{}, SourceRevision: revision, ObservedAt: time.Now().UTC()}, nil
+}
+
+func (s *Service) loadSourceReferenceContext(ctx context.Context, principal domainidentity.Principal, sourceID, serviceID string) (referenceContext, error) {
+	var state referenceContext
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
+		return state, err
+	}
+	source, err := s.catalog.GetApplicationEnvironment(ctx, principal, sourceID)
+	if err != nil {
+		return state, err
+	}
+	if source.ID != sourceID || source.ApplicationID == "" {
+		return state, fmt.Errorf("%w: source scope changed", apperrors.ErrConflict)
+	}
+	state.source, state.consumer = source, source
+	state.service, err = s.authorizeReferenceServiceWithAccess(ctx, principal, source.ApplicationID, serviceID, false)
+	if err != nil {
+		return state, err
+	}
+	state.consumerEnvironment, state.sourceEnvironment, err = s.referenceEnvironments(ctx, principal, source.EnvironmentID, source.EnvironmentID)
+	return state, err
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
@@ -300,6 +301,10 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 func (r *Repository) DeleteService(ctx context.Context, applicationID, serviceID string) error {
 	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM application_services WHERE application_id = ? AND id = ?`, strings.TrimSpace(applicationID), strings.TrimSpace(serviceID))
 	if result.Error != nil {
+		var dependency *pgconn.PgError
+		if errors.As(result.Error, &dependency) && (dependency.Code == "23001" || dependency.Code == "23503") && dependency.ConstraintName == "environment_service_references_service_id_fkey" {
+			return fmt.Errorf("%w: detach active environment references before deleting this service", apperrors.ErrConflict)
+		}
 		return fmt.Errorf("delete application service: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {

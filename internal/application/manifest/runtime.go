@@ -328,6 +328,25 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 	}
 	run := domainmanifest.OperationRun{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, DeploymentID: deployment.ID, Generation: payload.Generation, Action: payload.Action, IdempotencyKey: payload.IdempotencyKey, ExecutionTaskID: task.ID, CreatedAt: now}
 	run.DeliveryContext = payload.DeliveryContext
+	if domainmanifest.StagePreparedOperation(ctx, func(txctx context.Context) error {
+		// This projection performs database policy reads only. Recheck the frozen
+		// scope under the same transaction before exposing an otherwise stale preflight.
+		if run.DeliveryContext != nil {
+			if err := s.validateCurrentDeliveryContext(txctx, task.SecretPrincipal, task.ApplicationID, task.ApplicationEnvironmentID, *run.DeliveryContext); err != nil {
+				return err
+			}
+		}
+		existingID, _, err := s.repository.CreateOperationTask(txctx, run, task)
+		if err != nil {
+			return err
+		}
+		if existingID != task.ID {
+			return fmt.Errorf("%w: prepared operation belongs to another task", apperrors.ErrConflict)
+		}
+		return nil
+	}) {
+		return task, nil
+	}
 	existingID, created, err := s.repository.CreateOperationTask(ctx, run, task)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err

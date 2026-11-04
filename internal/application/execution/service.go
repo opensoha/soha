@@ -60,6 +60,10 @@ type Service struct {
 	pipelineImages  BuildImageVerifier
 }
 
+type ExecutionTaskRetryValidator interface {
+	ValidateExecutionTaskRetry(context.Context, domaindelivery.ExecutionTask) error
+}
+
 type ExecutionTaskHydrator interface {
 	HydrateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
 }
@@ -406,6 +410,13 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	}
 	if !isRetryableTaskStatus(task.Status) {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: task %s cannot be retried from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
+	}
+	if validator, ok := s.payloadHydrator.(ExecutionTaskRetryValidator); ok {
+		if err := validator.ValidateExecutionTaskRetry(ctx, task); err != nil {
+			return domaindelivery.ExecutionTask{}, err
+		}
+	} else if domaindelivery.RequiresManifestAdmission(task) || strings.HasPrefix(task.TaskKind, "helm_") {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
 	}
 	now := time.Now().UTC()
 	reason := strings.TrimSpace(input.Reason)

@@ -290,6 +290,9 @@ func (r deliveryMutationRule) matches(method, path string) bool {
 }
 
 var deliveryMutationRules = []deliveryMutationRule{
+	{method: "PUT", prefix: "/api/v1/application-environments/", contains: "/service-references/", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
+	{method: "DELETE", prefix: "/api/v1/application-environments/", contains: "/service-references/", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
+
 	{method: "PUT", prefix: "/api/v1/application-environments/", contains: "/service-reference-candidates/", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
 	{method: "DELETE", prefix: "/api/v1/application-environments/", contains: "/service-reference-candidates/", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
 	{method: "POST", prefix: "/api/v1/application-environments/", suffix: "/service-reference-previews", resourceKind: "ApplicationEnvironment", action: "view", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},

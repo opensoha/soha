@@ -54,7 +54,7 @@ func (s *Service) createTemplateAdoptionPlan(ctx context.Context, p domainidenti
 		input.Impact["templateMigration"] = frozen.Candidate.Cumulative.Migration
 	}
 	input.RollbackStrategy = "采用历史模板版本需重新比较并创建配置 Plan；已运行资源保持原部署版本"
-	return s.repository.CreateDeliveryPlan(ctx, input, p.UserID)
+	return s.createPlanWithServiceReferenceImpact(ctx, p, input)
 }
 
 func (s *Service) confirmTemplateAdoptionPlan(ctx context.Context, p domainidentity.Principal, plan domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlanConfirmResult, error) {
@@ -66,11 +66,17 @@ func (s *Service) confirmTemplateAdoptionPlan(ctx context.Context, p domainident
 	if err != nil {
 		return result, err
 	}
-	if plan.Impact["candidateDigest"] != frozen.Candidate.Digest || plan.ApplicationID != frozen.Candidate.Target.ApplicationID || plan.ApplicationEnvironmentID != frozen.Candidate.Target.ApplicationEnvironmentID || plan.RequiresApproval != frozen.Candidate.RequiresApproval {
+	if !templatePlanMatchesCandidate(plan, frozen) {
 		return result, apperrors.ErrConflict
 	}
 	if plan.Status == domaindelivery.DeliveryPlanStatusConfirmed {
+		if frozen.AppliedPlanID != plan.ID {
+			return result, apperrors.ErrConflict
+		}
 		return result, nil
+	}
+	if err := s.validateServiceReferenceImpact(ctx, p, plan); err != nil {
+		return result, err
 	}
 	if err := validateDeliveryPlanConfirmStatus(plan); err != nil {
 		return result, err
@@ -78,24 +84,108 @@ func (s *Service) confirmTemplateAdoptionPlan(ctx context.Context, p domainident
 	if plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
 		return result, fmt.Errorf("%w: template adoption approval is required", apperrors.ErrConflict)
 	}
+	previous := plan
 	plan.Status = domaindelivery.DeliveryPlanStatusConfirming
-	plan, err = s.repository.UpdateDeliveryPlan(ctx, plan)
-	if err != nil {
-		return result, err
-	}
-	err = s.templateUpdates.Apply(ctx, p, plan.TemplateCandidateID, plan.ID, func(txctx context.Context) error {
-		now := time.Now().UTC()
-		plan.Status = domaindelivery.DeliveryPlanStatusConfirmed
-		plan.ConfirmedAt = &now
+	err = s.withValidatedServiceReferenceImpact(ctx, p, plan, func(lockctx context.Context) error {
 		var updateErr error
-		plan, updateErr = s.repository.UpdateDeliveryPlan(txctx, plan)
+		plan, updateErr = s.repository.UpdateDeliveryPlan(lockctx, plan)
 		return updateErr
 	})
 	if err != nil {
 		return result, err
 	}
+	// Keep the claimed CAS immutable: a failed receipt callback may have changed
+	// its local confirmed value even though the adoption transaction rolled back.
+	claimed := plan
+	err = s.templateUpdates.Apply(ctx, p, plan.TemplateCandidateID, plan.ID, func(txctx context.Context) error {
+		now := time.Now().UTC()
+		confirmed := claimed
+		confirmed.Status = domaindelivery.DeliveryPlanStatusConfirmed
+		confirmed.ConfirmedAt = &now
+		var updateErr error
+		plan, updateErr = s.repository.UpdateDeliveryPlan(txctx, confirmed)
+		return updateErr
+	})
+	if err != nil {
+		result.Plan, err = s.recoverFailedTemplateAdoption(ctx, p, previous, claimed, err)
+		return result, err
+	}
 	result.Plan = plan
 	return result, nil
+}
+
+func templatePlanMatchesCandidate(plan domaindelivery.DeliveryPlan, frozen domainupdate.FrozenCandidate) bool {
+	return plan.TemplateCandidateID == frozen.Candidate.ID && plan.Impact["candidateDigest"] == frozen.Candidate.Digest && plan.ApplicationID == frozen.Candidate.Target.ApplicationID && plan.ApplicationEnvironmentID == frozen.Candidate.Target.ApplicationEnvironmentID && plan.RequiresApproval == frozen.Candidate.RequiresApproval
+}
+
+func (s *Service) recoverFailedTemplateAdoption(ctx context.Context, p domainidentity.Principal, previous, claimed domaindelivery.DeliveryPlan, cause error) (domaindelivery.DeliveryPlan, error) {
+	// The original request may have expired. Recovery is a bounded read/CAS, never
+	// a retry of adoption, a new worker, or a relaxation of the source busy guard.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	current, err := s.repository.GetDeliveryPlan(ctx, claimed.ID)
+	if err != nil {
+		return claimed, errors.Join(cause, fmt.Errorf("read template Plan outcome: %w", err))
+	}
+	if current.ID != claimed.ID || current.TemplateCandidateID != claimed.TemplateCandidateID || current.Source != claimed.Source {
+		return current, errors.Join(cause, apperrors.ErrConflict)
+	}
+	frozen, readErr := s.templateUpdates.ReadCandidate(ctx, p, claimed.TemplateCandidateID)
+	if readErr == nil && !templatePlanMatchesCandidate(current, frozen) {
+		return current, errors.Join(cause, apperrors.ErrConflict)
+	}
+	if readErr == nil && current.Status == domaindelivery.DeliveryPlanStatusConfirmed && frozen.AppliedPlanID == current.ID {
+		return current, nil
+	}
+	if current.Status != domaindelivery.DeliveryPlanStatusConfirming || claimed.UpdatedAt.IsZero() || !current.UpdatedAt.Equal(claimed.UpdatedAt) {
+		return current, errors.Join(cause, apperrors.ErrConflict)
+	}
+	if !templateAdoptionDefinitelyRolledBack(cause) {
+		return current, errors.Join(cause, readErr)
+	}
+	// A deterministic failure and this exact persisted claim prove the atomic
+	// adoption did not commit. Candidate read failures or another Plan's adoption
+	// cannot strand it; an observed own applied receipt would contradict that proof.
+	if readErr == nil && frozen.AppliedPlanID == claimed.ID {
+		return current, errors.Join(cause, apperrors.ErrConflict)
+	}
+	restored := claimed
+	restored.Status = domaindelivery.DeliveryPlanStatusDraft
+	restored.ConfirmedAt = previous.ConfirmedAt
+	stamp := claimed.UpdatedAt
+	restored.ExpectedUpdatedAt = &stamp
+	restored, err = s.repository.UpdateDeliveryPlan(ctx, restored)
+	if err != nil {
+		return current, errors.Join(cause, fmt.Errorf("restore template Plan after rollback: %w", err))
+	}
+	return restored, cause
+}
+
+func templateAdoptionDefinitelyRolledBack(err error) bool {
+	// ApplyCandidate commits configuration, the Plan receipt and candidate adoption
+	// together. Explicit business failures abort that callback; transport, timeout
+	// and unknown database errors cannot prove its transaction outcome.
+	if group, ok := err.(interface{ Unwrap() []error }); ok {
+		causes := group.Unwrap()
+		if len(causes) == 0 {
+			return false
+		}
+		for _, cause := range causes {
+			if !templateAdoptionDefinitelyRolledBack(cause) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return templateAdoptionDefinitelyRolledBack(wrapped.Unwrap())
+	}
+	switch err {
+	case apperrors.ErrConflict, apperrors.ErrAccessDenied, apperrors.ErrUnauthorized, apperrors.ErrInvalidArgument, apperrors.ErrUnsupportedOperation, apperrors.ErrNotFound, apperrors.ErrGone:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) freezeTemplateAdoption(ctx context.Context, p domainidentity.Principal, target domainworkflow.DeliveryTargetInput) (domainworkflow.DeliveryTargetSnapshot, error) {

@@ -77,14 +77,18 @@ func (s *Service) CurrentManifestDeliveryContext(ctx context.Context, principal 
 	if err != nil {
 		return empty, fmt.Errorf("%w: publication target identity requires review", apperrors.ErrConflict)
 	}
+	impactRevision, err := s.referenceConsumerSetRevision(ctx, environmentID)
+	if err != nil {
+		return empty, err
+	}
 	scopeRevision, err := domainmanifest.DeliveryContextDigest(struct {
-		ApplicationID, BindingID, EnvironmentID string
-		Environment                             domaincatalog.Environment
-		ReleasePolicy                           domaincatalog.ReleasePolicy
-		Strategy, Promotion, Artifact           string
-		ServiceVersion                          int64
-		Targets                                 []domaincatalog.ReleaseTargetInput
-	}{applicationID, binding.ID, binding.EnvironmentID, environment, binding.ReleasePolicy, binding.StrategyProfileID, binding.PromotionPolicyID, binding.ArtifactPolicyID, serviceVersion, group})
+		ApplicationID, BindingID, EnvironmentID, ServiceReferenceRevision string
+		Environment                                                       domaincatalog.Environment
+		ReleasePolicy                                                     domaincatalog.ReleasePolicy
+		Strategy, Promotion, Artifact                                     string
+		ServiceVersion                                                    int64
+		Targets                                                           []domaincatalog.ReleaseTargetInput
+	}{applicationID, binding.ID, binding.EnvironmentID, impactRevision, environment, binding.ReleasePolicy, binding.StrategyProfileID, binding.PromotionPolicyID, binding.ArtifactPolicyID, serviceVersion, group})
 	if err != nil {
 		return empty, fmt.Errorf("encode publication policy: %w", err)
 	}

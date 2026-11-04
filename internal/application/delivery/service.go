@@ -140,28 +140,29 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	templateUpdates   TemplateUpdates
-	applications      ApplicationReader
-	catalog           CatalogReader
-	builds            BuildReader
-	workflows         WorkflowReader
-	releases          ReleaseReader
-	repository        domaindelivery.Repository
-	importRepository  KubernetesImportRepository
-	execution         ExecutionController
-	targets           TargetReader
-	importTargets     KubernetesImportTargetReader
-	helmImportTargets HelmImportTargetReader
-	permissions       *appaccess.PermissionResolver
-	audit             AuditRecorder
-	operations        OperationRecorder
-	governance        *deliverygovernance.Service
-	logs              LogRuntime
-	logTickets        LogStreamTicketIssuer
-	manifestPackages  ManifestPackageWriter
-	manifestDelivery  ManifestDelivery
-	docker            DockerDelivery
-	helm              HelmDeliveryDependencies
+	executionPrincipals ExecutionPrincipalReader
+	templateUpdates     TemplateUpdates
+	applications        ApplicationReader
+	catalog             CatalogReader
+	builds              BuildReader
+	workflows           WorkflowReader
+	releases            ReleaseReader
+	repository          domaindelivery.Repository
+	importRepository    KubernetesImportRepository
+	execution           ExecutionController
+	targets             TargetReader
+	importTargets       KubernetesImportTargetReader
+	helmImportTargets   HelmImportTargetReader
+	permissions         *appaccess.PermissionResolver
+	audit               AuditRecorder
+	operations          OperationRecorder
+	governance          *deliverygovernance.Service
+	logs                LogRuntime
+	logTickets          LogStreamTicketIssuer
+	manifestPackages    ManifestPackageWriter
+	manifestDelivery    ManifestDelivery
+	docker              DockerDelivery
+	helm                HelmDeliveryDependencies
 }
 
 func uniqueStrings(values []string) []string {
@@ -1132,6 +1133,7 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 	planInput.Impact = deliveryPlanImpact(app, binding, environment, firstTarget(targets), planInput)
 	planInput.RollbackStrategy = deliveryPlanRollbackStrategy(action, binding)
 	planInput.ID = firstNonEmpty(strings.TrimSpace(planInput.ID), uuid.NewString())
+	ctx, _ = domainmanifest.WithPreparedOperations(ctx)
 	planInput.ManifestSnapshots, err = s.prepareManifestDelivery(ctx, principal, app.ID, binding.ID, targets, planInput)
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
@@ -1153,7 +1155,7 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) createPreparedDeliveryPlan(ctx context.Context, principal domainidentity.Principal, planInput domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error) {
-	plan, err := s.repository.CreateDeliveryPlan(ctx, planInput, principal.UserID)
+	plan, err := s.createPlanWithServiceReferenceImpact(ctx, principal, planInput)
 	if err == nil {
 		err = s.ensureHelmPreflights(ctx, principal, plan)
 	}
@@ -1214,6 +1216,9 @@ func (s *Service) confirmRuntimeDeliveryPlan(ctx context.Context, principal doma
 	if result, recovered, err := s.recoverDockerPlanConfirmation(ctx, principal, plan); recovered || err != nil {
 		return result, err
 	}
+	if err := s.validateServiceReferenceImpact(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlanConfirmResult{}, err
+	}
 	if err := validateDeliveryPlanConfirmStatus(plan); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
@@ -1234,11 +1239,17 @@ func (s *Service) confirmRuntimeDeliveryPlan(ctx context.Context, principal doma
 	now := time.Now().UTC()
 	plan.Status = domaindelivery.DeliveryPlanStatusConfirming
 	plan.UpdatedAt = now
-	plan, err := s.repository.UpdateDeliveryPlan(ctx, plan)
+	var updated domaindelivery.DeliveryPlan
+	err := s.withValidatedServiceReferenceImpact(ctx, principal, plan, func(lockctx context.Context) error {
+		var updateErr error
+		updated, updateErr = s.repository.UpdateDeliveryPlan(lockctx, plan)
+		return updateErr
+	})
 	if err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
-	result, err := s.TriggerApplicationDeliveryAction(ctx, principal, plan.ApplicationID, deliveryActionInputFromPlan(plan))
+	plan = updated
+	result, err := s.TriggerApplicationDeliveryAction(context.WithValue(ctx, referenceExecutionPlanKey{}, plan), principal, plan.ApplicationID, deliveryActionInputFromPlan(plan))
 	if err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, s.restoreDeliveryPlanConfirmFailure(ctx, plan, err)
 	}
@@ -1337,7 +1348,17 @@ func (s *Service) DecideDeliveryPlanApproval(ctx context.Context, principal doma
 	plan.Status = domaindelivery.DeliveryPlanStatusDraft
 	plan.UpdatedAt = time.Now().UTC()
 	plan.Impact = deliveryPlanApprovalImpact(plan, principal, action, input.Comment)
-	updated, err := s.repository.UpdateDeliveryPlan(ctx, plan)
+	var updated domaindelivery.DeliveryPlan
+	apply := func(lockctx context.Context) error {
+		var updateErr error
+		updated, updateErr = s.repository.UpdateDeliveryPlan(lockctx, plan)
+		return updateErr
+	}
+	if action == "approved" {
+		err = s.withValidatedServiceReferenceImpact(ctx, principal, plan, apply)
+	} else {
+		err = apply(ctx)
+	}
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
@@ -1377,6 +1398,9 @@ func (s *Service) GetExecutingDeliveryPlan(ctx context.Context, p domainidentity
 	if err := s.authorizeApplicationDeliveryAction(ctx, p, plan.ApplicationEnvironmentID, plan.Action); err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
+	if err := s.validateServiceReferenceImpact(ctx, p, plan); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
 	return plan, nil
 }
 
@@ -1389,6 +1413,9 @@ func (s *Service) GetConfirmedDeliveryPlan(ctx context.Context, principal domain
 	}
 	if plan.Status != domaindelivery.DeliveryPlanStatusConfirmed || plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
 		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: execution requires its confirmed approved delivery plan", apperrors.ErrConflict)
+	}
+	if err := s.validateServiceReferenceImpact(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
 	}
 	return plan, nil
 }
@@ -1469,6 +1496,9 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
 	}
 	if err := s.authorizeApplicationDeliveryAction(ctx, principal, binding.ID, action); err != nil {
+		return domaindelivery.ApplicationDeliveryActionResult{}, err
+	}
+	if err := s.validateReferenceTrigger(ctx, principal, app.ID, binding.ID); err != nil {
 		return domaindelivery.ApplicationDeliveryActionResult{}, err
 	}
 	result := domaindelivery.ApplicationDeliveryActionResult{

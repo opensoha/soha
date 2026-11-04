@@ -60,7 +60,7 @@ func (r *Repository) UpdateSource(ctx context.Context, packageID string, input d
 		if hasSQLState(result.Error, "23503") {
 			return domainmanifest.Source{}, fmt.Errorf("%w: manifest source repository does not exist", apperrors.ErrInvalidArgument)
 		}
-		return domainmanifest.Source{}, fmt.Errorf("update manifest source: %w", result.Error)
+		return domainmanifest.Source{}, fmt.Errorf("update manifest source: %w", referenceLifecycleError(result.Error))
 	}
 	if result.RowsAffected == 0 {
 		if _, err := r.GetSource(ctx, packageID); err != nil {
@@ -154,7 +154,7 @@ func (r *Repository) CreateBinding(ctx context.Context, item domainmanifest.Envi
 		return syncBindingProjection(tx, item.PackageID)
 	})
 	if err != nil {
-		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("create manifest binding: %w", err)
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("create manifest binding: %w", referenceLifecycleError(err))
 	}
 	return r.GetBinding(ctx, item.ID)
 }
@@ -197,7 +197,7 @@ func (r *Repository) UpdateBinding(ctx context.Context, item domainmanifest.Envi
 			}
 			return domainmanifest.EnvironmentBinding{}, fmt.Errorf("%w: manifest binding version changed", apperrors.ErrConflict)
 		}
-		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("update manifest binding: %w", err)
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("update manifest binding: %w", referenceLifecycleError(err))
 	}
 	return r.GetBinding(ctx, item.ID)
 }
@@ -207,7 +207,7 @@ func (r *Repository) DeleteBinding(ctx context.Context, bindingID string) error 
 	if err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec(`DELETE FROM manifest_bindings WHERE id = ?`, existing.ID)
 		if result.Error != nil {
 			return result.Error
@@ -217,6 +217,7 @@ func (r *Repository) DeleteBinding(ctx context.Context, bindingID string) error 
 		}
 		return syncBindingProjection(tx, existing.PackageID)
 	})
+	return referenceLifecycleError(err)
 }
 
 const bindingSelect = `SELECT id, package_id, application_environment_id, environment_key, cluster_id, namespace,
@@ -576,4 +577,14 @@ func (r *Repository) listInventory(ctx context.Context, deploymentID string, gen
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// Referenced source identity may only be removed after explicit detachment.
+func referenceLifecycleError(err error) error {
+	for _, state := range []string{"23001", "23503", "23514", "40001", "40P01"} {
+		if hasSQLState(err, state) {
+			return fmt.Errorf("%w: source identity is referenced or changed concurrently; review active consumers", apperrors.ErrConflict)
+		}
+	}
+	return err
 }

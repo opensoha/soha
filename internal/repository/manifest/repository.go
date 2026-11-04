@@ -153,13 +153,13 @@ func (r *Repository) Update(ctx context.Context, id string, item domainmanifest.
 		return syncLegacyBindingRelations(tx, id, item.Bindings, item.UpdatedAt)
 	})
 	if err != nil {
-		return domainmanifest.Package{}, fmt.Errorf("update manifest package: %w", err)
+		return domainmanifest.Package{}, fmt.Errorf("update manifest package: %w", referenceLifecycleError(err))
 	}
 	return r.Get(ctx, id)
 }
 
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	return dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec(`DELETE FROM manifest_packages WHERE id = ? AND archived_at IS NULL AND current_revision = 0`, id)
 		if result.Error != nil {
 			return result.Error
@@ -176,6 +176,7 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 		}
 		return nil
 	})
+	return referenceLifecycleError(err)
 }
 
 func (r *Repository) Publish(ctx context.Context, item domainmanifest.Package, revision domainmanifest.Revision) (domainmanifest.Package, error) {

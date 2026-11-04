@@ -108,7 +108,7 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 		return nil
 	})
 	if err != nil {
-		return domaindelivery.KubernetesServiceImportResult{}, err
+		return domaindelivery.KubernetesServiceImportResult{}, referenceConstraintError(err)
 	}
 	return result, nil
 }
@@ -160,7 +160,7 @@ func (r *Repository) ImportHelmReleases(ctx context.Context, input domaindeliver
 		return touchImportBinding(tx, bindingID)
 	})
 	if err != nil {
-		return domaindelivery.HelmReleaseImportResult{}, err
+		return domaindelivery.HelmReleaseImportResult{}, referenceConstraintError(err)
 	}
 	return result, nil
 }

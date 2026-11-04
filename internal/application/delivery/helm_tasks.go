@@ -214,28 +214,9 @@ func (s *Service) hydrateHelmExecutionTask(ctx context.Context, task domaindeliv
 	if err != nil {
 		return task, err
 	}
-	if task.TaskKind != "helm_"+string(payload.Action) || task.ApplicationID != payload.Snapshot.ApplicationID || task.ApplicationEnvironmentID != payload.Snapshot.ApplicationEnvironmentID {
-		return task, apperrors.ErrConflict
-	}
-	plan, err := s.repository.GetDeliveryPlan(ctx, payload.Snapshot.DeliveryPlanID)
+	task, plan, err := s.validateHelmTaskAdmission(ctx, task, payload)
 	if err != nil {
 		return task, err
-	}
-	selected := slices.ContainsFunc(plan.HelmSnapshots, func(snapshot sohaapi.HelmDeliverySnapshot) bool {
-		return reflect.DeepEqual(snapshot, payload.Snapshot)
-	})
-	if !selected || plan.ApplicationID != task.ApplicationID || plan.ApplicationEnvironmentID != task.ApplicationEnvironmentID {
-		return task, fmt.Errorf("%w: Helm task is not part of this plan", apperrors.ErrConflict)
-	}
-	if payload.Action == sohaapi.Apply && (plan.Status != domaindelivery.DeliveryPlanStatusConfirming && plan.Status != domaindelivery.DeliveryPlanStatusConfirmed || plan.RequiresApproval && !deliveryPlanApprovalGranted(plan)) {
-		return task, fmt.Errorf("%w: Helm deployment requires a confirmed approved plan", apperrors.ErrConflict)
-	}
-	if err := s.validateHelmSnapshot(ctx, task.SecretPrincipal, payload.Snapshot, payload.Action != sohaapi.Preflight); err != nil {
-		return task, err
-	}
-	provider, err := s.helm.Runtime.AuthorizeHelmDelivery(ctx, task.SecretPrincipal, payload.Snapshot, payload.Action == sohaapi.Apply)
-	if err != nil || provider != task.ProviderKind {
-		return task, fmt.Errorf("%w: Helm runtime changed", apperrors.ErrConflict)
 	}
 	prepared, err := s.helmPlanPreparation(ctx, task.SecretPrincipal, plan, payload.Snapshot)
 	if err != nil {
@@ -336,4 +317,43 @@ func (s *Service) applyHelmDelivery(ctx context.Context, principal domainidentit
 		return nil
 	}
 	return apperrors.ErrConflict
+}
+
+// Admission contains no chart/value hydration and is shared by claim and retry.
+func (s *Service) validateHelmTaskAdmission(ctx context.Context, task domaindelivery.ExecutionTask, payload sohaapi.HelmExecutionTaskPayload) (domaindelivery.ExecutionTask, domaindelivery.DeliveryPlan, error) {
+	var plan domaindelivery.DeliveryPlan
+	var err error
+	if task.TaskKind != "helm_"+string(payload.Action) || task.ApplicationID != payload.Snapshot.ApplicationID || task.ApplicationEnvironmentID != payload.Snapshot.ApplicationEnvironmentID {
+		return task, plan, apperrors.ErrConflict
+	}
+	plan, err = s.repository.GetDeliveryPlan(ctx, payload.Snapshot.DeliveryPlanID)
+	if err != nil {
+		return task, plan, err
+	}
+	selected := slices.ContainsFunc(plan.HelmSnapshots, func(snapshot sohaapi.HelmDeliverySnapshot) bool {
+		return reflect.DeepEqual(snapshot, payload.Snapshot)
+	})
+	if !selected || plan.ApplicationID != task.ApplicationID || plan.ApplicationEnvironmentID != task.ApplicationEnvironmentID {
+		return task, plan, fmt.Errorf("%w: Helm task is not part of this plan", apperrors.ErrConflict)
+	}
+	if payload.Action == sohaapi.Apply && (plan.Status != domaindelivery.DeliveryPlanStatusConfirming && plan.Status != domaindelivery.DeliveryPlanStatusConfirmed || plan.RequiresApproval && !deliveryPlanApprovalGranted(plan)) {
+		return task, plan, fmt.Errorf("%w: Helm deployment requires a confirmed approved plan", apperrors.ErrConflict)
+	}
+	principal, err := s.currentImpactExecutionPrincipal(ctx, task)
+	if err != nil {
+		return task, plan, err
+	}
+	task.SecretPrincipal = principal
+	if err := s.validateServiceReferenceImpact(ctx, task.SecretPrincipal, plan); err != nil {
+		return task, plan, err
+	}
+	if err := s.validateHelmSnapshot(ctx, task.SecretPrincipal, payload.Snapshot, payload.Action != sohaapi.Preflight); err != nil {
+		return task, plan, err
+	}
+	provider, err := s.helm.Runtime.AuthorizeHelmDelivery(ctx, task.SecretPrincipal, payload.Snapshot, payload.Action == sohaapi.Apply)
+	if err != nil || provider != task.ProviderKind {
+		return task, plan, fmt.Errorf("%w: Helm runtime changed", apperrors.ErrConflict)
+	}
+
+	return task, plan, nil
 }

@@ -79,7 +79,7 @@ func TestManifestDeliveryPlanRetainsApprovalAndRejectsStaleSnapshot(t *testing.T
 			ctx := context.Background()
 			repo := &planRepository{}
 			targets := []domaincatalog.ReleaseTarget{{ID: "target", ExecutorKind: "manifest_ssa", ConfigRef: "manifest-binding", ClusterID: "cluster", Namespace: "payments", Enabled: true}}
-			service := New(stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "Payments"}}, stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", Targets: targets, ReleasePolicy: domaincatalog.ReleasePolicy{RequiresApproval: true}}}}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+			service := New(stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "Payments"}}, stubCatalogReader{envs: []domaincatalog.Environment{{ID: "env", Enabled: true}}, bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env", Targets: targets, ReleasePolicy: domaincatalog.ReleasePolicy{RequiresApproval: true}}}}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
 				deliveryActionPermissions(appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryReleasesTrigger, appaccess.PermDeliveryApplicationEnvApprove))
 			runtime := &manifestDeliveryStub{}
 			service.SetManifestDelivery(runtime)

@@ -12,6 +12,7 @@ import (
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	repodelivery "github.com/opensoha/soha/internal/repository/delivery"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
@@ -177,7 +178,7 @@ func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest
 	}
 	created := false
 	var taskID string
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if _, ok := domainworkflow.NodeExecutionFrom(ctx); ok {
 			if err := repoworkflow.LockDeliveryNode(ctx, tx, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
 				return err

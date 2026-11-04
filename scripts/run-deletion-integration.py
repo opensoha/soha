@@ -36,12 +36,14 @@ def main():
     parser.add_argument("--identity", action="store_true")
     parser.add_argument("--kubernetes-import", action="store_true")
     parser.add_argument("--service-reference-candidates", action="store_true")
+    parser.add_argument("--service-references", action="store_true")
     parser.add_argument("--virtualization-capacity", action="store_true")
     parser.add_argument("--feed-search",action="store_true")
     parser.add_argument("--network-navigation", action="store_true")
     parser.add_argument("--relation-rules", action="store_true")
     parser.add_argument("--manifest-root", action="store_true")
     parser.add_argument("--template-adoption", action="store_true")
+    parser.add_argument("--template-adoption-recovery", action="store_true")
     parser.add_argument("--template-migration", action="store_true")
     parser.add_argument("--manifest-migration", action="store_true")
     parser.add_argument("--manifest-control", action="store_true")
@@ -57,7 +59,7 @@ def main():
     try:
         container = command(["docker", "run", "--detach", "--rm", "--label", "soha.test.run=" + run_id,
                              "--publish", "127.0.0.1::5432",
-                             *(["--tmpfs", "/var/lib/postgresql"] if args.service_reference_candidates or args.kubernetes_import or args.relation_rules or args.template_adoption or args.template_migration or args.manifest_migration or args.manifest_control or args.initialization else []),
+                             *(["--tmpfs", "/var/lib/postgresql"] if args.service_reference_candidates or args.service_references or args.kubernetes_import or args.relation_rules or args.template_adoption or args.template_adoption_recovery or args.template_migration or args.manifest_migration or args.manifest_control or args.initialization else []),
                              "--env", "POSTGRES_DB=soha",
                              "--env", "POSTGRES_USER=pgsql", "--env", "POSTGRES_PASSWORD=test-only", IMAGE], timeout=90)
         info = json.loads(command(["docker", "inspect", container]))[0]
@@ -85,12 +87,16 @@ def main():
                 parent = "TestKubernetesImportIdentityWithPostgres"
             if args.service_reference_candidates:
                 parent = "TestServiceReferenceCandidatesWithPostgres"
+            if args.service_references:
+                parent = "(TestServiceReferencesPostgres|TestServiceReferenceImpactsPostgres)"
             if args.relation_rules:
                 parent = "TestTemplateVersionsWithPostgres/relation-rules-persistence-and-cas"
             if args.manifest_root:
                 parent = "TestDeliverySnapshotWithPostgres"
             if args.template_adoption:
                 parent = "TestTemplateAdoptionWithPostgres"
+            if args.template_adoption_recovery:
+                parent = "TestTemplateAdoptionRecoveryWithPostgres"
             if args.template_migration:
                 parent = "TestTemplateVersionsWithPostgres"
             if args.manifest_migration or args.manifest_control:
@@ -102,7 +108,7 @@ def main():
                 package = "virtualization"
             if args.kubernetes_import:
                 package = "delivery"
-            if args.service_reference_candidates:
+            if args.service_reference_candidates or args.service_references:
                 package = "delivery"
             if args.relation_rules:
                 package = "catalog"
@@ -116,9 +122,12 @@ def main():
                 package = "manifest"
             if args.initialization:
                 package = "delivery"
+            test_package = "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package
+            if args.template_adoption_recovery:
+                test_package = "./internal/application/delivery"
             result = subprocess.run(["go", "test", "-json", "-count=1", "-race", "-timeout=10m",
                                      "-run", "^" + parent + "$",
-                                     "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package], cwd=ROOT, env=env, stdout=log, stderr=diagnostics)
+                                     test_package], cwd=ROOT, env=env, stdout=log, stderr=diagnostics)
         spec = importlib.util.spec_from_file_location("evidence", ROOT / "scripts/check-go-test-evidence.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -149,13 +158,18 @@ def main():
             scope = module.MANIFEST_ROOT_SCOPE
         if args.template_adoption:
             scope = module.TEMPLATE_ADOPTION_SCOPE
+        if args.template_adoption_recovery:
+            scope = module.TEMPLATE_ADOPTION_RECOVERY_SCOPE
         if args.template_migration:
             scope = module.TEMPLATE_MIGRATION_SCOPE
         if args.manifest_migration or args.manifest_control:
             scope = module.MANIFEST_CONTROL_SCOPE if args.manifest_control else module.MANIFEST_MIGRATION_SCOPE
         if args.initialization:
             scope = module.INITIALIZATION_SCOPE
-        evidence = module.validate(args.output.read_text(), result.returncode, **scope)
+        if args.service_references:
+            evidence = module.validate_service_references(args.output.read_text(), result.returncode)
+        else:
+            evidence = module.validate(args.output.read_text(), result.returncode, **scope)
         manifest['result'] = evidence
     except Exception as error:
         manifest['failure'] = str(error)

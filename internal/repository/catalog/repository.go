@@ -184,7 +184,7 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 		}
 		result := tx.Exec(query, args...)
 		if result.Error != nil {
-			return fmt.Errorf("update application environment: %w", result.Error)
+			return referenceLifecycleError(result.Error)
 		}
 		if result.RowsAffected == 0 {
 			if input.ExpectedUpdatedAt != nil {
@@ -206,7 +206,7 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 func (r *Repository) DeleteApplicationEnvironment(ctx context.Context, id string) error {
 	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM application_environments WHERE id = ?`, strings.TrimSpace(id))
 	if result.Error != nil {
-		return fmt.Errorf("delete application environment: %w", result.Error)
+		return referenceLifecycleError(result.Error)
 	}
 	if result.RowsAffected == 0 {
 		return ErrNotFound
@@ -367,9 +367,8 @@ func (r *Repository) listReleaseTargets(ctx context.Context, applicationEnvironm
 }
 
 func replaceReleaseTargetsTx(tx *gorm.DB, applicationEnvironmentID string, inputs []domaincatalog.ReleaseTargetInput, now time.Time) error {
-	if err := tx.Exec(`DELETE FROM release_targets WHERE application_environment_id = ?`, applicationEnvironmentID).Error; err != nil {
-		return fmt.Errorf("delete release targets: %w", err)
-	}
+	ids := make([]string, 0, len(inputs))
+	seen := make(map[string]bool, len(inputs))
 	for _, input := range inputs {
 		canonical, err := input.WithCanonicalServiceID()
 		if err != nil {
@@ -391,12 +390,37 @@ func replaceReleaseTargetsTx(tx *gorm.DB, applicationEnvironmentID string, input
 		if err != nil {
 			return fmt.Errorf("marshal Helm target configuration: %w", err)
 		}
-		if err := tx.Exec(`
+		if seen[item.ID] {
+			return fmt.Errorf("%w: duplicate release target identity", apperrors.ErrInvalidArgument)
+		}
+		seen[item.ID] = true
+		ids = append(ids, item.ID)
+		result := tx.Exec(`
 			INSERT INTO release_targets (id, application_environment_id, cluster_id, namespace, target_kind, executor_kind, group_key, wave_key, region_key, config_ref, workload_kind, workload_name, container_name, metadata, enabled, created_at, updated_at, helm_configuration, docker_configuration)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
-		`, item.ID, item.ApplicationEnvironmentID, nullableString(item.ClusterID), item.Namespace, item.TargetKind, item.ExecutorKind, nullableString(item.GroupKey), nullableString(item.WaveKey), nullableString(item.RegionKey), nullableString(item.ConfigRef), item.WorkloadKind, item.WorkloadName, nullableString(item.ContainerName), string(metadata), item.Enabled, item.CreatedAt, item.UpdatedAt, string(helm), string(docker)).Error; err != nil {
-			return fmt.Errorf("create release target: %w", err)
+            ON CONFLICT(id) DO UPDATE SET cluster_id=EXCLUDED.cluster_id, namespace=EXCLUDED.namespace,
+            target_kind=EXCLUDED.target_kind, executor_kind=EXCLUDED.executor_kind, group_key=EXCLUDED.group_key,
+            wave_key=EXCLUDED.wave_key, region_key=EXCLUDED.region_key, config_ref=EXCLUDED.config_ref,
+            workload_kind=EXCLUDED.workload_kind, workload_name=EXCLUDED.workload_name, container_name=EXCLUDED.container_name,
+            metadata=EXCLUDED.metadata, enabled=EXCLUDED.enabled, updated_at=EXCLUDED.updated_at,
+            helm_configuration=EXCLUDED.helm_configuration, docker_configuration=EXCLUDED.docker_configuration
+            WHERE release_targets.application_environment_id=EXCLUDED.application_environment_id
+		`, item.ID, item.ApplicationEnvironmentID, nullableString(item.ClusterID), item.Namespace, item.TargetKind, item.ExecutorKind, nullableString(item.GroupKey), nullableString(item.WaveKey), nullableString(item.RegionKey), nullableString(item.ConfigRef), item.WorkloadKind, item.WorkloadName, nullableString(item.ContainerName), string(metadata), item.Enabled, item.CreatedAt, item.UpdatedAt, string(helm), string(docker))
+		if result.Error != nil {
+			return referenceLifecycleError(result.Error)
 		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("%w: target belongs to another environment", apperrors.ErrConflict)
+		}
+	}
+	var deletion *gorm.DB
+	if len(ids) == 0 {
+		deletion = tx.Exec("DELETE FROM release_targets WHERE application_environment_id = ?", applicationEnvironmentID)
+	} else {
+		deletion = tx.Exec("DELETE FROM release_targets WHERE application_environment_id = ? AND id NOT IN ?", applicationEnvironmentID, ids)
+	}
+	if deletion.Error != nil {
+		return referenceLifecycleError(deletion.Error)
 	}
 	return nil
 }

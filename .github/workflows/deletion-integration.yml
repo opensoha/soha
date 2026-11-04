@@ -58,6 +58,12 @@ jobs:
           python3 scripts/check-go-test-evidence.py identity-test.json --exit-code 0 --identity
           go test -json -count=1 -race -timeout=10m -run '^TestKubernetesImportIdentityWithPostgres$' ./internal/repository/delivery | tee kubernetes-import-test.json
           python3 scripts/check-go-test-evidence.py kubernetes-import-test.json --exit-code 0 --kubernetes-import
+          go test -json -count=1 -race -timeout=10m -run '^TestServiceReferenceCandidatesWithPostgres$' ./internal/repository/delivery | tee service-reference-candidates-test.json
+          python3 scripts/check-go-test-evidence.py service-reference-candidates-test.json --exit-code 0 --service-reference-candidates
+          go test -json -count=1 -race -timeout=10m -run '^(TestServiceReferencesPostgres|TestServiceReferenceImpactsPostgres)$' ./internal/repository/delivery | tee service-references-test.json
+          python3 scripts/check-go-test-evidence.py service-references-test.json --exit-code 0 --service-references
+          go test -json -count=1 -race -timeout=10m -run '^TestTemplateAdoptionRecoveryWithPostgres$' ./internal/application/delivery | tee template-adoption-recovery-test.json
+          python3 scripts/check-go-test-evidence.py template-adoption-recovery-test.json --exit-code 0 --template-adoption-recovery
           go test -json -count=1 -race -timeout=10m -run '^TestTemplateAdoptionWithPostgres$' ./internal/repository/templateupdate | tee template-adoption-test.json
           python3 scripts/check-go-test-evidence.py template-adoption-test.json --exit-code 0 --template-adoption
           go test -json -count=1 -race -timeout=10m -run '^TestTemplateVersionsWithPostgres$' ./internal/repository/catalog | tee template-migration-test.json
@@ -85,6 +91,9 @@ jobs:
             main-chat-test.json
             identity-test.json
             kubernetes-import-test.json
+            service-reference-candidates-test.json
+            service-references-test.json
+            template-adoption-recovery-test.json
             template-adoption-test.json
             template-migration-test.json
             manifest-migration-test.json

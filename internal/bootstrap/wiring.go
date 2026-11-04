@@ -1185,6 +1185,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)
 	deliveryService.SetRecorders(core.auditService, core.operationService)
+	deliveryService.SetExecutionPrincipalReader(core.identityService)
 	deliveryService.SetDockerDelivery(dockerService)
 	deliveryService.SetLogRuntime(core.resourceService.Logs(), core.identityService)
 	if governanceService, governanceErr := appdeliverygovernance.New(repos.deliveryRepository, core.auditService); governanceErr == nil {
