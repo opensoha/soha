@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "reference-a",
+      "serviceId": "svc-api",
+      "revision": 3,
+      "state": "active",
+      "createdAt": "2026-11-04T08:00:00Z",
+      "updatedAt": "2026-11-04T08:00:00Z"
+    }
+  ],
+  "nextCursor": "svc-api"
+}

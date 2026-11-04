@@ -2,6 +2,8 @@ package sohaapi
 
 import (
 	"encoding/json"
+	"os"
+	"reflect"
 	"testing"
 )
 
@@ -204,6 +206,58 @@ func TestNetworkProxyInputsRemainInGoSDK(t *testing.T) {
 			if after[name] != value {
 				t.Fatalf("%s changed during round trip: %s", name, encoded)
 			}
+		}
+	}
+}
+
+func TestEnvironmentServiceReferenceInputRoundTrip(t *testing.T) {
+	for _, fixture := range []struct {
+		name string
+		read func() ([]byte, error)
+	}{
+		{"activate", func() ([]byte, error) {
+			return os.ReadFile("../../../fixtures/openapi/EnvironmentServiceReferenceInput/valid/activate.json")
+		}},
+		{"explicit-rebind", func() ([]byte, error) {
+			return os.ReadFile("../../../fixtures/openapi/EnvironmentServiceReferenceInput/valid/explicit-rebind.json")
+		}},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			raw, err := fixture.read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var input EnvironmentServiceReferenceInput
+			if err := json.Unmarshal(raw, &input); err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var before, after map[string]any
+			if err := json.Unmarshal(raw, &before); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(encoded, &after); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Fatalf("reference CAS fields or presence changed: %s", encoded)
+			}
+		})
+	}
+}
+
+func TestDeliveryReferenceEnumCompatibility(t *testing.T) {
+	for _, value := range []DeliveryPlanStatus{Confirmed, Confirming, Draft, WaitingApproval} {
+		if !value.Valid() {
+			t.Fatalf("published Plan status %q is invalid", value)
+		}
+	}
+	for _, value := range []PersonalAgentAccessDecisionStatus{Approved, Rejected, Revoked} {
+		if !value.Valid() {
+			t.Fatalf("published access decision %q is invalid", value)
 		}
 	}
 }

@@ -13950,6 +13950,7 @@
           },
           "impact": {
             "additionalProperties": true,
+            "description": "General caller-visible Plan impact. Service-reference impact may contain only a server-produced opaque revision and an existence hint; never include the private complete consumer snapshot, hidden consumer IDs or counts. Read current authorized consumer details from the dedicated service-reference-impact endpoint.",
             "type": "object"
           },
           "manifestSnapshots": {
@@ -14200,6 +14201,58 @@
           "applicationId",
           "applicationEnvironmentId",
           "action"
+        ],
+        "type": "object"
+      },
+      "DeliveryPlanServiceReferenceImpact": {
+        "additionalProperties": false,
+        "description": "Frozen server digest compared with the current complete consumer-set digest, alongside a current caller-visible page. Complete private snapshots, hidden IDs and hidden counts are never public. A stale revision requires a new Plan preflight, independently of approval and execution permissions.",
+        "properties": {
+          "currentRevision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "hasRestrictedConsumers": {
+            "type": "boolean"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentServiceReferenceConsumer"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "planId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "revision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "sourceApplicationEnvironmentId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "planId",
+          "sourceApplicationEnvironmentId",
+          "revision",
+          "currentRevision",
+          "isCurrent",
+          "items",
+          "hasRestrictedConsumers"
         ],
         "type": "object"
       },
@@ -17723,6 +17776,58 @@
           "EndpointNetworkInterfaceStatusUnknown"
         ]
       },
+      "EnvironmentServiceReference": {
+        "additionalProperties": false,
+        "description": "Active direct reference, not deployment or stream authorization. Reads reauthorize and freshly validate source identity/control and actual resource UIDs. Ordinary source configuration versions may refresh the preview; identity/control drift fails without cached fallback.",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currentSourceRevision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferencePreview"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sourceIdentityRevision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "state",
+          "sourceIdentityRevision",
+          "currentSourceRevision",
+          "preview",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "EnvironmentServiceReferenceCandidate": {
         "additionalProperties": false,
         "description": "Persisted inactive proposal. Identity digest excludes ordinary configuration/runtime versions; neither digest nor current status is activation permission or proof of runtime health/network reachability. Reads reauthorize and reobserve the source. No local target or source resource is claimed.",
@@ -17966,6 +18071,221 @@
         ],
         "type": "object"
       },
+      "EnvironmentServiceReferenceConsumer": {
+        "additionalProperties": false,
+        "description": "One currently authorized consumer of a directly owned source service. No source resource content or hidden consumer metadata.",
+        "properties": {
+          "applicationEnvironmentId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "environmentId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "environmentKey": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "referenceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "referenceRevision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "serviceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceApplicationEnvironmentId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceTargetIds": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "referenceId",
+          "referenceRevision",
+          "applicationEnvironmentId",
+          "environmentId",
+          "environmentKey",
+          "serviceId",
+          "sourceApplicationEnvironmentId",
+          "sourceTargetIds"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceConsumerPage": {
+        "additionalProperties": false,
+        "description": "Current consumers filtered by authorization before pagination. The restricted flag reveals no hidden count or identity; cursors contain visible reference IDs only.",
+        "properties": {
+          "hasRestrictedConsumers": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentServiceReferenceConsumer"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "hasRestrictedConsumers"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceDeleteInput": {
+        "additionalProperties": false,
+        "description": "Consumer-only safe detach CAS; source access or presence is not required. Executing source publication still blocks detachment.",
+        "properties": {
+          "expectedConsumerUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedReferenceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expectedReferenceId",
+          "expectedRevision",
+          "expectedConsumerUpdatedAt"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/EnvironmentServiceReference"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceInput": {
+        "additionalProperties": false,
+        "description": "Activate or explicitly rebind only from the saved candidate and complete source target group. No source, targets, ownership or force overrides are accepted. Candidate and reference identities fence delete-and-recreate ABA in addition to transactional consumer/source CAS.",
+        "else": {
+          "required": [
+            "expectedReferenceId"
+          ]
+        },
+        "if": {
+          "properties": {
+            "expectedRevision": {
+              "const": 0
+            }
+          }
+        },
+        "properties": {
+          "expectedCandidateId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedCandidateRevision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expectedConsumerUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedReferenceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expectedSourceRevision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "expectedSourceUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedCandidateId",
+          "expectedCandidateRevision",
+          "expectedConsumerUpdatedAt",
+          "expectedSourceUpdatedAt",
+          "expectedSourceRevision",
+          "expectedRevision"
+        ],
+        "then": {
+          "not": {
+            "required": [
+              "expectedReferenceId"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "EnvironmentServiceReferencePage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentServiceReferenceSummary"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Last service ID in this page.",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "EnvironmentServiceReferencePreview": {
         "additionalProperties": false,
         "properties": {
@@ -18081,6 +18401,56 @@
         ],
         "type": "object"
       },
+      "EnvironmentServiceReferenceResolvedTarget": {
+        "additionalProperties": false,
+        "description": "Authorized identity only. view is the consumer scope and origin is the direct source scope; this does not authorize YAML, logs, terminal or stream operations.",
+        "properties": {
+          "applicationId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferenceScope"
+          },
+          "referenceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "referenceRevision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "serviceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferenceTarget"
+          },
+          "view": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferenceScope"
+          }
+        },
+        "required": [
+          "referenceId",
+          "referenceRevision",
+          "applicationId",
+          "serviceId",
+          "view",
+          "origin",
+          "target",
+          "observedAt"
+        ],
+        "type": "object"
+      },
       "EnvironmentServiceReferenceResource": {
         "additionalProperties": false,
         "description": "Identity only; no workload spec, CR values, Helm values, annotations, output or credentials.",
@@ -18161,6 +18531,50 @@
           "tier",
           "stageLevel",
           "isProduction",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceSummary": {
+        "additionalProperties": false,
+        "description": "Consumer-owned active reference metadata for cold-open cleanup, without any source content, digest or global count.",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "serviceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "serviceId",
+          "revision",
+          "state",
+          "createdAt",
           "updatedAt"
         ],
         "type": "object"
@@ -76086,6 +76500,86 @@
         ]
       }
     },
+    "/application-environments/{applicationEnvironmentID}/service-reference-consumers": {
+      "get": {
+        "description": "List current consumers of the source service with source environment view and service view. Filter every consumer using its current view permissions before pagination. Only visible reference IDs may become cursors. hasRestrictedConsumers signals omitted consumers without exposing their count or identity. Server-side governance uses the complete private set independently of this caller-visible page. All success and error responses use Cache-Control no-store.",
+        "operationId": "listEnvironmentServiceReferenceConsumers",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "in": "query",
+            "name": "serviceId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Last visible reference ID from the preceding page; never a hidden reference ID.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferenceConsumerPage"
+                }
+              }
+            },
+            "description": "Authorized result. No cached source data.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "enum": [
+                    "no-store"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
     "/application-environments/{applicationEnvironmentID}/service-reference-previews": {
       "post": {
         "description": "Read-only preflight for a direct same-application, same-service, same-tier source. Requires consumer environment update, service update, source environment view and each actual source resource read permission. Returns the complete atomic source target set and current local target IDs without creating a reference, changing deployment control, executing a Plan or proving network reachability. Omitted sourceTargetIds selects the complete set; an explicit selection must equal that set. Revalidate all revisions and permissions when references are eventually saved; this response is not a write or stream ticket.",
@@ -76115,6 +76609,331 @@
               }
             },
             "description": "Authorized source identity preview. Cache-Control no-store."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/application-environments/{applicationEnvironmentID}/service-references": {
+      "get": {
+        "description": "Paginate only active reference metadata owned by the consumer. Requires consumer environment view/update and application view, without source access, for safe cleanup after a cold open. No source content or global counts are returned. All success and error responses use Cache-Control no-store.",
+        "operationId": "listEnvironmentServiceReferences",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Last service ID from the preceding page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferencePage"
+                }
+              }
+            },
+            "description": "Authorized result. No cached source data.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "enum": [
+                    "no-store"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/application-environments/{applicationEnvironmentID}/service-references/{serviceID}": {
+      "delete": {
+        "description": "Safely detach only the active reference after current consumer environment view/update, consumer updatedAt and reference ID/revision CAS. Source revocation or absence does not block cleanup. A source publication currently executing still returns conflict. Do not modify the source, owned targets or actual resources. All success and error responses use Cache-Control no-store.",
+        "operationId": "deleteEnvironmentServiceReference",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentServiceReferenceDeleteInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Reference detached without modifying source or targets.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "enum": [
+                    "no-store"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      },
+      "get": {
+        "description": "Read the active reference with current consumer environment view, service view, corresponding source view and actual source resource read permissions; consumer update is not required. Freshly validate source UIDs, identity and publication control. Ordinary configuration versions may refresh the preview. Identity/control drift or denied access fails without falling back to cached source data. This grants no write or stream access. All success and error responses use Cache-Control no-store.",
+        "operationId": "getEnvironmentServiceReference",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferenceEnvelope"
+                }
+              }
+            },
+            "description": "Authorized result. No cached source data.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "enum": [
+                    "no-store"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      },
+      "put": {
+        "description": "Activate or explicitly rebind using the saved candidate and its complete atomic source target group, never caller-supplied source, targets, ownership or force. Require current consumer view/update, service update, source view and each actual source resource read permission. In one transaction revalidate consumer/source updatedAt, fresh source digest and UIDs, current permissions, candidate ID/revision and reference ID/revision against ABA. The source must directly own the same application/service in the same tier; reference-to-reference chains are forbidden. Existing consumer-owned targets for this service cause conflict and are never implicitly removed. Reject mutations while a source publication is executing, preserving the claimed Plan impact. Revision zero creates; updates require expectedReferenceId. All success and error responses use Cache-Control no-store.",
+        "operationId": "putEnvironmentServiceReference",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentServiceReferenceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferenceEnvelope"
+                }
+              }
+            },
+            "description": "Authorized result. No cached source data.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "enum": [
+                    "no-store"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/application-environments/{applicationEnvironmentID}/service-references/{serviceID}/targets/{targetID}": {
+      "get": {
+        "description": "Resolve a referenced target identity after current reference ID/revision CAS, fresh source UID validation and both consumer and source view/service/resource read authorization. The view scope is the consumer and origin scope is the direct owned source. This is identity resolution only and grants no YAML, logs, terminal or stream authorization. All success and error responses use Cache-Control no-store.",
+        "operationId": "resolveEnvironmentServiceReferenceTarget",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceID"
+          },
+          {
+            "in": "path",
+            "name": "targetID",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expectedReferenceId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expectedRevision",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferenceResolvedTarget"
+                }
+              }
+            },
+            "description": "Authorized result. No cached source data.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "enum": [
+                    "no-store"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -93692,6 +94511,76 @@
             "description": "Accepted delivery plan confirmation and trigger result."
           },
           "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/delivery/plans/{planID}/service-reference-impact": {
+      "get": {
+        "description": "Read service-reference impact with current Plan/source read permissions and per-consumer view filtering. revision is the server-frozen complete-set digest and currentRevision is the current complete-set digest; the public page always lists current visible consumers. A changed set makes isCurrent false and requires a new Plan preflight. Never expose the private complete snapshot, hidden IDs or hidden counts. Approval and execution permissions remain independent. A known application Plan without its required stored snapshot must fail closed rather than fabricate an empty set; standalone Manifest Plans retain their existing compatibility. All success and error responses use Cache-Control no-store.",
+        "operationId": "getDeliveryPlanServiceReferenceImpact",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlanID"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Last visible reference ID from the preceding page; never a hidden reference ID.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryPlanServiceReferenceImpact"
+                }
+              }
+            },
+            "description": "Authorized result. No cached source data.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "enum": [
+                    "no-store"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
             "$ref": "#/components/responses/Error"
           }
         },

@@ -114,6 +114,16 @@ const requiredJsonSchemas = [
 ];
 
 const requiredOpenapiFixtureSchemas = [
+  "EnvironmentServiceReferenceInput",
+  "EnvironmentServiceReferenceDeleteInput",
+  "EnvironmentServiceReference",
+  "EnvironmentServiceReferenceEnvelope",
+  "EnvironmentServiceReferenceSummary",
+  "EnvironmentServiceReferencePage",
+  "EnvironmentServiceReferenceResolvedTarget",
+  "EnvironmentServiceReferenceConsumer",
+  "EnvironmentServiceReferenceConsumerPage",
+  "DeliveryPlanServiceReferenceImpact",
   "TemplateUpdatePreviewInput",
   "TemplateUpdatePolicyInput",
   "TemplateMigrationPolicy",

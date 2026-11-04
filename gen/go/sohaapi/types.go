@@ -2695,22 +2695,22 @@ func (e DeliveryPlanSource) Valid() bool {
 
 // Defines values for DeliveryPlanStatus.
 const (
-	Confirmed       DeliveryPlanStatus = "confirmed"
-	Confirming      DeliveryPlanStatus = "confirming"
-	Draft           DeliveryPlanStatus = "draft"
-	WaitingApproval DeliveryPlanStatus = "waiting_approval"
+	DeliveryPlanStatusConfirmed       DeliveryPlanStatus = "confirmed"
+	DeliveryPlanStatusConfirming      DeliveryPlanStatus = "confirming"
+	DeliveryPlanStatusDraft           DeliveryPlanStatus = "draft"
+	DeliveryPlanStatusWaitingApproval DeliveryPlanStatus = "waiting_approval"
 )
 
 // Valid indicates whether the value is a known member of the DeliveryPlanStatus enum.
 func (e DeliveryPlanStatus) Valid() bool {
 	switch e {
-	case Confirmed:
+	case DeliveryPlanStatusConfirmed:
 		return true
-	case Confirming:
+	case DeliveryPlanStatusConfirming:
 		return true
-	case Draft:
+	case DeliveryPlanStatusDraft:
 		return true
-	case WaitingApproval:
+	case DeliveryPlanStatusWaitingApproval:
 		return true
 	default:
 		return false
@@ -3452,6 +3452,21 @@ func (e EndpointNetworkInterfaceStatus) Valid() bool {
 	}
 }
 
+// Defines values for EnvironmentServiceReferenceState.
+const (
+	EnvironmentServiceReferenceStateActive EnvironmentServiceReferenceState = "active"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentServiceReferenceState enum.
+func (e EnvironmentServiceReferenceState) Valid() bool {
+	switch e {
+	case EnvironmentServiceReferenceStateActive:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EnvironmentServiceReferenceCandidateState.
 const (
 	EnvironmentServiceReferenceCandidateStateCandidate EnvironmentServiceReferenceCandidateState = "candidate"
@@ -3509,6 +3524,21 @@ const (
 func (e EnvironmentServiceReferenceCandidateSummaryState) Valid() bool {
 	switch e {
 	case EnvironmentServiceReferenceCandidateSummaryStateCandidate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EnvironmentServiceReferenceSummaryState.
+const (
+	EnvironmentServiceReferenceSummaryStateActive EnvironmentServiceReferenceSummaryState = "active"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentServiceReferenceSummaryState enum.
+func (e EnvironmentServiceReferenceSummaryState) Valid() bool {
+	switch e {
+	case EnvironmentServiceReferenceSummaryStateActive:
 		return true
 	default:
 		return false
@@ -8584,19 +8614,19 @@ func (e PersonalAgentAccessStatus) Valid() bool {
 
 // Defines values for PersonalAgentAccessDecisionStatus.
 const (
-	Approved PersonalAgentAccessDecisionStatus = "approved"
-	Rejected PersonalAgentAccessDecisionStatus = "rejected"
-	Revoked  PersonalAgentAccessDecisionStatus = "revoked"
+	PersonalAgentAccessDecisionStatusApproved PersonalAgentAccessDecisionStatus = "approved"
+	PersonalAgentAccessDecisionStatusRejected PersonalAgentAccessDecisionStatus = "rejected"
+	PersonalAgentAccessDecisionStatusRevoked  PersonalAgentAccessDecisionStatus = "revoked"
 )
 
 // Valid indicates whether the value is a known member of the PersonalAgentAccessDecisionStatus enum.
 func (e PersonalAgentAccessDecisionStatus) Valid() bool {
 	switch e {
-	case Approved:
+	case PersonalAgentAccessDecisionStatusApproved:
 		return true
-	case Rejected:
+	case PersonalAgentAccessDecisionStatusRejected:
 		return true
-	case Revoked:
+	case PersonalAgentAccessDecisionStatusRevoked:
 		return true
 	default:
 		return false
@@ -16856,23 +16886,25 @@ type DeliveryPlan struct {
 	HelmSnapshots            []HelmDeliverySnapshot        `json:"helmSnapshots,omitempty"`
 	ID                       string                        `json:"id"`
 	ImageTag                 string                        `json:"imageTag,omitempty"`
-	Impact                   map[string]any                `json:"impact,omitempty"`
-	ManifestSnapshots        []ManifestDeliverySnapshot    `json:"manifestSnapshots,omitempty"`
-	Reason                   string                        `json:"reason,omitempty"`
-	RefName                  string                        `json:"refName,omitempty"`
-	RefType                  string                        `json:"refType,omitempty"`
-	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
-	ReleaseName              string                        `json:"releaseName,omitempty"`
-	RequiresApproval         bool                          `json:"requiresApproval"`
-	RiskLevel                string                        `json:"riskLevel,omitempty"`
-	RollbackStrategy         string                        `json:"rollbackStrategy,omitempty"`
-	Source                   DeliveryPlanSource            `json:"source"`
-	Status                   DeliveryPlanStatus            `json:"status"`
-	TargetID                 string                        `json:"targetId,omitempty"`
-	TargetSummary            string                        `json:"targetSummary,omitempty"`
-	TemplateCandidateID      string                        `json:"templateCandidateId,omitempty"`
-	UpdatedAt                time.Time                     `json:"updatedAt"`
-	Variables                map[string]any                `json:"variables,omitempty"`
+
+	// Impact General caller-visible Plan impact. Service-reference impact may contain only a server-produced opaque revision and an existence hint; never include the private complete consumer snapshot, hidden consumer IDs or counts. Read current authorized consumer details from the dedicated service-reference-impact endpoint.
+	Impact              map[string]any             `json:"impact,omitempty"`
+	ManifestSnapshots   []ManifestDeliverySnapshot `json:"manifestSnapshots,omitempty"`
+	Reason              string                     `json:"reason,omitempty"`
+	RefName             string                     `json:"refName,omitempty"`
+	RefType             string                     `json:"refType,omitempty"`
+	ReleaseBundleID     string                     `json:"releaseBundleId,omitempty"`
+	ReleaseName         string                     `json:"releaseName,omitempty"`
+	RequiresApproval    bool                       `json:"requiresApproval"`
+	RiskLevel           string                     `json:"riskLevel,omitempty"`
+	RollbackStrategy    string                     `json:"rollbackStrategy,omitempty"`
+	Source              DeliveryPlanSource         `json:"source"`
+	Status              DeliveryPlanStatus         `json:"status"`
+	TargetID            string                     `json:"targetId,omitempty"`
+	TargetSummary       string                     `json:"targetSummary,omitempty"`
+	TemplateCandidateID string                     `json:"templateCandidateId,omitempty"`
+	UpdatedAt           time.Time                  `json:"updatedAt"`
+	Variables           map[string]any             `json:"variables,omitempty"`
 }
 
 // DeliveryPlanSource defines model for DeliveryPlan.Source.
@@ -16941,6 +16973,18 @@ type DeliveryPlanInput struct {
 
 // DeliveryPlanInputSource defines model for DeliveryPlanInput.Source.
 type DeliveryPlanInputSource string
+
+// DeliveryPlanServiceReferenceImpact Frozen server digest compared with the current complete consumer-set digest, alongside a current caller-visible page. Complete private snapshots, hidden IDs and hidden counts are never public. A stale revision requires a new Plan preflight, independently of approval and execution permissions.
+type DeliveryPlanServiceReferenceImpact struct {
+	CurrentRevision                string                                `json:"currentRevision"`
+	HasRestrictedConsumers         bool                                  `json:"hasRestrictedConsumers"`
+	IsCurrent                      bool                                  `json:"isCurrent"`
+	Items                          []EnvironmentServiceReferenceConsumer `json:"items"`
+	NextCursor                     string                                `json:"nextCursor,omitempty"`
+	PlanID                         string                                `json:"planId"`
+	Revision                       string                                `json:"revision"`
+	SourceApplicationEnvironmentID string                                `json:"sourceApplicationEnvironmentId"`
+}
 
 // DeliverySourceCommit Replace only explicit matching repository refs in a versioned workflow with a verified event commit. Unmatched repository/ref pairs are rejected; no repository is inferred.
 type DeliverySourceCommit struct {
@@ -17966,6 +18010,21 @@ type EndpointNetworkInterfaceKind string
 // EndpointNetworkInterfaceStatus defines model for EndpointNetworkInterfaceStatus.
 type EndpointNetworkInterfaceStatus string
 
+// EnvironmentServiceReference Active direct reference, not deployment or stream authorization. Reads reauthorize and freshly validate source identity/control and actual resource UIDs. Ordinary source configuration versions may refresh the preview; identity/control drift fails without cached fallback.
+type EnvironmentServiceReference struct {
+	CreatedAt              time.Time                          `json:"createdAt"`
+	CurrentSourceRevision  string                             `json:"currentSourceRevision"`
+	ID                     string                             `json:"id"`
+	Preview                EnvironmentServiceReferencePreview `json:"preview"`
+	Revision               int64                              `json:"revision"`
+	SourceIdentityRevision string                             `json:"sourceIdentityRevision"`
+	State                  EnvironmentServiceReferenceState   `json:"state"`
+	UpdatedAt              time.Time                          `json:"updatedAt"`
+}
+
+// EnvironmentServiceReferenceState defines model for EnvironmentServiceReference.State.
+type EnvironmentServiceReferenceState string
+
 // EnvironmentServiceReferenceCandidate Persisted inactive proposal. Identity digest excludes ordinary configuration/runtime versions; neither digest nor current status is activation permission or proof of runtime health/network reachability. Reads reauthorize and reobserve the source. No local target or source resource is claimed.
 type EnvironmentServiceReferenceCandidate struct {
 	CreatedAt              time.Time                                  `json:"createdAt"`
@@ -18042,6 +18101,57 @@ type EnvironmentServiceReferenceCandidateSummary struct {
 // EnvironmentServiceReferenceCandidateSummaryState defines model for EnvironmentServiceReferenceCandidateSummary.State.
 type EnvironmentServiceReferenceCandidateSummaryState string
 
+// EnvironmentServiceReferenceConsumer One currently authorized consumer of a directly owned source service. No source resource content or hidden consumer metadata.
+type EnvironmentServiceReferenceConsumer struct {
+	ApplicationEnvironmentID       string   `json:"applicationEnvironmentId"`
+	EnvironmentID                  string   `json:"environmentId"`
+	EnvironmentKey                 string   `json:"environmentKey"`
+	ReferenceID                    string   `json:"referenceId"`
+	ReferenceRevision              int64    `json:"referenceRevision"`
+	ServiceID                      string   `json:"serviceId"`
+	SourceApplicationEnvironmentID string   `json:"sourceApplicationEnvironmentId"`
+	SourceTargetIDs                []string `json:"sourceTargetIds"`
+}
+
+// EnvironmentServiceReferenceConsumerPage Current consumers filtered by authorization before pagination. The restricted flag reveals no hidden count or identity; cursors contain visible reference IDs only.
+type EnvironmentServiceReferenceConsumerPage struct {
+	HasRestrictedConsumers bool                                  `json:"hasRestrictedConsumers"`
+	Items                  []EnvironmentServiceReferenceConsumer `json:"items"`
+	NextCursor             string                                `json:"nextCursor,omitempty"`
+}
+
+// EnvironmentServiceReferenceDeleteInput Consumer-only safe detach CAS; source access or presence is not required. Executing source publication still blocks detachment.
+type EnvironmentServiceReferenceDeleteInput struct {
+	ExpectedConsumerUpdatedAt time.Time `json:"expectedConsumerUpdatedAt"`
+	ExpectedReferenceID       string    `json:"expectedReferenceId"`
+	ExpectedRevision          int64     `json:"expectedRevision"`
+}
+
+// EnvironmentServiceReferenceEnvelope defines model for EnvironmentServiceReferenceEnvelope.
+type EnvironmentServiceReferenceEnvelope struct {
+	// Item Active direct reference, not deployment or stream authorization. Reads reauthorize and freshly validate source identity/control and actual resource UIDs. Ordinary source configuration versions may refresh the preview; identity/control drift fails without cached fallback.
+	Item EnvironmentServiceReference `json:"item"`
+}
+
+// EnvironmentServiceReferenceInput Activate or explicitly rebind only from the saved candidate and complete source target group. No source, targets, ownership or force overrides are accepted. Candidate and reference identities fence delete-and-recreate ABA in addition to transactional consumer/source CAS.
+type EnvironmentServiceReferenceInput struct {
+	ExpectedCandidateID       string    `json:"expectedCandidateId"`
+	ExpectedCandidateRevision int64     `json:"expectedCandidateRevision"`
+	ExpectedConsumerUpdatedAt time.Time `json:"expectedConsumerUpdatedAt"`
+	ExpectedReferenceID       string    `json:"expectedReferenceId,omitempty"`
+	ExpectedRevision          int64     `json:"expectedRevision"`
+	ExpectedSourceRevision    string    `json:"expectedSourceRevision"`
+	ExpectedSourceUpdatedAt   time.Time `json:"expectedSourceUpdatedAt"`
+}
+
+// EnvironmentServiceReferencePage defines model for EnvironmentServiceReferencePage.
+type EnvironmentServiceReferencePage struct {
+	Items []EnvironmentServiceReferenceSummary `json:"items"`
+
+	// NextCursor Last service ID in this page.
+	NextCursor string `json:"nextCursor,omitempty"`
+}
+
 // EnvironmentServiceReferencePreview defines model for EnvironmentServiceReferencePreview.
 type EnvironmentServiceReferencePreview struct {
 	ApplicationID string                           `json:"applicationId"`
@@ -18075,6 +18185,18 @@ type EnvironmentServiceReferencePreviewInput struct {
 	SourceTargetIDs []string `json:"sourceTargetIds,omitempty"`
 }
 
+// EnvironmentServiceReferenceResolvedTarget Authorized identity only. view is the consumer scope and origin is the direct source scope; this does not authorize YAML, logs, terminal or stream operations.
+type EnvironmentServiceReferenceResolvedTarget struct {
+	ApplicationID     string                            `json:"applicationId"`
+	ObservedAt        time.Time                         `json:"observedAt"`
+	Origin            EnvironmentServiceReferenceScope  `json:"origin"`
+	ReferenceID       string                            `json:"referenceId"`
+	ReferenceRevision int64                             `json:"referenceRevision"`
+	ServiceID         string                            `json:"serviceId"`
+	Target            EnvironmentServiceReferenceTarget `json:"target"`
+	View              EnvironmentServiceReferenceScope  `json:"view"`
+}
+
 // EnvironmentServiceReferenceResource Identity only; no workload spec, CR values, Helm values, annotations, output or credentials.
 type EnvironmentServiceReferenceResource struct {
 	CrdName  string `json:"crdName,omitempty"`
@@ -18102,6 +18224,19 @@ type EnvironmentServiceReferenceScope struct {
 	Tier                     string    `json:"tier"`
 	UpdatedAt                time.Time `json:"updatedAt"`
 }
+
+// EnvironmentServiceReferenceSummary Consumer-owned active reference metadata for cold-open cleanup, without any source content, digest or global count.
+type EnvironmentServiceReferenceSummary struct {
+	CreatedAt time.Time                               `json:"createdAt"`
+	ID        string                                  `json:"id"`
+	Revision  int64                                   `json:"revision"`
+	ServiceID string                                  `json:"serviceId"`
+	State     EnvironmentServiceReferenceSummaryState `json:"state"`
+	UpdatedAt time.Time                               `json:"updatedAt"`
+}
+
+// EnvironmentServiceReferenceSummaryState defines model for EnvironmentServiceReferenceSummary.State.
+type EnvironmentServiceReferenceSummaryState string
 
 // EnvironmentServiceReferenceTarget defines model for EnvironmentServiceReferenceTarget.
 type EnvironmentServiceReferenceTarget struct {
@@ -33715,6 +33850,29 @@ type ListEnvironmentServiceReferenceCandidatesParams struct {
 	Cursor string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListEnvironmentServiceReferenceConsumersParams defines parameters for ListEnvironmentServiceReferenceConsumers.
+type ListEnvironmentServiceReferenceConsumersParams struct {
+	ServiceID string `form:"serviceId" json:"serviceId"`
+	Limit     int    `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Last visible reference ID from the preceding page; never a hidden reference ID.
+	Cursor string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListEnvironmentServiceReferencesParams defines parameters for ListEnvironmentServiceReferences.
+type ListEnvironmentServiceReferencesParams struct {
+	Limit int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Last service ID from the preceding page.
+	Cursor string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ResolveEnvironmentServiceReferenceTargetParams defines parameters for ResolveEnvironmentServiceReferenceTarget.
+type ResolveEnvironmentServiceReferenceTargetParams struct {
+	ExpectedReferenceID string `form:"expectedReferenceId" json:"expectedReferenceId"`
+	ExpectedRevision    int64  `form:"expectedRevision" json:"expectedRevision"`
+}
+
 // ListApplicationsParams defines parameters for ListApplications.
 type ListApplicationsParams struct {
 	Search string `form:"search,omitempty" json:"search,omitempty"`
@@ -34792,6 +34950,14 @@ type TriggerManifestSourceWebhookParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// GetDeliveryPlanServiceReferenceImpactParams defines parameters for GetDeliveryPlanServiceReferenceImpact.
+type GetDeliveryPlanServiceReferenceImpactParams struct {
+	Limit int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Last visible reference ID from the preceding page; never a hidden reference ID.
+	Cursor string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListReleaseBundlesParams defines parameters for ListReleaseBundles.
 type ListReleaseBundlesParams struct {
 	ApplicationID            string `form:"applicationId,omitempty" json:"applicationId,omitempty"`
@@ -35687,6 +35853,12 @@ type PutEnvironmentServiceReferenceCandidateJSONRequestBody = EnvironmentService
 
 // PreviewEnvironmentServiceReferenceJSONRequestBody defines body for PreviewEnvironmentServiceReference for application/json ContentType.
 type PreviewEnvironmentServiceReferenceJSONRequestBody = EnvironmentServiceReferencePreviewInput
+
+// DeleteEnvironmentServiceReferenceJSONRequestBody defines body for DeleteEnvironmentServiceReference for application/json ContentType.
+type DeleteEnvironmentServiceReferenceJSONRequestBody = EnvironmentServiceReferenceDeleteInput
+
+// PutEnvironmentServiceReferenceJSONRequestBody defines body for PutEnvironmentServiceReference for application/json ContentType.
+type PutEnvironmentServiceReferenceJSONRequestBody = EnvironmentServiceReferenceInput
 
 // CreateApplicationJSONRequestBody defines body for CreateApplication for application/json ContentType.
 type CreateApplicationJSONRequestBody = ApplicationInput
@@ -44417,6 +44589,27 @@ const (
 	Medium   MarketplaceAdvisorySeverity = MarketplaceAdvisorySeverityMedium
 	Low      MarketplaceAdvisorySeverity = MarketplaceAdvisorySeverityLow
 )
+
+// Retained for Go SDK source compatibility.
+const Confirmed DeliveryPlanStatus = "confirmed"
+
+// Retained for Go SDK source compatibility.
+const Confirming DeliveryPlanStatus = "confirming"
+
+// Retained for Go SDK source compatibility.
+const Draft DeliveryPlanStatus = "draft"
+
+// Retained for Go SDK source compatibility.
+const WaitingApproval DeliveryPlanStatus = "waiting_approval"
+
+// Retained for Go SDK source compatibility.
+const Approved PersonalAgentAccessDecisionStatus = "approved"
+
+// Retained for Go SDK source compatibility.
+const Rejected PersonalAgentAccessDecisionStatus = "rejected"
+
+// Retained for Go SDK source compatibility.
+const Revoked PersonalAgentAccessDecisionStatus = "revoked"
 
 // Retained for Go SDK source compatibility.
 const Browser PersonalGuestRuntimeInputKind = "browser"
