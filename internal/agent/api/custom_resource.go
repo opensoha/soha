@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -17,6 +19,39 @@ type customResourceListRequest struct {
 }
 
 type customResourceYAMLRequest = domainresource.CustomResourceYAMLRequest
+
+func registerCustomResourceGraphRoutes(platform *gin.RouterGroup, client *k8sagent.Client, actions actionPolicy, token string) {
+	platform.POST("/extensions/custom-resources/graph-page", authRequiredAnyMiddleware(token), actions.Require(actionPlatformCustomResourcesList), func(c *gin.Context) {
+		var req customResourceListRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&req) != nil || decoder.Decode(&struct{}{}) != io.EOF || invalidCRDDefinition(req.Definition) {
+			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "valid custom resource definition is required")
+			return
+		}
+		page, err := client.ReadCustomResourceGraphPage(c.Request.Context(), req.Definition, req.Namespace)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		apiresponse.Item(c, http.StatusOK, page)
+	})
+	platform.POST(contractresource.CustomResourceGraphObjectPath, authRequiredAnyMiddleware(token), func(c *gin.Context) {
+		var req contractresource.CustomResourceGraphObjectRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&req) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "valid named custom resource request is required")
+			return
+		}
+		item, err := client.ReadCustomResourceGraphObject(c.Request.Context(), req)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		apiresponse.Item(c, http.StatusOK, item)
+	})
+}
 
 func registerCustomResourceRoutes(platform *gin.RouterGroup, client *k8sagent.Client, actions actionPolicy) {
 	platform.POST("/extensions/custom-resources/access", func(c *gin.Context) {

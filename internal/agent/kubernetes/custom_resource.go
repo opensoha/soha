@@ -2,10 +2,12 @@ package kubernetes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -16,6 +18,14 @@ import (
 
 	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
 )
+
+func (c *Client) ReadCustomResourceGraphPage(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace string) (contractresource.CustomResourceGraphPage, error) {
+	return contractruntime.ReadCustomResourceGraphPage(ctx, c.restConfig, definition, namespace)
+}
+
+func (c *Client) ReadCustomResourceGraphObject(ctx context.Context, request contractresource.CustomResourceGraphObjectRequest) (json.RawMessage, error) {
+	return contractruntime.ReadCustomResourceGraphObject(ctx, c.restConfig, request)
+}
 
 func (c *Client) ListCustomResources(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace string) ([]domainresource.CustomResourceView, error) {
 	gvr, err := customResourceGVR(definition)

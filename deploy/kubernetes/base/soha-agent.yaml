@@ -117,6 +117,9 @@ rules:
       - tlsroutes
       - udproutes
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["controllerrevisions"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["metrics.k8s.io"]
     resources:
       - nodes
@@ -138,6 +141,9 @@ rules:
     verbs: ["create", "update", "patch", "delete"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingressclasses", "ingresses", "networkpolicies"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
     verbs: ["create", "update", "patch", "delete"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
@@ -234,10 +240,6 @@ data:
         - platform.port_forwards.create
         - platform.port_forwards.tunnel
         - platform.port_forwards.delete
-        - platform.helm_releases.install
-        - platform.helm_releases.values_update
-        - platform.helm_releases.delete
-        - platform.helm_releases.rollback
         - runtime.execution_tasks.cancel
 
     audit:

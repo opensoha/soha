@@ -28,6 +28,8 @@ func TestTopologyRPCAuthenticatesValidatesAndReportsDisabledVendor(t *testing.T)
 	}{
 		{`{"queries":[{"sourceId":"traefik.ingressroutes","namespace":"team"}]}`, "", 401},
 		{`{"queries":[{"sourceId":"secrets","namespace":"team"}]}`, "token", 400},
+		{`{"queries":[{"sourceId":"traefik.ingressroutes","namespace":"team","name":"route"}]}`, "token", 400},
+		{`{"queries":[{"sourceId":"kubernetes.services","namespace":"team","name":"../secret"}]}`, "token", 400},
 		{`{"queries":[{"sourceId":"kubernetes.pods","namespace":"../team"}]}`, "token", 400},
 		{`{"queries":[{"sourceId":"traefik.ingressroutes","namespace":"team"}]}`, "token", 200},
 		{`{"queries":[{"sourceId":"gateway.tcproutes","namespace":"team"}]}`, "token", 200},
@@ -63,6 +65,8 @@ func TestTopologyAndMonitoringReadThroughAuthenticatedHTTPAndKubernetesREST(t *t
 		switch r.URL.Path {
 		case "/api/v1":
 			_ = json.NewEncoder(w).Encode(metav1.APIResourceList{GroupVersion: "v1", APIResources: []metav1.APIResource{{Name: "services", Kind: "Service", Namespaced: true}}})
+		case "/api/v1/namespaces/team/services/web":
+			_ = json.NewEncoder(w).Encode(corev1.Service{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"}, ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "team", UID: "web-uid", Annotations: map[string]string{"private": "do-not-transport"}}})
 		case "/api/v1/namespaces/team/services":
 			_ = json.NewEncoder(w).Encode(corev1.ServiceList{Items: []corev1.Service{{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "team", UID: "web-uid", Annotations: map[string]string{"private": "do-not-transport"}}, Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "http", Port: 80}}}}}})
 		case "/api/v1/nodes":
@@ -91,6 +95,7 @@ func TestTopologyAndMonitoringReadThroughAuthenticatedHTTPAndKubernetesREST(t *t
 		{"/infrastructure/resource-monitoring", http.MethodGet, "", false, 401},
 		{"/infrastructure/resource-monitoring", http.MethodGet, "", true, 200},
 		{"/network/topology/snapshot", http.MethodPost, `{"queries":[{"sourceId":"kubernetes.services","namespace":"team"}]}`, true, 200},
+		{"/network/topology/snapshot", http.MethodPost, `{"queries":[{"sourceId":"kubernetes.services","namespace":"team","name":"web"}]}`, true, 200},
 	} {
 		request, _ := http.NewRequest(test.method, server.URL+"/api/v1/platform"+test.path, strings.NewReader(test.body))
 		if test.authorize {
@@ -122,6 +127,11 @@ func TestTopologyAndMonitoringReadThroughAuthenticatedHTTPAndKubernetesREST(t *t
 		} else {
 			var payload struct {
 				Data cr.NetworkTopologySnapshot `json:"data"`
+			}
+			if strings.Contains(test.body, `"name":"web"`) {
+				if json.Unmarshal(raw, &payload) != nil || payload.Data.Version != cr.NetworkTopologyNamedRootFeature || len(payload.Data.Sources) != 1 || payload.Data.Sources[0].Coverage.Name != "web" {
+					t.Fatalf("named proof lost: %s", raw)
+				}
 			}
 			if json.Unmarshal(raw, &payload) != nil || len(payload.Data.Sources) != 1 || payload.Data.Sources[0].Coverage.State != "available" || len(payload.Data.Sources[0].Objects) != 1 || payload.Data.Sources[0].Objects[0].Resource.UID != "web-uid" {
 				t.Fatalf("topology did not reach Kubernetes: %s", raw)

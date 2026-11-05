@@ -84,7 +84,14 @@ func New(cfg cfgpkg.KubernetesConfig) (*Client, error) {
 
 func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 	summary := domaincluster.Summary{
-		Capabilities:   []string{contractresource.NetworkTopologySnapshotFeature, contractresource.NetworkTopologyGatewayL4Feature, contractresource.ResourceMonitoringSnapshotFeature},
+		Capabilities: []string{
+			contractresource.NetworkTopologySnapshotFeature,
+			contractresource.NetworkTopologyNamedRootFeature,
+			contractresource.NetworkTopologyGatewayL4Feature,
+			contractresource.StorageResourceGraphFeature,
+			contractresource.ResourceMonitoringSnapshotFeature,
+			contractresource.RBACResourceGraphFeature,
+		},
 		ID:             c.cfg.ID,
 		Name:           c.cfg.Name,
 		Region:         c.cfg.Region,
@@ -106,10 +113,10 @@ func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 		return summary
 	}
 
-	capabilities := []string{
-		contractresource.NetworkTopologySnapshotFeature, contractresource.NetworkTopologyGatewayL4Feature, contractresource.ResourceMonitoringSnapshotFeature, "manifest.preflight", "manifest.ssa", "manifest.observe", contractruntime.ManifestAgentCapability,
+	capabilities := append(summary.Capabilities,
+		"manifest.preflight", "manifest.ssa", "manifest.observe", contractruntime.ManifestAgentCapability,
 		"logs.runtime.snapshot", "logs.runtime.stream", "logs.runtime.aggregate",
-	}
+	)
 	for _, group := range groups.Groups {
 		if strings.TrimSpace(group.Name) == "" {
 			continue
@@ -472,7 +479,7 @@ func (c *Client) GetStatefulSetDetail(ctx context.Context, namespace, name strin
 	if err != nil {
 		return domainresource.StatefulSetDetailView{}, err
 	}
-	pods, relatedResources, err := c.loadWorkloadDetailRelations(queryCtx, namespace, item.Spec.Selector, item.OwnerReferences, item.Spec.Template, "")
+	pods, relatedResources, err := c.loadWorkloadDetailRelations(queryCtx, namespace, item.Spec.Selector, item.OwnerReferences, item.Spec.Template, item.UID)
 	if err != nil {
 		return domainresource.StatefulSetDetailView{}, err
 	}
@@ -491,6 +498,7 @@ func (c *Client) GetStatefulSetYAML(ctx context.Context, namespace, name string)
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
+	copyItem.TypeMeta = metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"}
 	content, err := yaml.Marshal(copyItem)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
@@ -509,7 +517,7 @@ func (c *Client) GetDaemonSetDetail(ctx context.Context, namespace, name string)
 	if err != nil {
 		return domainresource.DaemonSetDetailView{}, err
 	}
-	pods, relatedResources, err := c.loadWorkloadDetailRelations(queryCtx, namespace, item.Spec.Selector, item.OwnerReferences, item.Spec.Template, "")
+	pods, relatedResources, err := c.loadWorkloadDetailRelations(queryCtx, namespace, item.Spec.Selector, item.OwnerReferences, item.Spec.Template, item.UID, "DaemonSet")
 	if err != nil {
 		return domainresource.DaemonSetDetailView{}, err
 	}
@@ -528,6 +536,7 @@ func (c *Client) GetDaemonSetYAML(ctx context.Context, namespace, name string) (
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
+	copyItem.TypeMeta = metav1.TypeMeta{APIVersion: "apps/v1", Kind: "DaemonSet"}
 	content, err := yaml.Marshal(copyItem)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
@@ -579,6 +588,8 @@ func (c *Client) GetJobYAML(ctx context.Context, namespace, name string) (domain
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
+	copyItem.APIVersion = batchv1.SchemeGroupVersion.String()
+	copyItem.Kind = "Job"
 	content, err := yaml.Marshal(copyItem)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
@@ -744,6 +755,9 @@ func (c *Client) GetPodDisruptionBudgetDetail(ctx context.Context, namespace, na
 	if err != nil {
 		return domainresource.PodDisruptionBudgetDetailView{}, err
 	}
+	if item.Spec.Selector == nil {
+		return mapPodDisruptionBudgetDetail(*item, "", nil, nil), nil
+	}
 	selector, err := metav1.LabelSelectorAsSelector(item.Spec.Selector)
 	if err != nil {
 		return domainresource.PodDisruptionBudgetDetailView{}, err
@@ -789,6 +803,8 @@ func (c *Client) GetCronJobYAML(ctx context.Context, namespace, name string) (do
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
+	copyItem.APIVersion = "batch/v1"
+	copyItem.Kind = "CronJob"
 	content, err := yaml.Marshal(copyItem)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
@@ -825,26 +841,33 @@ func (c *Client) GetResourceYAML(ctx context.Context, namespace, kind, name stri
 }
 
 func (c *Client) ApplyResourceYAML(ctx context.Context, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
-	view, _, err := c.applyResourceYAML(ctx, namespace, kind, name, content, false)
+	view, _, err := c.applyResourceYAML(ctx, namespace, kind, name, content, false, false)
 	return view, err
 }
 
 func (c *Client) DryRunResourceYAML(ctx context.Context, namespace, kind, name, content string) (domainresource.ResourceUpdateAnalysis, error) {
-	_, analysis, err := c.applyResourceYAML(ctx, namespace, kind, name, content, true)
+	_, analysis, err := c.applyResourceYAML(ctx, namespace, kind, name, content, true, false)
 	return analysis, err
 }
 
-func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, content string, dryRun bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+func (c *Client) EditObservedResourceYAML(ctx context.Context, namespace, kind, name, content string, dryRun bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+	return c.applyResourceYAML(ctx, namespace, kind, name, content, dryRun, true)
+}
+
+func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, content string, dryRun, requireObserved bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
 	if strings.TrimSpace(content) == "" {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("yaml content is required")
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest("yaml content is required")
 	}
 	gvr, namespaceScoped, canonicalKind, err := resourceGVRForKind(kind)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest(err.Error())
+	}
+	if namespaceScoped && strings.TrimSpace(namespace) == "" {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest("namespace is required for YAML updates")
 	}
 	var object map[string]any
 	if err := yaml.Unmarshal([]byte(content), &object); err != nil {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("invalid yaml: %w", err)
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest("invalid YAML")
 	}
 	item := &unstructured.Unstructured{Object: object}
 	item.SetKind(canonicalKind)
@@ -852,13 +875,13 @@ func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, c
 		item.SetName(name)
 	}
 	if item.GetName() != name {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("yaml metadata.name does not match target resource")
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest("yaml metadata.name does not match target resource")
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	resource, effectiveNamespace, err := c.dynamicResource(gvr, namespaceScoped, namespace, item)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, apierrors.NewBadRequest(err.Error())
 	}
 	current, err := resource.Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
@@ -868,8 +891,9 @@ func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, c
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	item.SetAPIVersion(gvr.GroupVersion().String())
-	item.SetResourceVersion(current.GetResourceVersion())
-	item.SetUID(current.GetUID())
+	if err := contractruntime.BindResourceEditIdentity(current, item, gvr.GroupResource(), requireObserved); err != nil {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
+	}
 	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(item.Object, "metadata", "creationTimestamp")
 	unstructured.RemoveNestedField(item.Object, "metadata", "generation")
@@ -877,7 +901,7 @@ func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, c
 	analysis := analyzeResourceUpdate(current, item)
 	updated, err := contractruntime.ApplyResourceEdit(queryCtx, resource, current, item, resourceEditFieldManager, dryRun)
 	if err != nil {
-		if dryRun && apierrors.IsConflict(err) {
+		if dryRun && apierrors.IsConflict(err) && (!requireObserved || contractruntime.IsResourceEditOwnershipConflict(err)) {
 			analysis.Conflicts = conflictsFromError(err.Error(), analysis)
 			return domainresource.ResourceYAMLView{}, analysis, nil
 		}
@@ -897,6 +921,17 @@ func (c *Client) applyResourceYAML(ctx context.Context, namespace, kind, name, c
 }
 
 func (c *Client) DeleteResource(ctx context.Context, namespace, kind, name string) error {
+	return c.deleteResource(ctx, namespace, kind, name, "")
+}
+
+func (c *Client) DeleteObservedWorkload(ctx context.Context, namespace, kind, name, expectedUID string) error {
+	if (kind != "Pod" && kind != "Deployment") || !contractresource.ValidWorkloadUID(expectedUID) {
+		return apierrors.NewBadRequest("a Pod or Deployment and valid expectedUid are required")
+	}
+	return c.deleteResource(ctx, namespace, kind, name, expectedUID)
+}
+
+func (c *Client) deleteResource(ctx context.Context, namespace, kind, name, expectedUID string) error {
 	gvr, namespaceScoped, _, err := resourceGVRForKind(kind)
 	if err != nil {
 		return err
@@ -913,9 +948,12 @@ func (c *Client) DeleteResource(ctx context.Context, namespace, kind, name strin
 			return err
 		}
 		uid, version := item.GetUID(), item.GetResourceVersion()
+		if expectedUID != "" && (string(uid) != expectedUID || version == "") {
+			return apierrors.NewConflict(gvr.GroupResource(), name, fmt.Errorf("pod identity changed; refresh before deleting"))
+		}
 		return resource.Delete(queryCtx, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &version}})
 	}
-	return contractruntime.DeleteManifest(queryCtx, resource, name, "")
+	return contractruntime.DeleteManifest(queryCtx, resource, name, expectedUID)
 }
 
 func (c *Client) dynamicResource(gvr schema.GroupVersionResource, namespaceScoped bool, namespace string, item *unstructured.Unstructured) (dynamic.ResourceInterface, string, error) {
@@ -1633,14 +1671,11 @@ func buildRESTConfig(cfg cfgpkg.KubernetesConfig) (*rest.Config, error) {
 }
 
 func mapPod(item corev1.Pod) domainresource.PodView {
-	ready := 0
+	containerStatuses, ready := buildPodListContainerStatuses(item)
 	restarts := int32(0)
 	claims := make([]string, 0)
 	requests, limits := podResourceTotals(item)
 	for _, status := range item.Status.ContainerStatuses {
-		if status.Ready {
-			ready++
-		}
 		restarts += status.RestartCount
 	}
 	for _, volume := range item.Spec.Volumes {
@@ -1651,6 +1686,7 @@ func mapPod(item corev1.Pod) domainresource.PodView {
 	return domainresource.PodView{
 		Name:                   item.Name,
 		Namespace:              item.Namespace,
+		UID:                    string(item.UID),
 		Phase:                  string(item.Status.Phase),
 		NodeName:               item.Spec.NodeName,
 		PodIP:                  item.Status.PodIP,
@@ -1659,7 +1695,9 @@ func mapPod(item corev1.Pod) domainresource.PodView {
 		Limits:                 formatNodeResourceTotals(limits),
 		Labels:                 item.Labels,
 		PersistentVolumeClaims: claims,
-		ReadyContainers:        fmt.Sprintf("%d/%d", ready, len(item.Status.ContainerStatuses)),
+		ReadyContainers:        fmt.Sprintf("%d/%d", ready, len(item.Spec.Containers)),
+		QOSClass:               string(item.Status.QOSClass),
+		ContainerStatuses:      containerStatuses,
 		Restarts:               restarts,
 		AgeSeconds:             secondsSince(item.CreationTimestamp.Time),
 	}
@@ -1699,6 +1737,7 @@ func mapPodDetail(item corev1.Pod) domainresource.PodDetailView {
 	return domainresource.PodDetailView{
 		Name:               item.Name,
 		Namespace:          item.Namespace,
+		UID:                string(item.UID),
 		Phase:              string(item.Status.Phase),
 		PodIP:              item.Status.PodIP,
 		HostIP:             item.Status.HostIP,
@@ -2197,6 +2236,7 @@ func mapDeploymentDetail(item appsv1.Deployment) domainresource.DeploymentDetail
 	return domainresource.DeploymentDetailView{
 		Name:               item.Name,
 		Namespace:          item.Namespace,
+		UID:                string(item.UID),
 		DesiredReplicas:    desired,
 		ReadyReplicas:      item.Status.ReadyReplicas,
 		UpdatedReplicas:    item.Status.UpdatedReplicas,
@@ -2314,32 +2354,21 @@ func mapDaemonSetDetail(item appsv1.DaemonSet) domainresource.DaemonSetDetailVie
 }
 
 func mapJob(item batchv1.Job) domainresource.JobView {
-	completions := int32(0)
-	if item.Spec.Completions != nil {
-		completions = *item.Spec.Completions
-	}
-	completionMode := ""
-	if item.Spec.CompletionMode != nil {
-		completionMode = string(*item.Spec.CompletionMode)
-	}
+	detail := mapJobDetail(item)
 	return domainresource.JobView{
-		Name:           item.Name,
-		Namespace:      item.Namespace,
-		Completions:    completions,
-		Succeeded:      item.Status.Succeeded,
-		Failed:         item.Status.Failed,
-		Active:         item.Status.Active,
-		CompletionMode: completionMode,
-		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		Name: detail.Name, Namespace: detail.Namespace, Completions: detail.Completions,
+		Succeeded: detail.Succeeded, Failed: detail.Failed, Active: detail.Active,
+		CompletionMode: detail.CompletionMode, AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+		CompletionTarget: detail.CompletionTarget, Suspend: detail.Suspend, Conditions: detail.Conditions,
+		StartTime: detail.StartTime, CompletionTime: detail.CompletionTime,
 	}
 }
 
 func mapJobDetail(item batchv1.Job) domainresource.JobDetailView {
-	completions := int32(0)
+	completions, parallelism := int32(0), int32(1)
 	if item.Spec.Completions != nil {
 		completions = *item.Spec.Completions
 	}
-	parallelism := int32(1)
 	if item.Spec.Parallelism != nil {
 		parallelism = *item.Spec.Parallelism
 	}
@@ -2347,29 +2376,34 @@ func mapJobDetail(item batchv1.Job) domainresource.JobDetailView {
 	if item.Spec.CompletionMode != nil {
 		completionMode = string(*item.Spec.CompletionMode)
 	}
-	startTime := ""
+	startTime, completionTime := "", ""
 	if item.Status.StartTime != nil {
-		startTime = item.Status.StartTime.Time.Format(time.RFC3339)
+		startTime = item.Status.StartTime.Format(time.RFC3339)
 	}
-	completionTime := ""
 	if item.Status.CompletionTime != nil {
-		completionTime = item.Status.CompletionTime.Time.Format(time.RFC3339)
+		completionTime = item.Status.CompletionTime.Format(time.RFC3339)
 	}
 	return domainresource.JobDetailView{
-		Name:           item.Name,
-		Namespace:      item.Namespace,
-		Completions:    completions,
-		Parallelism:    parallelism,
-		Succeeded:      item.Status.Succeeded,
-		Failed:         item.Status.Failed,
-		Active:         item.Status.Active,
-		CompletionMode: completionMode,
-		CreatedAt:      item.CreationTimestamp.Time.Format(time.RFC3339),
-		StartTime:      startTime,
-		CompletionTime: completionTime,
-		Labels:         item.Labels,
-		Annotations:    item.Annotations,
+		Name: item.Name, Namespace: item.Namespace, Completions: completions, Parallelism: parallelism,
+		CompletionTarget: item.Spec.Completions, Suspend: item.Spec.Suspend, BackoffLimit: item.Spec.BackoffLimit,
+		ActiveDeadlineSeconds: item.Spec.ActiveDeadlineSeconds, TTLSecondsAfterFinished: item.Spec.TTLSecondsAfterFinished,
+		Conditions: mapJobConditions(item.Status.Conditions),
+		Succeeded:  item.Status.Succeeded, Failed: item.Status.Failed, Active: item.Status.Active,
+		CompletionMode: completionMode, CreatedAt: item.CreationTimestamp.Format(time.RFC3339),
+		StartTime: startTime, CompletionTime: completionTime, Labels: item.Labels, Annotations: item.Annotations,
 	}
+}
+
+func mapJobConditions(conditions []batchv1.JobCondition) []domainresource.WorkloadConditionView {
+	result := make([]domainresource.WorkloadConditionView, 0, len(conditions))
+	for _, condition := range conditions {
+		observed := domainresource.WorkloadConditionView{Type: string(condition.Type), Status: string(condition.Status), Reason: condition.Reason, Message: condition.Message}
+		if !condition.LastTransitionTime.IsZero() {
+			observed.LastTransitionTime = condition.LastTransitionTime.Format(time.RFC3339)
+		}
+		result = append(result, observed)
+	}
+	return result
 }
 
 func mapCronJob(item batchv1.CronJob) domainresource.CronJobView {

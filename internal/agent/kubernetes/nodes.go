@@ -33,6 +33,7 @@ func buildNodeViews(nodes []corev1.Node, pods []corev1.Pod) []domainresource.Nod
 	for _, node := range nodes {
 		items = append(items, domainresource.NodeView{
 			Name:          node.Name,
+			Labels:        cloneStringMap(node.Labels),
 			Status:        nodeStatus(node),
 			Unschedulable: node.Spec.Unschedulable,
 			Taints:        mapNodeTaints(node.Spec.Taints),

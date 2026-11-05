@@ -182,7 +182,7 @@ func (c *Client) listDeploymentSummaries(ctx context.Context, namespace string) 
 			if item.Spec.Replicas != nil {
 				desired = *item.Spec.Replicas
 			}
-			views = append(views, domainresource.DeploymentView{Name: item.Name, Namespace: item.Namespace, Labels: item.Labels,
+			views = append(views, domainresource.DeploymentView{Name: item.Name, Namespace: item.Namespace, UID: string(item.UID), Labels: item.Labels,
 				DesiredReplicas: desired, ReadyReplicas: item.Status.ReadyReplicas, UpdatedReplicas: item.Status.UpdatedReplicas,
 				Available: item.Status.AvailableReplicas, AgeSeconds: secondsSince(item.CreationTimestamp.Time)})
 		}
@@ -217,7 +217,7 @@ func (c *Client) listDeploymentSummaries(ctx context.Context, namespace string) 
 			return nil, err
 		}
 		views = append(views, domainresource.DeploymentView{
-			Name: metadata.GetName(), Namespace: metadata.GetNamespace(), Labels: metadata.GetLabels(),
+			Name: metadata.GetName(), Namespace: metadata.GetNamespace(), UID: string(metadata.GetUID()), Labels: metadata.GetLabels(),
 			DesiredReplicas: desired, ReadyReplicas: ready, UpdatedReplicas: updated,
 			Available: available, AgeSeconds: secondsSince(metadata.GetCreationTimestamp().Time),
 		})
@@ -566,7 +566,14 @@ func (c *Client) listCRDSummaries(ctx context.Context) ([]domainresource.CRDView
 	if err != nil {
 		return nil, err
 	}
-	groups, resources, discoveryErr := c.discovery.ServerGroupsAndResources()
+	discoveryClient, err := c.discoveryForContext(queryCtx)
+	if err != nil {
+		return nil, err
+	}
+	groups, resources, discoveryErr := discoveryClient.ServerGroupsAndResourcesWithContext(queryCtx)
+	if queryCtx.Err() != nil {
+		return nil, queryCtx.Err()
+	}
 	if discoveryErr != nil && len(resources) == 0 {
 		return nil, discoveryErr
 	}

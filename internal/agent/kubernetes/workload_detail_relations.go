@@ -20,8 +20,9 @@ func (c *Client) loadWorkloadDetailRelations(
 	owners []metav1.OwnerReference,
 	template corev1.PodTemplateSpec,
 	podOwnerUID types.UID,
+	ownerKind ...string,
 ) ([]domainresource.PodView, []domainresource.WorkloadRelationView, error) {
-	pods, refs, err := c.listWorkloadPods(ctx, namespace, selector, podOwnerUID)
+	pods, refs, err := c.listWorkloadPods(ctx, namespace, selector, podOwnerUID, ownerKind...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -32,7 +33,7 @@ func (c *Client) loadWorkloadDetailRelations(
 	return pods, relations, nil
 }
 
-func (c *Client) listWorkloadPods(ctx context.Context, namespace string, selector *metav1.LabelSelector, ownerUID types.UID) ([]domainresource.PodView, podVolumeSourceRefSet, error) {
+func (c *Client) listWorkloadPods(ctx context.Context, namespace string, selector *metav1.LabelSelector, ownerUID types.UID, ownerKind ...string) ([]domainresource.PodView, podVolumeSourceRefSet, error) {
 	refs := emptyPodVolumeSourceRefs()
 	labelSelector := labels.Nothing()
 	var err error
@@ -55,6 +56,9 @@ func (c *Client) listWorkloadPods(ctx context.Context, namespace string, selecto
 	pods := make([]domainresource.PodView, 0, len(items.Items))
 	for _, item := range items.Items {
 		if ownerUID != "" && !ownedByUID(item.OwnerReferences, ownerUID) {
+			continue
+		}
+		if len(ownerKind) > 0 && ownerKind[0] == "DaemonSet" && !daemonSetControlsPod(item.OwnerReferences, ownerUID) {
 			continue
 		}
 		pods = append(pods, mapPod(item))

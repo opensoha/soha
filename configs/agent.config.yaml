@@ -44,10 +44,6 @@ security:
     - platform.port_forwards.create
     - platform.port_forwards.tunnel
     - platform.port_forwards.delete
-    - platform.helm_releases.install
-    - platform.helm_releases.values_update
-    - platform.helm_releases.delete
-    - platform.helm_releases.rollback
     - runtime.execution_tasks.cancel
     - docker.runtime.terminal
     # Enable after configuring an enrolled control-plane identity and VM SSH access.

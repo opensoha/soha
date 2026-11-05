@@ -116,7 +116,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-contracts
-          ref: ${{ steps.contracts.outputs.ref }}
+          ref: refs/tags/${{ steps.contracts.outputs.ref }}
           path: soha-contracts
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - uses: docker/setup-qemu-action@v3

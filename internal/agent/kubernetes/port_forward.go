@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
@@ -124,14 +125,15 @@ func (c *Client) resolvePortForwardTarget(ctx context.Context, namespace, kind, 
 		if len(svc.Spec.Selector) == 0 {
 			return "", 0, fmt.Errorf("service %s has no pod selector", name)
 		}
-		targetPort := port
-		for _, svcPort := range svc.Spec.Ports {
-			if int(svcPort.Port) == port {
-				if svcPort.TargetPort.IntValue() > 0 {
-					targetPort = svcPort.TargetPort.IntValue()
-				}
+		var servicePort *corev1.ServicePort
+		for i := range svc.Spec.Ports {
+			if int(svc.Spec.Ports[i].Port) == port && (svc.Spec.Ports[i].Protocol == "" || svc.Spec.Ports[i].Protocol == corev1.ProtocolTCP) {
+				servicePort = &svc.Spec.Ports[i]
 				break
 			}
+		}
+		if servicePort == nil {
+			return "", 0, fmt.Errorf("service %s does not declare TCP port %d", name, port)
 		}
 		podList, err := c.typed.CoreV1().Pods(namespace).List(queryCtx, metav1.ListOptions{
 			LabelSelector: labels.SelectorFromSet(svc.Spec.Selector).String(),
@@ -139,10 +141,19 @@ func (c *Client) resolvePortForwardTarget(ctx context.Context, namespace, kind, 
 		if err != nil {
 			return "", 0, fmt.Errorf("list pods: %w", err)
 		}
+		var targetError error
 		for _, pod := range podList.Items {
 			if pod.Status.Phase == corev1.PodRunning && portForwardPodReady(pod) {
-				return pod.Name, targetPort, nil
+				targetPort, err := resolveTCPServiceTargetPort(svc, *servicePort, &pod)
+				if err != nil {
+					targetError = err
+					continue
+				}
+				return pod.Name, int(targetPort), nil
 			}
+		}
+		if targetError != nil {
+			return "", 0, fmt.Errorf("resolve service target port: %w", targetError)
 		}
 		return "", 0, fmt.Errorf("no ready pod found for service %s", name)
 	case "pod":
@@ -153,6 +164,29 @@ func (c *Client) resolvePortForwardTarget(ctx context.Context, namespace, kind, 
 	default:
 		return "", 0, fmt.Errorf("unsupported target kind %s", kind)
 	}
+}
+
+func resolveTCPServiceTargetPort(service *corev1.Service, port corev1.ServicePort, pod *corev1.Pod) (int32, error) {
+	if service.Spec.ClusterIP == corev1.ClusterIPNone {
+		return port.Port, nil
+	}
+	if port.TargetPort.Type == intstr.Int {
+		if port.TargetPort.IntVal == 0 {
+			return port.Port, nil
+		}
+		return port.TargetPort.IntVal, nil
+	}
+	name := port.TargetPort.StrVal
+	for _, containers := range [][]corev1.Container{pod.Spec.Containers, pod.Spec.InitContainers} {
+		for _, container := range containers {
+			for _, candidate := range container.Ports {
+				if candidate.Name == name && (candidate.Protocol == "" || candidate.Protocol == corev1.ProtocolTCP) {
+					return candidate.ContainerPort, nil
+				}
+			}
+		}
+	}
+	return 0, fmt.Errorf("pod %s has no TCP container port named %s", pod.Name, name)
 }
 
 func portForwardPodReady(pod corev1.Pod) bool {

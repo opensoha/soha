@@ -138,6 +138,8 @@ func registerPlatformDeploymentRoutes(platform *gin.RouterGroup, client *k8sagen
 	})
 }
 func registerPlatformControllerRoutes(platform *gin.RouterGroup, client *k8sagent.Client) {
+	registerPlatformStatefulSetHistoryRoutes(platform, client)
+	registerPlatformDaemonSetHistoryRoutes(platform, client)
 	platform.GET("/workloads/statefulsets", func(c *gin.Context) {
 		namespace := c.Query("namespace")
 		items, err := client.ListStatefulSets(c.Request.Context(), namespace)
