@@ -34,7 +34,7 @@ jobs:
         with:
           repository: opensoha/soha-web
           path: soha-web
-          ref: ${{ inputs.latest_siblings && 'main' || '9d202225d805bdce164aea4d83af91584ba18c84' }}
+          ref: ${{ inputs.latest_siblings && 'main' || '21f943075fe2dfaf6e9c03c04a93f472317cc262' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Record actual source combination
         env:
