@@ -379,15 +379,21 @@ test('Cluster edit failures preserve the draft and do not silently save or check
   await page.goto(detail)
   await edit(page)
   await fillIdentity(page)
-  await page.getByRole('button', { name: '保存并校验', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('Cluster configuration changed')
-  await expect(page.getByRole('textbox', { name: '集群标签值', exact: true })).toHaveValue(
+  const editor = page.getByRole('dialog', { name: '编辑集群', exact: true })
+  // Ant Design's animated loading icon can contribute to the accessible name.
+  const saveAndCheck = editor.getByRole('button').filter({ hasText: /^保存并校验$/ })
+  const updates = () => state.writes.filter(({ method, path }) => method === 'PUT' && path === root)
+  await saveAndCheck.click()
+  await expect(editor).toContainText('Cluster configuration changed')
+  await expect(editor.getByRole('textbox', { name: '集群标签值', exact: true })).toHaveValue(
     'middleware-prod',
   )
+  expect(updates()).toHaveLength(1)
   expect(state.reads).not.toContain(root + '/resource-monitoring')
   state.failSave = 0
-  await page.getByRole('button', { name: '保存并校验', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('主机指标已接通')
+  await saveAndCheck.click()
+  await expect(editor).toContainText('主机指标已接通')
+  expect(updates()).toHaveLength(2)
   await clickDone(page)
   verifyBrowserEvidence(evidence)
 })
