@@ -17,7 +17,7 @@ import uuid
 
 CACHE_ROOT = Path('/private/tmp/opensoha-cache')
 GIB = 1024 ** 3
-MIN_FREE = 10 * GIB
+MIN_FREE = 5 * GIB
 LIMITS = {'go-build': 8 * GIB, 'go-mod': 6 * GIB,
           'npm': 2 * GIB, 'golangci-lint': GIB}
 LABEL = 'com.opensoha.local-verification'

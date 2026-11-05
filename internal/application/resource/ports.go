@@ -100,6 +100,8 @@ type DeploymentAgent interface {
 }
 
 type StatefulSetAgent interface {
+	ListStatefulSetRolloutHistory(context.Context, string, string) ([]domainresource.RolloutHistoryView, error)
+	GetStatefulSetRevisionYAML(context.Context, string, string, string) (domainresource.ResourceYAMLView, error)
 	ListStatefulSets(context.Context, string) ([]domainresource.StatefulSetView, error)
 	GetStatefulSetDetail(context.Context, string, string) (domainresource.StatefulSetDetailView, error)
 	GetStatefulSetYAML(context.Context, string, string) (domainresource.ResourceYAMLView, error)
@@ -108,6 +110,8 @@ type StatefulSetAgent interface {
 }
 
 type DaemonSetAgent interface {
+	ListDaemonSetRolloutHistory(context.Context, string, string) ([]domainresource.RolloutHistoryView, error)
+	GetDaemonSetRevisionYAML(context.Context, string, string, string) (domainresource.ResourceYAMLView, error)
 	ListDaemonSets(context.Context, string) ([]domainresource.DaemonSetView, error)
 	GetDaemonSetDetail(context.Context, string, string) (domainresource.DaemonSetDetailView, error)
 	GetDaemonSetYAML(context.Context, string, string) (domainresource.ResourceYAMLView, error)
@@ -166,6 +170,8 @@ type DirectDeploymentMutator interface {
 }
 
 type DirectStatefulSet interface {
+	ListStatefulSetRolloutHistory(context.Context, string, string, string) ([]domainresource.RolloutHistoryView, error)
+	GetStatefulSetRevisionYAML(context.Context, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ListStatefulSets(context.Context, string, string) ([]domainresource.StatefulSetView, string, error)
 	GetStatefulSetDetail(context.Context, string, string, string) (domainresource.StatefulSetDetailView, error)
 	GetStatefulSetYAML(context.Context, string, string, string) (domainresource.ResourceYAMLView, error)
@@ -174,6 +180,8 @@ type DirectStatefulSet interface {
 }
 
 type DirectDaemonSet interface {
+	ListDaemonSetRolloutHistory(context.Context, string, string, string) ([]domainresource.RolloutHistoryView, error)
+	GetDaemonSetRevisionYAML(context.Context, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ListDaemonSets(context.Context, string, string) ([]domainresource.DaemonSetView, error)
 	GetDaemonSetDetail(context.Context, string, string, string) (domainresource.DaemonSetDetailView, error)
 	GetDaemonSetYAML(context.Context, string, string, string) (domainresource.ResourceYAMLView, error)
@@ -221,6 +229,7 @@ type ConfigurationObjectMutationAgent interface {
 }
 
 type ConfigurationObjectAgent interface {
+	GetSecretCertificate(context.Context, string, string) (domainresource.SecretCertificateView, error)
 	GetConfigMapDetail(context.Context, string, string) (domainresource.ConfigMapDetailView, error)
 	GetSecretDetail(context.Context, string, string) (domainresource.SecretDetailView, error)
 	ListConfigReferences(context.Context, string, string, bool) ([]domainresource.ConfigReferenceView, error)
@@ -260,6 +269,7 @@ type ConfigurationAgent interface {
 }
 
 type DirectConfigurationObjectReader interface {
+	GetSecretCertificate(context.Context, string, string, string) (domainresource.SecretCertificateView, error)
 	ListConfigMaps(context.Context, string, string) ([]domainresource.ConfigMapView, error)
 	ListSecrets(context.Context, string, string) ([]domainresource.SecretView, error)
 	GetConfigMapDetail(context.Context, string, string, string) (domainresource.ConfigMapDetailView, error)
@@ -444,7 +454,7 @@ type HelmReleaseReaderAgent interface {
 
 type HelmReleaseMutationAgent interface {
 	InstallHelmChart(context.Context, domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error)
-	UpdateHelmReleaseValues(context.Context, string, string, string) (domainresource.HelmValuesView, error)
+	UpdateHelmReleaseValues(context.Context, string, string, string, int) (domainresource.HelmValuesView, error)
 	DryRunHelmReleaseRollback(context.Context, string, string, domainresource.HelmReleaseRollbackInput) error
 	RollbackHelmRelease(context.Context, string, string, domainresource.HelmReleaseRollbackInput) (domainresource.HelmReleaseDetailView, error)
 	DeleteHelmRelease(context.Context, string, string) error
@@ -537,6 +547,16 @@ type DirectGenericResource interface {
 	DeleteResource(context.Context, string, string, string, string) error
 }
 
+type observedYAMLAgent interface {
+	ApplyObservedResourceYAML(context.Context, string, string, string, string) (domainresource.ResourceYAMLView, error)
+	DryRunObservedResourceYAML(context.Context, string, string, string, string) (domainresource.ResourceUpdateAnalysis, error)
+}
+
+type observedYAMLDirect interface {
+	ApplyObservedResourceYAML(context.Context, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
+	DryRunObservedResourceYAML(context.Context, string, string, string, string, string) (domainresource.ResourceUpdateAnalysis, error)
+}
+
 type DirectResourceGraph interface {
 	GetResourceGraph(context.Context, string, string, string, string) (domainresource.ResourceGraph, error)
 }
@@ -551,8 +571,10 @@ type DirectResourceCreator interface {
 	CreateResolvedManifest(context.Context, string, domainresource.ResolvedCreateManifest, string) (domainresource.ResourceYAMLView, error)
 }
 
+type AuthorizeCustomCreateDiscovery func(ctx context.Context, apiVersion, kind, namespace string) error
+
 type AgentResourceCreator interface {
-	ResolveCreateManifests(context.Context, string, int) ([]domainresource.ResolvedCreateManifest, error)
+	ResolveCreateManifests(context.Context, string, int, AuthorizeCustomCreateDiscovery) ([]domainresource.ResolvedCreateManifest, error)
 	DryRunCreateManifest(context.Context, string, string, domainresource.ResolvedCreateManifest) error
 	CreateResolvedManifest(context.Context, string, string, domainresource.ResolvedCreateManifest) (domainresource.ResourceYAMLView, error)
 }
@@ -579,7 +601,7 @@ type DirectHelmReleaseReader interface {
 
 type DirectHelmReleaseMutator interface {
 	InstallHelmChart(context.Context, string, domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error)
-	UpdateHelmReleaseValues(context.Context, string, string, string, string) (domainresource.HelmValuesView, error)
+	UpdateHelmReleaseValues(context.Context, string, string, string, string, int) (domainresource.HelmValuesView, error)
 	DryRunHelmReleaseRollback(context.Context, string, string, string, domainresource.HelmReleaseRollbackInput) error
 	RollbackHelmRelease(context.Context, string, string, string, domainresource.HelmReleaseRollbackInput) (domainresource.HelmReleaseDetailView, error)
 	DeleteHelmRelease(context.Context, string, string, string) error

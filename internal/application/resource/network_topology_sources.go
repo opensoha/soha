@@ -15,25 +15,33 @@ import (
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
+
+type topologyCollectionPolicyKey struct{}
 
 func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.NetworkTopologyView, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	ctx = queryCtx
-	connection, _, err := n.authorizeResourceGroup(ctx, principal, clusterID, namespace, "network", "NetworkTopology", domainaccess.ActionView)
+	ctx = context.WithValue(queryCtx, graphNamespacePolicyKey{}, true)
+	connection, _, err := n.authorizeTopologyRead(ctx, principal, clusterID, namespace, "network", "NetworkTopology", domainaccess.ActionView)
 	if err != nil {
 		return domainresource.NetworkTopologyView{}, err
 	}
 	if (connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent && n.topologyAgent == nil) || (connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent && n.topologyDirect == nil) {
-		return n.legacyTopologyWithCoverage(ctx, principal, clusterID, namespace)
+		return n.legacyTopologyWithCoverage(ctx, principal, connection, namespace)
 	}
-	request, coverage := n.topologySourceQueries(ctx, principal, connection, namespace)
+	// Keep a slow optional source's policy lookup from consuming the entire
+	// request before any already-authorized Kubernetes resources can be read.
+	deadline, _ := ctx.Deadline()
+	authorizationCtx, finishAuthorization := context.WithTimeout(ctx, time.Until(deadline)/2)
+	request, coverage := n.topologySourceQueries(authorizationCtx, principal, connection, namespace)
+	finishAuthorization()
 	snapshot := contractresource.NetworkTopologySnapshot{Version: contractresource.NetworkTopologySnapshotFeature}
 	if len(request.Queries) > 0 {
 		snapshot, err = n.readTopologySnapshot(ctx, connection, request)
 		if errors.Is(err, contractresource.ErrNetworkTopologySnapshotUnsupported) {
-			return n.legacyTopologyWithCoverage(ctx, principal, clusterID, namespace)
+			return n.legacyTopologyWithCoverage(ctx, principal, connection, namespace)
 		}
 		if err != nil {
 			snapshot.Sources = nil
@@ -75,9 +83,10 @@ func (n *Network) topologySourceQueries(ctx context.Context, principal domainide
 		if vendor {
 			group = "extensions"
 		}
-		_, decision, err := n.authorizeResourceGroup(ctx, principal, connection.Summary.ID, ns, group, definition.Kind, domainaccess.ActionView)
+		sourceCtx := topologySourcePolicyContext(ctx, ns, definition.Namespaced)
+		_, decision, err := n.authorizeTopologyRead(sourceCtx, principal, connection.Summary.ID, ns, group, definition.Kind, domainaccess.ActionView)
 		if err != nil {
-			coverage = append(coverage, topologyCoverage(definition, ns, "denied", "soha_permission"))
+			coverage = append(coverage, topologyAuthorizationCoverage(definition, ns, err, "soha_permission"))
 			continue
 		}
 		namespaces := topologyQueryNamespaces(ns, definition.Namespaced, decision)
@@ -93,13 +102,20 @@ func (n *Network) topologySourceQueries(ctx context.Context, principal domainide
 			continue
 		}
 		for _, targetNamespace := range namespaces {
-			if _, _, err := n.authorizeResourceGroup(ctx, principal, connection.Summary.ID, targetNamespace, group, definition.Kind, domainaccess.ActionView); err != nil {
-				coverage = append(coverage, topologyCoverage(definition, targetNamespace, "denied", "soha_permission"))
+			if err := n.authorizeTopologySourceScope(ctx, principal, connection, definition, group, ns, targetNamespace); err != nil {
+				coverage = append(coverage, topologyAuthorizationCoverage(definition, targetNamespace, err, "soha_permission"))
 				continue
 			}
-			if vendor && !n.canReadTopologyVendor(ctx, principal, connection, definition, targetNamespace) {
-				coverage = append(coverage, topologyCoverage(definition, targetNamespace, "denied", "custom_resource_grant"))
-				continue
+			if vendor {
+				allowed, err := n.canReadTopologyVendor(ctx, principal, connection, definition, targetNamespace)
+				if err != nil {
+					coverage = append(coverage, topologyAuthorizationCoverage(definition, targetNamespace, err, "custom_resource_grant"))
+					continue
+				}
+				if !allowed {
+					coverage = append(coverage, topologyCoverage(definition, targetNamespace, "denied", "custom_resource_grant"))
+					continue
+				}
 			}
 			if len(request.Queries) >= contractresource.NetworkTopologyMaxQueries {
 				item := topologyCoverage(definition, ns, "partial", "query_budget")
@@ -113,6 +129,33 @@ func (n *Network) topologySourceQueries(ctx context.Context, principal domainide
 	return request, coverage
 }
 
+func topologySourcePolicyContext(ctx context.Context, namespace string, namespaced bool) context.Context {
+	// The unscoped planning decision may project a bounded set of namespaces.
+	// The planner checks the actual collection after it selects those targets.
+	if namespace == "" && namespaced {
+		return ctx
+	}
+	return context.WithValue(ctx, topologyCollectionPolicyKey{}, true)
+}
+
+func (n *Network) authorizeTopologySourceScope(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, definition contractresource.NetworkTopologySourceDefinition, group, requestedNamespace, targetNamespace string) error {
+	if definition.Namespaced && targetNamespace == "" {
+		return n.requireTopologyWideRead(ctx, principal, connection, group, definition.Kind, domainaccess.ActionView)
+	}
+	if targetNamespace == requestedNamespace {
+		return nil
+	}
+	collectionCtx := context.WithValue(ctx, topologyCollectionPolicyKey{}, true)
+	_, decision, err := n.authorizeTopologyRead(collectionCtx, principal, connection.Summary.ID, targetNamespace, group, definition.Kind, domainaccess.ActionView)
+	if err != nil {
+		return err
+	}
+	if !graphNamedReferenceScopeAllowed(targetNamespace, decision) {
+		return apperrors.ErrAccessDenied
+	}
+	return nil
+}
+
 func topologyQueryNamespaces(namespace string, namespaced bool, decision domainaccess.Decision) []string {
 	if !namespaced {
 		if !clusterWideResourceScope(decision) {
@@ -120,11 +163,17 @@ func topologyQueryNamespaces(namespace string, namespaced bool, decision domaina
 		}
 		return []string{""}
 	}
+	if namespace != "" {
+		if !graphNamedReferenceScopeAllowed(namespace, decision) {
+			return nil
+		}
+		return []string{namespace}
+	}
 	scope := decision.ResourceScope
 	if scope != nil && scope.LabelSelector != "" {
 		return nil
 	}
-	if namespace != "" || scope == nil {
+	if scope == nil {
 		return []string{namespace}
 	}
 	if len(scope.NamespaceSelectors) > 0 || len(scope.ExcludedNamespaceSelectors) > 0 {
@@ -141,19 +190,71 @@ func topologyQueryNamespaces(namespace string, namespaced bool, decision domaina
 	return slices.Compact(result)
 }
 
-func (n *Network) canReadTopologyVendor(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, source contractresource.NetworkTopologySourceDefinition, namespace string) bool {
+func (n *Network) canReadTopologyVendor(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, source contractresource.NetworkTopologySourceDefinition, namespace string) (bool, error) {
 	if n.customResources == nil {
-		return false
+		return false, nil
 	}
-	if _, err := n.customResources.authorizeCRDDefinitionAccess(ctx, principal, connection.Summary.ID, domainaccess.ActionView); err != nil {
-		return false
+	if _, _, err := n.customResources.authorizeTopologyRead(ctx, principal, connection.Summary.ID, "", "extensions", "CustomResourceDefinition", domainaccess.ActionView); err != nil {
+		return false, err
 	}
-	if _, _, err := n.customResources.authorizeCustomResourceAccess(ctx, principal, connection.Summary.ID, namespace, source.Kind, domainaccess.ActionList); err != nil {
-		return false
+	if namespace == "" && source.Namespaced {
+		if err := n.customResources.requireTopologyWideRead(ctx, principal, connection, "extensions", source.Kind, domainaccess.ActionList); err != nil {
+			return false, err
+		}
+	} else {
+		collectionCtx := context.WithValue(ctx, topologyCollectionPolicyKey{}, true)
+		_, decision, err := n.customResources.authorizeTopologyRead(collectionCtx, principal, connection.Summary.ID, namespace, "extensions", source.Kind, domainaccess.ActionList)
+		if err != nil {
+			return false, err
+		}
+		if !graphNamedReferenceScopeAllowed(namespace, decision) {
+			return false, nil
+		}
 	}
 	definition := crdResourceDefinition{Kind: source.Kind, Group: source.Group, Version: source.Version, Resource: source.Resource, Namespaced: source.Namespaced}
 	// The snapshot's actual LIST enforces Kubernetes RBAC without reviewing unrelated mutation verbs.
-	return slices.Contains(configuredCustomResourceActions(connection, definition, namespace, []string{string(domainaccess.ActionList)}), string(domainaccess.ActionList))
+	return slices.Contains(configuredCustomResourceActions(connection, definition, namespace, []string{string(domainaccess.ActionList)}), string(domainaccess.ActionList)), nil
+}
+
+func (s *resourceAccess) requireTopologyWideRead(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, group, kind string, action domainaccess.Action) error {
+	request := s.resourceAccessRequest(ctx, principal, connection, "", group, kind, action)
+	request.RequireClusterWideNamespace = true
+	decision, err := s.authorizer.Authorize(ctx, request)
+	if err != nil {
+		return err
+	}
+	if clusterWideResourceScope(decision) {
+		return nil
+	}
+	const reason = "topology source requires access across all namespaces"
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", kind, "", string(action), "deny", reason)
+	return fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, reason)
+}
+
+// Topology consumes read decisions and resource scope, not resource action menus.
+// Keep the normal policy/namespace-label checks and denial audit, but do not fan
+// out into update/delete/restart/scale checks for every graph source.
+func (s *resourceAccess) authorizeTopologyRead(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, group, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
+	connection, decision, err := s.decide(ctx, principal, clusterID, namespace, group, kind, action)
+	if err != nil {
+		return domaincluster.Connection{}, domainaccess.Decision{}, err
+	}
+	if !decision.Allowed {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, "", string(action), "deny", decision.Reason)
+		return domaincluster.Connection{}, domainaccess.Decision{}, fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
+	}
+	return connection, decision, nil
+}
+
+func topologyAuthorizationCoverage(source contractresource.NetworkTopologySourceDefinition, namespace string, err error, deniedReason string) contractresource.NetworkTopologyCoverage {
+	if errors.Is(err, apperrors.ErrAccessDenied) {
+		return topologyCoverage(source, namespace, "denied", deniedReason)
+	}
+	reason := "source_unavailable"
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		reason = "timeout"
+	}
+	return topologyCoverage(source, namespace, "error", reason)
 }
 
 func topologyCoverage(source contractresource.NetworkTopologySourceDefinition, namespace, state, reason string) contractresource.NetworkTopologyCoverage {
@@ -167,7 +268,7 @@ func validateTopologySnapshot(snapshot contractresource.NetworkTopologySnapshot,
 		definition, _ := contractresource.LookupNetworkTopologySource(query.SourceID)
 		source := contractresource.NetworkTopologySourceResult{Coverage: topologyCoverage(definition, query.Namespace, "error", "invalid_snapshot"), Objects: []contractresource.NetworkTopologySourceObject{}}
 		for _, candidate := range snapshot.Sources {
-			if candidate.Coverage.SourceID == query.SourceID && candidate.Coverage.Namespace == query.Namespace {
+			if candidate.Coverage.SourceID == query.SourceID && candidate.Coverage.Namespace == query.Namespace && candidate.Coverage.Name == query.Name {
 				source = candidate
 				break
 			}
@@ -208,25 +309,59 @@ func validateTopologySnapshot(snapshot contractresource.NetworkTopologySnapshot,
 }
 
 func cleanTopologyReason(reason string) string {
-	if slices.Contains([]string{"", "kubernetes_rbac", "source_not_served", "invalid_response", "item_budget", "object_budget", "invalid_identity", "total_budget", "byte_budget", "source_unavailable", "action_not_allowed", "timeout", "invalid_snapshot"}, reason) {
+	if slices.Contains([]string{"", "kubernetes_rbac", "source_not_served", "invalid_response", "item_budget", "object_budget", "invalid_identity", "total_budget", "byte_budget", "source_unavailable", "action_not_allowed", "timeout", "invalid_snapshot", "named_get", "named_not_found"}, reason) {
 		return reason
 	}
 	return "source_unavailable"
 }
 
-func (n *Network) legacyTopologyWithCoverage(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.NetworkTopologyView, error) {
-	view, err := n.getLegacyNetworkTopology(ctx, principal, clusterID, namespace)
-	sanitizeLegacyTopology(&view)
+func (n *Network) legacyTopologyWithCoverage(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace string) (domainresource.NetworkTopologyView, error) {
+	clusterID := connection.Summary.ID
+	view := domainresource.NetworkTopologyView{ClusterID: clusterID, Namespace: namespace, Source: "backend-aggregate", GeneratedAt: time.Now().UTC().Format(time.RFC3339), Traces: []domainresource.NetworkTopologyTraceView{}}
+	allowed, withheld := n.legacyTopologyAuthorizedSources(ctx, principal, connection, namespace)
+	var err error
+	if len(allowed) > 0 {
+		view, err = n.getLegacyNetworkTopology(ctx, principal, clusterID, namespace, allowed)
+		sanitizeLegacyTopology(&view)
+	}
+	if withheld {
+		view.Warnings = append(view.Warnings, "Some legacy inventory sources could not be read within the current access scope.")
+	}
 	view.Coverage = []contractresource.NetworkTopologyCoverage{{Provider: "kubernetes", SourceID: "legacy.inventory", State: "unsupported", ReasonCode: "upgrade_agent_for_rule_topology"}}
 	view.Warnings = append(view.Warnings, "Legacy inventory: rule, port and provider coverage unverified; upgrade Agent for topology snapshot.")
 	return view, err
 }
 
+func (n *Network) legacyTopologyAuthorizedSources(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace string) (map[string]bool, bool) {
+	allowed := map[string]bool{}
+	withheld := false
+	for _, kind := range []string{"Service", "Ingress", "HTTPRoute", "Gateway", "Pod"} {
+		if !n.canViewRelatedKind(ctx, principal, connection.Summary.ID, namespace, kind) {
+			continue
+		}
+		// Legacy collection can return references outside the selected namespace
+		// and cannot enforce name-based restrictions before aggregating them.
+		group := resourceGroupForKind(kind)
+		if n.requireTopologyWideRead(ctx, principal, connection, group, kind, domainaccess.ActionView) != nil ||
+			n.requireTopologyWideRead(ctx, principal, connection, group, kind, domainaccess.ActionList) != nil {
+			withheld = true
+			continue
+		}
+		allowed[kind] = true
+	}
+	return allowed, withheld
+}
+
 func sanitizeTopologyObject(item contractresource.NetworkTopologySourceObject, definition contractresource.NetworkTopologySourceDefinition, query contractresource.NetworkTopologySourceQuery, clusterID string) (contractresource.NetworkTopologySourceObject, bool) {
-	expectedVersion := strings.TrimPrefix(definition.Group+"/"+definition.Version, "/")
-	fallbackVersion := strings.TrimPrefix(definition.Group+"/"+definition.FallbackVersion, "/")
 	ref := item.Resource
-	if ref.ClusterID != clusterID || ref.Kind != definition.Kind || (ref.APIVersion != expectedVersion && (definition.FallbackVersion == "" || ref.APIVersion != fallbackVersion)) || (query.Namespace != "" && ref.Namespace != query.Namespace) || (!definition.Namespaced && ref.Namespace != "") || len(item.Content) > contractresource.NetworkTopologyMaxObjectBytes {
+	knownVersion := false
+	for _, version := range contractresource.NetworkTopologySourceVersions(definition) {
+		if ref.APIVersion == strings.TrimPrefix(definition.Group+"/"+version, "/") {
+			knownVersion = true
+			break
+		}
+	}
+	if ref.ClusterID != clusterID || ref.Kind != definition.Kind || !knownVersion || (query.Namespace != "" && ref.Namespace != query.Namespace) || (!definition.Namespaced && ref.Namespace != "") || len(item.Content) > contractresource.NetworkTopologyMaxObjectBytes {
 		return item, false
 	}
 	var raw map[string]any

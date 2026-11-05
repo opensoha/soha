@@ -38,7 +38,7 @@ func TestPodRoutesPreserveRuntimeErrorSemantics(t *testing.T) {
 func TestAgentPodDeleteRequestsFailureAudit(t *testing.T) {
 	t.Parallel()
 
-	auditFailure, err := (agentPodRoute{client: failedPodDeleteAgent{}}).DeletePod(t.Context(), "platform", "api-0")
+	auditFailure, err := (agentPodRoute{client: failedPodDeleteAgent{}}).DeletePod(t.Context(), "platform", "api-0", "")
 	if err == nil {
 		t.Fatal("DeletePod() error = nil, want denied operation")
 	}

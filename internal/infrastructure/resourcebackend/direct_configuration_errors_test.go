@@ -34,6 +34,26 @@ func TestDirectMissingConfigMapDetailIsNotFound(t *testing.T) {
 	}
 }
 
+func TestDirectPodDisruptionBudgetDetailSkipsPodsForAbsentSelector(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/apis/policy/v1/namespaces/demo/poddisruptionbudgets/sample" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"apiVersion":"policy/v1","kind":"PodDisruptionBudget","metadata":{"name":"sample","namespace":"demo"}}`))
+	}))
+	defer server.Close()
+	kubeconfig := fmt.Sprintf("apiVersion: v1\nkind: Config\ncurrent-context: test\nclusters:\n- name: test\n  cluster:\n    server: %s\ncontexts:\n- name: test\n  context:\n    cluster: test\n    user: test\nusers:\n- name: test\n  user: {}\n", server.URL)
+	manager := k8sinfra.NewManager([]cfgpkg.ClusterConfig{{ID: "test", KubeconfigData: kubeconfig}})
+	direct := NewDirect(NewClusters(manager), nil)
+	detail, err := direct.GetPodDisruptionBudgetDetail(context.Background(), "test", "demo", "sample")
+	if err != nil || len(detail.Pods) != 0 || detail.Workload != nil {
+		t.Fatalf("absent selector detail = %#v, %v", detail, err)
+	}
+}
+
 func TestDirectPodYAMLIncludesManifestIdentityAfterTypedDecode(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/namespaces/demo/pods/sample" {

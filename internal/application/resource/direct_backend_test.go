@@ -304,7 +304,7 @@ func (*stubDirectHelmReleaseReader) InstallHelmChart(context.Context, string, do
 	return domainresource.HelmChartInstallResult{}, nil
 }
 
-func (*stubDirectHelmReleaseReader) UpdateHelmReleaseValues(context.Context, string, string, string, string) (domainresource.HelmValuesView, error) {
+func (*stubDirectHelmReleaseReader) UpdateHelmReleaseValues(context.Context, string, string, string, string, int) (domainresource.HelmValuesView, error) {
 	return domainresource.HelmValuesView{}, nil
 }
 

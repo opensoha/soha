@@ -3,6 +3,7 @@ package resourcebackend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 )
@@ -225,4 +227,39 @@ func TestDirectHPAPDBYAMLLifecycle(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDirectObservedWorkloadDeleteRequiresMatchingUID(t *testing.T) {
+	for _, tc := range []struct {
+		name, uid string
+		want      error
+		writes    int32
+	}{
+		{name: "matching", uid: "uid-app", writes: 1},
+		{name: "replacement", uid: "old-uid", want: apperrors.ErrConflict},
+	} {
+		for _, kind := range []string{"Pod", "Deployment"} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				var writes atomic.Int32
+				// Pods with external ownership still use the rebuild path.
+				direct := directOwnershipFixture(t, kind == "Pod", &writes)
+				run := direct.DeletePodWithExpectedUID
+				if kind == "Deployment" {
+					run = direct.DeleteDeploymentWithExpectedUID
+				}
+				err := run(t.Context(), "test", "demo", "app", tc.uid)
+				if !errors.Is(err, tc.want) || writes.Load() != tc.writes {
+					t.Fatalf("delete=%v, writes=%d", err, writes.Load())
+				}
+			})
+		}
+	}
+	t.Run("Deployment external owner", func(t *testing.T) {
+		var writes atomic.Int32
+		direct := directOwnershipFixture(t, true, &writes)
+		err := direct.DeleteDeploymentWithExpectedUID(t.Context(), "test", "demo", "app", "uid-app")
+		if !errors.Is(err, apperrors.ErrConflict) || writes.Load() != 0 {
+			t.Fatalf("delete=%v, writes=%d", err, writes.Load())
+		}
+	})
 }

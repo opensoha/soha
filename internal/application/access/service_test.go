@@ -89,6 +89,39 @@ func TestExactPermissionAllowsVMCreateAndResizeButDeniesDelete(t *testing.T) {
 	}
 }
 
+type legacyNamespacePolicyRepository struct{}
+
+func (legacyNamespacePolicyRepository) ListRoleCapabilities(context.Context) (map[string][]domainaccess.Action, error) {
+	return map[string][]domainaccess.Action{"legacy": {domainaccess.ActionUpdate}}, nil
+}
+
+func (legacyNamespacePolicyRepository) ListPolicies(context.Context) ([]domainaccess.Policy, error) {
+	return []domainaccess.Policy{{
+		Effect: domainaccess.EffectAllow, Actions: []domainaccess.Action{domainaccess.ActionUpdate},
+		Namespaces: domainaccess.NamespaceMatcher{Labels: map[string][]string{"team": {"a"}}},
+	}}, nil
+}
+
+func TestLegacyPermissionPreservesRequiredNamespaceLabelDecision(t *testing.T) {
+	t.Cleanup(func() { SetRolePermissionMatrix(nil) })
+	service := New(policy.NewEngine(), legacyNamespacePolicyRepository{}, nil, nil)
+	service.SetPermissionResolver(NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{"legacy": {}}}))
+	request := domainaccess.Request{
+		RequireNamespaceLabels: true, PermissionKey: PermPlatformPodsUpdate, Action: domainaccess.ActionUpdate,
+		Principal: domainidentity.Principal{Roles: []string{"legacy"}},
+		Namespace: domainaccess.NamespaceAttributes{Namespace: "team-a"},
+	}
+	decision, err := service.Authorize(context.Background(), request)
+	if err != nil || decision.Allowed || decision.ReasonCode != domainaccess.ReasonNamespaceLabelsRequired {
+		t.Fatalf("legacy fallback swallowed the label proof request: %+v %v", decision, err)
+	}
+	request.Namespace.Labels = map[string]string{"team": "a"}
+	decision, err = service.Authorize(context.Background(), request)
+	if err != nil || !decision.Allowed || decision.ReasonCode != "legacy_capability_allowed" {
+		t.Fatalf("legacy fallback rejected proven namespace labels: %+v %v", decision, err)
+	}
+}
+
 func TestLegacyManagePermissionExpandsOnlyToReplacementActions(t *testing.T) {
 	resolver := NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{
 		"custom": {PermVirtualizationVMsManage},
@@ -789,5 +822,33 @@ func platformRequest(principal domainidentity.Principal, action domainaccess.Act
 		Cluster:   domainaccess.ClusterAttributes{ClusterID: "cluster-a", Environment: "development"},
 		Namespace: domainaccess.NamespaceAttributes{Namespace: namespace},
 		Resource:  domainaccess.ResourceAttributes{Group: group, Kind: kind},
+	}
+}
+
+func TestAuthorizeUnscopedPlatformRejectsActiveSubjectScopeGrant(t *testing.T) {
+	grants := stubScopeGrantReader{items: []domainscopegrant.Record{
+		{SubjectType: "user", SubjectID: "user-1", Role: "admin", ScopeType: domainscopegrant.ScopeTypePlatform, Enabled: true},
+	}}
+	service := New(policy.NewEngine(), nil, grants, nil)
+	const permission = "platform.clusters.update"
+	service.SetPermissionResolver(NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{
+		"admin": {permission},
+	}}))
+	request := domainaccess.Request{
+		PermissionKey:           permission,
+		RequireUnscopedPlatform: true,
+		Principal:               domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}},
+		Subject:                 domainaccess.SubjectAttributes{UserID: "user-1", Roles: []string{"admin"}},
+		Action:                  domainaccess.ActionUpdate,
+		Resource:                domainaccess.ResourceAttributes{Kind: "Cluster"},
+	}
+	decision, err := service.Authorize(t.Context(), request)
+	if err != nil || decision.Allowed {
+		t.Fatalf("scoped user authorized for unscoped platform action: %+v, %v", decision, err)
+	}
+	request.RequireUnscopedPlatform = false
+	decision, err = service.Authorize(t.Context(), request)
+	if err != nil || !decision.Allowed {
+		t.Fatalf("ordinary authorization changed: %+v, %v", decision, err)
 	}
 }

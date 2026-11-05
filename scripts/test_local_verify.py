@@ -80,7 +80,7 @@ class LocalVerificationGuards(unittest.TestCase):
                         pass
 
     def test_low_space_and_active_over_budget_cache_prevent_execution(self):
-        for blocked, free, message in [([], 10 * verify.GIB - 1, '10 GiB'), (['go-build'], 100 * verify.GIB, 'over budget')]:
+        for blocked, free, message in [([], 5 * verify.GIB - 1, '5 GiB'), (['go-build'], 100 * verify.GIB, 'over budget')]:
             with patch.object(verify, 'maintain', return_value=blocked), \
                     patch.object(verify.shutil, 'disk_usage', return_value=SimpleNamespace(free=free)), \
                     patch.object(verify, 'execute') as execute:
@@ -88,11 +88,11 @@ class LocalVerificationGuards(unittest.TestCase):
                     verify.verify(['python3', '-V'])
                 execute.assert_not_called()
 
-    def test_ten_gib_free_allows_execution(self):
+    def test_five_gib_free_allows_execution(self):
         with patch.object(verify, 'maintain', return_value=[]), \
-                patch.object(verify.shutil, 'disk_usage', return_value=SimpleNamespace(free=10 * verify.GIB)), \
+                patch.object(verify.shutil, 'disk_usage', return_value=SimpleNamespace(free=5 * verify.GIB)), \
                 patch.object(verify, 'execute', return_value=0) as execute:
-            self.assertEqual(verify.MIN_FREE, 10 * verify.GIB)
+            self.assertEqual(verify.MIN_FREE, 5 * verify.GIB)
             self.assertEqual(verify.verify(['synthetic']), 0)
         execute.assert_called_once()
 

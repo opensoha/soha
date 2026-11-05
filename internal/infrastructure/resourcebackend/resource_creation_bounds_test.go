@@ -57,7 +57,7 @@ func TestAgentResourceCreatorRejectsInvalidEmptyAndExcessDocuments(t *testing.T)
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := creator.ResolveCreateManifests(context.Background(), test.content, test.limit); err == nil {
+			if _, err := creator.ResolveCreateManifests(context.Background(), test.content, test.limit, allowAgentCreateDiscovery); err == nil {
 				t.Fatal("ResolveCreateManifests() error = nil")
 			}
 		})

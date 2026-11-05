@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
@@ -18,8 +19,23 @@ func (g *GenericResources) ApplyResourceYAMLByKind(ctx context.Context, principa
 }
 
 func (g *GenericResources) applyResourceYAML(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
+	return g.applyResourceYAMLWithIdentity(ctx, principal, clusterID, namespace, kind, name, content, false)
+}
+
+func (g *GenericResources) ApplyObservedResourceYAMLByKind(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
+	return g.applyResourceYAMLWithIdentity(ctx, principal, clusterID, namespace, kind, name, content, true)
+}
+
+func (g *GenericResources) applyResourceYAMLWithIdentity(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, content string, requireIdentity bool) (domainresource.ResourceYAMLView, error) {
+	namespace = strings.TrimSpace(namespace)
+	if err := validateResourceYAMLNamespace(kind, namespace); err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
 	connection, _, err := g.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionUpdate)
 	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	if err := g.authorizeResourceYAMLData(ctx, principal, kind); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
 	if strings.TrimSpace(content) == "" {
@@ -31,7 +47,15 @@ func (g *GenericResources) applyResourceYAML(ctx context.Context, principal doma
 		if err != nil {
 			return domainresource.ResourceYAMLView{}, err
 		}
-		item, err = client.ApplyResourceYAML(ctx, namespace, kind, name, content)
+		if requireIdentity {
+			guarded, ok := client.(observedYAMLAgent)
+			if !ok {
+				return item, apperrors.ErrUnsupportedOperation
+			}
+			item, err = guarded.ApplyObservedResourceYAML(ctx, namespace, kind, name, content)
+		} else {
+			item, err = client.ApplyResourceYAML(ctx, namespace, kind, name, content)
+		}
 		if err != nil {
 			_ = g.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionUpdate), "failure", err.Error())
 			return domainresource.ResourceYAMLView{}, wrapAgentResourceError(err)
@@ -40,7 +64,15 @@ func (g *GenericResources) applyResourceYAML(ctx context.Context, principal doma
 		if g.direct == nil {
 			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: direct generic resource adapter is not configured", apperrors.ErrClusterUnready)
 		}
-		item, err = g.direct.ApplyResourceYAML(ctx, clusterID, namespace, kind, name, content)
+		if requireIdentity {
+			guarded, ok := g.direct.(observedYAMLDirect)
+			if !ok {
+				return item, apperrors.ErrUnsupportedOperation
+			}
+			item, err = guarded.ApplyObservedResourceYAML(ctx, clusterID, namespace, kind, name, content)
+		} else {
+			item, err = g.direct.ApplyResourceYAML(ctx, clusterID, namespace, kind, name, content)
+		}
 		if err != nil {
 			_ = g.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionUpdate), "failure", err.Error())
 			return domainresource.ResourceYAMLView{}, err
@@ -55,15 +87,20 @@ func (g *GenericResources) applyResourceYAML(ctx context.Context, principal doma
 	return item, nil
 }
 
+func validateResourceYAMLNamespace(kind, namespace string) error {
+	if definition, known := contractresource.LookupKubernetesResourceKind(kind); known && definition.Namespaced && namespace == "" {
+		return fmt.Errorf("%w: namespace is required for %s YAML updates", apperrors.ErrInvalidArgument, definition.Kind)
+	}
+	return nil
+}
+
 func (g *GenericResources) GetResourceYAML(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name string) (domainresource.ResourceYAMLView, error) {
 	connection, _, err := g.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionView)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if strings.EqualFold(strings.TrimSpace(kind), "Secret") {
-		if err := g.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformConfigurationSecretDataView); err != nil {
-			return domainresource.ResourceYAMLView{}, err
-		}
+	if err := g.authorizeResourceYAMLData(ctx, principal, kind); err != nil {
+		return domainresource.ResourceYAMLView{}, err
 	}
 	var item domainresource.ResourceYAMLView
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
@@ -88,7 +125,22 @@ func (g *GenericResources) GetResourceYAML(ctx context.Context, principal domain
 	return item, nil
 }
 
+func (g *GenericResources) authorizeResourceYAMLData(ctx context.Context, principal domainidentity.Principal, kind string) error {
+	if strings.EqualFold(strings.TrimSpace(kind), "Secret") {
+		return g.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformConfigurationSecretDataView)
+	}
+	return nil
+}
+
 func (g *GenericResources) DeleteResourceByKind(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name string) error {
+	return g.deleteResourceByKind(ctx, principal, clusterID, namespace, kind, name, "")
+}
+
+func (g *GenericResources) DeleteDeploymentWithExpectedUID(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, expectedUID string) error {
+	return g.deleteResourceByKind(ctx, principal, clusterID, namespace, "Deployment", name, expectedUID)
+}
+
+func (g *GenericResources) deleteResourceByKind(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, expectedUID string) error {
 	connection, _, err := g.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionDelete)
 	if err != nil {
 		return err
@@ -98,7 +150,12 @@ func (g *GenericResources) DeleteResourceByKind(ctx context.Context, principal d
 		if err != nil {
 			return err
 		}
-		if err := client.DeleteResource(ctx, namespace, kind, name); err != nil {
+		if expectedUID == "" {
+			err = client.DeleteResource(ctx, namespace, kind, name)
+		} else {
+			err = deleteObservedAgentWorkload(ctx, client, namespace, kind, name, expectedUID)
+		}
+		if err != nil {
 			_ = g.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
 			return wrapAgentResourceError(err)
 		}
@@ -106,7 +163,12 @@ func (g *GenericResources) DeleteResourceByKind(ctx context.Context, principal d
 		if g.direct == nil {
 			return fmt.Errorf("%w: direct generic resource adapter is not configured", apperrors.ErrClusterUnready)
 		}
-		if err := g.direct.DeleteResource(ctx, clusterID, namespace, kind, name); err != nil {
+		if expectedUID == "" {
+			err = g.direct.DeleteResource(ctx, clusterID, namespace, kind, name)
+		} else {
+			err = deleteObservedDirectDeployment(ctx, g.direct, clusterID, namespace, name, expectedUID)
+		}
+		if err != nil {
 			_ = g.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
 			return err
 		}

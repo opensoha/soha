@@ -175,7 +175,7 @@ func (d *Direct) GetStatefulSetDetail(ctx context.Context, clusterID, namespace,
 		return domainresource.StatefulSetDetailView{}, err
 	}
 	view := mapStatefulSetDetail(*item)
-	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, item.Spec.Selector, item.Spec.Template, item.OwnerReferences, "", "", "", "")
+	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, item.Spec.Selector, item.Spec.Template, item.OwnerReferences, "", "", item.UID, "StatefulSet")
 	return view, err
 }
 
@@ -186,6 +186,7 @@ func (d *Direct) GetStatefulSetYAML(ctx context.Context, clusterID, namespace, n
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
+	copyItem.TypeMeta = metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"}
 	return marshalWorkloadYAML("StatefulSet", name, namespace, copyItem)
 }
 
@@ -213,7 +214,7 @@ func (d *Direct) GetDaemonSetDetail(ctx context.Context, clusterID, namespace, n
 		return domainresource.DaemonSetDetailView{}, err
 	}
 	view := mapDaemonSetDetail(*item)
-	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, item.Spec.Selector, item.Spec.Template, item.OwnerReferences, "", "", "", "")
+	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, item.Spec.Selector, item.Spec.Template, item.OwnerReferences, "", "", item.UID, "DaemonSet")
 	return view, err
 }
 
@@ -224,6 +225,7 @@ func (d *Direct) GetDaemonSetYAML(ctx context.Context, clusterID, namespace, nam
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
+	copyItem.TypeMeta = metav1.TypeMeta{APIVersion: "apps/v1", Kind: "DaemonSet"}
 	return marshalWorkloadYAML("DaemonSet", name, namespace, copyItem)
 }
 
@@ -262,6 +264,8 @@ func (d *Direct) GetJobYAML(ctx context.Context, clusterID, namespace, name stri
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
+	copyItem.APIVersion = batchv1.SchemeGroupVersion.String()
+	copyItem.Kind = "Job"
 	return marshalWorkloadYAML("Job", name, namespace, copyItem)
 }
 
@@ -300,6 +304,8 @@ func (d *Direct) GetCronJobYAML(ctx context.Context, clusterID, namespace, name 
 	}
 	copyItem := item.DeepCopy()
 	copyItem.ManagedFields = nil
+	copyItem.APIVersion = "batch/v1"
+	copyItem.Kind = "CronJob"
 	return marshalWorkloadYAML("CronJob", name, namespace, copyItem)
 }
 
@@ -442,6 +448,10 @@ func (d *Direct) GetPodDisruptionBudgetDetail(ctx context.Context, clusterID, na
 		return domainresource.PodDisruptionBudgetDetailView{}, err
 	}
 	detail := mapPodDisruptionBudgetDetail(*item)
+	if item.Spec.Selector == nil {
+		detail.Pods = []domainresource.PodView{}
+		return detail, nil
+	}
 	selector, err := metav1.LabelSelectorAsSelector(item.Spec.Selector)
 	if err != nil {
 		return domainresource.PodDisruptionBudgetDetailView{}, fmt.Errorf("convert pod disruption budget selector: %w", err)

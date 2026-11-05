@@ -107,7 +107,7 @@ func (r *contractRepository) GetConnection(ctx context.Context, _ string) (domai
 	return r.connection, nil
 }
 
-func (r *contractRepository) UpsertRegistration(ctx context.Context, connection domaincluster.Connection) error {
+func (r *contractRepository) CreateRegistration(ctx context.Context, connection domaincluster.Connection) error {
 	r.context = ctx
 	r.upserted = connection
 	if r.upsertErr == nil {

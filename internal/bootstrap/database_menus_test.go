@@ -341,3 +341,40 @@ func TestNetworkNavigationHasSixEntriesAndPreservesLeafPaths(t *testing.T) {
 		t.Fatalf("missing scene entries: %v", want)
 	}
 }
+
+func TestSyncNetworkClassMenuSeedUpgradesOnlyMatchesOriginalOrder(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	mock.ExpectBegin()
+	old := map[string]int{"network-ingressclasses": 54, "network-gateway-api-gatewayclasses": 43, "network-gateway-api-gateways": 44, "network-gateway-api-httproutes": 45, "network-gateway-api-backendtlspolicies": 46, "network-gateway-api-grpcroutes": 47, "network-gateway-api-referencegrants": 48}
+	for _, item := range defaultMenuSeeds() {
+		before, ok := old[item.ID]
+		if !ok {
+			continue
+		}
+		mock.ExpectExec(`UPDATE menus SET sort_order = \$1, updated_at = \$2 WHERE id = \$3 AND parent_id = \$4 AND path = \$5 AND sort_order = \$6`).WithArgs(item.SortOrder, now, item.ID, "network", item.Path, before).WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+	mock.ExpectCommit()
+	if err := syncNetworkClassMenuSeedUpgrades(context.Background(), db, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	seeds := defaultMenuSeeds()
+	sorts := map[string]int{}
+	for _, item := range seeds {
+		sorts[item.ID] = item.SortOrder
+	}
+	if sorts["network-ingressclasses"] != sorts["network-ingresses"]+1 || sorts["network-gateway-api-gatewayclasses"] != sorts["network-ingressclasses"]+1 {
+		t.Fatal("IngressClasses must immediately follow Ingresses")
+	}
+}
