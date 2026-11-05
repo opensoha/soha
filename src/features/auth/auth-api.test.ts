@@ -67,24 +67,38 @@ describe('auth session restore', () => {
     expect(localStorage.getItem('soha-auth')).not.toContain('sessionGeneration')
   })
 
-  it('clears local auth when refresh is rejected', async () => {
-    useAuthStore.getState().setUser(user)
-    const startingGeneration = useAuthStore.getState().sessionGeneration
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        jsonResponse(
-          { error: { code: 'unauthorized', message: 'refresh token expired' } },
-          { status: 401, statusText: 'Unauthorized' },
+  it.each([null, 'access-token'])(
+    'clears local auth when refresh is rejected with access token %s',
+    async (accessToken) => {
+      useAuthStore.getState().setUser(user)
+      if (accessToken) useAuthStore.getState().setTokens(accessToken)
+      const startingGeneration = useAuthStore.getState().sessionGeneration
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          jsonResponse(
+            { error: { code: 'unauthorized', message: 'refresh token expired' } },
+            { status: 401, statusText: 'Unauthorized' },
+          ),
         ),
-      ),
-    )
+      )
+
+      await expect(restoreAuthSession()).resolves.toBe('unauthenticated')
+
+      expect(useAuthStore.getState().user).toBeNull()
+      expect(useAuthStore.getState().accessToken).toBeNull()
+      expect(useAuthStore.getState().sessionGeneration).toBe(startingGeneration + 1)
+    },
+  )
+
+  it('keeps the signed-out generation stable when repeated refresh attempts are rejected', async () => {
+    const startingGeneration = useAuthStore.getState().sessionGeneration
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 401 })))
 
     await expect(restoreAuthSession()).resolves.toBe('unauthenticated')
+    await expect(restoreAuthSession()).resolves.toBe('unauthenticated')
 
-    expect(useAuthStore.getState().user).toBeNull()
-    expect(useAuthStore.getState().accessToken).toBeNull()
-    expect(useAuthStore.getState().sessionGeneration).toBe(startingGeneration + 1)
+    expect(useAuthStore.getState().sessionGeneration).toBe(startingGeneration)
   })
 
   it('advances the generation when the current user ID changes', () => {

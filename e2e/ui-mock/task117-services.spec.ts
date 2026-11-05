@@ -239,7 +239,13 @@ spec:
       }
     if (url.pathname === root + '/workloads/pods')
       return { body: { data: [{ name: 'api-worker', namespace: 'monitoring', phase: 'Running' }] } }
-    if (url.pathname === root + '/resources/graph')
+    if (
+      method === 'GET' &&
+      url.pathname === root + '/resources/graph' &&
+      url.searchParams.get('kind') === 'Service' &&
+      url.searchParams.get('name') === 'api' &&
+      url.searchParams.get('namespace') === 'monitoring'
+    )
       return state.graphFail
         ? {
             status: state.graphFail,
@@ -478,8 +484,10 @@ test('related graph and list share data; header/card align at desktop, dark and 
   await expect(
     active(page).getByRole('button', { name: /Pod monitoring.*api-worker/ }),
   ).toBeVisible()
-  await active(page).getByRole('button', { name: 'Zoom Out', exact: true }).click()
   const viewport = active(page).locator('.react-flow__viewport')
+  const initialStyle = await viewport.getAttribute('style')
+  await active(page).getByRole('button', { name: 'Zoom Out', exact: true }).click()
+  await expect(viewport).not.toHaveAttribute('style', initialStyle || '')
   let transform: string | null = null
   await expect
     .poll(
@@ -493,7 +501,7 @@ test('related graph and list share data; header/card align at desktop, dark and 
     )
     .toBe(true)
   await active(page).getByText('列表', { exact: true }).click()
-  await expect(active(page).getByRole('link', { name: 'api-worker', exact: true })).toBeVisible()
+  await expect(active(page).getByRole('button', { name: 'api-worker', exact: true })).toBeVisible()
   await active(page).getByText('关系图', { exact: true }).click()
   await expect(viewport).toHaveAttribute('style', transform || '')
   await expect(
@@ -504,7 +512,9 @@ test('related graph and list share data; header/card align at desktop, dark and 
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
       .toBe(true)
-    await expect(active(page).locator('.soha-service-relationships')).toBeVisible()
+    await expect(
+      active(page).getByRole('application', { name: 'Kubernetes 资源关系图' }),
+    ).toBeVisible()
   }
   await page.getByRole('button', { name: '切换到深色模式' }).click()
   await expect(
@@ -764,60 +774,69 @@ test('Service editor presents configuration together, keeps footer visible and r
   verifyBrowserEvidence(evidence)
 })
 
-test('Service relationships adapt only explicit scope changes and clear protected graph content on permission failure', async ({
+test('Service relationships use exact scope and clear protected graph and list content on permission failure', async ({
   context,
   page,
 }) => {
   const { state, evidence } = await setup(context, page)
   state.graph.nodes.push({
-    id: 'other',
+    id: 'slice',
     resource: {
       clusterId: 'cluster-a',
       namespace: 'monitoring',
-      name: 'another-service',
-      kind: 'Service',
-      apiVersion: 'v1',
+      name: 'api-endpoints',
+      kind: 'EndpointSlice',
+      apiVersion: 'discovery.k8s.io/v1',
       scopeMode: 'namespace',
     },
   })
+  state.graph.edges.push({
+    id: 'service-slice',
+    sourceId: 'service',
+    targetId: 'slice',
+    relation: 'resolves',
+    fieldPath: 'metadata.labels[kubernetes.io/service-name]',
+  })
   await page.goto(detailRoute + '&tab=relationships')
-  await expect(active(page).locator('.react-flow__node')).toHaveCount(2)
+  const nodes = active(page).locator('.react-flow__node')
+  await expect(nodes).toHaveCount(3)
   await expect(active(page)).toContainText('选择器匹配')
-  await active(page)
-    .getByRole('button', { name: /Pod monitoring.*api-worker/ })
-    .click()
-  await expect(
-    active(page).getByRole('button', { name: '查看资源详情', exact: true }),
-  ).toBeEnabled()
-  const viewport = active(page).locator('.react-flow__viewport')
-  let previous: string | null = null
-  await expect
-    .poll(
-      async () => {
-        const next = await viewport.getAttribute('style')
-        const stable = next === previous
-        previous = next
-        return stable
-      },
-      { intervals: [250] },
-    )
-    .toBe(true)
-  await active(page).getByRole('switch', { name: '其他关联', exact: true }).click()
-  await expect(active(page).locator('.react-flow__node')).toHaveCount(3)
-  await expect(viewport).not.toHaveAttribute('style', previous || '')
+  await active(page).getByRole('button', { name: 'EndpointSlice monitoring/api-endpoints' }).click()
+  const inspector = active(page).getByRole('complementary', { name: '选中资源信息' })
+  await expect(inspector).toContainText('api-endpoints')
+  await expect(inspector).toContainText('端点关联来源')
+  await expect(inspector.getByRole('button', { name: '查看详情', exact: true })).toBeEnabled()
   await active(page).getByText('列表', { exact: true }).click()
-  await expect(
-    active(page).getByRole('link', { name: 'another-service', exact: true }),
-  ).toHaveAttribute('href', /clusterId=cluster-a/)
-  expect(state.reads.filter((path) => path.includes('/resources/graph'))).toHaveLength(1)
+  const sliceRow = active(page).getByRole('button', { name: 'api-endpoints', exact: true })
+  const podRow = active(page).getByRole('button', { name: 'api-worker', exact: true })
+  await expect(sliceRow).toHaveAttribute('aria-pressed', 'true')
+  const graphPath = root + '/resources/graph?namespace=monitoring&kind=Service&name=api'
+  const graphReads = () => state.reads.filter((path) => path.includes('/resources/graph'))
+  expect(graphReads()).toEqual([graphPath])
   state.graphFail = 503
+  const lastFailure = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(graphPath) && response.status() === 503 && graphReads().length === 5,
+  )
   await active(page).getByRole('button', { name: '刷新资源关系', exact: true }).click()
-  await expect(active(page)).toContainText('Graph read failed')
-  await expect(active(page).getByRole('link', { name: 'api-worker', exact: true })).toBeVisible()
+  await lastFailure
+  await expect(active(page).getByRole('alert')).toContainText('正在展示上次读取结果')
+  await expect(podRow).toBeVisible()
+  await expect(sliceRow).toHaveAttribute('aria-pressed', 'true')
+  await expect(inspector).toContainText('api-endpoints')
   state.graphFail = 403
   await active(page).getByRole('button', { name: '刷新资源关系', exact: true }).click()
-  await expect(active(page).getByRole('link', { name: 'api-worker', exact: true })).toHaveCount(0)
-  await expect(active(page).locator('.react-flow__node')).toHaveCount(0)
+  await expect(active(page).getByRole('alert')).toContainText('资源关系无访问权限')
+  await expect(podRow).toHaveCount(0)
+  await expect(sliceRow).toHaveCount(0)
+  await expect(inspector).toHaveCount(0)
+  await active(page).getByText('关系图', { exact: true }).click()
+  await expect(nodes).toHaveCount(0)
+  state.graphFail = 0
+  await active(page).getByRole('button', { name: '刷新资源关系', exact: true }).click()
+  await expect(nodes).toHaveCount(3)
+  await expect(inspector).toHaveCount(0)
+  expect(graphReads()).toEqual(Array(7).fill(graphPath))
   expect(state.writes).toEqual([])
   verifyBrowserEvidence(evidence)
 })

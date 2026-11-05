@@ -40,35 +40,54 @@ for (const variant of [
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto(`/extensions/apis/${definition.group}`)
     await page.getByRole('button', { name, exact: true }).click()
-    const heading = page.locator('.soha-crd-resource-heading')
-    await expect(heading.getByRole('heading', { name, exact: true })).toBeVisible()
-    await expect(page.getByText('YAML · 只读', { exact: true })).toBeVisible()
-    await expect(page.getByLabel('资源 YAML，只读', { exact: true })).toBeVisible()
+    const detail = page.locator('.soha-crd-resource-detail')
+    const header = detail.locator('header')
+    await expect(page.locator('html')).toHaveAttribute('data-theme-mode', variant.theme)
+    await expect(header.getByRole('heading', { name, exact: true })).toBeVisible()
+    await expect(header.getByText(`${definition.group}/v1`, { exact: true })).toBeVisible()
     if (variant.long) {
-      const identity = await heading.locator('.soha-crd-resource-identity').boundingBox()
-      const summary = await heading.boundingBox()
-      expect(identity!.width / summary!.width).toBeGreaterThanOrEqual(0.5)
+      const titleRow = header.locator('.soha-k8s-detail-title-row')
+      const identity = await titleRow.locator('.soha-k8s-detail-title').boundingBox()
+      const row = await titleRow.boundingBox()
+      expect(identity!.width / row!.width).toBeGreaterThanOrEqual(0.5)
     }
-    await expect(heading).toContainText(variant.scope === 'Cluster' ? '集群范围' : 'monitoring')
-    await expect(heading).toContainText('controller')
-    await expect(heading).toContainText('gateway.envoyproxy.io/gatewayclass-controller')
-    await expect(heading.getByRole('button', { name: '编辑', exact: true })).toBeDisabled()
-    await expect(heading.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
-    const metadata = heading.locator('details')
-    await expect(metadata).not.toHaveAttribute('open')
-    const disclosure = metadata.locator('summary')
+    const overview = detail.getByRole('tabpanel', { name: '概览', exact: true })
+    await expect(overview).toBeVisible()
+    await expect(
+      overview.getByText(variant.scope === 'Cluster' ? '集群范围' : 'monitoring', { exact: true }),
+    ).toBeVisible()
+    await expect(overview.getByText('controller', { exact: true })).toBeVisible()
+    await expect(
+      overview.getByText('gateway.envoyproxy.io/gatewayclass-controller', { exact: true }),
+    ).toBeVisible()
+    await expect(overview.getByText(definition.name, { exact: true })).toBeVisible()
+    const versions = overview.locator('dl > div').filter({
+      has: page.getByText('支持版本', { exact: true }),
+    })
+    await expect(versions.getByText('v1', { exact: true })).toBeVisible()
+    const finalizersName = `Finalizers · ${variant.long ? 2 : 0}`
+    const finalizers = overview.locator('.ant-collapse-item').filter({
+      has: page.getByRole('button', { name: finalizersName, exact: true }),
+    })
+    const disclosure = finalizers.getByRole('button', { name: finalizersName, exact: true })
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
     await disclosure.scrollIntoViewIfNeeded()
     await verifyGeometry(page, disclosure)
     await disclosure.focus()
     await disclosure.press('Enter')
-    await expect(metadata).toHaveAttribute('open', '')
-    await expect(metadata).toContainText('支持版本')
-    await expect(metadata).toContainText('Finalizers')
-    if (variant.long) await expect(metadata).toContainText(finalizer)
-    else await expect(metadata).toContainText('—')
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+    for (const value of variant.long ? [finalizer, `cleanup.${definition.group}`] : ['—']) {
+      await expect(finalizers.getByText(value, { exact: true })).toBeVisible()
+    }
     await verifyGeometry(page, disclosure)
     await page.screenshot({ path: info.outputPath('resource-summary.png'), fullPage: true })
-    const back = heading.getByRole('button', { name: /返回实例列表/ })
+
+    await detail.getByRole('tab', { name: 'YAML', exact: true }).click()
+    await expect(detail.getByText('YAML · 只读', { exact: true })).toBeVisible()
+    await expect(detail.getByLabel('资源 YAML，只读', { exact: true })).toBeVisible()
+    await expect(detail.getByRole('button', { name: '编辑 YAML', exact: true })).toHaveCount(0)
+    await expect(detail.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+    const back = header.getByRole('button', { name: /返回实例列表/ })
     await back.scrollIntoViewIfNeeded()
     await verifyGeometry(page, back)
     await back.click()

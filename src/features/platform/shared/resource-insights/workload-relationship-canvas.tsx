@@ -1,4 +1,4 @@
-import { ReactFlowProvider } from '@xyflow/react'
+import { ReactFlowProvider, type OnMove, type Viewport } from '@xyflow/react'
 import type { KubernetesResourceGraph } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useMemo } from 'react'
 import { useI18n } from '@/i18n'
@@ -9,10 +9,14 @@ export default function WorkloadRelationshipCanvas({
   graph,
   selectedId,
   onSelect,
+  defaultViewport,
+  onMove,
 }: {
   graph: KubernetesResourceGraph
   selectedId: string | null
   onSelect: (id: string | null) => void
+  defaultViewport?: Viewport
+  onMove: OnMove
 }) {
   const { localeCode } = useI18n()
   const flow = useMemo(() => {
@@ -46,6 +50,8 @@ export default function WorkloadRelationshipCanvas({
         flow={flow}
         selectedId={selectedId}
         onSelect={onSelect}
+        defaultViewport={defaultViewport}
+        onMove={onMove}
         hideInspector
         fitViewKey={graph.rootId}
       />

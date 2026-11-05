@@ -478,6 +478,7 @@ async function setup(
           ...original,
           nodeRef: { ...original.nodeRef, name: `worker-${index + 1}`, uid: `uid-${index + 1}` },
         }))
+        data.nodeOptions = data.nodes.map((node) => node.nodeRef)
         data.panels = data.panels.map((panel) => ({
           ...panel,
           series: data.nodes.map((node, index) => {
@@ -929,63 +930,62 @@ test('monitoring keeps gaps and zero samples, overcommit and unlimited values di
 }) => {
   const evidence = await setup(context, page, { english: true })
   await page.goto('/resource-monitoring/cpu?clusterId=cluster-a')
-  const content = page.locator('.soha-monitoring-page')
-  await expect(content).toContainText('cluster-a-worker')
-  await expect(content).toContainText('142.9%')
-  await expect(content).toContainText('Unlimited resources / incomplete coverage')
-  const details = page.getByRole('dialog', { name: 'CPU · Metric details', exact: true })
-  await expect(details.getByRole('img', { name: /Exact values/ }).first()).toBeVisible()
+  const details = page.getByRole('tabpanel')
+  await expect(page.getByRole('tab', { name: 'CPU', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await expect(details).toContainText('cluster-a-worker')
+  await expect(details).toContainText('142.9%')
+  await expect(details).toContainText('Unlimited resources / incomplete coverage')
+  await expect(
+    details.getByRole('img', { name: /^host\.cpu\.used: cluster-a-worker\. Exact values/ }),
+  ).toBeVisible()
   await details.getByRole('button', { name: 'Samples', exact: true }).first().click()
-  const samples = page.getByRole('dialog').filter({ hasText: 'no zero fill' })
+  const samples = page.getByRole('dialog', { name: 'host.cpu.used · Samples', exact: true })
   await expect(samples).toContainText('no zero fill')
   await expect(samples.getByText('0 mCPU', { exact: true })).toBeVisible()
   await expect(samples.getByText('—', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
-  await expect(content.getByRole('tab')).toHaveCount(0)
-  await page.keyboard.press('Escape')
-  await expect(page).toHaveURL(/resource-monitoring\?clusterId=cluster-a$/)
-  await expect(content.getByRole('button', { name: /Node details and all metrics/ })).toHaveCount(0)
-  await content
-    .locator('.soha-monitoring-node-card')
-    .getByRole('link', { name: 'cluster-a-worker Pod capacity details and samples', exact: true })
-    .click()
-  const podDetails = page.getByRole('dialog', {
-    name: 'Pod capacity · Metric details',
-    exact: true,
-  })
-  await expect(podDetails).toContainText('101.8%')
-  await expect(podDetails).toContainText('0 / 2')
+  await expect(samples).toBeHidden()
+  await expect(page).toHaveURL(/resource-monitoring\/cpu\?clusterId=cluster-a$/)
+  await page.getByRole('tab', { name: 'Pod capacity', exact: true }).click()
+  await expect(page).toHaveURL(/clusterId=cluster-a#monitoring-pods$/)
+  const podRow = details.locator('.ant-table-row').filter({ hasText: 'cluster-a-worker' })
+  await expect(podRow).toBeVisible()
+  await expect(podRow).toContainText('112 / 110')
+  await expect(podRow).toContainText('101.8% · Overcommitted')
+  await expect(podRow.getByText('0 / 2', { exact: true })).toBeVisible()
   verifyBrowserEvidence(evidence)
 })
 
-test('monitoring combines node metrics and compact trends in list cards', async ({
+test('monitoring combines compact scope trends and a node comparison table', async ({
   context,
   page,
 }) => {
   const evidence = await setup(context, page)
   await page.goto('/resource-monitoring?clusterId=cluster-a&rangeMinutes=15')
-  const row = page.locator('.soha-monitoring-node-card')
-  await expect(row).toContainText('cluster-a-worker')
-  await expect(page.locator('.soha-monitoring-summary-grid')).toHaveCount(0)
-  await expect(row.locator('.soha-monitoring-node-meter')).toHaveCount(4)
-  await expect(row.getByRole('img', { name: /cluster-a-worker.*趋势/ })).toHaveCount(4)
+  const active = page.getByRole('tabpanel')
+  const overview = active.getByRole('region', { name: '当前范围资源汇总' })
+  const row = active.locator('.ant-table-row').filter({ hasText: 'cluster-a-worker' })
+  await expect(row).toBeVisible()
+  await expect(row.locator('.soha-monitoring-usage')).toHaveCount(4)
+  const charts = overview.getByRole('img', { name: /范围合计趋势/ })
+  await expect(charts).toHaveCount(4)
+  for (const chart of await charts.all()) expect((await chart.boundingBox())!.height).toBe(40)
   expect((await row.boundingBox())!.height).toBeLessThan(210)
   expect((await row.boundingBox())!.width).toBeGreaterThan(800)
-  for (const chart of await row.locator('.soha-monitoring-sparkline').all())
-    expect((await chart.boundingBox())!.height).toBe(40)
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await row.locator('summary').press('Enter')
-  await expect(row.getByText('当前 requests / 可分配').first()).toBeVisible()
-  await expect(row.getByText('当前集群未调度 Pending')).toBeVisible()
-  await expect(row.getByText('drop /s', { exact: true })).toBeVisible()
-  await row
-    .getByRole('link', { name: 'cluster-a-worker 连接跟踪 明细与采样', exact: true })
-    .press('Enter')
-  await expect(page).toHaveURL(/rangeMinutes=15.*node=cluster-a-worker#monitoring-conntrack/)
-  await expect(page.getByRole('dialog')).toContainText('drop /s')
-  await page.keyboard.press('Escape')
+  await row.getByRole('button', { name: '更多操作：cluster-a-worker', exact: true }).press('Enter')
+  await page.getByRole('menuitem', { name: '聚焦 连接跟踪趋势', exact: true }).press('Enter')
+  await expect(page).toHaveURL(/rangeMinutes=15#monitoring-conntrack$/)
+  await expect(
+    active.getByRole('img', { name: /^conntrack\.entries: cluster-a-worker\./ }),
+  ).toBeVisible()
+  await expect(active.getByRole('columnheader', { name: 'drop /s', exact: true })).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page).not.toHaveURL(/#/)
+  await page.getByRole('tab', { name: '总览', exact: true }).click()
+  await expect(page).toHaveURL(/rangeMinutes=15#monitoring-overview$/)
   verifyBrowserEvidence(evidence)
 })
 
@@ -1028,12 +1028,19 @@ test('single monitoring page only requests and renders permitted detail sections
   page,
 }) => {
   const evidence = await setup(context, page, { english: true, views: ['cpu'] })
-  await page.goto('/resource-monitoring?clusterId=cluster-a&rangeMinutes=15')
-  await page.getByRole('link', { name: 'Metric details', exact: true }).press('Enter')
-  await expect(page).toHaveURL(/rangeMinutes=15#monitoring-cpu/)
-  await expect(page.locator('#monitoring-cpu')).toContainText('cluster-a-worker')
-  for (const view of ['overview', 'memory', 'conntrack', 'pods'])
-    await expect(page.locator(`#monitoring-${view}`)).toHaveCount(0)
+  await page.goto('/resource-monitoring?clusterId=cluster-a&rangeMinutes=15#monitoring-memory')
+  const tab = page.getByRole('tab', { name: 'CPU', exact: true })
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+  await expect(
+    page.getByRole('tab', { name: /^(Overview|Memory|Conntrack|Pod capacity)$/ }),
+  ).toHaveCount(0)
+  const content = page.getByRole('tabpanel')
+  await expect(content.getByRole('region', { name: 'CPU', exact: true })).toContainText(
+    'cluster-a-worker',
+  )
+  await content.getByRole('button', { name: 'More actions: cluster-a-worker', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Focus CPU trend', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem')).toHaveCount(1)
   const requests = evidence.requests.filter((request) => request.includes('/resource-monitoring?'))
   expect(requests.length).toBeGreaterThan(0)
   expect(
@@ -1054,23 +1061,29 @@ test('historical CPU keeps observed usage separate from current capacity', async
     '/resource-monitoring/cpu?clusterId=cluster-a&from=2026-10-19T07%3A00%3A00Z&to=2026-10-19T08%3A00%3A00Z',
   )
   const content = page.locator('.soha-monitoring-page')
-  await expect(page.getByRole('dialog')).toContainText('Historical percentage unavailable')
-  await expect(page.getByRole('dialog')).toContainText('Current allocatable:')
-  await expect(content.getByRole('switch', { name: 'Refresh every 30 seconds' })).toBeDisabled()
+  const active = page.getByRole('tabpanel')
+  await expect(active).toContainText('0 mCPU')
+  await expect(active).toContainText(
+    'Historical percentage unavailable · Current capacity: 4.00 cores',
+  )
+  await expect(active).toContainText('Current allocatable: 3.50 cores')
   await expect(
-    content.locator('.soha-monitoring-node-card .soha-monitoring-node-meter.is-scope'),
-  ).toContainText('—')
+    content.getByRole('switch', { name: /Historical window; auto-refresh paused/ }),
+  ).toBeDisabled()
+  await page.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await expect(active.getByText('Historical capacity unavailable', { exact: true })).toBeVisible()
   await expect(
-    content
-      .locator('.soha-monitoring-node-card .soha-monitoring-node-meter.is-scope')
-      .getByRole('progressbar'),
+    active.locator('.ant-table-row .soha-monitoring-usage').first().getByRole('progressbar'),
   ).toHaveCount(0)
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-  await content.locator('.soha-monitoring-node-card summary').press('Enter')
-  await expect(content.getByText('Current bound Pending on selected nodes').last()).toBeVisible()
-  await expect(content).toContainText('Current remaining / overflow slots')
-  await expect(content).toContainText('Current cluster unbound Pending')
+  await page.getByRole('tab', { name: 'Pod capacity', exact: true }).click()
+  await expect(active).toContainText('Requests, limits and Pod slots below are current snapshots')
+  await expect(
+    active.getByRole('columnheader', { name: 'Bound Pending Pods', exact: true }),
+  ).toBeVisible()
+  await expect(
+    active.getByRole('columnheader', { name: 'Remaining / overflow slots', exact: true }),
+  ).toBeVisible()
+  await expect(active).toContainText('Unbound Pending Pods in this cluster: 2')
   verifyBrowserEvidence(evidence)
 })
 
@@ -1081,18 +1094,23 @@ test('monitoring updates observed charts in place and stops polling when paused'
   await page.clock.install()
   await page.emulateMedia({ reducedMotion: 'reduce' })
   const evidence = await setup(context, page, { english: true, views: ['cpu'], updates: true })
-  await page.goto('/resource-monitoring?clusterId=cluster-a')
-  const card = page.locator('.soha-monitoring-node-card .soha-monitoring-node-meter.is-metric')
-  await expect(card).toContainText('0 mCPU')
-  const canvas = await card.locator('canvas').first().elementHandle()
+  await page.goto('/resource-monitoring/cpu?clusterId=cluster-a')
+  const active = page.getByRole('tabpanel')
+  const host = active.locator('.ant-table-row').getByText('0 mCPU / 4.00 cores', { exact: false })
+  await expect(host).toBeVisible()
+  const chart = active.getByRole('img', { name: /^host\.cpu\.used: cluster-a-worker\./ })
+  const canvas = await chart.locator('canvas').first().elementHandle()
   expect(canvas).not.toBeNull()
-  const refresh = page.getByRole('switch', { name: 'Refresh every 30 seconds', exact: true })
+  const refresh = page.getByRole('switch', { name: /^Auto-refresh/ })
+  await expect(refresh).toHaveAttribute('aria-checked', 'false')
   await refresh.click()
   await page.clock.fastForward(30_000)
-  await expect(card).toContainText('2.00 cores')
+  const row = active.locator('.ant-table-row')
+  await expect(row).toContainText('2.00 cores / 4.00 cores')
   expect(await canvas!.evaluate((element) => element.isConnected)).toBe(true)
-  await expect(card).toContainText('50.0%')
+  await expect(row).toContainText('50.0%')
   await refresh.click()
+  await expect(refresh).toHaveAttribute('aria-checked', 'false')
   const reads = evidence.requests.filter((request) =>
     request.includes('/resource-monitoring?'),
   ).length
@@ -1110,13 +1128,16 @@ test('live sampling keeps the plot visible throughout its update transition', as
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   const evidence = await setup(context, page, {
     english: true,
-    views: ['cpu'],
+    views: ['overview', 'cpu'],
     updates: true,
     continuous: true,
     shifted: true,
   })
   await page.goto('/resource-monitoring?clusterId=cluster-a')
-  const card = page.locator('.soha-monitoring-node-card .soha-monitoring-node-meter.is-metric')
+  const card = page
+    .getByRole('region', { name: 'Resource totals in this scope' })
+    .locator('.soha-monitoring-summary-card')
+    .filter({ has: page.getByRole('link', { name: 'CPU', exact: true }) })
   await expect(card).toContainText('0 mCPU')
   const canvas = await card.locator('canvas').first().elementHandle()
   expect(canvas).not.toBeNull()
@@ -1170,30 +1191,24 @@ test('live sampling keeps the plot visible throughout its update transition', as
 })
 
 for (const dark of [false, true]) {
-  test(`monitoring compares ten compact node rows in ${dark ? 'dark' : 'light'} mode`, async ({
+  test(`monitoring keeps the full compact node table and limits chart comparison in ${dark ? 'dark' : 'light'} mode`, async ({
     context,
     page,
   }, info) => {
-    const evidence = await setup(context, page, { english: true, nodeCount: 10, dark })
+    const evidence = await setup(context, page, { english: true, nodeCount: 12, dark })
     await page.goto('/resource-monitoring?clusterId=cluster-a')
-    const content = page.locator('.soha-monitoring-page')
-    const rows = content.getByRole('list', { name: 'Node monitoring list' }).getByRole('listitem')
-    await expect(content).toContainText('Chart nodes (up to 10)')
-    await expect(rows).toHaveCount(10)
-    await expect(content.locator('.soha-monitoring-total-card')).toContainText('10 selected nodes')
-    await expect(content.locator('.soha-monitoring-summary-grid')).toHaveCount(0)
-    for (let index = 0; index < 10; index++) {
-      const row = rows.nth(index)
-      await expect(row.locator('.soha-monitoring-node-meter')).toHaveCount(4)
-      await expect(
-        row.getByRole('img', { name: new RegExp(`^worker-${index + 1} .*trend;`) }),
-      ).toHaveCount(4)
-      await expect(row.locator('.is-metric .soha-monitoring-metric-value')).toHaveText(
-        `${(index + 1).toFixed(2)} cores`,
-      )
-    }
-    for (const metric of ['is-metric', 'is-service']) {
-      const canvas = rows.last().locator(`.${metric} canvas`).first()
+    await expect(page.locator('html')).toHaveAttribute('data-theme-mode', dark ? 'dark' : 'light')
+    const content = page.getByRole('tabpanel')
+    const rows = content.locator('.ant-table-row')
+    const summary = content.getByRole('region', { name: 'Resource totals in this scope' })
+    await expect(summary).toContainText('78.00 cores')
+    await expect(content.getByRole('status').filter({ hasText: '12 Nodes' })).toBeVisible()
+    await expect(rows.first().locator('.soha-monitoring-usage')).toHaveCount(4)
+    for (const metric of ['CPU', 'Memory']) {
+      const canvas = summary
+        .getByRole('img', { name: new RegExp(`^${metric} scope total trend`) })
+        .locator('canvas')
+        .first()
       await expect
         .poll(() =>
           canvas.evaluate((element) => {
@@ -1227,12 +1242,8 @@ for (const dark of [false, true]) {
         (box) => box.x === boxes[0].x && box.width === boxes[0].width && box.height < 210,
       ),
     ).toBe(true)
-    await rows.last().locator('summary').press('Enter')
-    await expect(rows.last().getByText('Current requests / allocatable').first()).toBeVisible()
-    await expect(rows).toHaveCount(10)
-    await rows.last().locator('summary').press('Enter')
     await page.screenshot({
-      path: info.outputPath(`monitoring-ten-node-list-${dark ? 'dark' : 'light'}.png`),
+      path: info.outputPath(`monitoring-node-table-${dark ? 'dark' : 'light'}.png`),
       fullPage: true,
     })
     await page.setViewportSize({ width: 320, height: 1000 })
@@ -1240,24 +1251,32 @@ for (const dark of [false, true]) {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true)
     await page.setViewportSize({ width: 1440, height: 1000 })
-    await rows
-      .last()
-      .getByRole('link', { name: 'worker-10 CPU details and samples', exact: true })
-      .click()
-    await expect(page).toHaveURL(/node=worker-10#monitoring-cpu/)
-    const chart = page
-      .getByRole('dialog')
-      .getByRole('img', { name: /^host\.cpu\.used: worker-10\./ })
+    await page.getByRole('tab', { name: 'CPU', exact: true }).click()
+    await expect(content.getByRole('combobox', { name: 'Chart nodes', exact: true })).toBeVisible()
+    await expect(content).toContainText(
+      'Compare up to 10 chart nodes; the table shows the full loaded scope',
+    )
+    await expect(
+      content.getByRole('img', { name: /^host\.cpu\.used: worker-1, .*worker-10\. Exact values/ }),
+    ).toBeVisible()
+    await expect(content.getByRole('status').filter({ hasText: '12 Nodes' })).toBeVisible()
+    await content.getByRole('searchbox', { name: 'Search monitored nodes' }).fill('worker-12')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('12.00 cores / 4.00 cores')
+    await rows.first().getByRole('button', { name: 'More actions: worker-12', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Focus CPU trend', exact: true }).click()
+    await expect(page).toHaveURL(/clusterId=cluster-a#monitoring-cpu$/)
+    const chart = content.getByRole('img', { name: /^host\.cpu\.used: worker-12\./ })
     await expect(chart).toBeVisible()
-    await page
-      .getByRole('dialog')
+    await content
       .locator('.soha-monitoring-trends > .ant-card')
-      .filter({ has: page.getByRole('img', { name: /^host\.cpu\.used: worker-10\./ }) })
+      .filter({ has: page.getByRole('img', { name: /^host\.cpu\.used: worker-12\./ }) })
       .getByRole('button', { name: 'Samples', exact: true })
       .click()
     const samples = page.getByRole('dialog', { name: 'host.cpu.used · Samples', exact: true })
-    await expect(samples).toContainText('worker-10')
-    await expect(samples.getByText('10.00 cores', { exact: true }).first()).toBeVisible()
+    await expect(samples).toContainText('worker-12')
+    await expect(samples).not.toContainText('worker-10')
+    await expect(samples.getByText('12.00 cores', { exact: true }).first()).toBeVisible()
     verifyBrowserEvidence(evidence)
   })
 }
@@ -1287,18 +1306,29 @@ test('monitoring cluster changes clear node selection and previous cluster data'
 }) => {
   const evidence = await setup(context, page, { english: true })
   await page.goto('/resource-monitoring/cpu?clusterId=cluster-a&node=cluster-a-worker')
-  await expect(page.locator('.soha-monitoring-page')).toContainText('cluster-a-worker')
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('dialog')).toHaveCount(0)
+  const active = page.getByRole('tabpanel')
+  await expect(
+    active.getByRole('img', { name: /^host\.cpu\.used: cluster-a-worker\./ }),
+  ).toBeVisible()
   const cluster = page.getByRole('combobox', { name: 'Select cluster', exact: true })
   await cluster.click()
   await cluster.press('ArrowDown')
   await cluster.press('Enter')
   await expect(page).toHaveURL(/clusterId=cluster-b/)
   await expect(page).not.toHaveURL(/node=/)
-  await expect(page.locator('.soha-monitoring-page')).toContainText('cluster-b-worker')
+  await expect(
+    active.getByRole('img', { name: /^host\.cpu\.used: cluster-b-worker\./ }),
+  ).toBeVisible()
   await expect(page.locator('.soha-monitoring-page')).not.toContainText('cluster-a-worker')
+  expect(
+    evidence.requests.some((request) => {
+      const url = new URL(request, 'http://localhost')
+      return (
+        url.pathname === '/api/v1/clusters/cluster-b/resource-monitoring' &&
+        !url.searchParams.has('node')
+      )
+    }),
+  ).toBe(true)
   verifyBrowserEvidence(evidence)
 })
 
@@ -1324,22 +1354,35 @@ test('missing metrics retain current capacity without empty chart grids', async 
   const evidence = await setup(context, page, { missing: true })
   await page.goto('/resource-monitoring/memory')
   const content = page.locator('.soha-monitoring-page')
-  await expect(page.getByRole('dialog')).toContainText('当前没有可展示的历史样本')
-  await expect(content).toContainText('cluster-a-worker')
-  await expect(content.locator('.soha-monitoring-chart')).toHaveCount(0)
-  await page.keyboard.press('Escape')
+  const active = page.getByRole('tabpanel')
+  await expect(active.getByRole('alert')).toContainText('当前没有可展示的历史样本')
+  await expect(active.getByRole('link', { name: 'cluster-a-worker', exact: true })).toBeVisible()
+  await expect(active.locator('.ant-table-row')).toContainText('1.0 GB')
+  await expect(active.locator('.soha-monitoring-chart')).toHaveCount(0)
   await content.getByRole('button', { name: '来源与覆盖', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('未配置数据源')
   verifyBrowserEvidence(evidence)
 })
 
 test('monitoring denial does not reveal cached capacity', async ({ context, page }) => {
-  const evidence = await setup(context, page, { denied: true })
+  const options = { english: true, denied: false }
+  const evidence = await setup(context, page, options)
   await page.goto('/resource-monitoring/cpu')
-  const failures = page.getByText('Monitoring access denied', { exact: false })
-  await expect(failures).toHaveCount(5)
-  for (const failure of await failures.all()) await expect(failure).toBeVisible()
-  await expect(page.locator('.soha-monitoring-page')).not.toContainText('cluster-a-worker')
+  const active = page.getByRole('tabpanel')
+  await expect(active.getByRole('link', { name: 'cluster-a-worker', exact: true })).toBeVisible()
+  options.denied = true
+  await page.getByRole('button', { name: 'Refresh resource monitoring', exact: true }).click()
+  for (const label of ['CPU', 'Overview', 'Memory', 'Conntrack', 'Pod capacity']) {
+    await page.getByRole('tab', { name: label, exact: true }).click()
+    await expect(active.getByText('Monitoring access denied', { exact: false })).toBeVisible()
+    await expect(active.getByRole('link', { name: 'cluster-a-worker', exact: true })).toHaveCount(0)
+    await expect(
+      active.locator('.soha-monitoring-chart, .soha-monitoring-summary-card'),
+    ).toHaveCount(0)
+  }
+  await expect(
+    page.getByRole('button', { name: 'Sources and coverage', exact: true }),
+  ).toBeDisabled()
   verifyBrowserEvidence(evidence)
 })
 

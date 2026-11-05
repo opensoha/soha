@@ -3,6 +3,7 @@ import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { verifyGeometry } from '../fixtures/geometry'
 
 const root = '/api/v1/clusters/cluster-a'
+const configMapRefresh = '刷新 ConfigMaps'
 const hpaYAML =
   'apiVersion: autoscaling/v2\nkind: HorizontalPodAutoscaler\nmetadata:\n  name: autoscale-api\n  namespace: monitoring\nspec:\n  minReplicas: 2\n  maxReplicas: 8\n  scaleTargetRef:\n    apiVersion: apps/v1\n    kind: Deployment\n    name: api\n'
 const allowedActions = [
@@ -21,6 +22,7 @@ const lists = [
     route: '/configuration/configmaps',
     path: '/configuration/configmaps',
     name: 'application-settings',
+    refreshLabel: configMapRefresh,
     data: [
       { ...base, name: 'application-settings', dataEntries: 3, binaryEntries: 0, immutable: false },
     ],
@@ -29,6 +31,7 @@ const lists = [
     route: '/configuration/hpas',
     path: '/configuration/hpas',
     name: 'autoscale-api',
+    refreshLabel: '刷新 HorizontalPodAutoscalers',
     data: [
       {
         ...base,
@@ -45,6 +48,7 @@ const lists = [
     route: '/network/services',
     path: '/network/services',
     name: 'frontend-service',
+    refreshLabel: '刷新 Services',
     data: [
       {
         ...base,
@@ -62,6 +66,7 @@ const lists = [
     route: '/storage/persistentvolumeclaims',
     path: '/storage/persistentvolumeclaims',
     name: 'database-data',
+    refreshLabel: '刷新 PVC',
     data: [
       {
         ...base,
@@ -78,12 +83,14 @@ const lists = [
     route: '/platform-access-control/roles',
     path: '/access-control/roles',
     name: 'namespace-reader',
+    refreshLabel: '刷新 Roles',
     data: [{ ...base, name: 'namespace-reader', rules: 2 }],
   },
   {
     route: '/workloads/deployments',
     path: '/workloads/deployments',
     name: 'api',
+    refreshLabel: '刷新',
     data: [
       {
         ...base,
@@ -101,6 +108,7 @@ const lists = [
     route: '/cluster-resources/nodes',
     path: '/infrastructure/nodes',
     name: 'worker-prod-01',
+    refreshLabel: '刷新节点',
     data: [
       {
         name: 'worker-prod-01',
@@ -126,6 +134,7 @@ const lists = [
     route: '/helm/releases',
     path: '/helm/releases',
     name: 'ingress-controller',
+    refreshLabel: '刷新',
     data: [
       {
         ...base,
@@ -193,11 +202,15 @@ async function platformMocks(context: BrowserContext, page: Page) {
     'platform.configuration.config-maps.update',
     'platform.configuration.horizontal-pod-autoscalers.view',
     'platform.configuration.horizontal-pod-autoscalers.update',
+    'platform.configuration.horizontal-pod-autoscalers.delete',
     'platform.network.services.view',
     'platform.storage.persistent-volume-claims.view',
+    'platform.storage.persistent-volume-claims.delete',
     'platform.access-control.roles.view',
+    'platform.access-control.roles.delete',
     'platform.helm.view',
     'platform.helm.releases.view',
+    'platform.helm.releases.delete',
     'platform.helm.charts.view',
   ]
   const evidence = await installMocks(context, page, (url, method, request) => {
@@ -278,6 +291,10 @@ async function platformMocks(context: BrowserContext, page: Page) {
         return {
           body: { data: [{ name: 'monitoring', status: 'Active', labels: {}, allowedActions }] },
         }
+      if (state.namespaceActions && path === root + '/workloads/pods') {
+        expect(url.search).toBe('')
+        return { body: { data: [] } }
+      }
       const list = lists.find((item) => path === root + item.path)
       if (list) {
         if (list.path !== '/infrastructure/nodes')
@@ -374,7 +391,7 @@ for (const theme of ['light', 'dark']) {
       .first()
       .locator(':scope > .ant-table-cell')
       .first()
-    const handle = page.getByRole('separator', { name: '调整Name列宽', exact: true })
+    const handle = header.getByRole('separator', { name: '调整名称列宽', exact: true })
     const declared = Number(await handle.getAttribute('aria-valuenow'))
     await expect
       .poll(() => header.evaluate((node) => node.getBoundingClientRect().width))
@@ -411,8 +428,9 @@ for (const theme of ['light', 'dark']) {
     ]
     await page.goto('/network/services')
     const name = table.getByRole('button', { name: state.serviceName, exact: true })
+    const portRows = table.locator('.soha-service-port-row')
     await expect(name).toBeVisible()
-    await expect(table.locator('.soha-service-port-chain')).toHaveCount(2)
+    await expect(portRows).toHaveCount(2)
     for (const width of [1440, 900, 390]) {
       await page.setViewportSize({ width, height: 900 })
       await expect
@@ -428,14 +446,14 @@ for (const theme of ['light', 'dark']) {
         .toBe(true)
       await expect
         .poll(() =>
-          table.locator('.soha-service-port-chain').evaluateAll(
-            (chains) =>
-              chains.length === 2 &&
-              chains.every((chain) => {
-                const parent = chain.closest('.ant-table-cell')
-                if (!chain.isConnected || !parent) return false
+          portRows.evaluateAll(
+            (rows) =>
+              rows.length === 2 &&
+              rows.every((row) => {
+                const parent = row.closest('.ant-table-cell')
+                if (!row.isConnected || !parent) return false
                 const cell = parent.getBoundingClientRect()
-                return Array.from(chain.children).every((child) => {
+                return Array.from(row.children).every((child) => {
                   const bounds = child.getBoundingClientRect()
                   return bounds.left >= cell.left - 1 && bounds.right <= cell.right + 1
                 })
@@ -460,12 +478,8 @@ for (const item of lists)
     const { state, evidence } = await platformMocks(context, page)
     await page.goto(item.route)
     await expect(page.getByText(item.name, { exact: true })).toBeVisible()
-    const refreshLabels: Record<string, string> = {
-      '/configuration/configmaps': '刷新 ConfigMaps',
-      '/cluster-resources/nodes': '刷新节点',
-    }
     const refresh = page.getByRole('button', {
-      name: refreshLabels[item.route] ?? '刷新',
+      name: item.refreshLabel,
       exact: true,
     })
     await expect(refresh).toHaveCount(1)
@@ -498,12 +512,13 @@ for (const mode of ['light', 'dark', 'narrow'] as const)
     await expect(page.getByText('application-settings', { exact: true })).toBeVisible()
     state.failedPath = root + '/configuration/configmaps'
     state.readStatus = 503
-    await page.getByRole('button', { name: '刷新', exact: true }).press('Enter')
+    const refresh = page.getByRole('button', { name: configMapRefresh, exact: true })
+    await refresh.press('Enter')
     await expect(page.getByText('列表未更新，正在展示上次读取结果')).toBeVisible()
     await expect(page.locator('.ant-notification-notice')).toHaveCount(0)
     if (mode === 'dark')
       await expect(page.locator('html')).toHaveAttribute('data-theme-mode', 'dark')
-    await verifyGeometry(page, page.getByRole('button', { name: '刷新', exact: true }))
+    await verifyGeometry(page, refresh)
     await page.screenshot({ path: info.outputPath(`platform-${mode}.png`), fullPage: true })
     verifyBrowserEvidence(evidence)
   })
@@ -517,7 +532,7 @@ test('Platform long resource identity remains usable at 125 percent zoom', async
   await page.goto('/configuration/configmaps')
   await expect(page.getByText(state.configMapName, { exact: true })).toBeVisible()
   await page.addStyleTag({ content: 'html { zoom: 1.25; }' })
-  const refresh = page.getByRole('button', { name: '刷新', exact: true })
+  const refresh = page.getByRole('button', { name: configMapRefresh, exact: true })
   await verifyGeometry(page, refresh)
   await refresh.press('Enter')
   await expect(page.getByText(state.configMapName, { exact: true })).toBeVisible()
@@ -748,7 +763,8 @@ for (const item of lists.filter((entry) => entry.path !== '/workloads/deployment
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
     await trigger.click()
-    await menu.getByRole('menuitem', { name: /^(删除|删除 Helm Release)$/ }).click()
+    const deleteLabel = item.path === '/helm/releases' ? '卸载 Helm Release' : '删除'
+    await menu.getByRole('menuitem', { name: deleteLabel, exact: true }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog).toContainText(item.name)
     if (item.path === '/infrastructure/nodes')
@@ -766,7 +782,8 @@ test('Task117 namespace navigation and destructive confirmation stay distinct', 
   const { state, evidence } = await platformMocks(context, page)
   state.namespaceActions = true
   await page.goto('/cluster-resources/namespaces')
-  await page.getByRole('button', { name: '更多操作：monitoring', exact: true }).click()
+  const trigger = page.getByRole('button', { name: '更多操作：monitoring', exact: true })
+  await trigger.click()
   const menu = page.getByRole('menu', { name: '命名空间 操作：monitoring', exact: true })
   await expect(menu.getByRole('menuitem', { name: '查看资源', exact: true })).toBeVisible()
   await expect(menu.getByRole('menuitem', { name: 'Helm', exact: true })).toBeVisible()
@@ -774,6 +791,12 @@ test('Task117 namespace navigation and destructive confirmation stay distinct', 
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText('该命名空间下的资源会一并回收')
   await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+  await expect(page).toHaveURL('/cluster-resources/namespaces')
+  await trigger.click()
+  await menu.getByRole('menuitem', { name: 'Helm', exact: true }).click()
+  await expect(page).toHaveURL('/helm/releases?clusterId=cluster-a&namespace=monitoring')
+  await expect(page.getByText('ingress-controller', { exact: true })).toBeVisible()
+  expect(evidence.requests).toContain(root + '/helm/releases?namespace=monitoring')
   expect(state.writes).toEqual([])
   verifyBrowserEvidence(evidence)
 })

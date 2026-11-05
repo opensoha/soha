@@ -464,9 +464,12 @@ test('Task52 login uses compact Antd controls, readable option failures and redu
   state.status = 503
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/login')
-  await expect(page.locator('.soha-read-feedback').first()).toBeVisible()
+  const optionsError = page.getByRole('alert').filter({ hasText: '登录选项读取失败' })
+  await expect(optionsError).toContainText('本次验证请求失败')
+  await expect(page.getByLabel('用户名', { exact: true })).toBeDisabled()
+  await expect(page.getByLabel('密码', { exact: true })).toBeDisabled()
   state.status = 200
-  await page.getByRole('button', { name: /重试读取登录选项/ }).click()
+  await optionsError.getByRole('button', { name: '重试读取登录选项', exact: true }).click()
   await expect(page.locator('.soha-read-feedback')).toHaveCount(0)
   await expect(page.getByLabel('用户名', { exact: true })).toBeEnabled()
   await expect(page.getByLabel('密码', { exact: true })).toBeEnabled()

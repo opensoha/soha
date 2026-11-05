@@ -324,22 +324,21 @@ test('Namespace read and write errors preserve metadata, drafts and destructive 
   expect(state.writes.filter((p) => p === 'POST ' + root + '/namespaces')).toHaveLength(1)
   await page.getByRole('button', { name: '更多操作：team-000' }).click()
   await page.getByRole('menuitem', { name: '编辑', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Labels(JSON)' }).fill('{"owner":"updated"}')
+  const edit = page.getByRole('dialog', { name: '编辑命名空间 team-000', exact: true })
+  const labels = edit.getByRole('textbox', { name: 'Labels(JSON)' })
+  // The loading icon can temporarily contribute to the button's accessible name.
+  const save = edit.getByRole('button').filter({ hasText: /^保\s*存$/ })
+  const updates = () => state.writes.filter((p) => p === 'PUT ' + root + '/namespaces/team-000')
+  await labels.fill('{"owner":"updated"}')
   state.failWrite = 409
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: /^保\s*存$/ })
-    .click()
-  await expect(page.getByRole('dialog')).toContainText('Namespace write failed')
-  await expect(page.getByRole('textbox', { name: 'Labels(JSON)' })).toHaveValue(
-    '{"owner":"updated"}',
-  )
+  await save.click()
+  await expect(edit).toContainText('Namespace write failed')
+  await expect(labels).toHaveValue('{"owner":"updated"}')
+  expect(updates()).toHaveLength(1)
   state.failWrite = 0
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: /^保\s*存$/ })
-    .click()
+  await save.click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(updates()).toHaveLength(2)
   await page.getByRole('button', { name: '更多操作：team-000' }).click()
   await page.getByRole('menuitem', { name: '删除', exact: true }).click()
   state.failWrite = 500

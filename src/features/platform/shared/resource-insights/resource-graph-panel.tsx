@@ -20,6 +20,8 @@ import {
   useStore,
   type Edge,
   type Node,
+  type OnMove,
+  type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Alert, Button, Empty, Space, Spin, Switch, Typography } from 'antd'
@@ -105,6 +107,8 @@ export function ResourceGraphCanvas({
   flow: suppliedFlow,
   getResourcePath,
   fitViewKey,
+  defaultViewport,
+  onMove,
   selectedId: controlledSelection,
   onSelect,
   hideInspector = false,
@@ -114,6 +118,8 @@ export function ResourceGraphCanvas({
   onSelect?: (id: string | null) => void
   hideInspector?: boolean
   fitViewKey?: string | boolean
+  defaultViewport?: Viewport
+  onMove?: OnMove
   flow?: ReturnType<typeof buildResourceGraphFlow>
   getResourcePath?: (
     resource: KubernetesResourceGraph['nodes'][number]['resource'],
@@ -125,6 +131,7 @@ export function ResourceGraphCanvas({
   const canvasWidth = useStore((state) => state.width)
   const canvasHeight = useStore((state) => state.height)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const restoredViewport = useRef(Boolean(defaultViewport))
   const [localSelection, setLocalSelection] = useState<string | null>(null)
   const selectedId = controlledSelection === undefined ? localSelection : controlledSelection
   const setSelectedId = (id: string | null) => {
@@ -142,7 +149,14 @@ export function ResourceGraphCanvas({
   const zh = localeCode === 'zh_CN'
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => fitView({ padding: 0.18, duration: 0 }))
+    if (!canvasWidth || !canvasHeight) return
+    const frame = requestAnimationFrame(() => {
+      if (restoredViewport.current) {
+        restoredViewport.current = false
+        return
+      }
+      void fitView({ padding: 0.18, duration: 0 })
+    })
     return () => cancelAnimationFrame(frame)
   }, [fitView, canvasWidth, canvasHeight, fitViewKey])
 
@@ -168,6 +182,8 @@ export function ResourceGraphCanvas({
             domAttributes: { 'aria-expanded': node.id === selectedNode?.id },
           }))}
           edgesFocusable={false}
+          defaultViewport={defaultViewport}
+          onMove={onMove}
           nodesConnectable={false}
           nodesDraggable={false}
           deleteKeyCode={null}

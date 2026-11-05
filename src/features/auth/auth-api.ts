@@ -165,7 +165,9 @@ export async function restoreAuthSession(): Promise<AuthRefreshStatus> {
     return 'authenticated'
   } catch (error) {
     if (isAuthRejected(error)) {
-      clearAuthSession()
+      const { accessToken, user } = useAuthStore.getState()
+      // An already signed-out browser must not remount the login page on every refresh rejection.
+      if (accessToken || user) clearAuthSession()
       return 'unauthenticated'
     }
     return 'unavailable'

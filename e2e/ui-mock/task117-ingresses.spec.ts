@@ -318,7 +318,37 @@ async function setup(
               ],
             },
           }
-    if (url.pathname === root + '/resources/graph') {
+    if (
+      method === 'GET' &&
+      url.pathname === root + '/workloads/pods/api-worker/detail' &&
+      url.searchParams.get('namespace') === 'monitoring'
+    ) {
+      return {
+        body: {
+          data: {
+            name: 'api-worker',
+            namespace: 'monitoring',
+            uid: 'mock-api-worker',
+            phase: 'Running',
+            containers: [],
+          },
+        },
+      }
+    }
+    if (
+      method === 'GET' &&
+      url.pathname === root + '/workloads/pods/api-worker/metrics' &&
+      url.searchParams.get('namespace') === 'monitoring'
+    ) {
+      return { body: { data: { configured: false, series: [] } } }
+    }
+    if (
+      method === 'GET' &&
+      url.pathname === root + '/resources/graph' &&
+      url.searchParams.get('kind') === 'Ingress' &&
+      url.searchParams.get('name') === 'web' &&
+      url.searchParams.get('namespace') === 'monitoring'
+    ) {
       const nodes = [
         {
           id: 'ingress',
@@ -581,10 +611,14 @@ test('Ingress relationships share graph and list, retain zoom and respect dark n
   const { state, evidence } = await setup(context, page)
   await page.goto(route + '&tab=relationships')
   await expect(active(page).locator('.react-flow__node')).toHaveCount(3)
-  await expect(active(page)).toContainText('路由指向')
+  const graphPod = active(page).getByRole('button', { name: 'Pod monitoring/api-worker' })
+  await expect(graphPod).toBeVisible()
+  await expect(active(page)).toContainText('声明路由后端')
   await capture(page, 'mock-relationships')
-  await active(page).getByRole('button', { name: 'Zoom Out', exact: true }).click()
   const viewport = active(page).locator('.react-flow__viewport')
+  const initialStyle = await viewport.getAttribute('style')
+  await active(page).getByRole('button', { name: 'Zoom Out', exact: true }).click()
+  await expect(viewport).not.toHaveAttribute('style', initialStyle || '')
   let style: string | null = null
   await expect
     .poll(
@@ -598,10 +632,7 @@ test('Ingress relationships share graph and list, retain zoom and respect dark n
     )
     .toBe(true)
   await active(page).getByText('列表', { exact: true }).click()
-  await expect(active(page).getByRole('link', { name: 'api-worker', exact: true })).toHaveAttribute(
-    'href',
-    /clusterId=cluster-a/,
-  )
+  await expect(active(page).getByRole('button', { name: 'api-worker', exact: true })).toBeVisible()
   await active(page).getByText('关系图', { exact: true }).click()
   await expect(viewport).toHaveAttribute('style', style || '')
   for (const width of [1440, 900, 375]) {
@@ -614,7 +645,18 @@ test('Ingress relationships share graph and list, retain zoom and respect dark n
   await expect(
     active(page).locator('.soha-resource-graph-kind').filter({ hasText: 'Ingress' }),
   ).toBeVisible()
-  expect(state.reads.filter((p) => p.includes('/resources/graph'))).toHaveLength(1)
+  await active(page).getByText('列表', { exact: true }).click()
+  await active(page).getByRole('button', { name: 'api-worker', exact: true }).click()
+  const inspector = active(page).getByRole('complementary', { name: '选中资源信息' })
+  await expect(inspector).toContainText('monitoring')
+  await inspector.getByRole('button', { name: '查看详情', exact: true }).click()
+  await expect(page).toHaveURL(
+    /\/workloads\/pods\/api-worker\?clusterId=cluster-a&namespace=monitoring$/,
+  )
+  await expect(page.getByRole('heading', { name: 'api-worker', exact: true })).toBeVisible()
+  expect(state.reads.filter((p) => p.includes('/resources/graph'))).toEqual([
+    root + '/resources/graph?namespace=monitoring&kind=Ingress&name=web',
+  ])
   verifyBrowserEvidence(evidence)
 })
 

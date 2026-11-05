@@ -10,6 +10,7 @@ import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { CloseOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { KubernetesResourceGraph } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { Viewport } from '@xyflow/react'
 import { Alert, Button, Card, Segmented, Spin, Switch, Typography } from 'antd'
 import {
   lazy,
@@ -62,9 +63,12 @@ export function WorkloadRelationships({
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
-  const networkRoot = !rootAPI && networkRelationshipKinds.some((networkKind) => networkKind === kind)
-  const storageRoot = !rootAPI && storageRelationshipKinds.some((storageKind) => storageKind === kind)
-  const accessControlRoot = !rootAPI && accessControlRelationshipKinds.some((value) => value === kind)
+  const networkRoot =
+    !rootAPI && networkRelationshipKinds.some((networkKind) => networkKind === kind)
+  const storageRoot =
+    !rootAPI && storageRelationshipKinds.some((storageKind) => storageKind === kind)
+  const accessControlRoot =
+    !rootAPI && accessControlRelationshipKinds.some((value) => value === kind)
   const showNamespaces = storageRoot || accessControlRoot || Boolean(rootAPI)
   const permissions = readableQueryData(usePermissionSnapshot())?.data
   const permission = rootAPI
@@ -94,6 +98,7 @@ export function WorkloadRelationships({
   const lastSelection = useRef<HTMLElement | null>(null)
   const restoreFocus = useRef<HTMLElement | null>(null)
   const control = useRef<HTMLDivElement>(null)
+  const lastViewport = useRef<{ identity: string; viewport: Viewport } | null>(null)
   const denied = queryAccessDenied(query)
   const purgedDenials = useRef(new WeakSet<object>())
   const [retryingIdentity, setRetryingIdentity] = useState<string | null>(null)
@@ -123,7 +128,10 @@ export function WorkloadRelationships({
     }
   }
   const graph = useMemo(() => {
-    if (!raw || !graphMatches(raw, kind, name, scope.clusterId, scope.namespace, rootAPI?.apiVersion))
+    if (
+      !raw ||
+      !graphMatches(raw, kind, name, scope.clusterId, scope.namespace, rootAPI?.apiVersion)
+    )
       return undefined
     const filtered = kind === 'Pod' && !rootAPI ? podRelationshipGraph(raw, includeOther) : raw
     return filterGraph ? filterGraph(filtered) : filtered
@@ -152,6 +160,9 @@ export function WorkloadRelationships({
     } else restoreFocus.current = control.current
     setSelection(null)
   }
+  useLayoutEffect(() => {
+    if (!graph || lastViewport.current?.identity !== identity) lastViewport.current = null
+  }, [graph, identity])
   // Restore after the inspector has unmounted so its pending focus effect cannot
   // leave focus on an element that the close commit removes.
   useLayoutEffect(() => {
@@ -195,11 +206,7 @@ export function WorkloadRelationships({
       if (customPath) return customPath
     }
     const descriptor = relationshipResourceDescriptor(resource)
-    if (
-      !descriptor ||
-      !hasPermission(permissions, descriptor.permission)
-    )
-      return null
+    if (!descriptor || !hasPermission(permissions, descriptor.permission)) return null
     const route = buildKubernetesResourcePath(resource)
     if (!route) return null
     const [pathname, search] = route.split('?')
@@ -376,8 +383,17 @@ export function WorkloadRelationships({
                 {view === 'graph' ? (
                   <Suspense fallback={<Spin />}>
                     <Canvas
+                      key={identity}
                       graph={graph}
                       selectedId={selected?.id || null}
+                      defaultViewport={
+                        lastViewport.current?.identity === identity
+                          ? lastViewport.current.viewport
+                          : undefined
+                      }
+                      onMove={(_, viewport) => {
+                        lastViewport.current = { identity, viewport }
+                      }}
                       onSelect={(id) =>
                         select(
                           id,
