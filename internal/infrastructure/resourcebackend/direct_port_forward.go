@@ -38,9 +38,9 @@ func (d *Direct) StartPortForward(ctx context.Context, clusterID string, view do
 		if err != nil {
 			return nil, err
 		}
-		return portforward.NewOnAddresses(
-			dialer, []string{"127.0.0.1"}, []string{fmt.Sprintf("%d:%d", view.LocalPort, targetPort)},
-			attemptCtx.Done(), readyCh, io.Discard, io.Discard,
+		return portforward.NewOnAddressesForStreamingWithContext(
+			attemptCtx, dialer, []string{"127.0.0.1"}, []string{fmt.Sprintf("%d:%d", view.LocalPort, targetPort)},
+			readyCh, io.Discard, io.Discard,
 		)
 	})
 }

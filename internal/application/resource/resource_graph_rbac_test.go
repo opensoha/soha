@@ -142,16 +142,21 @@ func TestRBACResourceGraphFiltersHiddenReferencesAndDisconnectedResources(t *tes
 				got.Edges[1].FieldPath != "subjects" || got.Edges[2].FieldPath != "aggregationRule.clusterRoleSelectors" || got.Edges[2].ResolutionState != "resolved" {
 				t.Fatalf("wrong declaration evidence: %+v", got.Edges)
 			}
-			body, err := json.Marshal(got)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, secret := range []string{"hidden-binding", "hidden-team", "detached-account", "custom-binding", "wrong-scope", "blocked-source", "effective-rights", "subjects[21]", "agent-local"} {
-				if strings.Contains(string(body), secret) {
-					t.Errorf("filtered identifier %q appears in graph: %s", secret, body)
-				}
-			}
+			assertRBACGraphHidesFilteredIdentifiers(t, got)
 		})
+	}
+}
+
+func assertRBACGraphHidesFilteredIdentifiers(t *testing.T, graph domainresource.ResourceGraph) {
+	t.Helper()
+	body, err := json.Marshal(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"hidden-binding", "hidden-team", "detached-account", "custom-binding", "wrong-scope", "blocked-source", "effective-rights", "subjects[21]", "agent-local"} {
+		if strings.Contains(string(body), secret) {
+			t.Errorf("filtered identifier %q appears in graph: %s", secret, body)
+		}
 	}
 }
 

@@ -21,7 +21,7 @@ import (
 func TestConfigurationGraphDirectMetadataHTTP(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		status   int
+		status   int32
 		ordinary bool
 	}{
 		{"metadata success", http.StatusOK, false},
@@ -38,20 +38,7 @@ func TestConfigurationGraphDirectMetadataHTTP(t *testing.T) {
 						unsafeReads.Add(1)
 					}
 					namedReads.Add(1)
-					w.WriteHeader(tc.status)
-					if tc.status == http.StatusOK {
-						if tc.ordinary {
-							_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Secret","metadata":{"name":"credentials","namespace":"team-a"},"data":{"password":"must-not-read"}}`))
-							return
-						}
-						_ = json.NewEncoder(w).Encode(metav1.PartialObjectMetadata{TypeMeta: metav1.TypeMeta{APIVersion: "meta.k8s.io/v1", Kind: "PartialObjectMetadata"}, ObjectMeta: metav1.ObjectMeta{Name: "credentials", Namespace: "team-a", UID: "secret-uid"}})
-						return
-					}
-					reason := metav1.StatusReasonForbidden
-					if tc.status == http.StatusNotAcceptable {
-						reason = metav1.StatusReasonNotAcceptable
-					}
-					_ = json.NewEncoder(w).Encode(metav1.Status{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"}, Status: "Failure", Reason: reason, Code: int32(tc.status)})
+					writeConfigurationSecretMetadataResponse(w, tc.status, tc.ordinary)
 					return
 				}
 				w.WriteHeader(http.StatusForbidden)
@@ -99,4 +86,21 @@ users:
 			}
 		})
 	}
+}
+
+func writeConfigurationSecretMetadataResponse(w http.ResponseWriter, status int32, ordinary bool) {
+	w.WriteHeader(int(status))
+	if status == http.StatusOK {
+		if ordinary {
+			_, _ = w.Write([]byte(`{"apiVersion":"v1","kind":"Secret","metadata":{"name":"credentials","namespace":"team-a"},"data":{"password":"must-not-read"}}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(metav1.PartialObjectMetadata{TypeMeta: metav1.TypeMeta{APIVersion: "meta.k8s.io/v1", Kind: "PartialObjectMetadata"}, ObjectMeta: metav1.ObjectMeta{Name: "credentials", Namespace: "team-a", UID: "secret-uid"}})
+		return
+	}
+	reason := metav1.StatusReasonForbidden
+	if status == http.StatusNotAcceptable {
+		reason = metav1.StatusReasonNotAcceptable
+	}
+	_ = json.NewEncoder(w).Encode(metav1.Status{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"}, Status: "Failure", Reason: reason, Code: status})
 }

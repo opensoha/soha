@@ -77,14 +77,7 @@ func TestStorageResourceGraphFiltersScopesAndDisconnectedPaths(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(got.Nodes) != 3 || len(got.Edges) != 2 || len(got.Evidence) != 0 || len(got.Warnings) != 1 || got.Warnings[0] != graphStorageAccessWarning {
-				t.Fatalf("unexpected visible graph: %+v", got)
-			}
-			for _, item := range got.Nodes {
-				if item.ID != "class" && item.ID != "allowed-claim" && item.ID != "allowed-pod" {
-					t.Errorf("unexpected resource returned: %s", item.ID)
-				}
-			}
+			assertStorageGraphVisiblePaths(t, got)
 			if direct.called != (mode == domaincluster.ConnectionModeDirectKubeconfig) || agent.called != (mode == domaincluster.ConnectionModeAgent) {
 				t.Fatal("wrong graph source")
 			}
@@ -101,6 +94,18 @@ func TestStorageResourceGraphFiltersScopesAndDisconnectedPaths(t *testing.T) {
 				t.Fatalf("mismatched observation accepted: %v", err)
 			}
 		})
+	}
+}
+
+func assertStorageGraphVisiblePaths(t *testing.T, graph domainresource.ResourceGraph) {
+	t.Helper()
+	if len(graph.Nodes) != 3 || len(graph.Edges) != 2 || len(graph.Evidence) != 0 || len(graph.Warnings) != 1 || graph.Warnings[0] != graphStorageAccessWarning {
+		t.Fatalf("unexpected visible graph: %+v", graph)
+	}
+	for _, item := range graph.Nodes {
+		if item.ID != "class" && item.ID != "allowed-claim" && item.ID != "allowed-pod" {
+			t.Errorf("unexpected resource returned: %s", item.ID)
+		}
 	}
 }
 

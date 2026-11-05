@@ -41,20 +41,7 @@ func TestResourceGraphHPACustomTargetObservedInBothModes(t *testing.T) {
 				if err != nil || state.reads != 1 || state.lists != 1 || len(graph.Nodes) != 3 || len(graph.Edges) != 2 || len(graph.Evidence) != 2 {
 					t.Fatalf("custom target not observed: graph=%+v reads=%d lists=%d err=%v", graph, state.reads, state.lists, err)
 				}
-				foundTarget, foundScale := false, false
-				for _, node := range graph.Nodes {
-					if node.ID == "custom-owner-00" {
-						foundTarget = node.Resource.UID == "owner-00-uid" && node.Resource.APIVersion == "example.io/v1" && node.Resource.Kind == kind && node.Resource.Namespace == "team" && node.Resource.ScopeMode == domainresource.ResourceScopeModeNamespace && node.Status != "unresolved"
-					}
-				}
-				for _, edge := range graph.Edges {
-					if edge.ID == "scale-declaration" && edge.Relation == "scales" {
-						foundScale = true
-					}
-				}
-				if !foundTarget || !foundScale {
-					t.Fatalf("declared scale identity or edge lost: %+v", graph)
-				}
+				assertGraphHPACustomScaleTarget(t, graph, kind)
 				if mode == domaincluster.ConnectionModeAgent && state.reviews != 1 {
 					t.Fatal("Agent exact named-get RBAC review skipped")
 				}
@@ -64,6 +51,29 @@ func TestResourceGraphHPACustomTargetObservedInBothModes(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func assertGraphHPACustomScaleTarget(t *testing.T, graph domainresource.ResourceGraph, kind string) {
+	t.Helper()
+	foundTarget, foundScale := false, false
+	for _, node := range graph.Nodes {
+		if node.ID == "custom-owner-00" {
+			foundTarget = node.Resource.UID == "owner-00-uid" &&
+				node.Resource.APIVersion == "example.io/v1" &&
+				node.Resource.Kind == kind &&
+				node.Resource.Namespace == "team" &&
+				node.Resource.ScopeMode == domainresource.ResourceScopeModeNamespace &&
+				node.Status != "unresolved"
+		}
+	}
+	for _, edge := range graph.Edges {
+		if edge.ID == "scale-declaration" && edge.Relation == "scales" {
+			foundScale = true
+		}
+	}
+	if !foundTarget || !foundScale {
+		t.Fatalf("declared scale identity or edge lost: %+v", graph)
 	}
 }
 

@@ -3,18 +3,18 @@ package resourcebackend
 import (
 	"context"
 	"encoding/json"
-	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-	"k8s.io/client-go/rest"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
+	"testing"
 	"time"
 
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"testing"
+	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/rest"
 )
 
 func TestResourceGraphCRDFallbackVersionsAreServedOnly(t *testing.T) {
@@ -37,7 +37,7 @@ func TestResourceGraphCRDCatalogIsOneMetadataPageWithoutSchemaFallback(t *testin
 		name                                  string
 		count                                 int
 		continuation                          string
-		metadataStatus                        int
+		metadataStatus                        int32
 		discoveryFailure, unmapped, wantError bool
 	}{
 		{name: "bounded success", count: 1},
@@ -61,8 +61,8 @@ func TestResourceGraphCRDCatalogIsOneMetadataPageWithoutSchemaFallback(t *testin
 						t.Errorf("unbounded or repeated page query: %s", r.URL.RawQuery)
 					}
 					if tc.metadataStatus != 0 {
-						w.WriteHeader(tc.metadataStatus)
-						_ = json.NewEncoder(w).Encode(metav1.Status{Status: "Failure", Reason: metav1.StatusReasonNotAcceptable, Code: int32(tc.metadataStatus)})
+						w.WriteHeader(int(tc.metadataStatus))
+						_ = json.NewEncoder(w).Encode(metav1.Status{Status: "Failure", Reason: metav1.StatusReasonNotAcceptable, Code: tc.metadataStatus})
 						return
 					}
 					items := make([]metav1.PartialObjectMetadata, tc.count)
@@ -72,25 +72,7 @@ func TestResourceGraphCRDCatalogIsOneMetadataPageWithoutSchemaFallback(t *testin
 					_ = json.NewEncoder(w).Encode(metav1.PartialObjectMetadataList{TypeMeta: metav1.TypeMeta{Kind: "PartialObjectMetadataList", APIVersion: "meta.k8s.io/v1"}, ListMeta: metav1.ListMeta{Continue: tc.continuation}, Items: items})
 					return
 				}
-				if tc.discoveryFailure {
-					w.WriteHeader(http.StatusForbidden)
-					_ = json.NewEncoder(w).Encode(metav1.Status{Status: "Failure", Reason: metav1.StatusReasonForbidden, Code: 403})
-					return
-				}
-				switch r.URL.Path {
-				case "/api":
-					_ = json.NewEncoder(w).Encode(metav1.APIVersions{TypeMeta: metav1.TypeMeta{Kind: "APIVersions", APIVersion: "v1"}, Versions: []string{"v1"}})
-				case "/api/v1":
-					_ = json.NewEncoder(w).Encode(metav1.APIResourceList{GroupVersion: "v1"})
-				case "/apis":
-					groups := []metav1.APIGroup{}
-					if !tc.unmapped {
-						groups = append(groups, metav1.APIGroup{Name: "example.io", Versions: []metav1.GroupVersionForDiscovery{{GroupVersion: "example.io/v1", Version: "v1"}}, PreferredVersion: metav1.GroupVersionForDiscovery{GroupVersion: "example.io/v1", Version: "v1"}})
-					}
-					_ = json.NewEncoder(w).Encode(metav1.APIGroupList{TypeMeta: metav1.TypeMeta{Kind: "APIGroupList", APIVersion: "v1"}, Groups: groups})
-				case "/apis/example.io/v1":
-					_ = json.NewEncoder(w).Encode(metav1.APIResourceList{GroupVersion: "example.io/v1", APIResources: []metav1.APIResource{{Name: "widgets", Kind: "Widget", Namespaced: true, Verbs: metav1.Verbs{"get", "list"}}}})
-				default:
+				if !serveResourceGraphCRDDiscovery(w, r, tc.discoveryFailure, tc.unmapped) {
 					fullReads.Add(1)
 					t.Errorf("unexpected schema/resource read: %s", r.URL)
 					w.WriteHeader(404)
@@ -113,4 +95,29 @@ func TestResourceGraphCRDCatalogIsOneMetadataPageWithoutSchemaFallback(t *testin
 			}
 		})
 	}
+}
+
+func serveResourceGraphCRDDiscovery(w http.ResponseWriter, r *http.Request, discoveryFailure, unmapped bool) bool {
+	if discoveryFailure {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(metav1.Status{Status: "Failure", Reason: metav1.StatusReasonForbidden, Code: 403})
+		return true
+	}
+	switch r.URL.Path {
+	case "/api":
+		_ = json.NewEncoder(w).Encode(metav1.APIVersions{TypeMeta: metav1.TypeMeta{Kind: "APIVersions", APIVersion: "v1"}, Versions: []string{"v1"}})
+	case "/api/v1":
+		_ = json.NewEncoder(w).Encode(metav1.APIResourceList{GroupVersion: "v1"})
+	case "/apis":
+		groups := []metav1.APIGroup{}
+		if !unmapped {
+			groups = append(groups, metav1.APIGroup{Name: "example.io", Versions: []metav1.GroupVersionForDiscovery{{GroupVersion: "example.io/v1", Version: "v1"}}, PreferredVersion: metav1.GroupVersionForDiscovery{GroupVersion: "example.io/v1", Version: "v1"}})
+		}
+		_ = json.NewEncoder(w).Encode(metav1.APIGroupList{TypeMeta: metav1.TypeMeta{Kind: "APIGroupList", APIVersion: "v1"}, Groups: groups})
+	case "/apis/example.io/v1":
+		_ = json.NewEncoder(w).Encode(metav1.APIResourceList{GroupVersion: "example.io/v1", APIResources: []metav1.APIResource{{Name: "widgets", Kind: "Widget", Namespaced: true, Verbs: metav1.Verbs{"get", "list"}}}})
+	default:
+		return false
+	}
+	return true
 }

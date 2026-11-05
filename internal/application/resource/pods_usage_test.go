@@ -137,22 +137,27 @@ func TestPodListUsageScopeAndTransportParity(t *testing.T) {
 			if calls.Load() != 4 {
 				t.Fatalf("queries = %d, want 2 per authorized namespace", calls.Load())
 			}
-			_, _, err = workloads.listPodViews(t.Context(), "soha-id", "", connection, decision, false)
-			if err != nil || calls.Load() != 4 {
-				t.Fatalf("overview queried metrics: calls=%d err=%v", calls.Load(), err)
-			}
-			decision.ResourceScope.Namespaces = []string{"a"}
-			items, _, err = workloads.listPodViews(t.Context(), "soha-id", "a", connection, decision, true)
-			if err != nil || len(items) != 1 || items[0].CPU != "0" || calls.Load() != 6 {
-				t.Fatalf("namespaced list = %+v, calls=%d, err=%v", items, calls.Load(), err)
-			}
-			// A scope excluding every returned namespace must cause no metrics read.
-			decision.ResourceScope.Namespaces = []string{"unrelated"}
-			items, _, err = workloads.listPodViews(t.Context(), "soha-id", "", connection, decision, true)
-			if err != nil || len(items) != 0 || calls.Load() != 6 {
-				t.Fatalf("denied identities queried: items=%+v calls=%d err=%v", items, calls.Load(), err)
-			}
+			assertPodListUsageQueryScope(t, workloads, connection, decision, &calls)
 		})
+	}
+}
+
+func assertPodListUsageQueryScope(t *testing.T, workloads *Workloads, connection dc.Connection, decision da.Decision, calls *atomic.Int32) {
+	t.Helper()
+	_, _, err := workloads.listPodViews(t.Context(), "soha-id", "", connection, decision, false)
+	if err != nil || calls.Load() != 4 {
+		t.Fatalf("overview queried metrics: calls=%d err=%v", calls.Load(), err)
+	}
+	decision.ResourceScope.Namespaces = []string{"a"}
+	items, _, err := workloads.listPodViews(t.Context(), "soha-id", "a", connection, decision, true)
+	if err != nil || len(items) != 1 || items[0].CPU != "0" || calls.Load() != 6 {
+		t.Fatalf("namespaced list = %+v, calls=%d, err=%v", items, calls.Load(), err)
+	}
+	// A scope excluding every returned namespace must cause no metrics read.
+	decision.ResourceScope.Namespaces = []string{"unrelated"}
+	items, _, err = workloads.listPodViews(t.Context(), "soha-id", "", connection, decision, true)
+	if err != nil || len(items) != 0 || calls.Load() != 6 {
+		t.Fatalf("denied identities queried: items=%+v calls=%d err=%v", items, calls.Load(), err)
 	}
 }
 
@@ -199,15 +204,7 @@ func TestPodListUsageUnavailableAndPartial(t *testing.T) {
 			if err != nil || len(items) != 3 {
 				t.Fatalf("metrics failure affected Pod inventory: %+v %v", items, err)
 			}
-			for _, item := range items {
-				wantCPU := ""
-				if scenario == "partial" && item.Name == "p" {
-					wantCPU = "0"
-				}
-				if item.CPU != wantCPU || item.Memory != "" {
-					t.Errorf("missing usage became zero: %+v", item)
-				}
-			}
+			assertPodListUsageSamples(t, items, scenario == "partial")
 			if (scenario == "unconfigured" || scenario == "agent-offline") && calls.Load() != 0 {
 				t.Fatal("unavailable configuration reached direct Prometheus")
 			}
@@ -215,5 +212,18 @@ func TestPodListUsageUnavailableAndPartial(t *testing.T) {
 				t.Fatalf("budget was reset per query: elapsed=%v calls=%d", time.Since(start), calls.Load())
 			}
 		})
+	}
+}
+
+func assertPodListUsageSamples(t *testing.T, items []dr.PodView, partial bool) {
+	t.Helper()
+	for _, item := range items {
+		wantCPU := ""
+		if partial && item.Name == "p" {
+			wantCPU = "0"
+		}
+		if item.CPU != wantCPU || item.Memory != "" {
+			t.Errorf("missing usage became zero: %+v", item)
+		}
 	}
 }

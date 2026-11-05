@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/httpstream"
-	streamspdy "k8s.io/apimachinery/pkg/util/httpstream/spdy"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
+	"k8s.io/streaming/pkg/httpstream"
+	streamspdy "k8s.io/streaming/pkg/httpstream/spdy"
 )
 
 type portForwardFunc func() error
@@ -198,7 +198,7 @@ func TestDirectPortForwardSDKReconnectRebindsOriginalPort(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		return portforward.NewOnAddresses(dialer, []string{"127.0.0.1"}, []string{port + ":8080"}, ctx.Done(), ready, io.Discard, io.Discard)
+		return portforward.NewOnAddressesForStreamingWithContext(ctx, dialer, []string{"127.0.0.1"}, []string{port + ":8080"}, ready, io.Discard, io.Discard)
 	})
 	if err != nil {
 		t.Fatal(err)

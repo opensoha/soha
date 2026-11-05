@@ -282,24 +282,30 @@ func TestResourceGraphOnlyEvaluatesViewDecisionsAndAuditsDenials(t *testing.T) {
 					t.Fatalf("Graph queried unrelated action %s", request.Action)
 				}
 			}
-			denials := 0
-			for _, entry := range audit.entries {
-				if entry.Result == "deny" {
-					denials++
-					if entry.Action != string(domainaccess.ActionView) || entry.ClusterID != "cluster-a" {
-						t.Fatalf("deny audit changed: %+v", entry)
-					}
-					if denyRoot && entry.ResourceKind != "Pod" {
-						t.Fatalf("wrong root deny audit: %+v", entry)
-					}
-					if !denyRoot && (entry.ResourceKind != "Secret" || entry.Namespace != "hidden") {
-						t.Fatalf("wrong node deny audit: %+v", entry)
-					}
-				}
-			}
-			if denials != 1 {
-				t.Fatalf("deny audit missing/duplicated: %+v", audit.entries)
-			}
+			assertGraphViewDenialAudit(t, audit.entries, denyRoot)
 		})
+	}
+}
+
+func assertGraphViewDenialAudit(t *testing.T, entries []domainaudit.Entry, denyRoot bool) {
+	t.Helper()
+	denials := 0
+	for _, entry := range entries {
+		if entry.Result != "deny" {
+			continue
+		}
+		denials++
+		if entry.Action != string(domainaccess.ActionView) || entry.ClusterID != "cluster-a" {
+			t.Fatalf("deny audit changed: %+v", entry)
+		}
+		if denyRoot && entry.ResourceKind != "Pod" {
+			t.Fatalf("wrong root deny audit: %+v", entry)
+		}
+		if !denyRoot && (entry.ResourceKind != "Secret" || entry.Namespace != "hidden") {
+			t.Fatalf("wrong node deny audit: %+v", entry)
+		}
+	}
+	if denials != 1 {
+		t.Fatalf("deny audit missing/duplicated: %+v", entries)
 	}
 }

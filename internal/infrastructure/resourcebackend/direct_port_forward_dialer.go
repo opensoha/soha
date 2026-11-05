@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"golang.org/x/net/http/httpguts"
-	"k8s.io/apimachinery/pkg/util/httpstream"
-	streamspdy "k8s.io/apimachinery/pkg/util/httpstream/spdy"
 	"k8s.io/client-go/rest"
+	"k8s.io/streaming/pkg/httpstream"
+	streamspdy "k8s.io/streaming/pkg/httpstream/spdy"
 )
 
 const directPortForwardHandshakeTimeout = 10 * time.Second

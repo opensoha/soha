@@ -114,16 +114,21 @@ func TestConfigurationGraphAdapterParity(t *testing.T) {
 				t.Fatal("ConfigMap payload escaped projection")
 			}
 			if root.kind == "Secret" {
-				if len(meta.Actions()) != 1 || meta.Actions()[0].GetResource().Resource != "secrets" || meta.Actions()[0].GetNamespace() != "team-a" {
-					t.Fatalf("Secret root read was not metadata named get: %+v", meta.Actions())
-				}
-				for _, node := range got.Nodes {
-					if node.ID == got.RootID && node.Resource.UID != "secret-uid" {
-						t.Fatal("Secret metadata identity lost")
-					}
-				}
+				assertConfigurationSecretGraph(t, got, meta.Actions())
 			}
 		})
+	}
+}
+
+func assertConfigurationSecretGraph(t *testing.T, graph cr.ResourceGraph, actions []clienttesting.Action) {
+	t.Helper()
+	if len(actions) != 1 || actions[0].GetResource().Resource != "secrets" || actions[0].GetNamespace() != "team-a" {
+		t.Fatalf("Secret root read was not metadata named get: %+v", actions)
+	}
+	for _, node := range graph.Nodes {
+		if node.ID == graph.RootID && node.Resource.UID != "secret-uid" {
+			t.Fatal("Secret metadata identity lost")
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -36,13 +37,14 @@ func TestRBACResourceGraphRequiresAuthenticatedAgentCapability(t *testing.T) {
 		{"denied graph", "Role", "team-a", 204, 403, apperrors.ErrAccessDenied},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			token := rand.Text()
 			var mu sync.Mutex
 			var calls []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mu.Lock()
 				defer mu.Unlock()
 				calls = append(calls, r.Method)
-				if got := r.Header.Get("Authorization"); got != "Bearer rbac-test-token" {
+				if got := r.Header.Get("Authorization"); got != "Bearer "+token {
 					t.Errorf("missing Agent authorization")
 				}
 				switch {
@@ -64,7 +66,7 @@ func TestRBACResourceGraphRequiresAuthenticatedAgentCapability(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			client := &Client{baseURL: server.URL, token: "rbac-test-token", httpClient: server.Client()}
+			client := &Client{baseURL: server.URL, token: token, httpClient: server.Client()}
 			graph, err := client.GetResourceGraph(context.Background(), tc.namespace, tc.kind, "system:sample")
 			if !errors.Is(err, tc.want) || (tc.want == nil && graph.RootID != "root") {
 				t.Fatalf("graph=%+v error=%v, want %v", graph, err, tc.want)
