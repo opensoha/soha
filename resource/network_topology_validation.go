@@ -6,6 +6,8 @@ import (
 	"regexp"
 )
 
+var topologyNamePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+
 var topologyNamespacePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 func ValidateNetworkTopologySnapshotRequest(request NetworkTopologySnapshotRequest) error {
@@ -19,6 +21,9 @@ func ValidateNetworkTopologySnapshotRequest(request NetworkTopologySnapshotReque
 			return fmt.Errorf("unknown or duplicate topology source query")
 		}
 		seen[query] = true
+		if query.Name != "" && (definition.RequiresCustomResourceAccess() || len(query.Name) > 253 || !topologyNamePattern.MatchString(query.Name) || definition.Namespaced && query.Namespace == "") {
+			return fmt.Errorf("invalid named topology query")
+		}
 		if query.Namespace != "" && (!definition.Namespaced || len(query.Namespace) > 63 || !topologyNamespacePattern.MatchString(query.Namespace)) {
 			return fmt.Errorf("invalid topology source namespace")
 		}

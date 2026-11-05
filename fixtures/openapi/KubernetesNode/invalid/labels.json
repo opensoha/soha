@@ -1,0 +1,10 @@
+{
+  "name": "worker-a",
+  "status": "Ready",
+  "unschedulable": false,
+  "podCount": 0,
+  "ageSeconds": 0,
+  "labels": {
+    "pool": 1
+  }
+}

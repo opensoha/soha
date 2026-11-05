@@ -1,0 +1,5 @@
+{
+  "hasBearerToken": false,
+  "clusterLabel": "cluster",
+  "clusterLabelValue": "middleware-prod"
+}

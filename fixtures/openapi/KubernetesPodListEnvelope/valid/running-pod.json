@@ -3,6 +3,7 @@
     {
       "name": "api-7c8d9f",
       "namespace": "production",
+      "uid": "97cb3639-ff9d-4633-a70b-70c8149d6f4a",
       "phase": "Running",
       "nodeName": "worker-1",
       "podIp": "10.42.1.8",
