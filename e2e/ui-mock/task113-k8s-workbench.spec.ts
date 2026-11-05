@@ -569,7 +569,7 @@ test('topology preserves zero weights, rule evidence, filtering and keyboard tab
   await expect(page.getByText('agent_action_denied', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await content.getByRole('textbox', { name: '搜索已加载节点' }).fill('no-such-resource')
-  await expect(content).toContainText('当前筛选范围没有已加载节点')
+  await expect(content).toContainText('没有匹配的已加载资源')
   verifyBrowserEvidence(evidence)
 })
 
@@ -596,7 +596,7 @@ test('topology preserves focus when a background snapshot is incomplete', async 
   await expect(page).toHaveURL(/focus=service/)
   incomplete = true
   await page.getByRole('button', { name: 'Refresh network topology', exact: true }).click()
-  await expect(content).toContainText('The result reached its budget')
+  await expect(content).toContainText('Data budget reached')
   await expect(page).toHaveURL(/focus=service/)
   await expect(content).toContainText('The selected node is no longer in this snapshot')
   verifyBrowserEvidence(evidence)
@@ -665,7 +665,7 @@ for (const scope of ['cluster', 'namespace'] as const) {
   })
 }
 
-test('topology unassociated resources stay collapsed and exclude nodes on every relationship page', async ({
+test('topology unassociated resources stay collapsed and exclude nodes during continuous relationship browsing', async ({
   context,
   page,
 }) => {
@@ -692,7 +692,14 @@ test('topology unassociated resources stay collapsed and exclude nodes on every 
     isolated.getByRole('button', { name: 'Unresolved reference', exact: true }),
   ).not.toBeVisible()
   await expect(page.getByText('节点入口（含独立节点）：', { exact: true })).toHaveCount(0)
-  await page.getByTitle('2', { exact: true }).click()
+  await expect(page.locator('.soha-topology-page .ant-pagination')).toHaveCount(0)
+  await page.locator('.soha-topology-page .ant-table-tbody-virtual-holder').evaluate((node) => {
+    node.scrollTop = node.scrollHeight
+    node.dispatchEvent(new Event('scroll', { bubbles: true }))
+  })
+  await expect(
+    page.locator('.soha-topology-page .ant-table-row[data-row-key="extra-pod-edge-20"]'),
+  ).toBeVisible()
   await expect(summary).toHaveText('未关联资源（1）')
   await summary.focus()
   await summary.press('Enter')
@@ -884,7 +891,8 @@ for (const mode of ['pdb', 'unavailable', 'state-denied'] as const) {
         writes.push(request.url())
     })
     await page.goto('/cluster-resources/nodes')
-    await page.getByRole('button', { name: '排空节点 cordoned-worker', exact: true }).click()
+    await page.getByRole('button', { name: '更多操作：cordoned-worker', exact: true }).click()
+    await page.getByRole('menuitem', { name: /排空节点/ }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('spinbutton', { name: '排水超时（秒）' }).fill('30')
     await dialog.getByRole('button', { name: '确认排空', exact: true }).click()
@@ -930,8 +938,8 @@ test('monitoring keeps gaps and zero samples, overcommit and unlimited values di
   await details.getByRole('button', { name: 'Samples', exact: true }).first().click()
   const samples = page.getByRole('dialog').filter({ hasText: 'no zero fill' })
   await expect(samples).toContainText('no zero fill')
-  await expect(samples.getByRole('cell', { name: '0 mCPU', exact: true })).toBeVisible()
-  await expect(samples.getByRole('cell', { name: '—', exact: true })).toBeVisible()
+  await expect(samples.getByText('0 mCPU', { exact: true })).toBeVisible()
+  await expect(samples.getByText('—', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(content.getByRole('tab')).toHaveCount(0)
   await page.keyboard.press('Escape')
@@ -987,29 +995,31 @@ test('node list distinguishes Ready, cordon, pressure, taints and unavailable fi
 }) => {
   const evidence = await setup(context, page, { nodeStates: true })
   await page.goto('/cluster-resources/nodes')
-  const row = page.getByRole('row').filter({ hasText: 'cordoned-worker' })
+  const row = page.locator('.ant-table-row[data-row-key]').filter({ hasText: 'cordoned-worker' })
   await expect(row).toContainText('就绪')
   await expect(row).toContainText('禁止调度')
   await expect(row).toContainText('磁盘压力')
   await expect(row).not.toContainText('排水中')
-  const tags = row.locator('.soha-node-taints .ant-tag')
-  await expect(tags).toHaveCount(3)
-  const colors = await tags.evaluateAll((items) =>
-    items.map((tag) => getComputedStyle(tag).backgroundColor),
-  )
-  expect(new Set(colors).size).toBe(3)
-  await row
-    .getByRole('button', { name: '查看污点 maintenance=task113:NoSchedule', exact: true })
-    .press('Enter')
-  await expect(
-    page.locator('.ant-popover').getByText('maintenance=task113:NoSchedule', { exact: true }),
-  ).toBeVisible()
+  const taints = row.getByRole('button', { name: '查看节点污点', exact: true })
+  const tags = taints.locator('.ant-tag')
+  await expect(tags).toHaveText(['maintenance=task113', '+2'])
+  await expect(tags.first()).toHaveClass(/\bant-tag-purple\b/)
+  await taints.press('Enter')
+  const details = page.locator('.soha-node-taint-details')
+  await expect(details).toBeVisible()
+  await expect(details.locator('code')).toHaveText([
+    'maintenance=task113:NoSchedule',
+    'prefer=batch:PreferNoSchedule',
+    'node.kubernetes.io/unreachable:NoExecute',
+  ])
   await expect(
     page
-      .getByRole('row')
+      .locator('.ant-table-row[data-row-key]')
       .filter({ hasText: 'task113-production-healthy-worker-with-a-long-resource-name-09' }),
   ).toContainText('无污点')
-  await expect(page.getByRole('row').filter({ hasText: 'legacy-worker' })).toContainText('未提供')
+  await expect(
+    page.locator('.ant-table-row[data-row-key]').filter({ hasText: 'legacy-worker' }),
+  ).toContainText('未提供')
   verifyBrowserEvidence(evidence)
 })
 
@@ -1247,9 +1257,7 @@ for (const dark of [false, true]) {
       .click()
     const samples = page.getByRole('dialog', { name: 'host.cpu.used · Samples', exact: true })
     await expect(samples).toContainText('worker-10')
-    await expect(
-      samples.getByRole('cell', { name: '10.00 cores', exact: true }).first(),
-    ).toBeVisible()
+    await expect(samples.getByText('10.00 cores', { exact: true }).first()).toBeVisible()
     verifyBrowserEvidence(evidence)
   })
 }
@@ -1361,16 +1369,20 @@ for (const width of [320, 1238, 1275]) {
     const evidence = await setup(context, page, { nodeStates: true, dark: width === 320 })
     await page.goto('/cluster-resources/nodes')
     const content = page.locator('.soha-cluster-nodes-page')
-    await expect(content.getByRole('link', { name: 'cordoned-worker', exact: true })).toBeVisible()
+    const cordonedNode = content.getByRole('link', { name: 'cordoned-worker', exact: true })
+    await expect(cordonedNode).toBeVisible()
+    await expect(cordonedNode).toHaveAttribute(
+      'href',
+      '/cluster-resources/nodes/cordoned-worker?clusterId=cluster-a&tab=overview',
+    )
     expect(
       (await content.getByRole('columnheader', { name: '时长', exact: true }).boundingBox())!.width,
     ).toBeLessThan(90)
     await verifyGeometry(page, content.getByRole('link', { name: 'cordoned-worker', exact: true }))
     if (width >= 1238) {
-      const body = content.locator('.ant-table-body')
-      await body.evaluate((element) => {
-        element.scrollLeft = element.scrollWidth
-      })
+      const body = content.getByRole('region', { name: '资源列表，可连续滚动', exact: true })
+      await body.hover()
+      await page.mouse.wheel(1500, 0)
       const name = content.getByRole('link', { name: 'cordoned-worker', exact: true })
       await expect(name).toBeInViewport()
       const longName = content.getByRole('link', {
@@ -1390,7 +1402,7 @@ for (const width of [320, 1238, 1275]) {
         const deltas = await content.locator('.ant-table-row-expand-icon').evaluateAll((buttons) =>
           buttons.map((button) => {
             const icon = button.getBoundingClientRect()
-            const cell = button.closest('td')!.getBoundingClientRect()
+            const cell = button.closest('.ant-table-cell')!.getBoundingClientRect()
             return {
               x: Math.abs(icon.x + icon.width / 2 - cell.x - cell.width / 2),
               y: Math.abs(icon.y + icon.height / 2 - cell.y - cell.height / 2),
@@ -1414,7 +1426,7 @@ for (const width of [320, 1238, 1275]) {
       ).toBeVisible()
       await page.mouse.move(0, 0)
       const healthy = content
-        .getByRole('row')
+        .locator('.ant-table-row[data-row-key]')
         .filter({ hasText: 'task113-production-healthy-worker-with-a-long-resource-name-09' })
       await healthy.getByRole('button', { name: '展开行', exact: true }).press('Tab')
       await expect(longName).toBeFocused()
@@ -1434,8 +1446,11 @@ for (const width of [320, 1238, 1275]) {
       await assertExpandAlignment()
       await content.getByRole('button', { name: '切换表格密度', exact: true }).click()
       await expect(
-        content.getByRole('button', { name: '编辑节点 cordoned-worker', exact: true }),
+        content.getByRole('button', { name: '更多操作：cordoned-worker', exact: true }),
       ).toBeInViewport()
+      await content.getByRole('button', { name: '更多操作：cordoned-worker', exact: true }).click()
+      await expect(page.getByRole('menuitem', { name: /编辑节点/ })).toBeVisible()
+      await page.keyboard.press('Escape')
     }
     await page.screenshot({ path: info.outputPath(`nodes-${width}.png`), fullPage: true })
     verifyBrowserEvidence(evidence)

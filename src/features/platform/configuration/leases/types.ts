@@ -7,3 +7,12 @@ export interface LeaseResource extends ConfigurationDetailBase {
   readonly leaseDurationSeconds?: number
   readonly renewTime?: string
 }
+
+export const LEASE_TEMPLATE = `apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: example-lease
+  namespace: default
+spec:
+  leaseDurationSeconds: 60
+`

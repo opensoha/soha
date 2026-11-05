@@ -233,6 +233,7 @@ describe('rule topology model', () => {
     expect(topologyResourceEditPath(node, 'c')).toBe(
       '/network/services/web?clusterId=c&namespace=apps&tab=yaml',
     )
+    expect(topologyResourcePath(node, 'other')).toBeUndefined()
     expect(topologyResourceEditPath(node, 'other')).toBeUndefined()
     expect(
       topologyResourceEditPath({ ...node, resolutionState: 'not_visible' }, 'c'),
@@ -247,4 +248,24 @@ describe('rule topology model', () => {
       topologyResourceEditPath({ ...node, resource: { ...node.resource, kind: 'Pod' } }, 'c'),
     ).toBeUndefined()
   })
+})
+
+it('preserves structured edge facts when viewing incoming relationships', () => {
+  const edge = {
+    id: 'multi-port',
+    source: 'a',
+    target: 'b',
+    relation: 'selects' as const,
+    resolutionState: 'resolved' as const,
+    protocol: 'TCP',
+    port: '9443',
+    sectionName: 'https',
+    weight: 0,
+    totalWeight: 10,
+    mirrorPercent: 25,
+  }
+  const label = edgeLabel(edge, 'zh_CN', false)
+  expect(label).toContain('被选择器匹配')
+  for (const fact of ['TCP', ':9443', 'https', '权重 0/10', '镜像 25%'])
+    expect(label).toContain(fact)
 })

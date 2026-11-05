@@ -1,198 +1,314 @@
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
-import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
-import { BooleanTag } from '@/components/status-tag'
-import { TableCellText } from '@/components/table-cell-content'
-import { buildWorkloadDetailPath } from '@/features/platform/workloads-model'
-import { WorkloadDetailShell } from '@/features/platform/workloads/shared/detail-shell'
-import { WorkloadRelationsCard } from '@/features/platform/workloads/shared/workload-relations'
-import '@/features/platform/workloads/styles.css'
+import { StatusTag } from '@/components/status-tag'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
-import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
-import { formatAgeSeconds, formatDateTime } from '@/utils/time'
-import { useQuery } from '@tanstack/react-query'
-import { Button, Card, Descriptions, Tag } from 'antd'
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { formatAgeSeconds } from '@/utils/time'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Spin } from 'antd'
+import { lazy, Suspense, useMemo, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { useWorkloadDetailScope } from '../shared/detail-scope'
+import { WorkloadDetailShell } from '../shared/detail-shell'
+import { WorkloadDetailHeader } from '../shared/workload-detail-header'
+import { WorkloadRefresh, useWorkloadRefresh } from '../shared/workload-refresh'
+import { WorkloadDetailEvents } from '../shared/detail-events'
+import { useWorkloadDetailActions } from '../shared/use-workload-detail-actions'
+import { workloadKeys } from '../shared/keys'
+import { CronJobDetailOverview } from './cronjob-detail-overview'
+import { CronJobJobsTable } from './cronjob-jobs-table'
+import { retainedCronJobs } from './cronjob-detail-model'
 import { cronJobQueries } from './queries'
-import type { CronJobChildJob, CronJobDetail } from './types'
+import { cronJobMutations } from './mutations'
+import './cronjob-detail.css'
 
-function CronJobOverview({ detail }: { detail: CronJobDetail }) {
-  const { localeCode } = useI18n()
-  const navigate = useNavigate()
-  const clusterId = usePlatformScopeStore((state) => state.clusterId)
-  const jobs = detail.jobs ?? []
-
-  return (
-    <div className="soha-detail-stack">
-      <Card
-        className="soha-detail-card soha-rollout-card"
-        size="small"
-        title={localeCode === 'zh_CN' ? 'CronJob 调度' : 'CronJob Schedule'}
-      >
-        <Descriptions
-          column={{ xs: 1, sm: 2, md: 3 }}
-          size="small"
-          items={[
-            {
-              key: 'schedule',
-              label: localeCode === 'zh_CN' ? '调度计划' : 'Schedule',
-              children: detail.schedule || '-',
-            },
-            {
-              key: 'suspend',
-              label: localeCode === 'zh_CN' ? '暂停' : 'Suspend',
-              children: (
-                <BooleanTag
-                  value={detail.suspend}
-                  trueLabel={localeCode === 'zh_CN' ? '是' : 'Yes'}
-                  falseLabel={localeCode === 'zh_CN' ? '否' : 'No'}
-                  trueColor="orange"
-                  falseColor="green"
-                />
-              ),
-            },
-            {
-              key: 'activeJobs',
-              label: localeCode === 'zh_CN' ? '活跃' : 'Active',
-              children: detail.activeJobs ?? 0,
-            },
-            {
-              key: 'lastSchedule',
-              label: localeCode === 'zh_CN' ? '上次调度' : 'Last Schedule',
-              children: detail.lastScheduleTime ? formatDateTime(detail.lastScheduleTime) : '-',
-            },
-            {
-              key: 'concurrency',
-              label: localeCode === 'zh_CN' ? '并发策略' : 'Concurrency',
-              children: detail.concurrencyPolicy || '-',
-            },
-            {
-              key: 'timeZone',
-              label: localeCode === 'zh_CN' ? '时区' : 'Time Zone',
-              children: detail.timeZone || '-',
-            },
-          ]}
-        />
-      </Card>
-      <Card
-        className="soha-detail-card soha-related-pod-card"
-        size="small"
-        title={localeCode === 'zh_CN' ? '关联 Jobs' : 'Related Jobs'}
-      >
-        {jobs.length === 0 ? (
-          <ManagementState
-            bordered={false}
-            compact
-            title={localeCode === 'zh_CN' ? '暂无关联 Jobs' : 'No related Jobs'}
-          />
-        ) : (
-          <div className="soha-related-pod-list" role="list">
-            {jobs.map((job: CronJobChildJob) => (
-              <div
-                className="soha-related-pod-item"
-                key={`${job.namespace}/${job.name}`}
-                role="listitem"
-              >
-                <div className="soha-related-pod-line">
-                  <Button
-                    type="link"
-                    className="soha-related-pod-name"
-                    style={{ maxWidth: '100%' }}
-                    styles={{ content: { minWidth: 0 } }}
-                    onClick={() =>
-                      navigate(
-                        buildWorkloadDetailPath(
-                          'jobs',
-                          job.name,
-                          detail.namespace,
-                          job.namespace,
-                          clusterId,
-                        ),
-                      )
-                    }
-                  >
-                    <TableCellText value={job.name} />
-                  </Button>
-                  <Tag color="blue" className="soha-related-pod-tag">
-                    {job.namespace || detail.namespace || '-'}
-                  </Tag>
-                  <Tag color="success" className="soha-related-pod-tag">
-                    {`${localeCode === 'zh_CN' ? '成功' : 'Succeeded'} ${job.succeeded ?? 0}`}
-                  </Tag>
-                  <Tag
-                    color={(job.failed ?? 0) > 0 ? 'error' : 'default'}
-                    className="soha-related-pod-tag"
-                  >
-                    {`${localeCode === 'zh_CN' ? '失败' : 'Failed'} ${job.failed ?? 0}`}
-                  </Tag>
-                  <Tag
-                    color={(job.active ?? 0) > 0 ? 'processing' : 'default'}
-                    className="soha-related-pod-tag"
-                  >
-                    {`${localeCode === 'zh_CN' ? '活跃' : 'Active'} ${job.active ?? 0}`}
-                  </Tag>
-                  <Tag color="geekblue" className="soha-related-pod-tag">
-                    {formatAgeSeconds(job.ageSeconds)}
-                  </Tag>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-      <WorkloadRelationsCard resources={detail.relatedResources} namespace={detail.namespace} />
-    </div>
-  )
-}
-
-function CronJobEventsTab({ detail, enabled }: { detail: CronJobDetail; enabled: boolean }) {
-  const { localeCode } = useI18n()
-  const { clusterId } = usePlatformScopeStore()
-  const options = cronJobQueries.events(toScopeKey(clusterId, detail.namespace), detail.name)
-  const eventsQuery = useQuery({ ...options, enabled: Boolean(options.enabled) && enabled })
-  const visibleEventsQueryData =
-    Boolean(options.enabled) && enabled ? readableQueryData(eventsQuery) : undefined
-
-  return (
-    <>
-      <ReadFeedback canRead={eventsQuery.isEnabled} query={eventsQuery} label="资源事件" />
-      <ResourceEventsTimeline
-        events={visibleEventsQueryData ?? []}
-        loading={eventsQuery.isLoading}
-        emptyDescription={localeCode === 'zh_CN' ? '当前 CronJob 暂无事件' : 'No CronJob events'}
-      />
-    </>
-  )
-}
+const Metrics = lazy(async () => ({
+  default: (await import('./cronjob-detail-metrics')).CronJobDetailMetrics,
+}))
+const Resources = lazy(async () => ({
+  default: (await import('./cronjob-related-resources')).CronJobRelatedResources,
+}))
+const Delivery = lazy(async () => ({
+  default: (await import('../shared/workload-detail-delivery')).WorkloadDetailDelivery,
+}))
+const tabs = ['overview', 'jobs', 'events', 'metrics', 'related-resources', 'delivery', 'yaml']
 
 export function CronJobDetailPage() {
-  const { localeCode } = useI18n()
-  const [activeTabKey, setActiveTabKey] = useState('overview')
-
+  const { localeCode } = useI18n(),
+    zh = localeCode === 'zh_CN'
+  const { cronJobName: name = '' } = useParams()
+  const detailScope = useWorkloadDetailScope()
+  const scope = useMemo(
+    () => ({ clusterId: detailScope.clusterId, namespace: detailScope.namespace }),
+    [detailScope.clusterId, detailScope.namespace],
+  )
+  const permissions = usePermissionSnapshot(),
+    permissionData = readableQueryData(permissions)?.data
+  const canRead = hasPermission(permissionData, 'platform.workloads.cron-jobs.view')
+  const [params, setParams] = useSearchParams(),
+    requested = params.get('tab') || 'overview'
+  const normalized = ['relationships', 'resources'].includes(requested)
+    ? 'related-resources'
+    : requested
+  const active = tabs.includes(normalized) ? normalized : 'overview'
+  const requestedRange = Number(params.get('range') || 60),
+    range = [15, 60, 360, 1440].includes(requestedRange) ? requestedRange : 60
+  const changeTab = (tab: string) =>
+    setParams((old) => {
+      const next = new URLSearchParams(old)
+      next.set('tab', tab)
+      return next
+    })
+  const refresh = useWorkloadRefresh()
+  const options = cronJobQueries.detail(scope, name)
+  const query = useQuery({
+    ...options,
+    enabled: Boolean(canRead && options.enabled),
+    refetchInterval: refresh.interval,
+    refetchIntervalInBackground: false,
+  })
+  const raw = canRead ? readableQueryData(query) : undefined
+  const detail = raw?.name === name && raw.namespace === scope.namespace ? raw : undefined
+  const config = cronJobQueries.configuration(scope, name)
+  const configuration = useQuery({
+    ...config,
+    enabled: Boolean(canRead && detail && config.enabled && active === 'overview'),
+    refetchInterval: refresh.interval,
+    refetchIntervalInBackground: false,
+  })
+  const eo = cronJobQueries.events(scope, name)
+  const events = useQuery({
+    ...eo,
+    enabled: Boolean(canRead && eo.enabled && active === 'events'),
+    refetchInterval: refresh.interval,
+    refetchIntervalInBackground: false,
+  })
+  const actions = useWorkloadDetailActions({
+    detail,
+    scope,
+    resource: 'cronjobs',
+    kind: 'CronJob',
+    permission: 'platform.workloads.cron-jobs',
+    mutations: { remove: cronJobMutations.remove, suspend: cronJobMutations.suspendDetail },
+  })
+  const client = useQueryClient(),
+    [refreshToken, setRefreshToken] = useState(0)
+  const identity = JSON.stringify([scope.clusterId, scope.namespace, name])
+  if (permissions.isLoading) return <Spin />
+  if (permissions.isError && !permissionData)
+    return <ReadFeedback query={permissions} label={zh ? '权限' : 'Permissions'} />
+  if (!canRead)
+    return (
+      <ManagementState
+        compact
+        kind="no-permission"
+        title={zh ? '无权查看 CronJob' : 'No permission to view CronJob'}
+      />
+    )
+  if (!options.enabled)
+    return (
+      <ManagementState
+        compact
+        title={zh ? '请选择集群和命名空间' : 'Select a cluster and namespace'}
+      />
+    )
+  if (!detail)
+    return (
+      <>
+        <ReadFeedback canRead query={query} label="CronJob" />
+        {query.isLoading ? (
+          <Spin />
+        ) : !query.isError ? (
+          <ManagementState
+            compact
+            kind="not-found"
+            title={zh ? 'CronJob 未找到' : 'CronJob not found'}
+          />
+        ) : null}
+      </>
+    )
+  const jobs = retainedCronJobs(detail)
   return (
-    <WorkloadDetailShell
-      title="CronJob"
-      resource="cronjobs"
-      paramKey="cronJobName"
-      activeTabKey={activeTabKey}
-      onTabChange={setActiveTabKey}
-      extraOverview={(detail) => <CronJobOverview detail={detail as unknown as CronJobDetail} />}
-      extraTabPanes={(detail) => [
-        {
-          key: 'events',
-          label: localeCode === 'zh_CN' ? '事件' : 'Events',
-          children: (
-            <CronJobEventsTab
-              detail={detail as unknown as CronJobDetail}
-              enabled={activeTabKey === 'events'}
+    <div className="soha-cronjob-detail">
+      {actions.feedback}
+      <WorkloadDetailShell
+        ownerManagedTabs
+        title="CronJob"
+        resource="cronjobs"
+        paramKey="cronJobName"
+        activeTabKey={active}
+        onTabChange={changeTab}
+        detailRefetchOnMount={false}
+        hideMetadataOverview
+        hideRelationshipsTab
+        yamlLast
+        header={
+          <WorkloadDetailHeader
+            kind="CronJob"
+            name={name}
+            namespace={detail.namespace}
+            status={
+              <StatusTag
+                value={
+                  detail.suspend ? 'suspended' : detail.suspend === false ? 'enabled' : 'unknown'
+                }
+                label={
+                  detail.suspend
+                    ? zh
+                      ? '已暂停'
+                      : 'Suspended'
+                    : detail.suspend === false
+                      ? zh
+                        ? '调度启用'
+                        : 'Scheduling enabled'
+                      : zh
+                        ? '未知'
+                        : 'Unknown'
+                }
+              />
+            }
+            facts={
+              <>
+                <span>{detail.schedule}</span>
+                <span>{detail.timeZone || (zh ? '控制器时区' : 'Controller time zone')}</span>
+                <span>{detail.concurrencyPolicy}</span>
+                <span>
+                  {zh ? '活跃' : 'Active'} {detail.activeJobs ?? '—'}
+                </span>
+                <span>
+                  {zh ? '已创建' : 'Created'}{' '}
+                  {formatAgeSeconds(
+                    detail.createdAt
+                      ? Math.max(0, (Date.now() - Date.parse(detail.createdAt)) / 1000)
+                      : detail.ageSeconds,
+                  )}
+                </span>
+              </>
+            }
+            actions={
+              <>
+                <WorkloadRefresh
+                  resourceLabel="CronJob"
+                  settings={refresh}
+                  queries={[query, configuration, events]}
+                  onRefresh={() => {
+                    void client.invalidateQueries({
+                      queryKey: workloadKeys.detail('cronjobs', scope, name),
+                    })
+                    if (events.isEnabled) void events.refetch()
+                    setRefreshToken((v) => v + 1)
+                  }}
+                />
+                {actions.buttons}
+                {actions.deleteButton}
+              </>
+            }
+          />
+        }
+        extraOverview={
+          <>
+            <ReadFeedback
+              canRead={configuration.isEnabled}
+              query={configuration}
+              label={zh ? '调度配置' : 'Schedule configuration'}
             />
-          ),
-        },
-      ]}
-      yamlLast
-    />
+            <CronJobDetailOverview
+              detail={detail}
+              jobs={jobs}
+              scope={scope}
+              configuration={readableQueryData(configuration)}
+              onTabChange={changeTab}
+            />
+          </>
+        }
+        extraTabPanes={[
+          {
+            key: 'jobs',
+            label: 'Jobs',
+            children:
+              active === 'jobs' ? (
+                <CronJobJobsTable key={identity} jobs={jobs} scope={scope} />
+              ) : null,
+          },
+          {
+            key: 'events',
+            label: zh ? '事件' : 'Events',
+            children:
+              active === 'events' ? (
+                <WorkloadDetailEvents
+                  key={identity}
+                  resourceLabel="CronJob"
+                  events={readableQueryData(events) || []}
+                  observedAt={events.dataUpdatedAt || Date.now()}
+                  loading={events.isLoading}
+                  error={events.error?.message}
+                  onRefresh={() => void events.refetch()}
+                />
+              ) : null,
+          },
+          {
+            key: 'metrics',
+            label: zh ? '指标' : 'Metrics',
+            children:
+              active === 'metrics' ? (
+                <Suspense fallback={<Spin />}>
+                  <Metrics
+                    jobs={jobs}
+                    activeJobs={detail.activeJobs}
+                    rangeMinutes={range}
+                    observedAt={query.dataUpdatedAt || Date.now()}
+                    onRangeChange={(v) =>
+                      setParams(
+                        (old) => {
+                          const next = new URLSearchParams(old)
+                          next.set('range', String(v))
+                          return next
+                        },
+                        { replace: true },
+                      )
+                    }
+                  />
+                </Suspense>
+              ) : null,
+          },
+          {
+            key: 'related-resources',
+            label: zh ? '关联资源' : 'Related resources',
+            children:
+              active === 'related-resources' ? (
+                <Suspense fallback={<Spin />}>
+                  <Resources
+                    key={identity}
+                    detail={detail}
+                    jobs={jobs}
+                    scope={scope}
+                    refreshToken={refreshToken}
+                    interval={refresh.interval}
+                    onShowJobs={() => changeTab('jobs')}
+                  />
+                </Suspense>
+              ) : null,
+          },
+          {
+            key: 'delivery',
+            label: zh ? '交付联动' : 'Delivery integration',
+            children:
+              active === 'delivery' ? (
+                <Suspense fallback={<Spin />}>
+                  <Delivery
+                    key={identity}
+                    kind="CronJob"
+                    scope={scope}
+                    name={name}
+                    refreshToken={refreshToken}
+                  />
+                </Suspense>
+              ) : null,
+          },
+        ]}
+      />
+      {actions.confirmation}
+    </div>
   )
 }

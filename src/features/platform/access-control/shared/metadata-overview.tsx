@@ -16,6 +16,7 @@ export function AccessControlMetadataOverview({
   const namespace = detail.namespace || scopeLabel
   return (
     <PlatformResourceOverview
+      compact
       ageSeconds={detail.ageSeconds}
       annotations={detail.annotations}
       createdAt={detail.createdAt}

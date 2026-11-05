@@ -23,6 +23,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: opensoha/soha-contracts
+          ref: 7911c05328e704ca8bb490042fa3a25be29f273e
           path: soha-contracts
           token: ${{ github.token }}
           persist-credentials: false

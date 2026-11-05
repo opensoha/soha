@@ -11,7 +11,7 @@ import {
   UndoOutlined,
 } from '@ant-design/icons'
 import { Alert, App, Button, Card, Input, Segmented, Spin } from 'antd'
-import { lazy, Suspense, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   configurationDataRows,
   configurationDataSize,
@@ -57,7 +57,13 @@ export function ConfigurationDataWorkspace({
   encodedData,
   readOnlyReason,
   onApply,
+  searchable = false,
+  editRequest = 0,
+  active = true,
 }: {
+  active?: boolean
+  searchable?: boolean
+  editRequest?: number
   blocked?: boolean
   applying?: boolean
   canEdit: boolean
@@ -81,14 +87,31 @@ export function ConfigurationDataWorkspace({
   const [encoding, setEncoding] = useState<'text' | 'base64'>('text')
   const [revealedKey, setRevealedKey] = useState<string>()
   const nextId = useRef(0)
+  const handledEdit = useRef(0)
+  const [keyword, setKeyword] = useState('')
   const entries = edit?.entries ?? dataEntries(detail)
   const selected = entries.find((entry) => entry.id === selection) ?? entries[0]
   const secret = encodedData !== undefined
-  const visible = !secret || Boolean(edit) || revealedKey === selected?.id
+  const visible = !secret || Boolean(edit) || (active && revealedKey === selected?.id)
   const baseline = JSON.stringify([detail.data ?? {}, detail.binaryData ?? {}, encodedData])
   const conflict = Boolean(edit && edit.baseline !== baseline)
   const permitted = canEdit && !detail.immutable
   const busy = Boolean(applying || saving || blocked)
+  useEffect(() => {
+    if (!active) setRevealedKey(undefined)
+  }, [active])
+  useEffect(() => {
+    if (!editRequest || editRequest === handledEdit.current) return
+    handledEdit.current = editRequest
+    if (!permitted || busy || edit) return
+    setEdit({ baseline, original: detail.data ?? {}, entries: dataEntries(detail) })
+    setView('edit')
+    setError('')
+  }, [editRequest, permitted, busy, edit, baseline, detail])
+  const filteredEntries =
+    searchable && keyword.trim()
+      ? entries.filter((entry) => entry.key.toLowerCase().includes(keyword.trim().toLowerCase()))
+      : entries
   const originalValue = (entry: DataEntry) => edit?.original[entry.originalKey ?? ''] ?? ''
   const entryChanged = (entry: DataEntry) =>
     !entry.binary &&
@@ -244,13 +267,25 @@ export function ConfigurationDataWorkspace({
                     current ? { ...current, entries: [...current.entries, entry] } : current,
                   )
                   setSelection(entry.id)
+                  setKeyword('')
                   setView('edit')
                 }}
               />
             ) : null}
           </div>
+          {searchable && (
+            <div className="soha-configuration-data-search">
+              <Input
+                allowClear
+                aria-label={zh ? '搜索数据键' : 'Search data keys'}
+                placeholder={zh ? '搜索 Key' : 'Search keys'}
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+              />
+            </div>
+          )}
           <nav className="soha-configuration-data-keys">
-            {entries.map((entry) => (
+            {filteredEntries.map((entry) => (
               <button
                 type="button"
                 key={entry.id}
@@ -293,9 +328,15 @@ export function ConfigurationDataWorkspace({
               </button>
             ))}
           </nav>
-          {!entries.length ? (
+          {!filteredEntries.length ? (
             <div className="soha-configuration-data-directory-empty">
-              {zh ? '暂无数据键' : 'No data keys'}
+              {entries.length
+                ? zh
+                  ? '没有匹配的 Key'
+                  : 'No matching keys'
+                : zh
+                  ? '暂无数据键'
+                  : 'No data keys'}
             </div>
           ) : null}
         </aside>

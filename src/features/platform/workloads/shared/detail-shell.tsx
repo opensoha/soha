@@ -1,9 +1,14 @@
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useYamlDraft } from '@/components/use-yaml-draft'
+import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
-import { useClusterCapability } from '@/features/platform/cluster-capabilities'
+import { useClusterCapabilityForCluster } from '@/features/platform/cluster-capabilities'
 import { ResourceGitOpsStatus } from '@/features/platform/shared/resource-gitops-status'
+import {
+  ResourceDetailTabs,
+  useResourceDetailTab,
+} from '@/features/platform/shared/resource-detail-header'
 import { PlatformResourceOverview } from '@/features/platform/shared/resource-overview'
 import {
   platformResourceTarget,
@@ -16,9 +21,20 @@ import type { WorkloadKind } from '@/features/platform/workloads/shared/types'
 import '@/features/platform/workloads/styles.css'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
-import { useQuery } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { Pod, WorkloadRelation } from '@/types'
+import { WorkloadPodsCard, WorkloadRelationsCard } from './workload-relations'
+import {
+  ControllerHeaderFacts,
+  ControllerStatusTag,
+  WorkloadJobsCard,
+  type ChildJob,
+} from './controller-overview'
+import { WorkloadDetailHeader } from './workload-detail-header'
+import { WorkloadRefresh, useWorkloadRefresh } from './workload-refresh'
+import { formatRelativeTime } from '@/utils/time'
 import type { TabsProps } from 'antd'
-import { App, Card, Spin, Tabs } from 'antd'
+import { App, Card, Segmented, Spin, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -50,6 +66,17 @@ const WORKLOAD_ENTITY_KINDS: Record<WorkloadKind, string> = {
   cronjobs: 'CronJob',
 }
 
+const WORKLOAD_PERMISSIONS: Record<WorkloadKind, string> = {
+  deployments: 'platform.deployment',
+  pods: 'platform.pods',
+  replicasets: 'platform.workloads.replica-sets',
+  replicationcontrollers: 'platform.workloads.replication-controllers',
+  statefulsets: 'platform.workloads.stateful-sets',
+  daemonsets: 'platform.workloads.daemon-sets',
+  jobs: 'platform.workloads.jobs',
+  cronjobs: 'platform.workloads.cron-jobs',
+}
+
 /* ─── generic workload detail ─── */
 
 export interface WorkloadMeta {
@@ -58,6 +85,7 @@ export interface WorkloadMeta {
   labels?: Record<string, string>
   annotations?: Record<string, string>
   createdAt: string
+  allowedActions?: string[]
   yaml?: string
   [key: string]: unknown
 }
@@ -77,6 +105,11 @@ export function WorkloadDetailShell({
   activeTabKey,
   onTabChange,
   yamlLast = false,
+  header,
+  hideMetadataOverview = false,
+  hideRelationshipsTab = false,
+  detailRefetchOnMount = true,
+  ownerManagedTabs = false,
 }: {
   title: string
   resource: WorkloadKind
@@ -86,27 +119,62 @@ export function WorkloadDetailShell({
   activeTabKey?: string
   onTabChange?: (activeKey: string) => void
   yamlLast?: boolean
+  header?: ReactNode
+  hideMetadataOverview?: boolean
+  hideRelationshipsTab?: boolean
+  detailRefetchOnMount?: boolean
+  ownerManagedTabs?: boolean
 }) {
   const { t, localeCode } = useI18n()
+  const [relationshipView, setRelationshipView] = useState('graph')
   const { message } = App.useApp()
   const params = useParams()
   const name = params[paramKey] as string
   const { clusterId, namespace: detailNamespace } = useWorkloadDetailScope()
-  const [internalActiveTabKey, setInternalActiveTabKey] = useState('overview')
+  const [internalActiveTabKey, setInternalActiveTabKey] = useResourceDetailTab()
   const resolvedActiveTabKey = activeTabKey ?? internalActiveTabKey
+  const queryClient = useQueryClient()
 
+  const detailRefresh = useWorkloadRefresh()
+  const enhanced = !ownerManagedTabs && resource !== 'pods' && resource !== 'deployments'
   const detailScope = { clusterId, namespace: detailNamespace }
-  const detailQuery = useQuery(workloadQueries.detail<WorkloadMeta>(resource, detailScope, name))
+  const podListKey = workloadQueries.list('pods', detailScope).queryKey
+  const podsFetching = useIsFetching({ queryKey: podListKey })
+  const detailQuery = useQuery({
+    ...workloadQueries.detail<WorkloadMeta>(resource, detailScope, name),
+    refetchOnMount: detailRefetchOnMount,
+    refetchInterval: enhanced ? detailRefresh.interval : false,
+    refetchIntervalInBackground: false,
+  })
   const visibleDetailQueryData = readableQueryData(detailQuery)
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const permission = WORKLOAD_PERMISSIONS[resource]
+  const yamlViewCapability = useClusterCapabilityForCluster(
+    'resource.yaml.view',
+    localeCode,
+    clusterId,
+  )
+  const yamlApplyCapability = useClusterCapabilityForCluster(
+    'resource.yaml.apply',
+    localeCode,
+    clusterId,
+  )
+  const canReadYaml =
+    hasPermission(permissions, `${permission}.view`) &&
+    !yamlViewCapability.disabled &&
+    !yamlViewCapability.isLoading
+  const canUpdateYaml =
+    canReadYaml &&
+    hasPermission(permissions, `${permission}.update`) &&
+    hasAllowedAction(visibleDetailQueryData?.allowedActions, 'update') &&
+    !yamlApplyCapability.disabled &&
+    !yamlApplyCapability.isLoading
   const yamlQueryOptions = workloadQueries.yaml(resource, detailScope, name)
   const yamlQuery = useQuery({
     ...yamlQueryOptions,
-    enabled: Boolean(yamlQueryOptions.enabled) && resolvedActiveTabKey === 'yaml',
+    enabled: Boolean(yamlQueryOptions.enabled && canReadYaml && resolvedActiveTabKey === 'yaml'),
   })
-  const visibleYamlQueryData =
-    Boolean(yamlQueryOptions.enabled) && resolvedActiveTabKey === 'yaml'
-      ? readableQueryData(yamlQuery)
-      : undefined
+  const visibleYamlQueryData = canReadYaml ? readableQueryData(yamlQuery) : undefined
   const yamlDraftStorageKey = useMemo(
     () =>
       clusterId
@@ -120,10 +188,6 @@ export function WorkloadDetailShell({
     yamlDraftStorageKey,
   )
   const { value: yamlDraft, setValue: setYamlDraft } = yamlState
-  const yamlApplyCapability = useClusterCapability('resource.yaml.apply', localeCode)
-  const yamlApplyDisabledReason = yamlApplyCapability.disabled
-    ? yamlApplyCapability.reason
-    : undefined
   useAIPageContext({
     sourceWorkbench: 'platform',
     sourceTitle: title,
@@ -153,6 +217,12 @@ export function WorkloadDetailShell({
     },
   )
   const platformWriteBlocked = applyYamlMutation.blocked
+  const canApplyYaml =
+    canUpdateYaml &&
+    !platformWriteBlocked &&
+    !yamlQuery.isError &&
+    yamlQuery.isEnabled &&
+    Boolean(visibleYamlQueryData && yamlDraft.trim())
 
   const detail = visibleDetailQueryData
 
@@ -178,20 +248,103 @@ export function WorkloadDetailShell({
   const resolvedExtraTabPanes =
     typeof extraTabPanes === 'function' ? extraTabPanes(detail) : (extraTabPanes ?? [])
   const graphKind = RESOURCE_GRAPH_KINDS[resource]
+  const controllerTabs: NonNullable<TabsProps['items']> = enhanced
+    ? [
+        ...(resource !== 'cronjobs'
+          ? [
+              {
+                key: 'pods',
+                label: 'Pods',
+                children:
+                  resolvedActiveTabKey === 'pods' ? (
+                    <WorkloadPodsCard
+                      key={JSON.stringify([resource, clusterId, detail.namespace, detail.name])}
+                      pods={Array.isArray(detail.pods) ? (detail.pods as Pod[]) : []}
+                      namespace={detail.namespace}
+                    />
+                  ) : null,
+              },
+            ]
+          : []),
+        ...(resource === 'cronjobs'
+          ? [
+              {
+                key: 'jobs',
+                label: 'Jobs',
+                children:
+                  resolvedActiveTabKey === 'jobs' ? (
+                    <WorkloadJobsCard
+                      key={JSON.stringify([resource, clusterId, detail.namespace, detail.name])}
+                      jobs={Array.isArray(detail.jobs) ? (detail.jobs as ChildJob[]) : []}
+                    />
+                  ) : null,
+              },
+            ]
+          : []),
+      ]
+    : []
 
   return (
-    <div className="soha-page soha-workload-detail-page">
+    <div className="soha-page soha-workload-detail-page soha-workload-detail-frame">
       <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
       <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
 
       {applyYamlMutation.feedback}
 
-      <Tabs
+      {header ??
+        (enhanced ? (
+          <WorkloadDetailHeader
+            kind={title}
+            name={detail.name}
+            namespace={detail.namespace}
+            status={<ControllerStatusTag detail={detail} resource={resource} title={title} />}
+            facts={
+              <>
+                <ControllerHeaderFacts detail={detail} resource={resource} />
+                {detail.createdAt && (
+                  <Typography.Text type="secondary">
+                    {localeCode === 'zh_CN' ? '已创建' : 'Created'}{' '}
+                    {formatRelativeTime(detail.createdAt)}
+                  </Typography.Text>
+                )}
+              </>
+            }
+            actions={
+              <WorkloadRefresh
+                resourceLabel={title}
+                settings={detailRefresh}
+                queries={[
+                  detailQuery,
+                  ...(resolvedActiveTabKey === 'pods'
+                    ? [
+                        {
+                          isFetching: podsFetching > 0,
+                          isError: queryClient.getQueryState(podListKey)?.status === 'error',
+                        },
+                      ]
+                    : []),
+                ]}
+                onRefresh={() =>
+                  Promise.all([
+                    queryClient.invalidateQueries({
+                      queryKey: workloadQueries.detail(resource, detailScope, name).queryKey,
+                    }),
+                    ...(resolvedActiveTabKey === 'pods'
+                      ? [queryClient.invalidateQueries({ queryKey: podListKey })]
+                      : []),
+                  ])
+                }
+              />
+            }
+          />
+        ) : null)}
+
+      <ResourceDetailTabs
         activeKey={resolvedActiveTabKey}
         className="soha-resource-tabs soha-workload-detail-tabs"
         onChange={(nextActiveKey) => {
-          setInternalActiveTabKey(nextActiveKey)
-          onTabChange?.(nextActiveKey)
+          if (onTabChange) onTabChange(nextActiveKey)
+          else setInternalActiveTabKey(nextActiveKey)
         }}
         indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
         size="small"
@@ -202,24 +355,29 @@ export function WorkloadDetailShell({
             label: t('common.overview', 'Overview'),
             children: (
               <div className="soha-detail-stack">
-                <PlatformResourceOverview
-                  annotations={detail.annotations}
-                  createdAt={detail.createdAt}
-                  labels={detail.labels}
-                  name={detail.name}
-                  namespace={detail.namespace}
-                />
+                {enhanced && resolvedExtraOverview}
+                {!hideMetadataOverview && (
+                  <PlatformResourceOverview
+                    compact={enhanced}
+                    annotations={detail.annotations}
+                    createdAt={detail.createdAt}
+                    labels={detail.labels}
+                    name={detail.name}
+                    namespace={detail.namespace}
+                  />
+                )}
                 <ResourceGitOpsStatus
                   clusterId={clusterId}
                   kind={title}
                   name={detail.name}
                   namespace={detail.namespace}
                 />
-                {resolvedExtraOverview}
+                {!enhanced && resolvedExtraOverview}
               </div>
             ),
           },
-          ...(graphKind
+          ...controllerTabs,
+          ...(graphKind && !hideRelationshipsTab && !enhanced
             ? [
                 {
                   key: 'relationships',
@@ -233,10 +391,73 @@ export function WorkloadDetailShell({
               ]
             : []),
           ...(yamlLast ? resolvedExtraTabPanes : []),
+          ...(enhanced
+            ? [
+                {
+                  key: 'relationships',
+                  label: localeCode === 'zh_CN' ? '关联资源' : 'Related resources',
+                  children:
+                    resolvedActiveTabKey === 'relationships' ? (
+                      <div className="soha-detail-stack">
+                        {graphKind && (
+                          <div className="soha-k8s-detail-toolbar">
+                            <Segmented
+                              aria-label={
+                                localeCode === 'zh_CN' ? '关联资源视图' : 'Related resource view'
+                              }
+                              value={relationshipView}
+                              onChange={setRelationshipView}
+                              options={[
+                                {
+                                  value: 'graph',
+                                  label: localeCode === 'zh_CN' ? '关系图' : 'Graph',
+                                },
+                                { value: 'list', label: localeCode === 'zh_CN' ? '列表' : 'List' },
+                              ]}
+                            />
+                          </div>
+                        )}
+                        {graphKind && relationshipView === 'graph' && (
+                          <Suspense fallback={<Spin />}>
+                            <ResourceGraphPanel
+                              kind={graphKind}
+                              name={detail.name}
+                              scope={detailScope}
+                            />
+                          </Suspense>
+                        )}
+                        {(!graphKind || relationshipView === 'list') && (
+                          <WorkloadRelationsCard
+                            resources={
+                              Array.isArray(detail.relatedResources)
+                                ? (detail.relatedResources as WorkloadRelation[])
+                                : []
+                            }
+                            namespace={detail.namespace}
+                          />
+                        )}
+                      </div>
+                    ) : null,
+                },
+              ]
+            : []),
           {
             key: 'yaml',
             label: t('common.yaml', 'YAML'),
-            children: (
+            children: !canReadYaml ? (
+              yamlViewCapability.isLoading ? (
+                <Spin />
+              ) : (
+                <ManagementState
+                  compact
+                  kind="no-permission"
+                  title={
+                    yamlViewCapability.reason ||
+                    (localeCode === 'zh_CN' ? '无法查看 YAML' : 'YAML view unavailable')
+                  }
+                />
+              )
+            ) : (
               <Suspense
                 fallback={
                   <Card className="soha-detail-card">
@@ -247,31 +468,33 @@ export function WorkloadDetailShell({
                 {yamlQuery.isError && visibleYamlQueryData === undefined ? null : (
                   <K8sYamlEditor
                     key={yamlState.resourceKey}
-                    value={yamlDraft}
-                    original={yamlState.original}
-                    serverChanged={yamlState.serverChanged}
+                    readOnly={!canUpdateYaml}
+                    value={canUpdateYaml ? yamlDraft : (visibleYamlQueryData?.content ?? '')}
+                    original={canUpdateYaml ? yamlState.original : visibleYamlQueryData?.content}
+                    serverChanged={canUpdateYaml && yamlState.serverChanged}
                     onCompareLatest={yamlState.compareLatest}
                     loading={yamlQuery.isPending}
                     error={yamlQuery.error}
-                    onChange={setYamlDraft}
+                    onChange={(value) => {
+                      if (canUpdateYaml) setYamlDraft(value)
+                    }}
                     onReset={() => {
                       yamlState.reset()
                       void message.success(t('yamlEditor.resetSuccess', 'YAML draft reset'))
                     }}
                     onSave={() => {
-                      if (!yamlDraftStorageKey) return
+                      if (!canUpdateYaml || !yamlDraftStorageKey) return
                       window.localStorage.setItem(yamlDraftStorageKey, yamlDraft)
                       void message.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
                     }}
-                    onApply={() => applyYamlMutation.mutate()}
-                    saveDisabled={!yamlDraftStorageKey}
-                    applyDisabled={
-                      platformWriteBlocked ||
-                      !yamlQueryOptions.enabled ||
-                      !yamlDraft.trim() ||
-                      yamlApplyCapability.disabled
+                    onApply={() => {
+                      if (canApplyYaml) applyYamlMutation.mutate()
+                    }}
+                    saveDisabled={!canUpdateYaml || !yamlDraftStorageKey}
+                    applyDisabled={!canApplyYaml}
+                    applyDisabledReason={
+                      yamlApplyCapability.disabled ? yamlApplyCapability.reason : undefined
                     }
-                    applyDisabledReason={yamlApplyDisabledReason}
                     applying={applyYamlMutation.isPending}
                   />
                 )}

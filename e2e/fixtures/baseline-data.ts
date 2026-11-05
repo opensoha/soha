@@ -121,6 +121,31 @@ export function baselineResponse(path: string) {
   if (path === '/api/v1/clusters/cluster-a/workloads/deployments/api/rollouts') {
     return { data: [] }
   }
+  if (path === '/api/v1/clusters/cluster-a/resources/graph') {
+    return {
+      data: {
+        rootId: 'deployment-api',
+        clusterId: 'cluster-a',
+        generatedAt: '2026-10-30T10:00:00Z',
+        warnings: [],
+        evidence: [],
+        nodes: [
+          {
+            id: 'deployment-api',
+            resource: {
+              clusterId: 'cluster-a',
+              namespace: 'monitoring',
+              kind: 'Deployment',
+              name: 'api',
+              apiVersion: 'apps/v1',
+              scopeMode: 'namespace',
+            },
+          },
+        ],
+        edges: [],
+      },
+    }
+  }
   if (
     [
       '/api/v1/application-environments',

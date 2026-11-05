@@ -41,6 +41,7 @@ export function ServiceDiagnosticsPanel({
   const { localeCode } = useI18n()
   const permissionSnapshot = usePermissionSnapshot().data?.data
   const canExec = hasPermission(permissionSnapshot, 'platform.pods.exec')
+  const canReadPods = hasPermission(permissionSnapshot, 'platform.pods.view')
   const scope = toScopeKey(clusterId, namespace)
   const podsQuery = useQuery({
     queryKey: serviceKeys.diagnosticPods(scope),
@@ -50,26 +51,39 @@ export function ServiceDiagnosticsPanel({
       )
       return (response.data ?? []).filter((pod) => pod.phase === 'Running')
     },
-    enabled: canExec,
+    enabled: canExec && canReadPods,
   })
   const visiblePodsQueryData = canExec ? readableQueryData(podsQuery) : undefined
   const ports = useMemo(
-    () => (portMappings ?? []).filter((item) => Number.isInteger(item.port) && item.port > 0),
+    () =>
+      (portMappings ?? []).filter(
+        (item) => item.protocol === 'TCP' && Number.isInteger(item.port) && item.port > 0,
+      ),
     [portMappings],
   )
   const [podName, setPodName] = useState<string>()
   const [port, setPort] = useState<number>()
   useEffect(() => {
-    if (!podName && visiblePodsQueryData?.[0]) setPodName(visiblePodsQueryData[0].name)
+    if (visiblePodsQueryData && !visiblePodsQueryData.some((pod) => pod.name === podName))
+      setPodName(visiblePodsQueryData[0]?.name)
   }, [podName, visiblePodsQueryData])
   useEffect(() => {
-    if (!port && ports[0]) setPort(ports[0].port)
+    if (!ports.some((item) => item.port === port)) setPort(ports[0]?.port)
   }, [port, ports])
 
   const probe = usePlatformMutation(
     {
       mutationFn: async () => {
-        if (!podName || !port) throw new Error('Source Pod and Service port are required')
+        if (
+          !podName ||
+          !port ||
+          !canExec ||
+          !canReadPods ||
+          podsQuery.isError ||
+          !visiblePodsQueryData?.some((pod) => pod.name === podName) ||
+          !ports.some((item) => item.port === port)
+        )
+          throw new Error('Source Pod and TCP Service port are required')
         const response = await api.post<ApiResponse<PodExecResult>>(
           `/clusters/${encodeURIComponent(clusterId)}/workloads/pods/${encodeURIComponent(podName)}/exec?namespace=${encodeURIComponent(namespace)}`,
           {
@@ -87,8 +101,14 @@ export function ServiceDiagnosticsPanel({
     },
   )
 
-  if (!canExec) {
-    return <ManagementState compact kind="unsupported" description="platform.pods.exec" />
+  if (!canExec || !canReadPods) {
+    return (
+      <ManagementState
+        compact
+        kind="unsupported"
+        description={!canExec ? 'platform.pods.exec' : 'platform.pods.view'}
+      />
+    )
   }
   if (podsQuery.isLoading) return <Spin />
 
@@ -124,13 +144,18 @@ export function ServiceDiagnosticsPanel({
         <Button
           type="primary"
           icon={<PlayCircleOutlined />}
-          disabled={!podName || !port}
+          disabled={!podName || !port || podsQuery.isError}
           loading={probe.isPending}
           onClick={() => probe.mutate()}
         >
           {localeCode === 'zh_CN' ? '运行诊断' : 'Run diagnostics'}
         </Button>
       </Space>
+      <Typography.Text type="secondary">
+        {localeCode === 'zh_CN'
+          ? '从所选 Pod 主动检查 DNS 与 TCP 端口；不自动执行，不检测 UDP/SCTP。'
+          : 'Actively checks DNS and TCP from the selected Pod; never runs automatically. UDP/SCTP are not tested.'}
+      </Typography.Text>
       {visiblePodsQueryData?.length === 0 ? (
         <Alert
           showIcon
@@ -142,7 +167,6 @@ export function ServiceDiagnosticsPanel({
           }
         />
       ) : null}
-      {probe.isError ? <Alert showIcon type="error" title={probe.error.message} /> : null}
       {probe.data ? (
         <Alert
           showIcon

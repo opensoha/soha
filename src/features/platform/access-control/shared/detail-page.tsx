@@ -1,3 +1,8 @@
+import {
+  ResourceDetailHeader,
+  ResourceDetailTabs,
+  useResourceDetailTab,
+} from '@/features/platform/shared/resource-detail-header'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useYamlDraft } from '@/components/use-yaml-draft'
@@ -12,9 +17,9 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TabsProps } from 'antd'
-import { App, Card, Spin, Tabs, Typography } from 'antd'
+import { App, Card, Spin, Typography } from 'antd'
 import type { ReactNode } from 'react'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import '../styles.css'
 import { accessControlMutations } from './mutations'
@@ -151,7 +156,7 @@ export function AccessControlResourceDetailPage<TDetail extends AccessControlDet
   const detailQuery = useQuery(accessControlQueries.detail<TDetail>(kind, scope, name))
   const visibleDetailQueryData = readableQueryData(detailQuery)
   const yamlCapability = useClusterCapability('resource.yaml.apply', localeCode)
-  const [activeTabKey, setActiveTabKey] = useState('overview')
+  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
   const detail = visibleDetailQueryData
   useAIPageContext({
     sourceWorkbench: 'platform',
@@ -209,7 +214,7 @@ export function AccessControlResourceDetailPage<TDetail extends AccessControlDet
       ? [
           {
             key: 'relationships',
-            label: localeCode === 'zh_CN' ? '关联关系' : 'Relationships',
+            label: localeCode === 'zh_CN' ? '关联资源' : 'Related resources',
             children: activeTabKey === 'relationships' ? renderRelationships(detail) : null,
           },
         ]
@@ -246,10 +251,17 @@ export function AccessControlResourceDetailPage<TDetail extends AccessControlDet
   ]
 
   return (
-    <div className="soha-page soha-workload-detail-page">
+    <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
       <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
 
-      <Tabs
+      <ResourceDetailHeader
+        kind={label}
+        name={detail.name}
+        namespace={detail.namespace}
+        ageSeconds={detail.ageSeconds}
+        queryKey={accessControlQueries.detail(kind, scope, name).queryKey}
+      />
+      <ResourceDetailTabs
         activeKey={activeTabKey}
         className="soha-resource-tabs soha-workload-detail-tabs"
         indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}

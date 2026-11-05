@@ -44,17 +44,23 @@ export function buildNetworkRoutePath(
   kind: NetworkKind,
   name: string,
   namespace: string,
-  options?: { tab?: string },
+  options?: { tab?: string; clusterId?: string },
 ) {
   const search = new URLSearchParams()
   if (namespace.trim()) search.set('namespace', namespace.trim())
+  if (options?.clusterId?.trim()) search.set('clusterId', options.clusterId.trim())
   if (options?.tab?.trim()) search.set('tab', options.tab.trim())
   const query = search.toString()
   return `/network/${kind}/${encodeURIComponent(normalizeName(name))}${query ? `?${query}` : ''}`
 }
 
-export function buildGatewayAPIRoutePath(kind: NetworkKind, name: string, namespace = '') {
-  const path = buildNetworkRoutePath(kind, name, namespace)
+export function buildGatewayAPIRoutePath(
+  kind: NetworkKind,
+  name: string,
+  namespace = '',
+  options?: { tab?: string; clusterId?: string },
+) {
+  const path = buildNetworkRoutePath(kind, name, namespace, options)
   return path.replace(`/network/${kind}/`, `/network/gateway-api/${kind}/`)
 }
 

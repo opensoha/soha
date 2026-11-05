@@ -1,0 +1,74 @@
+.soha-sc-detail {
+  min-width: 0;
+}
+.soha-sc-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+/* Match the storage detail shell tab spacing; the shell owns the Antd Tabs nav. */
+.soha-sc-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-sc-detail .soha-sc-section-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.soha-sc-detail .soha-sc-muted {
+  color: var(--soha-text-secondary);
+}
+.soha-sc-detail .soha-sc-warning {
+  color: var(--soha-warning);
+}
+.soha-sc-detail .soha-sc-relations-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.soha-sc-detail .soha-sc-relations-summary section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.soha-sc-detail .soha-sc-relations-summary dl {
+  margin: 0;
+}
+.soha-sc-detail .soha-sc-relations-summary dt {
+  color: var(--soha-text-secondary);
+}
+.soha-sc-detail .soha-sc-relations-summary dd {
+  margin: 4px 0 0;
+  font-size: var(--soha-font-size-metric);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.soha-sc-detail .soha-sc-overview dd,
+.soha-sc-detail .soha-sc-overview a,
+.soha-sc-detail .soha-sc-mount-options {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-sc-detail .soha-sc-topologies {
+  display: grid;
+  gap: 16px;
+}
+.soha-sc-detail .soha-sc-topologies h3 {
+  font-size: var(--soha-font-size);
+  margin: 0 0 12px;
+}
+.soha-sc-detail .soha-sc-mount-options {
+  margin: 0;
+  padding-inline-start: 20px;
+}
+.soha-sc-detail .soha-sc-truncation {
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .soha-sc-detail .soha-sc-relations-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+}

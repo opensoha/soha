@@ -15,7 +15,16 @@ const service = {
     clusterIP: '10.43.0.20',
     clusterIPs: ['10.43.0.20'],
     ipFamilies: ['IPv4'],
-    ports: [{ name: 'http', nodePort: 30080, port: 80, protocol: 'TCP', targetPort: 'web' }],
+    ports: [
+      {
+        appProtocol: 'kubernetes.io/h2c',
+        name: 'http',
+        nodePort: 30080,
+        port: 80,
+        protocol: 'TCP',
+        targetPort: 'web',
+      },
+    ],
     selector: { app: 'api' },
     sessionAffinity: 'ClientIP',
     type: 'NodePort',
@@ -61,13 +70,34 @@ describe('Service quick edit model', () => {
         clusterIP: '10.43.0.20',
         clusterIPs: ['10.43.0.20'],
         ipFamilies: ['IPv4'],
-        ports: [{ nodePort: 30081, port: 8080, targetPort: 'web' }],
+        ports: [
+          { appProtocol: 'kubernetes.io/h2c', nodePort: 30081, port: 8080, targetPort: 'web' },
+        ],
         selector: { app: 'backend' },
         sessionAffinity: 'ClientIP',
         type: 'NodePort',
       },
       status: { loadBalancer: {} },
     })
+  })
+
+  it('does not move appProtocol to a different transport protocol or duplicate it after moving a named port', () => {
+    const ports = [
+      { name: 'http', port: 8080, protocol: 'TCP' },
+      { name: 'replacement', port: 80, protocol: 'TCP' },
+      { name: 'dns', port: 80, protocol: 'UDP' },
+    ]
+    const edited = {
+      apiVersion: 'v1',
+      kind: 'Service' as const,
+      metadata: { name: 'api', namespace: 'team-a' },
+      spec: { type: 'NodePort', ports },
+    }
+    expect((mergeServiceManifest(service, edited).spec as typeof edited.spec).ports).toEqual([
+      { ...ports[0], appProtocol: 'kubernetes.io/h2c' },
+      ports[1],
+      ports[2],
+    ])
   })
 
   it('removes incompatible fields when changing to ExternalName', () => {

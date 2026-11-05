@@ -20,6 +20,8 @@ export interface HelmReleaseTarget {
 
 export interface UpdateHelmValuesVariables extends HelmReleaseTarget {
   content: string
+  expectedRevision: number
+  expectedContent: string
 }
 
 export interface HelmReleaseRollbackVariables extends HelmReleaseTarget {

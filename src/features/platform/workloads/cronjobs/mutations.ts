@@ -14,6 +14,13 @@ async function invalidateCronJobCaches(queryClient: QueryClient, target: CronJob
 }
 
 export const cronJobMutations = {
+  suspendDetail: (queryClient: QueryClient) =>
+    mutationOptions<void, Error, SuspendCronJobVariables>({
+      mutationFn: async (target) => {
+        await suspendCronJob(target)
+      },
+      onSuccess: (_data, target) => invalidateCronJobCaches(queryClient, target),
+    }),
   suspend: (queryClient: QueryClient) =>
     mutationOptions<CronJobDetailResult, Error, SuspendCronJobVariables>({
       mutationKey: [...workloadKeys.resource('cronjobs'), 'suspend'] as const,

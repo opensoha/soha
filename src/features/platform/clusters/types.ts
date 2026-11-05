@@ -15,6 +15,8 @@ export interface ClusterFormValues {
   agentCustomResourceRules?: import('@opensoha/contracts/gen/ts/sohaapi').components['schemas']['KubernetesAgentCustomResourceRule'][]
   prometheusBaseUrl?: string
   prometheusBearerToken?: string
+  prometheusClusterLabel?: string
+  prometheusClusterLabelValue?: string
 }
 
 export interface ClusterTarget {

@@ -2,6 +2,7 @@ import { api } from '@/services/api-client'
 import {
   getWorkloadDetail,
   getWorkloadMetrics,
+  getWorkloadYAML,
   listWorkloadEvents,
   listWorkloads,
 } from '@/features/platform/workloads/shared/api'
@@ -35,8 +36,11 @@ export function getStatefulSetDetail(target: StatefulSetTarget): Promise<Statefu
   return getWorkloadDetail<StatefulSetDetail>(statefulSetKind, target.scope, target.name)
 }
 
-export function getStatefulSetMetrics(target: StatefulSetTarget): Promise<ResourceMetrics> {
-  return getWorkloadMetrics(statefulSetKind, target.scope, target.name)
+export function getStatefulSetMetrics(
+  target: StatefulSetTarget,
+  rangeMinutes?: number,
+): Promise<ResourceMetrics> {
+  return getWorkloadMetrics(statefulSetKind, target.scope, target.name, rangeMinutes)
 }
 
 export async function listStatefulSetEvents(target: StatefulSetTarget): Promise<WorkloadEvent[]> {
@@ -70,4 +74,35 @@ export async function scaleStatefulSet({
 
 export async function deleteStatefulSet(target: StatefulSetTarget): Promise<void> {
   await api.delete<unknown>(buildWorkloadItemPath(statefulSetKind, target.scope, target.name))
+}
+
+export async function listStatefulSetRollouts(target: StatefulSetTarget) {
+  const result = await api.get<{ data: import('@/types').RolloutHistory[] }>(
+    statefulSetSubresourcePath(target, 'rollouts'),
+  )
+  return result.data
+}
+export async function getStatefulSetRevision(
+  target: StatefulSetTarget,
+  record: import('@/types').RolloutHistory,
+) {
+  const result = await api.get<{ data: import('@/types').ResourceYAMLView }>(
+    statefulSetSubresourcePath(target, `rollouts/${encodeURIComponent(record.name)}/yaml`),
+  )
+  const { readStatefulSetRevision } = await import('./statefulset-configuration')
+  return readStatefulSetRevision(result.data.content, record)
+}
+export async function getStatefulSetConfiguration(target: StatefulSetTarget) {
+  const result = await getWorkloadYAML(statefulSetKind, target.scope, target.name)
+  const { readStatefulSetConfiguration } = await import('./statefulset-configuration')
+  return readStatefulSetConfiguration(
+    result.content,
+    target.name,
+    requireWorkloadNamespace(target.scope),
+  )
+}
+
+function statefulSetSubresourcePath(target: StatefulSetTarget, suffix: string) {
+  const [path, query] = buildWorkloadItemPath(statefulSetKind, target.scope, target.name).split('?')
+  return `${path}/${suffix}${query ? `?${query}` : ''}`
 }

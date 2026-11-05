@@ -29,6 +29,7 @@ export interface WorkloadEvent {
   message: string
   count: number
   ageSeconds: number
+  lastTimestamp?: string
 }
 
 export interface WorkloadYAMLInput {

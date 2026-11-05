@@ -1,19 +1,22 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
-import { hasAllowedAction } from '@/features/auth'
+import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
+import { hasPermission, usePermissionSnapshot, hasAllowedAction } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -24,7 +27,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Popconfirm } from 'antd'
+import { Alert } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import '../styles.css'
 import { accessControlMutations } from './mutations'
@@ -51,6 +54,9 @@ function matchesSearchValues(values: Array<string | null | undefined>, keyword: 
 
 export function AccessControlResourceListPage<T extends AccessControlResourceRecord>({
   columns,
+  permissionKey,
+  onEdit,
+  autoRefresh = false,
   defaultTemplate,
   emptyDescription,
   kind,
@@ -58,6 +64,9 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
   rowKey,
   searchValues,
 }: {
+  permissionKey?: string
+  onEdit?: (record: T) => void
+  autoRefresh?: boolean
   columns: TableColumnsType<T>
   defaultTemplate: string
   emptyDescription: { en_US: string; zh_CN: string }
@@ -74,22 +83,27 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
   const scope = accessControlScopeFromSelection(kind, clusterId, namespace)
-  const query = useQuery(accessControlQueries.list<T>(kind, scope))
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const canRead = !permissionKey || hasPermission(permissions, `${permissionKey}.view`)
+  const refresh = useWorkloadRefresh()
+  const options = accessControlQueries.list<T>(kind, scope)
+  const query = useQuery({
+    ...options,
+    enabled: canRead && options.enabled,
+    ...(autoRefresh ? { refetchInterval: refresh.interval } : {}),
+  })
   const visibleQueryData = readableQueryData(query)
   const removeMutation = usePlatformMutation(accessControlMutations.remove(kind, queryClient), {
     label: ['删除资源', 'Delete resource'],
     target: platformResourceTarget,
   })
   const platformWriteBlocked = removeMutation.blocked
-  const rawItems = visibleQueryData ?? []
+  const rawItems = canRead ? (visibleQueryData ?? []) : []
   const normalizedKeyword = normalizeKeyword(deferredSearchKeyword)
   const filteredItems = useMemo(
     () => rawItems.filter((item) => matchesSearchValues(searchValues(item), normalizedKeyword)),
     [normalizedKeyword, rawItems, searchValues],
   )
-  const actionsAvailable = !yamlCapability.isLoading && !yamlCapability.disabled
-  const shouldShowActions =
-    actionsAvailable && rawItems.some((item) => hasAllowedAction(item.allowedActions, 'delete'))
   const entityKind = ACCESS_CONTROL_ENTITY_KINDS[kind]
   useAIPageContext({
     sourceWorkbench: 'platform',
@@ -100,62 +114,76 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
     visibleFilters: { keyword: searchKeyword || undefined },
     pinnedData: { itemCount: rawItems.length },
   })
-  const effectiveEmptyDescription = !clusterId
+  const effectiveEmptyDescription = !canRead
     ? localeCode === 'zh_CN'
-      ? '请选择集群查看 RBAC 资源。'
-      : 'Select a cluster to inspect RBAC resources.'
-    : normalizedKeyword && rawItems.length > 0
+      ? '没有查看权限'
+      : 'Permission required'
+    : !clusterId
       ? localeCode === 'zh_CN'
-        ? `没有匹配的 ${label}`
-        : `No matching ${label}`
-      : emptyDescription[localeCode]
+        ? '请选择集群查看 RBAC 资源。'
+        : 'Select a cluster to inspect RBAC resources.'
+      : normalizedKeyword && rawItems.length > 0
+        ? localeCode === 'zh_CN'
+          ? `没有匹配的 ${label}`
+          : `No matching ${label}`
+        : emptyDescription[localeCode]
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
-  const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-  const actionColumn: TableColumnsType<T>[number] = {
-    title: '',
-    dataIndex: '__actions',
-    fixed: 'right',
-    align: 'center',
-    width: 52,
-    onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    render: (_value, record) => {
-      if (!hasAllowedAction(record.allowedActions, 'delete')) return null
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `rbac:${kind}`,
+    resourceLabel: entityKind,
+    records: rawItems,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
+    actions: (record) => {
       const target = accessControlTargetFromRecord(kind, clusterId, record)
-      const deleting =
-        removeMutation.isPending &&
-        removeMutation.variables?.name === target.name &&
-        removeMutation.variables.scope.namespace === target.scope.namespace
-      return (
-        <Popconfirm
-          title={localeCode === 'zh_CN' ? `确认删除 ${record.name}？` : `Delete ${record.name}?`}
-          cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-          description={
-            localeCode === 'zh_CN'
-              ? '此操作不可恢复，删除后集群资源立即消失。'
-              : 'This deletes the resource immediately and cannot be undone.'
-          }
-          okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: deleting }}
-          okText={deleteLabel}
-          onConfirm={() => removeMutation.mutate(target, {})}
-          placement="topRight"
-        >
-          <ManagementIconButton
-            disabled={platformWriteBlocked}
-            danger
-            aria-label={deleteLabel}
-            icon={<DeleteOutlined />}
-            loading={deleting}
-            tooltip={deleteLabel}
-          />
-        </Popconfirm>
-      )
+      const deleteActions =
+        canRead &&
+        (!permissionKey || hasPermission(permissions, `${permissionKey}.delete`)) &&
+        hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled:
+                  platformWriteBlocked || yamlCapability.isLoading || yamlCapability.disabled,
+                reason: yamlCapability.reason,
+                loading:
+                  removeMutation.isPending &&
+                  removeMutation.variables?.scope.clusterId === clusterId &&
+                  removeMutation.variables?.name === target.name &&
+                  removeMutation.variables.scope.namespace === target.scope.namespace,
+                confirm: kubernetesDeleteConfirmation(record, localeCode),
+                prepare: () => removeMutation.reset(),
+                feedback: removeMutation.feedback,
+                run: () => removeMutation.mutateAsync(target),
+              },
+            ]
+          : []
+      return [
+        ...(onEdit &&
+        canRead &&
+        (!permissionKey || hasPermission(permissions, `${permissionKey}.update`)) &&
+        hasAllowedAction(record.allowedActions, 'update')
+          ? [
+              {
+                key: 'edit',
+                label: localeCode === 'zh_CN' ? '编辑 YAML' : 'Edit YAML',
+                disabled: platformWriteBlocked,
+                run: () => onEdit(record),
+              },
+            ]
+          : []),
+        ...deleteActions,
+      ]
     },
-  }
+  })
 
   return (
     <>
-      {removeMutation.feedback}
+      {resourceActions.confirmation}
+      {!resourceActions.isConfirming && removeMutation.feedback}
       <ManagementDataPage
         beforeQuery={
           <>
@@ -193,87 +221,103 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
             />
           ),
         }}
-        table={{
-          error: query.isEnabled === false ? null : query.error,
-          hasReadData: query.data !== undefined,
-          onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-          className: 'soha-rbac-table soha-platform-table',
-          columnSettingIconOnly: true,
-          columnSettingPlacement: 'header',
-          columns: shouldShowActions ? [...columns, actionColumn] : columns,
-          dataSource: clusterId ? filteredItems : [],
-          empty: (
-            <ManagementState
-              bordered={false}
-              compact
-              description={effectiveEmptyDescription}
-              kind={!clusterId ? 'select-scope' : 'empty'}
-            />
-          ),
-          headerExtra: (
-            <ManagementTableToolbar>
-              <CreateEntry
-                context={{
-                  clusterId: clusterId || '',
-                  defaultNamespace:
-                    kind === 'roles' || kind === 'rolebindings' || kind === 'serviceaccounts'
-                      ? namespace || undefined
-                      : undefined,
-                  expectedApiVersion:
-                    kind === 'serviceaccounts' ? 'v1' : 'rbac.authorization.k8s.io/v1',
-                  expectedKind: {
-                    serviceaccounts: 'ServiceAccount',
-                    roles: 'Role',
-                    rolebindings: 'RoleBinding',
-                    clusterroles: 'ClusterRole',
-                    clusterrolebindings: 'ClusterRoleBinding',
-                  }[kind],
-                  resourceGroup: 'access-control',
-                  scopeMode:
-                    kind === 'clusterroles' || kind === 'clusterrolebindings'
-                      ? 'cluster'
-                      : 'namespace',
-                  source: 'list',
-                }}
-                defaultTemplate={defaultTemplate}
-                label={label.replace(/s$/, '')}
+        tableNode={
+          <KubernetesResourceTable
+            resourceKey={`rbac:${kind}`}
+            resourceLabel={label}
+            allRows={rawItems}
+            filterKey={normalizedKeyword}
+            scopeMode={kind.startsWith('cluster') ? 'cluster' : 'namespace'}
+            error={query.isEnabled === false ? null : query.error}
+            hasReadData={query.data !== undefined}
+            onRetry={query.isEnabled === false ? undefined : () => query.refetch()}
+            className={'soha-rbac-table soha-platform-table'}
+            columnSettingIconOnly={true}
+            columnSettingPlacement={'header'}
+            columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
+            dataSource={clusterId ? filteredItems : []}
+            empty={
+              <ManagementState
+                bordered={false}
+                compact
+                description={effectiveEmptyDescription}
+                kind={!clusterId ? 'select-scope' : 'empty'}
               />
-              <ManagementDensityButton
-                aria-label={densityLabel}
-                onClick={() =>
-                  setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
-                }
-                title={densityLabel}
-                tooltip={densityLabel}
-              />
-              <ManagementRefreshButton
-                aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                disabled={!clusterId}
-                loading={query.isFetching}
-                onClick={() => {
-                  if (clusterId) void query.refetch()
-                }}
-                tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              />
-            </ManagementTableToolbar>
-          ),
-          loading: query.isLoading,
-          localSorting: true,
-          pageSize: K8S_TABLE_PAGE_SIZE,
-          rowKey,
-          onRow: (record: T) => ({
-            'data-ai-context': encodeAIContextForElement({
-              sourceWorkbench: 'platform',
-              entityKind,
-              entityName: record.name,
-              clusterId: clusterId || undefined,
-              namespace: record.namespace || undefined,
-            }),
-          }),
-          scroll: { x: 'max-content' },
-          tableSize,
-          viewportScroll: true,
-        }}
+            }
+            headerExtra={
+              <ManagementTableToolbar>
+                <CreateEntry
+                  context={{
+                    clusterId: clusterId || '',
+                    defaultNamespace:
+                      kind === 'roles' || kind === 'rolebindings' || kind === 'serviceaccounts'
+                        ? namespace || undefined
+                        : undefined,
+                    expectedApiVersion:
+                      kind === 'serviceaccounts' ? 'v1' : 'rbac.authorization.k8s.io/v1',
+                    expectedKind: {
+                      serviceaccounts: 'ServiceAccount',
+                      roles: 'Role',
+                      rolebindings: 'RoleBinding',
+                      clusterroles: 'ClusterRole',
+                      clusterrolebindings: 'ClusterRoleBinding',
+                    }[kind],
+                    resourceGroup: 'access-control',
+                    scopeMode:
+                      kind === 'clusterroles' || kind === 'clusterrolebindings'
+                        ? 'cluster'
+                        : 'namespace',
+                    source: 'list',
+                  }}
+                  defaultTemplate={defaultTemplate}
+                  label={label.replace(/s$/, '')}
+                />
+                <ManagementDensityButton
+                  aria-label={densityLabel}
+                  onClick={() =>
+                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
+                  }
+                  title={densityLabel}
+                  tooltip={densityLabel}
+                />
+                {autoRefresh ? (
+                  <WorkloadRefresh
+                    compact
+                    settings={refresh}
+                    queries={[query]}
+                    disabled={!clusterId || !canRead}
+                    resourceLabel={label}
+                    onRefresh={() => query.refetch()}
+                  />
+                ) : (
+                  <ManagementRefreshButton
+                    aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    disabled={!clusterId}
+                    loading={query.isFetching}
+                    onClick={() => {
+                      if (clusterId) void query.refetch()
+                    }}
+                    tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  />
+                )}
+              </ManagementTableToolbar>
+            }
+            loading={query.isLoading}
+            localSorting={true}
+            rowKey={rowKey}
+            onRow={(record: T) => ({
+              'data-ai-context': encodeAIContextForElement({
+                sourceWorkbench: 'platform',
+                entityKind,
+                entityName: record.name,
+                clusterId: clusterId || undefined,
+                namespace: record.namespace || undefined,
+              }),
+            })}
+            scroll={{ x: 'max-content' }}
+            tableSize={tableSize}
+          />
+        }
       />
     </>
   )

@@ -2,6 +2,8 @@ import { api } from '@/services/api-client'
 import { buildWorkloadItemPath } from '@/features/platform/workloads/shared/paths'
 import {
   getWorkloadDetail,
+  getWorkloadMetrics,
+  getWorkloadYAML,
   listWorkloadEvents,
   listWorkloads,
 } from '@/features/platform/workloads/shared/api'
@@ -36,4 +38,13 @@ export async function listJobEvents(target: JobTarget): Promise<WorkloadEvent[]>
 
 export async function deleteJob(target: JobTarget): Promise<void> {
   await api.delete<unknown>(buildWorkloadItemPath(jobKind, target.scope, target.name))
+}
+
+export function getJobMetrics(target: JobTarget, rangeMinutes: number) {
+  return getWorkloadMetrics(jobKind, target.scope, target.name, rangeMinutes)
+}
+export async function getJobTemplate(target: JobTarget) {
+  const yaml = await getWorkloadYAML(jobKind, target.scope, target.name)
+  const { readJobTemplate } = await import('./job-detail-model')
+  return readJobTemplate(yaml.content, target.name, target.scope.namespace || 'default')
 }

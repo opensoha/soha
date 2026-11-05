@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteJob, getJobDetail, listJobEvents, listJobs } from './api'
+import { deleteJob, getJobDetail, listJobEvents, listJobs, getJobMetrics } from './api'
 
 const apiMocks = vi.hoisted(() => ({
   delete: vi.fn(),
@@ -59,4 +59,14 @@ describe('job api', () => {
       '/clusters/cluster-a/workloads/jobs/nightly%2Freport?namespace=team%2Fa',
     )
   })
+})
+
+it('scopes Job metrics to the requested resource and range', async () => {
+  apiMocks.get.mockResolvedValueOnce({
+    data: { resourceKind: 'Job', resourceName: 'nightly/report' },
+  })
+  await getJobMetrics(target, 15)
+  expect(apiMocks.get).toHaveBeenLastCalledWith(
+    '/clusters/cluster-a/workloads/jobs/nightly%2Freport/metrics?namespace=team%2Fa&rangeMinutes=15',
+  )
 })

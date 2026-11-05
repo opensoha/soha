@@ -7,6 +7,7 @@ function resourceScope(crd: CRD, namespace?: string | null) {
 
 export const crdKeys = {
   all: ['platform', 'extensions', 'crds'] as const,
+  apply: () => [...crdKeys.all, 'apply'] as const,
   catalogs: () => [...crdKeys.all, 'catalog'] as const,
   catalog: (clusterId?: string | null) => [...crdKeys.catalogs(), clusterId ?? null] as const,
   resources: (clusterId: string, crd: CRD, namespace?: string | null) =>

@@ -1,19 +1,16 @@
+import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
+import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
-  ManagementRefreshButton,
+  ManagementKeywordField,
+  ManagementQueryPanel,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
-import {
-  manifestQueries,
-  type ManifestDeployment,
-  type ManifestPackage,
-  type ManifestResourceInventory,
-} from '@/features/delivery'
+import { manifestQueries, deliveryQueries } from '@/features/delivery'
 import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -22,81 +19,70 @@ import { formatDateTime } from '@/utils/time'
 import { CodeOutlined, ExportOutlined } from '@ant-design/icons'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Descriptions, Drawer, Space, Table, Tabs, Typography } from 'antd'
+import { Button, Pagination, Space, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './styles.css'
 
+import { ManifestRuntimeDrawer } from './runtime-drawer'
+import { runtimeRowKey, type ManifestRuntimeRow } from './runtime-model'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { WorkloadRefresh, useWorkloadRefresh } from '../workloads/shared/workload-refresh'
+import { clusterQueries } from '../clusters/queries'
 const { Text } = Typography
-
-type ManifestRuntimeRow = ManifestPackage['bindings'][number] & {
-  manifest: ManifestPackage
-  deployment?: ManifestDeployment
-}
-
-interface ManifestDiffRow {
-  key: string
-  resource: string
-  path: string
-  desiredValue: unknown
-  observedValue: unknown
-}
-
-function runtimeRowKey(item: ManifestRuntimeRow) {
-  return `${item.manifest.id}:${item.id || item.applicationEnvironmentId}`
-}
-
-function manifestDiffRows(deployment?: ManifestDeployment): ManifestDiffRow[] {
-  return (deployment?.status.drift?.resources ?? []).flatMap((resource) =>
-    resource.fields.map((field) => ({
-      key: `${resource.apiVersion}:${resource.kind}:${resource.namespace}:${resource.name}:${field.path}`,
-      resource: `${resource.kind}/${resource.name}`,
-      path: field.path,
-      desiredValue: field.desiredValue,
-      observedValue: field.observedValue,
-    })),
-  )
-}
-
-function formatManifestValue(value: unknown) {
-  if (typeof value === 'string') return value
-  return JSON.stringify(value) ?? '-'
-}
 
 export function PlatformManifestsPage() {
   const { localeCode, t } = useI18n()
   const navigate = useNavigate()
   const { clusterId, namespace } = usePlatformScopeStore()
   const [selectedKey, setSelectedKey] = useState('')
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'desired'>('overview')
+  const [search, setSearch] = useState('')
+  const [draftSearch, setDraftSearch] = useState('')
+  const refresh = useWorkloadRefresh()
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const canRead = hasPermission(permissions, 'delivery.applications.view')
+  const canReadClusters = hasPermission(permissions, 'platform.clusters.view')
+  const clustersQuery = useQuery(clusterQueries.list(canReadClusters))
+  const clusters = canReadClusters ? (readableQueryData(clustersQuery) ?? []) : []
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const [pagination, setPagination] = useState({ page: 1, pageSize: K8S_TABLE_PAGE_SIZE })
 
   useEffect(() => {
     setPagination((current) => ({ ...current, page: 1 }))
+    setSelectedKey('')
   }, [clusterId, namespace])
-  const manifestsQuery = useQuery(
-    manifestQueries.list(
+  const manifestsQuery = useQuery({
+    ...manifestQueries.list(
       {
         clusterId: clusterId || undefined,
         namespace: namespace || undefined,
+        search,
         page: pagination.page,
         pageSize: pagination.pageSize,
       },
-      Boolean(clusterId),
+      Boolean(clusterId && canRead),
     ),
-  )
-  const visibleManifestsQueryData = readableQueryData(manifestsQuery)
+    refetchInterval: refresh.interval,
+  })
+  const applicationsQuery = useQuery(deliveryQueries.applications.list(canRead))
+  const applications = readableQueryData(applicationsQuery) ?? []
+  const applicationNames = new Map(applications.map((app) => [app.id, app.name]))
+  const visibleManifestsQueryData = canRead ? readableQueryData(manifestsQuery) : undefined
 
-  const manifestItems = visibleManifestsQueryData?.items ?? []
+  const manifestItems = canRead ? (visibleManifestsQueryData?.items ?? []) : []
   const deploymentQueries = useQueries({
-    queries: manifestItems.map((item) => manifestQueries.deployments(item.id, Boolean(clusterId))),
+    queries: manifestItems.map((item) => ({
+      ...manifestQueries.deployments(item.id, Boolean(clusterId && canRead)),
+      refetchInterval: refresh.interval,
+    })),
   })
   const deploymentsByBinding = new Map(
     deploymentQueries
       .flatMap((query) => readableQueryData(query) ?? [])
       .map((item) => [item.bindingId, item]),
   )
-  const scopedBindings: ManifestRuntimeRow[] = manifestItems.flatMap((item) =>
+  const scopedBindings: ManifestRuntimeRow[] = manifestItems.flatMap((item, index) =>
     item.bindings
       .filter((binding) => !clusterId || binding.clusterId === clusterId)
       .filter((binding) => !namespace || binding.namespace === namespace)
@@ -104,31 +90,50 @@ export function PlatformManifestsPage() {
         ...binding,
         manifest: item,
         deployment: binding.id ? deploymentsByBinding.get(binding.id) : undefined,
+        readState: deploymentQueries[index]?.isError
+          ? 'error'
+          : deploymentQueries[index]?.isPending
+            ? 'loading'
+            : readableQueryData(deploymentQueries[index])
+              ? 'ready'
+              : 'unknown',
+        readError: deploymentQueries[index]?.error?.message,
       })),
   )
   const selected = scopedBindings.find((item) => runtimeRowKey(item) === selectedKey)
-  const selectedDiff = manifestDiffRows(selected?.deployment)
+  const selectedDeploymentQuery = selected
+    ? deploymentQueries[manifestItems.findIndex((item) => item.id === selected.manifest.id)]
+    : undefined
 
   const columns: TableColumnsType<ManifestRuntimeRow> = [
     {
       title: t('common.manifest', '应用清单'),
       dataIndex: ['manifest', 'name'],
+      width: 280,
+      fixed: 'left',
       render: (_value, item) => (
         <Button
           type="link"
           className="soha-platform-manifest-link"
-          onClick={() => setSelectedKey(runtimeRowKey(item))}
+          onClick={() => {
+            setSelectedTab('overview')
+            setSelectedKey(runtimeRowKey(item))
+          }}
         >
           {item.manifest.name}
         </Button>
       ),
     },
     {
-      title: t('common.source', '来源'),
+      title: t('common.application', '应用'),
       key: 'source',
+      width: 200,
+      ellipsis: true,
       render: (_value, item) => (
         <Space size={4} wrap>
-          <Text>{item.manifest.applicationId}</Text>
+          <Text title={item.manifest.applicationId}>
+            {applicationNames.get(item.manifest.applicationId) || item.manifest.applicationId}
+          </Text>
           <MetadataTag
             label={item.manifest.serviceId ? `服务 ${item.manifest.serviceId}` : '应用级'}
           />
@@ -141,8 +146,12 @@ export function PlatformManifestsPage() {
       width: 110,
       render: (value) => <MetadataTag label={value} />,
     },
-    { title: t('common.cluster', '集群'), dataIndex: 'clusterId' },
-    { title: t('common.namespace', '命名空间'), dataIndex: 'namespace' },
+    {
+      title: t('common.namespace', '命名空间'),
+      dataIndex: 'namespace',
+      width: 180,
+      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+    },
     {
       title: t('common.version', '版本'),
       key: 'revision',
@@ -159,7 +168,13 @@ export function PlatformManifestsPage() {
       key: 'status',
       width: 120,
       render: (_value, item) => (
-        <StatusTag value={item.deployment?.status.phase || item.status || 'not_deployed'} />
+        <StatusTag
+          value={
+            item.readState === 'error' || item.readState === 'loading'
+              ? 'unknown'
+              : item.deployment?.status.phase || item.status || 'not_deployed'
+          }
+        />
       ),
     },
     {
@@ -167,7 +182,9 @@ export function PlatformManifestsPage() {
       key: 'diff',
       width: 100,
       render: (_value, item) => {
-        const resources = item.deployment?.status.drift?.resources.length ?? 0
+        const resources = item.deployment?.status.drift?.resources.length
+        if (resources === undefined)
+          return <Text type="secondary">{localeCode === 'zh_CN' ? '未观测' : 'Not observed'}</Text>
         return <Text type={resources > 0 ? 'warning' : 'secondary'}>{`${resources} 个资源`}</Text>
       },
     },
@@ -178,28 +195,38 @@ export function PlatformManifestsPage() {
       render: formatDateTime,
     },
     {
-      title: t('common.actions', '操作'),
+      title: '',
       key: 'actions',
       fixed: 'right',
+      width: 64,
+      align: 'center',
       render: (_value, item) => (
-        <Space size={4}>
-          <ManagementIconButton
-            aria-label={t('common.viewYaml', '查看 YAML')}
-            icon={<CodeOutlined />}
-            tooltip={t('common.viewYaml', '查看 YAML')}
-            onClick={() => setSelectedKey(runtimeRowKey(item))}
-          />
-          <ManagementIconButton
-            aria-label={t('common.openManifestLibrary', '查看扩展资源')}
-            icon={<ExportOutlined />}
-            tooltip={t('common.openManifestLibrary', '查看扩展资源')}
-            onClick={() =>
+        <KubernetesResourceActionsMenu
+          resourceLabel={localeCode === 'zh_CN' ? '应用清单' : 'Manifest'}
+          name={item.manifest.name}
+          localeCode={localeCode}
+          items={[
+            {
+              key: 'yaml',
+              label: t('common.viewYaml', '查看 YAML'),
+              icon: <CodeOutlined aria-hidden />,
+            },
+            {
+              key: 'library',
+              label: t('common.openManifestLibrary', '查看扩展资源'),
+              icon: <ExportOutlined aria-hidden />,
+            },
+          ]}
+          onSelect={(key) => {
+            if (key === 'yaml') {
+              setSelectedTab('desired')
+              setSelectedKey(runtimeRowKey(item))
+            } else if (key === 'library')
               navigate(
                 `/applications/${encodeURIComponent(item.manifest.applicationId)}?tab=resources`,
               )
-            }
-          />
-        </Space>
+          }}
+        />
       ),
     },
   ]
@@ -212,7 +239,7 @@ export function PlatformManifestsPage() {
             {deploymentQueries.map((query, index) => (
               <ReadFeedback
                 key={manifestItems[index].id}
-                canRead={query.isEnabled}
+                canRead={query.isEnabled && selected?.manifest.id !== manifestItems[index].id}
                 query={query}
                 label={`清单 ${manifestItems[index].name} 的部署记录`}
               />
@@ -221,9 +248,64 @@ export function PlatformManifestsPage() {
         }
         className="soha-platform-manifests"
         beforeQuery={
-          <h1 className="soha-platform-manifests-heading">{t('common.manifest', '应用清单')}</h1>
+          <>
+            <h1 className="soha-platform-manifests-heading">
+              {localeCode === 'zh_CN' ? '应用清单' : 'Manifests'}
+            </h1>
+            <ManagementQueryPanel
+              onFinish={() => {
+                setSearch(draftSearch.trim())
+                setSelectedKey('')
+                setPagination((p) => ({ ...p, page: 1 }))
+              }}
+              actions={
+                <>
+                  <Button
+                    autoInsertSpace={false}
+                    onClick={() => {
+                      setDraftSearch('')
+                      setSearch('')
+                      setSelectedKey('')
+                      setPagination((p) => ({ ...p, page: 1 }))
+                    }}
+                  >
+                    {localeCode === 'zh_CN' ? '重置' : 'Reset'}
+                  </Button>
+                  <Button autoInsertSpace={false} type="primary" htmlType="submit">
+                    {localeCode === 'zh_CN' ? '查询' : 'Search'}
+                  </Button>
+                </>
+              }
+            >
+              <ManagementKeywordField
+                label={localeCode === 'zh_CN' ? '关键词' : 'Keyword'}
+                placeholder={localeCode === 'zh_CN' ? '搜索清单名称或描述' : 'Search manifests'}
+                value={draftSearch}
+                onChange={setDraftSearch}
+              />
+            </ManagementQueryPanel>
+          </>
         }
         table={{
+          title: (
+            <span className="soha-kubernetes-resource-count" role="status">
+              {!clusterId
+                ? localeCode === 'zh_CN'
+                  ? '请选择集群'
+                  : 'Select a cluster'
+                : visibleManifestsQueryData === undefined
+                  ? manifestsQuery.isLoading
+                    ? localeCode === 'zh_CN'
+                      ? '正在加载清单'
+                      : 'Loading manifests'
+                    : localeCode === 'zh_CN'
+                      ? '清单未加载'
+                      : 'Manifests not loaded'
+                  : localeCode === 'zh_CN'
+                    ? `${visibleManifestsQueryData.total} 份清单`
+                    : `${visibleManifestsQueryData.total} manifests`}
+            </span>
+          ),
           error: manifestsQuery.isEnabled === false ? null : manifestsQuery.error,
           hasReadData: manifestsQuery.data !== undefined,
           onRetry: manifestsQuery.isEnabled === false ? undefined : () => manifestsQuery.refetch(),
@@ -244,16 +326,15 @@ export function PlatformManifestsPage() {
                   setTableSize((current) => (current === 'small' ? 'middle' : 'small'))
                 }
               />
-              <ManagementRefreshButton
-                aria-label={localeCode === 'zh_CN' ? '刷新清单' : 'Refresh manifests'}
-                disabled={!clusterId}
-                loading={
-                  manifestsQuery.isFetching || deploymentQueries.some((query) => query.isFetching)
-                }
-                tooltip={t('common.refresh', '刷新')}
-                onClick={() => {
+              <WorkloadRefresh
+                compact
+                disabled={!clusterId || !canRead}
+                settings={refresh}
+                queries={[manifestsQuery, ...deploymentQueries]}
+                resourceLabel={localeCode === 'zh_CN' ? '应用清单' : 'Manifests'}
+                onRefresh={() => {
                   void manifestsQuery.refetch()
-                  deploymentQueries.forEach((query) => void query.refetch())
+                  deploymentQueries.forEach((q) => void q.refetch())
                 }}
               />
             </ManagementTableToolbar>
@@ -265,22 +346,7 @@ export function PlatformManifestsPage() {
           loading: manifestsQuery.isLoading || deploymentQueries.some((query) => query.isLoading),
           rowKey: runtimeRowKey,
           tableSize,
-          pageSize: pagination.pageSize,
-          pagination: {
-            current: visibleManifestsQueryData?.page ?? pagination.page,
-            pageSize: visibleManifestsQueryData?.pageSize ?? pagination.pageSize,
-            total: visibleManifestsQueryData?.total ?? 0,
-            locale: { items_per_page: localeCode === 'zh_CN' ? '份清单/页' : 'manifests/page' },
-            onPageChange: (page: number) => setPagination((current) => ({ ...current, page })),
-            onPageSizeChange: (pageSize: number) => setPagination({ page: 1, pageSize }),
-          },
-          paginationSummary: () => (
-            <Text type="secondary">
-              {localeCode === 'zh_CN'
-                ? `共 ${visibleManifestsQueryData?.total ?? 0} 份清单 · 当前页 ${manifestItems.length} 份清单 / ${scopedBindings.length} 条绑定`
-                : `${visibleManifestsQueryData?.total ?? 0} manifests · This page: ${manifestItems.length} manifests / ${scopedBindings.length} bindings`}
-            </Text>
-          ),
+          pagination: false,
           scroll: { x: 'max-content' },
           viewportScroll: true,
           empty: (
@@ -288,133 +354,63 @@ export function PlatformManifestsPage() {
               bordered={false}
               compact
               description={
-                clusterId
+                !canRead
                   ? localeCode === 'zh_CN'
-                    ? '当前页清单在此作用域没有绑定'
-                    : 'No bindings for this scope on the current manifest page'
-                  : localeCode === 'zh_CN'
-                    ? '请先选择集群'
-                    : 'Please select a cluster'
+                    ? '没有查看应用清单的权限'
+                    : 'No permission to view manifests'
+                  : clusterId
+                    ? localeCode === 'zh_CN'
+                      ? '当前页清单在此作用域没有绑定'
+                      : 'No bindings for this scope on the current manifest page'
+                    : localeCode === 'zh_CN'
+                      ? '请先选择集群'
+                      : 'Please select a cluster'
               }
               kind={!clusterId ? 'select-scope' : 'empty'}
             />
           ),
         }}
+        afterTable={
+          visibleManifestsQueryData && clusterId ? (
+            <nav aria-label={localeCode === 'zh_CN' ? '清单包分页' : 'Manifest package pages'}>
+              <Pagination
+                align="end"
+                size="small"
+                current={visibleManifestsQueryData.page}
+                pageSize={visibleManifestsQueryData.pageSize}
+                total={visibleManifestsQueryData.total}
+                showSizeChanger
+                showLessItems
+                pageSizeOptions={[10, 15, 20, 50, 100]}
+                locale={{ items_per_page: localeCode === 'zh_CN' ? '份清单/页' : 'manifests/page' }}
+                showTotal={() => (
+                  <Text type="secondary">
+                    {localeCode === 'zh_CN'
+                      ? `共 ${visibleManifestsQueryData.total} 份清单 · 当前页 ${manifestItems.length} 份清单 / ${scopedBindings.length} 条绑定`
+                      : `${visibleManifestsQueryData.total} manifests · This page: ${manifestItems.length} manifests / ${scopedBindings.length} bindings`}
+                  </Text>
+                )}
+                onChange={(page, pageSize) => {
+                  setSelectedKey('')
+                  setPagination({ page: pageSize === pagination.pageSize ? page : 1, pageSize })
+                }}
+              />
+            </nav>
+          ) : null
+        }
       />
 
-      <Drawer
-        open={Boolean(selected)}
-        size={760}
-        title={selected?.manifest.name}
+      <ManifestRuntimeDrawer
+        clusterName={clusters.find((cluster) => cluster.id === selected?.clusterId)?.name}
+        applicationName={
+          selected ? applicationNames.get(selected.manifest.applicationId) : undefined
+        }
+        key={`${selectedKey}:${selectedTab}`}
+        initialTab={selectedTab}
+        selected={selected}
+        deploymentQuery={selectedDeploymentQuery}
         onClose={() => setSelectedKey('')}
-      >
-        {selected ? (
-          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-            <Descriptions
-              size="small"
-              column={2}
-              items={[
-                { key: 'application', label: '应用', children: selected.manifest.applicationId },
-                {
-                  key: 'service',
-                  label: '服务',
-                  children: selected.manifest.serviceId || '应用级扩展资源',
-                },
-                { key: 'environment', label: '环境', children: selected.environmentKey },
-                {
-                  key: 'target',
-                  label: '目标',
-                  children: `${selected.clusterId} / ${selected.namespace}`,
-                },
-                {
-                  key: 'desired',
-                  label: '期望版本',
-                  children: `v${selected.deployment?.spec.desiredRevision ?? selected.manifest.currentRevision}`,
-                },
-                {
-                  key: 'applied',
-                  label: '实际版本',
-                  children: selected.deployment?.status.appliedRevision
-                    ? `v${selected.deployment.status.appliedRevision}`
-                    : '-',
-                },
-              ]}
-            />
-            <Tabs
-              className="soha-resource-tabs"
-              items={[
-                {
-                  key: 'desired',
-                  label: '期望清单',
-                  children:
-                    selected.manifest.files.length > 0 ? (
-                      <Tabs
-                        items={selected.manifest.files.map((file) => ({
-                          key: file.path,
-                          label: file.path,
-                          children: (
-                            <pre className="soha-platform-manifest-yaml">{file.content}</pre>
-                          ),
-                        }))}
-                      />
-                    ) : (
-                      <Text type="secondary">该清单包没有文件</Text>
-                    ),
-                },
-                {
-                  key: 'actual',
-                  label: `实际资源 (${selected.deployment?.status.inventory?.length ?? 0})`,
-                  children: (
-                    <Table<ManifestResourceInventory>
-                      size="small"
-                      pagination={false}
-                      rowKey={(item) =>
-                        `${item.apiVersion}:${item.kind}:${item.namespace}:${item.name}`
-                      }
-                      dataSource={selected.deployment?.status.inventory ?? []}
-                      columns={[
-                        { title: '资源', render: (_value, item) => `${item.kind}/${item.name}` },
-                        { title: '命名空间', dataIndex: 'namespace' },
-                        {
-                          title: '健康状态',
-                          dataIndex: 'health',
-                          render: (value: string) => <StatusTag value={value || 'unknown'} />,
-                        },
-                      ]}
-                    />
-                  ),
-                },
-                {
-                  key: 'diff',
-                  label: `差异 (${selectedDiff.length})`,
-                  children: (
-                    <Table<ManifestDiffRow>
-                      size="small"
-                      pagination={false}
-                      rowKey="key"
-                      dataSource={selectedDiff}
-                      columns={[
-                        { title: '资源', dataIndex: 'resource' },
-                        { title: '字段', dataIndex: 'path' },
-                        {
-                          title: '期望值',
-                          dataIndex: 'desiredValue',
-                          render: formatManifestValue,
-                        },
-                        {
-                          title: '实际值',
-                          dataIndex: 'observedValue',
-                          render: formatManifestValue,
-                        },
-                      ]}
-                    />
-                  ),
-                },
-              ]}
-            />
-          </Space>
-        ) : null}
-      </Drawer>
+      />
     </>
   )
 }

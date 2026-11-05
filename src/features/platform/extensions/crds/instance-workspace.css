@@ -1,6 +1,6 @@
 .soha-crd-instance-workspace {
   display: grid;
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(190px, 224px) minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -34,9 +34,10 @@
   padding: 0;
   height: auto;
   max-width: 100%;
-  white-space: normal;
+  white-space: nowrap;
   text-align: left;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .soha-crd-resource-heading {
   display: flex;
@@ -94,5 +95,78 @@
   }
   .soha-crd-kind-directory .soha-management-searchable-list-pane__items {
     max-height: 240px;
+  }
+}
+
+.soha-crd-group-detail > .soha-crd-instance-workspace {
+  margin-top: 16px;
+}
+.soha-crd-kind-panel[hidden] {
+  display: none;
+}
+.soha-crd-kind-panel,
+.soha-crd-resource-detail {
+  min-width: 0;
+}
+.soha-crd-kind-panel .soha-k8s-detail-title h1 {
+  font-size: var(--soha-font-size-section);
+}
+.soha-crd-inline-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.soha-crd-inline-tags .soha-metadata-tag {
+  margin-inline-end: 0;
+}
+.soha-crd-namespace-filter {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.soha-crd-namespace-filter .soha-metadata-tag {
+  display: block;
+  margin: 0;
+  max-width: 100%;
+}
+.soha-crd-namespace-filter span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-crd-overview {
+  grid-template-columns: minmax(0, 1fr);
+}
+.soha-crd-overview .soha-workload-overview-config > div {
+  grid-template-columns: minmax(100px, 132px) minmax(0, 1fr);
+}
+.soha-crd-overview .soha-workload-overview-config .soha-metadata-tag {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.soha-crd-editor-modal .soha-crd-editor-context {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+@media (min-width: 1450px) {
+  .soha-crd-overview {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 280px);
+  }
+}
+@media (max-width: 1050px) {
+  .soha-crd-instance-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-crd-kind-directory .soha-management-searchable-list-pane__items {
+    max-height: 200px;
   }
 }

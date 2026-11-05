@@ -21,7 +21,7 @@ export const crdMutations = {
     }),
   apply: (queryClient: QueryClient) =>
     mutationOptions({
-      mutationKey: [...crdKeys.all, 'apply'] as const,
+      mutationKey: crdKeys.apply(),
       mutationFn: applyCustomResource,
       onSuccess: (_data, variables: ApplyCustomResourceVariables) => {
         const target = {
@@ -37,6 +37,16 @@ export const crdMutations = {
     mutationOptions({
       mutationKey: [...crdKeys.all, 'delete'] as const,
       mutationFn: deleteCustomResource,
-      onSuccess: (_data, target) => invalidateCustomResource(queryClient, target),
+      onSuccess: (_data, target) =>
+        Promise.all([
+          invalidateCustomResource(queryClient, target),
+          ...(target.namespace
+            ? [
+                queryClient.invalidateQueries({
+                  queryKey: crdKeys.resources(target.clusterId, target.crd, null),
+                }),
+              ]
+            : []),
+        ]),
     }),
 }

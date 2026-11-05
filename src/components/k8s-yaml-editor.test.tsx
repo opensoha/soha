@@ -9,6 +9,9 @@ import { K8sYamlEditor } from './k8s-yaml-editor'
 
 const monaco = vi.hoisted(() => ({
   props: {} as ComponentProps<typeof DiffEditor>,
+  detach: vi.fn(),
+  releaseOriginal: vi.fn(),
+  releaseDraft: vi.fn(),
   modified: '',
   changes: 0,
   edits: new Set<() => void>(),
@@ -34,7 +37,13 @@ vi.mock('@monaco-editor/react', () => ({
         listeners.add(callback)
         return { dispose: () => listeners.delete(callback) }
       }
+      const models = {
+        original: { dispose: monaco.releaseOriginal },
+        modified: { dispose: monaco.releaseDraft },
+      }
       const editor = {
+        getModel: () => models,
+        setModel: monaco.detach,
         getLineChanges: () =>
           Array.from({ length: monaco.changes }, () => ({
             originalStartLineNumber: 1,
@@ -186,6 +195,9 @@ describe('Kubernetes YAML diff editor', () => {
     act(() => container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[0].click())
     expect(monaco.editProps.path).toBe(modelPath)
     expect(monaco.editProps.keepCurrentModel).toBe(true)
+    expect(monaco.editProps.options?.occurrencesHighlight).toBe('off')
+    expect(monaco.props.keepCurrentOriginalModel).toBe(true)
+    expect(monaco.props.keepCurrentModifiedModel).toBe(true)
     expect(monaco.props.original).toBe('replicas: 1')
     expect(container.querySelector('[data-testid="diff-editor"]')).not.toBeNull()
     act(() => container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[2].click())
@@ -221,5 +233,19 @@ describe('Kubernetes YAML diff editor', () => {
     expect(monaco.edits.size).toBe(0)
     act(() => button('Apply').click())
     expect(props.onApply).toHaveBeenCalledOnce()
+  })
+  it('detaches the comparison before disposing its retained models on unmount', () => {
+    render({ original: 'kind: Pod', value: 'kind: Pod' })
+    monaco.detach.mockClear()
+    monaco.releaseOriginal.mockClear()
+    monaco.releaseDraft.mockClear()
+    render({ original: undefined })
+    act(() => root.unmount())
+    expect(monaco.detach).toHaveBeenCalledWith(null)
+    expect(monaco.releaseOriginal).toHaveBeenCalledTimes(1)
+    expect(monaco.releaseDraft).toHaveBeenCalledTimes(1)
+    expect(monaco.detach.mock.invocationCallOrder[0]).toBeLessThan(
+      monaco.releaseOriginal.mock.invocationCallOrder[0],
+    )
   })
 })

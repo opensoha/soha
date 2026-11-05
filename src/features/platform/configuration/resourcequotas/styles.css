@@ -1,0 +1,95 @@
+.soha-resourcequota-detail {
+  min-width: 0;
+}
+.soha-resourcequota-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-resourcequota-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-resourcequota-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-quota-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.soha-quota-card-title .ant-btn {
+  color: var(--soha-text-secondary);
+}
+.soha-quota-namespace-trigger,
+.soha-resourcequota-detail .soha-quota-namespace {
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: top;
+}
+.soha-quota-namespace-trigger {
+  display: inline-flex;
+  border-radius: var(--soha-radius-control);
+}
+.soha-quota-namespace-trigger:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-quota-namespace-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-quota-muted,
+.soha-quota-note {
+  color: var(--soha-text-secondary);
+}
+.soha-quota-note {
+  margin: 0 0 16px;
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-quota-list-usage {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.soha-quota-list-usage > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-quota-usage-bar {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(52px, max-content);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+.soha-quota-usage-bar > span {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.soha-quota-usage-bar > .ant-progress {
+  margin: 0;
+  line-height: 1;
+}
+.soha-quota-unknown-track {
+  display: block;
+  height: 6px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-border-color);
+}
+.soha-quota-number {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.soha-resourcequota-detail .is-over,
+.soha-quota-usage-bar .is-over {
+  color: var(--soha-danger);
+}
+.soha-quota-scope-terms {
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}

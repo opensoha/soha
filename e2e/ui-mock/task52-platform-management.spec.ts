@@ -50,9 +50,10 @@ const lists = [
         ...base,
         name: 'frontend-service',
         type: 'ClusterIP',
-        clusterIP: '10.10.0.10',
+        clusterIp: '10.10.0.10',
         externalIPs: [],
-        ports: [{ port: 80, protocol: 'TCP', targetPort: '8080' }],
+        ports: ['80/TCP'],
+        portMappings: [{ port: 80, protocol: 'TCP', targetPort: '8080' }],
         selector: { app: 'frontend' },
       },
     ],
@@ -106,12 +107,17 @@ const lists = [
         status: 'Ready',
         roles: ['worker'],
         version: 'v1.31.0',
-        internalIP: '10.0.0.11',
+        internalIp: '10.0.0.11',
         labels: {},
         taints: [],
         allowedActions,
-        capacity: { cpu: '8', memory: '16Gi', pods: '110' },
-        allocatable: { cpu: '8', memory: '16Gi', pods: '110' },
+        podCount: 11,
+        resources: {
+          allocatable: { cpu: '8', memory: '16Gi', ephemeralStorage: '40Gi', pods: '110' },
+          requests: { cpu: '2', memory: '4Gi', ephemeralStorage: '10Gi' },
+          requestPercentages: { cpu: 25, memory: 25, ephemeralStorage: 25 },
+          usagePercentages: { pods: 10 },
+        },
         conditions: [],
       },
     ],
@@ -143,6 +149,16 @@ async function platformMocks(context: BrowserContext, page: Page) {
     reads: [] as string[],
     deleted: [] as string[],
     configMapName: 'application-settings',
+    serviceName: 'frontend-service',
+    servicePorts: [{ port: 80, protocol: 'TCP', targetPort: '8080' }] as Array<{
+      name?: string
+      port: number
+      protocol: string
+      targetPort: string
+      nodePort?: number
+    }>,
+    collectionCopies: 1,
+    namespaceActions: false,
   }
   const failure = (status: number) => ({
     status,
@@ -171,6 +187,7 @@ async function platformMocks(context: BrowserContext, page: Page) {
     'platform.namespaces.view',
     'platform.deployment.view',
     'platform.deployment.update',
+    'platform.configuration.config-maps.delete',
     'platform.pods.view',
     'platform.configuration.config-maps.view',
     'platform.configuration.config-maps.update',
@@ -257,6 +274,10 @@ async function platformMocks(context: BrowserContext, page: Page) {
             })),
           },
         }
+      if (state.namespaceActions && path === root + '/namespaces')
+        return {
+          body: { data: [{ name: 'monitoring', status: 'Active', labels: {}, allowedActions }] },
+        }
       const list = lists.find((item) => path === root + item.path)
       if (list) {
         if (list.path !== '/infrastructure/nodes')
@@ -264,9 +285,21 @@ async function platformMocks(context: BrowserContext, page: Page) {
         return {
           body: {
             data:
-              list.path === '/configuration/configmaps'
-                ? list.data.map((item) => ({ ...item, name: state.configMapName }))
-                : list.data,
+              state.collectionCopies > 1
+                ? Array.from({ length: state.collectionCopies }, (_, index) => ({
+                    ...list.data[0],
+                    name: `${list.name}-${String(index).padStart(4, '0')}`,
+                  }))
+                : list.path === '/configuration/configmaps'
+                  ? list.data.map((item) => ({ ...item, name: state.configMapName }))
+                  : list.path === '/network/services'
+                    ? list.data.map((item) => ({
+                        ...item,
+                        name: state.serviceName,
+                        ports: state.servicePorts.map((port) => `${port.port}/${port.protocol}`),
+                        portMappings: state.servicePorts,
+                      }))
+                    : list.data,
           },
         }
       }
@@ -326,6 +359,99 @@ async function platformMocks(context: BrowserContext, page: Page) {
   return { state, evidence }
 }
 
+for (const theme of ['light', 'dark']) {
+  test(`Task117 short tables keep exact widths and long service content stays inside its cell (${theme})`, async ({
+    context,
+    page,
+  }) => {
+    const { state, evidence } = await platformMocks(context, page)
+    await page.goto('/configuration/configmaps')
+    if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
+    const table = page.locator('.soha-kubernetes-resource-table')
+    const header = table.locator('.ant-table-thead th').first()
+    const cell = table
+      .locator('.ant-table-row[data-row-key]')
+      .first()
+      .locator(':scope > .ant-table-cell')
+      .first()
+    const handle = page.getByRole('separator', { name: '调整Name列宽', exact: true })
+    const declared = Number(await handle.getAttribute('aria-valuenow'))
+    await expect
+      .poll(() => header.evaluate((node) => node.getBoundingClientRect().width))
+      .toBeCloseTo(declared, 0)
+    await page.getByRole('button', { name: '列设置', exact: true }).click()
+    await page.getByRole('spinbutton', { name: '列宽像素', exact: true }).fill('280')
+    await page.getByRole('spinbutton', { name: '列宽像素', exact: true }).press('Tab')
+    await page.keyboard.press('Escape')
+    for (const width of [1440, 900, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expect
+        .poll(() => header.evaluate((node) => node.getBoundingClientRect().width))
+        .toBeCloseTo(280, 0)
+      expect(await cell.evaluate((node) => node.getBoundingClientRect().width)).toBeCloseTo(280, 0)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      )
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.reload()
+    await expect
+      .poll(() => header.evaluate((node) => node.getBoundingClientRect().width))
+      .toBeCloseTo(280, 0)
+    state.serviceName = `frontend-${'long-service-name-'.repeat(8)}`
+    state.servicePorts = [
+      {
+        name: 'public-http',
+        port: 80,
+        protocol: 'TCP',
+        targetPort: 'upstream-http',
+        nodePort: 30080,
+      },
+      { name: 'metrics', port: 9090, protocol: 'TCP', targetPort: 'metrics' },
+    ]
+    await page.goto('/network/services')
+    const name = table.getByRole('button', { name: state.serviceName, exact: true })
+    await expect(name).toBeVisible()
+    await expect(table.locator('.soha-service-port-chain')).toHaveCount(2)
+    for (const width of [1440, 900, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expect
+        .poll(() =>
+          name.evaluate((button) => {
+            const bounds = button.getBoundingClientRect()
+            const cell = button.closest('.ant-table-cell')
+            if (!button.isConnected || !cell) return false
+            const parent = cell.getBoundingClientRect()
+            return bounds.left >= parent.left && bounds.right <= parent.right
+          }),
+        )
+        .toBe(true)
+      await expect
+        .poll(() =>
+          table.locator('.soha-service-port-chain').evaluateAll(
+            (chains) =>
+              chains.length === 2 &&
+              chains.every((chain) => {
+                const parent = chain.closest('.ant-table-cell')
+                if (!chain.isConnected || !parent) return false
+                const cell = parent.getBoundingClientRect()
+                return Array.from(chain.children).every((child) => {
+                  const bounds = child.getBoundingClientRect()
+                  return bounds.left >= cell.left - 1 && bounds.right <= cell.right + 1
+                })
+              }),
+          ),
+        )
+        .toBe(true)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      )
+    }
+    expect(state.writes).toEqual([])
+    verifyBrowserEvidence(evidence)
+  })
+}
+
 for (const item of lists)
   test(`Platform ${item.route} retains refresh evidence and hides denied cache`, async ({
     context,
@@ -334,7 +460,14 @@ for (const item of lists)
     const { state, evidence } = await platformMocks(context, page)
     await page.goto(item.route)
     await expect(page.getByText(item.name, { exact: true })).toBeVisible()
-    const refresh = page.getByRole('button', { name: '刷新', exact: true })
+    const refreshLabels: Record<string, string> = {
+      '/configuration/configmaps': '刷新 ConfigMaps',
+      '/cluster-resources/nodes': '刷新节点',
+    }
+    const refresh = page.getByRole('button', {
+      name: refreshLabels[item.route] ?? '刷新',
+      exact: true,
+    })
     await expect(refresh).toHaveCount(1)
     state.failedPath = root + item.path
     state.readStatus = 503
@@ -394,7 +527,8 @@ test('Platform long resource identity remains usable at 125 percent zoom', async
 
 async function openHPAEditor(page: Page) {
   await page.goto('/configuration/hpas')
-  await page.getByRole('button', { name: '编辑 autoscale-api', exact: true }).click()
+  await page.getByRole('button', { name: '更多操作：autoscale-api', exact: true }).click()
+  await page.getByRole('menuitem', { name: '编辑', exact: true }).click()
   const editor = page.getByRole('dialog', { name: /编辑 HorizontalPodAutoscaler/ })
   await editor.getByLabel('最小副本数', { exact: true }).fill('3')
   await editor.getByRole('button', { name: '保存更改', exact: true }).press('Enter')
@@ -480,15 +614,182 @@ test('Deployment unknown batch restart also blocks the row restart and other wri
 }) => {
   const { state, evidence } = await platformMocks(context, page)
   await page.goto('/workloads/deployments')
-  const row = page.getByRole('row').filter({ has: page.getByText('api', { exact: true }) })
+  const row = page
+    .locator('.ant-table-row[data-row-key]')
+    .filter({ has: page.getByText('api', { exact: true }) })
   await row.getByRole('checkbox').check()
-  const batchRestart = page.getByRole('button').filter({ hasText: /^批量重启 \(1\)$/ })
-  await batchRestart.click()
+  const batchActions = page.getByRole('button', { name: '批量操作', exact: true })
+  await batchActions.click()
+  await page
+    .getByRole('menu', { name: 'Deployments 操作：已选 1 个', exact: true })
+    .getByRole('menuitem', { name: '批量重启', exact: true })
+    .click()
   await expect(page.getByText('批量重启 Deployment：请求结果不明', { exact: true })).toBeVisible()
-  await expect(row.getByRole('button', { name: '重启', exact: true })).toBeDisabled()
-  await expect(row.getByRole('button', { name: '编辑 api', exact: true })).toBeDisabled()
+  await row.getByRole('button', { name: '更多操作：api', exact: true }).click()
+  const actions = page.getByRole('menu', { name: 'Deployment 操作：api', exact: true })
+  await expect(actions.getByRole('menuitem', { name: '重启', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
+  await expect(actions.getByRole('menuitem', { name: '编辑', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
   await expect(row.getByRole('checkbox')).toBeChecked()
-  await expect(batchRestart).toBeDisabled()
+  await expect(batchActions).toBeDisabled()
+  await expect(page.getByRole('button', { name: '清除', exact: true })).toBeDisabled()
   expect(state.writes).toEqual([root + '/workloads/deployments/restart'])
+  verifyBrowserEvidence(evidence)
+})
+
+for (const entry of lists) {
+  test(`Task117 shared continuous resource list ${entry.route}`, async ({ context, page }) => {
+    const { state, evidence } = await platformMocks(context, page)
+    state.collectionCopies = entry.route === '/workloads/deployments' ? 2000 : 80
+    await page.goto(entry.route)
+    const table = page.locator('.soha-kubernetes-resource-table')
+    const rows = table.locator('.ant-table-row[data-row-key]')
+    const body = page.getByRole('region', { name: '资源列表，可连续滚动', exact: true })
+    await expect(body).toBeVisible()
+    await expect(page.locator('.ant-pagination')).toHaveCount(0)
+    await expect(
+      page.getByRole('status').filter({ hasText: `${state.collectionCopies} 个` }),
+    ).toBeVisible()
+    expect(await rows.count()).toBeLessThan(80)
+    if (entry.route === '/workloads/deployments') {
+      await table
+        .getByRole('checkbox', { name: '选择全部匹配的 2000 个 Deployments', exact: true })
+        .check()
+      await expect(page.getByRole('status').filter({ hasText: /^已选 2000 个$/ })).toBeVisible()
+      await expect(page.getByRole('button', { name: '批量操作', exact: true })).toBeEnabled()
+      await table
+        .getByRole('checkbox', { name: '选择全部匹配的 2000 个 Deployments', exact: true })
+        .uncheck()
+    }
+    if (entry.route === '/cluster-resources/nodes') {
+      const before = await rows.nth(1).evaluate((row) => row.getBoundingClientRect().top)
+      await table.locator('.ant-table-row-expand-icon').first().click()
+      const preview = page.locator('.soha-node-expand-grid')
+      await expect(preview).toBeVisible()
+      for (const [label, value] of [
+        ['cpu', '25'],
+        ['memory', '25'],
+        ['disk', '25'],
+        ['pod', '10'],
+      ]) {
+        await expect(
+          preview.getByRole('progressbar', { name: `${label} allocation for worker-prod-01-0000` }),
+        ).toHaveAttribute('aria-valuenow', value)
+      }
+      await expect(preview).toContainText('11 / 110')
+      await expect
+        .poll(() => rows.nth(1).evaluate((row) => row.getBoundingClientRect().top))
+        .toBeGreaterThan(before + 50)
+      await body.hover()
+      await page.mouse.wheel(0, 500)
+      const anchor = () =>
+        body.evaluate((holder) => {
+          const top = holder.getBoundingClientRect().top
+          const row = Array.from(holder.querySelectorAll<HTMLElement>('[data-row-key]')).find(
+            (item) => item.getBoundingClientRect().bottom > top + 1,
+          )
+          return row
+            ? {
+                key: row.dataset.rowKey,
+                offset: row.getBoundingClientRect().top - top,
+                scroll: holder.scrollTop,
+              }
+            : null
+        })
+      await expect.poll(async () => (await anchor())?.scroll ?? 0).toBeGreaterThan(100)
+      const saved = (await anchor())!
+      state.collectionCopies += 1
+      await page.getByRole('button', { name: '刷新节点', exact: true }).click()
+      await expect(page.getByRole('status').filter({ hasText: '81 个' })).toBeVisible()
+      await expect.poll(async () => (await anchor())?.key).toBe(saved.key)
+      expect(Math.abs((await anchor())!.offset - saved.offset)).toBeLessThan(3)
+      await body.focus()
+      await body.press('Home')
+      await expect(page.locator('.soha-node-expand-grid')).toBeVisible()
+      await table.locator('.ant-table-row-expand-icon').first().click()
+      await expect(page.locator('.soha-node-expand-grid')).toHaveCount(0)
+    }
+    await body.focus()
+    await body.press('End')
+    const last = `${entry.name}-${String(state.collectionCopies - 1).padStart(4, '0')}`
+    await expect(table.getByText(last, { exact: true }).first()).toBeInViewport()
+    expect(await rows.count()).toBeLessThan(80)
+    for (const width of [900, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expect(body).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      )
+    }
+    expect(state.writes).toEqual([])
+    verifyBrowserEvidence(evidence)
+  })
+}
+
+for (const item of lists.filter((entry) => entry.path !== '/workloads/deployments')) {
+  test(`Task117 shared action menu retains confirmation and permission semantics: ${item.route}`, async ({
+    context,
+    page,
+  }) => {
+    const { state, evidence } = await platformMocks(context, page)
+    await page.goto(item.route)
+    const trigger = page.getByRole('button', { name: `更多操作：${item.name}`, exact: true })
+    await expect(trigger).toBeVisible()
+    const column = trigger.locator('xpath=ancestor::*[contains(@class,"ant-table-cell")][1]')
+    expect((await column.boundingBox())!.width).toBeCloseTo(64, 0)
+    await trigger.press('ArrowDown')
+    const menu = page.getByRole('menu', { name: / 操作：/ })
+    await expect(menu).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+    await trigger.click()
+    await menu.getByRole('menuitem', { name: /^(删除|删除 Helm Release)$/ }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText(item.name)
+    if (item.path === '/infrastructure/nodes')
+      await expect(dialog).toContainText('不会自动回收底层机器')
+    await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+    expect(state.writes).toEqual([])
+    verifyBrowserEvidence(evidence)
+  })
+}
+
+test('Task117 namespace navigation and destructive confirmation stay distinct', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await platformMocks(context, page)
+  state.namespaceActions = true
+  await page.goto('/cluster-resources/namespaces')
+  await page.getByRole('button', { name: '更多操作：monitoring', exact: true }).click()
+  const menu = page.getByRole('menu', { name: '命名空间 操作：monitoring', exact: true })
+  await expect(menu.getByRole('menuitem', { name: '查看资源', exact: true })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'Helm', exact: true })).toBeVisible()
+  await menu.getByRole('menuitem', { name: '删除', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('该命名空间下的资源会一并回收')
+  await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+  expect(state.writes).toEqual([])
+  verifyBrowserEvidence(evidence)
+})
+test('Task117 node drain retains its explicit risk and parameter form', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await platformMocks(context, page)
+  await page.goto('/cluster-resources/nodes')
+  await page.getByRole('button', { name: '更多操作：worker-prod-01', exact: true }).click()
+  await page.getByRole('menuitem', { name: '排空节点', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('DaemonSet 和静态 Pod 不会被驱逐')
+  await expect(dialog.getByRole('spinbutton')).toHaveValue('300')
+  for (const box of await dialog.getByRole('checkbox').all()) await expect(box).not.toBeChecked()
+  await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+  expect(state.writes).toEqual([])
   verifyBrowserEvidence(evidence)
 })

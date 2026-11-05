@@ -1,6 +1,7 @@
-import { Progress, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
+import { StatusTag } from '@/components/status-tag'
+import { replicaControllerHealth } from '../shared/replica-controller-model'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
@@ -10,23 +11,6 @@ import { renderWorkloadNameLink } from '../shared/list-controls'
 import { ReplicaControllerListPage } from '../shared/replica-controller-list'
 import type { ReplicationController } from './types'
 import '@/features/platform/workloads/styles.css'
-
-const { Text } = Typography
-
-function renderReady(ready: number, desired: number) {
-  const percent = desired > 0 ? Math.min(100, Math.round((ready / desired) * 100)) : 0
-  return (
-    <div className="soha-replica-progress-cell">
-      <Progress
-        percent={percent}
-        showInfo={false}
-        size="small"
-        status={desired === 0 || ready >= desired ? 'success' : 'active'}
-      />
-      <Text type="secondary">{`${ready}/${desired}`}</Text>
-    </div>
-  )
-}
 
 export function WorkloadsReplicationControllersPage() {
   const { localeCode } = useI18n()
@@ -57,24 +41,57 @@ export function WorkloadsReplicationControllersPage() {
       width: 160,
     },
     {
-      title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
-      dataIndex: 'readyReplicas',
-      width: 190,
-      render: (_: number, record) => renderReady(record.readyReplicas, record.desiredReplicas),
+      title: localeCode === 'zh_CN' ? '状态' : 'Status',
+      ...tableColumnPresets.status,
+      key: 'health',
+      sorter: (a, b) =>
+        replicaControllerHealth(a, undefined, true).localeCompare(
+          replicaControllerHealth(b, undefined, true),
+        ),
+      width: 150,
+      render: (_: unknown, record) => {
+        const health = replicaControllerHealth(record, undefined, true)
+        return (
+          <StatusTag
+            value={health}
+            label={
+              health === 'healthy'
+                ? localeCode === 'zh_CN'
+                  ? '健康'
+                  : 'Healthy'
+                : health === 'inactive'
+                  ? localeCode === 'zh_CN'
+                    ? '期望为 0'
+                    : 'Zero desired'
+                  : health === 'unknown'
+                    ? localeCode === 'zh_CN'
+                      ? '状态未知'
+                      : 'Unknown'
+                    : localeCode === 'zh_CN'
+                      ? '副本不足'
+                      : 'Replicas unavailable'
+            }
+          />
+        )
+      },
     },
     {
-      title: localeCode === 'zh_CN' ? '期望' : 'Desired',
-      dataIndex: 'desiredReplicas',
-      width: 96,
+      title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',
+      dataIndex: 'readyReplicas',
+      width: 112,
+      render: (_: number, record) =>
+        `${record.readyReplicas ?? '—'}/${record.desiredReplicas ?? '—'}`,
     },
     {
       title: localeCode === 'zh_CN' ? '当前' : 'Current',
       dataIndex: 'currentReplicas',
+      render: (v?: number) => v ?? '—',
       width: 96,
     },
     {
       title: localeCode === 'zh_CN' ? '可用' : 'Available',
       dataIndex: 'availableReplicas',
+      render: (v?: number) => v ?? '—',
       width: 110,
     },
     {

@@ -5,6 +5,8 @@ import type {
 import { api } from '@/services/api-client'
 import type { ApiResponse, ScopeKey } from '@/types'
 
+export type ResourceGraphRootAPI = { apiVersion: string; resource: string }
+
 function clusterPath(scope: ScopeKey, suffix: string) {
   const clusterId = scope.clusterId?.trim()
   if (!clusterId) throw new Error('A cluster is required')
@@ -25,10 +27,11 @@ export async function getKubernetesResourceGraph(
   scope: ScopeKey,
   kind: string,
   name: string,
+  rootAPI?: ResourceGraphRootAPI,
 ): Promise<KubernetesResourceGraph> {
   const path = clusterPath(scope, '/resources/graph')
   const response = await api.get<ApiResponse<KubernetesResourceGraph>>(
-    appendQuery(path, { kind: kind.trim(), name: name.trim() }),
+    appendQuery(path, { kind: kind.trim(), name: name.trim(), ...rootAPI }),
   )
   return response.data
 }

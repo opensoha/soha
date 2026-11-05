@@ -124,12 +124,17 @@ function validPercent(value: number | undefined) {
   return Number.isFinite(value) ? Math.max(0, value!) : undefined
 }
 
-function maxNodePercent(nodes: ClusterNode[], key: 'cpu' | 'memory' | 'pods'): number | undefined {
+function maxNodePercent(
+  nodes: ClusterNode[],
+  key: 'cpu' | 'memory' | 'pods',
+  source: 'usagePercentages' | 'requestPercentages',
+  fallbackSource?: 'requestPercentages',
+): number | undefined {
   const values = nodes
     .map(
       (node) =>
-        validPercent(node.resources?.usagePercentages?.[key]) ??
-        validPercent(node.resources?.requestPercentages?.[key]),
+        validPercent(node.resources?.[source]?.[key]) ??
+        (fallbackSource ? validPercent(node.resources?.[fallbackSource]?.[key]) : undefined),
     )
     .filter((value): value is number => value != null)
   return values.length > 0 ? Math.max(...values) : undefined
@@ -137,9 +142,11 @@ function maxNodePercent(nodes: ClusterNode[], key: 'cpu' | 'memory' | 'pods'): n
 
 export function summarizeNodeCapacity(nodes: ClusterNode[]): OverviewCapacitySummary {
   return {
-    cpuPercent: maxNodePercent(nodes, 'cpu'),
-    memoryPercent: maxNodePercent(nodes, 'memory'),
-    podPercent: maxNodePercent(nodes, 'pods'),
+    cpuPercent: maxNodePercent(nodes, 'cpu', 'usagePercentages'),
+    memoryPercent: maxNodePercent(nodes, 'memory', 'usagePercentages'),
+    cpuRequestPercent: maxNodePercent(nodes, 'cpu', 'requestPercentages'),
+    memoryRequestPercent: maxNodePercent(nodes, 'memory', 'requestPercentages'),
+    podPercent: maxNodePercent(nodes, 'pods', 'usagePercentages', 'requestPercentages'),
     readyNodes: nodes.filter((node) => node.status.toLowerCase() === 'ready').length,
     totalNodes: nodes.length,
     unschedulableNodes: nodes.filter((node) => node.unschedulable).length,

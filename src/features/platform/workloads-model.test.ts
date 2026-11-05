@@ -1,12 +1,37 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildRelatedResourcePath,
+  buildVolumeDetailPath,
   buildWorkloadDetailPath,
   buildWorkloadListPagePath,
   localizeRelatedResourceKind,
+  targetMatchesWorkload,
+  targetMatchesDeployment,
 } from './workloads-model'
 
 describe('workload relation paths', () => {
+  it.each(['StatefulSet', 'DaemonSet'])(
+    'matches %s delivery binding kind and exact cluster/namespace/name independently',
+    (kind) => {
+      const target = {
+        id: 'target',
+        clusterId: 'cluster-a',
+        namespace: 'monitoring',
+        workloadKind: kind,
+        workloadName: 'db',
+        enabled: true,
+      }
+      expect(targetMatchesWorkload(target, 'cluster-a', 'monitoring', 'db', kind)).toBe(true)
+      expect(targetMatchesWorkload(target, 'cluster-a', 'other', 'db', kind)).toBe(false)
+      expect(targetMatchesWorkload(target, 'cluster-a', 'monitoring', 'other', kind)).toBe(false)
+      expect(targetMatchesDeployment(target, 'cluster-a', 'monitoring', 'db')).toBe(false)
+      expect(targetMatchesWorkload(target, 'cluster-b', 'monitoring', 'db', kind)).toBe(false)
+      expect(
+        targetMatchesWorkload({ ...target, enabled: false }, 'cluster-a', 'monitoring', 'db', kind),
+      ).toBe(false)
+    },
+  )
+
   it('links network and controller relations to their detail pages', () => {
     expect(
       buildRelatedResourcePath(
@@ -37,6 +62,23 @@ describe('workload relation paths', () => {
     expect(
       buildRelatedResourcePath({ kind: 'GRPCRoute', name: 'rpc', namespace: 'team-a' }, null),
     ).toBe('/network/gateway-api/grpcroutes/rpc?namespace=team-a')
+  })
+
+  it('keeps cluster scope in non-workload relations and volume targets', () => {
+    expect(
+      buildRelatedResourcePath(
+        { kind: 'ServiceAccount', name: 'runner', namespace: 'team-a' },
+        null,
+        'cluster-a',
+      ),
+    ).toBe('/platform-access-control/serviceaccounts/runner?clusterId=cluster-a&namespace=team-a')
+    expect(
+      buildVolumeDetailPath(
+        { name: 'config', type: 'ConfigMap', sourceName: 'api-config', readOnly: true },
+        'team-a',
+        'cluster-a',
+      ),
+    ).toBe('/configuration/configmaps/api-config?clusterId=cluster-a&namespace=team-a')
   })
 
   it('keeps cluster and namespace scope in workload detail links', () => {

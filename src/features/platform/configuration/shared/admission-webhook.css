@@ -1,0 +1,76 @@
+.soha-admission-webhook-detail {
+  min-width: 0;
+}
+.soha-admission-webhook-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-admission-webhook-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-admission-webhooks .soha-workload-overview-config > div {
+  grid-template-columns: minmax(100px, 150px) minmax(0, 1fr);
+}
+.soha-admission-webhook-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-admission-webhook-detail .ant-card-head-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.soha-admission-webhooks {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.soha-admission-chooser {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.soha-admission-chooser > .ant-select {
+  flex: 1;
+  min-width: 0;
+}
+.soha-admission-muted,
+.soha-admission-help-title .ant-btn {
+  color: var(--soha-text-secondary);
+}
+.soha-admission-help-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.soha-admission-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.soha-admission-expression {
+  margin-top: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--soha-font-family-code, monospace);
+}
+@media (max-width: 600px) {
+  .soha-admission-chooser {
+    flex-wrap: wrap;
+  }
+  .soha-admission-chooser > .ant-select {
+    flex-basis: 100%;
+  }
+}
+
+.soha-admission-ca {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+@media (max-width: 480px) {
+  .soha-admission-webhooks .soha-workload-overview-config > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

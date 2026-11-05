@@ -1,0 +1,33 @@
+.soha-runtime-detail {
+  min-width: 0;
+}
+.soha-runtime-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-runtime-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-runtime-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-runtime-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.soha-runtime-card-title .ant-btn,
+.soha-runtime-muted {
+  color: var(--soha-text-secondary);
+}
+.soha-runtime-muted {
+  margin-inline-start: 6px;
+}
+.soha-runtime-handler {
+  font-family: var(--soha-font-family-code, monospace);
+  overflow-wrap: anywhere;
+}
+.soha-runtime-number {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

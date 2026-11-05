@@ -8,7 +8,6 @@ import { ManagementState, ManagementTableToolbar } from '@/components/management
 import { StatusTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { buildKubernetesResourcePath } from '@/features/platform/shared/resource-ref'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import { useI18n } from '@/i18n'
 import type { ScopeKey } from '@/types'
 import { resourceInsightQueries } from './queries'
@@ -133,9 +132,10 @@ export function SecurityPosturePanel({ scope }: { scope: ScopeKey }) {
           />
         }
         localSorting
-        pageSize={K8S_TABLE_PAGE_SIZE}
+        pagination={false}
+        virtual
         rowKey="id"
-        scroll={{ x: 'max-content' }}
+        scroll={{ x: 1000, y: 520 }}
         viewportScroll
       />
     </div>
