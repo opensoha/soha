@@ -215,7 +215,8 @@ func TestResourceGraphCollectorErrorsWarningsAndLimit(t *testing.T) {
 		return true, nil, errors.New("Secret read prohibited")
 	})
 	client.PrependReactor("list", "pods", func(action ktesting.Action) (bool, kruntime.Object, error) {
-		if action.(interface{ GetListOptions() metav1.ListOptions }).GetListOptions().Limit != 500 {
+		list, ok := action.(interface{ GetListOptions() metav1.ListOptions })
+		if !ok || list.GetListOptions().Limit != 500 {
 			t.Error("list was not bounded")
 		}
 		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "", errors.New("denied"))

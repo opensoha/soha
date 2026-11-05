@@ -18,8 +18,8 @@ import (
 )
 
 func TestResourceGraphMetadataTransportNeverFallsBackToSecretPayload(t *testing.T) {
-	for _, status := range []int{http.StatusOK, http.StatusForbidden, http.StatusNotAcceptable} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
+	for _, status := range []int32{http.StatusOK, http.StatusForbidden, http.StatusNotAcceptable} {
+		t.Run(http.StatusText(int(status)), func(t *testing.T) {
 			var requests atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
@@ -30,7 +30,7 @@ func TestResourceGraphMetadataTransportNeverFallsBackToSecretPayload(t *testing.
 					t.Errorf("unsafe Secret negotiation: %q", r.Header.Get("Accept"))
 				}
 				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(status)
+				w.WriteHeader(int(status))
 				if status == http.StatusOK {
 					_ = json.NewEncoder(w).Encode(metav1.PartialObjectMetadata{TypeMeta: metav1.TypeMeta{APIVersion: "meta.k8s.io/v1", Kind: "PartialObjectMetadata"}, ObjectMeta: metav1.ObjectMeta{Name: "credentials", Namespace: "team-a", UID: "secret-uid"}})
 					return
@@ -39,7 +39,7 @@ func TestResourceGraphMetadataTransportNeverFallsBackToSecretPayload(t *testing.
 				if status == http.StatusNotAcceptable {
 					reason = metav1.StatusReasonNotAcceptable
 				}
-				_ = json.NewEncoder(w).Encode(metav1.Status{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"}, Status: "Failure", Reason: reason, Code: int32(status)})
+				_ = json.NewEncoder(w).Encode(metav1.Status{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"}, Status: "Failure", Reason: reason, Code: status})
 			}))
 			defer server.Close()
 			config := &rest.Config{Host: server.URL}
@@ -139,6 +139,11 @@ func TestResourceGraphMetadataTransportBoundsErrorPayload(t *testing.T) {
 			})}
 			request := httptest.NewRequest(http.MethodGet, "https://cluster.invalid/api/v1/namespaces/team-a/secrets/credentials", nil)
 			response, err := transport.RoundTrip(request)
+			if response != nil {
+				if closeErr := response.Body.Close(); closeErr != nil {
+					t.Errorf("close unexpected response body: %v", closeErr)
+				}
+			}
 			if err == nil || !strings.Contains(err.Error(), "size limit") || response != nil {
 				t.Fatalf("oversized error reached the metadata client: response=%v err=%v", response, err)
 			}
@@ -169,7 +174,10 @@ func TestResourceGraphMetadataTransportRetainsBodyReadCancellation(t *testing.T)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, `{"kind":"PartialObjectMetadata","apiVersion":"meta.k8s.io/v1","metadata":`)
-		w.(http.Flusher).Flush()
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Errorf("flush metadata response: %v", err)
+			return
+		}
 		<-r.Context().Done()
 	}))
 	defer server.Close()

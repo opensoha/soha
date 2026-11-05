@@ -119,15 +119,15 @@ func (t customGraphPageTransport) RoundTrip(request *http.Request) (*http.Respon
 	request = request.Clone(request.Context())
 	request.Header.Set("Accept", "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1")
 	response, err := t.RoundTripper.RoundTrip(request)
-	if err == nil && response.StatusCode >= 300 && response.StatusCode < 400 {
-		_ = response.Body.Close()
-		return nil, fmt.Errorf("custom graph metadata endpoint redirected")
-	}
 	if err != nil {
 		return response, err
 	}
-	defer response.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(response.Body, resourceGraphMetadataResponseLimit+1))
+	body := response.Body
+	defer func() { _ = body.Close() }()
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		return nil, fmt.Errorf("custom graph metadata endpoint redirected")
+	}
+	raw, err := io.ReadAll(io.LimitReader(body, resourceGraphMetadataResponseLimit+1))
 	if err != nil {
 		return nil, err
 	}

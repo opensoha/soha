@@ -63,9 +63,17 @@ func assertStorageGraphActions(t *testing.T, client *fake.Clientset, want []stri
 		record := action.GetVerb() + " " + action.GetResource().Resource + "/" + action.GetNamespace()
 		switch action.GetVerb() {
 		case "get":
-			record += "/" + action.(ktesting.GetAction).GetName()
+			get, ok := action.(ktesting.GetAction)
+			if !ok {
+				t.Fatalf("get action has no resource name: %+v", action)
+			}
+			record += "/" + get.GetName()
 		case "list":
-			options := action.(interface{ GetListOptions() metav1.ListOptions }).GetListOptions()
+			list, ok := action.(interface{ GetListOptions() metav1.ListOptions })
+			if !ok {
+				t.Fatalf("list action has no list options: %+v", action)
+			}
+			options := list.GetListOptions()
 			if options.Limit != ResourceGraphSourceLimit || options.Continue != "" {
 				t.Fatalf("unbounded source options for %s: %+v", record, options)
 			}

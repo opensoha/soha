@@ -13,8 +13,7 @@ func TestReasoningEffortNamesRemainCompatibleWithPodStatusEnums(t *testing.T) {
 			t.Fatalf("reasoning effort %d = %q, want %q", index, values[index], want)
 		}
 	}
-	var advisory MarketplaceAdvisorySeverity = High
-	if advisory != MarketplaceAdvisorySeverityHigh {
+	if High != MarketplaceAdvisorySeverityHigh {
 		t.Fatal("legacy advisory High changed")
 	}
 }

@@ -194,15 +194,16 @@ func TestResourceGraphRBACRejectsMalformedDeclarations(t *testing.T) {
 		binding := graphTestObject(graphRBACAPI, tc.kind, "read", "binding-uid")
 		binding.SetNamespace(tc.namespace)
 		binding.Object["roleRef"] = tc.role
-		binding.Object["subjects"] = []interface{}{
+		subjects := []interface{}{
 			map[string]interface{}{"kind": "ServiceAccount", "name": "reader", "namespace": "ns", "apiGroup": rbacv1.GroupName},
 			map[string]interface{}{"kind": "ServiceAccount", "name": "reader", "namespace": "ns/other"},
 			map[string]interface{}{"kind": "ServiceAccount", "name": "reader", "namespace": int64(5)},
 			map[string]interface{}{"kind": "ServiceAccount", "name": "ns/reader", "namespace": "ns"},
 		}
 		if tc.namespace == "" {
-			binding.Object["subjects"] = append(binding.Object["subjects"].([]interface{}), map[string]interface{}{"kind": "ServiceAccount", "name": "reader"})
+			subjects = append(subjects, map[string]interface{}{"kind": "ServiceAccount", "name": "reader"})
 		}
+		binding.Object["subjects"] = subjects
 		graph, err := BuildResourceGraphFromObjects(cr.ResourceRef{
 			ClusterID: "cluster", APIVersion: graphRBACAPI, Kind: tc.kind, Name: binding.GetName(), Namespace: tc.namespace,
 		}, []*unstructured.Unstructured{binding, account})
@@ -238,7 +239,11 @@ func TestResourceGraphRBACCrossNamespaceSubjectBudget(t *testing.T) {
 	}
 	client := fake.NewClientset(objects...)
 	client.PrependReactor("get", "serviceaccounts", func(action ktesting.Action) (bool, kruntime.Object, error) {
-		switch action.(ktesting.GetAction).GetName() {
+		get, ok := action.(ktesting.GetAction)
+		if !ok {
+			t.Fatalf("unexpected service account action: %+v", action)
+		}
+		switch get.GetName() {
 		case "account-01":
 			return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "serviceaccounts"}, "private-name", errors.New("private-cause"))
 		case "account-03":

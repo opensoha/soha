@@ -38,7 +38,8 @@ func (t resourceGraphMetadataTransport) RoundTrip(request *http.Request) (*http.
 	if err != nil {
 		return response, err
 	}
-	defer response.Body.Close()
+	body := response.Body
+	defer func() { _ = body.Close() }()
 	// A redirected request would pass through the Kubernetes authentication
 	// transport again, which can attach credentials to the new endpoint.
 	if response.StatusCode >= 300 && response.StatusCode < 400 {
@@ -50,9 +51,9 @@ func (t resourceGraphMetadataTransport) RoundTrip(request *http.Request) (*http.
 		if contentTypeErr != nil || mediaType != "application/json" {
 			return nil, fmt.Errorf("resource graph metadata response is not JSON metadata")
 		}
-		payload, err = readResourceGraphMetadataResponse(response.Body)
+		payload, err = readResourceGraphMetadataResponse(body)
 	} else {
-		payload, err = io.ReadAll(io.LimitReader(response.Body, resourceGraphMetadataResponseLimit+1))
+		payload, err = io.ReadAll(io.LimitReader(body, resourceGraphMetadataResponseLimit+1))
 		if len(payload) > resourceGraphMetadataResponseLimit {
 			return nil, fmt.Errorf("resource graph metadata response exceeds its size limit")
 		}

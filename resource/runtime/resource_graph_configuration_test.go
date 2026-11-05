@@ -91,9 +91,10 @@ func TestResourceGraphConfigurationUsersBothDirections(t *testing.T) {
 					spec["imagePullSecrets"] = []interface{}{map[string]interface{}{"name": "config"}}
 				}
 				field := "containers"
-				if source == "init" {
+				switch source {
+				case "init":
 					field = "initContainers"
-				} else if source == "ephemeral" {
+				case "ephemeral":
 					field = "ephemeralContainers"
 				}
 				spec[field] = []interface{}{container}
@@ -245,7 +246,11 @@ func TestResourceGraphConfigurationCollectorAllRoots(t *testing.T) {
 					t.Fatal("typed Secret API was read")
 				}
 				if action.GetVerb() == "list" {
-					if opts := action.(interface{ GetListOptions() metav1.ListOptions }).GetListOptions(); opts.Limit != 500 || opts.Continue != "" {
+					list, ok := action.(interface{ GetListOptions() metav1.ListOptions })
+					if !ok {
+						t.Fatalf("list action has no list options: %+v", action)
+					}
+					if opts := list.GetListOptions(); opts.Limit != 500 || opts.Continue != "" {
 						t.Fatalf("unbounded list: %+v", opts)
 					}
 					if graphClusterConfigurationKind(kind) && action.GetNamespace() != "" {
@@ -263,11 +268,12 @@ func TestResourceGraphConfigurationCollectorAllRoots(t *testing.T) {
 func graphSecretMetadataClient() *metadatafake.FakeMetadataClient {
 	client := metadatafake.NewSimpleMetadataClient(kruntime.NewScheme())
 	client.PrependReactor("*", "*", func(action ktesting.Action) (bool, kruntime.Object, error) {
-		if action.GetVerb() != "get" || action.GetResource() != graphSecretResource {
+		get, ok := action.(ktesting.GetAction)
+		if !ok || action.GetVerb() != "get" || action.GetResource() != graphSecretResource {
 			return true, nil, errors.New("metadata source only permits named Secret Get")
 		}
 		return true, &metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{
-			Name: action.(ktesting.GetAction).GetName(), Namespace: action.GetNamespace(), UID: "secret-uid",
+			Name: get.GetName(), Namespace: action.GetNamespace(), UID: "secret-uid",
 			Annotations: map[string]string{"sensitive": "must-not-retain"}, ManagedFields: []metav1.ManagedFieldsEntry{{Manager: "must-not-retain"}},
 		}}, nil
 	})
@@ -389,7 +395,8 @@ func TestResourceGraphConfigurationNamespaceMetadata(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			metadataClient := metadatafake.NewSimpleMetadataClient(kruntime.NewScheme())
 			metadataClient.PrependReactor("get", "namespaces", func(action ktesting.Action) (bool, kruntime.Object, error) {
-				if action.GetNamespace() != "" || action.(ktesting.GetAction).GetName() != "ns" {
+				get, ok := action.(ktesting.GetAction)
+				if !ok || action.GetNamespace() != "" || get.GetName() != "ns" {
 					t.Fatalf("namespace metadata identity was not exact: %+v", action)
 				}
 				if state == "forbidden" {

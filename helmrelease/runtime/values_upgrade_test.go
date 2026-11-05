@@ -79,7 +79,11 @@ func TestGuardValuesUpgradeRevision(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if latest.(*releasev1.Release).Config["winner"] != true {
+				latestRelease, ok := latest.(*releasev1.Release)
+				if !ok {
+					t.Fatalf("latest revision has unexpected type %T", latest)
+				}
+				if latestRelease.Config["winner"] != true {
 					t.Fatal("concurrent writer's Values were overwritten")
 				}
 			}
@@ -112,7 +116,8 @@ func (c *valuesUpgradeKubeClient) Update(original, target kube.ResourceList, opt
 	c.writes++
 	latest, err := c.history.Last("app")
 	if err == nil {
-		c.reservedBeforeUpdate = latest.(*releasev1.Release).Version == 3 && latest.(*releasev1.Release).Info.Status == releasecommon.StatusPendingUpgrade
+		latestRelease, ok := latest.(*releasev1.Release)
+		c.reservedBeforeUpdate = ok && latestRelease.Version == 3 && latestRelease.Info.Status == releasecommon.StatusPendingUpgrade
 	}
 	return c.PrintingKubeClient.Update(original, target, opts...)
 }

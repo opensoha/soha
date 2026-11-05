@@ -6,6 +6,8 @@ import (
 	"encoding/pem"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	cr "github.com/opensoha/soha-contracts/resource"
 )
 
@@ -13,7 +15,7 @@ import (
 // direct and Agent adapters use this bounded projection of the first certificate.
 func SecretCertificateMetadata(name, namespace, secretType string, certificatePEM []byte) cr.SecretCertificateView {
 	view := cr.SecretCertificateView{Name: name, Namespace: namespace, Status: "unsupported_type"}
-	if secretType != "kubernetes.io/tls" {
+	if secretType != string(corev1.SecretTypeTLS) {
 		return view
 	}
 	view.Status = "missing"
