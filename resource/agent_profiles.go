@@ -8,22 +8,14 @@ func KubernetesAgentProfileActions(profile string) ([]string, error) {
 	switch profile {
 	case "read-only":
 		return []string{"platform.custom_resources.list"}, nil
-	case "workbench":
+	case "workbench", "legacy":
 		return append([]string(nil), kubernetesWorkbenchActions[:]...), nil
-	case "legacy":
-		actions := make([]string, 0, len(kubernetesWorkbenchActions))
-		for _, action := range kubernetesWorkbenchActions {
-			if action != "platform.helm_releases.install" && action != "platform.helm_releases.values_update" && action != "platform.helm_releases.delete" && action != "platform.helm_releases.rollback" {
-				actions = append(actions, action)
-			}
-		}
-		return actions, nil
 	default:
 		return nil, fmt.Errorf("unknown Kubernetes Agent action profile")
 	}
 }
 
-// KubernetesAgentActions lists implemented platform actions, including separately opted-in CRD deletion.
+// KubernetesAgentActions lists implemented platform actions, including separately opted-in mutations.
 func KubernetesAgentActions() []string {
 	actions := make([]string, 0, len(kubernetesWorkbenchActions))
 	for _, action := range kubernetesWorkbenchActions {
@@ -31,7 +23,13 @@ func KubernetesAgentActions() []string {
 			actions = append(actions, action)
 		}
 	}
-	return append(actions, "platform.crds.delete")
+	return append(actions,
+		"platform.helm_releases.install",
+		"platform.helm_releases.values_update",
+		"platform.helm_releases.delete",
+		"platform.helm_releases.rollback",
+		"platform.crds.delete",
+	)
 }
 
 var kubernetesWorkbenchActions = [...]string{
@@ -54,9 +52,5 @@ var kubernetesWorkbenchActions = [...]string{
 	"platform.port_forwards.create",
 	"platform.port_forwards.tunnel",
 	"platform.port_forwards.delete",
-	"platform.helm_releases.install",
-	"platform.helm_releases.values_update",
-	"platform.helm_releases.delete",
-	"platform.helm_releases.rollback",
 	"runtime.execution_tasks.cancel",
 }

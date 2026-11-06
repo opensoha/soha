@@ -49,3 +49,23 @@ func TestTopologySourcesKeepSupportedVersionsAndDedicatedKindsExplicit(t *testin
 		t.Fatal("source allowlist is mutable by callers")
 	}
 }
+
+func TestNetworkTopologyNamedQueriesRejectUnsafeIdentity(t *testing.T) {
+	for _, query := range []NetworkTopologySourceQuery{
+		{SourceID: "kubernetes.services", Namespace: "team", Name: "../secret"},
+		{SourceID: "traefik.ingressroutes", Namespace: "team", Name: "route"},
+		{SourceID: "gateway.tcproutes", Namespace: "team", Name: "route"},
+		{SourceID: "kubernetes.services", Name: "service"},
+		{SourceID: "kubernetes.services", Namespace: "team", Name: "service/name"},
+		{SourceID: "kubernetes.services", Namespace: "team", Name: "service?watch=true"},
+		{SourceID: "kubernetes.ingressclasses", Namespace: "team", Name: "class"},
+	} {
+		if err := ValidateNetworkTopologySnapshotRequest(NetworkTopologySnapshotRequest{Queries: []NetworkTopologySourceQuery{query}}); err == nil {
+			t.Fatalf("unsafe named query accepted: %+v", query)
+		}
+	}
+	valid := NetworkTopologySnapshotRequest{Queries: []NetworkTopologySourceQuery{{SourceID: "kubernetes.services", Namespace: "team", Name: "service"}, {SourceID: "kubernetes.services", Namespace: "team"}}}
+	if err := ValidateNetworkTopologySnapshotRequest(valid); err != nil {
+		t.Fatalf("named and list queries must coexist: %v", err)
+	}
+}

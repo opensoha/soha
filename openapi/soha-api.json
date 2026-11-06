@@ -621,6 +621,18 @@
           "type": "integer"
         }
       },
+      "KubernetesExpectedWorkloadUID": {
+        "description": "Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement.",
+        "in": "query",
+        "name": "expectedUid",
+        "required": false,
+        "schema": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "type": "string"
+        }
+      },
       "KubernetesJobName": {
         "in": "path",
         "name": "jobName",
@@ -24749,6 +24761,11 @@
           "prometheusClusterLabel": {
             "type": "string"
           },
+          "prometheusClusterLabelValue": {
+            "description": "Exact value of prometheusClusterLabel for this cluster. Omitted updates preserve the saved value; an explicit empty string restores the legacy Soha cluster ID default. A non-empty value requires a valid label name.",
+            "maxLength": 1024,
+            "type": "string"
+          },
           "prometheusTransport": {
             "$ref": "#/components/schemas/KubernetesPrometheusTransport"
           },
@@ -25702,6 +25719,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "uid": {
+            "description": "Kubernetes object UID for identity-checked deletion. Omitted if unavailable.",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "type": "string"
+          },
           "updatedReplicas": {
             "format": "int32",
             "minimum": 0,
@@ -25792,6 +25816,13 @@
           "strategy": {
             "type": "string"
           },
+          "uid": {
+            "description": "Kubernetes object UID for identity-checked deletion. Omitted if unavailable.",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "type": "string"
+          },
           "updatedReplicas": {
             "format": "int32",
             "minimum": 0,
@@ -25849,10 +25880,19 @@
             },
             "type": "array"
           },
+          "matchesCurrentTemplate": {
+            "description": "When supplied, whether the retained ControllerRevision patch exactly matches the current DaemonSet Pod template. False is a confirmed mismatch; omission means this endpoint did not evaluate it.",
+            "type": "boolean",
+            "x-go-pointer": true
+          },
           "name": {
             "type": "string"
           },
           "namespace": {
+            "type": "string"
+          },
+          "podRevisionHash": {
+            "description": "Observed controller-revision-hash used by owned Pods; omitted when unavailable. Do not infer it from resource names.",
             "type": "string"
           },
           "readyReplicas": {
@@ -27464,6 +27504,77 @@
         ],
         "type": "object"
       },
+      "KubernetesHelmReleaseValues": {
+        "additionalProperties": false,
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "content": {
+            "type": "string"
+          },
+          "diffEnabled": {
+            "type": "boolean"
+          },
+          "editable": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "original": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "namespace",
+          "content",
+          "editable",
+          "diffEnabled"
+        ],
+        "type": "object"
+      },
+      "KubernetesHelmReleaseValuesEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/KubernetesHelmReleaseValues"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "KubernetesHelmReleaseValuesUpdateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "description": "Complete Helm values YAML.",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "description": "Latest Helm revision observed by the editor. When supplied, a changed revision returns 409 and an Agent without conditional updates returns 501.",
+            "maximum": 2147483646,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      },
       "KubernetesHorizontalPodAutoscaler": {
         "additionalProperties": false,
         "properties": {
@@ -28272,6 +28383,22 @@
             "minimum": 0,
             "type": "integer"
           },
+          "completionTarget": {
+            "description": "Native spec.completions when specified; absence is not a zero completion target.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
+          "completionTime": {
+            "type": "string"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/KubernetesWorkloadCondition"
+            },
+            "type": "array"
+          },
           "failed": {
             "format": "int32",
             "minimum": 0,
@@ -28283,10 +28410,17 @@
           "namespace": {
             "type": "string"
           },
+          "startTime": {
+            "type": "string"
+          },
           "succeeded": {
             "format": "int32",
             "minimum": 0,
             "type": "integer"
+          },
+          "suspend": {
+            "type": "boolean",
+            "x-go-pointer": true
           }
         },
         "required": [
@@ -28308,6 +28442,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "activeDeadlineSeconds": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
           "allowedActions": {
             "items": {
               "type": "string"
@@ -28317,6 +28457,12 @@
           "annotations": {
             "$ref": "#/components/schemas/KubernetesStringMap"
           },
+          "backoffLimit": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
           "completionMode": {
             "type": "string"
           },
@@ -28325,8 +28471,21 @@
             "minimum": 0,
             "type": "integer"
           },
+          "completionTarget": {
+            "description": "Native spec.completions when specified; absence is not a zero completion target.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
+          },
           "completionTime": {
             "type": "string"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/KubernetesWorkloadCondition"
+            },
+            "type": "array"
           },
           "createdAt": {
             "type": "string"
@@ -28369,6 +28528,16 @@
             "format": "int32",
             "minimum": 0,
             "type": "integer"
+          },
+          "suspend": {
+            "type": "boolean",
+            "x-go-pointer": true
+          },
+          "ttlSecondsAfterFinished": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer",
+            "x-go-pointer": true
           }
         },
         "required": [
@@ -29228,6 +29397,13 @@
           "internalIp": {
             "type": "string"
           },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Kubernetes Node labels available to the current reader.",
+            "type": "object"
+          },
           "name": {
             "type": "string"
           },
@@ -29527,6 +29703,23 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "KubernetesObservedResourceYamlInput": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "requireObservedIdentity": {
+            "description": "Require the YAML to include the UID and resource version of the object read before editing. A changed or replaced object returns conflict.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "content"
+        ],
         "type": "object"
       },
       "KubernetesPersistentVolume": {
@@ -29891,6 +30084,13 @@
             "format": "int32",
             "minimum": 0,
             "type": "integer"
+          },
+          "uid": {
+            "description": "Kubernetes object UID for identity-checked deletion. Omitted if unavailable.",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "type": "string"
           }
         },
         "required": [
@@ -30014,6 +30214,13 @@
             "type": "string"
           },
           "startTime": {
+            "type": "string"
+          },
+          "uid": {
+            "description": "Kubernetes object UID for identity-checked deletion. Omitted if unavailable.",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
             "type": "string"
           },
           "volumes": {
@@ -30438,6 +30645,11 @@
             "type": "string"
           },
           "clusterLabel": {
+            "type": "string"
+          },
+          "clusterLabelValue": {
+            "description": "Configured metric cluster label value. Omitted or empty uses the Soha cluster ID for legacy compatibility.",
+            "maxLength": 1024,
             "type": "string"
           },
           "grafanaBaseUrl": {
@@ -31698,17 +31910,38 @@
       "KubernetesResourceGraphEdge": {
         "additionalProperties": false,
         "properties": {
+          "fieldPath": {
+            "type": "string"
+          },
           "id": {
             "minLength": 1,
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "port": {
+            "type": "string"
+          },
+          "protocol": {
             "type": "string"
           },
           "relation": {
             "minLength": 1,
             "type": "string"
           },
+          "resolutionState": {
+            "type": "string"
+          },
+          "sectionName": {
+            "type": "string"
+          },
           "sourceId": {
             "minLength": 1,
             "type": "string"
+          },
+          "sourceRef": {
+            "$ref": "#/components/schemas/KubernetesResourceRef"
           },
           "targetId": {
             "minLength": 1,
@@ -32315,6 +32548,10 @@
           },
           "namespace": {
             "type": "string"
+          },
+          "requireObservedIdentity": {
+            "description": "Require the YAML to identify the observed Kubernetes object by metadata.uid and metadata.resourceVersion.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -32641,6 +32878,57 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "KubernetesSecretCertificate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "notAfter": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "notBefore": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "selfSigned": {
+            "description": "The first certificate is signed by its own key; this is not a trust validation result.",
+            "type": "boolean",
+            "x-go-pointer": true
+          },
+          "status": {
+            "enum": [
+              "available",
+              "missing",
+              "invalid",
+              "unsupported_type"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "namespace",
+          "status"
+        ],
+        "type": "object"
+      },
+      "KubernetesSecretCertificateEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/KubernetesSecretCertificate"
+          }
+        },
+        "required": [
+          "data"
         ],
         "type": "object"
       },
@@ -33778,6 +34066,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "name": {
+            "maxLength": 253,
+            "type": "string"
+          },
           "namespace": {
             "maxLength": 63,
             "type": "string"
@@ -33838,6 +34130,10 @@
       "KubernetesTopologyGraphEdge": {
         "additionalProperties": false,
         "properties": {
+          "fieldPath": {
+            "maxLength": 1024,
+            "type": "string"
+          },
           "id": {
             "maxLength": 2048,
             "minLength": 1,
@@ -33868,7 +34164,14 @@
               "weights",
               "mirrors",
               "resolves",
-              "selects"
+              "selects",
+              "uses-class",
+              "uses-secret",
+              "uses-config",
+              "parameters",
+              "targets",
+              "authorizes-reference",
+              "policy-peer"
             ],
             "type": "string",
             "x-enum-varnames": [
@@ -33878,7 +34181,14 @@
               "KubernetesTopologyGraphEdgeRelationWeights",
               "KubernetesTopologyGraphEdgeRelationMirrors",
               "KubernetesTopologyGraphEdgeRelationResolves",
-              "KubernetesTopologyGraphEdgeRelationSelects"
+              "KubernetesTopologyGraphEdgeRelationSelects",
+              "KubernetesTopologyGraphEdgeRelationUsesClass",
+              "KubernetesTopologyGraphEdgeRelationUsesSecret",
+              "KubernetesTopologyGraphEdgeRelationUsesConfig",
+              "KubernetesTopologyGraphEdgeRelationParameters",
+              "KubernetesTopologyGraphEdgeRelationTargets",
+              "KubernetesTopologyGraphEdgeRelationAuthorizesReference",
+              "KubernetesTopologyGraphEdgeRelationPolicyPeer"
             ]
           },
           "resolutionState": {
@@ -33886,6 +34196,10 @@
           },
           "ruleRef": {
             "maxLength": 2048,
+            "type": "string"
+          },
+          "sectionName": {
+            "maxLength": 253,
             "type": "string"
           },
           "source": {
@@ -34133,7 +34447,7 @@
             "type": "array"
           },
           "version": {
-            "pattern": "^v1$",
+            "pattern": "^v1$|^network\\.topology\\.(snapshot|named-root)\\.v1$",
             "type": "string"
           }
         },
@@ -34192,7 +34506,8 @@
                 "sourceId": {
                   "enum": [
                     "kubernetes.ingressclasses",
-                    "gateway.gatewayclasses"
+                    "gateway.gatewayclasses",
+                    "kubernetes.namespaces"
                   ]
                 }
               },
@@ -34211,6 +34526,10 @@
           }
         ],
         "properties": {
+          "name": {
+            "maxLength": 253,
+            "type": "string"
+          },
           "namespace": {
             "maxLength": 63,
             "pattern": "^$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
@@ -34218,6 +34537,10 @@
           },
           "sourceId": {
             "enum": [
+              "kubernetes.networkpolicies",
+              "kubernetes.namespaces",
+              "kubernetes.configmaps",
+              "gateway.backendtlspolicies",
               "kubernetes.services",
               "kubernetes.pods",
               "kubernetes.endpointslices",
@@ -34243,6 +34566,10 @@
             ],
             "type": "string",
             "x-enum-varnames": [
+              "KubernetesTopologySourceKubernetesNetworkpolicies",
+              "KubernetesTopologySourceKubernetesNamespaces",
+              "KubernetesTopologySourceKubernetesConfigmaps",
+              "KubernetesTopologySourceGatewayBackendtlspolicies",
               "KubernetesTopologySourceKubernetesServices",
               "KubernetesTopologySourceKubernetesPods",
               "KubernetesTopologySourceKubernetesEndpointslices",
@@ -77984,6 +78311,63 @@
         }
       }
     },
+    "/clusters/{clusterID}/configuration/secrets/{name}/certificate": {
+      "get": {
+        "description": "Public metadata for the first tls.crt certificate of a TLS Secret. Requires resource-scoped Secret view; never returns certificate PEM, Secret data or private keys. Dates do not establish certificate trust, host matching or controller deployment.",
+        "operationId": "getKubernetesSecretCertificate",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesResourceName"
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesSecretCertificateEnvelope"
+                }
+              }
+            },
+            "description": "Public certificate metadata, including explicit missing or invalid certificate state."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.configuration.secrets.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
     "/clusters/{clusterID}/configuration/secrets/{name}/data": {
       "put": {
         "operationId": "updateKubernetesSecretData",
@@ -78144,6 +78528,79 @@
         "x-soha-permissions": {
           "keys": [
             "platform.configuration.secrets.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/clusters/{clusterID}/configuration/secrets/{name}/yaml": {
+      "put": {
+        "operationId": "applyKubernetesSecretYaml",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesResourceName"
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubernetesObservedResourceYamlInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesResourceYamlEnvelope"
+                }
+              }
+            },
+            "description": "Updated Kubernetes resource YAML."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.configuration.secret-data.view",
+            "platform.configuration.secrets.update"
           ],
           "mode": "all"
         }
@@ -78994,6 +79451,81 @@
         "x-soha-permissions": {
           "keys": [
             "platform.helm.releases.rollback"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/clusters/{clusterID}/helm/releases/{releaseName}/values": {
+      "put": {
+        "operationId": "updateKubernetesHelmReleaseValues",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesReleaseName"
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubernetesHelmReleaseValuesUpdateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesHelmReleaseValuesEnvelope"
+                }
+              }
+            },
+            "description": "Helm release values after upgrade."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.helm.releases.update"
           ],
           "mode": "all"
         }
@@ -80939,6 +81471,78 @@
         }
       }
     },
+    "/clusters/{clusterID}/network/ingresses/{name}/yaml": {
+      "put": {
+        "operationId": "applyKubernetesIngressYaml",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesResourceName"
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubernetesObservedResourceYamlInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesResourceYamlEnvelope"
+                }
+              }
+            },
+            "description": "Updated Kubernetes resource YAML."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.network.ingresses.update"
+          ],
+          "mode": "all"
+        }
+      }
+    },
     "/clusters/{clusterID}/network/networkpolicies": {
       "get": {
         "operationId": "listKubernetesNetworkPolicies",
@@ -81434,6 +82038,78 @@
         "x-soha-permissions": {
           "keys": [
             "platform.network.services.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/clusters/{clusterID}/network/services/{serviceName}/yaml": {
+      "put": {
+        "operationId": "applyKubernetesServiceYaml",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesServiceName"
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubernetesObservedResourceYamlInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesResourceYamlEnvelope"
+                }
+              }
+            },
+            "description": "Updated Kubernetes resource YAML."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.network.services.update"
           ],
           "mode": "all"
         }
@@ -82028,6 +82704,24 @@
             "in": "query",
             "name": "name",
             "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact served group/version for a CRD instance, or apiextensions.k8s.io/v1 for a CRD definition. Required together with resource for explicit CRD graphs.",
+            "in": "query",
+            "name": "apiVersion",
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact CRD plural resource name. For a CRD definition use customresourcedefinitions.",
+            "in": "query",
+            "name": "resource",
             "schema": {
               "minLength": 1,
               "type": "string"
@@ -82919,6 +83613,111 @@
         }
       }
     },
+    "/clusters/{clusterID}/workloads/daemonsets/{daemonSetName}/rollouts": {
+      "get": {
+        "description": "Retained ControllerRevisions controlled by the selected DaemonSet UID. Replica counts include only Pods controlled by that DaemonSet and referencing the ControllerRevision hash label, not replicas inferred from template names. podRevisionHash is the observed history label; matchesCurrentTemplate compares the native stored patch with the selected DaemonSet template and does not imply every Pod is updated.",
+        "operationId": "listKubernetesDaemonSetRollouts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesDaemonSetName"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesNamespaceDefaultQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesDeploymentRolloutListEnvelope"
+                }
+              }
+            },
+            "description": "Retained DaemonSet ControllerRevisions. Revision is the native ControllerRevision sequence, name is the ControllerRevision name, and zero replicas means no currently observed owned Pod references this revision. This is not a permanent change archive."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.workloads.daemon-sets.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/clusters/{clusterID}/workloads/daemonsets/{daemonSetName}/rollouts/{revisionName}/yaml": {
+      "get": {
+        "description": "Read a retained ControllerRevision only when its controlling owner UID matches the selected DaemonSet in the same namespace. Does not resolve Secret references. Inline template values may be sensitive, as in workload YAML.",
+        "operationId": "getKubernetesDaemonSetRevisionYaml",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesDaemonSetName"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesNamespaceDefaultQuery"
+          },
+          {
+            "in": "path",
+            "name": "revisionName",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesResourceYamlEnvelope"
+                }
+              }
+            },
+            "description": "Authorized ControllerRevision YAML; it is a stored template patch, not a live DaemonSet object."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.workloads.daemon-sets.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
     "/clusters/{clusterID}/workloads/daemonsets/{daemonSetName}/yaml": {
       "get": {
         "operationId": "getKubernetesDaemonSetYaml",
@@ -83015,6 +83814,59 @@
         "x-soha-permissions": {
           "keys": [
             "platform.deployment.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/clusters/{clusterID}/workloads/deployments/{deploymentName}": {
+      "delete": {
+        "description": "Request deletion of a Deployment. With expectedUid, a same-name replacement is rejected and an Agent that cannot enforce the precondition returns 501.",
+        "operationId": "deleteKubernetesDeployment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesDeploymentName"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesNamespaceQuery"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesExpectedWorkloadUID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deletion requested."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.deployment.delete"
           ],
           "mode": "all"
         }
@@ -83365,6 +84217,62 @@
         }
       }
     },
+    "/clusters/{clusterID}/workloads/jobs/{jobName}/metrics": {
+      "get": {
+        "operationId": "getKubernetesJobMetrics",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesJobName"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesNamespaceDefaultQuery"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesMetricsRangeMinutesQuery"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesMetricsStepSecondsQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesResourceMetricsEnvelope"
+                }
+              }
+            },
+            "description": "Prometheus metrics aggregated from Pods owned by the current Job UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.workloads.jobs.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
     "/clusters/{clusterID}/workloads/jobs/{jobName}/yaml": {
       "get": {
         "operationId": "getKubernetesJobYaml",
@@ -83512,6 +84420,7 @@
     },
     "/clusters/{clusterID}/workloads/pods/{podName}": {
       "delete": {
+        "description": "Request deletion of a Pod. With expectedUid, a same-name replacement is rejected and an Agent that cannot enforce the precondition returns 501.",
         "operationId": "deleteKubernetesPod",
         "parameters": [
           {
@@ -83522,6 +84431,9 @@
           },
           {
             "$ref": "#/components/parameters/KubernetesNamespaceQuery"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesExpectedWorkloadUID"
           }
         ],
         "responses": {
@@ -83538,6 +84450,9 @@
             "$ref": "#/components/responses/Error"
           },
           "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
             "$ref": "#/components/responses/Error"
           },
           "503": {
@@ -83925,6 +84840,62 @@
         }
       }
     },
+    "/clusters/{clusterID}/workloads/replicasets/{replicaSetName}/metrics": {
+      "get": {
+        "operationId": "getKubernetesReplicaSetMetrics",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesReplicaSetName"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesNamespaceDefaultQuery"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesMetricsRangeMinutesQuery"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesMetricsStepSecondsQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesResourceMetricsEnvelope"
+                }
+              }
+            },
+            "description": "Prometheus metrics aggregated from Pods owned by the current ReplicaSet UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.workloads.replica-sets.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
     "/clusters/{clusterID}/workloads/replicasets/{replicaSetName}/yaml": {
       "get": {
         "operationId": "getKubernetesReplicaSetYaml",
@@ -84086,6 +85057,62 @@
               }
             },
             "description": "Kubernetes ReplicationController status, Pods, and related resources."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.workloads.replication-controllers.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/clusters/{clusterID}/workloads/replicationcontrollers/{name}/metrics": {
+      "get": {
+        "operationId": "getKubernetesReplicationControllerMetrics",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesResourceName"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesNamespaceDefaultQuery"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesMetricsRangeMinutesQuery"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesMetricsStepSecondsQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesResourceMetricsEnvelope"
+                }
+              }
+            },
+            "description": "Prometheus metrics aggregated from Pods owned by the current ReplicationController UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "403": {
             "$ref": "#/components/responses/Error"
@@ -84280,6 +85307,111 @@
           },
           "400": {
             "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.workloads.stateful-sets.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/clusters/{clusterID}/workloads/statefulsets/{statefulSetName}/rollouts": {
+      "get": {
+        "description": "Retained ControllerRevisions controlled by the selected StatefulSet UID. Replica counts include only Pods controlled by that StatefulSet and referencing the revision, not replicas inferred from the template.",
+        "operationId": "listKubernetesStatefulSetRollouts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesStatefulSetName"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesNamespaceDefaultQuery"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesDeploymentRolloutListEnvelope"
+                }
+              }
+            },
+            "description": "Retained StatefulSet ControllerRevisions. Revision is the native ControllerRevision sequence, name is the ControllerRevision name, and zero replicas means no currently observed owned Pod references this revision. This is not a permanent change archive."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Platform"
+        ],
+        "x-soha-implementation-status": "implemented",
+        "x-soha-permissions": {
+          "keys": [
+            "platform.workloads.stateful-sets.view"
+          ],
+          "mode": "all"
+        }
+      }
+    },
+    "/clusters/{clusterID}/workloads/statefulsets/{statefulSetName}/rollouts/{revisionName}/yaml": {
+      "get": {
+        "description": "Read a retained ControllerRevision only when its controlling owner UID matches the selected StatefulSet in the same namespace. Does not resolve Secret references. Inline template values may be sensitive, as in workload YAML.",
+        "operationId": "getKubernetesStatefulSetRevisionYaml",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClusterID"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesStatefulSetName"
+          },
+          {
+            "$ref": "#/components/parameters/KubernetesNamespaceDefaultQuery"
+          },
+          {
+            "in": "path",
+            "name": "revisionName",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesResourceYamlEnvelope"
+                }
+              }
+            },
+            "description": "Authorized ControllerRevision YAML; it is a stored template patch, not a live StatefulSet object."
           },
           "403": {
             "$ref": "#/components/responses/Error"

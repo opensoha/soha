@@ -54,10 +54,17 @@ type ResourceGraphNode struct {
 }
 
 type ResourceGraphEdge struct {
-	ID       string `json:"id"`
-	SourceID string `json:"sourceId"`
-	TargetID string `json:"targetId"`
-	Relation string `json:"relation"`
+	ID              string       `json:"id"`
+	SourceID        string       `json:"sourceId"`
+	TargetID        string       `json:"targetId"`
+	Relation        string       `json:"relation"`
+	ResolutionState string       `json:"resolutionState,omitempty"`
+	Protocol        string       `json:"protocol,omitempty"`
+	Port            string       `json:"port,omitempty"`
+	SectionName     string       `json:"sectionName,omitempty"`
+	FieldPath       string       `json:"fieldPath,omitempty"`
+	Note            string       `json:"note,omitempty"`
+	SourceRef       *ResourceRef `json:"sourceRef,omitempty"`
 }
 
 type ResourceEvidence struct {
@@ -106,6 +113,7 @@ type NamespaceUpsertInput struct {
 type PodView struct {
 	Name                   string                   `json:"name"`
 	Namespace              string                   `json:"namespace"`
+	UID                    string                   `json:"uid,omitempty"`
 	Phase                  string                   `json:"phase"`
 	NodeName               string                   `json:"nodeName,omitempty"`
 	PodIP                  string                   `json:"podIp,omitempty"`
@@ -253,6 +261,7 @@ type NodeResourceSummaryView struct {
 type PodDetailView struct {
 	Name               string                   `json:"name"`
 	Namespace          string                   `json:"namespace"`
+	UID                string                   `json:"uid,omitempty"`
 	Phase              string                   `json:"phase"`
 	PodIP              string                   `json:"podIp,omitempty"`
 	HostIP             string                   `json:"hostIp,omitempty"`
@@ -349,10 +358,11 @@ type ResourceYAMLView struct {
 }
 
 type ResourceUpdatePlanRequest struct {
-	Namespace string `json:"namespace,omitempty"`
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Content   string `json:"content"`
+	Namespace               string `json:"namespace,omitempty"`
+	Kind                    string `json:"kind"`
+	Name                    string `json:"name"`
+	Content                 string `json:"content"`
+	RequireObservedIdentity bool   `json:"requireObservedIdentity,omitempty"`
 }
 
 type ManagedFieldOwner struct {
@@ -443,6 +453,7 @@ type SubjectAccessReviewResult struct {
 type DeploymentView struct {
 	Name            string            `json:"name"`
 	Namespace       string            `json:"namespace"`
+	UID             string            `json:"uid,omitempty"`
 	Labels          map[string]string `json:"labels,omitempty"`
 	DesiredReplicas int32             `json:"desiredReplicas"`
 	ReadyReplicas   int32             `json:"readyReplicas"`
@@ -455,6 +466,7 @@ type DeploymentView struct {
 type DeploymentDetailView struct {
 	Name               string                  `json:"name"`
 	Namespace          string                  `json:"namespace"`
+	UID                string                  `json:"uid,omitempty"`
 	DesiredReplicas    int32                   `json:"desiredReplicas"`
 	ReadyReplicas      int32                   `json:"readyReplicas"`
 	UpdatedReplicas    int32                   `json:"updatedReplicas"`
@@ -473,13 +485,15 @@ type DeploymentDetailView struct {
 }
 
 type RolloutHistoryView struct {
-	Name          string   `json:"name"`
-	Namespace     string   `json:"namespace"`
-	Revision      string   `json:"revision"`
-	Images        []string `json:"images,omitempty"`
-	Replicas      int32    `json:"replicas"`
-	ReadyReplicas int32    `json:"readyReplicas"`
-	CreatedAt     string   `json:"createdAt,omitempty"`
+	Name                   string   `json:"name"`
+	Namespace              string   `json:"namespace"`
+	Revision               string   `json:"revision"`
+	Images                 []string `json:"images,omitempty"`
+	Replicas               int32    `json:"replicas"`
+	ReadyReplicas          int32    `json:"readyReplicas"`
+	CreatedAt              string   `json:"createdAt,omitempty"`
+	PodRevisionHash        string   `json:"podRevisionHash,omitempty"`
+	MatchesCurrentTemplate *bool    `json:"matchesCurrentTemplate,omitempty"`
 }
 
 type DeploymentRolloutStatusView struct {
@@ -565,34 +579,45 @@ type DaemonSetDetailView struct {
 }
 
 type JobView struct {
-	Name           string   `json:"name"`
-	Namespace      string   `json:"namespace"`
-	Completions    int32    `json:"completions"`
-	Succeeded      int32    `json:"succeeded"`
-	Failed         int32    `json:"failed"`
-	Active         int32    `json:"active"`
-	CompletionMode string   `json:"completionMode,omitempty"`
-	AgeSeconds     int64    `json:"ageSeconds"`
-	AllowedActions []string `json:"allowedActions,omitempty"`
+	Name             string                  `json:"name"`
+	Namespace        string                  `json:"namespace"`
+	Completions      int32                   `json:"completions"`
+	Succeeded        int32                   `json:"succeeded"`
+	Failed           int32                   `json:"failed"`
+	Active           int32                   `json:"active"`
+	CompletionMode   string                  `json:"completionMode,omitempty"`
+	AgeSeconds       int64                   `json:"ageSeconds"`
+	AllowedActions   []string                `json:"allowedActions,omitempty"`
+	CompletionTarget *int32                  `json:"completionTarget,omitempty"`
+	Suspend          *bool                   `json:"suspend,omitempty"`
+	Conditions       []WorkloadConditionView `json:"conditions,omitempty"`
+	StartTime        string                  `json:"startTime,omitempty"`
+	CompletionTime   string                  `json:"completionTime,omitempty"`
 }
 
 type JobDetailView struct {
-	Name             string                 `json:"name"`
-	Namespace        string                 `json:"namespace"`
-	Completions      int32                  `json:"completions"`
-	Parallelism      int32                  `json:"parallelism"`
-	Succeeded        int32                  `json:"succeeded"`
-	Failed           int32                  `json:"failed"`
-	Active           int32                  `json:"active"`
-	CompletionMode   string                 `json:"completionMode,omitempty"`
-	CreatedAt        string                 `json:"createdAt,omitempty"`
-	StartTime        string                 `json:"startTime,omitempty"`
-	CompletionTime   string                 `json:"completionTime,omitempty"`
-	Labels           map[string]string      `json:"labels,omitempty"`
-	Annotations      map[string]string      `json:"annotations,omitempty"`
-	Pods             []PodView              `json:"pods,omitempty"`
-	RelatedResources []WorkloadRelationView `json:"relatedResources,omitempty"`
-	AllowedActions   []string               `json:"allowedActions,omitempty"`
+	Name                    string                  `json:"name"`
+	Namespace               string                  `json:"namespace"`
+	Completions             int32                   `json:"completions"`
+	Parallelism             int32                   `json:"parallelism"`
+	Succeeded               int32                   `json:"succeeded"`
+	Failed                  int32                   `json:"failed"`
+	Active                  int32                   `json:"active"`
+	CompletionMode          string                  `json:"completionMode,omitempty"`
+	CreatedAt               string                  `json:"createdAt,omitempty"`
+	StartTime               string                  `json:"startTime,omitempty"`
+	CompletionTime          string                  `json:"completionTime,omitempty"`
+	Labels                  map[string]string       `json:"labels,omitempty"`
+	Annotations             map[string]string       `json:"annotations,omitempty"`
+	Pods                    []PodView               `json:"pods,omitempty"`
+	RelatedResources        []WorkloadRelationView  `json:"relatedResources,omitempty"`
+	AllowedActions          []string                `json:"allowedActions,omitempty"`
+	CompletionTarget        *int32                  `json:"completionTarget,omitempty"`
+	Suspend                 *bool                   `json:"suspend,omitempty"`
+	Conditions              []WorkloadConditionView `json:"conditions,omitempty"`
+	BackoffLimit            *int32                  `json:"backoffLimit,omitempty"`
+	ActiveDeadlineSeconds   *int64                  `json:"activeDeadlineSeconds,omitempty"`
+	TTLSecondsAfterFinished *int32                  `json:"ttlSecondsAfterFinished,omitempty"`
 }
 
 type CronJobView struct {
@@ -925,6 +950,7 @@ type NetworkTopologyView struct {
 }
 
 type NodeView struct {
+	Labels         map[string]string       `json:"labels,omitempty"`
 	Name           string                  `json:"name"`
 	Status         string                  `json:"status"`
 	Unschedulable  bool                    `json:"unschedulable"`
@@ -1386,6 +1412,16 @@ type SecretView struct {
 	Immutable      *bool    `json:"immutable"`
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+// SecretCertificateView contains public facts only; it cannot carry Secret data or PEM.
+type SecretCertificateView struct {
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+	Status     string `json:"status"`
+	NotBefore  string `json:"notBefore,omitempty"`
+	NotAfter   string `json:"notAfter,omitempty"`
+	SelfSigned *bool  `json:"selfSigned,omitempty"`
 }
 
 type SecretDetailView struct {
