@@ -19,10 +19,10 @@ import (
 
 func TestWarmListsUseInformerCacheWithoutAPICalls(t *testing.T) {
 	typed := fake.NewClientset(
-		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "team-a", Labels: map[string]string{"app": "api"}}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "team-a", UID: "pod-uid", Labels: map[string]string{"app": "api"}}},
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "team-b"}},
 		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}},
-		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "team-a"}, Status: appsv1.DeploymentStatus{ReadyReplicas: 1, UpdatedReplicas: 1, AvailableReplicas: 1}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "team-a", UID: "deployment-uid"}, Status: appsv1.DeploymentStatus{ReadyReplicas: 1, UpdatedReplicas: 1, AvailableReplicas: 1}},
 		&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "logs", Namespace: "team-a"}, Status: appsv1.DaemonSetStatus{DesiredNumberScheduled: 2, NumberReady: 1}},
 		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config", Namespace: "team-a", Annotations: map[string]string{"kubectl.kubernetes.io/last-applied-configuration": "sensitive"}}, Data: map[string]string{"key": "value"}, BinaryData: map[string][]byte{"file": []byte("data")}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "credentials", Namespace: "team-a", Annotations: map[string]string{"private": "sensitive"}}, Type: corev1.SecretTypeOpaque, Data: map[string][]byte{"password": []byte("private")}},
@@ -44,12 +44,12 @@ func TestWarmListsUseInformerCacheWithoutAPICalls(t *testing.T) {
 	typed.ClearActions()
 	for i := 0; i < 100; i++ {
 		pods, err := client.ListPods(ctx, "team-a")
-		if err != nil || len(pods) != 1 || pods[0].Name != "api" {
+		if err != nil || len(pods) != 1 || pods[0].Name != "api" || pods[0].UID != "pod-uid" {
 			t.Fatalf("pods = %#v, %v", pods, err)
 		}
 		pods[0].Labels["app"] = "mutated"
 		deployments, err := client.ListDeployments(ctx, "team-a")
-		if err != nil || len(deployments) != 1 || deployments[0].DesiredReplicas != 1 || deployments[0].Available != 1 {
+		if err != nil || len(deployments) != 1 || deployments[0].UID != "deployment-uid" || deployments[0].DesiredReplicas != 1 || deployments[0].Available != 1 {
 			t.Fatalf("deployments = %#v, %v", deployments, err)
 		}
 		daemons, err := client.ListDaemonSets(ctx, "team-a")

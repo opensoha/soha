@@ -66,7 +66,7 @@ func TestLightweightPlatformListsUseTableMetadata(t *testing.T) {
 	created := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		metadata := &metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{
-			Name: "app", Namespace: "platform", CreationTimestamp: metav1.NewTime(created),
+			Name: "app", Namespace: "platform", UID: "table-uid", CreationTimestamp: metav1.NewTime(created),
 		}}
 		table := metav1.Table{Rows: []metav1.TableRow{{Object: runtime.RawExtension{Object: metadata}}}}
 		switch r.URL.Path {
@@ -114,7 +114,7 @@ func TestLightweightPlatformListsUseTableMetadata(t *testing.T) {
 	}
 	client := &Client{typed: typed}
 	deployments, err := client.ListDeployments(context.Background(), "platform")
-	if err != nil || len(deployments) != 1 || deployments[0].DesiredReplicas != 3 || deployments[0].ReadyReplicas != 2 {
+	if err != nil || len(deployments) != 1 || deployments[0].UID != "table-uid" || deployments[0].DesiredReplicas != 3 || deployments[0].ReadyReplicas != 2 {
 		t.Fatalf("deployments = %#v, error = %v", deployments, err)
 	}
 	daemonSets, err := client.ListDaemonSets(context.Background(), "platform")

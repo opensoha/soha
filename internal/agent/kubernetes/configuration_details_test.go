@@ -106,6 +106,32 @@ func TestGetPodDisruptionBudgetDetailListsSelectedPodsAndResolvesCommonOwner(t *
 	}
 }
 
+func TestGetPodDisruptionBudgetDetailDistinguishesAbsentAndEmptySelector(t *testing.T) {
+	const namespace = "infra"
+	fakeClient := kubernetesfake.NewSimpleClientset(
+		&policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Name: "absent", Namespace: namespace}},
+		&policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Name: "empty", Namespace: namespace},
+			Spec:       policyv1.PodDisruptionBudgetSpec{Selector: &metav1.LabelSelector{}},
+		},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: namespace}},
+	)
+	client := &Client{typed: fakeClient}
+	absent, err := client.GetPodDisruptionBudgetDetail(context.Background(), namespace, "absent")
+	if err != nil || len(absent.Pods) != 0 || absent.Workload != nil {
+		t.Fatalf("absent selector detail = %#v, %v", absent, err)
+	}
+	for _, action := range fakeClient.Actions() {
+		if action.Matches("list", "pods") {
+			t.Fatal("absent selector listed namespace Pods")
+		}
+	}
+	empty, err := client.GetPodDisruptionBudgetDetail(context.Background(), namespace, "empty")
+	if err != nil || len(empty.Pods) != 1 {
+		t.Fatalf("empty selector detail = %#v, %v", empty, err)
+	}
+}
+
 func TestGetWebhookDetailsExposeConfigurationWithoutCABytes(t *testing.T) {
 	path := "/admit"
 	port := int32(9443)

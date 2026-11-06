@@ -112,6 +112,7 @@ type Runner struct {
 	helmExecutor        HelmExecutor
 	helmClusterID       string
 	helmClaimToken      string
+	helmAllowedActions  []string
 	manifestExecutor    ManifestExecutor
 	manifestClusterID   string
 	sshClusterID        string

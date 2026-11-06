@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/restmapper"
 
 	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 )
 
 const resourceCreateTimeout = 10 * time.Second
@@ -49,7 +50,7 @@ func (c *Client) PreflightResourceCreate(ctx context.Context, request domainreso
 }
 
 func (c *Client) preflightResourceCreate(ctx context.Context, request domainresource.KubernetesResourceAgentCreateRequest) (domainresource.KubernetesResourceAgentPreflightResult, []resourceCreateCandidate) {
-	items, candidates := c.prepareResourceCreate(request)
+	items, candidates := c.prepareResourceCreate(ctx, request)
 	ready := true
 	for index, candidate := range candidates {
 		if len(items[index].Errors) > 0 {
@@ -92,6 +93,7 @@ func (c *Client) CreateResources(ctx context.Context, request domainresource.Kub
 			break
 		}
 		result.Items[index].Status = domainresource.KubernetesResourceCreateResultStatusSucceeded
+		candidate.ref.Name = created.GetName()
 		candidate.ref.UID = string(created.GetUID())
 		result.Items[index].ResourceRef = &candidate.ref
 		succeeded++
@@ -100,10 +102,10 @@ func (c *Client) CreateResources(ctx context.Context, request domainresource.Kub
 	return result
 }
 
-func (c *Client) prepareResourceCreate(request domainresource.KubernetesResourceAgentCreateRequest) ([]domainresource.KubernetesResourceAgentPreflightItem, []resourceCreateCandidate) {
+func (c *Client) prepareResourceCreate(ctx context.Context, request domainresource.KubernetesResourceAgentCreateRequest) ([]domainresource.KubernetesResourceAgentPreflightItem, []resourceCreateCandidate) {
 	items := make([]domainresource.KubernetesResourceAgentPreflightItem, len(request.Documents))
 	candidates := make([]resourceCreateCandidate, len(request.Documents))
-	mapper, err := c.resourceCreateMapper()
+	mapper, err := c.resourceCreateMapper(ctx)
 	if err != nil {
 		for index, input := range request.Documents {
 			candidate := resourceCreateCandidate{document: input.Document, ref: input.ResourceRef}
@@ -142,11 +144,17 @@ type resourceCreateMapper interface {
 	RESTMapping(schema.GroupKind, ...string) (*meta.RESTMapping, error)
 }
 
-func (c *Client) resourceCreateMapper() (resourceCreateMapper, error) {
-	if c.discovery == nil {
-		return nil, errors.New("kubernetes discovery client is unavailable")
+func (c *Client) resourceCreateMapper(ctx context.Context) (resourceCreateMapper, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, resourceDiscoveryTimeout)
+	defer cancel()
+	discoveryClient, err := c.discoveryForContext(queryCtx)
+	if err != nil {
+		return nil, err
 	}
-	resources, err := restmapper.GetAPIGroupResources(c.discovery)
+	resources, err := restmapper.GetAPIGroupResourcesWithContext(queryCtx, discoveryClient)
+	if queryCtx.Err() != nil {
+		return nil, queryCtx.Err()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +184,11 @@ func (c *Client) prepareResourceCreateCandidate(mapper resourceCreateMapper, inp
 	if err != nil {
 		return candidate, validationError(domainresource.KubernetesResourceCreateErrorCodeResourceCapabilityUnsupported, "resourceRef.apiVersion")
 	}
+	if definition, known := contractresource.LookupKubernetesResourceKind(gvk.Kind); known && definition.Group == gvk.Group {
+		if mapping.Resource.Resource != definition.Resource || (mapping.Scope.Name() == meta.RESTScopeNameNamespace) != definition.Namespaced {
+			return candidate, validationError(domainresource.KubernetesResourceCreateErrorCodeResourceKindMismatch, "resourceRef.kind")
+		}
+	}
 	candidate.gvr = mapping.Resource
 	candidate.namespaced = mapping.Scope.Name() == meta.RESTScopeNameNamespace
 	candidate.item = item
@@ -186,7 +199,7 @@ func (c *Client) prepareResourceCreateCandidate(mapper resourceCreateMapper, inp
 }
 
 func validateResourceCreateIdentity(input domainresource.KubernetesResourceAgentCreateDocument, item *unstructured.Unstructured, gvk schema.GroupVersionKind) error {
-	if gvk.Empty() || strings.TrimSpace(item.GetName()) == "" {
+	if gvk.Empty() || strings.TrimSpace(resourceCreateIdentityName(item)) == "" {
 		return validationError(domainresource.KubernetesResourceCreateErrorCodeResourceKindMismatch, "content.metadata")
 	}
 	apiVersion := gvk.GroupVersion().String()
@@ -194,13 +207,22 @@ func validateResourceCreateIdentity(input domainresource.KubernetesResourceAgent
 		gvk.Kind != strings.TrimSpace(input.Document.Kind) || gvk.Kind != strings.TrimSpace(input.ResourceRef.Kind) {
 		return validationError(domainresource.KubernetesResourceCreateErrorCodeResourceKindMismatch, "content.kind")
 	}
-	if item.GetName() != strings.TrimSpace(input.Document.Name) || item.GetName() != strings.TrimSpace(input.ResourceRef.Name) {
+	if resourceCreateIdentityName(item) != strings.TrimSpace(input.Document.Name) || resourceCreateIdentityName(item) != strings.TrimSpace(input.ResourceRef.Name) {
 		return validationError(domainresource.KubernetesResourceCreateErrorCodeResourceKindMismatch, "content.metadata.name")
 	}
 	if input.Document.ScopeMode != input.ResourceRef.ScopeMode {
 		return validationError(domainresource.KubernetesResourceCreateErrorCodeNamespaceMismatch, "document.scopeMode")
 	}
 	return nil
+}
+
+// Kubernetes gives an explicit name precedence over generateName. Envelope names
+// must bind that same identity, never a generateName prefix when name is present.
+func resourceCreateIdentityName(item *unstructured.Unstructured) string {
+	if item.GetName() != "" {
+		return item.GetName()
+	}
+	return item.GetGenerateName()
 }
 
 func validateResourceCreateScope(candidate *resourceCreateCandidate) error {
@@ -277,8 +299,8 @@ func (c *Client) createResource(ctx context.Context, candidate resourceCreateCan
 		resource = c.dynamic.Resource(candidate.gvr)
 	}
 	created, err := resource.Create(requestCtx, candidate.item.DeepCopy(), resourceCreateOptions(dryRun))
-	if err == nil && created == nil {
-		return nil, errors.New("cluster create returned no resource")
+	if err == nil && (created == nil || created.GetName() == "") {
+		return nil, errors.New("cluster create returned no resource identity")
 	}
 	return created, err
 }
