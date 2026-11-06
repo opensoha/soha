@@ -24,7 +24,7 @@ const (
 	BindingRedirect = crewjam.HTTPRedirectBinding
 	BindingPOST     = crewjam.HTTPPostBinding
 
-	bearerConfirmationMethod = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
+	samlBrowserConfirmationMethod = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
 )
 
 type Metadata struct {
@@ -299,7 +299,7 @@ func validateBrowserSSOAssertion(assertion *crewjam.Assertion, now time.Time, sk
 		return fmt.Errorf("%w: assertion is missing an audience restriction", ErrInvalidXML)
 	}
 	if !slices.ContainsFunc(assertion.Subject.SubjectConfirmations, func(confirmation crewjam.SubjectConfirmation) bool {
-		return confirmation.Method == bearerConfirmationMethod
+		return confirmation.Method == samlBrowserConfirmationMethod
 	}) {
 		return fmt.Errorf("%w: assertion is missing a bearer subject confirmation", ErrInvalidXML)
 	}

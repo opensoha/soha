@@ -127,7 +127,7 @@ func (idp *IdentityProvider) SignResponse(input ResponseInput) ([]byte, error) {
 		Issuer: crewjam.Issuer{Format: "urn:oasis:names:tc:SAML:2.0:nameid-format:entity", Value: idp.provider.MetadataURL.String()},
 		Subject: &crewjam.Subject{
 			NameID:               &crewjam.NameID{Format: nameIDFormat, NameQualifier: idp.provider.MetadataURL.String(), SPNameQualifier: input.SPEntityID, Value: input.NameID},
-			SubjectConfirmations: []crewjam.SubjectConfirmation{{Method: bearerConfirmationMethod, SubjectConfirmationData: &crewjam.SubjectConfirmationData{InResponseTo: input.RequestID, NotOnOrAfter: now.Add(validFor), Recipient: acsURL.String()}}},
+			SubjectConfirmations: []crewjam.SubjectConfirmation{{Method: samlBrowserConfirmationMethod, SubjectConfirmationData: &crewjam.SubjectConfirmationData{InResponseTo: input.RequestID, NotOnOrAfter: now.Add(validFor), Recipient: acsURL.String()}}},
 		},
 		Conditions:          &crewjam.Conditions{NotBefore: now.Add(-time.Minute), NotOnOrAfter: now.Add(validFor), AudienceRestrictions: []crewjam.AudienceRestriction{{Audience: crewjam.Audience{Value: input.SPEntityID}}}},
 		AuthnStatements:     []crewjam.AuthnStatement{{AuthnInstant: authnInstant, SessionIndex: input.SessionIndex, AuthnContext: crewjam.AuthnContext{AuthnContextClassRef: &crewjam.AuthnContextClassRef{Value: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"}}}},
