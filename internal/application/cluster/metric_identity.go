@@ -26,6 +26,21 @@ func normalizeClusterMetricIdentity(input *domaincluster.RegisterInput) error {
 	return nil
 }
 
+func updatedClusterMetricIdentity(metadata map[string]any, input domaincluster.UpdateInput) (label, value string) {
+	label = metadataString(metadata, "prometheus_cluster_label")
+	value = metadataString(metadata, "prometheus_cluster_label_value")
+	if input.PrometheusClusterLabel != nil {
+		label = strings.TrimSpace(*input.PrometheusClusterLabel)
+		if label == "" {
+			value = ""
+		}
+	}
+	if input.PrometheusClusterLabelValue != nil {
+		value = *input.PrometheusClusterLabelValue
+	}
+	return label, value
+}
+
 // A monitoring-only edit must preserve file-backed versus inline credential semantics.
 func preserveDirectUpdateCredential(existing domaincluster.Connection, connection *domaincluster.Connection, cfg *appconfig.Cluster) error {
 	previous, err := runtimeClusterConfig(existing)

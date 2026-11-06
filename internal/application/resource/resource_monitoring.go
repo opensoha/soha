@@ -181,7 +181,7 @@ func monitoringPrerequisites(enabled bool, url, label string, nodeCount int, qua
 	if !enabled || strings.TrimSpace(url) == "" {
 		return "not_configured", "prometheus_not_configured"
 	}
-	if !monitoringLabelPattern.MatchString(label) {
+	if label != "" && !monitoringLabelPattern.MatchString(label) {
 		return "not_configured", "cluster_label_required"
 	}
 	if nodeCount == 0 {

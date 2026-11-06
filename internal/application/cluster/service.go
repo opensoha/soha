@@ -396,10 +396,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if input.PrometheusBaseURL != nil {
 		metricURL = *input.PrometheusBaseURL
 	}
-	metricClusterValue := metadataString(existing.Metadata, "prometheus_cluster_label_value")
-	if input.PrometheusClusterLabelValue != nil {
-		metricClusterValue = *input.PrometheusClusterLabelValue
-	}
+	metricClusterLabel, metricClusterValue := updatedClusterMetricIdentity(existing.Metadata, input)
 	registerInput := domaincluster.RegisterInput{
 		ID:                          clusterID,
 		Name:                        input.Name,
@@ -416,7 +413,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		AgentActionProfile:          input.AgentActionProfile,
 		PrometheusBaseURL:           metricURL,
 		PrometheusBearerToken:       input.PrometheusBearerToken,
-		PrometheusClusterLabel:      input.PrometheusClusterLabel,
+		PrometheusClusterLabel:      metricClusterLabel,
 		PrometheusClusterLabelValue: metricClusterValue,
 		GrafanaBaseURL:              input.GrafanaBaseURL,
 	}
@@ -912,9 +909,6 @@ func mergeClusterObservabilityUpdate(next *domaincluster.RegisterInput, metadata
 	}
 	if strings.TrimSpace(next.PrometheusBearerToken) == "" {
 		next.PrometheusBearerToken = preservedMetadataString(metadata, "prometheus_bearer_token")
-	}
-	if strings.TrimSpace(next.PrometheusClusterLabel) == "" {
-		next.PrometheusClusterLabel = preservedMetadataString(metadata, "prometheus_cluster_label")
 	}
 	if strings.TrimSpace(next.GrafanaBaseURL) == "" {
 		next.GrafanaBaseURL = preservedMetadataString(metadata, "grafana_base_url")

@@ -33,8 +33,8 @@ func PrometheusSourceConflict(left, right Connection) bool {
 	if left.Summary.ID == right.Summary.ID {
 		return false
 	}
-	leftURL := strings.TrimRight(prometheusMetadata(left, "prometheus_url"), "/")
-	rightURL := strings.TrimRight(prometheusMetadata(right, "prometheus_url"), "/")
+	leftURL := prometheusSourceURL(left)
+	rightURL := prometheusSourceURL(right)
 	if leftURL == "" || leftURL != rightURL || prometheusSourceLocation(left, leftURL) != prometheusSourceLocation(right, rightURL) {
 		return false
 	}
@@ -44,6 +44,30 @@ func PrometheusSourceConflict(left, right Connection) bool {
 		return true
 	}
 	return prometheusSourceValue(left) == prometheusSourceValue(right)
+}
+
+func prometheusSourceURL(connection Connection) string {
+	baseURL := strings.TrimRight(prometheusMetadata(connection, "prometheus_url"), "/")
+	endpoint, err := url.Parse(baseURL)
+	if err != nil || endpoint.Host == "" {
+		return baseURL
+	}
+	host := endpoint.Hostname()
+	if !strings.Contains(host, ":") {
+		host = strings.ToLower(host)
+	}
+	port := endpoint.Port()
+	if port == "80" && endpoint.Scheme == "http" || port == "443" && endpoint.Scheme == "https" {
+		port = ""
+	}
+	if port != "" {
+		endpoint.Host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		endpoint.Host = "[" + host + "]"
+	} else {
+		endpoint.Host = host
+	}
+	return endpoint.String()
 }
 
 func prometheusSourceLocation(connection Connection, baseURL string) string {

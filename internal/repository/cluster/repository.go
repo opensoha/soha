@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -108,7 +107,6 @@ func (r *Repository) GetConnection(ctx context.Context, clusterID string) (domai
 // HasPrometheusSourceConflict checks legacy/config-seeded sources and protects
 // reads even when two registrations were validated concurrently.
 func (r *Repository) HasPrometheusSourceConflict(ctx context.Context, connection domaincluster.Connection) (bool, error) {
-	baseURL, _ := connection.Metadata["prometheus_url"].(string)
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT c.id, ccm.metadata->>'prometheus_url', ccm.metadata->>'prometheus_transport',
 			ccm.metadata->>'endpoint', ccm.metadata->>'prometheus_cluster_label',
@@ -118,8 +116,8 @@ func (r *Repository) HasPrometheusSourceConflict(ctx context.Context, connection
 			SELECT metadata FROM cluster_credentials_meta
 			WHERE cluster_id = c.id ORDER BY updated_at DESC LIMIT 1
 		) ccm ON TRUE
-		WHERE c.id <> ? AND rtrim(btrim(ccm.metadata->>'prometheus_url'), '/') = ?
-	`, connection.Summary.ID, strings.TrimRight(strings.TrimSpace(baseURL), "/")).Rows()
+		WHERE c.id <> ? AND btrim(ccm.metadata->>'prometheus_url') <> ''
+	`, connection.Summary.ID).Rows()
 	if err != nil {
 		return false, err
 	}

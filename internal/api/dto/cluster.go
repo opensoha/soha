@@ -38,7 +38,7 @@ type UpdateClusterRequest struct {
 	AgentToken                  string                                  `json:"agentToken"`
 	PrometheusBaseURL           *string                                 `json:"prometheusBaseUrl"`
 	PrometheusBearerToken       string                                  `json:"prometheusBearerToken"`
-	PrometheusClusterLabel      string                                  `json:"prometheusClusterLabel"`
+	PrometheusClusterLabel      *string                                 `json:"prometheusClusterLabel"`
 	PrometheusClusterLabelValue *string                                 `json:"prometheusClusterLabelValue"`
 	GrafanaBaseURL              string                                  `json:"grafanaBaseUrl"`
 }
