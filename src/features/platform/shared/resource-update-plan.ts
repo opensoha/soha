@@ -7,6 +7,7 @@ export interface ResourceUpdatePlanVariables {
   kind: string
   name: string
   content: string
+  requireObservedIdentity?: boolean
 }
 
 export async function planResourceUpdate(
@@ -21,6 +22,7 @@ export async function planResourceUpdate(
       kind: variables.kind,
       name: variables.name,
       content: variables.content,
+      ...(variables.requireObservedIdentity ? { requireObservedIdentity: true } : {}),
     },
   )
   return response.data

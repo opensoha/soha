@@ -1,0 +1,65 @@
+.soha-rolebinding-detail .soha-workload-detail-page {
+  gap: 0;
+}
+
+.soha-rolebinding-detail .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+
+.soha-rolebinding-detail .soha-rb-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-rolebinding-detail .soha-rb-subject-search {
+  margin-bottom: 16px;
+}
+
+.soha-rolebinding-detail .soha-workload-overview-config > div {
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr);
+}
+
+.soha-rolebinding-detail .soha-workload-overview-config dt,
+.soha-rolebinding-detail .soha-workload-overview-config dd,
+.soha-rolebinding-detail .soha-rb-raw-summary,
+.soha-rolebinding-detail .soha-rb-raw-subjects li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.soha-rolebinding-detail .soha-rb-source-status {
+  margin-block: 0 16px;
+  color: var(--soha-text-secondary);
+}
+
+.soha-rolebinding-detail .soha-rb-raw-summary,
+.soha-rolebinding-detail .soha-rb-raw-subjects li {
+  white-space: pre-wrap;
+}
+
+.soha-rolebinding-detail .soha-rb-raw-subjects {
+  margin: 0;
+  padding-inline-start: 20px;
+}
+
+.soha-rolebinding-detail .soha-rb-raw-subjects li {
+  padding-block: 6px;
+}
+
+.soha-rolebinding-detail .soha-rb-namespace {
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.soha-rolebinding-detail .soha-rb-namespace .soha-metadata-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-rolebinding-detail .soha-rb-subject-name {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

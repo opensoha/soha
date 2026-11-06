@@ -3,126 +3,47 @@ import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import { useI18n } from '@/i18n'
-import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { toScopeKey, type ApiResponse } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
-import { SafetyCertificateOutlined } from '@ant-design/icons'
+import { TableCellText } from '@/components/table-cell-content'
+import {
+  QuestionCircleOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Tag, Typography } from 'antd'
-import { accessControlKeys } from '../shared/keys'
-
-interface AccessCheck {
-  verb: string
-  group?: string
-  resource: string
-  namespace?: string
-  name?: string
-}
-
-interface AccessDecision {
-  check: AccessCheck
-  allowed: boolean
-  denied: boolean
-  reason?: string
-  evaluationError?: string
-}
-
-interface EffectiveAccessRow extends AccessDecision {
-  key: string
-  label: string
-  risk: 'read' | 'high'
-}
-
-function serviceAccountChecks(namespace: string) {
-  return [
-    { label: 'List Pods', risk: 'read' as const, verb: 'list', resource: 'pods', namespace },
-    { label: 'Read Pod logs', risk: 'read' as const, verb: 'get', resource: 'pods/log', namespace },
-    {
-      label: 'Create Deployments',
-      risk: 'high' as const,
-      verb: 'create',
-      group: 'apps',
-      resource: 'deployments',
-      namespace,
-    },
-    {
-      label: 'Update Deployments',
-      risk: 'high' as const,
-      verb: 'update',
-      group: 'apps',
-      resource: 'deployments',
-      namespace,
-    },
-    {
-      label: 'Delete Deployments',
-      risk: 'high' as const,
-      verb: 'delete',
-      group: 'apps',
-      resource: 'deployments',
-      namespace,
-    },
-    { label: 'Read Secrets', risk: 'high' as const, verb: 'get', resource: 'secrets', namespace },
-    {
-      label: 'Create RoleBindings',
-      risk: 'high' as const,
-      verb: 'create',
-      group: 'rbac.authorization.k8s.io',
-      resource: 'rolebindings',
-      namespace,
-    },
-    {
-      label: 'Create ClusterRoleBindings',
-      risk: 'high' as const,
-      verb: 'create',
-      group: 'rbac.authorization.k8s.io',
-      resource: 'clusterrolebindings',
-    },
-    { label: 'Impersonate Users', risk: 'high' as const, verb: 'impersonate', resource: 'users' },
-  ]
-}
+import { Alert, Button, Card, Tag, Tooltip } from 'antd'
+import {
+  accessDecisionState,
+  serviceAccountAccessReviewOptions,
+  type EffectiveAccessRow,
+} from './access-review'
 
 export function ServiceAccountEffectiveAccessPanel({
   name,
   namespace,
+  clusterId: explicitClusterId,
 }: {
   name: string
   namespace: string
+  clusterId?: string
 }) {
   const { localeCode } = useI18n()
-  const { clusterId } = usePlatformScopeStore()
+  const scopeClusterId = usePlatformScopeStore((state) => state.clusterId)
+  const clusterId = explicitClusterId ?? scopeClusterId
   const snapshot = usePermissionSnapshot().data?.data
   const canReview =
     hasPermission(snapshot, 'platform.access-control.access-reviews.execute') ||
     hasPermission(snapshot, 'platform.access-control.service-accounts.view')
-  const checks = serviceAccountChecks(namespace)
-  const scope = toScopeKey(clusterId, namespace)
-  const query = useQuery({
-    queryKey: accessControlKeys.accessReview(scope, name),
-    queryFn: async () => {
-      const response = await api.post<ApiResponse<{ decisions: AccessDecision[] }>>(
-        `/clusters/${encodeURIComponent(clusterId!)}/access-control/access-reviews`,
-        {
-          subject: { kind: 'ServiceAccount', namespace, name },
-          checks: checks.map(({ label: _label, risk: _risk, ...check }) => check),
-        },
-      )
-      return response.data.decisions.map(
-        (decision, index): EffectiveAccessRow => ({
-          ...decision,
-          key: `${decision.check.verb}/${decision.check.group || 'core'}/${decision.check.resource}`,
-          label: checks[index]?.label ?? decision.check.resource,
-          risk: checks[index]?.risk ?? 'read',
-        }),
-      )
-    },
-    enabled: canReview && Boolean(clusterId && namespace && name),
-  })
+  const query = useQuery(
+    serviceAccountAccessReviewOptions(clusterId ?? undefined, namespace, name, canReview),
+  )
   const visibleQueryData =
-    canReview && Boolean(clusterId && namespace && name) ? readableQueryData(query) : undefined
+    canReview && !query.isError && Boolean(clusterId && namespace && name)
+      ? readableQueryData(query)
+      : undefined
 
   if (!canReview) {
     return (
@@ -135,34 +56,74 @@ export function ServiceAccountEffectiveAccessPanel({
   }
 
   const rows = visibleQueryData ?? []
-  const highRiskAllowed = rows.filter((row) => row.risk === 'high' && row.allowed).length
+  const highRiskAllowed = rows.filter(
+    (row) => row.risk === 'high' && accessDecisionState(row) === 'allowed',
+  ).length
+  const inconclusive =
+    query.isError ||
+    new Set(rows.map((row) => row.key)).size !== 9 ||
+    rows.some(
+      (row) => ['unknown', 'error'].includes(accessDecisionState(row)) || row.risk === 'unknown',
+    )
   const columns: TableColumnsType<EffectiveAccessRow> = [
-    { title: localeCode === 'zh_CN' ? '操作' : 'Operation', dataIndex: 'label' },
+    {
+      title: localeCode === 'zh_CN' ? '操作' : 'Operation',
+      key: 'operation',
+      width: 220,
+      render: (_value, row) => <TableCellText value={`${row.check.verb} · ${row.label}`} />,
+    },
     {
       title: localeCode === 'zh_CN' ? '范围' : 'Scope',
       key: 'scope',
-      render: (_value, row) =>
-        `${row.check.group || 'core'}/${row.check.resource}${row.check.namespace ? ` · ${row.check.namespace}` : ' · cluster'}`,
+      width: 320,
+      render: (_value, row) => (
+        <TableCellText
+          value={`${row.check.group || 'core'}/${row.check.resource}${row.check.namespace ? ` · ${row.check.namespace}` : ' · cluster'}${row.check.name ? ` · ${row.check.name}` : ''}`}
+        />
+      ),
     },
     {
       title: localeCode === 'zh_CN' ? '风险' : 'Risk',
       dataIndex: 'risk',
+      width: 100,
       render: (risk: EffectiveAccessRow['risk']) => (
-        <Tag color={risk === 'high' ? 'red' : 'default'}>{risk}</Tag>
+        <Tag color={risk === 'high' ? 'red' : 'default'}>
+          {localeCode === 'zh_CN'
+            ? risk === 'high'
+              ? '敏感操作'
+              : risk === 'read'
+                ? '读取'
+                : '未知'
+            : risk}
+        </Tag>
       ),
     },
     {
       title: localeCode === 'zh_CN' ? '决策' : 'Decision',
       key: 'decision',
-      render: (_value, row) => <StatusTag value={row.allowed ? 'allowed' : 'denied'} />,
+      width: 100,
+      render: (_value, row) => <StatusTag value={accessDecisionState(row)} />,
     },
     {
       title: localeCode === 'zh_CN' ? '原因' : 'Reason',
       key: 'reason',
+      width: 280,
       render: (_value, row) => (
-        <Typography.Text type="secondary">
-          {row.evaluationError || row.reason || '-'}
-        </Typography.Text>
+        <TableCellText
+          value={
+            row.evaluationError ||
+            (row.allowed && row.denied
+              ? localeCode === 'zh_CN'
+                ? '决策冲突'
+                : 'Conflicting decisions'
+              : row.reason) ||
+            (accessDecisionState(row) === 'unknown'
+              ? localeCode === 'zh_CN'
+                ? '未返回允许或明确拒绝'
+                : 'Neither allowed nor explicitly denied'
+              : '—')
+          }
+        />
       ),
     },
   ]
@@ -171,31 +132,71 @@ export function ServiceAccountEffectiveAccessPanel({
     <div className="soha-detail-stack">
       <ReadFeedback canRead={query.isEnabled} query={query} label="资源记录" />
 
-      <Alert
-        showIcon
-        icon={<SafetyCertificateOutlined />}
-        type={highRiskAllowed > 0 ? 'warning' : 'info'}
+      <Card
         title={
-          highRiskAllowed > 0
-            ? localeCode === 'zh_CN'
-              ? `允许 ${highRiskAllowed} 项高风险操作`
-              : `${highRiskAllowed} high-risk operations allowed`
-            : localeCode === 'zh_CN'
-              ? '未发现允许的高风险操作'
-              : 'No high-risk operations allowed'
+          <span className="soha-sa-section-title">
+            {localeCode === 'zh_CN' ? '权限检查' : 'Access checks'}
+            <Tooltip
+              trigger={['hover', 'focus', 'click']}
+              title={
+                localeCode === 'zh_CN'
+                  ? '仅覆盖当前九项抽样检查，不代表完整权限或安全评估。未知表示未返回允许或明确拒绝；评估错误单独展示。'
+                  : 'Only nine sampled checks; not a complete security assessment. Unknown means neither allowed nor explicitly denied. Evaluation errors are separate.'
+              }
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<QuestionCircleOutlined />}
+                aria-label={localeCode === 'zh_CN' ? '权限检查说明' : 'Access check information'}
+              />
+            </Tooltip>
+          </span>
         }
-      />
-      <AdminTable
-        className="soha-platform-table"
-        columns={columns}
-        dataSource={rows}
-        loading={query.isLoading}
-        rowKey="key"
-        pageSize={K8S_TABLE_PAGE_SIZE}
-        tableSize="small"
-        localSorting
-        viewportScroll
-      />
+        extra={
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            onClick={() => void query.refetch()}
+            loading={query.isFetching}
+            disabled={!query.isEnabled}
+          >
+            {localeCode === 'zh_CN' ? '刷新检查' : 'Refresh checks'}
+          </Button>
+        }
+      >
+        <Alert
+          showIcon
+          style={{ marginBottom: 16 }}
+          icon={<SafetyCertificateOutlined />}
+          type={highRiskAllowed > 0 ? 'warning' : 'info'}
+          title={
+            highRiskAllowed > 0
+              ? localeCode === 'zh_CN'
+                ? `允许 ${highRiskAllowed} 项高风险操作`
+                : `${highRiskAllowed} high-risk operations allowed`
+              : inconclusive
+                ? localeCode === 'zh_CN'
+                  ? '检查不完整，无法确认高风险授权'
+                  : 'Checks incomplete; high-risk access is unknown'
+                : localeCode === 'zh_CN'
+                  ? '本次检查未返回允许的高风险操作'
+                  : 'No high-risk operations allowed among these checks'
+          }
+        />
+        <AdminTable
+          enableColumnSelection={false}
+          className="soha-platform-table"
+          columns={columns}
+          dataSource={rows}
+          loading={query.isLoading}
+          rowKey="key"
+          pagination={false}
+          scroll={{ x: 1020 }}
+          tableSize="small"
+          localSorting
+        />
+      </Card>
     </div>
   )
 }

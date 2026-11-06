@@ -8,6 +8,9 @@ import { helmMutations } from './helm/mutations'
 const apiMocks = vi.hoisted(() => ({
   deleteCustomResource: vi.fn(),
   deleteHelmRelease: vi.fn(),
+  getHelmReleaseDetail: vi.fn(),
+  getHelmReleaseHistory: vi.fn(),
+  rollbackHelmRelease: vi.fn(),
 }))
 
 vi.mock('./crds/api', async (importOriginal) => ({
@@ -18,6 +21,9 @@ vi.mock('./crds/api', async (importOriginal) => ({
 vi.mock('./helm/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./helm/api')>()),
   deleteHelmRelease: apiMocks.deleteHelmRelease,
+  getHelmReleaseDetail: apiMocks.getHelmReleaseDetail,
+  getHelmReleaseHistory: apiMocks.getHelmReleaseHistory,
+  rollbackHelmRelease: apiMocks.rollbackHelmRelease,
 }))
 
 describe('extensions cache invalidation', () => {
@@ -43,6 +49,9 @@ describe('extensions cache invalidation', () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: crdKeys.resources('cluster-a', crd, 'row-ns'),
     })
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: crdKeys.resources('cluster-a', crd, null),
+    })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: crdKeys.yaml(target) })
   })
 
@@ -53,5 +62,24 @@ describe('extensions cache invalidation', () => {
     const target = { clusterId: 'cluster-a', name: 'release-a', namespace: 'row-ns' }
     await new MutationObserver(queryClient, helmMutations.removeRelease(queryClient)).mutate(target)
     expect(invalidate).toHaveBeenCalledWith({ queryKey: helmKeys.releases('cluster-a') })
+  })
+
+  it('invalidates the observed Helm release values after rollback', async () => {
+    const queryClient = new QueryClient()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue()
+    const target = { clusterId: 'cluster-a', name: 'release-a', namespace: 'row-ns' }
+    apiMocks.getHelmReleaseDetail.mockResolvedValueOnce({ ...target, revision: '3' })
+    apiMocks.getHelmReleaseHistory.mockResolvedValueOnce([
+      { revision: '2', allowedActions: ['rollback'] },
+    ])
+    apiMocks.rollbackHelmRelease.mockResolvedValueOnce({ revision: '4' })
+    await new MutationObserver(queryClient, helmMutations.rollbackRelease(queryClient)).mutate({
+      ...target,
+      revision: 2,
+      currentRevision: '3',
+      wait: true,
+      timeoutSeconds: 300,
+    })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: helmKeys.releaseValues(target) })
   })
 })

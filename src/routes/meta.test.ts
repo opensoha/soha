@@ -1644,7 +1644,12 @@ describe('access route authorization', () => {
 })
 
 it('keeps network resource leaves flat while preserving legacy group routes', () => {
-  for (const id of ['network-services', 'network-ingresses', 'network-gateway-api-gateways', 'network-gateway-api-httproutes']) {
+  for (const id of [
+    'network-services',
+    'network-ingresses',
+    'network-gateway-api-gateways',
+    'network-gateway-api-httproutes',
+  ]) {
     expect(getRoute(id).parentId).toBe('network')
   }
   for (const id of ['network-routing', 'network-backends']) {
@@ -1657,11 +1662,91 @@ it('keeps network resource leaves flat while preserving legacy group routes', ()
     { id: 'network-services', parentId: 'network', path: '/network/services' },
   ]
   const snapshot = buildSnapshot({
-    permissionKeys: ['workspace.resource.view', 'workbench.platform.view', 'platform.network.topology.view', 'platform.network.services.view'],
+    permissionKeys: [
+      'workspace.resource.view',
+      'workbench.platform.view',
+      'platform.network.topology.view',
+      'platform.network.services.view',
+    ],
     visibleMenuIds: visibleMenus.map((menu) => menu.id),
     visibleMenus,
   })
   const network = getAccessibleSidebarNav(snapshot).find((menu) => menu.id === 'network')
-  expect(network?.children?.map((menu) => menu.id)).toEqual(['network-services', 'network-topology'])
+  expect(network?.children?.map((menu) => menu.id)).toEqual([
+    'network-services',
+    'network-topology',
+  ])
   expect(network?.children?.every((menu) => !menu.children)).toBe(true)
+})
+
+for (const classSort of [54, 60]) {
+  it(`places untouched legacy IngressClasses after Ingresses, preserves custom sort ${classSort}`, () => {
+    const visibleMenus = [
+      { id: 'network', path: '/network' },
+      { id: 'network-ingresses', parentId: 'network', path: '/network/ingresses', sortOrder: 42 },
+      {
+        id: 'network-gateway-api-gatewayclasses',
+        parentId: 'network',
+        path: '/network/gateway-api/gatewayclasses',
+        sortOrder: 43,
+      },
+      {
+        id: 'network-ingressclasses',
+        parentId: 'network',
+        path: '/network/ingressclasses',
+        sortOrder: classSort,
+      },
+    ]
+    const snapshot = buildSnapshot({
+      visibleMenus,
+      visibleMenuIds: visibleMenus.map((v) => v.id),
+      permissionKeys: [
+        'platform.network.ingresses.view',
+        'platform.network.ingress-classes.view',
+        'platform.network.gateway-classes.view',
+      ],
+    })
+    const children = getAccessibleSidebarNav(snapshot)
+      .find((m) => m.id === 'network')
+      ?.children?.map((m) => m.id)
+    expect(children).toEqual(
+      classSort === 54
+        ? ['network-ingresses', 'network-ingressclasses', 'network-gateway-api-gatewayclasses']
+        : ['network-ingresses', 'network-gateway-api-gatewayclasses', 'network-ingressclasses'],
+    )
+    expect(visibleMenus[3].sortOrder).toBe(classSort)
+  })
+}
+
+it('keeps legacy IngressClasses next to Ingresses for roles without GatewayClasses', () => {
+  const visibleMenus = [
+    { id: 'network', path: '/network' },
+    { id: 'network-ingresses', parentId: 'network', path: '/network/ingresses', sortOrder: 42 },
+    {
+      id: 'network-endpointslices',
+      parentId: 'network',
+      path: '/network/endpointslices',
+      sortOrder: 53,
+    },
+    {
+      id: 'network-ingressclasses',
+      parentId: 'network',
+      path: '/network/ingressclasses',
+      sortOrder: 54,
+    },
+  ]
+  const snapshot = buildSnapshot({
+    visibleMenus,
+    visibleMenuIds: visibleMenus.map((v) => v.id),
+    permissionKeys: [
+      'platform.network.ingresses.view',
+      'platform.network.ingress-classes.view',
+      'platform.network.endpoint-slices.view',
+    ],
+  })
+  expect(
+    getAccessibleSidebarNav(snapshot)
+      .find((m) => m.id === 'network')
+      ?.children?.map((m) => m.id),
+  ).toEqual(['network-ingresses', 'network-ingressclasses', 'network-endpointslices'])
 })

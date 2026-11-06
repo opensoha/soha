@@ -79,6 +79,8 @@ export interface OverviewActivityItem {
 export interface OverviewCapacitySummary {
   cpuPercent?: number
   memoryPercent?: number
+  cpuRequestPercent?: number
+  memoryRequestPercent?: number
   podPercent?: number
   readyNodes: number
   totalNodes: number

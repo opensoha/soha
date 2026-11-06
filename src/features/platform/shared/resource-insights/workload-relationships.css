@@ -1,0 +1,106 @@
+.soha-workload-relationships-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.soha-workload-relationships-workspace {
+  display: flex;
+  position: relative;
+  gap: 16px;
+  min-width: 0;
+  margin-top: 16px;
+}
+.soha-workload-relationships-view {
+  flex: 1;
+  min-width: 0;
+}
+.soha-workload-relationships .soha-unresolved-storage-binding .react-flow__edge-path {
+  stroke-dasharray: 5px 4px;
+}
+.soha-workload-relationships-inspector {
+  flex: 0 0 288px;
+  width: 288px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+  overflow: auto;
+  max-height: 720px;
+}
+.soha-workload-relationships-inspector strong {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-block: 8px;
+}
+.soha-workload-relationships-inspector > dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 12px;
+}
+.soha-workload-relationships-inspector dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.soha-workload-relationships-inspector ul {
+  padding-inline-start: 16px;
+}
+.soha-workload-relationships-inspector li {
+  margin-block: 12px;
+  overflow-wrap: anywhere;
+}
+.soha-workload-relationships-inspector li button {
+  border: 0;
+  background: transparent;
+  color: var(--soha-primary);
+  cursor: pointer;
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.soha-workload-relationships-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .soha-workload-relationships-inspector {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    max-width: calc(100% - 16px);
+    z-index: 5;
+    box-shadow: var(--soha-shadow-strong);
+  }
+}
+
+.soha-workload-relationships-edge-facts {
+  margin: 4px 0 8px;
+  font-size: var(--soha-font-size-supporting);
+  overflow-wrap: anywhere;
+}
+.soha-workload-relationships-edge-facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.soha-workload-relationships-edge-facts dt {
+  color: var(--soha-text-secondary);
+}
+.soha-workload-relationships-edge-facts dd {
+  margin: 0;
+  min-width: 0;
+}
+.soha-workload-relationships-edge-facts button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--soha-primary);
+  cursor: pointer;
+  text-align: start;
+  font: inherit;
+  overflow-wrap: anywhere;
+}

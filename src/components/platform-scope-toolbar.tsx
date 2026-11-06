@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { Select, Space, Tag, Typography } from 'antd'
 import { ApartmentOutlined, KubernetesOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { clusterQueries } from '@/features/platform/clusters/queries'
 import { namespaceQueries } from '@/features/platform/cluster-resources/queries'
 import { toClusterScope } from '@/features/platform/cluster-resources/scope'
@@ -29,6 +30,7 @@ interface GlobalScopeBarProps {
 interface PlatformScopeTriggerProps {
   className?: string
   scopeMode?: ScopeMode
+  syncClusterSearch?: boolean
 }
 
 interface ScopeSummaryProps {
@@ -111,8 +113,10 @@ function isEditableScopeMode(scopeMode: ScopeMode) {
 export function PlatformScopeTrigger({
   className,
   scopeMode = 'hidden',
+  syncClusterSearch = true,
 }: PlatformScopeTriggerProps = {}) {
   const { t } = useI18n()
+  const [searchParams, setSearchParams] = useSearchParams()
   const {
     clusterId,
     namespace,
@@ -181,7 +185,16 @@ export function PlatformScopeTrigger({
         size="small"
         value={clusterId ?? undefined}
         variant="filled"
-        onChange={(value) => setClusterId(typeof value === 'string' ? value : null)}
+        onChange={(value) => {
+          if (value === clusterId) return
+          setClusterId(value)
+          if (syncClusterSearch && (searchParams.has('clusterId') || searchParams.has('namespace'))) {
+            const next = new URLSearchParams(searchParams)
+            next.set('clusterId', value)
+            next.delete('namespace')
+            setSearchParams(next, { replace: true })
+          }
+        }}
       />
     </div>
   )

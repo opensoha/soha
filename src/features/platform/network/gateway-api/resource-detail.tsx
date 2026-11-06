@@ -1,16 +1,14 @@
+import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useI18n } from '@/i18n'
-import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery } from '@tanstack/react-query'
 import { Card } from 'antd'
 import type { ReactNode } from 'react'
-import { useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { useNetworkDetailScope } from '../shared/detail-scope'
 import { NetworkDetailShell } from '../shared/detail-shell'
-import { resolveNetworkNamespace } from '../shared/scope'
 import type { NetworkResourceRecord } from '../shared/types'
 import { gatewayAPIQueries } from './queries'
 import type { GatewayAPIKind } from './types'
@@ -27,12 +25,10 @@ export function GatewayAPIResourceDetail<T extends NetworkResourceRecord>({
   label: string
 }) {
   const { localeCode } = useI18n()
-  const { clusterId, namespace } = usePlatformScopeStore()
   const name = (useParams().name as string | undefined) ?? ''
-  const [searchParams] = useSearchParams()
-  const detailNamespace = resolveNetworkNamespace(namespace, searchParams.get('namespace'))
-  const scope = toScopeKey(clusterId, detailNamespace)
-  const [activeTabKey, setActiveTabKey] = useState(() => searchParams.get('tab') === 'yaml' ? 'yaml' : 'overview')
+  const scope = useNetworkDetailScope()
+  const { clusterId, namespace: detailNamespace } = scope
+  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
   const query = useQuery(gatewayAPIQueries.detail<T>(kind, scope, name))
   const visibleQueryData = readableQueryData(query)
   const detail = visibleQueryData

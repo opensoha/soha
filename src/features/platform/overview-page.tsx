@@ -21,12 +21,13 @@ import {
   AppstoreOutlined,
   ArrowRightOutlined,
   FireOutlined,
-  ReloadOutlined,
+  HddOutlined,
+  QuestionCircleOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Card, Space, Spin, Typography } from 'antd'
-import { useMemo } from 'react'
+import { Button, Card, Space, Spin, Tooltip, Typography } from 'antd'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import './overview.css'
 import {
@@ -40,8 +41,24 @@ import { PlatformOperationsPanel } from './overview/operations-panel'
 import { platformOverviewQueries } from './overview/queries'
 import { ResourceFinder, type OverviewResourceKindOption } from './overview/resource-finder'
 import type { AggregatedWorkloadOverview } from './overview/types'
+import { nodeQueries } from './cluster-resources/queries'
+import { WorkloadRefresh, useWorkloadRefresh } from './workloads/shared/workload-refresh'
 
 const { Text } = Typography
+
+function OverviewHint({ title, label }: { title: string; label: string }) {
+  return (
+    <Tooltip title={title} trigger={['hover', 'focus']}>
+      <Button
+        type="text"
+        size="small"
+        className="soha-platform-overview-hint"
+        aria-label={label}
+        icon={<QuestionCircleOutlined />}
+      />
+    </Tooltip>
+  )
+}
 
 const clusterTypeLabels: Record<string, { zh: string; en: string }> = {
   standard_kubernetes: { zh: '标准 Kubernetes', en: 'Standard Kubernetes' },
@@ -81,32 +98,62 @@ function formatWorkloadSource(source: string | undefined, localeCode: string) {
 export function OverviewPage() {
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
-  const { clusterId } = usePlatformScopeStore()
+  // Overview is deliberately cluster-wide, irrespective of the namespace selector.
+  const clusterId = usePlatformScopeStore((state) => state.clusterId)
+  const setNamespace = usePlatformScopeStore((state) => state.setNamespace)
+  const refresh = useWorkloadRefresh()
+  const [refreshToken, setRefreshToken] = useState(0)
+  const [operationsRefreshState, setOperationsRefreshState] = useState({
+    isFetching: false,
+    isError: false,
+  })
   const permissionSnapshotQuery = usePermissionSnapshot()
   const permissionSnapshot = permissionSnapshotQuery.data?.data
   const canViewClusters = hasPermission(permissionSnapshot, 'platform.clusters.view')
   const canViewMonitoring = hasPermission(permissionSnapshot, 'observe.monitoring.view')
   const canViewAlerts = hasPermission(permissionSnapshot, 'observe.alerts.view')
   const canViewWorkloads = hasPermission(permissionSnapshot, 'platform.pods.view')
+  const canViewNodes = hasPermission(permissionSnapshot, 'platform.nodes.view')
+  const nodesQuery = useQuery({
+    ...nodeQueries.list({ clusterId, namespace: null }),
+    enabled: canViewNodes && Boolean(clusterId),
+    refetchInterval: refresh.interval,
+  })
+  const nodes = canViewNodes && clusterId ? readableQueryData(nodesQuery) : undefined
 
-  const clustersQuery = useQuery(platformOverviewQueries.clusters(canViewClusters))
+  const clustersQuery = useQuery({
+    ...platformOverviewQueries.clusters(canViewClusters),
+    refetchInterval: refresh.interval,
+  })
   const visibleClustersQueryData = readableQueryData(clustersQuery)
 
-  const summaryQuery = useQuery(platformOverviewQueries.monitoringSummary(canViewMonitoring))
+  const summaryQuery = useQuery({
+    ...platformOverviewQueries.monitoringSummary(canViewMonitoring),
+    refetchInterval: refresh.interval,
+  })
   const visibleSummaryQueryData = readableQueryData(summaryQuery)
   const alertEventsQuery = useQuery({
     ...observabilityAlertQueries.recent(50, clusterId ?? undefined),
+    refetchInterval: refresh.interval,
     enabled: canViewAlerts && Boolean(clusterId),
   })
   const visibleAlertEventsQueryData =
     canViewAlerts && Boolean(clusterId) ? readableQueryData(alertEventsQuery) : undefined
   const refreshAlertOverview = () => {
-    void alertEventsQuery.refetch?.()
-    if (canViewMonitoring) void summaryQuery.refetch?.()
+    if (!refresh.enabled || refresh.hidden) return
+    if (alertEventsQuery.isEnabled && !alertEventsQuery.isError) {
+      void alertEventsQuery.refetch()
+    }
+    if (summaryQuery.isEnabled && !summaryQuery.isError) void summaryQuery.refetch()
   }
   const alertStream = useAlertEventStream({
     clusterId,
-    enabled: canViewAlerts && Boolean(clusterId) && !queryAccessDenied(alertEventsQuery),
+    enabled:
+      canViewAlerts &&
+      Boolean(clusterId) &&
+      refresh.enabled &&
+      !refresh.hidden &&
+      !queryAccessDenied(alertEventsQuery),
     onSignal: refreshAlertOverview,
     onFallback: refreshAlertOverview,
   })
@@ -196,9 +243,10 @@ export function OverviewPage() {
     [localeCode, permissionSnapshot],
   )
 
-  const workloadOverviewQuery = useQuery(
-    platformOverviewQueries.workload(clusterId, canViewWorkloads),
-  )
+  const workloadOverviewQuery = useQuery({
+    ...platformOverviewQueries.workload(clusterId, canViewWorkloads),
+    refetchInterval: refresh.interval,
+  })
   const visibleWorkloadOverviewQueryData = readableQueryData(workloadOverviewQuery)
 
   const workloadOverviewLoading = canViewWorkloads && workloadOverviewQuery.isLoading
@@ -256,10 +304,7 @@ export function OverviewPage() {
   const updatedAt = workloadOverview?.generatedAt
     ? formatDateTime(workloadOverview.generatedAt)
     : '-'
-  const isLoading =
-    permissionSnapshotQuery.isLoading ||
-    (canViewClusters && clustersQuery.isLoading) ||
-    (canViewMonitoring && summaryQuery.isLoading)
+  const isLoading = permissionSnapshotQuery.isLoading
   const latestAlertEventAt = scopedAlertEvents.reduce<string | undefined>((latest, alert) => {
     const candidate = alert.lastSeenAt || alert.updatedAt
     return !latest || Date.parse(candidate) > Date.parse(latest) ? candidate : latest
@@ -297,6 +342,19 @@ export function OverviewPage() {
       : (value ?? '-')
   const overviewStats = [
     {
+      key: 'nodes',
+      label: localeCode === 'zh_CN' ? '就绪节点' : 'Ready nodes',
+      helper:
+        localeCode === 'zh_CN'
+          ? '当前集群的就绪节点 / 已读取节点总数'
+          : 'Ready / returned nodes in the current cluster',
+      value: nodes
+        ? `${nodes.filter((node) => node.status.toLowerCase() === 'ready').length} / ${nodes.length}`
+        : '—',
+      icon: <HddOutlined />,
+      tone: nodes?.some((node) => node.status.toLowerCase() !== 'ready') ? 'warning' : 'default',
+    },
+    {
       key: 'pods',
       label: localeCode === 'zh_CN' ? 'Pod 总数' : 'Pods',
       helper:
@@ -314,16 +372,8 @@ export function OverviewPage() {
       tone: (workloadOverview?.atRiskPods ?? 0) > 0 ? 'danger' : 'default',
     },
     {
-      key: 'restart',
-      label: localeCode === 'zh_CN' ? '发生重启' : 'Restarting Pods',
-      helper: localeCode === 'zh_CN' ? '存在重启记录的 Pod' : 'Pods with restart activity',
-      value: workloadValue(workloadOverview?.restartingPods),
-      icon: <ReloadOutlined />,
-      tone: (workloadOverview?.restartingPods ?? 0) > 0 ? 'warning' : 'default',
-    },
-    {
       key: 'alerts',
-      label: localeCode === 'zh_CN' ? '活跃告警' : 'Firing Alerts',
+      label: localeCode === 'zh_CN' ? '近期活跃告警' : 'Recent firing alerts',
       helper:
         localeCode === 'zh_CN'
           ? '最近 50 条告警记录中的活跃项'
@@ -421,13 +471,51 @@ export function OverviewPage() {
       <h1 className="soha-platform-overview-heading">
         {localeCode === 'zh_CN' ? 'Kubernetes 总览' : 'Kubernetes overview'}
       </h1>
+      <div className="soha-platform-overview-toolbar">
+        <Space size={8} wrap>
+          <Text strong>
+            {currentCluster?.name || (localeCode === 'zh_CN' ? '当前集群' : 'Current cluster')}
+          </Text>
+          <Text type="secondary">{localeCode === 'zh_CN' ? '全部命名空间' : 'All namespaces'}</Text>
+        </Space>
+        <WorkloadRefresh
+          settings={refresh}
+          resourceLabel={localeCode === 'zh_CN' ? '集群总览' : 'Cluster overview'}
+          disabled={!clusterId}
+          queries={[
+            clustersQuery,
+            summaryQuery,
+            alertEventsQuery,
+            workloadOverviewQuery,
+            nodesQuery,
+            operationsRefreshState,
+          ]}
+          onRefresh={() => {
+            setRefreshToken((value) => value + 1)
+            return Promise.allSettled(
+              [clustersQuery, summaryQuery, alertEventsQuery, workloadOverviewQuery]
+                .filter((query) => query.isEnabled)
+                .map((query) => query.refetch()),
+            )
+          }}
+        />
+      </div>
       <div className="soha-overview-metric-grid">
         {overviewStats.map((item) => (
           <OverviewMetricCard
             key={item.key}
-            label={item.label}
+            label={
+              <Space size={2}>
+                {item.label}
+                <OverviewHint
+                  title={item.helper}
+                  label={
+                    localeCode === 'zh_CN' ? `${item.label}统计说明` : `${item.label} information`
+                  }
+                />
+              </Space>
+            }
             value={item.value}
-            helper={item.helper}
             icon={item.icon}
             tone={item.tone}
           />
@@ -437,7 +525,7 @@ export function OverviewPage() {
       <div className="soha-platform-focus-grid">
         <Card
           className="soha-overview-runtime-card"
-          title={localeCode === 'zh_CN' ? 'Pod 运行态势' : 'Pod Runtime'}
+          title={localeCode === 'zh_CN' ? 'Pod 运行状态' : 'Pod runtime'}
           extra={
             canViewWorkloads && clusterId ? (
               <div className="soha-overview-runtime-card-extra">
@@ -495,13 +583,15 @@ export function OverviewPage() {
             <div className="soha-overview-runtime-layout">
               <div className="soha-overview-runtime-main">
                 <div className="soha-platform-runtime-source">
-                  <span>
-                    {localeCode === 'zh_CN' ? '数据来源' : 'Source'}:{' '}
-                    {formatWorkloadSource(workloadOverview.source, localeCode)}
-                  </span>
-                  <span>
-                    {localeCode === 'zh_CN' ? '更新于' : 'Updated'}: {updatedAt}
-                  </span>
+                  <Text type="secondary">
+                    {localeCode === 'zh_CN'
+                      ? '当前集群 · 全部命名空间'
+                      : 'Current cluster · All namespaces'}
+                  </Text>
+                  <OverviewHint
+                    label={localeCode === 'zh_CN' ? '运行状态数据来源' : 'Runtime data source'}
+                    title={`${localeCode === 'zh_CN' ? '来源' : 'Source'}: ${formatWorkloadSource(workloadOverview.source, localeCode)} · ${localeCode === 'zh_CN' ? '更新于' : 'Updated'} ${updatedAt}`}
+                  />
                 </div>
 
                 <div className="soha-platform-pod-phases">
@@ -521,11 +611,6 @@ export function OverviewPage() {
                       <Text strong>
                         {localeCode === 'zh_CN' ? '需关注的 Pod' : 'Pods Requiring Attention'}
                       </Text>
-                      <div className="soha-overview-inline-caption">
-                        {localeCode === 'zh_CN'
-                          ? '先看异常实例，再下钻到详情页定位节点、重启与就绪状态。'
-                          : 'Start with the exceptions, then drill into pod details for node, restart, and readiness context.'}
-                      </div>
                     </div>
                   </div>
                   {problematicPods.length === 0 ? (
@@ -580,63 +665,6 @@ export function OverviewPage() {
                   )}
                 </div>
               </div>
-
-              <div className="soha-overview-runtime-side">
-                <div className="soha-overview-subpanel">
-                  <div className="soha-overview-subpanel-head">
-                    <div>
-                      <Text strong>
-                        {localeCode === 'zh_CN' ? '命名空间热点' : 'Namespace Hotspots'}
-                      </Text>
-                      <div className="soha-overview-inline-caption">
-                        {localeCode === 'zh_CN'
-                          ? '先看哪些命名空间承载了更多 Pod 和风险信号。'
-                          : 'Use this to spot which namespaces carry most of the pod volume and risk pressure.'}
-                      </div>
-                    </div>
-                  </div>
-                  {namespaceBreakdown.length === 0 ? (
-                    <ManagementState
-                      bordered={false}
-                      compact
-                      title={
-                        localeCode === 'zh_CN'
-                          ? '当前平台暂无 Pod 分布数据'
-                          : 'No namespace distribution in the platform scope'
-                      }
-                    />
-                  ) : (
-                    <div
-                      className="soha-overview-namespace-list"
-                      role="region"
-                      aria-label={
-                        localeCode === 'zh_CN' ? '命名空间热点列表' : 'Namespace hotspots list'
-                      }
-                      tabIndex={namespaceBreakdown.length > 3 ? 0 : undefined}
-                    >
-                      {namespaceBreakdown.map((item) => (
-                        <div
-                          key={`${item.clusterId}:${item.namespace}`}
-                          className="soha-overview-namespace-row"
-                        >
-                          <div className="soha-overview-namespace-main">
-                            <Text strong>{item.namespace}</Text>
-                            <div className="soha-overview-cluster-caption">
-                              {`Cluster: ${item.clusterName}`}
-                            </div>
-                          </div>
-                          <div className="soha-overview-namespace-meta">
-                            <span>{`Pods: ${item.totalPods}`}</span>
-                            <span>{`Running: ${item.runningPods}`}</span>
-                            <span>{`${localeCode === 'zh_CN' ? '需关注' : 'At-risk'}: ${item.atRiskPods}`}</span>
-                            <span>{`${localeCode === 'zh_CN' ? '重启' : 'Restarts'}: ${item.restartingPods}`}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
           )}
         </Card>
@@ -646,10 +674,10 @@ export function OverviewPage() {
           extra={
             canViewAlerts && clusterId && !alertEventsQuery.isError ? (
               <Space size={6} wrap>
-                <Text type="secondary" className="text-xs">
-                  {localeCode === 'zh_CN' ? '最近记录' : 'Recent records'} {effectiveAlertCount} ·{' '}
-                  {localeCode === 'zh_CN' ? '最近接收' : 'Last received'}: {lastReceivedText}
-                </Text>
+                <OverviewHint
+                  label={localeCode === 'zh_CN' ? '告警接收信息' : 'Alert reception information'}
+                  title={`${localeCode === 'zh_CN' ? '最近记录' : 'Recent records'} ${effectiveAlertCount} · ${localeCode === 'zh_CN' ? '最近接收' : 'Last received'}: ${lastReceivedText}`}
+                />
                 <ReadFeedback
                   label="告警事件流"
                   query={{
@@ -705,15 +733,18 @@ export function OverviewPage() {
           ) : (
             <div className="soha-overview-alert-stack">
               <OverviewSectionBar
-                title={localeCode === 'zh_CN' ? '告警分布' : 'Alert Distribution'}
-                description={
-                  effectiveFiringCount > 0
-                    ? localeCode === 'zh_CN'
-                      ? '当前仍有活跃告警，优先查看严重和警告级别。'
-                      : 'Active alerts remain. Start with Critical and Warning.'
-                    : localeCode === 'zh_CN'
-                      ? '最近 50 条记录中没有活跃告警。'
-                      : 'No active alerts in the latest 50 records.'
+                title={
+                  <Space size={2}>
+                    {localeCode === 'zh_CN' ? '告警分布' : 'Alert distribution'}
+                    <OverviewHint
+                      label={localeCode === 'zh_CN' ? '告警统计说明' : 'Alert count information'}
+                      title={
+                        localeCode === 'zh_CN'
+                          ? '仅统计当前集群最近 50 条告警记录中的活跃项；不是全量活跃告警总数。'
+                          : 'Active alerts among the latest 50 records in this cluster; not the total active alert count.'
+                      }
+                    />
+                  </Space>
                 }
                 extra={
                   <Button
@@ -775,7 +806,11 @@ export function OverviewPage() {
       </div>
 
       <PlatformOperationsPanel
+        key={clusterId || 'no-cluster'}
         clusterId={clusterId}
+        refresh={refresh}
+        refreshToken={refreshToken}
+        onRefreshStateChange={setOperationsRefreshState}
         connectionMode={currentCluster?.connectionMode}
         localeCode={localeCode}
         permissions={{
@@ -806,10 +841,103 @@ export function OverviewPage() {
         }}
       />
 
+      <Card
+        className="soha-overview-panel-card"
+        title={localeCode === 'zh_CN' ? '命名空间分布' : 'Namespace distribution'}
+        extra={
+          <OverviewHint
+            label={
+              localeCode === 'zh_CN' ? '命名空间分布说明' : 'Namespace distribution information'
+            }
+            title={
+              localeCode === 'zh_CN'
+                ? '按需关注 Pod、重启记录与 Pod 数量排序，展示前 6 个命名空间。点击名称查看该命名空间的 Pods。'
+                : 'Top six namespaces ordered by at-risk Pods, restart records and Pod count. Open a name to view its Pods.'
+            }
+          />
+        }
+      >
+        <div className="soha-platform-namespace-distribution">
+          {!canViewWorkloads ? (
+            <ManagementState
+              bordered={false}
+              compact
+              kind="no-permission"
+              title={
+                localeCode === 'zh_CN'
+                  ? '无权限查看命名空间分布'
+                  : 'No namespace distribution access'
+              }
+            />
+          ) : !clusterId ? (
+            <ManagementState
+              bordered={false}
+              compact
+              kind="select-scope"
+              title={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'}
+            />
+          ) : workloadOverviewLoading ? (
+            <div className="soha-platform-ops-loading">
+              <Spin size="small" />
+            </div>
+          ) : workloadOverviewQuery.isError ? (
+            <ManagementState
+              bordered={false}
+              compact
+              kind="error"
+              title={
+                localeCode === 'zh_CN'
+                  ? '命名空间分布加载失败'
+                  : 'Namespace distribution failed to load'
+              }
+            />
+          ) : namespaceBreakdown.length === 0 ? (
+            <ManagementState
+              bordered={false}
+              compact
+              title={
+                localeCode === 'zh_CN'
+                  ? '当前平台暂无 Pod 分布数据'
+                  : 'No namespace distribution in the platform scope'
+              }
+            />
+          ) : (
+            <div
+              className="soha-overview-namespace-list"
+              role="region"
+              aria-label={localeCode === 'zh_CN' ? '命名空间热点列表' : 'Namespace hotspots list'}
+              tabIndex={namespaceBreakdown.length > 3 ? 0 : undefined}
+            >
+              {namespaceBreakdown.map((item) => (
+                <div
+                  key={`${item.clusterId}:${item.namespace}`}
+                  className="soha-overview-namespace-row"
+                >
+                  <div className="soha-overview-namespace-main">
+                    <Link
+                      to={`/workloads/pods?clusterId=${encodeURIComponent(item.clusterId)}&namespace=${encodeURIComponent(item.namespace)}`}
+                      title={item.namespace}
+                      onClick={() => setNamespace(item.namespace)}
+                    >
+                      {item.namespace}
+                    </Link>
+                  </div>
+                  <div className="soha-overview-namespace-meta">
+                    <span>{`Pods: ${item.totalPods}`}</span>
+                    <span>{`${localeCode === 'zh_CN' ? '运行中' : 'Running'}: ${item.runningPods}`}</span>
+                    <span>{`${localeCode === 'zh_CN' ? '需关注' : 'At-risk'}: ${item.atRiskPods}`}</span>
+                    <span>{`${localeCode === 'zh_CN' ? '重启' : 'Restarts'}: ${item.restartingPods}`}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
       <div className="soha-overview-summary-grid">
         <Card
           className="soha-overview-panel-card"
-          title={localeCode === 'zh_CN' ? '集群健康状态' : 'Cluster Health'}
+          title={localeCode === 'zh_CN' ? '集群目录' : 'Cluster directory'}
           extra={
             <Text type="secondary" className="text-xs">
               {localeCode === 'zh_CN' ? '健康 / 总数' : 'Healthy / Total'}: {healthyClusters}/

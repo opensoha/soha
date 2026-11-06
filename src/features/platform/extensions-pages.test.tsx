@@ -17,7 +17,7 @@ import { HelmChartsPage } from './extensions/helm/charts/page'
 import { HelmReleasesPage } from './extensions/helm/releases/list-page'
 
 const testState = vi.hoisted(() => ({
-  permissions: ['platform.helm.values.view'] as string[],
+  permissions: ['platform.helm.view', 'platform.helm.values.view'] as string[],
   normalizePath: (path: string) => {
     const [pathname, rawQuery] = path.split('?')
     if (!rawQuery) return path
@@ -51,7 +51,14 @@ const apiGetMock = vi.hoisted(() =>
 const apiPutMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/stores/platform-scope-store', () => ({
-  usePlatformScopeStore: () => testState.scope,
+  usePlatformScopeStore: Object.assign(
+    (selector?: (state: typeof testState.scope) => unknown) =>
+      selector ? selector(testState.scope) : testState.scope,
+    {
+      getState: () => testState.scope,
+      subscribe: () => () => {},
+    },
+  ),
 }))
 
 vi.mock('@/services/api-client', () => ({
@@ -121,6 +128,7 @@ vi.mock('@/components/admin-table', () => ({
     columns,
     dataSource,
     error,
+    hasReadData,
     empty,
     headerExtra,
     onRow,
@@ -130,11 +138,11 @@ vi.mock('@/components/admin-table', () => ({
     title,
     toolbar,
     toolbarExtra,
-    onRefresh,
   }: {
     columns: Array<Record<string, any>>
     dataSource: Array<Record<string, any>>
     error?: Error | null
+    hasReadData?: boolean
     empty?: ReactNode
     headerExtra?: ReactNode
     onRow?: (record: Record<string, any>, index: number) => Record<string, any>
@@ -144,20 +152,14 @@ vi.mock('@/components/admin-table', () => ({
     title?: ReactNode
     toolbar?: ReactNode
     toolbarExtra?: ReactNode
-    onRefresh?: () => void
   }) => (
     <div data-testid="admin-table">
-      {onRefresh ? (
-        <button data-testid="refresh-table" onClick={onRefresh}>
-          Refresh table
-        </button>
-      ) : null}
       {error ? <div data-testid="table-error">{error.message}</div> : null}
       {title ? <div data-testid="table-title">{title}</div> : null}
       {headerExtra ? <div data-testid="header-extra">{headerExtra}</div> : null}
       {toolbar ? <div data-testid="table-toolbar">{toolbar}</div> : null}
       {toolbarExtra ? <div data-testid="toolbar-extra">{toolbarExtra}</div> : null}
-      {paginationSummary ? (
+      {paginationSummary && (!error || hasReadData) ? (
         <div data-testid="pagination-summary">
           {typeof paginationSummary === 'function'
             ? paginationSummary(dataSource.length, [1, dataSource.length])
@@ -359,6 +361,17 @@ async function openInstance(container: HTMLElement, name: string) {
   })
 }
 
+async function openInstanceYaml(container: HTMLElement) {
+  const yamlTab = await vi.waitFor(() => {
+    const tab = [
+      ...container.querySelectorAll<HTMLElement>('.soha-crd-resource-detail [role="tab"]'),
+    ].find((item) => item.textContent === 'YAML')
+    expect(tab).toBeDefined()
+    return tab!
+  })
+  await act(async () => yamlTab.click())
+}
+
 describe('CRD catalog page', () => {
   beforeAll(() => {
     class ResizeObserverMock {
@@ -392,7 +405,7 @@ describe('CRD catalog page', () => {
   })
 
   beforeEach(() => {
-    testState.permissions = ['platform.helm.values.view']
+    testState.permissions = ['platform.helm.view', 'platform.helm.values.view']
     setResponses({
       '/clusters/cluster-a/extensions/crds': [
         {
@@ -431,21 +444,25 @@ describe('CRD catalog page', () => {
     vi.clearAllMocks()
   })
 
-  it('keeps the CRD catalog query controls outside the table and uses shared pagination', async () => {
+  it('keeps the CRD catalog query controls outside the table and uses shared continuous browsing', async () => {
     const container = await renderWithProviders(<CRDPage />)
 
     expect(container.querySelector('[data-testid="page-header"]')).toBeNull()
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('1 个 API Groups')
     expect(container.querySelector('[data-testid="table-toolbar"]')).toBeNull()
     expect(
       container.querySelector('input[placeholder="搜索 API Group / CRD / Kind / Version"]'),
     ).not.toBeNull()
     expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
 
-    const headerButtons = Array.from(
-      container.querySelectorAll('[data-testid="header-extra"] button'),
-    ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
+    const header = container.querySelector('[data-testid="header-extra"]')!
+    const headerButtons = Array.from(header.querySelectorAll('button:not([role="switch"])')).map(
+      (button) => button.textContent?.trim() || button.getAttribute('aria-label'),
+    )
     expect(headerButtons).toEqual(['切换表格密度', '刷新'])
+    expect(header.querySelectorAll('button[role="switch"]')).toHaveLength(1)
 
     expect(container.textContent).toContain('API Group')
     expect(container.textContent).toContain('CRD Names')
@@ -465,7 +482,7 @@ describe('CRD catalog page', () => {
     expect(container.querySelector('[data-testid="cell-0-2"]')?.textContent).toContain('2 个')
   })
 
-  it('keeps Helm release list filters in the query card and uses shared pagination', async () => {
+  it('keeps Helm release list filters in the query card and uses shared continuous browsing', async () => {
     setResponses({
       '/clusters/cluster-a/helm/releases?namespace=team-a': [
         {
@@ -491,7 +508,9 @@ describe('CRD catalog page', () => {
 
     const container = await renderWithProviders(<HelmReleasesPage />, '/helm/releases')
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('2 个 Helm Releases')
     expect(container.querySelector('[data-testid="table-toolbar"]')).toBeNull()
     expect(
       container.querySelector(
@@ -500,10 +519,12 @@ describe('CRD catalog page', () => {
     ).not.toBeNull()
     expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
 
-    const headerButtons = Array.from(
-      container.querySelectorAll('[data-testid="header-extra"] button'),
-    ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
+    const header = container.querySelector('[data-testid="header-extra"]')!
+    const headerButtons = Array.from(header.querySelectorAll('button:not([role="switch"])')).map(
+      (button) => button.textContent?.trim() || button.getAttribute('aria-label'),
+    )
     expect(headerButtons).toEqual(['切换表格密度', '刷新'])
+    expect(header.querySelectorAll('button[role="switch"]')).toHaveLength(1)
 
     const input = container.querySelector(
       'input[placeholder="搜索 Release / Namespace / Chart / 状态 / 版本"]',
@@ -528,6 +549,7 @@ describe('CRD catalog page', () => {
   })
 
   it('enables Helm release write actions when the capability matrix marks agent parity available', async () => {
+    testState.permissions.push('platform.helm.releases.update', 'platform.helm.releases.delete')
     setResponses({
       '/clusters': [
         {
@@ -571,24 +593,26 @@ describe('CRD catalog page', () => {
 
     const container = await renderWithProviders(<HelmReleasesPage />, '/helm/releases')
 
-    const editButton = container.querySelector(
-      'button[aria-label="编辑并比对 values.yaml"]',
-    ) as HTMLButtonElement | null
-    const deleteButton = container.querySelector(
-      'button[aria-label="删除 Helm Release"]',
-    ) as HTMLButtonElement | null
-    const viewButton = container.querySelector(
-      'button[aria-label="查看 values.yaml"]',
-    ) as HTMLButtonElement | null
-
     expect(container.textContent).not.toContain('当前连接模式限制 Helm 写入')
-    expect(editButton?.disabled).toBe(false)
-    expect(deleteButton?.disabled).toBe(false)
-    expect(viewButton?.disabled).toBe(false)
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="更多操作：ingress-nginx"]')!
+        .click()
+    })
+    const menu = document.querySelector(
+      '[role="menu"][aria-label="Helm Release 操作：ingress-nginx"]',
+    )!
+    for (const label of ['编辑并比对 values.yaml', '卸载 Helm Release', '查看 values.yaml']) {
+      const item = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (entry) => entry.textContent === label,
+      )
+      expect(item).toBeTruthy()
+      expect(item?.getAttribute('aria-disabled')).not.toBe('true')
+    }
   })
 
   it('hides the Helm action column when values and mutation permissions are absent', async () => {
-    testState.permissions = []
+    testState.permissions = ['platform.helm.view']
     setResponses({
       '/clusters/cluster-a/helm/releases?namespace=team-a': [
         {
@@ -699,6 +723,7 @@ describe('CRD catalog page', () => {
         expect(container.querySelector('[data-testid="crd-yaml-editor"]')).toBeNull()
         expect(apiGetMock.mock.calls.some(([path]) => path.includes('/yaml'))).toBe(false)
         await openInstance(container, 'agent-widget')
+        await openInstanceYaml(container)
         await vi.waitFor(async () => {
           await act(async () => {
             await new Promise((resolve) => window.setTimeout(resolve, 0))
@@ -712,8 +737,10 @@ describe('CRD catalog page', () => {
             'apiVersion: example.io/v1',
           )
           expect(
-            container.querySelector<HTMLButtonElement>('button[aria-label="编辑"]')?.disabled,
-          ).toBe(true)
+            [...container.querySelectorAll('button')].some(
+              (button) => button.textContent === '编辑 YAML',
+            ),
+          ).toBe(false)
           expect(container.textContent).not.toContain('Apply')
         })
       }
@@ -729,6 +756,7 @@ describe('CRD catalog page', () => {
       client,
     )
     await openInstance(container, 'widget-a')
+    await openInstanceYaml(container)
     await waitForEditor(container)
     testState.responses[
       '/clusters/cluster-a/extensions/crds/widgets.example.io/resources?namespace=team-a&version=v1'
@@ -739,6 +767,7 @@ describe('CRD catalog page', () => {
     await vi.waitFor(() => {
       expect(container.textContent).toContain('自定义资源无访问权限')
       expect(container.querySelector('[data-testid="crd-yaml-editor"]')).toBeNull()
+      expect(container.querySelector('.soha-crd-resource-detail h1')).toBeNull()
       expect(container.textContent).not.toContain('complete summary')
     })
   })
@@ -777,9 +806,9 @@ describe('CRD catalog page', () => {
     const reads = () =>
       apiGetMock.mock.calls.filter(([path]) => path.includes('/resources?')).length
     const before = reads()
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[data-testid="refresh-table"]')!.click(),
-    )
+    const refresh = container.querySelector<HTMLButtonElement>('button[aria-label="刷新 Widget"]')!
+    expect(refresh.disabled).toBe(true)
+    await act(async () => refresh.click())
     expect(reads()).toBe(before)
     expect(container.textContent).not.toContain('widget-a')
   })
@@ -791,17 +820,24 @@ describe('CRD catalog page', () => {
       <CRDKindWorkspace crd={widgetCRD} kinds={[widgetCRD]} onKindSelect={vi.fn()} />,
     )
     await openInstance(container, 'widget-a')
+    await vi.waitFor(() => expect(container.textContent).toContain('complete summary'))
+    await openInstanceYaml(container)
     await waitForEditor(container)
     expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(widgetYAML)
     expect(
       container.querySelector('[data-testid="crd-yaml-editor"]')?.getAttribute('data-read-only'),
     ).toBe('true')
-    expect(container.textContent).toContain('complete summary')
     expect(apiGetMock.mock.calls.some(([path]) => path.includes('widget-b/yaml'))).toBe(false)
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="编辑"]')!.click(),
-    )
-    await waitForEditor(container)
+    const edit = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === '编辑 YAML',
+    )!
+    await act(async () => edit.click())
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector('[data-testid="crd-yaml-editor"]')?.getAttribute('data-read-only'),
+      ).toBe('false')
+      expect(container.querySelector('[data-testid="baseline"]')?.textContent).toBe(widgetYAML)
+    })
     const changed = widgetYAML.replace('replicas: 1', 'replicas: 2')
     await act(async () => {
       const input = container.querySelector<HTMLTextAreaElement>('textarea')!
@@ -868,7 +904,7 @@ describe('CRD catalog page', () => {
     expect(container.querySelector('[data-testid="crd-yaml-editor"]')).toBeNull()
   })
 
-  it('keeps CRD types visible, loads only the selected type, and preserves instance search and pagination on return', async () => {
+  it('keeps CRD types visible, loads only the selected type, and preserves instance search and the continuous list on return', async () => {
     widgetResponses(['view'])
     const otherCRD = {
       ...widgetCRD,
@@ -914,15 +950,10 @@ describe('CRD catalog page', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('20')
-    await act(async () => {
-      ;[...container.querySelectorAll('button')]
-        .find((button) => button.textContent === 'Next page')!
-        .click()
-    })
-    expect(
-      container.querySelector('[data-testid="pagination"]')?.getAttribute('data-current'),
-    ).toBe('2')
+    expect(container.querySelector('[data-testid="pagination"]')).toBeNull()
+    expect(container.textContent).toContain('sample-16')
     await openInstance(container, 'sample-16')
+    await openInstanceYaml(container)
     await waitForEditor(container)
     expect(directory.isConnected).toBe(true)
     expect(
@@ -938,10 +969,12 @@ describe('CRD catalog page', () => {
       container.querySelector<HTMLInputElement>('input[placeholder="搜索实例 / 命名空间 / 摘要"]')
         ?.value,
     ).toBe('sample-')
+    expect(container.querySelector('[data-testid="pagination"]')).toBeNull()
     expect(
-      container.querySelector('[data-testid="pagination"]')?.getAttribute('data-current'),
-    ).toBe('2')
-    expect(container.querySelector('.soha-crd-instance-name')?.textContent).toBe('sample-16')
+      Array.from(container.querySelectorAll('.soha-crd-instance-name')).some(
+        (item) => item.textContent === 'sample-16',
+      ),
+    ).toBe(true)
     await act(async () => {
       const input = directory.querySelector<HTMLInputElement>('input')!
       setNativeInputValue(input, 'Zadget')
@@ -966,9 +999,7 @@ describe('CRD catalog page', () => {
       container.querySelector<HTMLInputElement>('input[placeholder="搜索实例 / 命名空间 / 摘要"]')
         ?.value,
     ).toBe('')
-    expect(
-      container.querySelector('[data-testid="pagination"]')?.getAttribute('data-current'),
-    ).toBe('1')
+    expect(container.querySelector('[data-testid="pagination"]')).toBeNull()
     expect(container.querySelector('[data-testid="column-titles"]')?.textContent).not.toContain(
       '命名空间',
     )
@@ -995,7 +1026,35 @@ describe('CRD catalog page', () => {
     expect(apiGetMock.mock.calls.some(([path]) => path.includes('/yaml'))).toBe(false)
   })
 
-  it('renders Helm charts from the backend catalog and filters within the table shell', async () => {
+  it('keeps an unread Chart total unknown instead of displaying zero', async () => {
+    setResponses({
+      '/clusters/cluster-a/helm/charts?limit=15&offset=0': new Error('Catalog unavailable'),
+    })
+    const container = await renderWithProviders(<HelmChartsPage />, '/helm/charts')
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="table-error"]')?.textContent).toContain(
+        'Catalog unavailable',
+      ),
+    )
+    expect(container.querySelector('[data-testid="table-title"]')?.textContent).toBe(
+      'Charts 未加载',
+    )
+    expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
+  })
+
+  it('does not assert a zero CRD count when the API Group catalog failed', async () => {
+    setResponses({ '/clusters/cluster-a/extensions/crds': new Error('Catalog unavailable') })
+    const container = await renderWithProviders(
+      <Routes>
+        <Route path="/extensions/apis/:groupName" element={<CRDApiGroupDetailPage />} />
+      </Routes>,
+      '/extensions/apis/example.io',
+    )
+    await vi.waitFor(() => expect(container.textContent).toContain('API Group 加载失败'))
+    expect(container.querySelector('.soha-k8s-detail-header')?.textContent).not.toContain('0 CRDs')
+  })
+
+  it('renders the Helm Chart catalog and searches it with the server-side query', async () => {
     const catalog = {
       repository: {
         id: 'artifacthub',
@@ -1081,59 +1140,60 @@ describe('CRD catalog page', () => {
 
     const container = await renderWithProviders(<HelmChartsPage />, '/helm/charts')
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
-    expect(container.querySelector('[data-testid="table-toolbar"]')).not.toBeNull()
-    expect(container.textContent).toContain('Artifact Hub')
-    expect(container.textContent).toContain('仅 Helm packages')
-    expect(container.textContent).toContain('总计 17,043 个')
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="table-title"]')?.textContent).toBe(
+        '17,043 个 Charts',
+      ),
+    )
+    expect(container.querySelector('[data-testid="table-toolbar"]')).toBeNull()
     expect(container.textContent).not.toContain('当前页 2 个')
     expect(container.textContent).not.toContain('版本 5 个')
-    expect(
-      container.querySelector('input[placeholder="搜索 Chart / 版本 / 描述 / 关键词 / 维护者"]'),
-    ).not.toBeNull()
+    const input = container.querySelector<HTMLInputElement>(
+      'input[placeholder="搜索 Chart / 版本 / 描述 / 关键词 / 维护者"]',
+    )!
+    expect(input).not.toBeNull()
+    expect(input.closest('[data-testid="admin-table"]')).toBeNull()
     expect(container.querySelector('[data-testid="pagination-summary"]')?.textContent).toContain(
       '当前 1-2 / 总计 17,043 条',
     )
 
-    expect(container.querySelector('[data-testid="header-extra"]')).toBeNull()
+    expect(container.querySelector('[data-testid="toolbar-extra"]')).toBeNull()
     const toolbarButtons = Array.from(
-      container.querySelectorAll('[data-testid="toolbar-extra"] button'),
+      container.querySelectorAll('[data-testid="header-extra"] button'),
     ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
-    expect(toolbarButtons).toEqual(['切换表格密度', '刷新'])
+    expect(toolbarButtons).toEqual(['Chart 目录来源与范围', '切换表格密度', '刷新'])
 
-    await act(async () => {
+    await act(async () =>
       container
-        .querySelector('[data-testid="row-0"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await import('./extensions/helm/charts/chart-drawer')
-      await new Promise((resolve) => window.setTimeout(resolve, 0))
-    })
-
-    expect(document.body.textContent).toContain('Chart: bitnami/nginx')
-    const valuesTab = Array.from(document.body.querySelectorAll('[role="tab"]')).find((item) =>
-      item.textContent?.includes('Values'),
+        .querySelector<HTMLButtonElement>('button[aria-label="Chart 目录来源与范围"]')!
+        .click(),
     )
-    await act(async () => {
-      valuesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain('来自 Artifact Hub 的 Helm packages')
+      expect(document.body.textContent).toContain('搜索与分页由服务端处理')
     })
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const value = (document.body.querySelector('textarea') as HTMLTextAreaElement | null)?.value
-      if (value?.includes('replicaCount: 2')) break
-      await act(async () => {
-        await new Promise((resolve) => window.setTimeout(resolve, 10))
-      })
-    }
-    expect(
-      (document.body.querySelector('textarea') as HTMLTextAreaElement | null)?.value,
-    ).toContain('replicaCount: 2')
 
-    const input = container.querySelector(
-      'input[placeholder="搜索 Chart / 版本 / 描述 / 关键词 / 维护者"]',
-    ) as HTMLInputElement | null
-    if (!input) {
-      throw new Error('helm charts search input not found')
-    }
+    const chartButton = [
+      ...container.querySelectorAll<HTMLButtonElement>('[data-testid="row-0"] button'),
+    ].find((button) => button.textContent === 'nginx')!
+    expect(chartButton).toBeDefined()
+    await act(async () => chartButton.click())
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Chart: bitnami/nginx'))
+    const valuesTab = [...document.body.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+      (item) => item.textContent === '默认 Values',
+    )!
+    expect(valuesTab).toBeDefined()
+    await act(async () => valuesTab.click())
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[role="dialog"] pre > code')?.textContent).toContain(
+        'replicaCount: 2',
+      )
+    })
+    const close = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ].find((button) => button.textContent === '取消')!
+    expect(close).toBeDefined()
+    await act(async () => close.click())
 
     await act(async () => {
       setNativeInputValue(input, 'metrics')
@@ -1151,6 +1211,9 @@ describe('CRD catalog page', () => {
     })
 
     expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
+    expect(apiGetMock.mock.calls.map(([path]) => testState.normalizePath(path))).toContain(
+      '/clusters/cluster-a/helm/charts?keyword=metrics&limit=15&offset=0',
+    )
     expect(container.querySelector('[data-testid="pagination-summary"]')?.textContent).toContain(
       '当前 1-1 / 总计 1 条',
     )

@@ -1,0 +1,41 @@
+.soha-reference-grant-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-grant-summary {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  gap: 4px;
+}
+.soha-grant-summary summary {
+  cursor: pointer;
+  color: var(--soha-text-secondary);
+}
+.soha-grant-summary details > .soha-grant-summary-entry {
+  margin-top: 4px;
+}
+.soha-grant-summary-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+.soha-grant-summary-entry > .soha-grant-summary-tag {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  margin-inline-end: 0;
+  white-space: nowrap;
+}
+.soha-grant-summary-tag > span {
+  min-width: 0;
+  max-width: 100%;
+}
+.soha-grant-note {
+  margin-top: 12px;
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}

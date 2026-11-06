@@ -1,4 +1,7 @@
 import type { ConfigurationDetailBase, ConfigurationResourceRecord } from '../shared/types'
+import type { components } from '@opensoha/contracts/gen/ts/sohaapi'
+
+export type SecretCertificate = components['schemas']['KubernetesSecretCertificate']
 
 export interface SecretResource extends ConfigurationResourceRecord {
   readonly namespace: string

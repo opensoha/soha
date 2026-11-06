@@ -538,3 +538,94 @@
     justify-content: space-between;
   }
 }
+
+/* OV-01: scoped dashboard composition; shared card and table defaults stay intact. */
+.soha-platform-overview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.soha-platform-overview-hint {
+  color: var(--soha-text-tertiary);
+}
+
+.soha-platform-operations-stack {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.soha-platform-capacity-resource {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.65fr) repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 12px;
+  padding-block: 8px;
+}
+
+.soha-platform-capacity-resource + .soha-platform-capacity-resource {
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-platform-governance-collapse {
+  background: var(--soha-bg-surface);
+  border-radius: var(--soha-radius-panel);
+}
+
+.soha-platform-namespace-distribution .soha-overview-namespace-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  max-height: none;
+}
+
+.soha-platform-namespace-distribution .soha-overview-namespace-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+}
+
+.soha-platform-namespace-distribution .soha-overview-namespace-main {
+  min-width: 0;
+}
+
+.soha-platform-namespace-distribution .soha-overview-namespace-main > a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .soha-platform-focus-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-platform-namespace-distribution .soha-overview-namespace-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .soha-platform-capacity-resource {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .soha-platform-capacity-resource > .ant-typography {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 600px) {
+  .soha-platform-namespace-distribution .soha-overview-namespace-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.soha-platform-namespace-distribution .soha-overview-namespace-meta {
+  justify-content: flex-start;
+  gap: 6px 12px;
+}

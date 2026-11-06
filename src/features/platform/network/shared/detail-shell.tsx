@@ -1,3 +1,7 @@
+import {
+  ResourceDetailHeader,
+  ResourceDetailTabs,
+} from '@/features/platform/shared/resource-detail-header'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useYamlDraft } from '@/components/use-yaml-draft'
 import type { AIPageContext } from '@/features/copilot'
@@ -12,7 +16,7 @@ import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TabsProps } from 'antd'
-import { App, Card, Spin, Tabs } from 'antd'
+import { App, Card, Spin } from 'antd'
 import type { ReactNode } from 'react'
 import { lazy, Suspense } from 'react'
 import '../styles.css'
@@ -25,12 +29,12 @@ const K8sYamlEditor = lazy(async () => {
   return { default: module.K8sYamlEditor }
 })
 
-const ResourceGraphPanel = lazy(async () => {
-  const module = await import('@/features/platform/shared/resource-insights/resource-graph-panel')
-  return { default: module.ResourceGraphPanel }
+const Relationships = lazy(async () => {
+  const module = await import('@/features/platform/shared/resource-insights/workload-relationships')
+  return { default: module.WorkloadRelationships }
 })
 
-const RESOURCE_GRAPH_KINDS: Partial<Record<NetworkKind, string>> = {
+const RESOURCE_GRAPH_KINDS: Partial<Record<NetworkKind, 'Service' | 'Ingress'>> = {
   ingresses: 'Ingress',
   services: 'Service',
 }
@@ -60,6 +64,7 @@ export function NetworkResourceOverview({
 }) {
   return (
     <PlatformResourceOverview
+      compact
       ageSeconds={detail.ageSeconds}
       annotations={detail.annotations}
       createdAtLabel={ageLabel}
@@ -72,10 +77,14 @@ export function NetworkResourceOverview({
 }
 
 function NetworkYAMLTab({
+  active = true,
+  canUpdate = true,
   clusterScoped,
   kind,
   target,
 }: {
+  active?: boolean
+  canUpdate?: boolean
   clusterScoped: boolean
   kind: NetworkKind
   target: NetworkTarget
@@ -83,7 +92,8 @@ function NetworkYAMLTab({
   const { localeCode } = useI18n()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
-  const yamlQuery = useQuery(networkQueries.yaml(kind, target.scope, target.name, clusterScoped))
+  const options = networkQueries.yaml(kind, target.scope, target.name, clusterScoped)
+  const yamlQuery = useQuery({ ...options, enabled: Boolean(options.enabled) && active })
   const visibleYamlQueryData = readableQueryData(yamlQuery)
   const updateMutation = usePlatformMutation(networkMutations.updateYAML(kind, queryClient), {
     label: ['更新资源', 'Update resource'],
@@ -132,6 +142,8 @@ function NetworkYAMLTab({
               )
             }
             onApply={() =>
+              canUpdate &&
+              active &&
               updateMutation.mutate(
                 { ...target, content: draft },
                 {
@@ -142,7 +154,9 @@ function NetworkYAMLTab({
               )
             }
             saveDisabled
-            applyDisabled={platformWriteBlocked || !draft.trim() || updateMutation.isPending}
+            applyDisabled={
+              !canUpdate || platformWriteBlocked || !draft.trim() || updateMutation.isPending
+            }
             applying={updateMutation.isPending}
           />
         )}
@@ -152,6 +166,12 @@ function NetworkYAMLTab({
 }
 
 export function NetworkDetailShell({
+  header,
+  overview,
+  relatedResources,
+  tabOrder,
+  preserveYaml = false,
+  canUpdateYAML = true,
   activeTabKey,
   ageLabel,
   aiContext,
@@ -165,6 +185,12 @@ export function NetworkDetailShell({
   overviewContent,
   target,
 }: {
+  header?: ReactNode
+  overview?: ReactNode
+  relatedResources?: ReactNode
+  tabOrder?: readonly string[]
+  preserveYaml?: boolean
+  canUpdateYAML?: boolean
   activeTabKey: string
   ageLabel?: ReactNode
   aiContext?: Partial<AIPageContext>
@@ -194,7 +220,7 @@ export function NetworkDetailShell({
     {
       key: 'overview',
       label: t('common.overview', 'Overview'),
-      children: (
+      children: overview ?? (
         <div className="soha-detail-stack">
           <NetworkResourceOverview ageLabel={ageLabel} detail={detail} extra={overviewExtra} />
           <ResourceGitOpsStatus
@@ -211,12 +237,20 @@ export function NetworkDetailShell({
       ? [
           {
             key: 'relationships',
-            label: t('common.relationships', 'Relationships'),
-            children: (
-              <Suspense fallback={<Spin size="large" />}>
-                <ResourceGraphPanel kind={graphKind} name={detail.name} scope={target.scope} />
-              </Suspense>
-            ),
+            label: t('common.relatedResources', '关联资源'),
+            children:
+              relatedResources !== undefined ? (
+                relatedResources
+              ) : (
+                <Suspense fallback={<Spin size="large" />}>
+                  <Relationships
+                    kind={graphKind}
+                    name={detail.name}
+                    scope={target.scope}
+                    active={activeTabKey === 'relationships'}
+                  />
+                </Suspense>
+              ),
           },
         ]
       : []),
@@ -224,20 +258,40 @@ export function NetworkDetailShell({
     {
       key: 'yaml',
       label: t('common.yaml', 'YAML'),
+      destroyOnHidden: !preserveYaml,
       children:
-        activeTabKey === 'yaml' ? (
-          <NetworkYAMLTab clusterScoped={clusterScoped} kind={kind} target={target} />
+        preserveYaml || activeTabKey === 'yaml' ? (
+          <NetworkYAMLTab
+            active={activeTabKey === 'yaml'}
+            canUpdate={canUpdateYAML}
+            clusterScoped={clusterScoped}
+            kind={kind}
+            target={target}
+          />
         ) : null,
     },
   ]
 
   return (
-    <div className="soha-page soha-workload-detail-page">
-      <Tabs
+    <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
+      {header ?? (
+        <ResourceDetailHeader
+          kind={label}
+          name={detail.name}
+          namespace={detail.namespace}
+          ageSeconds={detail.ageSeconds}
+          queryKey={networkQueries.detail(kind, target.scope, target.name, clusterScoped).queryKey}
+        />
+      )}
+      <ResourceDetailTabs
         activeKey={activeTabKey}
         className="soha-resource-tabs soha-workload-detail-tabs"
         indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
-        items={items}
+        items={
+          tabOrder
+            ? [...items].sort((a, b) => tabOrder.indexOf(a.key) - tabOrder.indexOf(b.key))
+            : items
+        }
         onChange={onTabChange}
         size="small"
         tabBarGutter={32}

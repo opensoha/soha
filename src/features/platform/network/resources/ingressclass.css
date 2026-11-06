@@ -1,0 +1,9 @@
+.soha-ingressclass-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-ingressclass-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

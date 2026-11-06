@@ -88,7 +88,7 @@ export const configurationRoutes = defineRoutes([
       requiresAuth: true,
       tabbar: false,
       navVisible: false,
-      permissionKey: 'platform.configuration.secret-data.view',
+      permissionKey: 'platform.configuration.secrets.view',
       scopeMode: 'namespace',
     },
     shell: 'app',
@@ -287,6 +287,25 @@ export const configurationRoutes = defineRoutes([
   },
   {
     meta: {
+      id: 'configuration-priorityclass-detail',
+      path: '/configuration/priorityclasses/:name',
+      title: 'PriorityClass 详情',
+      description: '优先级类详情',
+      scopeMode: 'cluster',
+      requiresAuth: true,
+      tabbar: false,
+      navVisible: false,
+      parentId: 'configuration-priorityclasses',
+    },
+    inheritMetaFrom: 'configuration-priorityclasses',
+    shell: 'app',
+    load: async () => {
+      const module = await import('./priorityclasses/detail-page')
+      return { default: module.ConfigurationPriorityClassDetailPage }
+    },
+  },
+  {
+    meta: {
       id: 'configuration-runtimeclasses',
       path: '/configuration/runtimeclasses',
       title: 'RuntimeClasses',
@@ -310,6 +329,25 @@ export const configurationRoutes = defineRoutes([
   },
   {
     meta: {
+      id: 'configuration-runtimeclass-detail',
+      path: '/configuration/runtimeclasses/:name',
+      title: 'RuntimeClass Detail',
+      description: '运行时类详情',
+      requiresAuth: true,
+      tabbar: false,
+      navVisible: false,
+      scopeMode: 'cluster',
+      parentId: 'configuration-runtimeclasses',
+    },
+    inheritMetaFrom: 'configuration-runtimeclasses',
+    shell: 'app',
+    load: async () => {
+      const module = await import('./runtimeclasses/detail-page')
+      return { default: module.ConfigurationRuntimeClassDetailPage }
+    },
+  },
+  {
+    meta: {
       id: 'configuration-leases',
       path: '/configuration/leases',
       title: 'Leases',
@@ -329,6 +367,26 @@ export const configurationRoutes = defineRoutes([
     load: async () => {
       const module = await import('./leases/list-page')
       return { default: module.ConfigurationLeasesPage }
+    },
+  },
+  {
+    meta: {
+      id: 'configuration-lease-detail',
+      path: '/configuration/leases/:name',
+      title: 'Lease Detail',
+      description: '租约详情',
+      group: 'platform',
+      requiresAuth: true,
+      tabbar: false,
+      navVisible: false,
+      scopeMode: 'namespace',
+      parentId: 'configuration-leases',
+    },
+    inheritMetaFrom: 'configuration-leases',
+    shell: 'app',
+    load: async () => {
+      const module = await import('./leases/detail-page')
+      return { default: module.ConfigurationLeaseDetailPage }
     },
   },
   {

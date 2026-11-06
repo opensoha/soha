@@ -40,35 +40,54 @@ for (const variant of [
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto(`/extensions/apis/${definition.group}`)
     await page.getByRole('button', { name, exact: true }).click()
-    const heading = page.locator('.soha-crd-resource-heading')
-    await expect(heading.getByRole('heading', { name, exact: true })).toBeVisible()
-    await expect(page.getByText('YAML · 只读', { exact: true })).toBeVisible()
-    await expect(page.getByLabel('资源 YAML，只读', { exact: true })).toBeVisible()
+    const detail = page.locator('.soha-crd-resource-detail')
+    const header = detail.locator('header')
+    await expect(page.locator('html')).toHaveAttribute('data-theme-mode', variant.theme)
+    await expect(header.getByRole('heading', { name, exact: true })).toBeVisible()
+    await expect(header.getByText(`${definition.group}/v1`, { exact: true })).toBeVisible()
     if (variant.long) {
-      const identity = await heading.locator('.soha-crd-resource-identity').boundingBox()
-      const summary = await heading.boundingBox()
-      expect(identity!.width / summary!.width).toBeGreaterThanOrEqual(0.5)
+      const titleRow = header.locator('.soha-k8s-detail-title-row')
+      const identity = await titleRow.locator('.soha-k8s-detail-title').boundingBox()
+      const row = await titleRow.boundingBox()
+      expect(identity!.width / row!.width).toBeGreaterThanOrEqual(0.5)
     }
-    await expect(heading).toContainText(variant.scope === 'Cluster' ? '集群范围' : 'monitoring')
-    await expect(heading).toContainText('controller')
-    await expect(heading).toContainText('gateway.envoyproxy.io/gatewayclass-controller')
-    await expect(heading.getByRole('button', { name: '编辑', exact: true })).toBeDisabled()
-    await expect(heading.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
-    const metadata = heading.locator('details')
-    await expect(metadata).not.toHaveAttribute('open')
-    const disclosure = metadata.locator('summary')
+    const overview = detail.getByRole('tabpanel', { name: '概览', exact: true })
+    await expect(overview).toBeVisible()
+    await expect(
+      overview.getByText(variant.scope === 'Cluster' ? '集群范围' : 'monitoring', { exact: true }),
+    ).toBeVisible()
+    await expect(overview.getByText('controller', { exact: true })).toBeVisible()
+    await expect(
+      overview.getByText('gateway.envoyproxy.io/gatewayclass-controller', { exact: true }),
+    ).toBeVisible()
+    await expect(overview.getByText(definition.name, { exact: true })).toBeVisible()
+    const versions = overview.locator('dl > div').filter({
+      has: page.getByText('支持版本', { exact: true }),
+    })
+    await expect(versions.getByText('v1', { exact: true })).toBeVisible()
+    const finalizersName = `Finalizers · ${variant.long ? 2 : 0}`
+    const finalizers = overview.locator('.ant-collapse-item').filter({
+      has: page.getByRole('button', { name: finalizersName, exact: true }),
+    })
+    const disclosure = finalizers.getByRole('button', { name: finalizersName, exact: true })
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
     await disclosure.scrollIntoViewIfNeeded()
     await verifyGeometry(page, disclosure)
     await disclosure.focus()
     await disclosure.press('Enter')
-    await expect(metadata).toHaveAttribute('open', '')
-    await expect(metadata).toContainText('支持版本')
-    await expect(metadata).toContainText('Finalizers')
-    if (variant.long) await expect(metadata).toContainText(finalizer)
-    else await expect(metadata).toContainText('—')
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+    for (const value of variant.long ? [finalizer, `cleanup.${definition.group}`] : ['—']) {
+      await expect(finalizers.getByText(value, { exact: true })).toBeVisible()
+    }
     await verifyGeometry(page, disclosure)
     await page.screenshot({ path: info.outputPath('resource-summary.png'), fullPage: true })
-    const back = heading.getByRole('button', { name: /返回实例列表/ })
+
+    await detail.getByRole('tab', { name: 'YAML', exact: true }).click()
+    await expect(detail.getByText('YAML · 只读', { exact: true })).toBeVisible()
+    await expect(detail.getByLabel('资源 YAML，只读', { exact: true })).toBeVisible()
+    await expect(detail.getByRole('button', { name: '编辑 YAML', exact: true })).toHaveCount(0)
+    await expect(detail.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+    const back = header.getByRole('button', { name: /返回实例列表/ })
     await back.scrollIntoViewIfNeeded()
     await verifyGeometry(page, back)
     await back.click()
@@ -103,23 +122,33 @@ test('U07: multiple kinds switch the exact scoped resource request', async ({
   ).toBe(true)
 })
 
-test('U08: browser return preserves catalog query, page and scope', async ({ page }) => {
+test('U08: legacy page links open the complete catalog and preserve query on return', async ({
+  page,
+}) => {
   await page.goto('/extensions?q=group&page=2')
+  await expect(page.locator('.ant-pagination')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
+  const list = page.getByRole('region', { name: '资源列表，可连续滚动', exact: true })
+  await list.focus()
+  await list.press('End')
   await page.getByRole('button', { name: definitions[17].group, exact: true }).click()
   await expect(page.getByText('sample-widget', { exact: true })).toBeVisible()
   await page.goBack()
   await expect(page).toHaveURL(/\/extensions\?q=group&page=2$/)
   await expect(page.getByPlaceholder('搜索 API Group / CRD / Kind / Version')).toHaveValue('group')
-  await expect(page.getByRole('button', { name: definitions[17].group, exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
 })
 
-test('U02–U04: complete local catalog query, pagination, sorting and reset', async ({
+test('U02–U04: complete local catalog query, continuous scrolling, sorting and reset', async ({
   page,
   evidence,
 }) => {
   await page.goto('/extensions')
   await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
-  await page.getByTitle('2', { exact: true }).click()
+  await expect(page.locator('.ant-pagination')).toHaveCount(0)
+  const list = page.getByRole('region', { name: '资源列表，可连续滚动', exact: true })
+  await list.focus()
+  await list.press('End')
   await expect(page.getByRole('button', { name: definitions[17].group, exact: true })).toBeVisible()
   const search = page.getByPlaceholder('搜索 API Group / CRD / Kind / Version')
   await search.fill('group17')
@@ -128,7 +157,7 @@ test('U02–U04: complete local catalog query, pagination, sorting and reset', a
     0,
   )
   await search.fill('')
-  await page.getByTitle('1', { exact: true }).click()
+  await expect.poll(() => list.evaluate((node) => node.scrollTop)).toBe(0)
   await page.getByRole('columnheader', { name: 'API Group' }).click()
   await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
   await page.getByRole('columnheader', { name: 'API Group' }).click()
@@ -160,7 +189,8 @@ test('U09–U11: exact deletion confirmation, failure context, retry and duplica
   catalog,
 }) => {
   await page.goto('/extensions')
-  await page.getByRole('button', { name: '删除 CRD 定义', exact: true }).first().click()
+  await page.getByRole('button', { name: `更多操作：${definitions[0].group}`, exact: true }).click()
+  await page.getByRole('menuitem', { name: '删除 CRD 定义', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText('所有命名空间')
   await dialog.getByLabel('选择具体 CRD 定义').click()
@@ -188,7 +218,8 @@ test('U09: unknown deletion keeps the original confirmation and blocks another r
 }) => {
   catalog.deleteFailureStatus = 503
   await page.goto('/extensions')
-  await page.getByRole('button', { name: '删除 CRD 定义', exact: true }).first().click()
+  await page.getByRole('button', { name: `更多操作：${definitions[0].group}`, exact: true }).click()
+  await page.getByRole('menuitem', { name: '删除 CRD 定义', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('选择具体 CRD 定义').click()
   await page.getByTitle(`${definitions[0].name} · Widget`, { exact: true }).click()
@@ -215,7 +246,9 @@ test('U12: no deletion permission removes dangerous UI entry', async ({ page, ca
   catalog.allowDelete = false
   await page.goto('/extensions')
   await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '删除 CRD 定义', exact: true })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: `更多操作：${definitions[0].group}`, exact: true }),
+  ).toHaveCount(0)
 })
 
 test('U12: catalog failure stays distinguishable from empty results', async ({ page, catalog }) => {

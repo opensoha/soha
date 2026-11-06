@@ -1,0 +1,131 @@
+.soha-ingress-detail .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-ingress-detail .ant-card-body,
+.soha-ingress-detail .soha-workload-overview-stack {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-ingress-wrap {
+  overflow-wrap: anywhere;
+}
+.soha-ingress-reference-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-ingress-rule-path {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.soha-ingress-rule-backend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.soha-ingress-tls-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.soha-ingress-tls-list > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.soha-ingress-certificate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-block: 4px;
+}
+.soha-ingress-certificate + .soha-ingress-certificate {
+  border-top: 1px solid var(--soha-border-color);
+  padding-top: 16px;
+}
+.soha-ingress-certificate-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.soha-ingress-backend-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 16px;
+}
+.soha-ingress-backend-grid > section {
+  min-width: 0;
+}
+.soha-ingress-backend-grid h3,
+.soha-ingress-editor-section h3 {
+  font-size: 14px;
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+.soha-ingress-editor-identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--soha-text-secondary);
+  margin-bottom: 20px;
+}
+.soha-ingress-editor-section {
+  padding-block: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-ingress-editor-rule {
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  margin-bottom: 12px;
+}
+.soha-ingress-editor-host {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.soha-ingress-editor-path {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.soha-ingress-editor-path-fields,
+.soha-ingress-editor-backend {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.soha-ingress-editor-tls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+@media (max-width: 960px) {
+  .soha-ingress-backend-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .soha-ingress-editor-path {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .soha-ingress-editor-path-fields {
+    grid-column: 1/-1;
+  }
+  .soha-ingress-editor-tls {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .soha-ingress-editor-tls > .ant-form-item:first-child {
+    grid-column: 1/-1;
+  }
+}

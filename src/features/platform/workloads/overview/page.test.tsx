@@ -10,17 +10,21 @@ import { WorkloadsOverviewPage } from './page'
 import { ApiError } from '@/services/api-error'
 
 const testState = vi.hoisted(() => ({
+  refetches: new Map<string, ReturnType<typeof vi.fn>>(),
   adminTableProps: null as Record<string, unknown> | null,
   events: [] as Array<Record<string, unknown>>,
   resourceError: null as Error | null,
   resourceData: [] as unknown[] | undefined,
+  fetchingKey: '',
   permissionKeys: ['platform.workloads.overview.view', 'platform.pods.view'],
 }))
 
 vi.mock('@tanstack/react-query', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-query')>()),
-  useQuery: vi.fn((options: { queryKey?: unknown }) => {
+  useQuery: vi.fn((options: { queryKey?: unknown; enabled?: boolean }) => {
     const queryKey = JSON.stringify(options.queryKey)
+    const refetch = testState.refetches.get(queryKey) ?? vi.fn()
+    testState.refetches.set(queryKey, refetch)
     return {
       data: queryKey.includes('security-posture')
         ? {
@@ -35,11 +39,12 @@ vi.mock('@tanstack/react-query', async (importOriginal) => ({
         : queryKey.includes('events')
           ? testState.events
           : testState.resourceData,
+      isEnabled: options.enabled !== false,
       error: testState.resourceError,
       isError: Boolean(testState.resourceError),
-      isFetching: false,
+      isFetching: Boolean(testState.fetchingKey && queryKey.includes(testState.fetchingKey)),
       isLoading: false,
-      refetch: vi.fn(),
+      refetch,
     }
   }),
 }))
@@ -67,11 +72,13 @@ vi.mock('@/components/admin-table', () => ({
       render?: (value: unknown, record: Record<string, unknown>) => ReactNode
     }>
     dataSource: Array<Record<string, unknown>>
+    headerExtra?: ReactNode
   }) => {
     testState.adminTableProps = props as unknown as Record<string, unknown>
     const objectColumn = props.columns.find((column) => column.dataIndex === 'involvedName')
     return (
       <div data-testid="admin-table">
+        {props.headerExtra}
         {props.dataSource.map((record) => (
           <div key={String(record.name)}>{objectColumn?.render?.(record.involvedName, record)}</div>
         ))}
@@ -90,10 +97,15 @@ vi.mock('@/components/overview-visuals', () => ({
     </div>
   ),
 }))
-vi.mock('@/components/status-tag', () => ({ StatusTag: () => <span /> }))
+vi.mock('@/components/status-tag', async (original) => ({
+  ...(await original<typeof import('@/components/status-tag')>()),
+  StatusTag: () => <span />,
+}))
 vi.mock('../shared/list-controls', () => ({
   useWorkloadTableDensity: () => ({ densityButton: null, tableSize: 'small' }),
-  WorkloadRefreshButton: () => null,
+  WorkloadRefreshButton: ({ label, onRefresh }: { label: string; onRefresh: () => void }) => (
+    <button onClick={onRefresh}>{label}</button>
+  ),
   WorkloadTableEmpty: () => null,
   WorkloadTableSummary: () => null,
 }))
@@ -102,9 +114,11 @@ beforeEach(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true))
 afterEach(() => {
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
+  testState.refetches.clear()
   testState.adminTableProps = null
   testState.resourceError = null
   testState.resourceData = []
+  testState.fetchingKey = ''
   testState.events = []
   testState.permissionKeys = ['platform.workloads.overview.view', 'platform.pods.view']
   vi.clearAllMocks()
@@ -125,6 +139,22 @@ function renderPage() {
 }
 
 describe('workloads overview permissions', () => {
+  it('reflects actual reads in its compact indicator and keeps partial failure visible', () => {
+    testState.fetchingKey = 'pods'
+    let view = renderPage()
+    let indicator = view.container.querySelector('.soha-workload-overview-toolbar [role="status"]')!
+    expect(indicator.getAttribute('aria-label')).toContain('刷新中')
+    expect(indicator.querySelector('.ant-badge-status-warning')).not.toBeNull()
+    act(() => view.root.unmount())
+    testState.fetchingKey = ''
+    testState.resourceError = new ApiError(503, 'partial read unavailable')
+    view = renderPage()
+    indicator = view.container.querySelector('.soha-workload-overview-toolbar [role="status"]')!
+    expect(indicator.getAttribute('aria-label')).toContain('刷新失败')
+    expect(indicator.querySelector('.ant-badge-status-error')).not.toBeNull()
+    expect(view.container.textContent).toContain('partial read unavailable')
+    act(() => view.root.unmount())
+  })
   it('only enables resource queries covered by exact leaf permissions', () => {
     const { container, root } = renderPage()
 
@@ -191,7 +221,8 @@ describe('workloads overview permissions', () => {
     expect(container.textContent).toContain('ConfigMap / settings')
     expect(testState.adminTableProps).toMatchObject({
       localSorting: true,
-      pageSize: 15,
+      pagination: false,
+      virtual: true,
       viewportScroll: true,
     })
     act(() => root.unmount())
@@ -212,5 +243,30 @@ it.each([new ApiError(403, 'denied'), new ApiError(503, 'unavailable')])(
 it('keeps a successfully read empty workload count as zero', () => {
   const { container, root } = renderPage()
   expect(container.querySelector('[data-testid="metric"]')?.textContent).toBe('Pods: 0')
+  act(() => root.unmount())
+})
+
+it('refreshes only enabled reads and filters the returned events without pagination', async () => {
+  testState.events = [
+    { name: 'normal', type: 'Normal', involvedName: 'normal', involvedKind: 'Pod' },
+    { name: 'warning', type: 'Warning', involvedName: 'warning', involvedKind: 'Pod' },
+  ]
+  const { container, root } = renderPage()
+  const reads = vi
+    .mocked(useQuery)
+    .mock.results.slice(0, 7)
+    .map((result) => result.value)
+  const refresh = [...container.querySelectorAll('button')].find(
+    (button) => button.textContent === '刷新概览',
+  )!
+  await act(async () => refresh.click())
+  for (const read of reads) expect(read.refetch).toHaveBeenCalledTimes(read.isEnabled ? 1 : 0)
+  const warning = [...container.querySelectorAll('input[type="radio"]')].find((input) =>
+    input.parentElement?.textContent?.includes('警告事件'),
+  )!
+  await act(async () => warning.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  expect(testState.adminTableProps?.dataSource).toEqual([testState.events[1]])
+  expect(testState.adminTableProps?.pagination).toBe(false)
+  expect(testState.adminTableProps?.virtual).toBe(true)
   act(() => root.unmount())
 })

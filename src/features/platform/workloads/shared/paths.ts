@@ -30,8 +30,13 @@ export function buildWorkloadListPath(kind: WorkloadKind, scope: ScopeKey) {
   return workloadPath(kind, scope)
 }
 
-export function buildWorkloadItemPath(kind: WorkloadKind, scope: ScopeKey, name: string) {
-  return workloadPath(kind, scope, `/${encodeURIComponent(normalizeWorkloadName(name))}`)
+export function buildWorkloadItemPath(
+  kind: WorkloadKind,
+  scope: ScopeKey,
+  name: string,
+  params?: { expectedUid?: string },
+) {
+  return workloadPath(kind, scope, `/${encodeURIComponent(normalizeWorkloadName(name))}`, params)
 }
 
 export function buildWorkloadDetailPath(kind: WorkloadKind, scope: ScopeKey, name: string) {

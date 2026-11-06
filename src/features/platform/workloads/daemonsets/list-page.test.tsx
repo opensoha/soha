@@ -50,24 +50,13 @@ vi.mock('@/features/platform/cluster-capabilities', () => ({
 vi.mock('@/components/resource-actions', () => ({
   TABLE_ACTIONS_COLUMN_CLASS_NAME: 'soha-actions',
 }))
-vi.mock('@/components/management-list', () => ({
-  ManagementIconButton: ({
-    'aria-label': ariaLabel,
-    disabled,
-    loading,
-    onClick,
-  }: {
-    'aria-label': string
-    disabled?: boolean
-    loading?: boolean
-    onClick?: () => void
-  }) => (
-    <button aria-label={ariaLabel} disabled={disabled || loading} onClick={onClick}>
-      {ariaLabel}
-    </button>
-  ),
-  ManagementTableToolbar: ({ children }: { children?: ReactNode }) => <>{children}</>,
-}))
+vi.mock('@/components/management-list', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/management-list')>()
+  return {
+    ManagementIconButton: actual.ManagementIconButton,
+    ManagementTableToolbar: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  }
+})
 vi.mock('@/features/platform/workloads/shared/list-controls', () => ({
   renderWorkloadNameLink: (name: string) => <span>{name}</span>,
   useWorkloadListAIContext: () => undefined,
@@ -165,20 +154,29 @@ async function renderPage() {
 describe('daemonset list actions', () => {
   it('uses the record namespace for restart actions', async () => {
     const container = await renderPage()
-    const restartButton = container.querySelector('button[aria-label="重启"]')
-    const editButton = container.querySelector('button[aria-label="编辑 node-agent"]')
-    expect(restartButton).toBeInstanceOf(HTMLButtonElement)
-    expect(editButton).toBeInstanceOf(HTMLButtonElement)
-    expect(container.querySelector('button[aria-label="删除"]')).toBeInstanceOf(HTMLButtonElement)
-
-    await act(async () => restartButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await flushAsyncWork()
+    async function select(label: string) {
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="更多操作：node-agent"]')
+          ?.click(),
+      )
+      await flushAsyncWork()
+      const menu = document.body.querySelector('[role="menu"]')!
+      expect(menu).toBeTruthy()
+      const item = [...menu.querySelectorAll('[role="menuitem"]')].find(
+        (entry) => entry.textContent === label,
+      )
+      expect(item).toBeTruthy()
+      await act(async () => item?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      await flushAsyncWork()
+    }
+    expect(container.querySelector('button[aria-label="重启"]')).toBeNull()
+    await select('重启')
     expect(apiPostMock).toHaveBeenCalledWith('/clusters/cluster-a/workloads/daemonsets/restart', {
       namespace: 'record-ns',
       name: 'node-agent',
     })
-
-    await act(async () => editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await select('编辑')
     expect(container.querySelector('[data-edit-name="node-agent"]')).not.toBeNull()
     expect(container.querySelector('[data-edit-namespace="record-ns"]')).not.toBeNull()
   })

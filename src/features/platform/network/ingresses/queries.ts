@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { ScopeKey } from '@/types'
 import { hasNamespacedNetworkScope, hasNetworkCluster } from '../shared/scope'
-import { getIngress, listIngresses } from './api'
+import { getIngress, listIngresses, getIngressEvents } from './api'
 import { ingressKeys } from './keys'
 
 function hasReference(scope: ScopeKey, name: string) {
@@ -9,6 +9,12 @@ function hasReference(scope: ScopeKey, name: string) {
 }
 
 export const ingressQueries = {
+  events: (scope: ScopeKey, name: string) =>
+    queryOptions({
+      queryKey: ingressKeys.events(scope, name),
+      queryFn: () => getIngressEvents(scope, name),
+      enabled: hasReference(scope, name),
+    }),
   list: (scope: ScopeKey) =>
     queryOptions({
       queryKey: ingressKeys.list(scope),

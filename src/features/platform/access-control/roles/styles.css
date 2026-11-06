@@ -1,0 +1,54 @@
+.soha-role-detail .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-role-detail .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-role-detail .soha-role-section-title,
+.soha-role-detail .soha-role-rules-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.soha-role-detail .soha-role-rule-preview {
+  padding-inline-start: 20px;
+  margin-block: 16px 0;
+}
+.soha-role-detail .soha-role-rule-preview li {
+  padding-block: 6px;
+  overflow-wrap: anywhere;
+}
+.soha-role-detail .soha-role-rule-values {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.soha-role-detail .soha-workload-overview-config > div {
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr);
+}
+.soha-role-detail .soha-workload-overview-config dt,
+.soha-role-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-role-detail .soha-role-namespace {
+  display: inline-flex;
+  max-width: 100%;
+}
+.soha-role-detail .soha-role-namespace .soha-metadata-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.soha-role-detail .soha-role-rules-toolbar {
+  margin-bottom: 16px;
+}
+.soha-role-detail .soha-role-section-title {
+  gap: 8px;
+}

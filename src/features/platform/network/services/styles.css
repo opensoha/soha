@@ -2,16 +2,33 @@
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
   max-width: 100%;
 }
 
+.soha-service-detail .soha-detail-card,
+.soha-service-detail .ant-card-body {
+  min-width: 0;
+}
+.soha-service-detail .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-service-detail .ant-card-body {
+  overflow-wrap: anywhere;
+}
+.soha-service-detail .ant-typography {
+  margin-bottom: 0;
+}
 .soha-service-port-chain {
+  font-variant-numeric: tabular-nums;
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  min-width: max-content;
-  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
 }
 
 .soha-service-port-arrow {
@@ -20,16 +37,145 @@
   font-size: 11px;
 }
 
+/* Port and selector facts stay readable at narrow column widths. */
+.soha-service-port-list .soha-service-port-tag.ant-tag,
+.soha-service-selector-tags .soha-service-selector-tag.ant-tag {
+  box-sizing: border-box;
+  height: auto;
+  min-width: 0;
+  white-space: normal;
+}
+.soha-service-tag-text {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.soha-service-port-list.is-detailed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.soha-service-port-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+.soha-service-port-list.is-detailed .soha-service-port-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 140px) minmax(0, 1fr);
+  gap: 12px;
+}
+.soha-service-port-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--soha-text-secondary);
+}
+.soha-service-selector-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+.soha-service-selector-link {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+.soha-service-selector-link:hover .ant-tag,
+.soha-service-selector-link:focus-visible .ant-tag {
+  color: var(--soha-primary);
+}
 @media (max-width: 640px) {
-  .soha-service-port-chain {
-    flex-direction: column;
-    align-items: flex-start;
-    min-width: 0;
-    white-space: normal;
+  .soha-service-port-list.is-detailed .soha-service-port-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
   }
+}
 
-  .soha-service-port-arrow {
-    margin-inline-start: 12px;
-    transform: rotate(90deg);
+.soha-service-selector-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.soha-service-selector-summary .soha-service-selector-link {
+  flex: 1 1 100%;
+}
+.soha-service-selector-tags.is-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+}
+.soha-service-selector-tags.is-compact .soha-service-tag-text {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.soha-service-selector-expanded {
+  width: min(440px, calc(100vw - 64px));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.soha-service-selector-expanded > .soha-service-selector-tags {
+  max-height: 340px;
+  overflow-y: auto;
+  width: 100%;
+}
+.soha-service-selector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.soha-service-selector-more {
+  flex: 0 0 auto;
+}
+.soha-service-editor-identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+.soha-service-editor-port-row {
+  display: grid;
+  grid-template-columns:
+    minmax(100px, 1.3fr) minmax(76px, 0.7fr) minmax(92px, 0.8fr) minmax(110px, 1.2fr)
+    auto;
+  gap: 12px;
+  align-items: end;
+}
+.soha-service-editor-port-row:has([aria-label='NodePort']) {
+  grid-template-columns:
+    minmax(100px, 1.2fr) minmax(76px, 0.7fr) minmax(92px, 0.8fr) minmax(110px, 1.2fr)
+    minmax(100px, 1fr) auto;
+}
+.soha-service-editor-port-row .ant-form-item {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.soha-service-editor-port-row > .ant-btn {
+  margin-bottom: 0;
+}
+@media (max-width: 640px) {
+  .soha-service-editor-port-row,
+  .soha-service-editor-port-row:has([aria-label='NodePort']) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px;
+    border: 1px solid var(--soha-border-color);
+    border-radius: var(--soha-radius-control);
   }
 }

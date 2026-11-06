@@ -213,6 +213,25 @@
   font-weight: 600;
 }
 
+.soha-admin-table .ant-table-tbody-virtual-holder:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
+}
+
+.soha-admin-table .ant-table-tbody-virtual .ant-table-row-expand-icon-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.soha-admin-table
+  .ant-table-tbody-virtual
+  .ant-table-row-expand-icon-cell
+  .ant-table-row-expand-icon {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
 /* AdminTable owns sorter spacing; Antd has no semantic title/icon layout hook. */
 .soha-admin-table .ant-table-column-sorters {
   justify-content: flex-start;
@@ -272,7 +291,8 @@
 }
 
 .soha-admin-table .ant-table-thead > tr > th,
-.soha-admin-table .ant-table-tbody > tr > td {
+.soha-admin-table .ant-table-tbody > tr > td,
+.soha-admin-table .ant-table-tbody-virtual .ant-table-cell {
   padding-left: 12px;
   padding-right: 12px;
   overflow: hidden;
@@ -503,4 +523,52 @@
     justify-content: flex-start;
     margin-left: 0;
   }
+}
+.soha-table-resizable-header:not(.ant-table-cell-fix-start):not(.ant-table-cell-fix-end) {
+  position: relative;
+}
+
+.soha-table-column-resizer {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.soha-table-column-resizer::after {
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-end: 3px;
+  width: 2px;
+  content: '';
+  background: transparent;
+}
+
+.soha-table-column-resizer:hover::after,
+.soha-table-column-resizer:focus-visible::after {
+  background: var(--soha-primary);
+}
+
+.soha-table-column-resizer:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
+}
+
+.soha-table-resizable-title {
+  padding-inline-end: 8px;
+}
+
+.soha-table-column-layout-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.soha-table-column-layout-width {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
 }

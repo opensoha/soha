@@ -2,6 +2,7 @@ import { api } from '@/services/api-client'
 import type { ApiResponse } from '@/types'
 import {
   getWorkloadDetail,
+  getWorkloadYAML,
   listWorkloadEvents,
   listWorkloads,
 } from '@/features/platform/workloads/shared/api'
@@ -57,4 +58,10 @@ export async function suspendCronJob({
 
 export async function deleteCronJob(target: CronJobTarget): Promise<void> {
   await api.delete<unknown>(buildWorkloadItemPath(cronJobKind, target.scope, target.name))
+}
+
+export async function getCronJobConfiguration(target: CronJobTarget) {
+  const yaml = await getWorkloadYAML(cronJobKind, target.scope, target.name)
+  const { readCronJobConfiguration } = await import('./cronjob-detail-model')
+  return readCronJobConfiguration(yaml.content, target.name, target.scope.namespace || 'default')
 }

@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
+import { listWorkloadEvents } from '../workloads/shared/api'
 import { getNodeDetail, getNodeYAML, listNamespaces, listNodes } from './api'
 import { clusterResourceKeys } from './keys'
 import { hasClusterScope } from './scope'
@@ -25,6 +26,15 @@ export const nodeQueries = {
     queryOptions<ClusterNodeDetail>({
       queryKey: clusterResourceKeys.nodeDetail(scope, name),
       queryFn: () => getNodeDetail({ scope, name }),
+      enabled: hasTarget(scope, name),
+    }),
+  events: (scope: ClusterScope, name: string, limit = 100) =>
+    queryOptions({
+      queryKey: clusterResourceKeys.nodeEvents(scope, name, limit),
+      queryFn: async () =>
+        (await listWorkloadEvents(scope, limit)).filter(
+          (event) => event.involvedKind === 'Node' && event.involvedName === name,
+        ),
       enabled: hasTarget(scope, name),
     }),
   yaml: (scope: ClusterScope, name: string, load = true) =>

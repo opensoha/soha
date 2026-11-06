@@ -1,19 +1,22 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { TableCellLink } from '@/components/table-cell-content'
-import { hasAllowedAction } from '@/features/auth'
+import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -25,7 +28,6 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined, FormOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Popconfirm, Space } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../styles.css'
@@ -67,13 +69,19 @@ export function ConfigurationNameLink({
   kind,
   name,
   namespace,
+  includeCluster = false,
 }: {
+  includeCluster?: boolean
   kind: ConfigurationKind
   name: string
   namespace?: string
 }) {
   const navigate = useNavigate()
-  const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''
+  const { clusterId } = usePlatformScopeStore()
+  const params = new URLSearchParams()
+  if (namespace) params.set('namespace', namespace)
+  if (includeCluster && clusterId) params.set('clusterId', clusterId)
+  const query = params.size ? `?${params}` : ''
   return (
     <TableCellLink
       label={name}
@@ -91,6 +99,8 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
   onEdit,
   scopeMode = 'namespace',
   singularLabel,
+  permissionKey,
+  autoRefresh = false,
 }: {
   columns: TableColumnsType<T>
   defaultTemplate?: string
@@ -100,6 +110,8 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
   onEdit?: (record: T) => void
   scopeMode?: ConfigurationScopeMode
   singularLabel?: string
+  permissionKey?: string
+  autoRefresh?: boolean
 }) {
   const { localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
@@ -108,14 +120,22 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
   const scope = toScopeKey(clusterId, scopeMode === 'namespace' ? namespace : null)
-  const query = useQuery(configurationQueries.list<T>(kind, scope))
+  const refresh = useWorkloadRefresh()
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const canRead = !permissionKey || hasPermission(permissions, `${permissionKey}.view`)
+  const options = configurationQueries.list<T>(kind, scope)
+  const query = useQuery({
+    ...options,
+    enabled: Boolean(options.enabled) && canRead,
+    refetchInterval: autoRefresh ? refresh.interval : false,
+  })
   const visibleQueryData = readableQueryData(query)
   const removeMutation = usePlatformMutation(configurationMutations.remove(kind, queryClient), {
     label: ['删除资源', 'Delete resource'],
     target: platformResourceTarget,
   })
   const platformWriteBlocked = removeMutation.blocked
-  const rawItems = visibleQueryData ?? []
+  const rawItems = canRead ? (visibleQueryData ?? []) : []
   const normalizedKeyword = normalizeKeyword(deferredSearchKeyword)
   const filteredItems = useMemo(
     () => rawItems.filter((item) => matchesKeyword(item, normalizedKeyword)),
@@ -125,11 +145,15 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
     ? localeCode === 'zh_CN'
       ? '请选择集群'
       : 'Select a cluster'
-    : normalizedKeyword && rawItems.length > 0
+    : !canRead
       ? localeCode === 'zh_CN'
-        ? `没有匹配的 ${label}`
-        : `No matching ${label}`
-      : emptyDescription[localeCode]
+        ? '没有权限查看配置资源'
+        : 'Permission required to view resources'
+      : normalizedKeyword && rawItems.length > 0
+        ? localeCode === 'zh_CN'
+          ? `没有匹配的 ${label}`
+          : `No matching ${label}`
+        : emptyDescription[localeCode]
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
   const canCreate = Boolean(defaultTemplate && singularLabel)
   const entityKind = singularLabel || CONFIGURATION_ENTITY_KINDS[kind]
@@ -142,76 +166,61 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
     visibleFilters: { keyword: searchKeyword || undefined },
     pinnedData: { itemCount: rawItems.length },
   })
-  const canShowActions = rawItems.some(
-    (item) =>
-      hasAllowedAction(item.allowedActions, 'delete') ||
-      Boolean(onEdit && hasAllowedAction(item.allowedActions, 'update')),
-  )
   const searchDimensions = scopeMode === 'namespace' ? '名称 / 命名空间' : '名称'
   const englishSearchDimensions = scopeMode === 'namespace' ? 'name / namespace' : 'name'
 
-  const actionColumn: TableColumnsType<T>[number] = {
-    title: '',
-    dataIndex: '__actions',
-    fixed: 'right',
-    align: 'center',
-    width: onEdit ? 84 : 52,
-    onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    render: (_value, record) => {
-      const canEdit = Boolean(onEdit && hasAllowedAction(record.allowedActions, 'update'))
-      const canDelete = hasAllowedAction(record.allowedActions, 'delete')
-      if (!canEdit && !canDelete) return null
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `configuration:${kind}`,
+    scopeKey: JSON.stringify([clusterId, namespace, kind]),
+    resourceLabel: entityKind,
+    records: rawItems,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
+    actions: (record) => {
       const target = configurationTargetFromRecord(clusterId, record)
-      const deleting =
-        removeMutation.isPending &&
-        removeMutation.variables?.name === target.name &&
-        removeMutation.variables.scope.namespace === target.scope.namespace
-      const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-      return (
-        <Space size={2} className="soha-row-action-icons">
-          {canEdit ? (
-            <ManagementIconButton
-              aria-label={`${localeCode === 'zh_CN' ? '编辑' : 'Edit'} ${record.name}`}
-              icon={<FormOutlined />}
-              onClick={() => onEdit?.(record)}
-              tooltip={localeCode === 'zh_CN' ? '编辑' : 'Edit'}
-            />
-          ) : null}
-          {canDelete ? (
-            <Popconfirm
-              title={
-                localeCode === 'zh_CN' ? `确认删除 ${record.name}？` : `Delete ${record.name}?`
-              }
-              description={
-                localeCode === 'zh_CN'
-                  ? '此操作不可恢复，删除后集群资源立即消失。'
-                  : 'This deletes the resource immediately and cannot be undone.'
-              }
-              okText={deleteLabel}
-              cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-              okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: deleting }}
-              placement="topRight"
-              onConfirm={() => removeMutation.mutate(target, {})}
-            >
-              <ManagementIconButton
-                disabled={platformWriteBlocked}
-                danger
-                icon={<DeleteOutlined />}
-                aria-label={deleteLabel}
-                loading={deleting}
-                tooltip={deleteLabel}
-              />
-            </Popconfirm>
-          ) : null}
-        </Space>
-      )
+      return [
+        ...(onEdit &&
+        (!permissionKey || hasPermission(permissions, `${permissionKey}.update`)) &&
+        hasAllowedAction(record.allowedActions, 'update')
+          ? [
+              {
+                key: 'edit',
+                label: localeCode === 'zh_CN' ? '编辑' : 'Edit',
+                icon: <FormOutlined />,
+                disabled: platformWriteBlocked,
+                run: () => onEdit(record),
+              },
+            ]
+          : []),
+        ...((!permissionKey || hasPermission(permissions, `${permissionKey}.delete`)) &&
+        hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled: platformWriteBlocked,
+                loading:
+                  removeMutation.isPending &&
+                  removeMutation.variables?.scope.clusterId === clusterId &&
+                  removeMutation.variables?.name === target.name &&
+                  removeMutation.variables.scope.namespace === target.scope.namespace,
+                confirm: kubernetesDeleteConfirmation(record, localeCode),
+                prepare: () => removeMutation.reset(),
+                feedback: removeMutation.feedback,
+                run: () => removeMutation.mutateAsync(target),
+              },
+            ]
+          : []),
+      ]
     },
-  }
+  })
 
   return (
     <>
-      {removeMutation.feedback}
+      {resourceActions.confirmation}
+      {!resourceActions.isConfirming && removeMutation.feedback}
       <ManagementDataPage
         query={{
           onFinish: () => undefined,
@@ -240,76 +249,92 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
             />
           ),
         }}
-        table={{
-          error: query.isEnabled === false ? null : query.error,
-          hasReadData: query.data !== undefined,
-          onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-          className: 'soha-platform-table',
-          columnSettingIconOnly: true,
-          columnSettingPlacement: 'header',
-          headerExtra: (
-            <ManagementTableToolbar>
-              {canCreate ? (
-                <CreateEntry
-                  context={{
-                    clusterId: clusterId || '',
-                    defaultNamespace:
-                      scopeMode === 'namespace' ? namespace || undefined : undefined,
-                    expectedKind: singularLabel,
-                    resourceGroup: 'configuration',
-                    scopeMode,
-                    source: 'list',
-                  }}
-                  defaultTemplate={defaultTemplate || ''}
-                  label={singularLabel || label}
+        tableNode={
+          <KubernetesResourceTable
+            resourceKey={`configuration:${kind}`}
+            resourceLabel={label}
+            allRows={rawItems}
+            filterKey={normalizedKeyword}
+            scopeMode={scopeMode}
+            error={query.isEnabled === false ? null : query.error}
+            hasReadData={query.data !== undefined}
+            onRetry={query.isEnabled === false ? undefined : () => query.refetch()}
+            className={'soha-platform-table'}
+            columnSettingIconOnly={true}
+            columnSettingPlacement={'header'}
+            headerExtra={
+              <ManagementTableToolbar>
+                {canCreate ? (
+                  <CreateEntry
+                    context={{
+                      clusterId: clusterId || '',
+                      defaultNamespace:
+                        scopeMode === 'namespace' ? namespace || undefined : undefined,
+                      expectedKind: singularLabel,
+                      resourceGroup: 'configuration',
+                      scopeMode,
+                      source: 'list',
+                    }}
+                    defaultTemplate={defaultTemplate || ''}
+                    label={singularLabel || label}
+                  />
+                ) : null}
+                <ManagementDensityButton
+                  aria-label={densityLabel}
+                  title={densityLabel}
+                  tooltip={densityLabel}
+                  onClick={() =>
+                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
+                  }
                 />
-              ) : null}
-              <ManagementDensityButton
-                aria-label={densityLabel}
-                title={densityLabel}
-                tooltip={densityLabel}
-                onClick={() =>
-                  setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
-                }
+                {autoRefresh ? (
+                  <WorkloadRefresh
+                    compact
+                    disabled={!clusterId || !canRead}
+                    settings={refresh}
+                    queries={[query]}
+                    resourceLabel={label}
+                    onRefresh={() => query.refetch()}
+                  />
+                ) : (
+                  <ManagementRefreshButton
+                    aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    disabled={!clusterId}
+                    loading={query.isFetching}
+                    tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    onClick={() => {
+                      if (clusterId) void query.refetch()
+                    }}
+                  />
+                )}
+              </ManagementTableToolbar>
+            }
+            columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
+            dataSource={clusterId ? filteredItems : []}
+            rowKey={(record) => `${record.namespace ?? ''}/${record.name}`}
+            onRow={(record: T) => ({
+              'data-ai-context': encodeAIContextForElement({
+                sourceWorkbench: 'platform',
+                entityKind,
+                entityName: record.name,
+                clusterId: clusterId || undefined,
+                namespace: record.namespace || undefined,
+              }),
+            })}
+            loading={query.isLoading}
+            localSorting={true}
+            empty={
+              <ManagementState
+                bordered={false}
+                compact
+                description={effectiveEmptyDescription}
+                kind={!clusterId ? 'select-scope' : 'empty'}
               />
-              <ManagementRefreshButton
-                aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                disabled={!clusterId}
-                loading={query.isFetching}
-                tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                onClick={() => {
-                  if (clusterId) void query.refetch()
-                }}
-              />
-            </ManagementTableToolbar>
-          ),
-          columns: canShowActions ? [...columns, actionColumn] : columns,
-          dataSource: clusterId ? filteredItems : [],
-          rowKey: (record) => `${record.namespace ?? ''}/${record.name}`,
-          onRow: (record: T) => ({
-            'data-ai-context': encodeAIContextForElement({
-              sourceWorkbench: 'platform',
-              entityKind,
-              entityName: record.name,
-              clusterId: clusterId || undefined,
-              namespace: record.namespace || undefined,
-            }),
-          }),
-          loading: query.isLoading,
-          localSorting: true,
-          empty: (
-            <ManagementState
-              bordered={false}
-              compact
-              description={effectiveEmptyDescription}
-              kind={!clusterId ? 'select-scope' : 'empty'}
-            />
-          ),
-          pageSize: K8S_TABLE_PAGE_SIZE,
-          tableSize,
-          scroll: { x: 'max-content' },
-          viewportScroll: true,
-        }}
+            }
+            tableSize={tableSize}
+            scroll={{ x: 'max-content' }}
+          />
+        }
       />
     </>
   )

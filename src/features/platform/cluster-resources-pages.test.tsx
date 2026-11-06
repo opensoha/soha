@@ -143,7 +143,7 @@ describe('cluster resource pages', () => {
     const container = await renderWithProviders(<ClusterNodesPage />)
 
     expect(container.querySelector('[data-testid="resource-workspace-scopebar"]')).toBeNull()
-    expect(container.textContent).toContain('Please select a cluster')
+    expect(container.textContent).toContain('请选择集群')
   })
 
   it('shows the select-cluster state on the namespaces page without a page-level scope bar', async () => {

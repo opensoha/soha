@@ -1,8 +1,19 @@
 import { ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ComponentProps, ReactNode } from 'react'
+import {
+  createContext,
+  forwardRef,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import type { ComponentProps, MutableRefObject, ReactNode, Ref } from 'react'
 import { Button, Checkbox, Popover, Table, Typography } from 'antd'
+import type { GetRef, TableProps } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, SettingOutlined } from '@ant-design/icons'
 import {
   ManagementDensityButton,
@@ -12,6 +23,11 @@ import {
 import { localeText, useI18n } from '@/i18n'
 import type { LocaleCode } from '@/i18n'
 import './admin-table.css'
+import {
+  ColumnLayoutControls,
+  ColumnResizeHandle,
+  useTableColumnLayout,
+} from './table-column-layout'
 
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 15, 20, 50, 100]
 const VIEWPORT_SCROLL_MIN_BODY_HEIGHT = 240
@@ -31,11 +47,103 @@ const ACTION_COLUMN_CLASS_NAME = 'soha-table-actions-column'
 const AUTO_ACTION_COLUMN_CLASS_NAME = 'soha-table-actions-column--auto'
 const { Text } = Typography
 const EMPTY_TABLE_RECORDS: AdminTableProps['dataSource'] = []
+const VirtualHorizontalScroll = createContext<(delta: number, top: number) => void>(() => {})
+const VirtualBoundaryScroll = createContext<((edge: 'Home' | 'End') => void) | null>(null)
+
+function revealVirtualCell(
+  body: HTMLElement,
+  target: HTMLElement,
+  scroll: (delta: number, top: number) => void,
+) {
+  if (document.activeElement !== target || !body.contains(target)) return
+  const cell = target.closest<HTMLElement>('.ant-table-cell')
+  if (!cell || cell.matches('.ant-table-cell-fix-start, .ant-table-cell-fix-end')) return
+  const row = cell.parentElement!
+  const viewport = body.getBoundingClientRect()
+  const start = Array.from(row.querySelectorAll<HTMLElement>('.ant-table-cell-fix-start'))
+  const end = Array.from(row.querySelectorAll<HTMLElement>('.ant-table-cell-fix-end'))
+  const left = Math.max(viewport.left, ...start.map((item) => item.getBoundingClientRect().right))
+  const right = Math.min(viewport.right, ...end.map((item) => item.getBoundingClientRect().left))
+  const rect = cell.getBoundingClientRect()
+  const delta = rect.right > right ? rect.right - right : rect.left < left ? rect.left - left : 0
+  if (delta) scroll(delta, body.scrollTop)
+}
 
 // Antd adds a native title to ellipsis headers even when sorter tooltips are disabled.
-function TableHeaderCell(props: ComponentProps<'th'>) {
-  return <th {...props} title={undefined} />
+function TableHeaderCell({
+  columnResizeHandle,
+  children,
+  ...props
+}: ComponentProps<'th'> & { 'data-column-label'?: string; columnResizeHandle?: ReactNode }) {
+  return (
+    <th {...props} title={undefined} aria-label={props['data-column-label'] ?? props['aria-label']}>
+      {children}
+      {columnResizeHandle}
+    </th>
+  )
 }
+
+const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((props, ref) => {
+  const { localeCode } = useI18n()
+  const scrollHorizontally = useContext(VirtualHorizontalScroll)
+  const scrollToBoundary = useContext(VirtualBoundaryScroll)
+  return (
+    <div
+      {...props}
+      ref={ref}
+      tabIndex={0}
+      role="region"
+      aria-label={localeText(localeCode, '资源列表，可连续滚动', 'Scrollable resource list')}
+      onScrollCapture={(event) => {
+        props.onScrollCapture?.(event)
+        const body = event.currentTarget
+        const scroller = event.target as HTMLElement
+        // Native focus scrolling bypasses the virtual list's horizontal transform.
+        // Keep Antd's virtual controller in charge of that offset and header sync.
+        if (typeof scroller.scrollLeft === 'number' && scroller.scrollLeft !== 0) {
+          const nativeLeft = scroller.scrollLeft
+          scroller.scrollLeft = 0
+          scrollHorizontally(nativeLeft, body.scrollTop)
+          const target = document.activeElement
+          if (target instanceof HTMLElement) {
+            requestAnimationFrame(() => revealVirtualCell(body, target, scrollHorizontally))
+          }
+        }
+      }}
+      onFocusCapture={(event) => {
+        props.onFocusCapture?.(event)
+        const body = event.currentTarget
+        const target = event.target as HTMLElement
+        requestAnimationFrame(() => {
+          revealVirtualCell(body, target, scrollHorizontally)
+        })
+      }}
+      onKeyDown={(event) => {
+        props.onKeyDown?.(event)
+        if (event.defaultPrevented || event.target !== event.currentTarget) return
+        if ((event.key === 'Home' || event.key === 'End') && scrollToBoundary) {
+          event.preventDefault()
+          scrollToBoundary(event.key)
+          return
+        }
+        const body = event.currentTarget
+        const step = body.querySelector('[data-row-key]')?.getBoundingClientRect().height ?? 24
+        const positions: Record<string, number> = {
+          ArrowDown: body.scrollTop + step,
+          ArrowUp: body.scrollTop - step,
+          PageDown: body.scrollTop + body.clientHeight,
+          PageUp: body.scrollTop - body.clientHeight,
+          Home: 0,
+          End: body.scrollHeight,
+        }
+        if (positions[event.key] === undefined) return
+        event.preventDefault()
+        body.scrollTop = positions[event.key]
+      }}
+    />
+  )
+})
+VirtualTableBody.displayName = 'VirtualTableBody'
 
 export interface AdminTableProps {
   className?: string
@@ -53,8 +161,9 @@ export interface AdminTableProps {
   hideExpandedColumn?: boolean
   localSorting?: boolean
   loading?: boolean
-  onChange?: any
+  onChange?: TableProps<any>['onChange']
   onRow?: any
+  onScroll?: TableProps['onScroll']
   onRefresh?: () => void
   onRetry?: () => void
   refreshing?: boolean
@@ -67,17 +176,24 @@ export interface AdminTableProps {
   shellClassName?: string
   tableSize?: 'large' | 'middle' | 'small'
   tableLayout?: 'auto' | 'fixed'
+  tableRef?: Ref<GetRef<typeof Table>>
   columnSettingPlacement?: 'toolbar' | 'header' | 'outside' | 'hidden'
   columnSettingIconOnly?: boolean
+  columnLayoutKey?: string
+  defaultHiddenColumnKeys?: string[]
+  onFitColumns?: () => void
+  onResetColumns?: () => void
   scroll?: {
     x?: string | number
     y?: string | number
+    scrollToFirstRowOnChange?: boolean
   }
   selectCurrentPageOnly?: boolean
   title?: ReactNode
   toolbar?: ReactNode
   toolbarExtra?: ReactNode
   viewportScroll?: boolean
+  virtual?: boolean
 }
 
 function getColumnId(column: any, index: number) {
@@ -275,14 +391,20 @@ export function AdminTable({
   rowSelection,
   shellClassName,
   tableSize = 'small',
+  tableRef,
   columnSettingPlacement = 'toolbar',
   columnSettingIconOnly = false,
+  columnLayoutKey,
+  defaultHiddenColumnKeys,
+  onFitColumns,
+  onResetColumns,
   scroll,
   selectCurrentPageOnly = false,
   title,
   toolbar,
   toolbarExtra,
   viewportScroll = false,
+  virtual = false,
   ...rest
 }: AdminTableProps) {
   const cachedRecords = readableQueryData({
@@ -303,11 +425,14 @@ export function AdminTable({
     [localeCode],
   )
   const normalizedColumns = useMemo(() => {
-    const nextColumns = columns.map((column, index) =>
-      normalizeTableColumn(column, String(index), iconActionWidths),
-    )
+    const nextColumns = columns.map((column, index) => {
+      const normalized = normalizeTableColumn(column, String(index), iconActionWidths)
+      return columnLayoutKey && column.fixed === false
+        ? { ...normalized, fixed: false }
+        : normalized
+    })
     return localSorting ? addLocalSorters(nextColumns, dataSource, localSortCollator) : nextColumns
-  }, [columns, dataSource, iconActionWidths, localSortCollator, localSorting])
+  }, [columns, dataSource, iconActionWidths, localSortCollator, localSorting, columnLayoutKey])
   const columnOptions = useMemo(
     () =>
       normalizedColumns.map((column, index) => ({
@@ -322,11 +447,52 @@ export function AdminTable({
     [columnOptions],
   )
   const columnSignature = columnOptions.map((option) => option.id).join('|')
-  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([])
+  const [visibleColumnIds, setSessionVisibleColumnIds] = useState<string[]>([])
+  const layout = useTableColumnLayout(columnLayoutKey)
+  const layoutColumns = selectableColumnOptions.map((option) => ({
+    id: option.id,
+    label: option.label,
+    width: getColumnWidth(option.column) ?? 168,
+    min: Math.max(40, Number(option.column.minWidth) || 64),
+  }))
+  const setVisibleColumnIds = (ids: string[]) => {
+    if (columnLayoutKey) layout.setVisible(ids)
+    else setSessionVisibleColumnIds(ids)
+  }
   const [currentPage, setCurrentPage] = useState(1)
   const [currentPageSize, setCurrentPageSize] = useState(pageSize)
   const [viewportScrollY, setViewportScrollY] = useState<number>()
+  const [layoutViewportWidth, setLayoutViewportWidth] = useState(0)
   const tableShellRef = useRef<HTMLDivElement>(null)
+  const innerTableRef = useRef<GetRef<typeof Table> | null>(null)
+  const attachTableRef = useCallback(
+    (instance: GetRef<typeof Table> | null) => {
+      innerTableRef.current = instance
+      if (typeof tableRef === 'function') tableRef(instance)
+      else if (tableRef)
+        (tableRef as MutableRefObject<GetRef<typeof Table> | null>).current = instance
+    },
+    [tableRef],
+  )
+  const scrollToBoundary = useCallback(
+    (edge: 'Home' | 'End') => {
+      innerTableRef.current?.scrollTo({
+        index: edge === 'Home' ? 0 : Math.max(0, dataSource.length - 1),
+        align: edge === 'Home' ? 'start' : 'end',
+      })
+    },
+    [dataSource.length],
+  )
+  const scrollHorizontally = useCallback((delta: number, top: number) => {
+    const table = innerTableRef.current
+    const header = table?.nativeElement.querySelector<HTMLElement>('.ant-table-header')
+    if (!table || !header) return
+    // Pinned Antd 6.6.2 forwards `left` without emitting onVirtualScroll.
+    // Keep the header aligned explicitly; its native range clamps the offset.
+    header.scrollLeft += delta
+    const position = { left: header.scrollLeft, top }
+    table.scrollTo(position)
+  }, [])
 
   // Measure the rendered icon group: permissions and row state can change its size.
   // Keep explicit sizing for text actions; never infer a button count from a render callback.
@@ -366,7 +532,7 @@ export function AdminTable({
 
   useEffect(() => {
     const nextIds = selectableColumnOptions.map((option) => option.id)
-    setVisibleColumnIds((current) => {
+    setSessionVisibleColumnIds((current) => {
       const filtered = current.filter((id) => nextIds.includes(id))
       return filtered.length > 0 ? filtered : nextIds
     })
@@ -386,21 +552,133 @@ export function AdminTable({
     setCurrentPageSize(nextPageSize)
   }, [pageSize, pagination])
 
-  const activeColumnIds =
-    visibleColumnIds.length > 0
+  const defaultIds = selectableColumnOptions
+    .filter((option) => !defaultHiddenColumnKeys?.includes(option.id))
+    .map((option) => option.id)
+  const savedIds = layout.visible?.filter((id) =>
+    selectableColumnOptions.some((option) => option.id === id),
+  )
+  const activeColumnIds = columnLayoutKey
+    ? savedIds?.length
+      ? savedIds
+      : defaultIds
+    : visibleColumnIds.length > 0
       ? visibleColumnIds
       : selectableColumnOptions.map((option) => option.id)
   const activeColumns = columnOptions
     .filter((option) => isActionColumn(option.column) || activeColumnIds.includes(option.id))
-    .map((option) => option.column)
-  const estimatedScrollWidth = useMemo(() => {
+    .map((option) => {
+      const descriptor = layoutColumns.find((item) => item.id === option.id)
+      if (!columnLayoutKey || !descriptor) return option.column
+      const width = Math.max(
+        descriptor.min,
+        Math.min(800, layout.widths[option.id] ?? descriptor.width),
+      )
+      const column = option.column
+      return {
+        ...column,
+        width,
+        onHeaderCell: (...args: any[]) => {
+          const original = column.onHeaderCell?.(...args) ?? {}
+          return {
+            ...original,
+            'data-column-label': descriptor.label,
+            className: mergeClassNames(original.className, 'soha-table-resizable-header'),
+            columnResizeHandle: (
+              <ColumnResizeHandle
+                column={descriptor}
+                width={width}
+                zh={localeCode === 'zh_CN'}
+                onResize={(next, persist) => layout.setWidth(option.id, next, persist)}
+              />
+            ),
+          }
+        },
+        title: (props: unknown) => (
+          <span className="soha-table-resizable-title">
+            {typeof column.title === 'function' ? column.title(props) : column.title}
+          </span>
+        ),
+      }
+    })
+  const contentScrollWidth = useMemo(() => {
     const columnWidth = activeColumns.reduce(
       (total, column) => total + (getColumnWidth(column) ?? 168),
       0,
     )
-    const selectionWidth = rowSelection ? 56 : 0
-    return Math.max(960, columnWidth + selectionWidth)
-  }, [activeColumns, rowSelection])
+    const selectionWidth = rowSelection
+      ? columnLayoutKey && typeof rowSelection.columnWidth === 'number'
+        ? rowSelection.columnWidth
+        : 56
+      : 0
+    const expansionWidth =
+      columnLayoutKey &&
+      (rest.expandedRowRender || rest.expandable?.expandedRowRender) &&
+      !rest.hideExpandedColumn
+        ? Number(rest.expandable?.columnWidth) || 48
+        : 0
+    const width = columnWidth + selectionWidth + expansionWidth
+    return columnLayoutKey ? Math.max(1, width) : Math.max(960, width)
+  }, [
+    activeColumns,
+    rowSelection,
+    columnLayoutKey,
+    rest.expandedRowRender,
+    rest.hideExpandedColumn,
+    rest.expandable?.expandedRowRender,
+    rest.expandable?.columnWidth,
+  ])
+  const estimatedScrollWidth = Math.max(
+    contentScrollWidth,
+    columnLayoutKey ? layoutViewportWidth : 0,
+  )
+  const fillerWidth = columnLayoutKey ? estimatedScrollWidth - contentScrollWidth : 0
+  const rightColumnIndex = activeColumns.findIndex((column) => column.fixed === 'right')
+  const fillerIndex = rightColumnIndex < 0 ? activeColumns.length : rightColumnIndex
+  const renderedColumns =
+    fillerWidth > 0
+      ? [
+          ...activeColumns.slice(0, fillerIndex),
+          {
+            key: '__soha_layout_filler',
+            width: fillerWidth,
+            title: '',
+            render: () => null,
+            onHeaderCell: () => ({ 'aria-hidden': true }),
+            onCell: () => ({ 'aria-hidden': true }),
+          },
+          ...activeColumns.slice(fillerIndex),
+        ]
+      : activeColumns
+  const layoutWidthSignature = activeColumns.map((column) => getColumnWidth(column)).join('|')
+  useLayoutEffect(() => {
+    if (!columnLayoutKey) return
+    const native = innerTableRef.current?.nativeElement
+    if (!native) return
+    let frame = 0
+    const schedule = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const width =
+          native.querySelector<HTMLElement>('.ant-table-container')?.clientWidth ??
+          native.clientWidth
+        if (width > 0) setLayoutViewportWidth(width)
+        const body = native.querySelector<HTMLElement>('[role="region"]')
+        if (virtual && body && document.activeElement instanceof HTMLElement) {
+          revealVirtualCell(body, document.activeElement, scrollHorizontally)
+        }
+      })
+    }
+    schedule()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    observer?.observe(native)
+    window.addEventListener('resize', schedule)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', schedule)
+      cancelAnimationFrame(frame)
+    }
+  }, [columnLayoutKey, virtual, layoutWidthSignature, scrollHorizontally])
 
   const getRowKeyValue = (record: any) =>
     typeof rowKey === 'function' ? rowKey(record) : record?.[rowKey]
@@ -498,8 +776,9 @@ export function AdminTable({
 
     const updateScrollHeight = () => {
       if (
-        window.innerWidth < VIEWPORT_SCROLL_MIN_WIDTH ||
-        content.clientHeight < VIEWPORT_SCROLL_MIN_CONTAINER_HEIGHT
+        !virtual &&
+        (window.innerWidth < VIEWPORT_SCROLL_MIN_WIDTH ||
+          content.clientHeight < VIEWPORT_SCROLL_MIN_CONTAINER_HEIGHT)
       ) {
         setViewportScrollY(undefined)
         return
@@ -515,8 +794,11 @@ export function AdminTable({
       const availableHeight = Math.floor(
         content.clientHeight - headerBottom - paddingBottom - paginationHeight - 8,
       )
-      const nextHeight =
-        availableHeight >= VIEWPORT_SCROLL_MIN_BODY_HEIGHT ? availableHeight : undefined
+      const nextHeight = virtual
+        ? Math.max(VIEWPORT_SCROLL_MIN_BODY_HEIGHT, availableHeight)
+        : availableHeight >= VIEWPORT_SCROLL_MIN_BODY_HEIGHT
+          ? availableHeight
+          : undefined
       setViewportScrollY((current) => (current === nextHeight ? current : nextHeight))
     }
 
@@ -531,14 +813,25 @@ export function AdminTable({
       resizeObserver?.disconnect()
       window.removeEventListener('resize', updateScrollHeight)
     }
-  }, [dataSource.length, viewportScroll])
+  }, [dataSource.length, viewportScroll, virtual])
 
   const resolvedScroll = useMemo(
     () => ({
-      x: scroll?.x ?? estimatedScrollWidth,
-      y: scroll?.y ?? viewportScrollY,
+      x:
+        virtual && typeof scroll?.x !== 'number'
+          ? estimatedScrollWidth
+          : (scroll?.x ?? estimatedScrollWidth),
+      y: scroll?.y ?? viewportScrollY ?? (virtual ? VIEWPORT_SCROLL_MIN_BODY_HEIGHT : undefined),
+      scrollToFirstRowOnChange: scroll?.scrollToFirstRowOnChange,
     }),
-    [estimatedScrollWidth, scroll?.x, scroll?.y, viewportScrollY],
+    [
+      estimatedScrollWidth,
+      scroll?.x,
+      scroll?.y,
+      scroll?.scrollToFirstRowOnChange,
+      viewportScrollY,
+      virtual,
+    ],
   )
 
   const columnSetting =
@@ -574,8 +867,29 @@ export function AdminTable({
                 setVisibleColumnIds(next)
               }}
             />
+            {columnLayoutKey ? (
+              <ColumnLayoutControls
+                columns={layoutColumns}
+                widths={layout.widths}
+                setWidth={layout.setWidth}
+                fit={() => {
+                  onFitColumns?.()
+                  layout.fit()
+                }}
+                reset={() => {
+                  if (onResetColumns) onResetColumns()
+                  else onFitColumns?.()
+                  layout.reset()
+                }}
+                zh={localeCode === 'zh_CN'}
+              />
+            ) : null}
             <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-              {t('table.columns.sessionHint', '列设置仅影响当前页面会话。')}
+              {columnLayoutKey
+                ? localeCode === 'zh_CN'
+                  ? '布局保存在当前用户的此浏览器中。'
+                  : 'Layout is saved for this user in this browser.'
+                : t('table.columns.sessionHint', '列设置仅影响当前页面会话。')}
             </Text>
           </div>
         }
@@ -687,29 +1001,38 @@ export function AdminTable({
         />
       ) : null}
       {!error || cachedRecords !== undefined ? (
-        <Table
-          {...rest}
-          className={resolvedTableClassName}
-          components={{ header: { cell: TableHeaderCell } }}
-          column={{
-            sortIcon: ({ sortOrder }) =>
-              sortOrder ? (
-                <span aria-hidden className="soha-table-sort-icon">
-                  {sortOrder === 'ascend' ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                </span>
-              ) : null,
-          }}
-          columns={activeColumns}
-          dataSource={dataSource}
-          loading={loading}
-          locale={{ emptyText: empty ?? <ManagementState bordered={false} compact /> }}
-          pagination={resolvedPagination}
-          rowKey={rowKey}
-          rowSelection={resolvedRowSelection}
-          scroll={resolvedScroll}
-          showSorterTooltip={false}
-          size={resolvedTableSize}
-        />
+        <VirtualHorizontalScroll.Provider value={scrollHorizontally}>
+          <VirtualBoundaryScroll.Provider value={scrollToBoundary}>
+            <Table
+              {...rest}
+              ref={attachTableRef}
+              className={resolvedTableClassName}
+              components={{
+                header: { cell: TableHeaderCell },
+                ...(virtual ? { body: { wrapper: VirtualTableBody } } : {}),
+              }}
+              column={{
+                sortIcon: ({ sortOrder }) =>
+                  sortOrder ? (
+                    <span aria-hidden className="soha-table-sort-icon">
+                      {sortOrder === 'ascend' ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+                    </span>
+                  ) : null,
+              }}
+              columns={renderedColumns}
+              dataSource={dataSource}
+              loading={loading}
+              locale={{ emptyText: empty ?? <ManagementState bordered={false} compact /> }}
+              pagination={resolvedPagination}
+              rowKey={rowKey}
+              rowSelection={resolvedRowSelection}
+              scroll={resolvedScroll}
+              showSorterTooltip={false}
+              size={resolvedTableSize}
+              virtual={virtual}
+            />
+          </VirtualBoundaryScroll.Provider>
+        </VirtualHorizontalScroll.Provider>
       ) : null}
     </div>
   )

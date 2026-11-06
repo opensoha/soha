@@ -1,7 +1,11 @@
+import { AdminTable } from '@/components/admin-table'
+import { ChartPackageOverview } from './package-overview'
+import { ChartReadme } from './readme'
+import { buildHelmReleaseRoutePath } from '../paths'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { useYamlDraft } from '@/components/use-yaml-draft'
-import { hasAllowedAction } from '@/features/auth'
+import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import {
   platformResourceTarget,
@@ -18,6 +22,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
   Descriptions,
   Drawer,
   Form,
@@ -26,12 +31,12 @@ import {
   Select,
   Space,
   Spin,
-  Table,
+  App,
   Tabs,
   Tag,
   Typography,
 } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { helmMutations } from '../mutations'
 import { helmQueries } from '../queries'
@@ -50,7 +55,6 @@ import {
   formatHelmInstallError,
   getHelmChartBadges,
   getHelmChartVersionOptions,
-  hasHelmChartSecuritySummary,
   isHelmReleaseNameConflictError,
   retryHelmReleaseName,
 } from './utils'
@@ -65,30 +69,20 @@ interface HelmChartDrawerProps {
 
 type HelmChartDrawerTab = 'overview' | 'readme' | 'values' | 'install'
 
-function Readme({ value }: { value?: string }) {
-  if (!value?.trim()) return <Text type="secondary">-</Text>
-  return (
-    <pre
-      style={{
-        background: 'var(--soha-bg-surface-muted)',
-        border: '1px solid var(--soha-border-color)',
-        borderRadius: 6,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        fontSize: 12,
-        lineHeight: 1.55,
-        maxHeight: 420,
-        overflow: 'auto',
-        padding: 12,
-        whiteSpace: 'pre-wrap',
-      }}
-    >
-      {value}
-    </pre>
-  )
-}
-
 export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerProps) {
   const { localeCode } = useI18n()
+  const { modal } = App.useApp()
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const canRead = hasPermission(permissions, 'platform.helm.view')
+  const submitFence = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const initialNamespace = useRef<string | null>(null)
   const { clusterId, namespace } = usePlatformScopeStore()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -110,7 +104,10 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
           version: selectedVersion,
         }
       : null
-  const detailQuery = useQuery(helmQueries.chartDetail(detailInput))
+  const detailQuery = useQuery({
+    ...helmQueries.chartDetail(detailInput),
+    enabled: canRead && Boolean(detailInput),
+  })
   const visibleDetailQueryData = readableQueryData(detailQuery)
   const detail = visibleDetailQueryData
   const activeChart = detail ?? chart
@@ -125,14 +122,21 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
         }
       : null
   const valuesQuery = useQuery(
-    helmQueries.chartValues(valuesInput, activeTab === 'values' || activeTab === 'install'),
+    helmQueries.chartValues(
+      valuesInput,
+      canRead && (activeTab === 'values' || activeTab === 'install'),
+    ),
   )
   const visibleValuesQueryData = readableQueryData(valuesQuery)
   const valuesState = useYamlDraft(JSON.stringify(valuesInput), visibleValuesQueryData?.content)
   const { value: valuesDraft, setValue: setValuesDraft } = valuesState
   const mutationsDisabled = capability.status !== 'available'
   const capabilityReason = mutationsDisabled ? capability.reason : ''
-  const canInstall = hasAllowedAction(activeChart.allowedActions, 'create') && !mutationsDisabled
+  const canInstall =
+    canRead &&
+    hasPermission(permissions, 'platform.helm.releases.create') &&
+    hasAllowedAction(activeChart.allowedActions, 'create') &&
+    !mutationsDisabled
   const installConflict = isHelmReleaseNameConflictError(installError)
   const progressTarget: HelmReleaseTarget | null =
     clusterId && installTarget
@@ -158,7 +162,10 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
   const platformWriteBlocked = installMutation.blocked
 
   useEffect(() => {
-    form.setFieldsValue(defaultHelmChartInstallForm(chart, namespace))
+    if (initialNamespace.current === null) {
+      initialNamespace.current = namespace || 'default'
+      form.setFieldsValue(defaultHelmChartInstallForm(chart, initialNamespace.current))
+    }
   }, [chart, form, namespace])
 
   useEffect(() => {
@@ -184,11 +191,36 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
   const drawerTitle = `Chart: ${activeChart.repositoryName ? `${activeChart.repositoryName}/` : ''}${activeChart.name}`
 
   const submitInstall = async () => {
-    if (!canInstall || !clusterId || installMutation.blocked) {
+    if (activeTab !== 'install') {
       setActiveTab('install')
       return
     }
-    const values = await form.validateFields()
+    if (
+      !canInstall ||
+      !clusterId ||
+      submitFence.current ||
+      installMutation.blocked ||
+      installMutation.isPending ||
+      detailQuery.error ||
+      valuesQuery.error ||
+      valuesQuery.isPending ||
+      !visibleValuesQueryData
+    ) {
+      setActiveTab('install')
+      return
+    }
+    submitFence.current = true
+    let values: HelmChartInstallFormValues
+    try {
+      values = await form.validateFields()
+    } catch {
+      submitFence.current = false
+      return
+    }
+    if (!mounted.current) {
+      submitFence.current = false
+      return
+    }
     setActiveTab('install')
     setInstallTarget({
       chartName: values.chartName,
@@ -206,10 +238,16 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
       { ...values, clusterId, valuesYaml: valuesDraft },
       {
         onSuccess: (result) => {
+          if (!mounted.current) return
           setInstallResult(result)
           setInstallError('')
         },
-        onError: (error) => setInstallError(error.message),
+        onError: (error) => {
+          if (mounted.current) setInstallError(error.message)
+        },
+        onSettled: () => {
+          submitFence.current = false
+        },
       },
     )
   }
@@ -260,23 +298,45 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
       open
       title={drawerTitle}
       size="large"
+      width="min(1120px, calc(100vw - 48px))"
+      maskClosable={!installMutation.isPending && !platformWriteBlocked}
+      keyboard={!installMutation.isPending && !platformWriteBlocked}
+      closable={!installMutation.isPending && !platformWriteBlocked}
       onClose={() => {
-        if (!platformWriteBlocked) onClose?.()
+        if (!platformWriteBlocked && !installMutation.isPending) onClose?.()
       }}
       extra={
         <Space>
-          <Button autoInsertSpace={false} disabled={platformWriteBlocked} onClick={onClose}>
+          <Button
+            autoInsertSpace={false}
+            disabled={platformWriteBlocked || installMutation.isPending}
+            onClick={onClose}
+          >
             {localeCode === 'zh_CN' ? '取消' : 'Cancel'}
           </Button>
           <Button
             autoInsertSpace={false}
             icon={<CloudDownloadOutlined />}
-            disabled={!canInstall}
+            disabled={
+              !canInstall ||
+              platformWriteBlocked ||
+              (activeTab === 'install' &&
+                (valuesQuery.isPending ||
+                  !visibleValuesQueryData ||
+                  Boolean(valuesQuery.error) ||
+                  Boolean(detailQuery.error)))
+            }
             loading={installMutation.isPending}
             type="primary"
             onClick={() => void submitInstall()}
           >
-            {localeCode === 'zh_CN' ? '安装' : 'Install'}
+            {activeTab === 'install'
+              ? localeCode === 'zh_CN'
+                ? '确认安装'
+                : 'Install'
+              : localeCode === 'zh_CN'
+                ? '配置安装'
+                : 'Configure install'}
           </Button>
         </Space>
       }
@@ -321,6 +381,36 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
             ) : null}
           </Space>
         </Space>
+        <Space wrap>
+          <Text>{localeCode === 'zh_CN' ? 'Chart 版本' : 'Chart version'}</Text>
+          <Select
+            aria-label="Chart version"
+            style={{ minWidth: 200 }}
+            value={selectedVersion}
+            options={versionOptions}
+            showSearch
+            disabled={installMutation.isPending || platformWriteBlocked}
+            onChange={(version) => {
+              const change = () => {
+                setSelectedVersion(version)
+                setInstallResult(null)
+                setInstallError('')
+                setInstallTarget(null)
+                setInstallStartedAt(null)
+                installMutation.reset()
+              }
+              if (valuesDraft !== (valuesState.original ?? ''))
+                modal.confirm({
+                  title:
+                    localeCode === 'zh_CN'
+                      ? '切换版本会清除当前 Values 草稿'
+                      : 'Changing versions clears the values draft',
+                  onOk: change,
+                })
+              else change()
+            }}
+          />
+        </Space>
         <Tabs
           size="small"
           activeKey={activeTab}
@@ -328,63 +418,17 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
           items={[
             {
               key: 'overview',
-              label: localeCode === 'zh_CN' ? '包信息' : 'Package',
-              children: (
-                <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-                  <Descriptions
-                    bordered
-                    column={1}
-                    size="small"
-                    items={[
-                      { key: 'chart', label: 'Chart', children: activeChart.name },
-                      {
-                        key: 'repository',
-                        label: localeCode === 'zh_CN' ? '仓库' : 'Repository',
-                        children: activeChart.repositoryName || '-',
-                      },
-                      {
-                        key: 'version',
-                        label: 'Version',
-                        children: activeChart.latestVersion || '-',
-                      },
-                      {
-                        key: 'appVersion',
-                        label: 'App Version',
-                        children: activeChart.appVersion || '-',
-                      },
-                      {
-                        key: 'security',
-                        label: 'Security',
-                        children: hasHelmChartSecuritySummary(activeChart)
-                          ? `critical ${activeChart.securityCritical ?? 0} / high ${activeChart.securityHigh ?? 0}`
-                          : '-',
-                      },
-                    ]}
-                  />
-                  {detailQuery.isLoading ? <Spin size="small" /> : null}
-                  {detail?.links?.map((link) =>
-                    link.url ? (
-                      <Button
-                        key={`${link.name}-${link.url}`}
-                        href={link.url}
-                        target="_blank"
-                        size="small"
-                      >
-                        {link.name || link.url}
-                      </Button>
-                    ) : null,
-                  )}
-                </Space>
-              ),
+              label: localeCode === 'zh_CN' ? '概览' : 'Overview',
+              children: <ChartPackageOverview chart={activeChart} version={activeVersion} />,
             },
             {
               key: 'readme',
               label: 'README',
-              children: activeTab === 'readme' ? <Readme value={detail?.readme} /> : null,
+              children: activeTab === 'readme' ? <ChartReadme value={detail?.readme} /> : null,
             },
             {
               key: 'values',
-              label: 'Values',
+              label: localeCode === 'zh_CN' ? '默认 Values' : 'Default values',
               children:
                 activeTab === 'values' ? (
                   <Space orientation="vertical" size={8} style={{ width: '100%' }}>
@@ -392,18 +436,29 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
                     {valuesQuery.isError ? (
                       <Text type="secondary">Artifact Hub did not return default values.</Text>
                     ) : null}
-                    <Input.TextArea
-                      value={valuesDraft}
-                      onChange={(event) => setValuesDraft(event.target.value)}
-                      rows={18}
-                      style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
-                    />
+                    {visibleValuesQueryData ? (
+                      <pre
+                        style={{
+                          margin: 0,
+                          maxHeight: '60vh',
+                          overflow: 'auto',
+                          whiteSpace: 'pre',
+                          background: 'var(--soha-bg-surface-muted)',
+                          color: 'var(--soha-text-primary)',
+                          border: '1px solid var(--soha-border-color)',
+                          borderRadius: 6,
+                          padding: 16,
+                        }}
+                      >
+                        <code>{visibleValuesQueryData.content}</code>
+                      </pre>
+                    ) : null}
                   </Space>
                 ) : null,
             },
             {
               key: 'install',
-              label: localeCode === 'zh_CN' ? '安装' : 'Install',
+              label: localeCode === 'zh_CN' ? '安装配置' : 'Install configuration',
               forceRender: true,
               children: (
                 <Space orientation="vertical" size={12} style={{ width: '100%' }}>
@@ -417,7 +472,12 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
                       description={capabilityReason}
                     />
                   ) : null}
-                  <Form form={form} layout="vertical" size="small">
+                  <Form
+                    form={form}
+                    layout="vertical"
+                    size="small"
+                    disabled={!canInstall || platformWriteBlocked || installMutation.isPending}
+                  >
                     <Form.Item name="releaseName" label="Release" rules={[{ required: true }]}>
                       <Input
                         disabled={!canInstall || platformWriteBlocked || Boolean(valuesQuery.error)}
@@ -428,47 +488,109 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
                         disabled={!canInstall || platformWriteBlocked || Boolean(valuesQuery.error)}
                       />
                     </Form.Item>
-                    <Form.Item name="version" label="Version" rules={[{ required: true }]}>
-                      <Select
-                        showSearch
-                        disabled={!canInstall || platformWriteBlocked || Boolean(valuesQuery.error)}
-                        options={versionOptions}
-                        onChange={(value) => {
-                          setSelectedVersion(value)
-                          setValuesDraft('')
-                        }}
-                      />
+                    <Form.Item name="version" hidden>
+                      <Input />
                     </Form.Item>
-                    <Form.Item
-                      name="repositoryUrl"
-                      label="Chart Repository URL"
-                      rules={[{ required: true }]}
-                    >
-                      <Input
-                        disabled={!canInstall || platformWriteBlocked || Boolean(valuesQuery.error)}
-                      />
-                    </Form.Item>
-                    <Form.Item name="chartName" label="Chart" rules={[{ required: true }]}>
-                      <Input
-                        disabled={!canInstall || platformWriteBlocked || Boolean(valuesQuery.error)}
-                      />
-                    </Form.Item>
-                    <Form.Item
-                      name="timeoutSeconds"
-                      label="Timeout seconds"
-                      rules={[{ required: true }]}
-                    >
-                      <InputNumber min={30} max={3600} step={30} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Space size={16} wrap>
-                      <Form.Item name="createNamespace" valuePropName="checked">
-                        <Checkbox>Create namespace</Checkbox>
-                      </Form.Item>
-                      <Form.Item name="wait" valuePropName="checked">
-                        <Checkbox>Wait for resources</Checkbox>
-                      </Form.Item>
-                    </Space>
+                    <Collapse
+                      items={[
+                        {
+                          key: 'advanced',
+                          label:
+                            localeCode === 'zh_CN'
+                              ? '高级安装选项'
+                              : 'Advanced installation options',
+                          forceRender: true,
+                          children: (
+                            <>
+                              {' '}
+                              <Form.Item
+                                name="repositoryUrl"
+                                label="Chart Repository URL"
+                                rules={[{ required: true }]}
+                              >
+                                <Input readOnly />
+                              </Form.Item>
+                              <Form.Item
+                                name="chartName"
+                                label="Chart"
+                                rules={[{ required: true }]}
+                              >
+                                <Input
+                                  disabled={
+                                    !canInstall ||
+                                    platformWriteBlocked ||
+                                    Boolean(valuesQuery.error)
+                                  }
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                name="timeoutSeconds"
+                                label="Timeout seconds"
+                                rules={[{ required: true }]}
+                              >
+                                <InputNumber
+                                  min={30}
+                                  max={3600}
+                                  step={30}
+                                  style={{ width: '100%' }}
+                                />
+                              </Form.Item>
+                              <Space size={16} wrap>
+                                <Form.Item name="createNamespace" valuePropName="checked">
+                                  <Checkbox>Create namespace</Checkbox>
+                                </Form.Item>
+                                <Form.Item name="wait" valuePropName="checked">
+                                  <Checkbox>Wait for resources</Checkbox>
+                                </Form.Item>
+                              </Space>
+                            </>
+                          ),
+                        },
+                      ]}
+                    />
                   </Form>
+                  <Card
+                    className="soha-detail-card"
+                    title={localeCode === 'zh_CN' ? '本次安装的 Values' : 'Installation values'}
+                  >
+                    {valuesState.serverChanged ? (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        title={
+                          localeCode === 'zh_CN'
+                            ? '默认参数已变化，草稿已保留'
+                            : 'Default values changed; draft retained'
+                        }
+                        action={
+                          <Button onClick={valuesState.compareLatest}>
+                            {localeCode === 'zh_CN' ? '比对最新' : 'Compare latest'}
+                          </Button>
+                        }
+                      />
+                    ) : null}
+                    {valuesQuery.isPending ? <Spin /> : null}
+                    <Input.TextArea
+                      aria-label="Installation values YAML"
+                      value={valuesDraft}
+                      onChange={(e) => setValuesDraft(e.target.value)}
+                      disabled={
+                        !canInstall ||
+                        platformWriteBlocked ||
+                        installMutation.isPending ||
+                        Boolean(valuesQuery.error) ||
+                        !visibleValuesQueryData
+                      }
+                      rows={16}
+                      style={{ fontFamily: 'ui-monospace,monospace' }}
+                    />
+                    <Button
+                      disabled={installMutation.isPending || platformWriteBlocked}
+                      onClick={valuesState.reset}
+                    >
+                      {localeCode === 'zh_CN' ? '恢复默认参数' : 'Reset defaults'}
+                    </Button>
+                  </Card>
                   {installTarget ? (
                     <Card size="small" title="Install progress">
                       <Space orientation="vertical" size={10} style={{ width: '100%' }}>
@@ -487,10 +609,28 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
                           items={[
                             {
                               key: 'submitted',
-                              label: 'Submit Helm install',
+                              label: localeCode === 'zh_CN' ? '安装请求' : 'Install request',
                               children: (
-                                <Tag color={installStartedAt ? 'success' : 'default'}>
-                                  {installStartedAt ? 'OK' : '-'}
+                                <Tag
+                                  color={
+                                    installResult
+                                      ? 'success'
+                                      : installError
+                                        ? 'error'
+                                        : 'processing'
+                                  }
+                                >
+                                  {installResult
+                                    ? localeCode === 'zh_CN'
+                                      ? '后端已返回结果'
+                                      : 'Backend result received'
+                                    : installError
+                                      ? localeCode === 'zh_CN'
+                                        ? '请求失败'
+                                        : 'Request failed'
+                                      : localeCode === 'zh_CN'
+                                        ? '等待后端结果'
+                                        : 'Awaiting backend result'}
                                 </Tag>
                               ),
                             },
@@ -543,7 +683,13 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
                                     size="small"
                                     onClick={() => {
                                       onClose()
-                                      navigate('/helm/releases')
+                                      navigate(
+                                        '/helm/releases?' +
+                                          new URLSearchParams({
+                                            clusterId: clusterId || '',
+                                            namespace: installTarget.namespace,
+                                          }),
+                                      )
                                     }}
                                   >
                                     View releases
@@ -577,16 +723,30 @@ export function HelmChartDrawer({ chart, initialTab, onClose }: HelmChartDrawerP
                                 },
                               ]}
                             />
-                            <Table
+                            <AdminTable
                               columns={resourceColumns}
                               dataSource={installResult.resources ?? []}
                               rowKey={(record) =>
                                 `${record.apiVersion}:${record.kind}:${record.namespace}:${record.name}`
                               }
-                              size="small"
+                              tableSize="small"
                               pagination={{ pageSize: 8, size: 'small', showSizeChanger: false }}
                               scroll={{ x: 720 }}
                             />
+                            <Button
+                              onClick={() => {
+                                onClose()
+                                navigate(
+                                  buildHelmReleaseRoutePath(
+                                    installResult.name,
+                                    installResult.namespace,
+                                    { clusterId },
+                                  ),
+                                )
+                              }}
+                            >
+                              {localeCode === 'zh_CN' ? '查看 Release' : 'View release'}
+                            </Button>
                             {installResult.notes ? (
                               <pre className="soha-helm-install-output">{installResult.notes}</pre>
                             ) : null}
