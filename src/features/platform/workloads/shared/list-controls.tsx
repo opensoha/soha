@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Typography } from 'antd'
-import { TableCellText } from '@/components/table-cell-content'
+import { TableCellLink } from '@/components/table-cell-content'
 import {
   ManagementDensityButton,
   ManagementKeywordField,
@@ -11,8 +10,6 @@ import {
 } from '@/components/management-list'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import type { WorkloadKind } from './types'
-
-const { Link } = Typography
 
 export type WorkloadLocaleCode = 'zh_CN' | 'en_US'
 
@@ -215,9 +212,5 @@ export function useWorkloadTableDensity(localeCode: WorkloadLocaleCode) {
 }
 
 export function renderWorkloadNameLink(name: string, onClick: () => void) {
-  return (
-    <Link className="soha-workload-name-link" onClick={onClick}>
-      <TableCellText value={name} />
-    </Link>
-  )
+  return <TableCellLink label={name} onClick={onClick} />
 }

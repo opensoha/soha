@@ -584,9 +584,85 @@
 
 .soha-pod-table-name-cell {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   min-width: 0;
   gap: 4px;
+}
+
+.soha-pod-container-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--soha-text-secondary);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.soha-pod-container-cell:focus-visible,
+.soha-pod-container-details:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-pod-container-square {
+  display: inline-block;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  background: var(--soha-text-tertiary);
+}
+
+.soha-pod-container-square.is-success {
+  background: var(--soha-success);
+}
+.soha-pod-container-square.is-warning {
+  background: var(--soha-warning);
+}
+.soha-pod-container-square.is-danger {
+  background: var(--soha-danger);
+}
+.soha-pod-container-overflow {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  background: var(--soha-fill-medium);
+  border-radius: 2px;
+  line-height: 12px;
+}
+.soha-pod-container-details {
+  max-width: min(420px, 80vw);
+  max-height: 50vh;
+  overflow: auto;
+}
+.soha-pod-container-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+  .soha-pod-container-cell {
+    min-height: 44px;
+  }
+}
+
+.soha-pod-table-name-cell > .soha-pod-table-name-link {
+  min-width: 0;
+}
+
+.soha-pod-table-name-cell > .soha-pod-table-meta {
+  flex-shrink: 0;
 }
 
 .soha-pod-table-name-link.ant-typography {
@@ -623,127 +699,42 @@
   text-overflow: ellipsis;
 }
 
-.soha-pod-table-namespace-tag.ant-tag,
 .soha-pod-table-pvc-tag.ant-tag {
   max-width: 112px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.soha-pod-table-node-text.ant-typography {
+.soha-pod-table-node-link {
   display: block;
   max-width: 100%;
-  overflow: hidden;
-  color: var(--soha-text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--soha-primary);
 }
 
-.soha-pod-resource-limit-cell {
-  --soha-pod-resource-fill: var(--soha-resource-success);
-  --soha-pod-resource-value-color: var(--soha-resource-on-fill);
-  display: flex;
-  align-items: center;
-  min-height: 24px;
-  min-width: 0;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: calc(var(--soha-radius-control) / 2);
-  background: transparent;
-  color: var(--soha-text-primary);
-  font: inherit;
-  cursor: help;
+.soha-pod-table-node-link:hover {
+  color: var(--soha-primary-hover);
 }
 
-.soha-pod-resource-limit-cell:focus-visible {
+.soha-pod-table-node-link:focus-visible {
   outline: 2px solid var(--soha-primary);
   outline-offset: 2px;
 }
 
-.soha-pod-resource-limit-cell.is-warning {
-  --soha-pod-resource-fill: var(--soha-resource-warning);
-  --soha-pod-resource-value-color: var(--soha-resource-on-warning);
-}
-
-.soha-pod-resource-limit-cell.is-danger {
-  --soha-pod-resource-fill: var(--soha-resource-danger);
-}
-
-.soha-pod-resource-limit-cell.is-unknown {
-  --soha-pod-resource-fill: transparent;
-}
-
-.soha-pod-resource-progress-wrap {
-  position: relative;
-  width: 100%;
-  min-width: 0;
-  height: 24px;
+.soha-pod-table-node-text.ant-typography {
+  display: block;
+  max-width: 100%;
   overflow: hidden;
-  border-radius: calc(var(--soha-radius-control) / 2);
-}
-
-.soha-pod-resource-value {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  font-size: var(--soha-font-size-supporting);
-  line-height: var(--soha-line-height-supporting);
-  font-variant-numeric: tabular-nums;
+  color: inherit;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  pointer-events: none;
-}
-
-.soha-pod-resource-value.is-on-fill {
-  color: var(--soha-pod-resource-value-color);
-  clip-path: inset(0 calc(100% - var(--soha-pod-resource-usage-percent)) 0 0);
-}
-
-.soha-pod-resource-marker {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 1;
-  width: 2px;
-  pointer-events: none;
-}
-
-.soha-pod-resource-marker.is-request {
-  left: clamp(0px, calc(var(--soha-pod-resource-request-percent) - 1px), calc(100% - 2px));
-  background: var(--soha-resource-success);
-}
-
-.soha-pod-resource-marker.is-request.is-passed {
-  background: var(--soha-resource-request-on-fill);
-}
-
-.soha-pod-resource-limit-cell.is-warning .soha-pod-resource-marker.is-request {
-  background: var(--soha-resource-request-on-warning);
-}
-
-.soha-pod-resource-marker.is-limit {
-  right: 0;
-  background: var(--soha-resource-danger);
-}
-
-.soha-pod-resource-marker.is-limit.is-passed {
-  background: var(--soha-resource-limit-on-fill);
-}
-
-@media (pointer: coarse) {
-  .soha-pod-resource-limit-cell {
-    min-height: 44px;
-  }
 }
 
 .soha-pod-actions-column.soha-table-actions-column {
-  --soha-table-actions-column-width: 116px;
+  --soha-table-actions-column-width: 64px;
 }
 
 .soha-deployments-table .soha-workload-actions-column {
-  --soha-table-actions-column-width: 148px;
+  --soha-table-actions-column-width: 64px;
 }
 
 .soha-statefulsets-table .soha-workload-actions-column {
@@ -848,4 +839,26 @@
 
 .soha-workload-overview-events.ant-card .ant-card-body {
   padding: 18px;
+}
+
+.soha-pod-action-menu-label {
+  display: grid;
+  gap: 2px;
+  max-width: 260px;
+}
+
+.soha-pod-action-menu-reason {
+  overflow-wrap: anywhere;
+  font-size: var(--soha-font-size-supporting);
+  line-height: var(--soha-line-height-supporting);
+  white-space: normal;
+}
+
+.soha-workload-overview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
 }

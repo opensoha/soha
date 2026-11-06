@@ -17,6 +17,7 @@ import type {
   NetworkNASBinding,
   NetworkNASBindingInput,
   NetworkNASBindingStatus,
+  NetworkEAPServerTrust,
   NetworkSession,
   NetworkSessionAction,
   NetworkSessionActionPlan,
@@ -29,6 +30,7 @@ import {
   Alert,
   Button,
   Descriptions,
+  Divider,
   Form,
   Input,
   InputNumber,
@@ -37,11 +39,15 @@ import {
   Select,
   Space,
   Switch,
+  Typography,
 } from 'antd'
 import { useState } from 'react'
+import { formatDateTime } from '@/utils/time'
 import { networkAccessMutations } from './mutations'
 import { networkAccessQueries } from './queries'
 import { TablePane } from './table-pane'
+import { responseLabel } from './endpoint-response/labels'
+
 const LIST_FILTER = { limit: 200 } as const
 const ACCESS_PROFILES: NetworkAccessProfile[] = [
   'onboarding',
@@ -51,6 +57,8 @@ const ACCESS_PROFILES: NetworkAccessProfile[] = [
   'deny',
 ]
 interface NASBindingValues {
+  configureEAP: boolean
+  eapServerTrust?: NetworkEAPServerTrust
   accessMedium: NetworkAccessMedium
   coaSupported: boolean
   deviceType: NetworkAccessDeviceType
@@ -71,7 +79,8 @@ export function NetworkNASBindingsPane({
   canManage,
   view = 'network-device',
 }: NetworkNASBindingsPaneProps) {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
+  const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
   const queryClient = useQueryClient()
   const query = useQuery(networkAccessQueries.nasBindings(LIST_FILTER))
   const visibleQueryData = query.isEnabled === false ? undefined : readableQueryData(query)
@@ -95,6 +104,7 @@ export function NetworkNASBindingsPane({
   const [editing, setEditing] = useState<NetworkNASBinding | null | undefined>(undefined)
   const [form] = Form.useForm<NASBindingValues>()
   const selectedMedium = Form.useWatch('accessMedium', form)
+  const configureEAP = Form.useWatch('configureEAP', form)
   const fixedMedium: NetworkAccessMedium | undefined = view === 'ssid' ? 'wifi' : undefined
   const items = fixedMedium
     ? visibleQueryData?.filter((item) => item.accessMedium === fixedMedium)
@@ -130,7 +140,18 @@ export function NetworkNASBindingsPane({
         ? t('networkAccess.search.ssids', '搜索 SSID、无线设备、NAS、运行时或站点')
         : t('networkAccess.search.networkDevices', '搜索设备、SSID、NAS、运行时或站点')
   function openEditor(record: NetworkNASBinding | null) {
+    create.reset()
+    update.reset()
+    form.resetFields()
     setEditing(record)
+    form.setFieldsValue({
+      configureEAP: Boolean(record?.eapServerTrust),
+      eapServerTrust: record?.eapServerTrust ?? {
+        serverNames: [],
+        caCertificates: [''],
+        wifiSecurity: 'wpa2-enterprise',
+      },
+    })
     form.setFieldsValue(
       record ?? {
         accessMedium: fixedMedium ?? 'wired',
@@ -140,35 +161,43 @@ export function NetworkNASBindingsPane({
         siteId: '',
         deviceType: fixedMedium === 'wifi' ? 'wireless_controller' : 'switch',
         status: 'active',
-        coaSupported: true,
-        disconnectSupported: true,
+        coaSupported: false,
+        disconnectSupported: false,
       },
     )
   }
   function closeEditor() {
+    if (create.isPending || update.isPending) return
     setEditing(undefined)
     form.resetFields()
   }
   async function submit() {
-    const values = await form.validateFields()
-    const input: NetworkNASBindingInput = {
-      name: values.name.trim(),
-      nasId: values.nasId.trim(),
-      runtimeId: values.runtimeId.trim(),
-      siteId: values.siteId.trim(),
-      accessMedium: fixedMedium ?? values.accessMedium,
-      deviceType: values.deviceType,
-      ...(selectedMedium === 'wifi' && values.ssid?.trim() ? { ssid: values.ssid.trim() } : {}),
-      ...(values.managementAddress?.trim()
-        ? { managementAddress: values.managementAddress.trim() }
-        : {}),
-      status: values.status,
-      coaSupported: values.coaSupported,
-      disconnectSupported: values.disconnectSupported,
+    try {
+      const values = await form.validateFields()
+      const input: NetworkNASBindingInput = {
+        name: values.name.trim(),
+        nasId: values.nasId.trim(),
+        runtimeId: values.runtimeId.trim(),
+        siteId: values.siteId.trim(),
+        accessMedium: fixedMedium ?? values.accessMedium,
+        deviceType: values.deviceType,
+        ...(selectedMedium === 'wifi' && values.ssid?.trim() ? { ssid: values.ssid.trim() } : {}),
+        ...(values.managementAddress?.trim()
+          ? { managementAddress: values.managementAddress.trim() }
+          : {}),
+        status: values.status,
+        coaSupported: values.coaSupported,
+        disconnectSupported: values.disconnectSupported,
+        ...(values.configureEAP && values.eapServerTrust
+          ? { eapServerTrust: values.eapServerTrust }
+          : {}),
+      }
+      if (editing) await update.mutateAsync({ bindingId: editing.id, input })
+      else await create.mutateAsync(input)
+      closeEditor()
+    } catch {
+      /* Retain the form and show the API failure below. */
     }
-    if (editing) await update.mutateAsync({ bindingId: editing.id, input })
-    else await create.mutateAsync(input)
-    closeEditor()
   }
   const columns: TableColumnsType<NetworkNASBinding> = [
     { title: t('networkAccess.name', '名称'), dataIndex: 'name', width: 180 },
@@ -406,6 +435,95 @@ export function NetworkNASBindingsPane({
           >
             <Switch />
           </Form.Item>
+          <Divider titlePlacement="start">EAP-TLS</Divider>
+          <Form.Item
+            name="configureEAP"
+            valuePropName="checked"
+            label={text('配置终端的认证服务器校验', 'Configure authentication server validation')}
+            extra={text(
+              '只填写公开 CA 证书和精确 DNS 名称。关闭会清除此项；终端不得跳过服务器证书校验。',
+              'Provide public CA certificates and exact DNS names. Turning this off clears the setting; endpoints must retain server certificate validation.',
+            )}
+          >
+            <Switch />
+          </Form.Item>
+          {configureEAP && (
+            <>
+              <Form.Item
+                name={['eapServerTrust', 'serverNames']}
+                label={text('认证服务器 DNS 名称', 'Authentication server DNS names')}
+                rules={[{ required: true, type: 'array', min: 1, max: 16 }]}
+              >
+                <Select
+                  mode="tags"
+                  maxCount={16}
+                  tokenSeparators={[',', ' ']}
+                  placeholder="radius.example.com"
+                />
+              </Form.Item>
+              <Form.Item
+                name={['eapServerTrust', 'wifiSecurity']}
+                label={text('无线安全协议', 'Wi-Fi security protocol')}
+                rules={[{ required: true }]}
+              >
+                <Select
+                  options={[
+                    { value: 'wpa2-enterprise', label: 'WPA2-Enterprise' },
+                    { value: 'wpa3-enterprise', label: 'WPA3-Enterprise' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.List
+                name={['eapServerTrust', 'caCertificates']}
+                rules={[
+                  {
+                    validator: async (_, values) => {
+                      if (!values?.length || values.length > 8)
+                        throw new Error(
+                          text(
+                            '至少一个、最多八个 CA 证书',
+                            'Provide one to eight CA certificates',
+                          ),
+                        )
+                    },
+                  },
+                ]}
+              >
+                {(fields, { add, remove }, { errors }) => (
+                  <>
+                    {fields.map((field) => (
+                      <div key={field.key}>
+                        <Form.Item
+                          name={field.name}
+                          label={text('公开 CA 证书（PEM）', 'Public CA certificate (PEM)')}
+                          rules={[{ required: true, whitespace: true, max: 16384 }]}
+                        >
+                          <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} maxLength={16384} />
+                        </Form.Item>
+                        {fields.length > 1 && (
+                          <Button size="small" onClick={() => remove(field.name)}>
+                            {text('移除此 CA', 'Remove this CA')}
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    <Button size="small" disabled={fields.length >= 8} onClick={() => add('')}>
+                      {text('添加 CA 证书', 'Add CA certificate')}
+                    </Button>
+                    <Form.ErrorList errors={errors} />
+                  </>
+                )}
+              </Form.List>
+            </>
+          )}
+          {(create.error || update.error) && (
+            <Alert
+              showIcon
+              type="error"
+              title={text('配置未保存', 'Configuration was not saved')}
+              description={(create.error ?? update.error)?.message}
+            />
+          )}
         </Form>
       </Modal>
     </>
@@ -624,7 +742,8 @@ interface SessionActionValues {
   targetAccessProfile: NetworkAccessProfile
 }
 export function NetworkSessionsPane({ canManage }: { canManage: boolean }) {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
+  const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
   const queryClient = useQueryClient()
   const query = useQuery(networkAccessQueries.sessions(LIST_FILTER))
   const visibleQueryData = query.isEnabled === false ? undefined : readableQueryData(query)
@@ -648,36 +767,43 @@ export function NetworkSessionsPane({ canManage }: { canManage: boolean }) {
   const [form] = Form.useForm<SessionActionValues>()
   function openAction(record: NetworkSession) {
     if (operationBlocked) return
+    planAction.reset()
+    executeAction.reset()
     setSession(record)
     setPlan(null)
     form.setFieldsValue({ action: 'coa', reasonCode: '', targetAccessProfile: undefined })
   }
   function closeAction() {
+    if (planAction.isPending || executeAction.isPending) return
     setSession(null)
     setPlan(null)
     form.resetFields()
   }
   async function submitAction() {
     if (!session) return
-    if (!plan) {
-      const values = await form.validateFields()
-      const next = await planAction.mutateAsync({
+    try {
+      if (!plan) {
+        const values = await form.validateFields()
+        const next = await planAction.mutateAsync({
+          sessionId: session.id,
+          input: { ...values, reasonCode: values.reasonCode.trim() },
+        })
+        setPlan(next)
+        return
+      }
+      await executeAction.mutateAsync({
         sessionId: session.id,
-        input: { ...values, reasonCode: values.reasonCode.trim() },
+        input: {
+          action: plan.requestedAction,
+          targetAccessProfile: plan.targetAccessProfile,
+          reasonCode: plan.reasonCode,
+          planHash: plan.planHash,
+        },
       })
-      setPlan(next)
-      return
+      closeAction()
+    } catch {
+      /* Keep the reviewed plan and show the API reason. */
     }
-    await executeAction.mutateAsync({
-      sessionId: session.id,
-      input: {
-        action: plan.requestedAction,
-        targetAccessProfile: plan.targetAccessProfile,
-        reasonCode: plan.reasonCode,
-        planHash: plan.planHash,
-      },
-    })
-    closeAction()
   }
   const columns: TableColumnsType<NetworkSession> = [
     { title: t('networkAccess.subjectId', '用户 ID'), dataIndex: 'subjectId', width: 190 },
@@ -703,7 +829,55 @@ export function NetworkSessionsPane({ canManage }: { canManage: boolean }) {
       width: 110,
       render: (value: string) => <StatusTag value={value} />,
     },
-    { title: t('networkAccess.policyVersion', '策略版本'), dataIndex: 'policyVersion', width: 110 },
+    {
+      title: t('networkAccess.policyVersion', '策略版本'),
+      dataIndex: 'policyVersion',
+      width: 190,
+      render: (value: number, row) => (
+        <Space orientation="vertical" size={0}>
+          <span>{value}</span>
+          {row.admissionAttributeVersion && (
+            <Typography.Text type="secondary" title={row.admissionAttributeVersion}>
+              {text('入网版本', 'Admission version')} {row.admissionPolicyVersion} ·{' '}
+              {row.admissionAttributeVersion.slice(7, 19)}
+            </Typography.Text>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: text('持久限制', 'Persisted restriction'),
+      dataIndex: 'restrictionProfile',
+      width: 140,
+      render: (value?: string) =>
+        value ? <StatusTag value={value} label={responseLabel(value, localeCode)} /> : '—',
+    },
+    {
+      title: text('NAS 执行回执', 'NAS command receipt'),
+      key: 'command',
+      width: 230,
+      render: (_, row) =>
+        row.latestCommand ? (
+          <Space orientation="vertical" size={2}>
+            <StatusTag
+              value={
+                row.latestCommand.status === 'applied' ? 'acknowledged' : row.latestCommand.status
+              }
+              label={
+                row.latestCommand.status === 'applied'
+                  ? text('NAS 已确认，待网络验证', 'NAS acknowledged; network verification pending')
+                  : undefined
+              }
+            />
+            <span>
+              {responseLabel(row.latestCommand.action, localeCode)} ·{' '}
+              {formatDateTime(row.latestCommand.expiresAt)}
+            </span>
+          </Space>
+        ) : (
+          '—'
+        ),
+    },
     ...(canManage
       ? [
           {
@@ -824,6 +998,16 @@ export function NetworkSessionsPane({ canManage }: { canManage: boolean }) {
         </Form>
         {plan ? (
           <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+            <Button
+              disabled={executeAction.isPending}
+              onClick={() => {
+                setPlan(null)
+                planAction.reset()
+                executeAction.reset()
+              }}
+            >
+              {text('重新生成计划', 'Regenerate plan')}
+            </Button>
             {plan.willDisconnect ? (
               <Alert
                 showIcon

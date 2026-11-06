@@ -52,8 +52,11 @@ export function getDeploymentDetail(target: DeploymentTarget): Promise<Deploymen
   return getWorkloadDetail<DeploymentDetail>(deploymentKind, target.scope, target.name)
 }
 
-export function getDeploymentMetrics(target: DeploymentTarget): Promise<ResourceMetrics> {
-  return getWorkloadMetrics(deploymentKind, target.scope, target.name)
+export function getDeploymentMetrics(
+  target: DeploymentTarget,
+  rangeMinutes?: number,
+): Promise<ResourceMetrics> {
+  return getWorkloadMetrics(deploymentKind, target.scope, target.name, rangeMinutes)
 }
 
 export async function getDeploymentRolloutStatus(
@@ -114,5 +117,7 @@ export async function rollbackDeployment({
 }
 
 export async function deleteDeployment(target: DeploymentTarget): Promise<void> {
-  await api.delete<unknown>(buildWorkloadItemPath(deploymentKind, target.scope, target.name))
+  await api.delete<unknown>(
+    buildWorkloadItemPath(deploymentKind, target.scope, target.name, { expectedUid: target.uid }),
+  )
 }

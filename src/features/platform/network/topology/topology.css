@@ -10,7 +10,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin: 18px 0 12px;
+  margin: 0;
 }
 .soha-topology-filters > .ant-input-affix-wrapper {
   flex: 1;
@@ -23,7 +23,7 @@
 .soha-topology-time {
   display: block;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--soha-font-size-supporting);
 }
 .soha-topology-workspace {
   display: grid;
@@ -32,10 +32,10 @@
   align-items: start;
 }
 .soha-topology-workspace.has-inspector {
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 32%);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 340px);
 }
 .soha-topology-canvas {
-  height: clamp(440px, 65vh, 760px);
+  height: clamp(440px, calc(100dvh - 390px), 900px);
   border: 1px solid var(--soha-border-color);
   border-radius: 8px;
   overflow: hidden;
@@ -72,13 +72,13 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--soha-font-size-supporting);
   color: var(--soha-text-secondary);
   margin-bottom: 8px;
 }
 .soha-topology-node-title {
   display: block;
-  font-size: 14px;
+  font-size: var(--soha-font-size);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -87,7 +87,7 @@
 .soha-topology-node-subtitle {
   display: block;
   color: var(--soha-text-tertiary);
-  font-size: 11px;
+  font-size: var(--soha-font-size-supporting);
   margin-top: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -96,7 +96,7 @@
 .soha-topology-node-entry {
   display: block;
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--soha-font-size-supporting);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -196,4 +196,119 @@
   max-width: 100%;
   padding-inline: 0;
   text-align: start;
+}
+
+.soha-topology-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.soha-topology-filter-card > .ant-card-body {
+  padding: 16px;
+}
+.soha-topology-main-card {
+  min-width: 0;
+}
+.soha-topology-main-card > .ant-card-body {
+  padding: 16px;
+}
+.soha-topology-count {
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+}
+.soha-topology-view-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-block: 14px;
+}
+.soha-topology-context {
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-topology-coverage-alert {
+  margin-bottom: 14px;
+}
+.soha-topology-read-status {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--soha-text-tertiary);
+}
+.soha-topology-read-status.is-success {
+  background: var(--soha-success);
+}
+.soha-topology-read-status.is-loading,
+.soha-topology-read-status.is-partial {
+  background: var(--soha-warning);
+}
+.soha-topology-read-status.is-error {
+  background: var(--soha-error);
+}
+.soha-topology-inspector {
+  min-width: 0;
+}
+.soha-topology-inspector > .ant-card-body {
+  max-height: calc(100dvh - 270px);
+  overflow-y: auto;
+}
+.soha-topology-coverage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.soha-topology-coverage-summary {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.soha-topology-coverage-summary > span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--soha-text-secondary);
+}
+.soha-topology-coverage-summary strong {
+  font-size: var(--soha-font-size-summary);
+  color: var(--soha-text-primary);
+}
+.soha-topology-coverage-panel .ant-select {
+  min-width: 150px;
+}
+.soha-topology-coverage-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 4px;
+}
+.soha-topology-coverage-cell .ant-typography {
+  max-width: 100%;
+}
+.soha-topology-page .ant-table-cell .ant-btn-link {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-inline: 0;
+}
+@media (max-width: 767px) {
+  .soha-topology-filter-card > .ant-card-body,
+  .soha-topology-main-card > .ant-card-body {
+    padding: 12px;
+  }
+  .soha-topology-context {
+    display: none;
+  }
+}
+
+.soha-topology-read-status:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 6px;
 }

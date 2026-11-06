@@ -1,20 +1,22 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { hasAllowedAction } from '@/features/auth'
 import type { AIPageContext } from '@/features/copilot'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
 import { getResourceCreateTemplate } from '@/features/platform/resource-creation/templates'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -26,7 +28,6 @@ import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Popconfirm, Space } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import '../styles.css'
 import { networkMutations } from './mutations'
@@ -64,6 +65,7 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
   rowKey,
   searchPlaceholder,
   searchValues,
+  refreshControl,
 }: {
   buildAIPageContext: (items: T[], searchKeyword: string) => AIPageContext
   columns: TableColumnsType<T>
@@ -77,6 +79,7 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
   rowKey?: string | ((record: T) => string)
   searchPlaceholder: { en_US: string; zh_CN: string }
   searchValues: (record: T) => Array<string | undefined | null>
+  refreshControl?: import('react').ReactNode
 }) {
   const { localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
@@ -95,11 +98,6 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
       ),
     [normalizedKeyword, rawItems, searchValues],
   )
-  const canShowEdit =
-    Boolean(onEdit) && rawItems.some((item) => hasAllowedAction(item.allowedActions, 'update'))
-  const canShowDelete =
-    deletable && rawItems.some((item) => hasAllowedAction(item.allowedActions, 'delete'))
-  const canShowActions = canShowEdit || canShowDelete
   useAIPageContext(buildAIPageContext(rawItems, searchKeyword))
   const removeMutation = usePlatformMutation(networkMutations.remove(kind, queryClient), {
     label: ['删除资源', 'Delete resource'],
@@ -148,72 +146,54 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
     }
   }
 
-  const actionColumn: TableColumnsType<T>[number] = {
-    title: '',
-    dataIndex: '__actions',
-    fixed: 'right',
-    align: 'center',
-    width: canShowEdit && canShowDelete ? 84 : 52,
-    onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    render: (_value, record) => {
-      const canEdit = Boolean(onEdit && hasAllowedAction(record.allowedActions, 'update'))
-      const canDelete = deletable && hasAllowedAction(record.allowedActions, 'delete')
-      if (!canEdit && !canDelete) return null
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `network:${kind}`,
+    resourceLabel: NETWORK_ENTITY_KINDS[kind],
+    records: rawItems,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
+    actions: (record) => {
       const target = networkTargetFromRecord(clusterId, record)
-      const deleting =
-        removeMutation.isPending &&
-        removeMutation.variables?.name === target.name &&
-        removeMutation.variables.scope.namespace === target.scope.namespace
-      const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-      return (
-        <Space
-          size={2}
-          className="soha-row-action-icons"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {canEdit ? (
-            <ManagementIconButton
-              icon={<EditOutlined />}
-              aria-label={localeCode === 'zh_CN' ? `编辑 ${record.name}` : `Edit ${record.name}`}
-              tooltip={localeCode === 'zh_CN' ? '编辑' : 'Edit'}
-              onClick={() => onEdit?.(record)}
-            />
-          ) : null}
-          {canDelete ? (
-            <Popconfirm
-              title={
-                localeCode === 'zh_CN' ? `确认删除 ${record.name}？` : `Delete ${record.name}?`
-              }
-              description={
-                localeCode === 'zh_CN'
-                  ? '此操作不可恢复，删除后集群资源立即消失。'
-                  : 'This deletes the resource immediately and cannot be undone.'
-              }
-              okText={deleteLabel}
-              cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-              okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: deleting }}
-              placement="topRight"
-              onConfirm={() => removeMutation.mutate(target, {})}
-            >
-              <ManagementIconButton
-                disabled={platformWriteBlocked}
-                danger
-                icon={<DeleteOutlined />}
-                aria-label={deleteLabel}
-                loading={deleting}
-                tooltip={deleteLabel}
-              />
-            </Popconfirm>
-          ) : null}
-        </Space>
-      )
+      return [
+        ...(onEdit && hasAllowedAction(record.allowedActions, 'update')
+          ? [
+              {
+                key: 'edit',
+                label: localeCode === 'zh_CN' ? '编辑' : 'Edit',
+                icon: <EditOutlined />,
+                disabled: platformWriteBlocked,
+                run: () => onEdit(record),
+              },
+            ]
+          : []),
+        ...(deletable && hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled: platformWriteBlocked,
+                loading:
+                  removeMutation.isPending &&
+                  removeMutation.variables?.scope.clusterId === clusterId &&
+                  removeMutation.variables?.name === target.name &&
+                  removeMutation.variables.scope.namespace === target.scope.namespace,
+                confirm: kubernetesDeleteConfirmation(record, localeCode),
+                prepare: () => removeMutation.reset(),
+                feedback: removeMutation.feedback,
+                run: () => removeMutation.mutateAsync(target),
+              },
+            ]
+          : []),
+      ]
     },
-  }
+  })
 
   return (
     <>
-      {removeMutation.feedback}
+      {resourceActions.confirmation}
+      {!resourceActions.isConfirming && removeMutation.feedback}
       <ManagementDataPage
         query={{
           onFinish: () => undefined,
@@ -238,69 +218,78 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
             />
           ),
         }}
-        table={{
-          error: query.isEnabled === false ? null : query.error,
-          hasReadData: query.data !== undefined,
-          onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-          className: 'soha-platform-table',
-          columnSettingIconOnly: true,
-          columnSettingPlacement: 'header',
-          columns: canShowActions ? [...columns, actionColumn] : columns,
-          dataSource: clusterId ? filteredItems : [],
-          rowKey: rowKey ?? ((record) => `${record.namespace}/${record.name}`),
-          onRow: rowProps,
-          loading: query.isLoading,
-          localSorting: true,
-          pageSize: K8S_TABLE_PAGE_SIZE,
-          tableSize,
-          scroll: { x: 'max-content' },
-          viewportScroll: true,
-          headerExtra: (
-            <ManagementTableToolbar>
-              {createKind ? (
-                <CreateEntry
-                  context={{
-                    clusterId: clusterId || '',
-                    defaultNamespace:
-                      createScope === 'namespace' ? namespace || undefined : undefined,
-                    expectedApiVersion: createAPIVersion,
-                    expectedKind: createKind,
-                    resourceGroup: 'network',
-                    scopeMode: createScope,
-                    source: 'list',
-                  }}
-                  defaultTemplate={getResourceCreateTemplate(createKind)}
-                  label={createKind}
+        tableNode={
+          <KubernetesResourceTable
+            resourceKey={`network:${kind}`}
+            resourceLabel={NETWORK_ENTITY_KINDS[kind]}
+            allRows={rawItems}
+            filterKey={normalizedKeyword}
+            scopeMode={
+              ['gatewayclasses', 'ingressclasses'].includes(kind) ? 'cluster' : 'namespace'
+            }
+            error={query.isEnabled === false ? null : query.error}
+            hasReadData={query.data !== undefined}
+            onRetry={query.isEnabled === false ? undefined : () => query.refetch()}
+            className={'soha-platform-table'}
+            columnSettingIconOnly={true}
+            columnSettingPlacement={'header'}
+            columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
+            dataSource={clusterId ? filteredItems : []}
+            rowKey={rowKey ?? ((record) => `${record.namespace}/${record.name}`)}
+            onRow={rowProps}
+            loading={query.isLoading}
+            localSorting={true}
+            tableSize={tableSize}
+            scroll={{ x: 'max-content' }}
+            headerExtra={
+              <ManagementTableToolbar>
+                {createKind ? (
+                  <CreateEntry
+                    context={{
+                      clusterId: clusterId || '',
+                      defaultNamespace:
+                        createScope === 'namespace' ? namespace || undefined : undefined,
+                      expectedApiVersion: createAPIVersion,
+                      expectedKind: createKind,
+                      resourceGroup: 'network',
+                      scopeMode: createScope,
+                      source: 'list',
+                    }}
+                    defaultTemplate={getResourceCreateTemplate(createKind)}
+                    label={createKind}
+                  />
+                ) : null}
+                <ManagementDensityButton
+                  aria-label={densityLabel}
+                  title={densityLabel}
+                  tooltip={densityLabel}
+                  onClick={() =>
+                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
+                  }
                 />
-              ) : null}
-              <ManagementDensityButton
-                aria-label={densityLabel}
-                title={densityLabel}
-                tooltip={densityLabel}
-                onClick={() =>
-                  setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
-                }
+                {refreshControl ?? (
+                  <ManagementRefreshButton
+                    aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    disabled={!clusterId}
+                    loading={query.isFetching}
+                    tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    onClick={() => {
+                      if (clusterId) void query.refetch()
+                    }}
+                  />
+                )}
+              </ManagementTableToolbar>
+            }
+            empty={
+              <ManagementState
+                bordered={false}
+                compact
+                description={effectiveEmpty}
+                kind={!clusterId ? 'select-scope' : 'empty'}
               />
-              <ManagementRefreshButton
-                aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                disabled={!clusterId}
-                loading={query.isFetching}
-                tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                onClick={() => {
-                  if (clusterId) void query.refetch()
-                }}
-              />
-            </ManagementTableToolbar>
-          ),
-          empty: (
-            <ManagementState
-              bordered={false}
-              compact
-              description={effectiveEmpty}
-              kind={!clusterId ? 'select-scope' : 'empty'}
-            />
-          ),
-        }}
+            }
+          />
+        }
       />
     </>
   )

@@ -34,7 +34,10 @@ export async function updateNetworkYAML(
 ): Promise<NetworkYAML> {
   const response = await api.put<ApiResponse<NetworkYAML>>(
     buildNetworkYAMLPath(kind, variables.scope, variables.name),
-    { content: variables.content },
+    {
+      content: variables.content,
+      ...(variables.requireObservedIdentity ? { requireObservedIdentity: true } : {}),
+    },
   )
   return response.data
 }

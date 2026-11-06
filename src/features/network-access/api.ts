@@ -7,8 +7,11 @@ import type {
   NetworkAccessGrantInput,
   NetworkAccessGrantSecret,
   NetworkAccessGrantStatus,
+  NetworkWorkloadBinding,
+  NetworkWorkloadBindingInput,
   NetworkAccessPolicy,
   NetworkAccessPolicyInput,
+  NetworkAdmissionPreviewRequest,
   NetworkConflictAnalysisRequest,
   NetworkConflictAnalysisResult,
   NetworkGateway,
@@ -24,6 +27,7 @@ import type {
   NetworkAccessProfile,
   NetworkPolicyPreviewRequest,
   NetworkPolicyPreviewResult,
+  NetworkAdmissionPreviewResult,
   NetworkPolicyEffect,
   NetworkPolicySnapshot,
   NetworkResource,
@@ -634,4 +638,45 @@ export async function previewNetworkAccessPolicy(
     input,
   )
   return response.data
+}
+
+export async function previewNetworkAdmission(
+  input: NetworkAdmissionPreviewRequest,
+): Promise<NetworkAdmissionPreviewResult> {
+  const response = await api.post<ApiResponse<NetworkAdmissionPreviewResult>>(
+    '/network-access/admission/preview',
+    input,
+  )
+  return response.data
+}
+
+export async function listNetworkWorkloadBindings(): Promise<NetworkWorkloadBinding[]> {
+  const response = await api.get<ApiResponse<NetworkWorkloadBinding[]>>(
+    '/network-access/workload-bindings',
+  )
+  return response.data ?? []
+}
+export async function putNetworkWorkloadBinding({
+  id,
+  input,
+}: {
+  id: string
+  input: NetworkWorkloadBindingInput
+}): Promise<NetworkWorkloadBinding> {
+  const response = await api.put<ApiResponse<NetworkWorkloadBinding>>(
+    `/network-access/workload-bindings/${encodeURIComponent(id)}`,
+    input,
+  )
+  return response.data
+}
+
+export async function submitManagementProof(
+  deviceId: string,
+  input: import('@opensoha/contracts/gen/ts/sohaapi').NetworkManagementProofInput,
+): Promise<EndpointDevice> {
+  const result = await api.post<ApiResponse<EndpointDevice>>(
+    `/network-access/devices/${encodeURIComponent(deviceId)}/management-proof`,
+    input,
+  )
+  return result.data
 }

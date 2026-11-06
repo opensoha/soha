@@ -14,7 +14,7 @@ import type {
   UpdateConfigurationYAMLVariables,
 } from './types'
 
-async function invalidateConfigurationCaches(
+export async function invalidateConfigurationCaches(
   queryClient: QueryClient,
   kind: ConfigurationKind,
   target?: ConfigurationTarget,

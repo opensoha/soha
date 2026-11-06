@@ -4,6 +4,7 @@ import { requireWorkloadNamespace } from '../shared/scope'
 import {
   getWorkloadDetail,
   getWorkloadMetrics,
+  getWorkloadYAML,
   listWorkloadEvents,
   listWorkloads,
 } from '../shared/api'
@@ -32,6 +33,16 @@ export function getPodMetrics(target: PodTarget, rangeMinutes: number): Promise<
   return getWorkloadMetrics(podKind, target.scope, target.name, rangeMinutes)
 }
 
+export async function getPodContainerConfiguration(target: PodTarget) {
+  const yaml = await getWorkloadYAML(podKind, target.scope, target.name)
+  const { readPodContainerConfiguration } = await import('./pod-container-configuration')
+  return readPodContainerConfiguration(
+    yaml.content,
+    target.name.trim(),
+    target.scope.namespace?.trim() || '',
+  )
+}
+
 export async function listPodEvents(target: PodTarget): Promise<WorkloadEvent[]> {
   const events = await listWorkloadEvents(target.scope, 100)
   const name = normalizePodName(target.name)
@@ -45,6 +56,8 @@ export async function listPodEvents(target: PodTarget): Promise<WorkloadEvent[]>
 export async function deletePod(target: PodTarget): Promise<void> {
   requireWorkloadNamespace(target.scope)
   await api.delete<unknown>(
-    buildWorkloadItemPath(podKind, target.scope, normalizePodName(target.name)),
+    buildWorkloadItemPath(podKind, target.scope, normalizePodName(target.name), {
+      expectedUid: target.uid,
+    }),
   )
 }

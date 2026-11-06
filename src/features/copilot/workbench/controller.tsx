@@ -2732,6 +2732,7 @@ export function AIWorkbenchController() {
                             type="text"
                             icon={<BookOutlined />}
                             aria-label="个人记忆"
+                            disabled={contextParsing}
                             onClick={() => setMemoryDraft({})}
                           >
                             记忆
@@ -2820,7 +2821,8 @@ export function AIWorkbenchController() {
                     cancelAgentRunsMutation.isPending
                   }
                   readOnly={requestRecovery.pending || Boolean(requestRecovery.error)}
-                  disabled={!canUseChat || !currentSession || contextParsing}
+                  disabled={!canUseChat || !currentSession}
+                  contextParsing={contextParsing}
                   value={senderValue}
                   onChange={setSenderValue}
                   onCancel={cancelMessageStream}

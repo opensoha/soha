@@ -3,6 +3,7 @@ import type { TableColumnsType } from 'antd'
 import type {
   EndpointDevice,
   EndpointDeviceOwnershipType,
+  EndpointDeviceManagementState,
   EndpointDeviceType,
   EndpointNetworkInterface,
 } from '@opensoha/contracts/gen/ts/sohaapi'
@@ -12,6 +13,7 @@ import { useI18n } from '@/i18n'
 import type { LocaleCode } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
 import { NetworkStatusTag } from './network-status-tag'
+import { EndpointChannelControlsPanel } from './endpoint-controls'
 import './styles.css'
 
 const DEVICE_TYPE_LABELS: Record<EndpointDeviceType, [string, string]> = {
@@ -47,6 +49,18 @@ export function endpointOwnershipLabel(
   localeCode: LocaleCode,
 ) {
   return localeLabel(OWNERSHIP_LABELS[value ?? 'unassigned'], localeCode)
+}
+
+export function endpointManagementLabel(
+  value: EndpointDeviceManagementState | undefined,
+  localeCode: LocaleCode,
+) {
+  const labels: Record<EndpointDeviceManagementState, [string, string]> = {
+    managed: ['已受管', 'Managed'],
+    unmanaged: ['非受管', 'Unmanaged'],
+    unknown: ['未知', 'Unknown'],
+  }
+  return localeLabel(labels[value ?? 'unknown'], localeCode)
 }
 
 function join(values?: string[]) {
@@ -113,6 +127,18 @@ export function EndpointDeviceDetailDrawer({
       key: 'ownershipType',
       label: t('networkAccess.device.ownership', '设备归属'),
       children: endpointOwnershipLabel(device.ownershipType, localeCode),
+    },
+    {
+      key: 'managementState',
+      label: t('networkAccess.device.managementState', '受管状态'),
+      children: endpointManagementLabel(device.managementState, localeCode),
+    },
+    {
+      key: 'managementVerifiedUntil',
+      label: t('networkAccess.device.managementVerifiedUntil', '管理证明有效期'),
+      children: device.managementVerifiedUntil
+        ? formatDateTime(device.managementVerifiedUntil)
+        : t('networkAccess.device.managementUnverified', '未持有有效证明'),
     },
     {
       key: 'owner',
@@ -223,6 +249,13 @@ export function EndpointDeviceDetailDrawer({
                 rowKey="name"
                 scroll={{ x: 1100 }}
               />
+            ),
+          },
+          {
+            key: 'channel-controls',
+            label: t('networkAccess.endpointChannels', '端点通道'),
+            children: (
+              <EndpointChannelControlsPanel deviceId={device.id} platform={device.platform} />
             ),
           },
         ]}

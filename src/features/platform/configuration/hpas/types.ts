@@ -18,3 +18,23 @@ export interface HorizontalPodAutoscalerResource extends ConfigurationDetailBase
   readonly metrics?: HorizontalPodAutoscalerMetric[]
   readonly conditions?: WorkloadCondition[]
 }
+
+export const HPA_TEMPLATE = `apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: example-autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: example-app
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+`

@@ -1,0 +1,63 @@
+.soha-clusterrole-detail .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-clusterrole-detail .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-clusterrole-detail .soha-clusterrole-section-title,
+.soha-clusterrole-detail .soha-clusterrole-rules-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.soha-clusterrole-detail .soha-clusterrole-rule-preview {
+  padding-inline-start: 20px;
+  margin-block: 16px 0;
+}
+.soha-clusterrole-detail .soha-clusterrole-rule-preview li {
+  padding-block: 6px;
+  overflow-wrap: anywhere;
+}
+.soha-clusterrole-detail .soha-clusterrole-rule-preview li > span {
+  display: block;
+}
+.soha-clusterrole-detail .soha-clusterrole-selector {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--soha-border-color);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-clusterrole-detail .soha-clusterrole-selector ul {
+  padding-inline-start: 20px;
+}
+.soha-clusterrole-detail .soha-clusterrole-selector small {
+  color: var(--soha-text-secondary);
+}
+.soha-clusterrole-detail .soha-clusterrole-rule-values {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.soha-clusterrole-detail .soha-workload-overview-config > div {
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr);
+}
+.soha-clusterrole-detail .soha-workload-overview-config dt,
+.soha-clusterrole-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.soha-clusterrole-detail .soha-clusterrole-rules-toolbar {
+  margin-bottom: 16px;
+}
+.soha-clusterrole-detail .soha-clusterrole-section-title {
+  gap: 8px;
+}

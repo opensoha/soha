@@ -5,7 +5,8 @@ import {
   hasNamespacedWorkloadScope,
   hasWorkloadCluster,
 } from '@/features/platform/workloads/shared/scope'
-import { getJobDetail, listJobEvents, listJobs } from './api'
+import { getJobDetail, listJobEvents, listJobs, getJobMetrics, getJobTemplate } from './api'
+import { jobKeys } from './keys'
 import type { Job, JobDetail } from './types'
 
 function target(scope: ScopeKey, name: string) {
@@ -17,6 +18,18 @@ function hasJobReference(scope: ScopeKey, name: string) {
 }
 
 export const jobQueries = {
+  metrics: (scope: ScopeKey, name: string, rangeMinutes: number) =>
+    queryOptions({
+      queryKey: workloadKeys.metrics('jobs', scope, name, rangeMinutes),
+      queryFn: () => getJobMetrics(target(scope, name), rangeMinutes),
+      enabled: hasJobReference(scope, name),
+    }),
+  template: (scope: ScopeKey, name: string) =>
+    queryOptions({
+      queryKey: jobKeys.template(scope, name),
+      queryFn: () => getJobTemplate(target(scope, name)),
+      enabled: hasJobReference(scope, name),
+    }),
   list: (scope: ScopeKey) =>
     queryOptions<Job[]>({
       queryKey: workloadKeys.list('jobs', scope),

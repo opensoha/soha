@@ -1,0 +1,66 @@
+.soha-sa-detail {
+  min-width: 0;
+}
+.soha-sa-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+/* Scoped detail shell spacing, matching storage detail tabs. */
+.soha-sa-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-sa-detail .soha-sa-section-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.soha-sa-detail .soha-sa-muted {
+  color: var(--soha-text-secondary);
+}
+.soha-sa-detail .soha-sa-references {
+  margin: 0;
+  padding-inline-start: 20px;
+  overflow-wrap: anywhere;
+}
+.soha-sa-detail .soha-sa-overview dd {
+  overflow-wrap: anywhere;
+}
+.soha-sa-detail .soha-sa-bindings {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.soha-sa-detail .soha-sa-overview .soha-workload-overview-config > div {
+  grid-template-columns: minmax(0, 112px) minmax(0, 1fr);
+  align-items: start;
+}
+.soha-sa-detail .soha-sa-overview dt,
+.soha-sa-detail .soha-sa-overview dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-sa-detail .soha-sa-access-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--soha-border-color);
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.soha-sa-detail .soha-sa-namespace {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+}
+.soha-sa-detail .soha-sa-namespace .ant-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-sa-detail .soha-sa-binding-toolbar {
+  margin-top: 12px;
+  margin-bottom: 16px;
+}

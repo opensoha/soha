@@ -1,0 +1,34 @@
+.soha-backend-tls-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+
+.soha-backend-tls-reference-summary,
+.soha-backend-tls-reference-summary details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.soha-backend-tls-reference-summary summary {
+  cursor: pointer;
+  color: var(--soha-text-secondary);
+}
+
+.soha-backend-tls-validation .soha-workload-overview-config > div {
+  grid-template-columns: minmax(0, 112px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.soha-backend-tls-detail .soha-workload-overview-config dt,
+.soha-backend-tls-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .soha-backend-tls-validation .soha-workload-overview-config > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}

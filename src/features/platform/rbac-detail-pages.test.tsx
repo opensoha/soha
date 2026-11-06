@@ -21,6 +21,18 @@ const testState = vi.hoisted(() => ({
 const apiGetMock = vi.hoisted(() =>
   vi.fn((path: string) => Promise.resolve({ data: testState.responses[path] ?? [] })),
 )
+const apiPutMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/features/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/auth')>()),
+  usePermissionSnapshot: () => ({
+    data: {
+      data: {
+        permissionKeys: ['platform.access-control.roles.view', 'platform.access-control.roles.update'],
+      },
+    },
+  }),
+}))
 
 vi.mock('@/stores/platform-scope-store', () => ({
   usePlatformScopeStore: () => testState.scope,
@@ -39,12 +51,29 @@ vi.mock('@/i18n', async (importOriginal) => ({
 vi.mock('@/services/api-client', () => ({
   api: {
     get: apiGetMock,
-    put: vi.fn(),
+    put: apiPutMock,
   },
 }))
 
 vi.mock('@/components/k8s-yaml-editor', () => ({
-  K8sYamlEditor: () => <div data-testid="yaml-editor">yaml-editor</div>,
+  K8sYamlEditor: ({
+    value,
+    readOnly,
+    applyDisabled,
+    onApply,
+  }: {
+    value: string
+    readOnly?: boolean
+    applyDisabled?: boolean
+    onApply: () => void
+  }) => (
+    <div data-testid="yaml-editor" data-read-only={String(readOnly)}>
+      <pre>{value}</pre>
+      <button disabled={readOnly || applyDisabled} onClick={onApply}>
+        Apply Role YAML
+      </button>
+    </div>
+  ),
 }))
 
 let containers: HTMLDivElement[] = []
@@ -146,8 +175,13 @@ describe('RBAC detail YAML tab', () => {
           direct: { status: 'available' },
           agent: {
             status: 'unsupported',
-            notes: ['YAML endpoints are not supported for agent-connected clusters yet'],
+            notes: ['This Agent does not support YAML apply'],
           },
+        },
+        {
+          key: 'resource.yaml.view',
+          direct: { status: 'available' },
+          agent: { status: 'available' },
         },
       ],
       '/clusters/cluster-a/access-control/roles/demo/detail?namespace=default': {
@@ -156,8 +190,12 @@ describe('RBAC detail YAML tab', () => {
         labels: {},
         name: 'demo',
         namespace: 'default',
+        allowedActions: ['view', 'update'],
         ruleSummaries: ['get pods'],
         rules: 1,
+      },
+      '/clusters/cluster-a/access-control/roles/demo/yaml?namespace=default': {
+        content: 'apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: demo\n  namespace: default\nrules: []\n',
       },
     })
   })
@@ -176,7 +214,7 @@ describe('RBAC detail YAML tab', () => {
     vi.clearAllMocks()
   })
 
-  it('does not fetch YAML for agent clusters with unsupported YAML capability', async () => {
+  it('reads authorized Role YAML while unsupported Agent apply remains blocked', async () => {
     const container = await renderWithProviders(<PlatformAccessControlRoleDetailPage />)
 
     const yamlTab = Array.from(container.querySelectorAll('[role="tab"]')).find(
@@ -191,11 +229,17 @@ describe('RBAC detail YAML tab', () => {
     })
     await flushAsyncWork()
 
-    expect(container.textContent).toContain(
-      'YAML endpoints are not supported for agent-connected clusters yet',
-    )
-    expect(apiGetMock.mock.calls.map(([path]) => path)).not.toContain(
+    await vi.waitFor(() => {
+      const editor = container.querySelector('[data-testid="yaml-editor"]')
+      expect(editor?.textContent).toContain('kind: Role')
+      expect(editor?.getAttribute('data-read-only')).toBe('false')
+    })
+    expect(apiGetMock.mock.calls.map(([path]) => path)).toContain(
       '/clusters/cluster-a/access-control/roles/demo/yaml?namespace=default',
     )
+    const apply = container.querySelector<HTMLButtonElement>('[data-testid="yaml-editor"] button')!
+    expect(apply.disabled).toBe(true)
+    await act(async () => apply.click())
+    expect(apiPutMock).not.toHaveBeenCalled()
   })
 })

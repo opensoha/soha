@@ -15,12 +15,23 @@ export function ResourceStreamStatus({
   status,
   lastEventAt,
   localeCode,
+  showLabel = false,
+  refreshing = false,
+  refreshFailed = false,
 }: {
   status: KubernetesResourceStreamStatus
   lastEventAt?: string
   localeCode: 'zh_CN' | 'en_US'
+  showLabel?: boolean
+  refreshing?: boolean
+  refreshFailed?: boolean
 }) {
-  const statusLabel = formatStatusLabel(status, localeCode)
+  const statusLabel =
+    status === 'live' && showLabel
+      ? localeCode === 'zh_CN'
+        ? '实时更新'
+        : 'Live updates'
+      : formatStatusLabel(status, localeCode)
   const eventDate = lastEventAt ? new Date(lastEventAt) : null
   const eventTime =
     eventDate && !Number.isNaN(eventDate.getTime())
@@ -31,9 +42,20 @@ export function ResourceStreamStatus({
           hour12: false,
         }).format(eventDate)
       : null
-  const detail = eventTime
+  const streamDetail = eventTime
     ? `${statusLabel} · ${localeCode === 'zh_CN' ? '更新于' : 'Updated at'} ${eventTime}`
     : statusLabel
+
+  const readLabel = refreshing
+    ? localeCode === 'zh_CN'
+      ? '刷新中'
+      : 'Refreshing'
+    : refreshFailed
+      ? localeCode === 'zh_CN'
+        ? '刷新失败，请重试'
+        : 'Refresh failed; retry'
+      : null
+  const detail = readLabel ? `${readLabel} · ${streamDetail}` : streamDetail
 
   return (
     <Tooltip title={detail}>
@@ -44,13 +66,18 @@ export function ResourceStreamStatus({
         style={{
           alignItems: 'center',
           display: 'inline-flex',
-          flex: '0 0 24px',
+          flex: showLabel ? '0 0 auto' : '0 0 24px',
           height: 24,
           justifyContent: 'center',
-          width: 24,
+          width: showLabel ? undefined : 24,
         }}
       >
-        <Badge status={badgeStatusByStreamStatus[status]} />
+        <Badge
+          status={
+            refreshing ? 'warning' : refreshFailed ? 'error' : badgeStatusByStreamStatus[status]
+          }
+          text={showLabel ? (readLabel ?? statusLabel) : undefined}
+        />
       </span>
     </Tooltip>
   )

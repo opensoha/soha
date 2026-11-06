@@ -1,18 +1,18 @@
-import { AdminTable } from '@/components/admin-table'
+import { useKubernetesResourceActions } from '@/features/platform/shared/use-kubernetes-resource-actions'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
-  ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import '@/features/platform/extensions/styles.css'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
+import {
+  WorkloadRefresh,
+  useWorkloadRefresh,
+} from '@/features/platform/workloads/shared/workload-refresh'
 import { useI18n } from '@/i18n'
-import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
-import { tableColumnPresets } from '@/utils/table-columns'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
@@ -26,12 +26,11 @@ import { buildCRDApiGroupDetailPath } from './paths'
 import { crdQueries } from './queries'
 import type { CRDApiGroupSummary } from './types'
 import { groupCRDsByApi } from './utils'
-
+import { useCRDClusterScope } from './use-cluster-scope'
 const { Text } = Typography
 
 export function CRDPage() {
   const { t, localeCode } = useI18n()
-  const { clusterId } = usePlatformScopeStore()
   const navigate = useNavigate()
   const permissionSnapshot = usePermissionSnapshot().data?.data
   const canDelete = hasPermission(permissionSnapshot, 'platform.extensions.crds.delete')
@@ -39,30 +38,33 @@ export function CRDPage() {
     null,
   )
   const [params, setParams] = useSearchParams()
+  const { clusterId, scopeReady } = useCRDClusterScope(params, setParams)
   const searchKeyword = params.get('q') ?? ''
-  const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1)
-  const pageSize = Math.min(
-    100,
-    Math.max(
-      1,
-      Number.parseInt(params.get('pageSize') ?? String(K8S_TABLE_PAGE_SIZE), 10) ||
-        K8S_TABLE_PAGE_SIZE,
-    ),
-  )
   const setSearchKeyword = (keyword: string) =>
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
         if (keyword) next.set('q', keyword)
         else next.delete('q')
-        next.set('page', '1')
+        next.delete('page')
+        next.delete('pageSize')
         return next
       },
       { replace: true },
     )
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const normalizedKeyword = normalizeSearchKeyword(useDeferredValue(searchKeyword))
-  const catalogQuery = useQuery(crdQueries.catalog(clusterId))
+  const catalogRefresh = useWorkloadRefresh()
+  const catalogQuery = useQuery({
+    ...crdQueries.catalog(clusterId),
+    enabled: Boolean(clusterId) && scopeReady,
+    refetchInterval: (query) => {
+      const interval = catalogRefresh.interval(query)
+      if (interval === false) return false
+      return query.state.data?.some((item) => item.deletingAt) ? 3000 : interval
+    },
+    refetchIntervalInBackground: false,
+  })
   const visibleCatalogQueryData = readableQueryData(catalogQuery)
   const apiGroups = useMemo(
     () => groupCRDsByApi(visibleCatalogQueryData ?? []),
@@ -79,7 +81,42 @@ export function CRDPage() {
     [apiGroups, normalizedKeyword],
   )
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
-  const openGroup = (group: string) => navigate(buildCRDApiGroupDetailPath(group))
+  const groupPath = (group: string) =>
+    `${buildCRDApiGroupDetailPath(group)}?${new URLSearchParams({ ...(clusterId ? { clusterId } : {}), ...(searchKeyword ? { q: searchKeyword } : {}) })}`
+  const openGroup = (group: string) => navigate(groupPath(group))
+
+  const resourceActions = useKubernetesResourceActions<CRDApiGroupSummary>({
+    resourceKey: 'crds',
+    resourceLabel: 'API Group',
+    records: apiGroups,
+    scopeKey: clusterId ?? '',
+    getName: (record) => record.group,
+    getKey: (record) => record.group,
+    actions: (record) => {
+      const hasDeletableDefinition = record.crds.some(
+        (item) => item.uid && !item.deletingAt && item.allowedActions?.includes('delete'),
+      )
+      return canDelete
+        ? [
+            {
+              key: 'delete-definition',
+              label: localeCode === 'zh_CN' ? '删除 CRD 定义' : 'Delete CRD definition',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: !clusterId || !hasDeletableDefinition,
+              reason: hasDeletableDefinition
+                ? ''
+                : localeCode === 'zh_CN'
+                  ? '需要删除授权和包含 UID 的最新目录；Agent 需启用 platform.crds.delete'
+                  : 'Requires deletion access and a current catalog with UIDs; enable platform.crds.delete on the agent',
+              run: () => {
+                if (clusterId) setDeleteTarget({ clusterId, group: record.group })
+              },
+            },
+          ]
+        : []
+    },
+  })
 
   const columns: TableColumnsType<CRDApiGroupSummary> = [
     {
@@ -160,39 +197,6 @@ export function CRDPage() {
         </Space>
       ),
     },
-    {
-      ...tableColumnPresets.action,
-      title: '',
-      key: 'actions',
-      render: (_value, record) => (
-        <ManagementIconButton
-          icon={<DeleteOutlined />}
-          danger
-          aria-label={localeCode === 'zh_CN' ? '删除 CRD 定义' : 'Delete CRD definition'}
-          disabled={
-            !clusterId ||
-            !record.crds.some(
-              (item) => item.uid && !item.deletingAt && item.allowedActions?.includes('delete'),
-            )
-          }
-          tooltip={
-            record.crds.some(
-              (item) => item.uid && !item.deletingAt && item.allowedActions?.includes('delete'),
-            )
-              ? localeCode === 'zh_CN'
-                ? '删除 CRD 定义'
-                : 'Delete CRD definition'
-              : localeCode === 'zh_CN'
-                ? '需要删除授权和包含 UID 的最新目录；Agent 需启用 platform.crds.delete'
-                : 'Requires deletion access and a current catalog with UIDs; enable platform.crds.delete on the agent'
-          }
-          onClick={(event) => {
-            event.stopPropagation()
-            if (clusterId) setDeleteTarget({ clusterId, group: record.group })
-          }}
-        />
-      ),
-    },
   ]
 
   return (
@@ -206,7 +210,12 @@ export function CRDPage() {
         searchKeyword={searchKeyword}
         setSearchKeyword={setSearchKeyword}
       />
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'crds'}
+        resourceLabel={'API Groups'}
+        allRows={apiGroups}
+        filterKey={searchKeyword}
+        scopeMode={'cluster'}
         error={catalogQuery.isEnabled === false ? null : catalogQuery.error}
         hasReadData={catalogQuery.data !== undefined}
         onRetry={catalogQuery.isEnabled === false ? undefined : () => catalogQuery.refetch()}
@@ -214,29 +223,13 @@ export function CRDPage() {
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
-        columns={canDelete ? columns : columns.filter((column) => column.key !== 'actions')}
+        columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
         dataSource={clusterId ? filteredApiGroups : []}
         rowKey="group"
         loading={catalogQuery.isLoading}
         localSorting
-        pageSize={pageSize}
-        pagination={{
-          current: page,
-          pageSize,
-          onChange: (nextPage: number, size: number) =>
-            setParams(
-              (current) => {
-                const next = new URLSearchParams(current)
-                next.set('page', String(nextPage))
-                next.set('pageSize', String(size))
-                return next
-              },
-              { replace: true },
-            ),
-        }}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
         onRow={(record: CRDApiGroupSummary) => ({
           onClick: () => openGroup(record.group),
           style: { cursor: 'pointer' },
@@ -249,12 +242,14 @@ export function CRDPage() {
               tooltip={densityLabel}
               onClick={() => setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))}
             />
-            <ManagementRefreshButton
-              aria-label={t('common.refresh', 'Refresh')}
+            <WorkloadRefresh
+              compact
+              settings={catalogRefresh}
+              queries={[catalogQuery]}
+              resourceLabel="CRD"
               disabled={!clusterId}
-              loading={catalogQuery.isFetching}
-              tooltip={t('common.refresh', 'Refresh')}
-              onClick={() => clusterId && void catalogQuery.refetch()}
+              label={t('common.refresh', 'Refresh')}
+              onRefresh={() => clusterId && void catalogQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

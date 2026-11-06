@@ -1,0 +1,64 @@
+.soha-pv-detail {
+  min-width: 0;
+}
+.soha-pv-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-pv-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-pv-detail .soha-pv-section-title,
+.soha-pv-detail .soha-pv-capacity,
+.soha-pv-detail .soha-pv-node-requirement {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.soha-pv-detail .soha-pv-capacity {
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.soha-pv-detail .soha-pv-capacity dl {
+  margin: 0;
+}
+.soha-pv-detail .soha-pv-capacity dt,
+.soha-pv-detail .soha-pv-muted {
+  color: var(--soha-text-secondary);
+}
+.soha-pv-detail .soha-pv-capacity dd {
+  margin: 4px 0 0;
+  font-size: 26px;
+  line-height: 1.4;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.soha-pv-detail .soha-pv-overview a,
+.soha-pv-detail .soha-pv-overview dd,
+.soha-pv-detail .soha-pv-node-requirement,
+.soha-pv-detail .soha-pv-mount-options {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-pv-detail .soha-pv-overview .soha-workload-overview-config > div {
+  grid-template-columns: minmax(0, 104px) minmax(0, 1fr);
+}
+.soha-pv-detail .soha-pv-sources,
+.soha-pv-detail .soha-pv-node-terms {
+  display: grid;
+  gap: 16px;
+}
+.soha-pv-detail .soha-pv-sources h3,
+.soha-pv-detail .soha-pv-node-terms h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+.soha-pv-detail .soha-pv-node-requirement + .soha-pv-node-requirement {
+  margin-top: 8px;
+}
+.soha-pv-detail .soha-pv-mount-options {
+  margin: 0;
+  padding-inline-start: 20px;
+}

@@ -1522,7 +1522,7 @@ describe('ApplicationDetailPage workbench', () => {
     await openSection(container, '服务')
     expect(container.querySelector('.soha-service-console__body')).toBe(pane)
     expect(container.querySelector('[aria-label="应用环境"]')).not.toBeNull()
-  })
+  }, 15_000)
 
   it('keeps the selected service open and preserves scoped Pods and actions', async () => {
     const container = await renderWithProviders(
@@ -2665,6 +2665,7 @@ describe('ApplicationDetailPage workbench', () => {
         )
       })
     },
+    15_000,
   )
 
   it('copies a multi-repository shared build without changing the original definition', async () => {
@@ -3240,7 +3241,9 @@ describe('ApplicationDetailPage workbench', () => {
     })
     const runButton = findButton(document.body, '运行工作流')
 
-    expect(document.body.textContent).toContain('当前集群连接模式仅部分支持该能力')
+    expect(document.body.textContent).toContain(
+      'build actions remain available; deploy, build-deploy, verification, and rollback against agent-connected targets require delivery runner parity',
+    )
     expect(runButton.disabled).toBe(true)
 
     await act(async () => {

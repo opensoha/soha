@@ -1,16 +1,25 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { toScopeKey } from '@/types'
 
+export function useIsCurrentDetailTarget(targetIdentity: string) {
+  const target = useMemo(() => ({ targetIdentity }), [targetIdentity])
+  const activeTarget = useRef<typeof target | null>(null)
+  useLayoutEffect(() => {
+    activeTarget.current = target
+    return () => {
+      activeTarget.current = null
+    }
+  }, [target])
+  return () => activeTarget.current === target
+}
+
 export function useWorkloadDetailScope() {
   const [searchParams] = useSearchParams()
-  const {
-    clusterId: scopedClusterId,
-    namespace: scopedNamespace,
-    setClusterId,
-    setNamespace,
-  } = usePlatformScopeStore()
+  const { clusterId: scopedClusterId, namespace: scopedNamespace, setClusterId } =
+    usePlatformScopeStore()
+  const syncedCluster = useRef<string | null>(null)
   const requestedClusterId = searchParams.get('clusterId')?.trim() || null
   const hasRequestedNamespace = searchParams.has('namespace')
   const requestedNamespace = hasRequestedNamespace
@@ -22,23 +31,12 @@ export function useWorkloadDetailScope() {
     requestedNamespace !== undefined ? requestedNamespace : clusterChanged ? null : scopedNamespace
 
   useEffect(() => {
-    if (clusterChanged && requestedClusterId) {
+    if (syncedCluster.current === requestedClusterId) return
+    syncedCluster.current = requestedClusterId
+    if (requestedClusterId && scopedClusterId !== requestedClusterId) {
       setClusterId(requestedClusterId)
     }
-    if (
-      requestedNamespace !== undefined &&
-      (clusterChanged || requestedNamespace !== scopedNamespace)
-    ) {
-      setNamespace(requestedNamespace)
-    }
-  }, [
-    clusterChanged,
-    requestedClusterId,
-    requestedNamespace,
-    scopedNamespace,
-    setClusterId,
-    setNamespace,
-  ])
+  }, [requestedClusterId, scopedClusterId, setClusterId])
 
   return toScopeKey(clusterId, namespace)
 }

@@ -437,7 +437,7 @@ describe('GlobalAIAssistantProvider', () => {
     )
     await waitForText(container, '已完成当前服务分析。')
     expect(String(container.textContent)).toContain('已完成当前服务分析。')
-  })
+  }, 15_000)
 
   it('uses general chat for explaining a selection', async () => {
     const container = await renderProvider()

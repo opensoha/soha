@@ -22,6 +22,12 @@ vi.mock('../workloads/pods/api', async (importOriginal) => ({
 }))
 
 const authorization = vi.hoisted(() => ({ allowed: true, refetch: vi.fn() }))
+const clusterCapability = vi.hoisted(() => ({
+  disabled: false,
+  isLoading: false,
+  status: 'available' as 'available' | 'partial',
+  reason: '当前模式仅支持非交互式 exec。',
+}))
 vi.mock('@/features/auth', () => ({
   usePermissionSnapshot: () => ({
     data: { data: {} },
@@ -33,11 +39,7 @@ vi.mock('@/features/auth', () => ({
     actions?.includes(action) ?? false,
 }))
 vi.mock('../cluster-capabilities', () => ({
-  useClusterCapabilityForCluster: () => ({
-    disabled: false,
-    isLoading: false,
-    status: 'supported',
-  }),
+  useClusterCapabilityForCluster: () => ({ ...clusterCapability }),
 }))
 
 vi.mock('@/i18n', () => ({
@@ -222,20 +224,30 @@ beforeAll(() => {
 beforeEach(() => {
   authorization.refetch.mockImplementation(async () => ({ data: { data: {} }, isError: false }))
   authorization.allowed = true
+  clusterCapability.isLoading = false
+  clusterCapability.status = 'available'
   localStorage.clear()
   getPodDetailMock.mockReset()
   getPodDetailMock.mockImplementation(async ({ name }: { name: string }) => ({
     uid: 'uid-' + name,
     containers:
       name === 'pod-a'
-        ? [{ name: 'api' }, { name: 'sidecar', role: 'sidecar' }]
+        ? [
+            { name: 'api' },
+            { name: 'sidecar', role: 'sidecar' },
+            { name: 'complete', role: 'init', state: 'terminated:Completed' },
+          ]
         : name === 'pod-b'
           ? [
-              { name: 'prepare', role: 'init' },
+              { name: 'prepare', role: 'init', state: 'terminated:Completed' },
               { name: 'sidecar', role: 'sidecar' },
               { name: 'worker', role: 'main' },
             ]
-          : [{ name: 'prepare', role: 'init' }, { name: 'worker' }],
+          : [
+              { name: 'complete', state: 'terminated:Completed' },
+              { name: 'prepare', role: 'init' },
+              { name: 'worker' },
+            ],
     allowedActions: ['logs', 'exec'],
   }))
   usePlatformScopeStore.setState({ clusterId: 'cluster-a', namespace: 'team-a' })
@@ -272,15 +284,15 @@ async function selectOption(select: Element | null | undefined, optionLabel: str
       ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
   })
   await flushAsyncWork()
-  const option = Array.from(document.body.querySelectorAll('.ant-select-item-option')).find(
-    (item) => item.textContent === optionLabel,
-  )
+  const options = Array.from(document.body.querySelectorAll('.ant-select-item-option'))
+  const option = options.find((item) => item.textContent === optionLabel)
   expect(option).not.toBeUndefined()
   await act(async () => {
     option?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     option?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   })
   await flushAsyncWork()
+  return options.map((item) => item.textContent)
 }
 
 function pointerEvent(type: string, clientY: number) {
@@ -289,14 +301,16 @@ function pointerEvent(type: string, clientY: number) {
   return event
 }
 
-async function renderDock({ preloadPodDetails = true } = {}) {
+async function renderDock({
+  preloadPodDetails = true,
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  }),
+} = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
   roots.push(root)
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  })
   queryClient.setQueryData(
     podQueries.detail({ clusterId: 'cluster-a', namespace: 'team-a' }, 'pod-b').queryKey,
     {
@@ -592,6 +606,97 @@ describe('realtime session dock', () => {
     expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
   })
 
+  it.each(['policy', 'identity', 'termination', 'missing container'] as const)(
+    'requires explicit reconnect after Pod %s changes',
+    async (change) => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+      })
+      const container = await renderDock({ queryClient })
+      const button = (label: string) =>
+        Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)
+      const terminal = () => container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')
+      await click(button('terminal-a'))
+      expect(terminal()).not.toBeNull()
+
+      const key = podQueries.detail(
+        { clusterId: 'cluster-a', namespace: 'team-a' },
+        'pod-a',
+      ).queryKey
+      const original = queryClient.getQueryData(key)!
+      const changes = {
+        policy: { allowedActions: ['logs'] },
+        identity: { uid: 'replacement-uid' },
+        termination: {
+          containers: original.containers?.map((item) =>
+            item.name === 'api' ? { ...item, state: 'terminated:Completed' } : item,
+          ),
+        },
+        'missing container': {
+          containers: original.containers?.filter((item) => item.name !== 'api'),
+        },
+      }
+      await act(async () => {
+        queryClient.setQueryData(key, { ...original, ...changes[change] })
+      })
+      await flushAsyncWork()
+      expect(terminal()).toBeNull()
+      expect(container.textContent).toContain(
+        change === 'termination'
+          ? '当前容器已结束，无法连接终端。'
+          : change === 'missing container'
+            ? '原容器已不存在'
+            : '会话权限或 Pod 身份已变化，请重新校验。',
+      )
+
+      await act(async () => {
+        queryClient.setQueryData(key, original)
+      })
+      await flushAsyncWork()
+      expect(terminal()).toBeNull()
+      await click(button('重新校验并连接'))
+      expect(terminal()).not.toBeNull()
+    },
+  )
+
+  it('waits for initial terminal capability and requires revalidation after capability loss', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    clusterCapability.isLoading = true
+    const container = await renderDock({ queryClient })
+    const button = (label: string) =>
+      Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)
+    const terminal = () => container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')
+    const key = podQueries.detail({ clusterId: 'cluster-a', namespace: 'team-a' }, 'pod-a').queryKey
+    const observe = async (phase: string) => {
+      await act(async () => {
+        queryClient.setQueryData(key, (current) => ({ ...current!, phase }))
+      })
+      await flushAsyncWork()
+    }
+
+    await click(button('terminal-a'))
+    expect(terminal()).toBeNull()
+    expect(button('重新校验并连接')).toBeUndefined()
+    clusterCapability.isLoading = false
+    await observe('Running')
+    expect(terminal()).not.toBeNull()
+
+    clusterCapability.status = 'partial'
+    await observe('Unknown')
+    expect(terminal()).toBeNull()
+    expect(button('重新校验并连接')?.disabled).toBe(true)
+    expect(container.textContent).toContain(clusterCapability.reason)
+
+    clusterCapability.status = 'available'
+    await observe('Running')
+    expect(terminal()).toBeNull()
+    expect(button('重新校验并连接')?.disabled).toBe(false)
+    await click(button('重新校验并连接'))
+    expect(terminal()).not.toBeNull()
+  })
+
   it('only follows the platform cluster selector, including after closing its last tab', async () => {
     const container = await renderDock()
     const button = (label: string) =>
@@ -665,7 +770,7 @@ describe('realtime session dock', () => {
 
     let selects = terminal?.querySelectorAll('.ant-select')
     expect(selects).toHaveLength(2)
-    await selectOption(selects?.item(0), 'sidecar')
+    expect(await selectOption(selects?.item(0), 'sidecar')).not.toContain('complete')
 
     terminal = container.querySelector<HTMLElement>('[data-testid="terminal:cluster-a:pod-a"]')
     expect(terminal?.dataset.container).toBe('sidecar')
@@ -696,16 +801,16 @@ describe('realtime session dock', () => {
     expect(container.querySelector('[role="tab"]')?.textContent).toContain('worker')
     await act(async () => {
       const select = container.querySelector<HTMLSelectElement>('[aria-label="日志容器"]')!
-      select.value = 'sidecar'
+      select.value = 'prepare'
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await flushAsyncWork()
     expect(
       container.querySelector<HTMLElement>('[data-testid="logs:cluster-a:pod-b"]')?.dataset
         .container,
-    ).toBe('sidecar')
+    ).toBe('prepare')
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1)
-    expect(container.querySelector('[role="tab"]')?.textContent).toContain('sidecar')
+    expect(container.querySelector('[role="tab"]')?.textContent).toContain('prepare')
   })
 
   it('falls back to a regular container for terminal sessions without role metadata', async () => {
@@ -757,36 +862,52 @@ describe('realtime session dock', () => {
     await click(retryButton)
     expect(getPodDetailMock.mock.calls.length).toBeGreaterThan(attempts)
   })
-  it('requires explicit restore after pagehide and rejects a same-name replacement on a fresh read', async () => {
-    const container = await renderDock()
-    await click(
-      Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent === 'terminal-a',
-      ),
-    )
-    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).not.toBeNull()
-    await act(async () => window.dispatchEvent(new Event('pagehide')))
-    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
-    await act(async () => window.dispatchEvent(new Event('pageshow')))
-    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
-    getPodDetailMock.mockResolvedValue({
+  it.each([
+    {
+      change: 'a same-name replacement',
       uid: 'replacement',
-      containers: [{ name: 'api' }],
-      allowedActions: ['exec'],
-    })
-    await click(
-      Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent === '重新连接',
-      ),
-    )
-    expect(container.textContent).toContain('Pod 已被替换')
-    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
-    const saved = Array.from({ length: localStorage.length }, (_, i) =>
-      localStorage.getItem(localStorage.key(i)!),
-    ).join('')
-    expect(saved).toContain('uid-pod-a')
-    expect(saved).not.toContain('replacement')
-  })
+      state: 'running',
+      message: 'Pod 已被替换',
+    },
+    {
+      change: 'a terminated container',
+      uid: 'uid-pod-a',
+      state: 'terminated:Completed',
+      message: '当前容器已结束',
+    },
+  ])(
+    'requires explicit restore after pagehide and rejects $change on a fresh read',
+    async ({ uid, state, message }) => {
+      const container = await renderDock()
+      await click(
+        Array.from(container.querySelectorAll('button')).find(
+          (button) => button.textContent === 'terminal-a',
+        ),
+      )
+      expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).not.toBeNull()
+      await act(async () => window.dispatchEvent(new Event('pagehide')))
+      expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
+      await act(async () => window.dispatchEvent(new Event('pageshow')))
+      expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
+      getPodDetailMock.mockResolvedValue({
+        uid,
+        containers: [{ name: 'api', state }],
+        allowedActions: ['exec'],
+      })
+      await click(
+        Array.from(container.querySelectorAll('button')).find(
+          (button) => button.textContent === '重新连接',
+        ),
+      )
+      expect(container.textContent).toContain(message)
+      expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
+      const saved = Array.from({ length: localStorage.length }, (_, i) =>
+        localStorage.getItem(localStorage.key(i)!),
+      ).join('')
+      expect(saved).toContain('uid-pod-a')
+      expect(saved).not.toContain('replacement')
+    },
+  )
 
   it('does not adopt a legacy saved record without UID', async () => {
     createSessionDockStore('platform', 'user-a').setState({

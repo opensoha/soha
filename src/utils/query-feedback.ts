@@ -12,6 +12,7 @@ export function writeOutcomeUnknown(error?: Error | null) {
   return Boolean(
     error instanceof ApiError &&
     error.method?.toUpperCase() !== 'GET' &&
+    !(error.status === 501 && error.code === 'unsupported_operation') &&
     ![400, 401, 403, 404, 409, 422, 429].includes(error.status),
   )
 }

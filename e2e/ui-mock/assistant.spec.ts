@@ -153,6 +153,8 @@ for (const theme of ['light', 'dark'])
       page,
       context,
     }, info) => {
+      // This full assistant workflow includes identity, attachments, environment changes and reload.
+      test.setTimeout(60_000)
       const requests: { path: string; body: unknown }[] = []
       let assistantName = 'Soha'
       let assistantAvatar = { avatarUrl: '', avatarPosterUrl: '', avatarMotion: 'auto' }
@@ -503,7 +505,16 @@ for (const theme of ['light', 'dark'])
       await expect(attachment).toContainText('已解析')
       await addMenu.getByRole('button', { name: '添加背景', exact: true }).click()
       await expect(page.getByLabel('添加文本附件', { exact: true })).toBeHidden()
+      await expect(addMenu).toBeVisible()
       await page.getByRole('button', { name: '添加内容', exact: true }).click()
+      await expect(addMenu).toBeHidden()
+      await page.getByRole('button', { name: '添加内容', exact: true }).click()
+      await expect(addMenu).toBeVisible()
+      await addMenu.getByRole('button', { name: '添加背景', exact: true }).click()
+      await expect(page.getByLabel('添加文本附件', { exact: true })).toBeVisible()
+      await composer.click()
+      await expect(page.getByLabel('添加文本附件', { exact: true })).toBeHidden()
+      await expect(addMenu).toBeHidden()
       await verifyGeometry(page, contextTools)
       await verifyGeometry(page, attachment)
       if (theme === 'light' && width === 1440)

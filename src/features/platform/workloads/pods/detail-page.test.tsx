@@ -31,6 +31,7 @@ const apiGetMock = vi.hoisted(() =>
         data: {
           name: 'prometheus-0',
           namespace: 'monitoring',
+          uid: 'uid-prometheus-0',
           phase: 'Running',
           createdAt: '2026-01-01T00:00:00Z',
           containers: [
@@ -41,12 +42,12 @@ const apiGetMock = vi.hoisted(() =>
               restartCount: 0,
               state: 'running',
             },
+            { name: 'migrate', role: 'init', state: 'terminated:Completed' },
           ],
           conditions: [],
           volumes: [],
           relatedResources: [],
           allowedActions: ['logs', 'exec'],
-          uid: 'uid-prometheus-0',
         },
       }
     }
@@ -94,7 +95,7 @@ vi.mock('@/features/auth/permission-snapshot', () => ({
   usePermissionSnapshot: () => ({
     data: {
       data: {
-        permissionKeys: ['platform.pods.logs', 'platform.pods.exec'],
+        permissionKeys: ['platform.pods.view', 'platform.pods.logs', 'platform.pods.exec'],
         visibleMenuIds: [],
       },
     },
@@ -107,6 +108,12 @@ vi.mock('@/features/auth/permission-snapshot', () => ({
 }))
 
 vi.mock('@/features/platform/cluster-capabilities', () => ({
+  useClusterCapabilityForCluster: () => ({
+    disabled: false,
+    isLoading: false,
+    reason: '',
+    status: 'available',
+  }),
   useClusterCapability: () => ({
     disabled: false,
     isLoading: false,
@@ -119,14 +126,14 @@ vi.mock('@/features/platform/session-dock', () => ({
   useRealtimeSessionDock: () => ({ openSession: testState.openSession }),
 }))
 
-vi.mock('@/components/resource-events-timeline', () => ({
-  ResourceEventsTimeline: () => <div data-testid="events-panel">events-panel</div>,
+vi.mock('./pod-detail-events', () => ({
+  PodDetailEvents: () => <div data-testid="events-panel">events-panel</div>,
 }))
 
-vi.mock('@/components/resource-metrics-panel', () => {
+vi.mock('./pod-detail-metrics', () => {
   testState.runtimeLoads.metrics += 1
   return {
-    ResourceMetricsPanel: () => <div data-testid="metrics-panel">metrics-panel</div>,
+    PodDetailMetrics: () => <div data-testid="metrics-panel">metrics-panel</div>,
   }
 })
 
@@ -163,6 +170,7 @@ vi.mock('@/components/k8s-yaml-editor', () => ({
 }))
 
 vi.mock('@/components/status-tag', () => ({
+  MetadataTag: ({ label }: { label: React.ReactNode }) => <span>{label}</span>,
   BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
   StatusTag: ({ value }: { value?: string }) => <span>{value}</span>,
 }))
@@ -277,7 +285,7 @@ describe('pod detail page lazy boundaries', () => {
     expect(container.querySelector('[data-testid="yaml-editor"]')).not.toBeNull()
   })
 
-  it('loads tab data and heavy runtimes only after their tab is activated', async () => {
+  it('loads tab data and metrics on demand and leaves live runtimes to the dock', async () => {
     const container = await renderDetail()
     const requestedPaths = () => apiGetMock.mock.calls.map(([path]) => String(path))
 
@@ -285,8 +293,10 @@ describe('pod detail page lazy boundaries', () => {
       '/clusters/url-cluster/workloads/pods/prometheus-0/detail?namespace=url-namespace',
     ])
     expect(testState.scope.setClusterId).toHaveBeenCalledWith('url-cluster')
-    expect(testState.scope.setNamespace).toHaveBeenCalledWith('url-namespace')
-    expect(requestedPaths().some((path) => path.includes('/metrics?'))).toBe(false)
+    // The resource URL scopes reads without replacing the list's global selection.
+    expect(testState.scope.setNamespace).not.toHaveBeenCalled()
+    expect(testState.scope.namespace).toBe('monitoring')
+    expect(requestedPaths().filter((path) => path.includes('/metrics?'))).toHaveLength(1)
     expect(requestedPaths().some((path) => path.includes('/events?'))).toBe(false)
     expect(requestedPaths().some((path) => path.includes('/yaml?'))).toBe(false)
     expect(testState.runtimeLoads).toEqual({ logs: 0, metrics: 0, terminal: 0 })
@@ -305,12 +315,13 @@ describe('pod detail page lazy boundaries', () => {
     expect(testState.runtimeLoads.logs).toBe(0)
 
     await clickTab(container, '终端')
-    const terminalPanel = container.querySelector('.soha-terminal-controls')
-    expect(terminalPanel).not.toBeNull()
+    expect(container.querySelector('.soha-terminal-controls')).not.toBeNull()
+    expect(container.textContent).toContain('容器:')
+    expect(container.textContent).toContain('Shell:')
+    expect(container.textContent).toContain('打开终端会话')
     expect(container.querySelector('[data-testid="terminal-panel"]')).toBeNull()
-    expect(terminalPanel?.textContent).toContain('容器:')
-    expect(terminalPanel?.textContent).toContain('Shell:')
     expect(testState.runtimeLoads.terminal).toBe(0)
+    expect(testState.openSession).not.toHaveBeenCalled()
 
     await clickTab(container, '事件')
     expect(requestedPaths().some((path) => path.includes('/events?namespace=url-namespace'))).toBe(
@@ -355,9 +366,9 @@ describe('pod detail page lazy boundaries', () => {
       clusterId: 'url-cluster',
       container: 'prometheus',
       kind: 'logs',
-      podUid: 'uid-prometheus-0',
       namespace: 'url-namespace',
       podName: 'prometheus-0',
+      podUid: 'uid-prometheus-0',
       streamingDisabledReason: undefined,
     })
 
@@ -373,10 +384,23 @@ describe('pod detail page lazy boundaries', () => {
       clusterId: 'url-cluster',
       container: 'prometheus',
       kind: 'terminal',
-      podUid: 'uid-prometheus-0',
       namespace: 'url-namespace',
       podName: 'prometheus-0',
+      podUid: 'uid-prometheus-0',
       shell: '/bin/sh',
     })
+    expect(testState.runtimeLoads).toMatchObject({ logs: 0, terminal: 0 })
+  })
+
+  it('blocks terminal launch for a terminated container selected by URL', async () => {
+    const container = await renderDetail(
+      '/workloads/pods/prometheus-0?clusterId=url-cluster&namespace=url-namespace&tab=terminal&container=migrate',
+    )
+    const launch = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '打开终端会话',
+    )
+    expect(launch?.disabled).toBe(true)
+    await act(async () => launch?.click())
+    expect(testState.openSession).not.toHaveBeenCalled()
   })
 })

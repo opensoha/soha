@@ -99,6 +99,11 @@ export const dockerQueries = {
     const projectId = id.trim()
     return queryOptions({
       queryKey: dockerKeys.projectVolumeFile(projectId, params),
+      gcTime: 0,
+      staleTime: 0,
+      retry: false,
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: 'always',
       queryFn: () => dockerApi.projectVolumeFile(projectId, params),
       enabled: enabled && hasId(projectId) && Boolean(params.target) && Boolean(params.path),
     })

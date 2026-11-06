@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Editor, { DiffEditor, loader, useMonaco } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import {
@@ -20,6 +20,7 @@ import './k8s-yaml-editor.css'
 import { useI18n } from '@/i18n'
 import { k8sYamlSchema } from '@/schemas/k8s-yaml-schema'
 import { ensureYamlLanguage } from './monaco-yaml-language'
+import { releaseOwnedDiffModels } from './yaml-diff-model-lifecycle'
 import { yamlChangeReview, yamlValuePreview, type YamlChange } from './yaml-change-review'
 
 const { Text } = Typography
@@ -98,6 +99,7 @@ export function K8sYamlEditor({
   const yamlHandleRef = useRef<MonacoYaml | null>(null)
   const id = useId()
   const editorPath = `file:///k8s/${encodeURIComponent(id)}/draft.yaml`
+  const standalonePath = `file:///k8s/${encodeURIComponent(id)}/standalone.yaml`
   const originalPath = `file:///k8s/${encodeURIComponent(id)}/original.yaml`
   const [view, setView] = useState<'edit' | 'split' | 'review'>('edit')
   const [onlyChanges, setOnlyChanges] = useState(true)
@@ -111,6 +113,24 @@ export function K8sYamlEditor({
   const [fullscreenError, setFullscreenError] = useState('')
   const hostRef = useRef<HTMLDivElement>(null)
   const [diffEditor, setDiffEditor] = useState<Monaco.editor.IStandaloneDiffEditor | null>(null)
+  const diffEditorRef = useRef<Monaco.editor.IStandaloneDiffEditor | null>(null)
+  const draftEditorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
+  const ownedModelsRef = useRef<Monaco.editor.IDiffEditorModel | null>(null)
+  // Both widgets borrow the compared draft. Detach both before releasing the owned pair;
+  // retained models also survive a temporary removal of the comparison widget.
+  useLayoutEffect(
+    () => () => {
+      releaseOwnedDiffModels({
+        getModel: () => ownedModelsRef.current,
+        setModel: () => {
+          if (draftEditorRef.current?.getModel()) draftEditorRef.current.setModel(null)
+          if (diffEditorRef.current?.getModel()) diffEditorRef.current.setModel(null)
+        },
+      })
+      ownedModelsRef.current = null
+    },
+    [],
+  )
   const changeRef = useRef(onChange)
   const valueRef = useRef(value)
   changeRef.current = onChange
@@ -292,6 +312,9 @@ export function K8sYamlEditor({
     minimap: { enabled: false },
     formatOnPaste: true,
     formatOnType: true,
+    // Monaco's asynchronous occurrence highlighter rejects cancellation when these
+    // two widgets swap the shared draft model. Keep this configuration editor stable.
+    occurrencesHighlight: 'off',
     wordWrap: 'on',
     scrollBeyondLastLine: false,
     tabSize: 2,
@@ -565,7 +588,7 @@ export function K8sYamlEditor({
             <div className="soha-k8s-yaml-editor" aria-busy={loading}>
               {comparing ? (
                 <>
-                  {/* The diff owns both models. The edit view borrows its draft model so mode switches retain undo. */}
+                  {/* This component owns the compared models; both widgets retain them across view changes. */}
                   <div className="soha-k8s-yaml-monaco" hidden={view === 'edit'}>
                     <DiffEditor
                       height="100%"
@@ -575,7 +598,13 @@ export function K8sYamlEditor({
                       modified={value}
                       originalModelPath={originalPath}
                       modifiedModelPath={editorPath}
-                      onMount={setDiffEditor}
+                      keepCurrentOriginalModel
+                      keepCurrentModifiedModel
+                      onMount={(instance) => {
+                        diffEditorRef.current = instance
+                        ownedModelsRef.current = instance.getModel()
+                        setDiffEditor(instance)
+                      }}
                       options={{
                         ...options,
                         originalEditable: false,
@@ -601,6 +630,9 @@ export function K8sYamlEditor({
                       path={editorPath}
                       theme={editorTheme}
                       keepCurrentModel
+                      onMount={(instance) => {
+                        draftEditorRef.current = instance
+                      }}
                       options={options}
                     />
                   ) : null}
@@ -609,7 +641,7 @@ export function K8sYamlEditor({
                 <Editor
                   height="100%"
                   language="yaml"
-                  path={editorPath}
+                  path={standalonePath}
                   theme={editorTheme}
                   value={value}
                   onChange={(nextValue) => onChange(nextValue ?? '')}

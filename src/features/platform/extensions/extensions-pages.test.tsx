@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { App as AntdApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/i18n'
 import { CRDApiGroupDetailPage } from './crds/api-group-detail-page'
@@ -43,9 +43,23 @@ const apiGetMock = vi.hoisted(() =>
   }),
 )
 const apiDeleteMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+const apiPostMock = vi.hoisted(() => vi.fn())
+const apiPutMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/features/platform/cluster-capabilities', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/platform/cluster-capabilities')>()),
+  useClusterCapability: () => ({ status: 'available', disabled: false, isLoading: false }),
+}))
 
 vi.mock('@/stores/platform-scope-store', () => ({
-  usePlatformScopeStore: () => testState.scope,
+  usePlatformScopeStore: Object.assign(
+    (selector?: (state: typeof testState.scope) => unknown) =>
+      selector ? selector(testState.scope) : testState.scope,
+    {
+      getState: () => testState.scope,
+      subscribe: () => () => {},
+    },
+  ),
 }))
 
 vi.mock('@/features/auth', async (importOriginal) => ({
@@ -59,8 +73,8 @@ vi.mock('@/services/api-client', () => ({
   api: {
     delete: apiDeleteMock,
     get: apiGetMock,
-    post: vi.fn(),
-    put: vi.fn(),
+    post: apiPostMock,
+    put: apiPutMock,
   },
 }))
 
@@ -72,8 +86,38 @@ vi.mock('@/components/k8s-yaml-editor', () => {
 vi.mock('@/components/yaml-draft-diff-editor', () => {
   testState.editorLoaded = true
   return {
-    YamlDraftDiffEditor: ({ modified }: { modified: string }) => (
-      <div data-testid="values-editor">{modified}</div>
+    YamlDraftDiffEditor: ({
+      modified,
+      original,
+      leftLabel,
+      rightLabel,
+      onChange,
+      onApply,
+      applyDisabled,
+      baselineOnLeft,
+    }: {
+      modified: string
+      original: string
+      leftLabel?: string
+      rightLabel?: string
+      onChange?: (value: string) => void
+      onApply?: () => void
+      applyDisabled?: boolean
+      baselineOnLeft?: boolean
+    }) => (
+      <div data-testid="values-editor" data-baseline-on-left={baselineOnLeft}>
+        <pre aria-label={leftLabel}>{original}</pre>
+        <textarea
+          aria-label={rightLabel}
+          value={modified}
+          onInput={(event) => onChange?.(event.currentTarget.value)}
+        />
+        {onApply ? (
+          <button disabled={applyDisabled} onClick={onApply}>
+            Test apply
+          </button>
+        ) : null}
+      </div>
     ),
   }
 })
@@ -143,6 +187,41 @@ function setResponses(responses: Record<string, unknown>) {
   })
 }
 
+const helmReleasePath = '/clusters/cluster-a/helm/releases/demo'
+const helmValuesPath = `${helmReleasePath}/values?namespace=team-a`
+const helmDetail = { name: 'demo', namespace: 'team-a', revision: '3', status: 'deployed' }
+
+function HelmTestRoute() {
+  const { search } = useLocation()
+  return (
+    <>
+      <HelmReleaseDetailPage />
+      <output data-testid="helm-location">{search}</output>
+    </>
+  )
+}
+
+function renderHelmDetail(search: string) {
+  return renderPage(
+    <Routes>
+      <Route path="/helm/releases/:releaseName" element={<HelmTestRoute />} />
+    </Routes>,
+    `/helm/releases/demo?namespace=team-a&${search}`,
+  )
+}
+
+async function click(selector: string, within: ParentNode = document) {
+  const node = await vi.waitFor(() => {
+    const found = within.querySelector<HTMLElement>(selector)
+    expect(found).not.toBeNull()
+    return found!
+  })
+  await act(async () => {
+    node.click()
+    await flush()
+  })
+}
+
 async function flush() {
   await Promise.resolve()
   await Promise.resolve()
@@ -202,6 +281,8 @@ describe('extensions capability pages', () => {
     testState.permissionKeys = ['platform.helm.view', 'platform.helm.values.view']
     setResponses({})
     apiDeleteMock.mockReset().mockResolvedValue(undefined)
+    apiPostMock.mockReset()
+    apiPutMock.mockReset()
   })
 
   afterEach(async () => {
@@ -248,7 +329,7 @@ describe('extensions capability pages', () => {
     expect(container.textContent).toContain('widgets.example.io')
     expect(container.textContent).toContain('gadgets.example.io')
     expect(container.querySelector('button[aria-label="查看详情"]')).toBeNull()
-    expect(container.querySelector('button[aria-label="删除 CRD 定义"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="更多操作：example.io"]')).toBeNull()
   })
 
   it('requires one definition and its full name, preserves deletion errors and observed UID', async () => {
@@ -266,7 +347,15 @@ describe('extensions capability pages', () => {
     setResponses({ '/clusters/cluster-a/extensions/crds': [definition] })
     const container = await renderPage(<CRDPage />, '/extensions')
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('button[aria-label="删除 CRD 定义"]')!.click()
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="更多操作：example.io"]')!
+        .click()
+    })
+    await act(async () => {
+      ;[...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent === '删除 CRD 定义')!
+        .click()
+      await flush()
     })
     expect(document.body.textContent).toContain('所有命名空间')
     const confirmButton = () =>
@@ -394,6 +483,179 @@ describe('extensions capability pages', () => {
     expect(testState.editorLoaded).toBe(false)
   })
 
+  it('checks the frozen Helm values revision even when submitted YAML stays identical', async () => {
+    testState.permissionKeys.push('platform.helm.releases.update')
+    const submitted = {
+      ...helmDetail,
+      content: 'replicas: 1',
+      editable: true,
+      allowedActions: ['update'],
+    }
+    setResponses({
+      [`${helmReleasePath}/detail?namespace=team-a`]: helmDetail,
+      [helmValuesPath]: submitted,
+    })
+    apiPutMock.mockResolvedValue({ data: { ...submitted, revision: '5', content: 'replicas: 2' } })
+    const page = await renderHelmDetail('tab=values&mode=edit&preserve=yes')
+    expect(page.querySelector('a[aria-label="返回Helm Release列表"]')?.getAttribute('href')).toBe(
+      '/helm/releases?clusterId=cluster-a&namespace=team-a',
+    )
+    const draft = await vi.waitFor(() => {
+      const field = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="更新草稿"]')
+      expect(field?.value).toBe('replicas: 1')
+      return field!
+    })
+    expect(document.querySelector('pre[aria-label="已提交参数"]')?.textContent).toBe('replicas: 1')
+    expect(
+      draft.closest('[data-testid="values-editor"]')?.getAttribute('data-baseline-on-left'),
+    ).toBe('true')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+        draft,
+        'replicas: 2',
+      )
+      draft.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    testState.responses[helmValuesPath] = { ...submitted, revision: '4' }
+    const apply = document.querySelector<HTMLButtonElement>('[data-testid="values-editor"] button')!
+    expect(apply.disabled).toBe(false)
+    await act(async () => {
+      apply.click()
+      await flush()
+    })
+    await vi.waitFor(() => expect(apply.disabled).toBe(true))
+    expect(apiPutMock).not.toHaveBeenCalled()
+    expect(draft.value).toBe('replicas: 2')
+    const compare = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.replace(/\s/g, '') === '比对最新值',
+    )!
+    await act(async () => compare.click())
+    expect(apply.disabled).toBe(false)
+    await act(async () => {
+      apply.click()
+      await flush()
+    })
+    expect(apiPutMock).toHaveBeenCalledExactlyOnceWith(helmValuesPath, {
+      content: 'replicas: 2',
+      expectedRevision: 4,
+    })
+    await vi.waitFor(() =>
+      expect(page.querySelector('[data-testid="helm-location"]')?.textContent).toBe(
+        '?namespace=team-a&tab=values&preserve=yes',
+      ),
+    )
+  })
+
+  it('aligns current and historical Helm manifest content with the two pane labels', async () => {
+    setResponses({
+      [`${helmReleasePath}/detail?namespace=team-a`]: helmDetail,
+      [`${helmReleasePath}/history?namespace=team-a`]: [{ revision: '2', status: 'superseded' }],
+      [`${helmReleasePath}/manifest?namespace=team-a&revision=3`]: {
+        revision: '3',
+        content: 'replicas: 3',
+      },
+      [`${helmReleasePath}/manifest?namespace=team-a&revision=2`]: {
+        revision: '2',
+        content: 'replicas: 2',
+      },
+    })
+    await renderHelmDetail('tab=history')
+    await click('button[aria-label="更多操作：2"]')
+    await click('[role="menuitem"]')
+    await vi.waitFor(() => {
+      expect(document.querySelector('pre[aria-label="当前 · Revision 3"]')?.textContent).toBe(
+        'replicas: 3',
+      )
+      expect(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Revision 2"]')?.value,
+      ).toBe('replicas: 2')
+    })
+    expect(document.querySelector('[data-baseline-on-left="true"]')).not.toBeNull()
+  })
+
+  it('keeps a rollback preflight paired with its requested revision while it is pending', async () => {
+    testState.permissionKeys.push('platform.helm.releases.rollback')
+    setResponses({
+      [`${helmReleasePath}/detail?namespace=team-a`]: helmDetail,
+      [`${helmReleasePath}/history?namespace=team-a`]: ['2', '1'].map((revision) => ({
+        revision,
+        status: 'superseded',
+        allowedActions: ['rollback'],
+      })),
+    })
+    let finishPreflight: (data: unknown) => void = () => {}
+    apiPostMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishPreflight = resolve
+        }),
+    )
+    apiPostMock.mockResolvedValueOnce({ data: helmDetail })
+    await renderHelmDetail('tab=history')
+    await click('button[aria-label="更多操作：2"]')
+    await click('[role="menuitem"]:last-child')
+    await click('button[aria-label="更多操作：1"]')
+    const second = [...document.querySelectorAll('[role="menuitem"]')].find(
+      (node) => node.textContent?.includes('revision 1') && node.textContent?.includes('回滚'),
+    )
+    expect(second?.getAttribute('aria-disabled')).toBe('true')
+    expect(document.querySelector('button[aria-label="确认回滚"]')).toBeNull()
+    await act(async () => {
+      finishPreflight({ data: { target: 'demo · 2', ready: true, changes: [] } })
+      await flush()
+    })
+    await click('button[aria-label="确认回滚"]')
+    expect(apiPostMock.mock.calls).toEqual([
+      [
+        `${helmReleasePath}/rollback/plan?namespace=team-a`,
+        { revision: 2, wait: true, timeoutSeconds: 300 },
+      ],
+      [
+        `${helmReleasePath}/rollback?namespace=team-a`,
+        { revision: 2, wait: true, timeoutSeconds: 300 },
+      ],
+    ])
+  })
+
+  it.each([
+    { description: 'revision changed', detail: { ...helmDetail, revision: '4' } },
+    {
+      description: 'the latest read failed',
+      detail: new Error('Helm detail temporarily unavailable'),
+    },
+  ])('blocks a ready rollback after $description', async ({ detail }) => {
+    testState.permissionKeys.push('platform.helm.releases.rollback')
+    const detailPath = `${helmReleasePath}/detail?namespace=team-a`
+    const historyPath = `${helmReleasePath}/history?namespace=team-a`
+    setResponses({
+      [detailPath]: helmDetail,
+      [historyPath]: [{ revision: '2', status: 'superseded', allowedActions: ['rollback'] }],
+    })
+    apiPostMock.mockResolvedValueOnce({ data: { target: 'demo · 2', ready: true, changes: [] } })
+    await renderHelmDetail('tab=history')
+    await click('button[aria-label="更多操作：2"]')
+    await click('[role="menuitem"]:last-child')
+    const confirm = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>('button[aria-label="确认回滚"]')
+      expect(button?.disabled).toBe(false)
+      return button!
+    })
+    testState.responses[detailPath] = detail
+    apiGetMock.mockClear()
+    await act(async () => {
+      confirm.click()
+      await flush()
+    })
+    await vi.waitFor(() => expect(confirm.disabled).toBe(true))
+    expect(apiGetMock).toHaveBeenCalledWith(detailPath)
+    expect(apiGetMock).toHaveBeenCalledWith(historyPath)
+    expect(apiPostMock).toHaveBeenCalledExactlyOnceWith(
+      `${helmReleasePath}/rollback/plan?namespace=team-a`,
+      { revision: 2, wait: true, timeoutSeconds: 300 },
+    )
+    expect(document.body.textContent).toContain('demo · 2')
+  })
+
   it('falls back to Helm history when values access is not granted', async () => {
     testState.permissionKeys = ['platform.helm.view']
     setResponses({
@@ -448,14 +710,9 @@ describe('extensions capability pages', () => {
     expect(apiGetMock.mock.calls.some(([path]) => String(path).includes('/bitnami/nginx'))).toBe(
       false,
     )
-    await act(async () => {
-      container
-        .querySelector('[data-testid="row-0"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await import('./helm/charts/chart-drawer')
-      await flush()
-    })
-    expect(document.body.textContent).toContain('Chart: bitnami/nginx')
+    await click('button[aria-label="更多操作：nginx"]', container)
+    await click('[role="menuitem"]')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Chart: bitnami/nginx'))
     expect(apiGetMock.mock.calls.some(([path]) => String(path).includes('/bitnami/nginx'))).toBe(
       true,
     )

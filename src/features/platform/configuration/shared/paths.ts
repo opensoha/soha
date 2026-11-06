@@ -38,6 +38,14 @@ export function buildConfigurationDataPath(kind: ConfigurationKind, scope: Scope
   return configurationPath(kind, scope, `/${encodeURIComponent(normalizeName(name))}/data`)
 }
 
+export function buildSecretCertificatePath(scope: ScopeKey, name: string) {
+  return configurationPath(
+    'secrets',
+    scope,
+    `/${encodeURIComponent(normalizeName(name))}/certificate`,
+  )
+}
+
 export function buildConfigurationReferencesPath(
   kind: ConfigurationKind,
   scope: ScopeKey,

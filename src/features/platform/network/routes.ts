@@ -159,6 +159,47 @@ export const networkRoutes = defineRoutes([
   },
   {
     meta: {
+      id: 'network-ingressclasses',
+      path: '/network/ingressclasses',
+      title: 'IngressClasses',
+      description: 'Ingress 类',
+      icon: 'IconConnection',
+      group: 'platform',
+      requiresAuth: true,
+      tabbar: true,
+      navVisible: true,
+      parentId: 'network',
+      menuId: 'network-ingressclasses',
+      permissionKey: 'platform.network.ingress-classes.view',
+      scopeMode: 'cluster',
+      workspace: 'resource',
+    },
+    shell: 'app',
+    load: async () => {
+      const module = await import('./resources/ingressclasses-list-page')
+      return { default: module.NetworkIngressClassesPage }
+    },
+  },
+  {
+    meta: {
+      id: 'network-ingressclass-detail',
+      path: '/network/ingressclasses/:name',
+      title: 'IngressClass Detail',
+      description: 'IngressClass 详情',
+      requiresAuth: true,
+      tabbar: false,
+      navVisible: false,
+      scopeMode: 'cluster',
+    },
+    shell: 'app',
+    inheritMetaFrom: 'network-ingressclasses',
+    load: async () => {
+      const module = await import('./resources/ingressclass-detail-page')
+      return { default: module.IngressClassDetailPage }
+    },
+  },
+  {
+    meta: {
       id: 'network-topology',
       path: '/network/topology',
       title: '网络拓扑',
@@ -465,47 +506,6 @@ export const networkRoutes = defineRoutes([
     load: async () => {
       const module = await import('./resources/endpointslice-detail-page')
       return { default: module.EndpointSliceDetailPage }
-    },
-  },
-  {
-    meta: {
-      id: 'network-ingressclasses',
-      path: '/network/ingressclasses',
-      title: 'IngressClasses',
-      description: 'Ingress 类',
-      icon: 'IconConnection',
-      group: 'platform',
-      requiresAuth: true,
-      tabbar: true,
-      navVisible: true,
-      parentId: 'network',
-      menuId: 'network-ingressclasses',
-      permissionKey: 'platform.network.ingress-classes.view',
-      scopeMode: 'cluster',
-      workspace: 'resource',
-    },
-    shell: 'app',
-    load: async () => {
-      const module = await import('./resources/ingressclasses-list-page')
-      return { default: module.NetworkIngressClassesPage }
-    },
-  },
-  {
-    meta: {
-      id: 'network-ingressclass-detail',
-      path: '/network/ingressclasses/:name',
-      title: 'IngressClass Detail',
-      description: 'IngressClass 详情',
-      requiresAuth: true,
-      tabbar: false,
-      navVisible: false,
-      scopeMode: 'cluster',
-    },
-    shell: 'app',
-    inheritMetaFrom: 'network-ingressclasses',
-    load: async () => {
-      const module = await import('./resources/ingressclass-detail-page')
-      return { default: module.IngressClassDetailPage }
     },
   },
   {

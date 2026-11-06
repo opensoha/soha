@@ -182,3 +182,7 @@
     flex-basis: 100%;
   }
 }
+
+.soha-configuration-data-search {
+  padding: 0 12px 12px;
+}

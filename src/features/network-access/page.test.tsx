@@ -14,6 +14,8 @@ import type {
   NetworkTelemetrySummary,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import type { PermissionSnapshot } from '@/types'
+import { ApiError, isApiErrorPresented } from '@/services/api-error'
+import { networkAccessQueries } from './queries'
 import { NetworkAccessPage } from './page'
 
 const state = vi.hoisted(() => ({
@@ -79,6 +81,7 @@ const apiMocks = vi.hoisted(() => ({
   listNetworkSessions: vi.fn(() => Promise.resolve([])),
   listNetworkSpaces: vi.fn(() => Promise.resolve([])),
   previewNetworkAccessPolicy: vi.fn(),
+  previewNetworkAdmission: vi.fn(),
   executeNetworkSessionAction: vi.fn(),
   planNetworkSessionAction: vi.fn(),
   revokeNetworkRuntimeEnrollment: vi.fn(),
@@ -121,6 +124,7 @@ async function renderPage(path = '/network-access') {
     )
   })
   await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+  return queryClient
 }
 
 describe('network access page', () => {
@@ -151,6 +155,7 @@ describe('network access page', () => {
   beforeEach(() => {
     state.snapshot = { permissionKeys: [], visibleMenuIds: [], visibleMenus: [] }
     vi.clearAllMocks()
+    apiMocks.listEndpointDevices.mockResolvedValue([])
   })
 
   afterEach(async () => {
@@ -341,6 +346,11 @@ describe('network access page', () => {
     const view = container.querySelector<HTMLButtonElement>('button[aria-label="查看终端详情"]')
     expect(view).not.toBeNull()
     await act(async () => view?.click())
+    const basicTab = Array.from(document.body.querySelectorAll<HTMLElement>('[role="tab"]')).find(
+      (tab) => tab.textContent?.includes('基本信息'),
+    )
+    expect(basicTab).not.toBeUndefined()
+    expect(basicTab?.getAttribute('aria-selected')).toBe('true')
     await act(async () => {
       await vi.waitFor(() => expect(document.body.textContent).toContain('C02TEST00001'))
     })
@@ -368,6 +378,179 @@ describe('network access page', () => {
     expect(apiMocks.listNetworkAccessPolicies).toHaveBeenCalledWith({ limit: 200 })
     expect(apiMocks.getNetworkAccessPolicySnapshot).toHaveBeenCalled()
   })
+
+  it('saves a policy scoped only to current role bindings', async () => {
+    state.snapshot.permissionKeys = ['network_access.policy.view', 'network_access.policy.create']
+    await renderPage('/network-access/policy')
+    const create = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('新增策略'),
+    )
+    await act(async () => create?.click())
+    const dialog = document.querySelector('[role="dialog"]')!
+    const name = dialog.querySelector('input#name') as HTMLInputElement
+    const roles = dialog.querySelector('textarea#rolesText') as HTMLTextAreaElement
+    expect(roles).not.toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        name,
+        'Role admission',
+      )
+      name.dispatchEvent(new Event('input', { bubbles: true }))
+      name.dispatchEvent(new Event('change', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+        roles,
+        'network-staff',
+      )
+      roles.dispatchEvent(new Event('input', { bubbles: true }))
+      roles.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const save = Array.from(dialog.querySelectorAll('button')).find(
+      (button) => button.textContent?.replace(/\s/g, '') === '保存',
+    )
+    expect(save).toBeDefined()
+    await act(async () => save?.click())
+    await act(async () => {
+      await vi.waitFor(() =>
+        expect(apiMocks.createNetworkAccessPolicy, dialog.textContent ?? '').toHaveBeenCalled(),
+      )
+    })
+    expect(apiMocks.createNetworkAccessPolicy.mock.calls[0]?.[0]).toMatchObject({
+      name: 'Role admission',
+      subjects: { users: [], roles: ['network-staff'], teams: [], tags: [] },
+    })
+  })
+
+  it('previews admission for an endpoint and clears the old decision when its target changes', async () => {
+    state.snapshot.permissionKeys = ['network_access.policy.view']
+    const version = 'sha256:' + 'a'.repeat(64)
+    apiMocks.previewNetworkAdmission.mockResolvedValueOnce({
+      decision: 'deny',
+      path: 'deny',
+      networkProfile: 'deny',
+      policyVersion: 4,
+      attributeVersion: version,
+      evaluatedAt: '2026-10-15T05:00:00Z',
+      protected: false,
+      networkLeaseRequired: false,
+      resourceLeaseRequired: false,
+      reasons: ['no_matching_allow_policy'],
+    })
+    await renderPage('/network-access/policy')
+    const tab = Array.from(container.querySelectorAll('[role="tab"]')).find((item) =>
+      item.textContent?.includes('准入预览'),
+    ) as HTMLElement
+    await act(async () => tab.click())
+    const device = container.querySelector('input#deviceId') as HTMLInputElement
+    const binding = container.querySelector('input#nasBindingId') as HTMLInputElement
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(device, 'device-1')
+      device.dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(binding, 'nas-binding-1')
+      binding.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const submit = Array.from(container.querySelectorAll('button')).find((item) =>
+      item.textContent?.includes('预览准入'),
+    )!
+    await act(async () => submit.click())
+    await vi.waitFor(async () => {
+      await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+      expect(container.textContent).toContain('当前策略拒绝接入')
+    })
+    expect(apiMocks.previewNetworkAdmission.mock.calls[0]?.[0]).toEqual({
+      deviceId: 'device-1',
+      nasBindingId: 'nas-binding-1',
+    })
+    expect(container.textContent).toContain(version)
+    expect(apiMocks.listEndpointDevices).not.toHaveBeenCalled()
+    expect(apiMocks.listNetworkNASBindings).not.toHaveBeenCalled()
+    await act(async () => {
+      setter?.call(device, 'device-2')
+      device.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.textContent).not.toContain('当前策略拒绝接入')
+  })
+
+  it.each([401, 403, 503])(
+    'handles cached admission choices after a %i response',
+    async (status) => {
+      state.snapshot.permissionKeys = [
+        'network_access.policy.view',
+        'network_access.endpoint_devices.view',
+      ]
+      const device: EndpointDevice = {
+        id: 'cached-device',
+        name: 'Cached endpoint',
+        ownerUserId: 'user-1',
+        status: 'active',
+        platform: 'linux',
+        postureStatus: 'compliant',
+        postureVersion: 1,
+        createdAt: '2026-10-15T00:00:00Z',
+        updatedAt: '2026-10-15T00:00:00Z',
+      }
+      apiMocks.listEndpointDevices.mockResolvedValue([device])
+      const client = await renderPage('/network-access/policy')
+      const tab = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find((item) =>
+        item.textContent?.includes('准入预览'),
+      )!
+      await act(async () => tab.click())
+      await vi.waitFor(async () => {
+        await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+        expect(client.getQueryData(networkAccessQueries.devices({ limit: 200 }).queryKey)).toEqual([
+          device,
+        ])
+      })
+      const input = container.querySelector<HTMLInputElement>('input#deviceId')!
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      await act(async () => {
+        input.focus()
+        setter?.call(input, 'Cached')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }),
+        )
+      })
+      await vi.waitFor(async () => {
+        await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+        expect(document.body.textContent).toContain('Cached endpoint')
+      })
+      const error = new ApiError(status, 'Endpoint choices unavailable', {
+        method: 'GET',
+        path: '/network-access/devices',
+        requestId: 'admission-choices-request',
+      })
+      apiMocks.listEndpointDevices.mockRejectedValueOnce(error)
+      await act(async () => {
+        await client.refetchQueries({
+          queryKey: networkAccessQueries.devices({ limit: 200 }).queryKey,
+        })
+      })
+      await vi.waitFor(async () => {
+        await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)))
+        expect(container.textContent).toContain('admission-choices-request')
+      })
+      if (status === 503) {
+        expect(document.body.textContent).toContain('Cached endpoint')
+        expect(input.getAttribute('aria-expanded')).toBe('true')
+        expect(container.textContent).toContain('终端选项未更新')
+      } else {
+        await act(async () => {
+          input.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true }),
+          )
+        })
+        expect(input.getAttribute('aria-expanded')).toBe('false')
+        expect(container.textContent).toContain(status === 401 ? '登录状态失效' : '无访问权限')
+      }
+      expect(input.value).toBe('Cached')
+      expect(client.getQueryData(networkAccessQueries.devices({ limit: 200 }).queryKey)).toEqual([
+        device,
+      ])
+      expect(isApiErrorPresented(error)).toBe(status !== 401)
+      expect(apiMocks.previewNetworkAdmission).not.toHaveBeenCalled()
+    },
+  )
 
   it('renders runtime enrollments only with the enrollment view permission', async () => {
     state.snapshot.permissionKeys = ['network_access.enrollments.view']

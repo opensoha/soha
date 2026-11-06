@@ -1,5 +1,9 @@
 import { localeText, useI18n } from '@/i18n'
 import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
+import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
+import { NodeStateTags } from '@/features/platform/shared/node-state-tags'
+import { MonitoringUsageMeter } from './usage-meter'
 import { ManagementRefreshButton, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
@@ -18,9 +22,11 @@ import {
   DatePicker,
   Drawer,
   Empty,
+  Input,
+  Tabs,
+  Tooltip,
   Select,
   Space,
-  Switch,
   Typography,
   type TableColumnsType,
 } from 'antd'
@@ -109,27 +115,22 @@ function Trend({
     [panel, names],
   )
   return (
-    <Card
-      className="soha-detail-card"
-      title={title}
-      extra={
-        panel && (
-          <Space wrap>
-            <Quality value={panel.quality} />
-            <Select
-              aria-label={`${title} ${localeText(localeCode, '指标', 'metric')}`}
-              style={{ width: 240, maxWidth: '100%' }}
-              value={panel.key}
-              onChange={setChosen}
-              options={panels.map((panel) => ({ value: panel.key, label: panel.label }))}
-            />
-            <Button onClick={() => setSamplesOpen(true)}>
-              {localeText(localeCode, '采样数据', 'Samples')}
-            </Button>
-          </Space>
-        )
-      }
-    >
+    <Card className="soha-detail-card" title={title}>
+      {panel && (
+        <Space wrap className="soha-monitoring-trend-controls">
+          <Quality value={panel.quality} />
+          <Select
+            aria-label={`${title} ${localeText(localeCode, '指标', 'metric')}`}
+            style={{ width: 240, maxWidth: '100%' }}
+            value={panel.key}
+            onChange={setChosen}
+            options={panels.map((panel) => ({ value: panel.key, label: panel.label }))}
+          />
+          <Button onClick={() => setSamplesOpen(true)}>
+            {localeText(localeCode, '采样数据', 'Samples')}
+          </Button>
+        </Space>
+      )}
       {panel && (
         <Text type="secondary">
           {t(
@@ -192,7 +193,9 @@ function Trend({
             },
           ]}
           dataSource={rows}
-          pageSize={30}
+          pagination={false}
+          virtual
+          scroll={{ x: 640, y: 520 }}
           enableColumnSelection={false}
         />
       </Drawer>
@@ -203,6 +206,7 @@ function Trend({
 export function ResourceMonitoringRuntimePage() {
   const { localeCode, t } = useI18n()
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
   const location = useLocation()
   const { clusterId: scopedClusterId, setClusterId } = usePlatformScopeStore()
   const lastScope = useRef(scopedClusterId)
@@ -248,7 +252,9 @@ export function ResourceMonitoringRuntimePage() {
     () => localStorage.getItem('soha-resource-monitoring-auto') !== '0',
   )
   const [coverageOpen, setCoverageOpen] = useState(false)
-  const [highlighted, setHighlighted] = useState<string[]>([])
+  const chartScope = JSON.stringify([principal, clusterId, input.node])
+  const [highlighted, setHighlighted] = useState({ scope: chartScope, names: [] as string[] })
+  const selectNames = (names: string[]) => setHighlighted({ scope: chartScope, names })
   const hidden = useDocumentHidden()
   const queries = useQueries({
     queries: monitoringViews.map(({ key }) => ({
@@ -274,7 +280,9 @@ export function ResourceMonitoringRuntimePage() {
   })
   const data = views.find((item) => item.data)?.data
   const nodes = data?.nodes ?? []
-  const names = highlighted.filter((name) => nodes.some((node) => node.nodeRef.name === name))
+  const names = (highlighted.scope === chartScope ? highlighted.names : []).filter((name) =>
+    nodes.some((node) => node.nodeRef.name === name),
+  )
   const activeNames = names.length
     ? names
     : nodes.slice(0, monitoringNodeLimit).map((node) => node.nodeRef.name)
@@ -283,6 +291,34 @@ export function ResourceMonitoringRuntimePage() {
       views.flatMap((item) => item.data?.panels ?? []).map((panel) => [panel.key, panel]),
     ).values(),
   ]
+  const requestedView =
+    location.hash.replace('#monitoring-', '') || location.pathname.split('/').pop()
+  const activeView = views.find((view) => view.key === requestedView)?.key ?? views[0]?.key
+  const openView = (key: string) =>
+    navigate(`/resource-monitoring${location.search}#monitoring-${key}`, { replace: true })
+  const fetching = views.some((item) => item.query.isFetching)
+  const failed = views.some((item) => item.query.isError)
+  const paused = !autoRefresh || hidden || Boolean(input.to) || !clusterId || !canRead
+  const refreshState = fetching ? 'refreshing' : failed ? 'failed' : paused ? 'paused' : 'live'
+  const refreshLabel = fetching
+    ? localeText(localeCode, '刷新中', 'Refreshing')
+    : failed
+      ? localeText(localeCode, '刷新失败，请重试', 'Refresh failed; retry')
+      : input.to
+        ? localeText(
+            localeCode,
+            '历史窗口，自动刷新已暂停',
+            'Historical window; auto-refresh paused',
+          )
+        : hidden
+          ? localeText(localeCode, '页面隐藏，自动刷新已暂停', 'Hidden page; auto-refresh paused')
+          : !autoRefresh
+            ? localeText(localeCode, '自动刷新已关闭', 'Auto-refresh off')
+            : localeText(
+                localeCode,
+                '自动刷新正常，每 30 秒',
+                'Auto-refresh active, every 30 seconds',
+              )
   const update = (values: Record<string, string | undefined>) =>
     setParams(
       (previous) => {
@@ -327,7 +363,7 @@ export function ResourceMonitoringRuntimePage() {
             showSearch={{ optionFilterProp: 'label' }}
             value={input.node || ''}
             onChange={(value) => {
-              setHighlighted([])
+              selectNames([])
               update({ node: value || undefined })
             }}
             options={[
@@ -342,65 +378,66 @@ export function ResourceMonitoringRuntimePage() {
             aria-label={localeText(localeCode, '时间范围', 'Time range')}
             value={input.from ? 'custom' : String(input.rangeMinutes)}
             onChange={(value) => {
-              if (value !== 'custom')
-                update({ rangeMinutes: value, from: undefined, to: undefined })
+              if (value === 'custom') {
+                const end = dayjs()
+                update({
+                  from: end.subtract(input.rangeMinutes || 60, 'minute').toISOString(),
+                  to: end.toISOString(),
+                })
+              } else update({ rangeMinutes: value, from: undefined, to: undefined })
             }}
             options={[
               { value: '15', label: localeText(localeCode, '最近 15 分钟', 'Last 15 minutes') },
               { value: '60', label: localeText(localeCode, '最近 1 小时', 'Last hour') },
               { value: '360', label: localeText(localeCode, '最近 6 小时', 'Last 6 hours') },
               { value: '1440', label: localeText(localeCode, '最近 24 小时', 'Last 24 hours') },
-              ...(input.from
-                ? [
-                    {
-                      value: 'custom',
-                      label: localeText(localeCode, '固定历史窗口', 'Fixed historical window'),
-                    },
-                  ]
-                : []),
+              { value: 'custom', label: localeText(localeCode, '自定义时间', 'Custom time') },
             ]}
           />
-          <DatePicker.RangePicker
-            aria-label={localeText(localeCode, '固定历史时间窗口', 'Fixed historical time window')}
-            showTime
-            value={input.from && input.to ? [dayjs(input.from), dayjs(input.to)] : null}
-            onChange={(dates) =>
-              update({ from: dates?.[0]?.toISOString(), to: dates?.[1]?.toISOString() })
-            }
-          />
-          <Space>
-            <Switch
-              checked={autoRefresh}
-              disabled={Boolean(input.to)}
-              onChange={(value) => {
-                setAutoRefresh(value)
-                localStorage.setItem('soha-resource-monitoring-auto', value ? '1' : '0')
-              }}
-              aria-label={localeText(localeCode, '每 30 秒自动刷新', 'Refresh every 30 seconds')}
+          {input.from && (
+            <DatePicker.RangePicker
+              aria-label={localeText(
+                localeCode,
+                '固定历史时间窗口',
+                'Fixed historical time window',
+              )}
+              showTime
+              value={input.from && input.to ? [dayjs(input.from), dayjs(input.to)] : null}
+              onChange={(dates) =>
+                update({ from: dates?.[0]?.toISOString(), to: dates?.[1]?.toISOString() })
+              }
             />
-            <Text>
-              {input.to
-                ? localeText(localeCode, '历史窗口已暂停', 'Paused for historical window')
-                : hidden
-                  ? localeText(localeCode, '页面隐藏已暂停', 'Paused while hidden')
-                  : localeText(localeCode, '30s 刷新', 'Refresh 30s')}
-            </Text>
-          </Space>
-          <ManagementRefreshButton
-            aria-label={localeText(localeCode, '刷新资源监控', 'Refresh resource monitoring')}
-            tooltip={localeText(localeCode, '刷新资源监控', 'Refresh resource monitoring')}
-            loading={views.some((item) => item.query.isFetching)}
-            disabled={!clusterId || !canRead}
-            onClick={() => void Promise.all(views.map((item) => item.query.refetch()))}
-          />
-          <Button disabled={!data} onClick={() => setCoverageOpen(true)}>
-            {localeText(localeCode, '来源与覆盖', 'Sources and coverage')}
-          </Button>
-          {views.length > 0 && (
-            <Link to={`${location.pathname}${location.search}#monitoring-${views[0]!.key}`}>
-              {localeText(localeCode, '指标明细', 'Metric details')}
-            </Link>
           )}
+          <div className="soha-monitoring-toolbar-actions">
+            <Tooltip title={refreshLabel} trigger={['hover', 'focus']}>
+              <Button
+                type="text"
+                size="small"
+                role="switch"
+                aria-checked={autoRefresh && !input.to}
+                aria-label={`${localeText(localeCode, '自动刷新', 'Auto-refresh')}：${refreshLabel}`}
+                disabled={Boolean(input.to) || !clusterId || !canRead}
+                data-refresh-state={refreshState}
+                className="soha-monitoring-refresh-dot"
+                onClick={() => {
+                  setAutoRefresh(!autoRefresh)
+                  localStorage.setItem('soha-resource-monitoring-auto', autoRefresh ? '0' : '1')
+                }}
+              >
+                <span aria-hidden />
+              </Button>
+            </Tooltip>
+            <ManagementRefreshButton
+              aria-label={localeText(localeCode, '刷新资源监控', 'Refresh resource monitoring')}
+              tooltip={localeText(localeCode, '刷新资源监控', 'Refresh resource monitoring')}
+              loading={views.some((item) => item.query.isFetching)}
+              disabled={!clusterId || !canRead}
+              onClick={() => void Promise.all(views.map((item) => item.query.refetch()))}
+            />
+            <Button disabled={!data} onClick={() => setCoverageOpen(true)}>
+              {localeText(localeCode, '来源与覆盖', 'Sources and coverage')}
+            </Button>
+          </div>
         </div>
         {data && (
           <div className="soha-monitoring-caption">
@@ -417,61 +454,66 @@ export function ResourceMonitoringRuntimePage() {
             <Quality value={data.snapshotQuality} />
           </div>
         )}
-        {data && (
-          <div className="soha-monitoring-toolbar">
-            <Text>
-              {localeText(
-                localeCode,
-                `曲线节点（最多 ${monitoringNodeLimit} 个）`,
-                `Chart nodes (up to ${monitoringNodeLimit})`,
-              )}
-            </Text>
-            <Select
-              aria-label={localeText(localeCode, '曲线节点', 'Chart nodes')}
-              mode="multiple"
-              maxCount={monitoringNodeLimit}
-              maxTagCount="responsive"
-              value={activeNames}
-              onChange={setHighlighted}
-              style={{ width: 320, maxWidth: '100%' }}
-              options={nodes.map((node) => ({
-                value: node.nodeRef.name,
-                label: node.nodeRef.name,
-              }))}
-            />
-            <Text type="secondary">
-              {localeText(
-                localeCode,
-                '实际用量、分配与容量分开查看；缺失点不连线。',
-                'Usage, allocation and capacity are separate. Gaps are not connected.',
-              )}
-            </Text>
-          </div>
-        )}
       </Card>
-      <MonitoringDashboard
-        views={views}
-        names={activeNames}
-        historical={Boolean(input.to)}
-        clusterId={clusterId}
-        onFocus={(name) => {
-          setHighlighted([name])
-          update({ node: name })
-        }}
+      <Tabs
+        className="soha-monitoring-tabs"
+        activeKey={activeView}
+        onChange={openView}
+        items={[...views]
+          .sort((a, b) => {
+            const order = ['overview', 'cpu', 'memory', 'pods', 'conntrack']
+            return order.indexOf(a.key) - order.indexOf(b.key)
+          })
+          .map((item) => ({
+            key: item.key,
+            label: item[localeCode === 'zh_CN' ? 'label' : 'englishLabel'],
+            children: (
+              <>
+                {item.key === 'overview' ? (
+                  <MonitoringDashboard views={views} historical={Boolean(input.to)} />
+                ) : (
+                  data && (
+                    <div className="soha-monitoring-compare-controls">
+                      <Select
+                        aria-label={localeText(localeCode, '曲线节点', 'Chart nodes')}
+                        mode="multiple"
+                        maxCount={monitoringNodeLimit}
+                        maxTagCount="responsive"
+                        value={activeNames}
+                        onChange={selectNames}
+                        options={nodes.map((node) => ({
+                          value: node.nodeRef.name,
+                          label: node.nodeRef.name,
+                        }))}
+                      />
+                      <Text type="secondary">
+                        {localeText(
+                          localeCode,
+                          `曲线最多 ${monitoringNodeLimit} 个节点，节点表展示当前范围全部结果`,
+                          `Compare up to ${monitoringNodeLimit} chart nodes; the table shows the full loaded scope`,
+                        )}
+                      </Text>
+                    </div>
+                  )
+                )}
+                <MonitoringSection
+                  view={item.key}
+                  query={item.query}
+                  data={item.data}
+                  clusterId={clusterId}
+                  params={params}
+                  activeNames={activeNames}
+                  snapshot={snapshot}
+                  historical={Boolean(input.to)}
+                  onFocus={(name, view) => {
+                    selectNames([name])
+                    openView(view)
+                  }}
+                />
+              </>
+            ),
+          }))}
       />
-      {views.map((item) => (
-        <MonitoringSection
-          key={item.key}
-          view={item.key}
-          query={item.query}
-          data={item.data}
-          clusterId={clusterId}
-          params={params}
-          activeNames={activeNames}
-          snapshot={snapshot}
-          historical={Boolean(input.to)}
-        />
-      ))}
       <Drawer
         title={localeText(localeCode, '数据来源与覆盖', 'Data sources and coverage')}
         size="min(620px, 100vw)"
@@ -534,6 +576,7 @@ function MonitoringSection({
   activeNames,
   snapshot,
   historical,
+  onFocus,
 }: {
   view: MonitoringViewName
   query: UseQueryResult<MonitoringView>
@@ -543,13 +586,10 @@ function MonitoringSection({
   activeNames: string[]
   snapshot: Parameters<typeof hasPermission>[0]
   historical: boolean
+  onFocus: (name: string, view: MonitoringViewName) => void
 }) {
   const { localeCode } = useI18n()
-  const location = useLocation()
-  const navigate = useNavigate()
-  const expanded = location.hash
-    ? location.hash === `#monitoring-${view}`
-    : location.pathname.endsWith(`/${view}`)
+  const [keyword, setKeyword] = useState('')
 
   const nodes = data?.nodes ?? []
   const ranked = nodes
@@ -560,18 +600,13 @@ function MonitoringSection({
         (nodeMetricScore(data, a, view, historical) ?? -1),
     )
   const panels = data?.panels ?? []
-  const links = (key: string, node?: string) => {
-    const next = new URLSearchParams(params)
-    if (node) next.set('node', node)
-    next.set('clusterId', clusterId)
-    return `/resource-monitoring?${next}#monitoring-${key}`
-  }
   const columns: TableColumnsType<MonitoringNode> = [
     {
       title: localeText(localeCode, '节点', 'Node'),
       key: 'name',
       fixed: 'left',
-      width: 170,
+      width: 280,
+      sorter: (a, b) => a.nodeRef.name.localeCompare(b.nodeRef.name),
       render: (_, node) => (
         <div>
           <Link
@@ -579,40 +614,84 @@ function MonitoringSection({
           >
             {node.nodeRef.name}
           </Link>
-          <div>
-            <StatusTag
-              value={
-                node.ready === 'True' ? 'ready' : node.ready === 'False' ? 'not_ready' : 'unknown'
-              }
-            />
-            {node.cordoned && (
-              <Text type="warning"> {localeText(localeCode, '· 已停止调度', ' · Cordoned')}</Text>
-            )}
-          </div>
         </div>
       ),
     },
   ]
+  columns.push({
+    title: localeText(localeCode, '状态', 'Status'),
+    key: 'status',
+    width: view === 'overview' ? 96 : 136,
+    render: (_, node) => (
+      <Tooltip
+        title={`${localeText(localeCode, '当前快照', 'Current snapshot')} ${node.observedAt ? formatDateTime(node.observedAt) : '—'}`}
+      >
+        <span>
+          <NodeStateTags
+            status={node.ready}
+            cordoned={node.cordoned}
+            conditions={[
+              { type: 'MemoryPressure', status: node.memoryPressure },
+              { type: 'DiskPressure', status: node.diskPressure },
+              { type: 'PIDPressure', status: node.pidPressure },
+            ]}
+          />
+          {view === 'overview' && node.quality !== 'valid' && <Quality value={node.quality} />}
+        </span>
+      </Tooltip>
+    ),
+  })
   if (view === 'overview') {
     columns.push(
-      ...(['cpu', 'memory', 'conntrack', 'pods'] as const).map((key) => ({
+      ...(['cpu', 'memory', 'pods', 'conntrack'] as const).map((key) => ({
         title: monitoringViews.find((view) => view.key === key)?.[
           localeCode === 'zh_CN' ? 'label' : 'englishLabel'
         ],
         key,
+        width: 136,
+        sorter: (a: MonitoringNode, b: MonitoringNode) =>
+          (nodeMetricScore(data, a, key, historical) ?? -1) -
+          (nodeMetricScore(data, b, key, historical) ?? -1),
         render: (_: unknown, node: MonitoringNode) => {
+          const metricKey =
+            key === 'cpu'
+              ? 'host.cpu.used'
+              : key === 'memory'
+                ? 'host.memory.used'
+                : key === 'pods'
+                  ? 'pods.bound'
+                  : 'conntrack.entries'
+          const unit = key === 'cpu' ? 'cores' : key === 'memory' ? 'bytes' : 'count'
           const value =
-            key === 'cpu' && historical ? (
-              <Text type="secondary">
-                {localeText(localeCode, '历史容量未提供', 'Historical capacity unavailable')}
-              </Text>
-            ) : (
-              <Ratio value={nodeMetricScore(data, node, key, historical)} />
-            )
-          return hasPermission(snapshot, monitoringPermission(key)) ? (
-            <Link to={links(key, node.nodeRef.name)}>{value}</Link>
-          ) : (
-            value
+            key === 'pods' && !historical
+              ? node.boundPods
+              : latestMetric(data, metricKey, node.nodeRef.name)
+          const capacity =
+            key === 'cpu'
+              ? historical
+                ? null
+                : node.capacity.cpuCores
+              : key === 'pods'
+                ? historical
+                  ? null
+                  : node.allocatable.podSlots
+                : alignedMetricDenominator(
+                    data,
+                    metricKey,
+                    key === 'memory' ? 'host.memory.total' : 'conntrack.limit',
+                    node.nodeRef.name,
+                  )
+          const panel = data?.panels.find((panel) => panel.key === metricKey)
+          return (
+            <div className="soha-monitoring-table-metric">
+              <MonitoringUsageMeter
+                value={value}
+                capacity={capacity}
+                unit={unit}
+                quality={panel?.quality}
+              />
+              {panel && panel.quality !== 'valid' && <Quality value={panel.quality} />}
+            </div>
           )
         },
       })),
@@ -632,6 +711,9 @@ function MonitoringSection({
                 cpu ? 'Host usage / current capacity' : 'Host usage / aligned capacity',
               ),
         key: 'host',
+        sorter: (a, b) =>
+          (latestMetric(data, `host.${view}.used`, a.nodeRef.name) ?? -1) -
+          (latestMetric(data, `host.${view}.used`, b.nodeRef.name) ?? -1),
         render: (_, node) => (
           <div>
             {valueText(latestMetric(data, `host.${view}.used`, node.nodeRef.name), unit)}
@@ -676,6 +758,9 @@ function MonitoringSection({
           historical ? 'Historical observed Pod usage' : 'Observed Pod usage / allocatable',
         ),
         key: 'pod',
+        sorter: (a, b) =>
+          (latestMetric(data, `pod.${view}.used`, a.nodeRef.name) ?? -1) -
+          (latestMetric(data, `pod.${view}.used`, b.nodeRef.name) ?? -1),
         render: (_, node) => (
           <div>
             {valueText(latestMetric(data, `pod.${view}.used`, node.nodeRef.name), unit)}
@@ -695,6 +780,7 @@ function MonitoringSection({
       {
         title: localeText(localeCode, '当前 requests', 'Current requests'),
         key: 'requests',
+        sorter: (a, b) => (a.requests[quantity] ?? -1) - (b.requests[quantity] ?? -1),
         render: (_, node) => (
           <div>
             {valueText(node.requests[quantity], unit)}
@@ -707,6 +793,7 @@ function MonitoringSection({
       {
         title: localeText(localeCode, '当前 limits', 'Current limits'),
         key: 'limits',
+        sorter: (a, b) => (a.limits[quantity] ?? -1) - (b.limits[quantity] ?? -1),
         render: (_, node) =>
           (cpu ? node.cpuLimitsComplete : node.memoryLimitsComplete) ? (
             <div>
@@ -737,6 +824,9 @@ function MonitoringSection({
       {
         title: localeText(localeCode, '条目 / 上限', 'Entries / limit'),
         key: 'entries',
+        sorter: (a, b) =>
+          (latestMetric(data, 'conntrack.entries', a.nodeRef.name) ?? -1) -
+          (latestMetric(data, 'conntrack.entries', b.nodeRef.name) ?? -1),
         render: (_, node) => (
           <div>
             {valueText(latestMetric(data, 'conntrack.entries', node.nodeRef.name), 'count')} /{' '}
@@ -767,6 +857,7 @@ function MonitoringSection({
       {
         title: localeText(localeCode, '非终态 Pod / allocatable', 'Nonterminal Pods / allocatable'),
         key: 'pods',
+        sorter: (a, b) => (a.boundPods ?? -1) - (b.boundPods ?? -1),
         render: (_, node) => (
           <div>
             {valueText(node.boundPods, 'count')} / {valueText(node.allocatable.podSlots, 'count')}
@@ -795,21 +886,46 @@ function MonitoringSection({
       },
     )
   }
-  columns.push({
-    title: localeText(localeCode, '当前快照 / 质量', 'Current snapshot / quality'),
-    key: 'quality',
-    width: 170,
-    render: (_, node) => (
-      <div>
-        <Quality value={node.quality} />
-        <Text type="secondary">
-          {node.observedAt
-            ? formatDateTime(node.observedAt)
-            : localeText(localeCode, '未提供采样时间', 'Observation time unavailable')}
-        </Text>
-      </div>
-    ),
-  })
+  if (view !== 'overview')
+    columns.push({
+      title: localeText(localeCode, '当前快照 / 质量', 'Current snapshot / quality'),
+      key: 'quality',
+      width: 170,
+      render: (_, node) => (
+        <div>
+          <Quality value={node.quality} />
+          <Text type="secondary">
+            {node.observedAt
+              ? formatDateTime(node.observedAt)
+              : localeText(localeCode, '未提供采样时间', 'Observation time unavailable')}
+          </Text>
+        </div>
+      ),
+    })
+  const trendViews = monitoringViews.filter(
+    (item) => item.key !== 'overview' && hasPermission(snapshot, monitoringPermission(item.key)),
+  )
+  if (trendViews.length)
+    columns.push({
+      key: 'actions',
+      className: 'soha-table-actions-column',
+      title: '',
+      width: 64,
+      minWidth: 64,
+      fixed: 'right',
+      render: (_, node) => (
+        <KubernetesResourceActionsMenu
+          name={node.nodeRef.name}
+          resourceLabel="Node"
+          localeCode={localeCode}
+          items={trendViews.map((item) => ({
+            key: item.key,
+            label: `${localeText(localeCode, '聚焦', 'Focus')} ${item[localeCode === 'zh_CN' ? 'label' : 'englishLabel']}${localeText(localeCode, '趋势', ' trend')}`,
+          }))}
+          onSelect={(key) => onFocus(node.nodeRef.name, key as MonitoringViewName)}
+        />
+      ),
+    })
   const title =
     monitoringViews.find((item) => item.key === view)?.[
       localeCode === 'zh_CN' ? 'label' : 'englishLabel'
@@ -863,117 +979,134 @@ function MonitoringSection({
         />
       )}
       {data && (
-        <Drawer
-          title={`${title} · ${localeText(localeCode, '指标明细', 'Metric details')}`}
-          size="min(1120px, 100vw)"
-          open={expanded}
-          destroyOnHidden
-          onClose={() => navigate(`/resource-monitoring${location.search}`, { replace: true })}
-        >
-          <section id={`monitoring-${view}`} className="soha-monitoring-section" aria-label={title}>
-            {unavailable && (
-              <Alert
-                showIcon
-                type="info"
-                title={localeText(
-                  localeCode,
-                  '当前没有可展示的历史样本',
-                  'No historical samples to display',
+        <section id={`monitoring-${view}`} className="soha-monitoring-section" aria-label={title}>
+          {unavailable && (
+            <Alert
+              showIcon
+              type="info"
+              title={localeText(
+                localeCode,
+                '当前没有可展示的历史样本',
+                'No historical samples to display',
+              )}
+              description={localeText(
+                localeCode,
+                '容量表独立展示当前 API 快照；缺失值不会补为 0。',
+                'The table separately shows the current API snapshot. Missing values are not filled with zero.',
+              )}
+            />
+          )}
+          {view !== 'overview' && !unavailable && (
+            <>
+              <div className="soha-monitoring-trends">
+                <Trend
+                  key={`${view}-primary`}
+                  panels={panels}
+                  defaultKey={primary}
+                  names={activeNames}
+                  title={localeText(localeCode, '用量趋势', 'Usage trend')}
+                />
+                {secondary && (
+                  <Trend
+                    key={`${view}-secondary`}
+                    panels={panels.filter((panel) => panel.key !== primary)}
+                    defaultKey={secondary}
+                    names={activeNames}
+                    title={
+                      view === 'conntrack'
+                        ? localeText(localeCode, '异常事件趋势', 'Failure event trend')
+                        : localeText(
+                            localeCode,
+                            'Pod 用量与分配趋势',
+                            'Pod usage and allocation trend',
+                          )
+                    }
+                  />
                 )}
-                description={localeText(
-                  localeCode,
-                  '容量表独立展示当前 API 快照；缺失值不会补为 0。',
-                  'The table separately shows the current API snapshot. Missing values are not filled with zero.',
-                )}
-              />
+              </div>
+            </>
+          )}
+          <Text className="soha-monitoring-snapshot-note" type="secondary">
+            {localeText(
+              localeCode,
+              historical
+                ? '曲线为历史数据；下表 requests、limits 和 Pod 槽位为当前快照，不代表历史容量或调度保证。'
+                : '主机实际用量与 Pod 用量分开统计；requests / limits 为当前分配，Pod 槽位不代表调度保证。',
+              historical
+                ? 'Charts show history. Requests, limits and Pod slots below are current snapshots, not historical capacity or scheduling guarantees.'
+                : 'Host and Pod usage are separate. Requests / limits are current allocations; Pod slots do not guarantee scheduling.',
             )}
-            <Card
-              className="soha-detail-card"
-              title={
-                view === 'overview'
-                  ? localeText(localeCode, '集群资源总览', 'Cluster resource overview')
-                  : view === 'pods'
-                    ? localeText(localeCode, '当前 Pod 容量', 'Current Pod capacity')
-                    : title
-              }
-              extra={
-                <Text type="secondary">
+          </Text>
+          {view === 'pods' && (
+            <Space wrap className="soha-monitoring-caption">
+              <Text>
+                {localeText(
+                  localeCode,
+                  '集群未绑定节点的 Pending Pod：',
+                  'Unbound Pending Pods in this cluster: ',
+                )}
+                {valueText(data.unscheduledPendingPods, 'count')}
+              </Text>
+              <Text type="secondary">
+                {localeText(
+                  localeCode,
+                  '已绑定非终态 Pod 包含终止中 Pod；不等同于 kubelet sandbox 数量。',
+                  'Bound nonterminal Pods include terminating Pods. This is not a kubelet sandbox count.',
+                )}
+              </Text>
+              {hasPermission(snapshot, 'platform.configuration.resource-quotas.view') && (
+                <Link to="/configuration/resourcequotas">
                   {localeText(
                     localeCode,
-                    '当前快照不表示历史容量，也不保证 Pod 可调度',
-                    'The current snapshot does not represent historical capacity or guarantee scheduling',
+                    '查看授权命名空间配额',
+                    'View authorized namespace quotas',
+                  )}
+                </Link>
+              )}
+            </Space>
+          )}
+          <KubernetesResourceTable
+            resourceKey={`resource-monitoring-${view}`}
+            shellClassName="soha-management-table-shell"
+            columnSettingPlacement="header"
+            columnSettingIconOnly
+            resourceLabel="Nodes"
+            scopeMode="cluster"
+            rowKey={(node: MonitoringNode) =>
+              `${node.nodeRef.clusterId}:${node.nodeRef.uid || node.nodeRef.name}`
+            }
+            allRows={nodes}
+            columns={columns}
+            dataSource={ranked.filter((node) =>
+              node.nodeRef.name.toLocaleLowerCase().includes(keyword.trim().toLocaleLowerCase()),
+            )}
+            filterKey={`${params.toString()}:${keyword}`}
+            loading={query.isPending}
+            error={query.isError ? query.error : null}
+            hasReadData={Boolean(data)}
+            headerExtra={
+              <Input.Search
+                aria-label={localeText(localeCode, '搜索监控节点', 'Search monitored nodes')}
+                placeholder={localeText(localeCode, '搜索节点', 'Search nodes')}
+                allowClear
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                style={{ width: 240, maxWidth: '100%' }}
+              />
+            }
+            title={
+              data.truncated ? (
+                <Text>
+                  {localeText(
+                    localeCode,
+                    `已加载 ${nodes.length} 个节点 · 结果已截断`,
+                    `Loaded ${nodes.length} nodes · Results truncated`,
                   )}
                 </Text>
-              }
-            >
-              {view === 'pods' && (
-                <Space wrap className="soha-monitoring-caption">
-                  <Text>
-                    {localeText(
-                      localeCode,
-                      '集群未绑定节点的 Pending Pod：',
-                      'Unbound Pending Pods in this cluster: ',
-                    )}
-                    {valueText(data.unscheduledPendingPods, 'count')}
-                  </Text>
-                  <Text type="secondary">
-                    {localeText(
-                      localeCode,
-                      '已绑定非终态 Pod 包含终止中 Pod；不等同于 kubelet sandbox 数量。',
-                      'Bound nonterminal Pods include terminating Pods. This is not a kubelet sandbox count.',
-                    )}
-                  </Text>
-                  {hasPermission(snapshot, 'platform.configuration.resource-quotas.view') && (
-                    <Link to="/configuration/resourcequotas">
-                      {localeText(
-                        localeCode,
-                        '查看授权命名空间配额',
-                        'View authorized namespace quotas',
-                      )}
-                    </Link>
-                  )}
-                </Space>
-              )}
-              <AdminTable
-                rowKey={(node) => node.nodeRef.uid || node.nodeRef.name}
-                columns={columns}
-                dataSource={ranked}
-                pageSize={20}
-                enableColumnSelection={false}
-              />
-            </Card>
-            {view !== 'overview' && !unavailable && (
-              <>
-                <div className="soha-monitoring-trends">
-                  <Trend
-                    key={`${view}-primary`}
-                    panels={panels}
-                    defaultKey={primary}
-                    names={activeNames}
-                    title={localeText(localeCode, '用量趋势', 'Usage trend')}
-                  />
-                  {secondary && (
-                    <Trend
-                      key={`${view}-secondary`}
-                      panels={panels.filter((panel) => panel.key !== primary)}
-                      defaultKey={secondary}
-                      names={activeNames}
-                      title={
-                        view === 'conntrack'
-                          ? localeText(localeCode, '异常事件趋势', 'Failure event trend')
-                          : localeText(
-                              localeCode,
-                              'Pod 用量与分配趋势',
-                              'Pod usage and allocation trend',
-                            )
-                      }
-                    />
-                  )}
-                </div>
-              </>
-            )}
-          </section>
-        </Drawer>
+              ) : undefined
+            }
+          />
+        </section>
       )}
     </>
   )

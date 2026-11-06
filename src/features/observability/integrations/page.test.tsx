@@ -55,6 +55,7 @@ beforeAll(() => {
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getStyle(element))
 })
 beforeEach(() => {
+  vi.useFakeTimers()
   api.get.mockReset().mockResolvedValue({ data: [] })
   api.post.mockReset().mockResolvedValue({ data: result })
   container = document.createElement('div')
@@ -65,15 +66,22 @@ beforeEach(() => {
   })
 })
 afterEach(async () => {
-  await act(async () => root.unmount())
-  container.remove()
-  client.clear()
+  try {
+    await act(async () => root.unmount())
+    client.clear()
+    // Run delayed form feedback while jsdom still owns its window.
+    await act(async () => vi.runOnlyPendingTimersAsync())
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+    container.remove()
+  }
 })
 
 async function settle(action: () => void = () => {}) {
   await act(async () => {
     action()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await vi.advanceTimersByTimeAsync(20)
   })
 }
 function button(label: string) {

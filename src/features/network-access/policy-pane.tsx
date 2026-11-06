@@ -7,6 +7,7 @@ import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type {
   EndpointDevicePostureStatus,
+  EndpointDeviceManagementState,
   EndpointDeviceStatus,
   NetworkAccessMode,
   NetworkAccessPolicy,
@@ -41,6 +42,9 @@ import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { formatDateTime } from '@/utils/time'
 import { networkAccessMutations } from './mutations'
 import { networkAccessQueries } from './queries'
+import { NetworkAdmissionPreview } from './admission-preview'
+import { endpointManagementLabel } from './device-detail-drawer'
+
 interface NetworkPolicyPaneProps {
   canCreate: boolean
   canDelete: boolean
@@ -49,6 +53,7 @@ interface NetworkPolicyPaneProps {
 interface PolicyFormValues {
   accessProfile: NetworkAccessProfile
   deviceStatuses: EndpointDeviceStatus[]
+  deviceManagementStates: EndpointDeviceManagementState[]
   effect: NetworkPolicyEffect
   enabled: boolean
   modes: NetworkAccessMode[]
@@ -56,6 +61,7 @@ interface PolicyFormValues {
   postureStatuses: EndpointDevicePostureStatus[]
   priority: number
   resourceIdsText?: string
+  rolesText?: string
   siteIdsText?: string
   tagsText?: string
   teamsText?: string
@@ -115,7 +121,7 @@ function textList(values: string[]) {
   return values.join('\n')
 }
 export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPolicyPaneProps) {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
   const queryClient = useQueryClient()
   const policies = useQuery(networkAccessQueries.policies(LIST_FILTER))
   const visiblePoliciesData = policies.isEnabled === false ? undefined : readableQueryData(policies)
@@ -170,12 +176,14 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
             effect: policy.effect,
             accessProfile: policy.accessProfile,
             usersText: textList(policy.subjects.users),
+            rolesText: textList(policy.subjects.roles ?? []),
             teamsText: textList(policy.subjects.teams),
             tagsText: textList(policy.subjects.tags),
             siteIdsText: textList(policy.siteIds),
             resourceIdsText: textList(policy.resourceIds),
             modes: policy.modes,
             deviceStatuses: policy.deviceStatuses,
+            deviceManagementStates: policy.deviceManagementStates ?? [],
             postureStatuses: policy.postureStatuses,
           }
         : {
@@ -185,12 +193,14 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
             effect: 'allow',
             accessProfile: 'full',
             usersText: '',
+            rolesText: '',
             teamsText: '',
             tagsText: '',
             siteIdsText: '',
             resourceIdsText: '',
             modes: [],
             deviceStatuses: ['active'],
+            deviceManagementStates: [],
             postureStatuses: ['compliant'],
           },
     )
@@ -204,6 +214,7 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
       effect: values.effect,
       subjects: {
         users: parseTextList(values.usersText),
+        roles: parseTextList(values.rolesText),
         teams: parseTextList(values.teamsText),
         tags: parseTextList(values.tagsText),
       },
@@ -211,6 +222,11 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
       resourceIds: parseTextList(values.resourceIdsText),
       modes: values.modes,
       deviceStatuses: values.deviceStatuses,
+      ...(editor === 'new' ||
+      [...(values.deviceManagementStates ?? [])].sort().join(',') !==
+        [...(editor?.deviceManagementStates ?? [])].sort().join(',')
+        ? { deviceManagementStates: values.deviceManagementStates ?? [] }
+        : {}),
       postureStatuses: values.postureStatuses,
       accessProfile: values.effect === 'deny' ? 'deny' : values.accessProfile,
     }
@@ -258,6 +274,7 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
       render: (_: unknown, policy) =>
         [
           ...policy.subjects.users.map((value) => 'user:' + value),
+          ...(policy.subjects.roles ?? []).map((value) => 'role:' + value),
           ...policy.subjects.teams.map((value) => 'team:' + value),
           ...policy.subjects.tags.map((value) => 'tag:' + value),
         ].join(', '),
@@ -380,6 +397,7 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
               policy.effect,
               policy.accessProfile,
               ...policy.subjects.users,
+              ...(policy.subjects.roles ?? []),
               ...policy.subjects.teams,
               ...policy.subjects.tags,
               ...policy.siteIds,
@@ -401,6 +419,11 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
           />
         </Space>
       ),
+    },
+    {
+      key: 'admission-preview',
+      label: t('networkAccess.policy.admissionPreview', '准入预览'),
+      children: <NetworkAdmissionPreview />,
     },
     {
       key: 'preview',
@@ -706,22 +729,29 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
           <Form.Item
             name="usersText"
             label={t('networkAccess.policy.users', '用户 ID')}
-            dependencies={['teamsText', 'tagsText']}
+            dependencies={['rolesText', 'teamsText', 'tagsText']}
             rules={[
               {
                 validator: (_, value) =>
                   parseTextList(value).length ||
+                  parseTextList(policyForm.getFieldValue('rolesText')).length ||
                   parseTextList(policyForm.getFieldValue('teamsText')).length ||
                   parseTextList(policyForm.getFieldValue('tagsText')).length
                     ? Promise.resolve()
                     : Promise.reject(
                         new Error(
-                          t('networkAccess.policy.requiredSubject', '用户、团队或标签至少填写一项'),
+                          t(
+                            'networkAccess.policy.requiredSubject',
+                            '用户、角色、团队或标签至少填写一项',
+                          ),
                         ),
                       ),
               },
             ]}
           >
+            <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
+          </Form.Item>
+          <Form.Item name="rolesText" label={t('networkAccess.policy.roles', '角色 ID')}>
             <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
           </Form.Item>
           <Form.Item name="teamsText" label={t('networkAccess.policy.teams', '团队 ID')}>
@@ -752,6 +782,22 @@ export function NetworkPolicyPane({ canCreate, canDelete, canUpdate }: NetworkPo
                 value,
                 label: value,
               }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="deviceManagementStates"
+            label={t('networkAccess.device.managementState', '受管状态')}
+            extra={t(
+              'networkAccess.policy.managementHelp',
+              '空列表表示不筛选状态，站点治理仍生效；受限非受管访问需指定状态、未保护资源和受限等级。',
+            )}
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              options={(['managed', 'unmanaged', 'unknown'] as EndpointDeviceManagementState[]).map(
+                (value) => ({ value, label: endpointManagementLabel(value, localeCode) }),
+              )}
             />
           </Form.Item>
           <Form.Item

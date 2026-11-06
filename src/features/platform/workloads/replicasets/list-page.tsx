@@ -1,4 +1,5 @@
-import { Progress, Typography } from 'antd'
+import { StatusTag } from '@/components/status-tag'
+import { replicaSetHealth } from './replicaset-detail-model'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
 import { useI18n } from '@/i18n'
@@ -10,23 +11,6 @@ import { renderWorkloadNameLink } from '../shared/list-controls'
 import { ReplicaControllerListPage } from '../shared/replica-controller-list'
 import type { ReplicaSet } from './types'
 import '@/features/platform/workloads/styles.css'
-
-const { Text } = Typography
-
-function renderReady(ready: number, desired: number) {
-  const percent = desired > 0 ? Math.min(100, Math.round((ready / desired) * 100)) : 0
-  return (
-    <div className="soha-replica-progress-cell">
-      <Progress
-        percent={percent}
-        showInfo={false}
-        size="small"
-        status={desired === 0 || ready >= desired ? 'success' : 'active'}
-      />
-      <Text type="secondary">{`${ready}/${desired}`}</Text>
-    </div>
-  )
-}
 
 export function WorkloadsReplicaSetsPage() {
   const { localeCode } = useI18n()
@@ -49,15 +33,39 @@ export function WorkloadsReplicaSetsPage() {
       width: 160,
     },
     {
-      title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
-      dataIndex: 'readyReplicas',
-      width: 190,
-      render: (_: number, record) => renderReady(record.readyReplicas, record.desiredReplicas),
+      ...tableColumnPresets.status,
+      title: localeCode === 'zh_CN' ? '状态' : 'Status',
+      key: 'health',
+      width: 150,
+      sorter: (a, b) => replicaSetHealth(a).localeCompare(replicaSetHealth(b)),
+      render: (_, record) => (
+        <StatusTag
+          value={replicaSetHealth(record)}
+          label={
+            replicaSetHealth(record) === 'healthy'
+              ? localeCode === 'zh_CN'
+                ? '健康'
+                : 'Healthy'
+              : replicaSetHealth(record) === 'inactive'
+                ? localeCode === 'zh_CN'
+                  ? '期望为 0'
+                  : 'Zero desired'
+                : replicaSetHealth(record) === 'unknown'
+                  ? localeCode === 'zh_CN'
+                    ? '状态未知'
+                    : 'Unknown'
+                  : localeCode === 'zh_CN'
+                    ? '未就绪或不可用'
+                    : 'Not ready or available'
+          }
+        />
+      ),
     },
     {
-      title: localeCode === 'zh_CN' ? '期望' : 'Desired',
-      dataIndex: 'desiredReplicas',
-      width: 96,
+      title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',
+      dataIndex: 'readyReplicas',
+      width: 112,
+      render: (_: number, record) => `${record.readyReplicas}/${record.desiredReplicas}`,
     },
     {
       title: localeCode === 'zh_CN' ? '可用' : 'Available',

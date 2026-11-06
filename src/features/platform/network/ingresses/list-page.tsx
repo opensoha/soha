@@ -1,3 +1,11 @@
+import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { readableQueryData } from '@/utils/query-feedback'
+import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
+import { networkResourcePath } from '../shared/resource-links'
+import { IngressEditModal } from './edit-modal'
+import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
+import './styles.css'
 import { ReadFeedback } from '@/components/request-feedback'
 import { TableCellLink } from '@/components/table-cell-content'
 import { useI18n } from '@/i18n'
@@ -18,17 +26,46 @@ export function NetworkIngressesPage() {
   const navigate = useNavigate()
   const { clusterId, namespace } = usePlatformScopeStore()
   const scope = toScopeKey(clusterId, namespace)
-  const query = useQuery(ingressQueries.list(scope))
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const canRead = hasPermission(permissions, 'platform.network.ingresses.view')
+  const canUpdate = hasPermission(permissions, 'platform.network.ingresses.update')
+  const canDelete = hasPermission(permissions, 'platform.network.ingresses.delete')
+  const refresh = useWorkloadRefresh()
+  const options = ingressQueries.list(scope)
+  const query = useQuery({
+    ...options,
+    enabled: Boolean(options.enabled) && canRead,
+    refetchInterval: refresh.interval,
+  })
+  const [editing, setEditing] = useState<{
+    record: Ingress
+    clusterId: string
+    namespace: string | null
+  }>()
+  useEffect(() => setEditing(undefined), [clusterId, namespace])
+  const editedRow = readableQueryData(query)?.find(
+    (item) => item.name === editing?.record.name && item.namespace === editing?.record.namespace,
+  )
+  const editAllowed = canUpdate && hasAllowedAction(editedRow?.allowedActions, 'update')
+  useEffect(() => {
+    if (!editAllowed) setEditing(undefined)
+  }, [editAllowed])
+  const refLink = (kind: string, name: string, ns?: string) =>
+    networkResourcePath(permissions, { clusterId: clusterId || '', namespace: ns, kind, name })
   const columns: TableColumnsType<Ingress> = [
     {
       title: localeCode === 'zh_CN' ? '名称' : 'Name',
       dataIndex: 'name',
       ellipsis: { showTitle: false },
-      width: 260,
+      width: 320,
       render: (value: string, record) => (
         <TableCellLink
           label={value}
-          onClick={() => navigate(buildNetworkRoutePath('ingresses', value, record.namespace))}
+          onClick={() =>
+            navigate(
+              `${buildNetworkRoutePath('ingresses', value, record.namespace)}&clusterId=${encodeURIComponent(clusterId || '')}`,
+            )
+          }
         />
       ),
     },
@@ -41,27 +78,58 @@ export function NetworkIngressesPage() {
       title: 'IngressClass',
       dataIndex: 'className',
       width: 160,
-      render: (value?: string) => value || '-',
+      render: (value?: string) => {
+        const path = value ? refLink('IngressClass', value) : null
+        return path ? <Link to={path}>{value}</Link> : value || '—'
+      },
     },
     {
-      title: 'Hosts',
+      title: localeCode === 'zh_CN' ? '域名' : 'Hosts',
+      width: 240,
       dataIndex: 'hosts',
       render: (value?: string[]) => renderNetworkTextList(value),
     },
-    { title: 'Address', dataIndex: 'address', render: (value?: string) => value || '-' },
     {
-      title: 'Backend Services',
-      dataIndex: 'backendServices',
-      render: (value?: string[]) => renderNetworkTextList(value),
+      title: localeCode === 'zh_CN' ? '地址' : 'Address',
+      dataIndex: 'address',
+      width: 210,
+      render: (value?: string) => (
+        <span className="soha-ingress-wrap">
+          {value || (localeCode === 'zh_CN' ? '未分配' : 'Not assigned')}
+        </span>
+      ),
     },
     {
-      title: 'Age',
+      title: localeCode === 'zh_CN' ? '后端 Service' : 'Backend Services',
+      width: 240,
+      dataIndex: 'backendServices',
+      render: (value: string[] | undefined, record: Ingress) =>
+        value?.length ? (
+          <div className="soha-ingress-reference-list">
+            {value.map((name) => {
+              const path = refLink('Service', name, record.namespace)
+              return path ? (
+                <Link key={name} to={path}>
+                  {name}
+                </Link>
+              ) : (
+                <span key={name}>{name}</span>
+              )
+            })}
+          </div>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      title: localeCode === 'zh_CN' ? '时长' : 'Age',
       dataIndex: 'ageSeconds',
       width: 104,
       render: (value: number) => formatAgeSeconds(value),
     },
   ]
 
+  if (!canRead) return <ReadFeedback canRead={false} query={query} label="Ingresses" />
   return (
     <>
       <ReadFeedback canRead={query.isEnabled} query={query} label="资源记录" />
@@ -80,6 +148,21 @@ export function NetworkIngressesPage() {
           promptHint: '分析当前 Ingress 列表的域名、地址、IngressClass 和后端 Service 风险。',
         })}
         columns={columns}
+        deletable={canDelete}
+        onEdit={
+          canUpdate
+            ? (record) =>
+                setEditing({ record, clusterId: clusterId || '', namespace: namespace || null })
+            : undefined
+        }
+        refreshControl={
+          <WorkloadRefresh
+            settings={refresh}
+            queries={[query]}
+            onRefresh={() => query.refetch()}
+            resourceLabel="Ingresses"
+          />
+        }
         emptyDescription={{
           zh_CN: '当前范围没有 Ingress',
           en_US: 'No ingresses in the current scope',
@@ -96,10 +179,21 @@ export function NetworkIngressesPage() {
           record.namespace,
           record.className,
           record.address,
-          ...record.hosts,
+          ...(record.hosts ?? []),
           ...(record.backendServices ?? []),
         ]}
       />
+      {editAllowed &&
+        editing &&
+        editing.clusterId === clusterId &&
+        editing.namespace === (namespace || null) && (
+          <IngressEditModal
+            key={`${editing.clusterId}/${editing.record.namespace}/${editing.record.name}`}
+            clusterId={editing.clusterId}
+            ingress={editing.record}
+            onClose={() => setEditing(undefined)}
+          />
+        )}
     </>
   )
 }

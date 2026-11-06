@@ -350,3 +350,69 @@
   gap: 4px;
   max-width: 420px;
 }
+
+.soha-kubernetes-resource-list {
+  min-width: 0;
+  width: 100%;
+}
+
+/* Antd virtual rows stretch block cells to the tallest control. Center their
+   contents without changing the block layout used for text ellipsis. */
+.soha-kubernetes-resource-table .ant-table-tbody-virtual .ant-table-cell {
+  align-content: center;
+}
+
+/* K8s resource counts share the approved Pods supporting-text hierarchy. */
+.soha-kubernetes-resource-count {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-kubernetes-action-menu-label {
+  display: grid;
+  gap: 2px;
+  max-width: 260px;
+}
+
+.soha-kubernetes-action-menu-reason {
+  overflow-wrap: anywhere;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  line-height: var(--soha-line-height-supporting);
+  white-space: normal;
+}
+
+.soha-deployment-selection {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .soha-kubernetes-actions-trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.soha-kubernetes-resource-list .soha-admin-table-header-main {
+  flex-wrap: wrap;
+}
+
+.soha-kubernetes-action-menu {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.soha-kubernetes-actions-column {
+  --soha-table-actions-column-width: 64px;
+}

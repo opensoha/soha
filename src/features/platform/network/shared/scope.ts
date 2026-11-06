@@ -26,12 +26,14 @@ export function requireNetworkNamespace(scope: ScopeKey) {
   return namespace
 }
 
-export function resolveNetworkNamespace(
-  selectedNamespace: string | null | undefined,
-  searchNamespace: string | null | undefined,
-  recordNamespace?: string | null,
-) {
-  return selectedNamespace?.trim() || searchNamespace?.trim() || recordNamespace?.trim() || ''
+export function resolveNetworkDetailScope(selected: ScopeKey, params: URLSearchParams): ScopeKey {
+  const requestedCluster = params.get('clusterId')?.trim()
+  const namespace = params.has('namespace')
+    ? params.get('namespace')
+    : requestedCluster && requestedCluster !== selected.clusterId
+      ? null
+      : selected.namespace
+  return toScopeKey(requestedCluster || selected.clusterId, namespace)
 }
 
 export function networkTargetFromRecord(

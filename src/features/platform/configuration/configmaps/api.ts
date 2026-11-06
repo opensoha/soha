@@ -12,8 +12,12 @@ export function listConfigMaps(scope: ConfigurationTarget['scope']) {
   return listConfigurationResources<ConfigMapResource>(configMapKind, scope)
 }
 
-export function getConfigMapDetail(target: ConfigurationTarget) {
-  return getConfigurationDetail<ConfigMapDetail>(configMapKind, target)
+export async function getConfigMapDetail(target: ConfigurationTarget) {
+  const detail = await getConfigurationDetail<ConfigMapDetail>(configMapKind, target)
+  if (detail.name !== target.name || detail.namespace !== target.scope.namespace) {
+    throw new Error('ConfigMap identity does not match the requested resource')
+  }
+  return detail
 }
 
 export function updateConfigMapData(

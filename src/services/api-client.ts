@@ -153,7 +153,69 @@ async function request<T>(
   return normalizeBody ? normalizeResponseBody<T>(body) : (body as T)
 }
 
+// Sensitive managed transfers capture one owner's token. They never replay a
+// body after refresh, mix it with a newer cookie or return another user's data.
+async function scopedRequest<T>(
+  path: string,
+  expectedUserId: string,
+  options: { method?: 'GET' | 'POST' | 'PUT'; body?: unknown } = {},
+): Promise<T> {
+  const accessToken = getStoredAccessToken()
+  const method = options.method ?? 'GET'
+  const current = () => useAuthStore.getState().user?.userId === expectedUserId
+  const changed = () =>
+    new ApiError(
+      method === 'GET' ? 403 : 503,
+      'Authentication context changed; this request was not replayed. Inspect its original request ID.',
+      { method, path },
+    )
+  if (!expectedUserId || !accessToken || !current())
+    throw new ApiError(
+      403,
+      'Authentication context changed before submission; no content was sent.',
+      { method, path },
+    )
+  const response = await fetchApi(
+    path,
+    {
+      method,
+      credentials: 'omit',
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    },
+    accessToken,
+  )
+  if (
+    !current() ||
+    (response.status === 401 && useAuthStore.getState().accessToken !== accessToken)
+  ) {
+    await response.body?.cancel().catch(() => undefined)
+    throw changed()
+  }
+  if (!response.ok) {
+    const errorBody = await parseJsonSafely<ErrorEnvelope>(response)
+    if (
+      !current() ||
+      (response.status === 401 && useAuthStore.getState().accessToken !== accessToken)
+    )
+      throw changed()
+    const error = createApiErrorFromResponse(response, errorBody, { method, path })
+    if (response.status === 401) clearAuthSession()
+    emitApiError(error)
+    throw error
+  }
+  const body = await parseJsonSafely<unknown>(response)
+  if (!current()) throw changed()
+  if (!body || typeof body !== 'object' || !('data' in body) || body.data === null) {
+    throw new ApiError(502, 'Invalid managed response; inspect the original request record.', {
+      method,
+      path,
+    })
+  }
+  return normalizeResponseBody<T>(body)
+}
+
 export const api = {
+  scoped: scopedRequest,
   serviceScope: () => new URL(API_BASE_URL, window.location.origin).toString(),
   postResponse: (path: string, body: unknown, signal: AbortSignal) =>
     requestResponse(path, { method: 'POST', body: JSON.stringify(body), signal }),

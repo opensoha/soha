@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { deletePod, getPodDetail, getPodMetrics, listPodEvents, listPods } from './api'
+import {
+  deletePod,
+  getPodDetail,
+  getPodMetrics,
+  getPodContainerConfiguration,
+  listPodEvents,
+  listPods,
+} from './api'
 
 const apiMocks = vi.hoisted(() => ({
   delete: vi.fn(),
@@ -52,6 +59,40 @@ describe('pod api', () => {
     )
   })
 
+  it('reads configuration only from the scoped Pod YAML without resolving Secret references', async () => {
+    apiMocks.get.mockResolvedValueOnce({
+      data: {
+        content: JSON.stringify({
+          kind: 'Pod',
+          metadata: { name: target.name, namespace: scope.namespace },
+          spec: {
+            containers: [
+              {
+                name: 'app',
+                env: [
+                  {
+                    name: 'PASSWORD',
+                    valueFrom: { secretKeyRef: { name: 'app-secret', key: 'password' } },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    })
+    const result = await getPodContainerConfiguration(target)
+    expect(result.containers[0].env[0].source).toMatchObject({
+      kind: 'Secret',
+      name: 'app-secret',
+      key: 'password',
+    })
+    expect(apiMocks.get).toHaveBeenCalledOnce()
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      '/clusters/cluster-a/workloads/pods/api%2Fpod-1/yaml?namespace=team%2Fa',
+    )
+  })
+
   it('deletes the record namespace and encodes the pod name', async () => {
     apiMocks.delete.mockResolvedValueOnce({ data: null })
 
@@ -66,5 +107,13 @@ describe('pod api', () => {
       deletePod({ scope: { clusterId: 'cluster-a', namespace: null }, name: 'api-pod' }),
     ).rejects.toThrow('A namespace is required')
     expect(apiMocks.delete).not.toHaveBeenCalled()
+  })
+
+  it('includes the expected UID in a guarded delete', async () => {
+    apiMocks.delete.mockResolvedValueOnce({ data: null })
+    await deletePod({ ...target, uid: 'pod/uid' })
+    expect(apiMocks.delete).toHaveBeenCalledWith(
+      '/clusters/cluster-a/workloads/pods/api%2Fpod-1?namespace=team%2Fa&expectedUid=pod%2Fuid',
+    )
   })
 })

@@ -54,14 +54,14 @@
     ]
   },
   "summary": {
-    "runtimePaths": 292,
-    "metadataPaths": 292,
-    "overlappingPaths": 292,
+    "runtimePaths": 297,
+    "metadataPaths": 297,
+    "overlappingPaths": 297,
     "runtimeOnlyPaths": 0,
     "metadataOnlyPaths": 0,
     "inlineJsxPaths": 0,
-    "lazyRouteLoads": 239,
-    "lazySourceModules": 225
+    "lazyRouteLoads": 244,
+    "lazySourceModules": 230
   },
   "paths": {
     "runtime": [
@@ -145,6 +145,7 @@
       "/configuration/hpas",
       "/configuration/hpas/:name",
       "/configuration/leases",
+      "/configuration/leases/:name",
       "/configuration/limitranges",
       "/configuration/limitranges/:name",
       "/configuration/mutatingwebhookconfigurations",
@@ -152,9 +153,11 @@
       "/configuration/poddisruptionbudgets",
       "/configuration/poddisruptionbudgets/:name",
       "/configuration/priorityclasses",
+      "/configuration/priorityclasses/:name",
       "/configuration/resourcequotas",
       "/configuration/resourcequotas/:name",
       "/configuration/runtimeclasses",
+      "/configuration/runtimeclasses/:name",
       "/configuration/secrets",
       "/configuration/secrets/:secretName",
       "/configuration/validatingwebhookconfigurations",
@@ -220,7 +223,9 @@
       "/network",
       "/network-access",
       "/network-access/access-grants",
+      "/network-access/content-transfers",
       "/network-access/devices",
+      "/network-access/endpoint-response",
       "/network-access/enrollments",
       "/network-access/gateways",
       "/network-access/mihomo-profiles",
@@ -439,6 +444,7 @@
       "/configuration/hpas",
       "/configuration/hpas/:name",
       "/configuration/leases",
+      "/configuration/leases/:name",
       "/configuration/limitranges",
       "/configuration/limitranges/:name",
       "/configuration/mutatingwebhookconfigurations",
@@ -446,9 +452,11 @@
       "/configuration/poddisruptionbudgets",
       "/configuration/poddisruptionbudgets/:name",
       "/configuration/priorityclasses",
+      "/configuration/priorityclasses/:name",
       "/configuration/resourcequotas",
       "/configuration/resourcequotas/:name",
       "/configuration/runtimeclasses",
+      "/configuration/runtimeclasses/:name",
       "/configuration/secrets",
       "/configuration/secrets/:secretName",
       "/configuration/validatingwebhookconfigurations",
@@ -514,7 +522,9 @@
       "/network",
       "/network-access",
       "/network-access/access-grants",
+      "/network-access/content-transfers",
       "/network-access/devices",
+      "/network-access/endpoint-response",
       "/network-access/enrollments",
       "/network-access/gateways",
       "/network-access/mihomo-profiles",
@@ -733,6 +743,7 @@
       "/configuration/hpas",
       "/configuration/hpas/:name",
       "/configuration/leases",
+      "/configuration/leases/:name",
       "/configuration/limitranges",
       "/configuration/limitranges/:name",
       "/configuration/mutatingwebhookconfigurations",
@@ -740,9 +751,11 @@
       "/configuration/poddisruptionbudgets",
       "/configuration/poddisruptionbudgets/:name",
       "/configuration/priorityclasses",
+      "/configuration/priorityclasses/:name",
       "/configuration/resourcequotas",
       "/configuration/resourcequotas/:name",
       "/configuration/runtimeclasses",
+      "/configuration/runtimeclasses/:name",
       "/configuration/secrets",
       "/configuration/secrets/:secretName",
       "/configuration/validatingwebhookconfigurations",
@@ -808,7 +821,9 @@
       "/network",
       "/network-access",
       "/network-access/access-grants",
+      "/network-access/content-transfers",
       "/network-access/devices",
+      "/network-access/endpoint-response",
       "/network-access/enrollments",
       "/network-access/gateways",
       "/network-access/mihomo-profiles",
@@ -1233,6 +1248,11 @@
         "source": "@/features/platform/configuration/hpas/list-page"
       },
       {
+        "exportName": "ConfigurationLeaseDetailPage",
+        "moduleExport": "ConfigurationLeaseDetailPage",
+        "source": "@/features/platform/configuration/leases/detail-page"
+      },
+      {
         "exportName": "ConfigurationLeasesPage",
         "moduleExport": "ConfigurationLeasesPage",
         "source": "@/features/platform/configuration/leases/list-page"
@@ -1268,6 +1288,11 @@
         "source": "@/features/platform/configuration/poddisruptionbudgets/list-page"
       },
       {
+        "exportName": "ConfigurationPriorityClassDetailPage",
+        "moduleExport": "ConfigurationPriorityClassDetailPage",
+        "source": "@/features/platform/configuration/priorityclasses/detail-page"
+      },
+      {
         "exportName": "ConfigurationPriorityClassesPage",
         "moduleExport": "ConfigurationPriorityClassesPage",
         "source": "@/features/platform/configuration/priorityclasses/list-page"
@@ -1281,6 +1306,11 @@
         "exportName": "ConfigurationResourceQuotasPage",
         "moduleExport": "ConfigurationResourceQuotasPage",
         "source": "@/features/platform/configuration/resourcequotas/list-page"
+      },
+      {
+        "exportName": "ConfigurationRuntimeClassDetailPage",
+        "moduleExport": "ConfigurationRuntimeClassDetailPage",
+        "source": "@/features/platform/configuration/runtimeclasses/detail-page"
       },
       {
         "exportName": "ConfigurationRuntimeClassesPage",
@@ -1596,6 +1626,16 @@
         "exportName": "MonitoringPage",
         "moduleExport": "MonitoringPage",
         "source": "@/features/observability/overview/page"
+      },
+      {
+        "exportName": "network-access-content-transfers:default",
+        "moduleExport": "default",
+        "source": "@/features/network-access/content-transfers/page"
+      },
+      {
+        "exportName": "network-access-endpoint-response:default",
+        "moduleExport": "default",
+        "source": "@/features/network-access/endpoint-response/page"
       },
       {
         "exportName": "network-access-nas-bindings:default",
@@ -2235,6 +2275,8 @@
       "@/features/identity/providers/list-page",
       "@/features/identity/software/page",
       "@/features/network-access/admission-settings-redirect",
+      "@/features/network-access/content-transfers/page",
+      "@/features/network-access/endpoint-response/page",
       "@/features/network-access/proxy-runtime/connections-page",
       "@/features/network-access/proxy-runtime/instances-page",
       "@/features/network-access/proxy-runtime/overview-page",
@@ -2279,6 +2321,7 @@
       "@/features/platform/configuration/configmaps/list-page",
       "@/features/platform/configuration/hpas/detail-page",
       "@/features/platform/configuration/hpas/list-page",
+      "@/features/platform/configuration/leases/detail-page",
       "@/features/platform/configuration/leases/list-page",
       "@/features/platform/configuration/limitranges/detail-page",
       "@/features/platform/configuration/limitranges/list-page",
@@ -2286,9 +2329,11 @@
       "@/features/platform/configuration/mutatingwebhookconfigurations/list-page",
       "@/features/platform/configuration/poddisruptionbudgets/detail-page",
       "@/features/platform/configuration/poddisruptionbudgets/list-page",
+      "@/features/platform/configuration/priorityclasses/detail-page",
       "@/features/platform/configuration/priorityclasses/list-page",
       "@/features/platform/configuration/resourcequotas/detail-page",
       "@/features/platform/configuration/resourcequotas/list-page",
+      "@/features/platform/configuration/runtimeclasses/detail-page",
       "@/features/platform/configuration/runtimeclasses/list-page",
       "@/features/platform/configuration/secrets/detail-page",
       "@/features/platform/configuration/secrets/list-page",
@@ -2468,6 +2513,12 @@
         "network-access-radius-services:default",
         "network-access-ssids:default"
       ],
+      "@/features/network-access/content-transfers/page": [
+        "network-access-content-transfers:default"
+      ],
+      "@/features/network-access/endpoint-response/page": [
+        "network-access-endpoint-response:default"
+      ],
       "@/features/network-access/proxy-runtime/connections-page": [
         "network-access-proxy-connections:default"
       ],
@@ -2542,6 +2593,7 @@
       "@/features/platform/configuration/configmaps/list-page": ["ConfigurationConfigMapsPage"],
       "@/features/platform/configuration/hpas/detail-page": ["ConfigurationHPADetailPage"],
       "@/features/platform/configuration/hpas/list-page": ["ConfigurationHPAPage"],
+      "@/features/platform/configuration/leases/detail-page": ["ConfigurationLeaseDetailPage"],
       "@/features/platform/configuration/leases/list-page": ["ConfigurationLeasesPage"],
       "@/features/platform/configuration/limitranges/detail-page": [
         "ConfigurationLimitRangeDetailPage"
@@ -2559,6 +2611,9 @@
       "@/features/platform/configuration/poddisruptionbudgets/list-page": [
         "ConfigurationPodDisruptionBudgetsPage"
       ],
+      "@/features/platform/configuration/priorityclasses/detail-page": [
+        "ConfigurationPriorityClassDetailPage"
+      ],
       "@/features/platform/configuration/priorityclasses/list-page": [
         "ConfigurationPriorityClassesPage"
       ],
@@ -2567,6 +2622,9 @@
       ],
       "@/features/platform/configuration/resourcequotas/list-page": [
         "ConfigurationResourceQuotasPage"
+      ],
+      "@/features/platform/configuration/runtimeclasses/detail-page": [
+        "ConfigurationRuntimeClassDetailPage"
       ],
       "@/features/platform/configuration/runtimeclasses/list-page": [
         "ConfigurationRuntimeClassesPage"
@@ -2701,5 +2759,5 @@
       "@/features/virtualization/virtual-machines/list-page": ["VirtualizationVmsPage"]
     }
   },
-  "generatedAt": "2026-10-19T15:48:23.079Z"
+  "generatedAt": "2026-11-05T16:13:12.469Z"
 }

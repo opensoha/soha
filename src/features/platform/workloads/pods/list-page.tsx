@@ -1,7 +1,7 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
+import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
 import {
   ManagementBatchBar,
-  ManagementIconButton,
   ManagementQueryField,
   ManagementTableToolbar,
 } from '@/components/management-list'
@@ -10,14 +10,10 @@ import { StatusTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
-import {
-  capabilityActionTooltip,
-  useClusterCapability,
-} from '@/features/platform/cluster-capabilities'
+import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { useRealtimeSessionDock } from '@/features/platform/session-dock'
 import { useKubernetesResourceStream } from '@/features/platform/shared/resource-stream'
 import { ResourceStreamStatus } from '@/features/platform/shared/resource-stream-status'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformBatchReceipt,
   platformBatchUnknown,
@@ -29,8 +25,6 @@ import {
   compareStrings,
   includesSearch,
   normalizeSearchKeyword,
-  parseCpuValue,
-  parseMemoryValue,
   parseReadyContainers,
 } from '@/features/platform/workloads-model'
 import '@/features/platform/workloads/styles.css'
@@ -39,14 +33,14 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds } from '@/utils/time'
-import { CodeOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons'
+import { CodeOutlined, DeleteOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { TableColumnsType } from 'antd'
+import type { MenuProps, TableColumnsType } from 'antd'
 import {
-  App,
+  Alert,
   Button,
+  Modal,
   Popconfirm,
-  Progress,
   Select,
   Space,
   Switch,
@@ -54,9 +48,8 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
-import type { CSSProperties } from 'react'
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { workloadKeys } from '../shared/keys'
 import {
   WorkloadQueryPanel,
@@ -67,9 +60,17 @@ import {
 } from '../shared/list-controls'
 import { podMutations } from './mutations'
 import { podQueries } from './queries'
-import { podTargetFromRecord, type Pod } from './types'
+import { podTargetFromRecord, type Pod, type PodTarget } from './types'
+import { PodContainersCell } from './pod-containers-cell'
+import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
+import { getPodResourceAmount, podResourceMinimumWidth, PodResourceCell } from './pod-resource-cell'
+import { podContentWidths } from './pod-column-widths'
 
 const { Link, Text } = Typography
+
+function podRowKey(pod: { namespace?: string | null; name: string; uid?: string }) {
+  return `${pod.namespace}/${pod.name}${pod.uid ? `/${pod.uid}` : ''}`
+}
 
 /* ─── Pods ─── */
 
@@ -80,168 +81,6 @@ function podSorter(compareFn: (left: Pod, right: Pod) => number) {
     if (!right) return 1
     return compareFn(left, right)
   }
-}
-
-function renderPodReadyCell(readyContainers: string, readyLabel: string) {
-  const ready = parseReadyContainers(readyContainers)
-  const readyHealthy = ready.total > 0 && ready.ready >= ready.total
-
-  return (
-    <Tag variant="filled" color={readyHealthy ? 'success' : 'warning'}>
-      {`${readyLabel} ${readyContainers || '-'}`}
-    </Tag>
-  )
-}
-
-function formatPodResourceValue(resource: 'cpu' | 'memory', value?: string) {
-  const amount = getPodResourceAmount(resource, value)
-  if (!Number.isFinite(amount) || amount < 0) return '—'
-  if (resource === 'cpu') return `${Number((amount * 1000).toFixed(2))}m`
-  const [unit, divisor] =
-    amount >= 1024 ** 3
-      ? ['Gi', 1024 ** 3]
-      : amount >= 1024 ** 2
-        ? ['Mi', 1024 ** 2]
-        : amount >= 1024
-          ? ['Ki', 1024]
-          : ['B', 1]
-  return `${Number((amount / Number(divisor)).toFixed(2))}${unit}`
-}
-
-function getPodResourceAmount(resource: 'cpu' | 'memory', value?: string) {
-  return resource === 'cpu' ? parseCpuValue(value) : parseMemoryValue(value)
-}
-
-function renderPodResourceLimitComparison(
-  record: Pod,
-  resource: 'cpu' | 'memory',
-  localeCode: 'zh_CN' | 'en_US',
-) {
-  const usageValue = resource === 'cpu' ? record.cpu : record.memory
-  const requestValue = record.requests?.[resource]
-  const limitValue = record.limits?.[resource]
-  const usageAmount = getPodResourceAmount(resource, usageValue)
-  const requestAmount = getPodResourceAmount(resource, requestValue)
-  const limitAmount = getPodResourceAmount(resource, limitValue)
-  const hasUsage = Number.isFinite(usageAmount) && usageAmount >= 0
-  const hasRequest = Number.isFinite(requestAmount) && requestAmount >= 0
-  const hasLimit = Number.isFinite(limitAmount) && limitAmount > 0
-  const baselineAmount = hasLimit ? limitAmount : hasRequest ? requestAmount : 0
-  const hasBaseline = baselineAmount > 0
-  const percent = hasUsage && hasBaseline ? Math.min(100, (usageAmount / baselineAmount) * 100) : 0
-  const requestPercent =
-    hasRequest && hasBaseline ? Math.min(100, (requestAmount / baselineAmount) * 100) : null
-  const label = resource === 'cpu' ? 'CPU' : localeCode === 'zh_CN' ? '内存' : 'Memory'
-  const usageLabel = formatPodResourceValue(resource, usageValue)
-  const unsetLabel = localeCode === 'zh_CN' ? '未设置' : 'Not set'
-  const missingLabel = localeCode === 'zh_CN' ? '暂无指标' : 'No metrics'
-  const requestLabel = hasRequest ? formatPodResourceValue(resource, requestValue) : unsetLabel
-  const limitLabel = hasLimit ? formatPodResourceValue(resource, limitValue) : unsetLabel
-  const usageText = localeCode === 'zh_CN' ? '使用' : 'Usage'
-  const requestText = localeCode === 'zh_CN' ? '请求' : 'Request'
-  const limitText = localeCode === 'zh_CN' ? '限制' : 'Limit'
-  const tone =
-    !hasUsage || !hasBaseline
-      ? 'unknown'
-      : hasLimit && usageAmount / limitAmount >= 0.9
-        ? 'danger'
-        : hasRequest && usageAmount > requestAmount
-          ? 'warning'
-          : 'success'
-  const statusText =
-    tone === 'danger'
-      ? localeCode === 'zh_CN'
-        ? '接近或达到限制'
-        : 'Near or above limit'
-      : tone === 'warning'
-        ? localeCode === 'zh_CN'
-          ? '超过请求'
-          : 'Above request'
-        : tone === 'success'
-          ? localeCode === 'zh_CN'
-            ? hasRequest
-              ? '请求以内'
-              : '低于限制的 90%'
-            : hasRequest
-              ? 'Within request'
-              : 'Below 90% of limit'
-          : ''
-  const baselineText = hasLimit
-    ? ''
-    : hasBaseline
-      ? localeCode === 'zh_CN'
-        ? '以请求为比例基准'
-        : 'Relative to request'
-      : localeCode === 'zh_CN'
-        ? '无比例基准'
-        : 'No comparison baseline'
-  const tooltipTitle = [
-    label,
-    `${usageText} ${hasUsage ? usageLabel : missingLabel}`,
-    `${requestText} ${requestLabel}`,
-    `${limitText} ${limitLabel}`,
-    baselineText,
-    statusText,
-  ]
-    .filter(Boolean)
-    .join(' · ')
-  const markerStyle = {
-    '--soha-pod-resource-usage-percent': `${percent}%`,
-    '--soha-pod-resource-request-percent': `${requestPercent ?? 0}%`,
-  } as CSSProperties
-
-  return (
-    <Tooltip title={tooltipTitle} placement="topLeft" trigger={['hover', 'focus', 'click']}>
-      <button
-        type="button"
-        className={`soha-pod-resource-limit-cell is-${tone}`}
-        aria-label={`${record.name} · ${tooltipTitle}`}
-      >
-        <div className="soha-pod-resource-progress-wrap" style={markerStyle}>
-          <Progress
-            aria-hidden
-            percent={percent}
-            showInfo={false}
-            size={['100%', 24]}
-            strokeColor="var(--soha-pod-resource-fill)"
-            strokeLinecap="butt"
-            railColor="var(--soha-fill-medium)"
-            styles={{
-              root: { display: 'block', margin: 0, lineHeight: 1 },
-              rail: {
-                borderRadius: 'calc(var(--soha-radius-control) / 2)',
-                ...(!hasLimit
-                  ? {
-                      background:
-                        'linear-gradient(to right, var(--soha-fill-medium) 70%, transparent)',
-                    }
-                  : {}),
-              },
-              track: { borderRadius: 'calc(var(--soha-radius-control) / 2)', transition: 'none' },
-            }}
-          />
-          <span className="soha-pod-resource-value" aria-hidden>
-            {usageLabel}
-          </span>
-          <span className="soha-pod-resource-value is-on-fill" aria-hidden>
-            {usageLabel}
-          </span>
-          {requestPercent === null ? null : (
-            <span
-              className={`soha-pod-resource-marker is-request${hasUsage && usageAmount >= requestAmount ? ' is-passed' : ''}`}
-              aria-hidden
-            />
-          )}
-          {hasLimit ? (
-            <span
-              className={`soha-pod-resource-marker is-limit${hasUsage && usageAmount >= limitAmount ? ' is-passed' : ''}`}
-              aria-hidden
-            />
-          ) : null}
-        </div>
-      </button>
-    </Tooltip>
-  )
 }
 
 function renderPodNameCell(record: Pod, onClick: () => void) {
@@ -265,14 +104,15 @@ function renderPodNameCell(record: Pod, onClick: () => void) {
 
 export function WorkloadsPodsPage() {
   const { t, localeCode } = useI18n()
-  const { message, modal } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
-  const permissionSnapshot = permissionSnapshotQuery.data?.data
-  const canDeletePods = hasPermission(permissionSnapshot, 'platform.pods.delete')
+  const permissionSnapshot = readableQueryData(permissionSnapshotQuery)?.data
+  const canDeletePods =
+    !permissionSnapshotQuery.isError && hasPermission(permissionSnapshot, 'platform.pods.delete')
   const canExecPods = hasPermission(permissionSnapshot, 'platform.pods.exec')
   const canViewPodLogs = hasPermission(permissionSnapshot, 'platform.pods.logs')
+  const canViewNodes = hasPermission(permissionSnapshot, 'platform.nodes.view')
   const { clusterId, namespace } = usePlatformScopeStore()
   const { openSession } = useRealtimeSessionDock()
   const podDeleteCapability = useClusterCapability('workload.mutations', localeCode)
@@ -286,13 +126,40 @@ export function WorkloadsPodsPage() {
   const [restartFilter, setRestartFilter] = useState('all')
   const [pvcFilter, setPvcFilter] = useState('all')
   const [nodeFilter, setNodeFilter] = useState('all')
+  const selectionScope = useMemo(
+    () => ({
+      clusterId,
+      namespace,
+      searchKeyword,
+      phaseFilter,
+      restartFilter,
+      pvcFilter,
+      nodeFilter,
+    }),
+    [clusterId, namespace, searchKeyword, phaseFilter, restartFilter, pvcFilter, nodeFilter],
+  )
+  const activeSelectionScope = useRef(selectionScope)
+  activeSelectionScope.current = selectionScope
   const [selectedPodKeys, setSelectedPodKeys] = useState<string[]>([])
+  const [rowDeleteDraft, setRowDeleteDraft] = useState<{
+    scope: typeof selectionScope
+    target: PodTarget
+  } | null>(null)
+  const [batchDeleteDraft, setBatchDeleteDraft] = useState<{
+    scope: typeof selectionScope
+    targets: PodTarget[]
+  } | null>(null)
   const { densityButton, tableSize } = useWorkloadTableDensity(localeCode)
 
   useEffect(() => {
     setNodeFilter('all')
-    setSelectedPodKeys([])
   }, [clusterId])
+
+  useEffect(() => {
+    setSelectedPodKeys([])
+    setRowDeleteDraft(null)
+    setBatchDeleteDraft(null)
+  }, [selectionScope])
 
   const listScope = toScopeKey(clusterId, namespace)
   const podsQueryOptions = podQueries.list(listScope)
@@ -316,6 +183,10 @@ export function WorkloadsPodsPage() {
   const isLoading = podsQuery.isLoading
 
   const pods = visiblePodsQueryData ?? []
+  const resourceColumnWidths = useMemo(
+    () => podContentWidths(pods, localeCode === 'zh_CN'),
+    [pods, localeCode],
+  )
   const normalizedKeyword = normalizeSearchKeyword(searchKeyword)
   useAIPageContext({
     sourceWorkbench: 'platform',
@@ -365,12 +236,20 @@ export function WorkloadsPodsPage() {
       }),
     [filteredPods],
   )
+
+  useEffect(() => {
+    const currentKeys = new Set((visiblePodsQueryData ?? []).map(podRowKey))
+    setSelectedPodKeys((keys) => {
+      const retained = keys.filter((key) => currentKeys.has(key))
+      return retained.length === keys.length ? keys : retained
+    })
+  }, [visiblePodsQueryData])
   const selectedPods = useMemo(
-    () => pods.filter((item) => selectedPodKeys.includes(`${item.namespace}/${item.name}`)),
-    [pods, selectedPodKeys],
+    () => filteredPods.filter((item) => selectedPodKeys.includes(podRowKey(item))),
+    [filteredPods, selectedPodKeys],
   )
   const hasSelectedPodsWithoutDeleteAction = selectedPods.some(
-    (item) => !hasAllowedAction(item.allowedActions, 'delete'),
+    (item) => !item.uid || !hasAllowedAction(item.allowedActions, 'delete'),
   )
   const podDeleteDisabled =
     podDeleteCapability.isLoading ||
@@ -379,7 +258,7 @@ export function WorkloadsPodsPage() {
   const canShowPodDeleteActions =
     canDeletePods &&
     !podDeleteDisabled &&
-    pods.some((item) => hasAllowedAction(item.allowedActions, 'delete'))
+    pods.some((item) => item.uid && hasAllowedAction(item.allowedActions, 'delete'))
   const podDeleteDisabledReason = podDeleteDisabled
     ? podDeleteCapability.isLoading
       ? localeCode === 'zh_CN'
@@ -392,6 +271,7 @@ export function WorkloadsPodsPage() {
     : ''
   const canDeleteSelectedPods =
     !!clusterId &&
+    canDeletePods &&
     selectedPods.length > 0 &&
     !hasSelectedPodsWithoutDeleteAction &&
     !podDeleteDisabled
@@ -420,6 +300,32 @@ export function WorkloadsPodsPage() {
       platformBatchReceipt(results, variables.targets.map(platformResourceTarget), localeCode),
   })
   const platformWriteBlocked = deletePodMutation.blocked || batchDeletePodsMutation.blocked
+  const rowDeleteUnavailable = podDeleteDisabled || podsQuery.isError
+  const rowDeleteTarget =
+    rowDeleteDraft?.scope === selectionScope ? rowDeleteDraft.target : undefined
+  const rowDeleteOpen = Boolean(rowDeleteTarget)
+  const rowDeleteAllowed = Boolean(
+    rowDeleteTarget?.uid &&
+    canDeletePods &&
+    !rowDeleteUnavailable &&
+    pods.some(
+      (item) =>
+        item.namespace === rowDeleteTarget.scope.namespace &&
+        item.name === rowDeleteTarget.name &&
+        item.uid === rowDeleteTarget.uid &&
+        hasAllowedAction(item.allowedActions, 'delete'),
+    ),
+  )
+  const batchDeleteOpen = batchDeleteDraft?.scope === selectionScope
+  const selectedPodIdentity = new Set(selectedPods.map(podRowKey))
+  const canConfirmBatchDelete =
+    batchDeleteOpen &&
+    canDeleteSelectedPods &&
+    !platformWriteBlocked &&
+    batchDeleteDraft.targets.length === selectedPods.length &&
+    batchDeleteDraft.targets.every((target) =>
+      selectedPodIdentity.has(podRowKey({ ...target, namespace: target.scope.namespace })),
+    )
 
   const handleRefresh = async () => {
     if (!clusterId || manualRefreshPending) {
@@ -433,7 +339,7 @@ export function WorkloadsPodsPage() {
     }
   }
 
-  const columns: TableColumnsType<Pod> = [
+  const baseColumns: TableColumnsType<Pod> = [
     {
       title: 'Pod',
       dataIndex: 'name',
@@ -458,11 +364,7 @@ export function WorkloadsPodsPage() {
       dataIndex: 'namespace',
       width: 132,
       sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)),
-      render: (value: string) => (
-        <Tag variant="filled" color="blue" className="soha-pod-table-namespace-tag">
-          {value || '-'}
-        </Tag>
-      ),
+      render: (value: string) => <NamespaceScopeTag namespace={value} />,
     },
     {
       title: 'IP',
@@ -477,9 +379,25 @@ export function WorkloadsPodsPage() {
       width: 180,
       ellipsis: { showTitle: false },
       sorter: podSorter((left, right) => compareStrings(left.nodeName, right.nodeName)),
-      render: (value?: string) => (
-        <TableCellText className="soha-pod-table-node-text" value={value} />
-      ),
+      render: (value?: string) => {
+        const label = <TableCellText className="soha-pod-table-node-text" value={value} />
+        if (!value || value === '-' || !canViewNodes) return label
+        return (
+          <RouterLink
+            className="soha-pod-table-node-link"
+            to={`/cluster-resources/nodes/${encodeURIComponent(value)}?clusterId=${encodeURIComponent(clusterId || '')}`}
+          >
+            {label}
+          </RouterLink>
+        )
+      },
+    },
+    {
+      title: 'QoS',
+      dataIndex: 'qosClass',
+      width: 112,
+      sorter: podSorter((left, right) => compareStrings(left.qosClass, right.qosClass)),
+      render: (value?: string) => value || '—',
     },
     {
       title: localeCode === 'zh_CN' ? '运行时间' : 'Age',
@@ -498,15 +416,20 @@ export function WorkloadsPodsPage() {
     {
       title: localeCode === 'zh_CN' ? '容器' : 'Containers',
       dataIndex: 'readyContainers',
-      width: 120,
+      width: 160,
       sorter: podSorter((left, right) => {
         const leftReady = parseReadyContainers(left.readyContainers)
         const rightReady = parseReadyContainers(right.readyContainers)
         if (leftReady.total !== rightReady.total) return leftReady.total - rightReady.total
         return leftReady.ready - rightReady.ready
       }),
-      render: (readyContainers: string) =>
-        renderPodReadyCell(readyContainers, localeCode === 'zh_CN' ? '就绪' : 'Ready'),
+      render: (readyContainers: string, record: Pod) => (
+        <PodContainersCell
+          readyContainers={readyContainers}
+          statuses={record.containerStatuses}
+          zh={localeCode === 'zh_CN'}
+        />
+      ),
     },
     {
       title: localeCode === 'zh_CN' ? '重启' : 'Restarts',
@@ -522,32 +445,34 @@ export function WorkloadsPodsPage() {
     {
       title: 'CPU',
       key: 'cpu-resource',
-      width: 150,
+      width: resourceColumnWidths.cpu,
       sorter: podSorter(
         (left, right) =>
           getPodResourceAmount('cpu', left.cpu) - getPodResourceAmount('cpu', right.cpu),
       ),
-      render: (_: unknown, record: Pod) =>
-        renderPodResourceLimitComparison(record, 'cpu', localeCode),
+      render: (_: unknown, record: Pod) => (
+        <PodResourceCell pod={record} resource="cpu" localeCode={localeCode} />
+      ),
     },
     {
       title: localeCode === 'zh_CN' ? '内存' : 'Memory',
       key: 'memory-resource',
-      width: 150,
+      width: resourceColumnWidths.memory,
       sorter: podSorter(
         (left, right) =>
           getPodResourceAmount('memory', left.memory) -
           getPodResourceAmount('memory', right.memory),
       ),
-      render: (_: unknown, record: Pod) =>
-        renderPodResourceLimitComparison(record, 'memory', localeCode),
+      render: (_: unknown, record: Pod) => (
+        <PodResourceCell pod={record} resource="memory" localeCode={localeCode} />
+      ),
     },
     {
       fixed: 'right',
       title: localeCode === 'zh_CN' ? '操作' : 'Actions',
       dataIndex: 'name',
       key: 'actions',
-      width: 116,
+      width: 64,
       align: 'center',
       className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column`,
       onHeaderCell: () => ({
@@ -557,7 +482,8 @@ export function WorkloadsPodsPage() {
       render: (_value: string, record: Pod) => {
         const canOpenLogs = canViewPodLogs && hasAllowedAction(record.allowedActions, 'logs')
         const canOpenTerminal = canExecPods && hasAllowedAction(record.allowedActions, 'exec')
-        const canDeletePod = canDeletePods && hasAllowedAction(record.allowedActions, 'delete')
+        const canDeletePod =
+          canDeletePods && Boolean(record.uid) && hasAllowedAction(record.allowedActions, 'delete')
         const logsDisabled = !clusterId || podLogsCapability.isLoading || podLogsCapability.disabled
         const terminalDisabled =
           !clusterId ||
@@ -568,87 +494,135 @@ export function WorkloadsPodsPage() {
         const terminalLabel = localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'
         const deleteLabel = localeCode === 'zh_CN' ? '删除 Pod' : 'Delete pod'
 
+        const actionLabel = (label: string, reason?: string) => (
+          <span className="soha-pod-action-menu-label">
+            <span>{label}</span>
+            {reason ? <span className="soha-pod-action-menu-reason">{reason}</span> : null}
+          </span>
+        )
+        const items: MenuProps['items'] = []
+        const actions: Record<string, () => void> = {}
+        if (canOpenLogs) {
+          items.push({
+            key: 'logs',
+            label: actionLabel(logLabel, podLogsCapability.reason),
+            icon: <FileTextOutlined aria-hidden />,
+            disabled: logsDisabled,
+          })
+          actions.logs = () => {
+            if (!clusterId) return
+            openSession({
+              clusterId,
+              kind: 'logs',
+              namespace: record.namespace,
+              podName: record.name,
+              podUid: record.uid,
+              streamingDisabledReason:
+                podLogsCapability.status === 'partial' ? podLogsCapability.reason : undefined,
+            })
+          }
+        }
+        if (canOpenTerminal) {
+          items.push({
+            key: 'terminal',
+            label: actionLabel(terminalLabel, podExecCapability.reason),
+            icon: <CodeOutlined aria-hidden />,
+            disabled: terminalDisabled,
+          })
+          actions.terminal = () => {
+            if (!clusterId) return
+            openSession({
+              clusterId,
+              kind: 'terminal',
+              namespace: record.namespace,
+              podName: record.name,
+              podUid: record.uid,
+              shell: '/bin/sh',
+            })
+          }
+        }
+        if (canDeletePod) {
+          if (items.length) items.push({ type: 'divider', key: 'mutation-divider' })
+          items.push({
+            key: 'delete',
+            label: actionLabel(deleteLabel, podDeleteCapability.reason),
+            danger: true,
+            disabled: platformWriteBlocked || rowDeleteUnavailable,
+            icon: deletePodMutation.isPending ? (
+              <LoadingOutlined aria-hidden />
+            ) : (
+              <DeleteOutlined aria-hidden />
+            ),
+          })
+          actions.delete = () => {
+            if (!clusterId || !canDeletePod || rowDeleteUnavailable || platformWriteBlocked) return
+            deletePodMutation.reset()
+            setRowDeleteDraft({
+              scope: selectionScope,
+              target: podTargetFromRecord(clusterId, record),
+            })
+          }
+        }
         return (
-          <Space size={4} className="soha-deployment-action-cell">
-            {canOpenLogs ? (
-              <ManagementIconButton
-                aria-label={logLabel}
-                disabled={logsDisabled}
-                icon={<FileTextOutlined />}
-                tooltip={capabilityActionTooltip(logLabel, podLogsCapability)}
-                onClick={() => {
-                  if (!clusterId) return
-                  openSession({
-                    clusterId,
-                    kind: 'logs',
-                    namespace: record.namespace,
-                    podName: record.name,
-                    podUid: record.uid,
-                    streamingDisabledReason:
-                      podLogsCapability.status === 'partial' ? podLogsCapability.reason : undefined,
-                  })
-                }}
-              />
-            ) : null}
-            {canOpenTerminal ? (
-              <ManagementIconButton
-                aria-label={terminalLabel}
-                disabled={terminalDisabled}
-                icon={<CodeOutlined />}
-                tooltip={capabilityActionTooltip(terminalLabel, podExecCapability)}
-                onClick={() => {
-                  if (!clusterId) return
-                  openSession({
-                    clusterId,
-                    kind: 'terminal',
-                    namespace: record.namespace,
-                    podName: record.name,
-                    podUid: record.uid,
-                    shell: '/bin/sh',
-                  })
-                }}
-              />
-            ) : null}
-            {canDeletePod ? (
-              <ManagementIconButton
-                danger
-                aria-label={deleteLabel}
-                disabled={platformWriteBlocked || podDeleteDisabled}
-                icon={<DeleteOutlined />}
-                loading={deletePodMutation.isPending}
-                tooltip={capabilityActionTooltip(deleteLabel, podDeleteCapability)}
-                onClick={() =>
-                  modal.confirm({
-                    title:
-                      localeCode === 'zh_CN'
-                        ? `确认删除 Pod ${record.name}？`
-                        : `Delete pod ${record.name}?`,
-                    content:
-                      localeCode === 'zh_CN'
-                        ? '独立 Pod 会直接消失；受控制器管理的 Pod 可能会自动创建替代实例。'
-                        : 'Standalone pods are removed. A controller-managed pod may be replaced automatically.',
-                    okText: localeCode === 'zh_CN' ? '删除' : 'Delete',
-                    cancelText: localeCode === 'zh_CN' ? '取消' : 'Cancel',
-                    okButtonProps: { danger: true },
-                    onOk: async () => {
-                      try {
-                        await deletePodMutation.mutateAsync(podTargetFromRecord(clusterId, record))
-                        void message.success(localeCode === 'zh_CN' ? 'Pod 已删除' : 'Pod deleted')
-                        void podsQuery.refetch()
-                      } catch (error) {
-                        void message.error(error instanceof Error ? error.message : String(error))
-                        throw error
-                      }
-                    },
-                  })
-                }
-              />
-            ) : null}
-          </Space>
+          <KubernetesResourceActionsMenu
+            resourceLabel="Pod"
+            name={record.name}
+            localeCode={localeCode}
+            items={items}
+            onSelect={(key) => actions[key]?.()}
+          />
         )
       },
     },
   ]
+
+  const columnOrder = [
+    'name',
+    'namespace',
+    'phase',
+    'readyContainers',
+    'restarts',
+    'cpu-resource',
+    'memory-resource',
+    'nodeName',
+    'ageSeconds',
+    'podIp',
+    'qosClass',
+    'actions',
+  ]
+  const fittedWidths: Record<string, number> = resourceColumnWidths
+  const compactWidths: Record<string, number> = {
+    phase: 88,
+    ageSeconds: 88,
+    qosClass: 96,
+    actions: 48,
+  }
+  const columns = baseColumns
+    .map((column) => {
+      const key = String(column.key ?? ('dataIndex' in column ? column.dataIndex : ''))
+      const widthKey = key.replace('-resource', '')
+      const width = fittedWidths[widthKey] ?? compactWidths[key] ?? column.width
+      const minWidth =
+        key === 'name'
+          ? 240
+          : key.endsWith('-resource')
+            ? podResourceMinimumWidth(widthKey as 'cpu' | 'memory', pods)
+            : key === 'readyContainers'
+              ? fittedWidths.readyContainers
+              : key === 'namespace' || key === 'podIp'
+                ? 96
+                : key === 'nodeName'
+                  ? 128
+                  : 64
+      return {
+        ...column,
+        key,
+        width,
+        minWidth,
+        fixed: column.fixed,
+      }
+    })
+    .sort((left, right) => columnOrder.indexOf(left.key) - columnOrder.indexOf(right.key))
 
   const podQueryPanel = (
     <WorkloadQueryPanel
@@ -761,8 +735,8 @@ export function WorkloadsPodsPage() {
             <Popconfirm
               title={
                 localeCode === 'zh_CN'
-                  ? `确认删除 ${selectedPods.length} 个 Pod？`
-                  : `Delete ${selectedPods.length} pods?`
+                  ? `确认删除 ${batchDeleteDraft?.targets.length ?? selectedPods.length} 个 Pod？`
+                  : `Delete ${batchDeleteDraft?.targets.length ?? selectedPods.length} pods?`
               }
               description={
                 localeCode === 'zh_CN'
@@ -772,33 +746,47 @@ export function WorkloadsPodsPage() {
               okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
               cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
               okButtonProps={{
-                disabled: platformWriteBlocked,
+                disabled: !canConfirmBatchDelete,
                 danger: true,
                 loading: batchDeletePodsMutation.isPending,
               }}
               placement="topRight"
-              disabled={!canDeleteSelectedPods}
-              onConfirm={() =>
-                batchDeletePodsMutation.mutate(
-                  {
+              open={batchDeleteOpen}
+              onOpenChange={(open) => {
+                if (!open) setBatchDeleteDraft(null)
+                else if (canDeleteSelectedPods && !platformWriteBlocked)
+                  setBatchDeleteDraft({
+                    scope: selectionScope,
                     targets: selectedPods.map((item) => podTargetFromRecord(clusterId, item)),
-                  },
+                  })
+              }}
+              onConfirm={() => {
+                if (!canConfirmBatchDelete) return
+                const { scope, targets } = batchDeleteDraft
+                batchDeletePodsMutation.mutate(
+                  { targets },
                   {
                     onSuccess: (results, variables) => {
-                      setSelectedPodKeys(
-                        variables.targets
-                          .filter((_target, index) => results[index].status === 'rejected')
-                          .map((target) => `${target.scope.namespace}/${target.name}`),
+                      if (activeSelectionScope.current !== scope) return
+                      const removedKeys = new Set(
+                        variables.targets.flatMap((target, index) =>
+                          results[index].status === 'fulfilled'
+                            ? [podRowKey({ ...target, namespace: target.scope.namespace })]
+                            : [],
+                        ),
+                      )
+                      setSelectedPodKeys((current) =>
+                        current.filter((key) => !removedKeys.has(key)),
                       )
                     },
                   },
                 )
-              }
+              }}
             >
               <Button
                 autoInsertSpace={false}
                 danger
-                disabled={!canDeleteSelectedPods}
+                disabled={!canDeleteSelectedPods || platformWriteBlocked}
                 loading={batchDeletePodsMutation.isPending}
                 size="small"
                 variant="outlined"
@@ -838,6 +826,8 @@ export function WorkloadsPodsPage() {
         />
       </div>
       <ResourceStreamStatus
+        refreshing={podsQuery.isFetching}
+        refreshFailed={podsQuery.isError}
         status={podStream.status}
         lastEventAt={podStream.lastEventAt}
         localeCode={localeCode}
@@ -854,11 +844,21 @@ export function WorkloadsPodsPage() {
 
   return (
     <div className="soha-page">
-      {deletePodMutation.feedback}
+      {!rowDeleteOpen && deletePodMutation.feedback}
       {batchDeletePodsMutation.feedback}
 
       {podQueryPanel}
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'pods'}
+        resourceLabel={'Pods'}
+        allRows={pods}
+        filterKey={JSON.stringify([
+          normalizedKeyword,
+          phaseFilter,
+          restartFilter,
+          pvcFilter,
+          nodeFilter,
+        ])}
         error={podsQuery.isEnabled === false ? null : podsQuery.error}
         hasReadData={podsQuery.data !== undefined}
         onRetry={podsQuery.isEnabled === false ? undefined : () => podsQuery.refetch()}
@@ -869,7 +869,7 @@ export function WorkloadsPodsPage() {
         headerExtra={podToolbarExtra}
         columns={columns}
         dataSource={orderedPods}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
+        rowKey={podRowKey}
         onRow={(record: Pod) => ({
           'data-ai-context': encodeAIContextForElement({
             sourceWorkbench: 'platform',
@@ -901,21 +901,72 @@ export function WorkloadsPodsPage() {
             totalCount={pods.length}
           />
         }
-        pageSize={K8S_TABLE_PAGE_SIZE}
         tableSize={tableSize}
-        scroll={{ x: 1540 }}
-        viewportScroll
-        selectCurrentPageOnly
+        scroll={{ scrollToFirstRowOnChange: false }}
         rowSelection={
           canShowPodDeleteActions
             ? {
                 columnWidth: 44,
                 selectedRowKeys: selectedPodKeys,
                 onChange: (selectedRowKeys: string[]) => setSelectedPodKeys(selectedRowKeys),
+                getTitleCheckboxProps: () => ({
+                  'aria-label':
+                    localeCode === 'zh_CN'
+                      ? `选择全部匹配的 ${orderedPods.length} 个 Pod`
+                      : `Select all ${orderedPods.length} matching Pods`,
+                  title:
+                    localeCode === 'zh_CN'
+                      ? `选择全部匹配的 ${orderedPods.length} 个 Pod`
+                      : `Select all ${orderedPods.length} matching Pods`,
+                }),
               }
             : undefined
         }
       />
+      <Modal
+        destroyOnHidden
+        open={rowDeleteOpen}
+        title={
+          localeCode === 'zh_CN'
+            ? `确认删除 Pod ${rowDeleteDraft?.target.name ?? ''}？`
+            : `Delete pod ${rowDeleteDraft?.target.name ?? ''}?`
+        }
+        okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+        cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+        confirmLoading={deletePodMutation.isPending}
+        okButtonProps={{ danger: true, disabled: !rowDeleteAllowed || platformWriteBlocked }}
+        cancelButtonProps={{ disabled: deletePodMutation.isPending }}
+        onCancel={() => {
+          if (!deletePodMutation.isPending) setRowDeleteDraft(null)
+        }}
+        onOk={() => {
+          if (!rowDeleteDraft || !rowDeleteAllowed || platformWriteBlocked) return
+          deletePodMutation.mutate(rowDeleteDraft.target, {
+            onSuccess: () =>
+              setRowDeleteDraft((current) => (current === rowDeleteDraft ? null : current)),
+          })
+        }}
+      >
+        {rowDeleteDraft && <p>{platformResourceTarget(rowDeleteDraft.target)}</p>}
+        <p>
+          {localeCode === 'zh_CN'
+            ? '独立 Pod 会直接消失；受控制器管理的 Pod 可能会自动创建替代实例。'
+            : 'Standalone pods are removed. A controller-managed pod may be replaced automatically.'}
+        </p>
+        {rowDeleteOpen && !rowDeleteAllowed && (
+          <Alert
+            showIcon
+            type="warning"
+            title={
+              podDeleteDisabledReason ||
+              (localeCode === 'zh_CN'
+                ? '资源或操作权限已变化，请关闭后重新选择。'
+                : 'Resource or permission changed. Close and select again.')
+            }
+          />
+        )}
+        {deletePodMutation.feedback}
+      </Modal>
     </div>
   )
 }

@@ -5,8 +5,9 @@ import {
   hasNamespacedWorkloadScope,
   hasWorkloadCluster,
 } from '@/features/platform/workloads/shared/scope'
-import { getCronJobDetail, listCronJobEvents, listCronJobs } from './api'
+import { getCronJobDetail, getCronJobConfiguration, listCronJobEvents, listCronJobs } from './api'
 import type { CronJob, CronJobDetail } from './types'
+import { cronJobKeys } from './keys'
 
 function target(scope: ScopeKey, name: string) {
   return { scope, name }
@@ -17,6 +18,12 @@ function hasCronJobReference(scope: ScopeKey, name: string) {
 }
 
 export const cronJobQueries = {
+  configuration: (scope: ScopeKey, name: string) =>
+    queryOptions({
+      queryKey: cronJobKeys.configuration(scope, name),
+      queryFn: () => getCronJobConfiguration(target(scope, name)),
+      enabled: hasCronJobReference(scope, name),
+    }),
   list: (scope: ScopeKey) =>
     queryOptions<CronJob[]>({
       queryKey: workloadKeys.list('cronjobs', scope),

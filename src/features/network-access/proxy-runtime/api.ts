@@ -1,7 +1,7 @@
 import type {
   ApiResponse,
   NetworkProxyCloseCommandEnvelope,
-  NetworkProxyConfigurationInput,
+  NetworkProxyConfigurationPatchInput,
   NetworkProxyConnectionsEnvelope,
   NetworkProxyEngine,
   NetworkProxyInstance,
@@ -39,7 +39,7 @@ export async function createInstance(
 
 export async function updateConfiguration(
   id: string,
-  input: NetworkProxyConfigurationInput,
+  input: NetworkProxyConfigurationPatchInput,
 ): Promise<NetworkProxyInstance> {
   const response = await api.put<ApiResponse<NetworkProxyInstance>>(
     `${instancePath(id)}/configuration`,
@@ -75,6 +75,35 @@ export async function createEnrollment(id: string): Promise<NetworkRuntimeEnroll
       subjectId: id,
       ttlSeconds: 600,
     },
+  )
+  return response.data
+}
+
+export async function getCloseCommand(
+  id: string,
+  commandId: string,
+): Promise<NetworkProxyCloseCommandEnvelope> {
+  return api.get<NetworkProxyCloseCommandEnvelope>(
+    `${instancePath(id)}/close-commands/${encodeURIComponent(commandId)}`,
+  )
+}
+
+export async function getConfigurationHistory(
+  id: string,
+): Promise<import('@opensoha/contracts/gen/ts/sohaapi').NetworkProxyConfigurationRevision[]> {
+  const response = await api.getEnvelope<
+    import('@opensoha/contracts/gen/ts/sohaapi').NetworkProxyConfigurationHistoryEnvelope
+  >(`${instancePath(id)}/configuration-history`)
+  return response.items
+}
+export async function restoreConfiguration(
+  id: string,
+  revision: number,
+  expectedRevision: number,
+): Promise<NetworkProxyInstance> {
+  const response = await api.post<ApiResponse<NetworkProxyInstance>>(
+    `${instancePath(id)}/configuration-history/${revision}/restore`,
+    { expectedRevision },
   )
   return response.data
 }

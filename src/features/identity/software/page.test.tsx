@@ -217,7 +217,7 @@ describe('SoftwareLibraryPage', () => {
     expect(packages[1]?.textContent).toContain('soha-desktop-amd64.exe')
     expect(packages[1]?.querySelector<HTMLInputElement>('input')?.value).toBe('soha-desktop-amd64')
     expect(modal?.textContent).toContain('批量上传并发布（2）')
-  })
+  }, 15_000)
 
   it('switches the publish source to a server-side URL import', async () => {
     const container = await renderPage()

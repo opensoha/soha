@@ -1,0 +1,15 @@
+.soha-configmap-detail {
+  min-width: 0;
+}
+.soha-configmap-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-configmap-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-configmap-summary {
+  margin: 0 0 16px;
+}
+.soha-configmap-detail .soha-workload-overview-config dd {
+  overflow-wrap: anywhere;
+}

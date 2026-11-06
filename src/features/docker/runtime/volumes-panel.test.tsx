@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useQuery } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { ApiError } from '@/services/api-error'
 import { DockerProjectVolumesPanel } from './volumes-panel'
 import type { DockerRuntimePanelProps } from './shared'
@@ -14,27 +14,29 @@ vi.mock('@tanstack/react-query', async (original) => ({
 const roots: ReturnType<typeof createRoot>[] = []
 beforeEach(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true))
 function render(files: object, props: Partial<DockerRuntimePanelProps> = {}) {
-  let index = 0
-  const states = [
-    { data: [{ target: '/data', source: 'volume-1' }], isFetching: false },
-    { isFetching: false, ...files },
-    { data: undefined, isFetching: false },
-  ]
-  vi.mocked(useQuery).mockImplementation(() => states[index++ % 3] as never)
+  vi.mocked(useQuery).mockImplementation((options) => {
+    if (options.queryKey.includes('volumes'))
+      return { data: [{ target: '/data', source: 'volume-1' }], isFetching: false } as never
+    if (options.queryKey.includes('volume-files')) return { isFetching: false, ...files } as never
+    return { data: undefined, isFetching: false } as never
+  })
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
   roots.push(root)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   act(() =>
     root.render(
-      <DockerProjectVolumesPanel
-        enabled
-        projectId="project"
-        serviceName="service"
-        serviceOptions={[{ label: 'service', value: 'service' }]}
-        onServiceChange={() => {}}
-        {...props}
-      />,
+      <QueryClientProvider client={client}>
+        <DockerProjectVolumesPanel
+          enabled
+          projectId="project"
+          serviceName="service"
+          serviceOptions={[{ label: 'service', value: 'service' }]}
+          onServiceChange={() => {}}
+          {...props}
+        />
+      </QueryClientProvider>,
     ),
   )
   return container

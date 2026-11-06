@@ -1,5 +1,7 @@
 import type {
   ApiResponse,
+  NetworkVPNRevocation,
+  NetworkVPNRevocationStateEnvelope,
   NetworkVPNProfile,
   NetworkVPNProfileConfig,
   NetworkVPNSelectionPolicy,
@@ -70,4 +72,26 @@ export async function vpnDecision(id: string): Promise<NetworkVPNDecision> {
 }
 export async function previewVPN(input: NetworkVPNPreviewInput): Promise<NetworkVPNDecision> {
   return (await api.post<ApiResponse<NetworkVPNDecision>>(`${base}/selection-preview`, input)).data!
+}
+
+const revocationPath = (sessionId: string) =>
+  `/network-access/sessions/${encodeURIComponent(sessionId)}/vpn-revocation`
+export async function getVPNRevocation(sessionId: string): Promise<NetworkVPNRevocation | null> {
+  return (
+    (await api.get<NetworkVPNRevocationStateEnvelope>(revocationPath(sessionId))).data.revocation ??
+    null
+  )
+}
+export async function revokeVPNSession(sessionId: string): Promise<NetworkVPNRevocation> {
+  return (await api.post<ApiResponse<NetworkVPNRevocation>>(revocationPath(sessionId))).data
+}
+export async function releaseVPNRevocation(
+  sessionId: string,
+  expectedEpoch: number,
+): Promise<NetworkVPNRevocation> {
+  return (
+    await api.post<ApiResponse<NetworkVPNRevocation>>(`${revocationPath(sessionId)}/release`, {
+      expectedEpoch,
+    })
+  ).data
 }

@@ -21,6 +21,8 @@ export const configurationKeys = {
     ] as const,
   references: (kind: ConfigurationKind, scope: ScopeKey, name: string) =>
     [...configurationKeys.detail(kind, scope, name), 'references'] as const,
+  certificate: (scope: ScopeKey, name: string) =>
+    [...configurationKeys.detail('secrets', scope, name), 'certificate'] as const,
   yaml: (kind: ConfigurationKind, scope: ScopeKey, name: string) =>
     [...configurationKeys.detail(kind, scope, name), 'yaml'] as const,
 }

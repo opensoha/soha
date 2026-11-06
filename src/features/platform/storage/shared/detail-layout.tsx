@@ -1,19 +1,32 @@
 import type { ReactNode } from 'react'
-import { Tabs } from 'antd'
 import type { TabsProps } from 'antd'
 import { useAIPageContext } from '@/features/copilot'
 import { PlatformResourceOverview } from '@/features/platform/shared/resource-overview'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
+import {
+  ResourceDetailHeader,
+  ResourceDetailTabs,
+} from '@/features/platform/shared/resource-detail-header'
+import type { QueryKey } from '@tanstack/react-query'
+import type { ScopeKey } from '@/types'
 import '../styles.css'
 
 export function StorageDetailShell({
   children,
   kind,
   name,
+  detail,
+  queryKey,
+  header,
+  scope,
 }: {
   children: ReactNode
   kind: string
   name: string
+  detail?: { namespace?: string; status?: string; createdAt?: string; ageSeconds?: number }
+  queryKey?: QueryKey
+  header?: ReactNode
+  scope?: ScopeKey
 }) {
   const { clusterId, namespace } = usePlatformScopeStore()
   useAIPageContext({
@@ -21,10 +34,26 @@ export function StorageDetailShell({
     sourceTitle: kind,
     entityKind: kind,
     entityName: name,
-    clusterId: clusterId || undefined,
-    namespace: kind === 'PersistentVolumeClaim' ? namespace || undefined : undefined,
+    clusterId: scope?.clusterId || clusterId || undefined,
+    namespace:
+      detail?.namespace ?? (kind === 'PersistentVolumeClaim' ? namespace || undefined : undefined),
   })
-  return <div className="soha-page soha-workload-detail-page">{children}</div>
+  return (
+    <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
+      {header ?? (
+        <ResourceDetailHeader
+          kind={kind}
+          name={name}
+          namespace={detail?.namespace}
+          status={detail?.status}
+          createdAt={detail?.createdAt}
+          ageSeconds={detail?.ageSeconds}
+          queryKey={queryKey}
+        />
+      )}
+      {children}
+    </div>
+  )
 }
 
 export function StorageDetailTabs({
@@ -37,7 +66,7 @@ export function StorageDetailTabs({
   onChange: (key: string) => void
 }) {
   return (
-    <Tabs
+    <ResourceDetailTabs
       activeKey={activeKey}
       className="soha-resource-tabs soha-workload-detail-tabs"
       indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
@@ -68,6 +97,7 @@ export function StorageResourceOverview({
 }) {
   return (
     <PlatformResourceOverview
+      compact
       ageSeconds={ageSeconds}
       annotations={annotations}
       createdAt={createdAt}

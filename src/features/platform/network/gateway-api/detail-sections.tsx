@@ -14,8 +14,6 @@ import type {
   GatewayRouteParentStatus,
   GatewayRouteReference,
   GatewayRouteRule,
-  ReferenceGrantFrom,
-  ReferenceGrantTo,
 } from './types'
 
 function buildPodPath(name: string, namespace: string) {
@@ -284,43 +282,5 @@ export function ParentStatusesSection({ statuses }: { statuses?: GatewayRoutePar
         },
       ]}
     />
-  )
-}
-
-export function ReferenceGrantRefsSection({
-  from,
-  to,
-}: {
-  from?: ReferenceGrantFrom[]
-  to?: ReferenceGrantTo[]
-}) {
-  const { localeCode } = useI18n()
-  return (
-    <>
-      <DetailTable
-        title={localeCode === 'zh_CN' ? '允许来源' : 'Allowed sources'}
-        data={from}
-        rowKey={(item) => `${item.group}/${item.kind}/${item.namespace}`}
-        columns={[
-          { title: 'Group', dataIndex: 'group' },
-          { title: 'Kind', dataIndex: 'kind' },
-          { title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', dataIndex: 'namespace' },
-        ]}
-      />
-      <DetailTable
-        title={localeCode === 'zh_CN' ? '允许目标' : 'Allowed targets'}
-        data={to}
-        rowKey={(item) => `${item.group}/${item.kind}/${item.name}`}
-        columns={[
-          { title: 'Group', dataIndex: 'group' },
-          { title: 'Kind', dataIndex: 'kind' },
-          {
-            title: localeCode === 'zh_CN' ? '名称' : 'Name',
-            dataIndex: 'name',
-            render: (value?: string) => value || '*',
-          },
-        ]}
-      />
-    </>
   )
 }

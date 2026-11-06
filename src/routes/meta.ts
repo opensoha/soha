@@ -684,6 +684,19 @@ function buildRuntimeMenuTree(snapshot?: PermissionSnapshot | null): RuntimeMenu
       })
     })
 
+  const ingress = nodes.get('network-ingresses')
+  const ingressClass = nodes.get('network-ingressclasses')
+  const gatewayClass = nodes.get('network-gateway-api-gatewayclasses')
+  if (
+    (!ingress || (ingress.parentId === 'network' && ingress.sortOrder === 42)) &&
+    ingressClass?.parentId === 'network' &&
+    ingressClass.path === '/network/ingressclasses' &&
+    ingressClass.sortOrder === 54 &&
+    (!gatewayClass || (gatewayClass.parentId === 'network' && gatewayClass.sortOrder === 43))
+  ) {
+    ingressClass.sortOrder = 42.5
+  }
+
   const roots: RuntimeMenuNode[] = []
   nodes.forEach((node) => {
     if (node.parentId && nodes.has(node.parentId)) {

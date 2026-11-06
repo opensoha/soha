@@ -131,6 +131,34 @@ export function mergeServiceManifest(source: unknown, edited: KubernetesManifest
     spec = { ...sourceSpec }
     for (const key of ['externalName', 'ports', 'selector', 'type']) delete spec[key]
     Object.assign(spec, editedSpec)
+    if (Array.isArray(sourceSpec.ports) && Array.isArray(editedSpec.ports)) {
+      const previousPorts = sourceSpec.ports.map(optionalRecord)
+      const editedPorts = editedSpec.ports.map(optionalRecord)
+      spec.ports = editedPorts.map((port) => {
+        const sameProtocol = previousPorts.filter(
+          (previous) => serviceProtocol(previous.protocol) === serviceProtocol(port.protocol),
+        )
+        const previousByName =
+          typeof port.name === 'string' && port.name
+            ? sameProtocol.find((candidate) => candidate.name === port.name)
+            : undefined
+        const previous =
+          previousByName ??
+          sameProtocol.find(
+            (candidate) =>
+              candidate.port === port.port &&
+              !editedPorts.some(
+                (other) =>
+                  candidate.name &&
+                  other.name === candidate.name &&
+                  serviceProtocol(other.protocol) === serviceProtocol(candidate.protocol),
+              ),
+          )
+        return previous && typeof previous.appProtocol === 'string'
+          ? { appProtocol: previous.appProtocol, ...port }
+          : port
+      })
+    }
     if (nextType !== 'ExternalName') delete spec.externalName
 
     if (nextType !== previousType && nextType !== 'LoadBalancer') {

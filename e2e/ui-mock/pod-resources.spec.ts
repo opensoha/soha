@@ -119,7 +119,7 @@ for (const theme of ['light', 'dark']) {
       '64Ki',
     )
     await expect(bar('unlimited', 'CPU').locator('.is-limit')).toHaveCount(0)
-    await expect(bar('over-limit', 'CPU').locator('.is-limit.is-passed')).toHaveCount(1)
+    await expect(bar('over-limit', 'CPU')).toHaveAccessibleName(/接近或达到限制/)
 
     const colors = await page
       .locator(
@@ -136,9 +136,13 @@ for (const theme of ['light', 'dark']) {
     for (const width of [1440, 900]) {
       await page.setViewportSize({ width, height: 1000 })
       if (width === 900) await page.getByRole('button', { name: '收起侧栏', exact: true }).click()
-      const geometry = await page.locator('.soha-pod-resource-progress-wrap').evaluateAll((bars) =>
-        bars.map((node) => {
-          const bar = node.getBoundingClientRect()
+      const geometry = await page.locator('.soha-pod-resource-limit-cell').evaluateAll((cells) =>
+        cells.map((node) => {
+          const cell = node.getBoundingClientRect()
+          const bar = node
+            .querySelector('.soha-pod-resource-progress-wrap')!
+            .getBoundingClientRect()
+          const rail = node.querySelector('.ant-progress-rail')!.getBoundingClientRect()
           const range = document.createRange()
           range.selectNodeContents(node.querySelector('.soha-pod-resource-value')!)
           const label = range.getBoundingClientRect()
@@ -146,10 +150,24 @@ for (const theme of ['light', 'dark']) {
             (marker) => marker.getBoundingClientRect(),
           )
           return (
-            label.left >= bar.left &&
-            label.right <= bar.right &&
+            bar.width >= 80 &&
+            bar.height === 20 &&
+            rail.height === bar.height &&
+            rail.width === bar.width &&
+            rail.top >= bar.top &&
+            rail.bottom <= bar.bottom &&
+            rail.left >= bar.left &&
+            rail.right <= bar.right &&
+            cell.height >= 24 &&
+            label.left >= cell.left &&
+            label.right <= cell.right &&
+            label.top >= cell.top &&
+            label.left >= bar.left + 7.9 &&
+            label.right <= bar.right - 7.9 &&
             label.top >= bar.top &&
             label.bottom <= bar.bottom &&
+            label.bottom <= cell.bottom &&
+            bar.bottom <= cell.bottom &&
             markers.every(
               (marker) =>
                 marker.left >= bar.left &&
@@ -160,23 +178,49 @@ for (const theme of ['light', 'dark']) {
           )
         }),
       )
-      expect(geometry.every(Boolean), `labels and markers inside bars at ${width}px`).toBe(true)
+      expect(geometry.every(Boolean), `20px bars with inset readable values at ${width}px`).toBe(
+        true,
+      )
+      await bar('normal', 'CPU').focus()
+      await expect(bar('normal', 'CPU')).toBeFocused()
       await bar('normal', 'CPU').hover()
-      await expect(page.getByRole('tooltip')).toHaveText(
-        'CPU · 使用 34m · 请求 100m · 限制 500m · 请求以内',
+      const detail = page.getByRole('tooltip')
+      await expect(detail.locator('.soha-pod-resource-tooltip__header strong')).toHaveText('CPU')
+      await expect(detail.locator('dt')).toHaveText(['实际用量', '请求', '限制'])
+      await expect(detail.locator('dd')).toHaveText(['34m', '100m', '500m'])
+      await expect(detail.locator('.soha-pod-resource-tooltip__status')).toHaveText('请求以内')
+      await expect(detail.locator('.soha-pod-resource-tooltip__basis')).toHaveText(
+        '以限额为比例基准',
       )
     }
     await page.mouse.move(0, 0)
     await bar('warning', 'CPU').focus()
     await bar('warning', 'CPU').press('Tab')
     await expect(bar('warning', '内存')).toBeFocused()
-    await expect(
-      page.getByRole('tooltip', {
-        name: '内存 · 使用 768Mi · 请求 512Mi · 限制 1Gi · 超过请求',
-        exact: true,
-      }),
-    ).toBeVisible()
     await expect(page.getByRole('tooltip')).toHaveCount(1)
+    const detail = page.getByRole('tooltip')
+    await expect(detail.locator('.soha-pod-resource-tooltip__header strong')).toHaveText('内存')
+    await expect(detail.locator('dd')).toHaveText(['768Mi', '512Mi', '1Gi'])
+    await expect(detail.locator('.soha-pod-resource-tooltip__status')).toHaveText('超过请求')
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await bar('unlimited', 'CPU').focus()
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await expect(detail.locator('dd')).toHaveText(['150m', '100m', '未设置'])
+    await expect(detail.locator('.soha-pod-resource-tooltip__basis')).toHaveText('以请求为比例基准')
+    await bar('missing', 'CPU').focus()
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await expect(detail.locator('dd').first()).toHaveText('暂无指标')
+    await page.setViewportSize({ width: 320, height: 700 })
+    await bar('unbounded', 'CPU').focus()
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await expect(detail.locator('dd')).toHaveText(['9m', '未设置', '未设置'])
+    await expect(detail.locator('.soha-pod-resource-tooltip__basis')).toHaveText('无比例基准')
+    await expect
+      .poll(async () => {
+        const box = await detail.boundingBox()
+        return Boolean(box && box.x >= 0 && box.x + box.width <= 320)
+      })
+      .toBe(true)
     verifyBrowserEvidence(evidence)
   })
 }

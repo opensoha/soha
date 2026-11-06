@@ -116,4 +116,12 @@ describe('deployment api', () => {
     ).rejects.toThrow('A namespace is required')
     expect(apiMocks.post).not.toHaveBeenCalled()
   })
+
+  it('includes the expected UID in a guarded delete', async () => {
+    apiMocks.delete.mockResolvedValueOnce({ data: null })
+    await deleteDeployment({ ...target, uid: 'deployment/uid' })
+    expect(apiMocks.delete).toHaveBeenCalledWith(
+      '/clusters/cluster-a/workloads/deployments/api%2Fserver?namespace=team%2Fa&expectedUid=deployment%2Fuid',
+    )
+  })
 })

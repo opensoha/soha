@@ -50,7 +50,8 @@ export function WorkbenchComposer({
   onChange,
   onSubmit,
   onCancel,
-  disabled,
+  disabled: unavailable,
+  contextParsing = false,
   readOnly = false,
   loading,
   senderRef,
@@ -87,6 +88,7 @@ export function WorkbenchComposer({
   onSubmit: (value: string) => void
   onCancel: () => void
   disabled: boolean
+  contextParsing?: boolean
   readOnly?: boolean
   loading: boolean
   senderRef: RefObject<SenderRef>
@@ -97,6 +99,7 @@ export function WorkbenchComposer({
   onSession: (id?: string) => void
 }) {
   const { message } = App.useApp()
+  const disabled = unavailable || contextParsing
   const attachmentsRef = useRef<AttachmentsRef>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
@@ -208,7 +211,7 @@ export function WorkbenchComposer({
                   trigger="click"
                   placement="topLeft"
                   arrow={false}
-                  open={addOpen && !disabled && !loading}
+                  open={addOpen && !unavailable && !loading}
                   onOpenChange={setAddOpen}
                   content={
                     <div
@@ -224,7 +227,7 @@ export function WorkbenchComposer({
                         type="text"
                         icon={<PictureOutlined />}
                         aria-label="添加图片"
-                        disabled={preparing || !onImagesChange}
+                        disabled={disabled || loading || preparing || !onImagesChange}
                         onClick={() => {
                           attachmentsRef.current?.select()
                           setAddOpen(false)
@@ -236,6 +239,7 @@ export function WorkbenchComposer({
                       <Button
                         type="text"
                         icon={<ExperimentOutlined aria-hidden />}
+                        disabled={disabled || loading}
                         onClick={() => {
                           setAddOpen(false)
                           onAnalysis()
@@ -246,6 +250,7 @@ export function WorkbenchComposer({
                       <Button
                         type="text"
                         icon={<ToolOutlined aria-hidden />}
+                        disabled={disabled || loading}
                         onClick={() => {
                           setAddOpen(false)
                           onTools()

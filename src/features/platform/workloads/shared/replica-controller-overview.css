@@ -1,0 +1,12 @@
+.soha-replica-controller-template {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+.soha-replica-controller-template:last-child {
+  margin-bottom: 0;
+}
+.soha-replica-controller-template .ant-typography {
+  overflow-wrap: anywhere;
+}
