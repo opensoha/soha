@@ -113,6 +113,7 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 	service.authorizer = stubAuthorizer{}
 
 	prometheusURL := "http://prometheus.internal:9090"
+	prometheusLabel := "k8s_cluster"
 	_, err := service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{
 		Name:                   "cluster-1",
 		Region:                 "local",
@@ -122,7 +123,7 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 		AgentEndpoint:          "http://agent.internal",
 		PrometheusBaseURL:      &prometheusURL,
 		PrometheusBearerToken:  "prom-token",
-		PrometheusClusterLabel: "k8s_cluster",
+		PrometheusClusterLabel: &prometheusLabel,
 		GrafanaBaseURL:         "http://grafana.internal:3000",
 		PrometheusTransport:    "agent",
 		AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{

@@ -28,7 +28,7 @@ func (s *metricIdentityClusterService) Update(_ context.Context, _ domainidentit
 func TestClusterHandlersBindMetricIdentityAndExplicitReset(t *testing.T) {
 	service := &metricIdentityClusterService{}
 	handler := &clusterHandler{service: service}
-	for _, body := range []string{`{"prometheusClusterLabelValue":"middleware-prod","prometheusBaseUrl":"http://metrics.invalid"}`, `{"prometheusClusterLabelValue":"","prometheusBaseUrl":""}`, `{}`} {
+	for _, body := range []string{`{"prometheusClusterLabel":"cluster","prometheusClusterLabelValue":"middleware-prod","prometheusBaseUrl":"http://metrics.invalid"}`, `{"prometheusClusterLabel":"","prometheusClusterLabelValue":"","prometheusBaseUrl":""}`, `{}`} {
 		recorder := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(recorder)
 		ctx.Request = httptest.NewRequest(http.MethodPut, "/clusters/real-id", strings.NewReader(body))
@@ -39,13 +39,15 @@ func TestClusterHandlersBindMetricIdentityAndExplicitReset(t *testing.T) {
 			t.Fatalf("status %d", recorder.Code)
 		}
 		if body == `{}` {
-			if service.updated.PrometheusClusterLabelValue != nil || service.updated.PrometheusBaseURL != nil {
+			if service.updated.PrometheusClusterLabel != nil || service.updated.PrometheusClusterLabelValue != nil || service.updated.PrometheusBaseURL != nil {
 				t.Fatal("omitted value became a reset")
 			}
-		} else if service.updated.PrometheusClusterLabelValue == nil || service.updated.PrometheusBaseURL == nil {
+		} else if service.updated.PrometheusClusterLabel == nil || service.updated.PrometheusClusterLabelValue == nil || service.updated.PrometheusBaseURL == nil {
 			t.Fatal("explicit value lost")
 		} else if strings.Contains(body, `"prometheusBaseUrl":""`) && *service.updated.PrometheusBaseURL != "" {
 			t.Fatal("explicit empty Prometheus URL was changed")
+		} else if strings.Contains(body, `"prometheusClusterLabel":""`) && *service.updated.PrometheusClusterLabel != "" {
+			t.Fatal("explicit empty Prometheus label was changed")
 		}
 	}
 	recorder := httptest.NewRecorder()

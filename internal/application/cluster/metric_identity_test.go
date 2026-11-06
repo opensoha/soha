@@ -25,29 +25,40 @@ func TestClusterMetricAliasPersistsAndPartialUpdatePreservesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertValue := func(want string) {
+	assertIdentity := func(label, value string) {
 		t.Helper()
-		if got := metadataString(repo.connection.Metadata, "prometheus_cluster_label_value"); got != want {
-			t.Fatalf("saved alias %q, want %q", got, want)
+		if got := metadataString(repo.connection.Metadata, "prometheus_cluster_label_value"); got != value {
+			t.Fatalf("saved alias %q, want %q", got, value)
 		}
 		detail, err := service.Describe(context.Background(), domainidentity.Principal{}, "cluster-a")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if detail.Monitoring.Prometheus.ClusterLabelValue != want {
-			t.Fatal("detail lost saved alias")
+		if detail.Monitoring.Prometheus.ClusterLabel != label || detail.Monitoring.Prometheus.ClusterLabelValue != value {
+			t.Fatalf("detail lost metric identity: %+v", detail.Monitoring.Prometheus)
 		}
 	}
-	assertValue("middleware-prod")
+	assertIdentity("cluster", "middleware-prod")
 	if _, err = service.Update(context.Background(), domainidentity.Principal{}, "cluster-a", domaincluster.UpdateInput{Name: "Renamed"}); err != nil {
 		t.Fatal(err)
 	}
-	assertValue("middleware-prod")
+	assertIdentity("cluster", "middleware-prod")
 	empty := ""
 	if _, err = service.Update(context.Background(), domainidentity.Principal{}, "cluster-a", domaincluster.UpdateInput{Name: "Renamed", PrometheusClusterLabelValue: &empty}); err != nil {
 		t.Fatal(err)
 	}
-	assertValue("")
+	assertIdentity("cluster", "")
+	alias := "middleware-prod"
+	if _, err = service.Update(t.Context(), domainidentity.Principal{}, "cluster-a", domaincluster.UpdateInput{Name: "Renamed", PrometheusClusterLabelValue: &alias}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Update(t.Context(), domainidentity.Principal{}, "cluster-a", domaincluster.UpdateInput{Name: "Renamed", PrometheusClusterLabel: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	assertIdentity("", "")
+	if got := metadataString(repo.connection.Metadata, "prometheus_url"); got != "http://metrics.invalid" {
+		t.Fatalf("clearing metric identity changed the source URL to %q", got)
+	}
 }
 
 func TestMetricIdentityValidatesLabelAndValue(t *testing.T) {
@@ -103,7 +114,8 @@ func TestMonitoringEditPreservesFileBackedCredential(t *testing.T) {
 	registry := &metricIdentityRegistry{}
 	service.registry = registry
 	alias := "middleware-prod"
-	_, err := service.Update(context.Background(), domainidentity.Principal{}, "file-cluster", domaincluster.UpdateInput{Name: "File", PrometheusClusterLabel: "cluster", PrometheusClusterLabelValue: &alias})
+	label := "cluster"
+	_, err := service.Update(context.Background(), domainidentity.Principal{}, "file-cluster", domaincluster.UpdateInput{Name: "File", PrometheusClusterLabel: &label, PrometheusClusterLabelValue: &alias})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,8 +162,9 @@ func TestMetricSourceRequiresUnscopedClusterPermission(t *testing.T) {
 		t.Fatalf("name-only edit replaced the metric source with %q", got)
 	}
 	alias := "other-cluster"
+	label := "cluster"
 	if _, err := service.Update(t.Context(), domainidentity.Principal{}, input.ID, domaincluster.UpdateInput{
-		Name: "Example", PrometheusBaseURL: &input.PrometheusBaseURL, PrometheusClusterLabel: "cluster", PrometheusClusterLabelValue: &alias,
+		Name: "Example", PrometheusBaseURL: &input.PrometheusBaseURL, PrometheusClusterLabel: &label, PrometheusClusterLabelValue: &alias,
 	}); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("scoped update changed Prometheus alias: %v", err)
 	}
@@ -184,6 +197,12 @@ func TestMetricSourceRejectsDuplicateMatcherAndAllowsDistinctAlias(t *testing.T)
 		PrometheusClusterLabel: "cluster", PrometheusClusterLabelValue: "cluster-a"}
 	if _, err := service.Register(t.Context(), domainidentity.Principal{}, input); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("shared source accepted duplicate identity: %v", err)
+	}
+	dedicated := input
+	dedicated.PrometheusClusterLabel = ""
+	dedicated.PrometheusClusterLabelValue = ""
+	if _, err := service.Register(t.Context(), domainidentity.Principal{}, dedicated); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("shared source accepted a registration without a matcher: %v", err)
 	}
 	input.PrometheusClusterLabelValue = "other-cluster"
 	if _, err := service.Register(t.Context(), domainidentity.Principal{}, input); err != nil {

@@ -200,7 +200,7 @@ type UpdateInput struct {
 	AgentToken                  string                    `json:"agentToken,omitempty"`
 	PrometheusBaseURL           *string                   `json:"prometheusBaseUrl,omitempty"`
 	PrometheusBearerToken       string                    `json:"prometheusBearerToken,omitempty"`
-	PrometheusClusterLabel      string                    `json:"prometheusClusterLabel,omitempty"`
+	PrometheusClusterLabel      *string                   `json:"prometheusClusterLabel,omitempty"`
 	PrometheusClusterLabelValue *string                   `json:"prometheusClusterLabelValue,omitempty"`
 	GrafanaBaseURL              string                    `json:"grafanaBaseUrl,omitempty"`
 }
