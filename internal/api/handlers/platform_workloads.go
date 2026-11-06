@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
@@ -47,13 +48,37 @@ func (h *podResourceHandler) GetPodDetail(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 func (h *podResourceHandler) DeletePod(c *gin.Context) {
+	expectedUID, err := expectedWorkloadUID(c)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	if err := h.editor.DeletePod(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName")); err != nil {
+	respondWorkloadDelete(c, h.editor.DeletePodWithExpectedUID(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), expectedUID))
+}
+
+func respondWorkloadDelete(c *gin.Context, err error) {
+	if err != nil {
 		writeError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func expectedWorkloadUID(c *gin.Context) (string, error) {
+	query, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid delete query", apperrors.ErrInvalidArgument)
+	}
+	values, supplied := query["expectedUid"]
+	if !supplied {
+		return "", nil
+	}
+	if len(values) != 1 || !contractresource.ValidWorkloadUID(values[0]) {
+		return "", fmt.Errorf("%w: expectedUid must contain one valid workload UID", apperrors.ErrInvalidArgument)
+	}
+	return values[0], nil
 }
 func (h *podResourceHandler) GetPodLogs(c *gin.Context) {
 	expectedUID, valid := podExpectedUID(c)
@@ -332,6 +357,18 @@ func (h *jobResourceHandler) GetJobDetail(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
+func (h *jobResourceHandler) GetJobMetrics(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.DefaultQuery("namespace", "default")
+	rangeMinutes, stepSeconds := parseMetricsWindow(c)
+	item, err := h.service.GetJobMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("jobName"), rangeMinutes, stepSeconds)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *jobResourceHandler) GetJobYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -438,6 +475,30 @@ func (h *workloadInventoryResourceHandler) GetReplicaSetDetail(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
+func (h *workloadInventoryResourceHandler) GetReplicaSetMetrics(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.DefaultQuery("namespace", "default")
+	rangeMinutes, stepSeconds := parseMetricsWindow(c)
+	item, err := h.service.GetReplicaSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("replicaSetName"), rangeMinutes, stepSeconds)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *workloadInventoryResourceHandler) GetReplicationControllerMetrics(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.DefaultQuery("namespace", "default")
+	rangeMinutes, stepSeconds := parseMetricsWindow(c)
+	item, err := h.service.GetReplicationControllerMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"), rangeMinutes, stepSeconds)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *workloadInventoryResourceHandler) ListReplicationControllers(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -550,12 +611,12 @@ func (h *workloadInventoryResourceHandler) GetPodDisruptionBudgetDetail(c *gin.C
 // the existing route param names (`:deploymentName`, etc.) to avoid route conflicts
 // with other GET/PUT entries already registered in router.go.
 func (h *workloadInventoryResourceHandler) RegisterWorkloadDeleteRoutes(group gin.IRoutes) {
+	group.DELETE("/clusters/:clusterID/workloads/deployments/:deploymentName", h.deleteDeployment)
 	entries := []struct {
 		path  string
 		param string
 		kind  string
 	}{
-		{"/clusters/:clusterID/workloads/deployments/:deploymentName", "deploymentName", "Deployment"},
 		{"/clusters/:clusterID/workloads/statefulsets/:statefulSetName", "statefulSetName", "StatefulSet"},
 		{"/clusters/:clusterID/workloads/daemonsets/:daemonSetName", "daemonSetName", "DaemonSet"},
 		{"/clusters/:clusterID/workloads/jobs/:jobName", "jobName", "Job"},
@@ -577,6 +638,21 @@ func (h *workloadInventoryResourceHandler) RegisterWorkloadDeleteRoutes(group gi
 		})
 	}
 }
+func (h *workloadInventoryResourceHandler) deleteDeployment(c *gin.Context) {
+	expectedUID, err := expectedWorkloadUID(c)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	ctx, principal := c.Request.Context(), apiMiddleware.PrincipalFromContext(c)
+	clusterID, namespace, name := c.Param("clusterID"), c.Query("namespace"), c.Param("deploymentName")
+	if expectedUID == "" {
+		respondWorkloadDelete(c, h.generic.DeleteResourceByKind(ctx, principal, clusterID, namespace, "Deployment", name))
+		return
+	}
+	respondWorkloadDelete(c, h.generic.DeleteDeploymentWithExpectedUID(ctx, principal, clusterID, namespace, name, expectedUID))
+}
+
 func (h *deploymentResourceHandler) RestartDeployment(c *gin.Context) {
 	var req dto.RestartDeploymentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -24,7 +24,7 @@ import (
 const (
 	agentReverseSessionTransport = "reverse_session"
 	agentInstallTicketTTL        = 15 * time.Minute
-	agentVersion                 = "v0.1.10"
+	agentVersion                 = "v0.1.11"
 	agentImageRepository         = "ghcr.io/opensoha/soha-agent"
 	agentImage                   = agentImageRepository + ":" + agentVersion
 )
@@ -290,7 +290,7 @@ func renderAgentManifest(connection domaincluster.Connection, accessURL string) 
 func agentManifestRules(metadata map[string]any, profile string) ([]map[string]any, error) {
 	readRules := []map[string]any{
 		{"apiGroups": []string{""}, "resources": []string{"configmaps", "endpoints", "events", "limitranges", "namespaces", "nodes", "persistentvolumeclaims", "persistentvolumes", "pods", "pods/log", "replicationcontrollers", "resourcequotas", "secrets", "serviceaccounts", "services"}, "verbs": []string{"get", "list", "watch"}},
-		{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "deployments/scale", "replicasets", "statefulsets", "statefulsets/scale"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{"apps"}, "resources": []string{"controllerrevisions", "daemonsets", "deployments", "deployments/scale", "replicasets", "statefulsets", "statefulsets/scale"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"batch"}, "resources": []string{"cronjobs", "jobs"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"networking.k8s.io"}, "resources": []string{"ingressclasses", "ingresses", "networkpolicies"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"discovery.k8s.io"}, "resources": []string{"endpointslices"}, "verbs": []string{"get", "list", "watch"}},
@@ -314,6 +314,7 @@ func agentManifestRules(metadata map[string]any, profile string) ([]map[string]a
 			map[string]any{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "replicasets", "statefulsets"}, "verbs": []string{"create", "update", "patch", "delete"}},
 			map[string]any{"apiGroups": []string{"batch"}, "resources": []string{"cronjobs", "jobs"}, "verbs": []string{"create", "update", "patch", "delete"}},
 			map[string]any{"apiGroups": []string{"networking.k8s.io"}, "resources": []string{"ingressclasses", "ingresses", "networkpolicies"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"discovery.k8s.io"}, "resources": []string{"endpointslices"}, "verbs": []string{"create", "update", "patch", "delete"}},
 			map[string]any{"apiGroups": []string{"autoscaling"}, "resources": []string{"horizontalpodautoscalers"}, "verbs": []string{"create", "update", "patch", "delete"}},
 			map[string]any{"apiGroups": []string{"policy"}, "resources": []string{"poddisruptionbudgets"}, "verbs": []string{"create", "update", "patch", "delete"}},
 			map[string]any{"apiGroups": []string{"admissionregistration.k8s.io"}, "resources": []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, "verbs": []string{"create", "update", "patch", "delete"}},

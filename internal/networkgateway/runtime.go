@@ -3,6 +3,7 @@ package networkgateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	randv2 "math/rand/v2"
@@ -21,6 +22,7 @@ type Control interface {
 
 type ConfigurationApplier interface {
 	Apply(context.Context, networkprotocol.ConfigurationDesired, time.Time) ApplyOutcome
+	Verify(context.Context, networkprotocol.ConfigurationDesired, time.Time) ApplyOutcome
 	Disable(context.Context) error
 }
 
@@ -38,6 +40,9 @@ type RuntimeStatus struct {
 }
 
 type Runtime struct {
+	runtimeKind       string
+	floorPath         string
+	floor             gatewayConfigurationFloor
 	runtimeID         string
 	control           Control
 	applier           ConfigurationApplier
@@ -130,6 +135,10 @@ func (r *Runtime) Cycle(ctx context.Context) error {
 	if err := r.expire(ctx, now); err != nil {
 		return err
 	}
+	cycleCtx, cancel := r.cycleContext(ctx)
+	defer cancel()
+	defer r.enforceExpiry(ctx)
+	ctx = cycleCtx
 	if err := r.reportPending(ctx); err != nil {
 		return err
 	}
@@ -142,8 +151,19 @@ func (r *Runtime) Cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer r.observeDNS(ctx, desired)
+	if err := r.rememberConfiguration(desired); err != nil {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		disableErr := r.applier.Disable(cleanup)
+		cancel()
+		r.setUnhealthy("configuration_floor_rejected")
+		r.mu.Lock()
+		r.disabled = true
+		r.mu.Unlock()
+		return fmt.Errorf("gateway configuration floor: %w", errors.Join(err, disableErr))
+	}
 	r.applyRuntimeIntervals(desired.RuntimeIntervals)
-	stop, err := r.handleKnownVersion(desired)
+	stop, err := r.handleKnownVersion(ctx, desired)
 	if stop || err != nil {
 		return err
 	}
@@ -160,6 +180,24 @@ func (r *Runtime) Cycle(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runtime) cycleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	r.mu.RLock()
+	until, disabled := r.validUntil, r.disabled
+	r.mu.RUnlock()
+	if !disabled && !until.IsZero() {
+		return context.WithDeadline(ctx, until)
+	}
+	return context.WithCancel(ctx)
+}
+
+func (r *Runtime) enforceExpiry(ctx context.Context) {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := r.expire(cleanup, r.now().UTC()); err != nil {
+		r.logger.Error("expired gateway cleanup failed", "event", "network_gateway.expiry.failed")
+	}
+}
+
 func (r *Runtime) reportPending(ctx context.Context) error {
 	pending := r.pendingReport()
 	if pending == nil {
@@ -174,7 +212,7 @@ func (r *Runtime) reportPending(ctx context.Context) error {
 }
 
 func (r *Runtime) decodeDesired(message networkprotocol.RuntimeMessage, now time.Time) (networkprotocol.ConfigurationDesired, error) {
-	if message.SchemaVersion != networkprotocol.RuntimeSchemaVersion || message.MessageType != networkprotocol.MessageConfiguration || message.ProducerID != "network-control" || message.RuntimeID != r.runtimeID || message.RuntimeKind != "gateway" {
+	if message.SchemaVersion != networkprotocol.RuntimeSchemaVersion || message.MessageType != networkprotocol.MessageConfiguration || message.ProducerID != "network-control" || message.RuntimeID != r.runtimeID || message.RuntimeKind != r.kind() {
 		r.setDegraded("invalid_configuration_message")
 		return networkprotocol.ConfigurationDesired{}, fmt.Errorf("network control returned a configuration for a different runtime")
 	}
@@ -190,9 +228,9 @@ func (r *Runtime) decodeDesired(message networkprotocol.RuntimeMessage, now time
 	return desired, nil
 }
 
-func (r *Runtime) handleKnownVersion(desired networkprotocol.ConfigurationDesired) (bool, error) {
+func (r *Runtime) handleKnownVersion(ctx context.Context, desired networkprotocol.ConfigurationDesired) (bool, error) {
 	r.mu.RLock()
-	currentVersion, attemptedVersion, terminalReason := r.configurationVersion, r.attemptedVersion, r.terminalReason
+	currentVersion, attemptedVersion, terminalReason, disabled := r.configurationVersion, r.attemptedVersion, r.terminalReason, r.disabled
 	r.mu.RUnlock()
 	if desired.ConfigurationVersion < max(currentVersion, attemptedVersion) {
 		r.setDegraded("stale_configuration")
@@ -202,7 +240,18 @@ func (r *Runtime) handleKnownVersion(desired networkprotocol.ConfigurationDesire
 		r.setDegraded(terminalReason)
 		return true, nil
 	}
-	if desired.ConfigurationVersion == currentVersion && currentVersion > 0 {
+	if desired.ConfigurationVersion == currentVersion && currentVersion > 0 && !disabled {
+		outcome := r.applier.Verify(ctx, desired, r.now().UTC())
+		if outcome.Status != "applied" {
+			if err := r.applier.Disable(ctx); err != nil {
+				r.setUnhealthy("configuration_drift_disable_failed")
+				return true, fmt.Errorf("disable gateway after drift: %w", err)
+			}
+			r.mu.Lock()
+			r.disabled, r.status, r.diagnostic = true, "unhealthy", outcome.ReasonCode
+			r.mu.Unlock()
+			return true, fmt.Errorf("gateway configuration readback failed: %s", outcome.ReasonCode)
+		}
 		r.mu.Lock()
 		r.probe = desired.VPNProbe
 		r.desired = &desired
@@ -303,7 +352,7 @@ func (r *Runtime) expire(ctx context.Context, now time.Time) error {
 func (r *Runtime) Ready() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.configurationVersion > 0 && !r.disabled && r.validUntil.After(r.now().UTC())
+	return r.configurationVersion > 0 && r.status == "healthy" && !r.disabled && r.validUntil.After(r.now().UTC())
 }
 
 func (r *Runtime) Status() RuntimeStatus {
@@ -367,4 +416,11 @@ func (r *Runtime) setUnhealthy(reason string) {
 	r.mu.Lock()
 	r.status, r.diagnostic = "unhealthy", reason
 	r.mu.Unlock()
+}
+
+func (r *Runtime) kind() string {
+	if r.runtimeKind == "endpoint" {
+		return "endpoint"
+	}
+	return "gateway"
 }

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -71,6 +73,7 @@ type NetworkAccessService interface {
 	GetPolicySnapshot(context.Context, domainidentity.Principal) (domainnetworkaccess.PolicySnapshot, error)
 	AnalyzeConflicts(context.Context, domainidentity.Principal, []domainnetworkaccess.ConflictRange) (domainnetworkaccess.ConflictAnalysis, error)
 	PreviewPolicy(context.Context, domainidentity.Principal, appnetworkaccess.PreviewInput) (domainnetworkaccess.PolicyPreview, error)
+	PreviewAdmission(context.Context, domainidentity.Principal, appnetworkaccess.AdmissionPreviewInput) (domainnetworkaccess.PolicyPreview, error)
 }
 
 type NetworkEnrollmentService interface {
@@ -118,7 +121,7 @@ func (h *NetworkAccessHandler) GetDevice(c *gin.Context) {
 
 func (h *NetworkAccessHandler) RegisterDevice(c *gin.Context) {
 	var input sohaapi.EndpointDeviceRegistrationInput
-	if !bindNetworkJSON(c, &input) {
+	if !bindDeviceRegistration(c, &input) {
 		return
 	}
 	item, err := h.service.RegisterDevice(c.Request.Context(), principal(c), c.Param("deviceID"), domainnetworkaccess.DeviceRegistrationInput{Name: input.Name, Hostname: input.Hostname, Platform: input.Platform, DeviceType: string(input.DeviceType), ReportedFacts: endpointDeviceReportedFacts(input.ReportedFacts)})
@@ -130,7 +133,7 @@ func (h *NetworkAccessHandler) UpdateDevice(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateDevice(c.Request.Context(), principal(c), c.Param("deviceID"), domainnetworkaccess.DeviceInput{Name: input.Name, SiteID: input.SiteID, Status: string(input.Status), PostureStatus: string(input.PostureStatus), DeviceType: string(input.DeviceType), OwnershipType: string(input.OwnershipType)})
+	item, err := h.service.UpdateDevice(c.Request.Context(), principal(c), c.Param("deviceID"), domainnetworkaccess.DeviceInput{Name: input.Name, SiteID: input.SiteID, Status: string(input.Status), PostureStatus: string(input.PostureStatus), DeviceType: string(input.DeviceType), OwnershipType: string(input.OwnershipType), ManagementState: string(input.ManagementState)})
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -175,7 +178,7 @@ func (h *NetworkAccessHandler) CreateSite(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreateSite(c.Request.Context(), principal(c), domainnetworkaccess.SiteInput{Name: input.Name, Description: input.Description, Location: input.Location, Status: string(input.Status)})
+	item, err := h.service.CreateSite(c.Request.Context(), principal(c), domainnetworkaccess.SiteInput{Name: input.Name, Description: input.Description, Location: input.Location, DeviceGovernance: string(input.DeviceGovernance), ManagementIssuerKey: input.ManagementIssuerKey, Status: string(input.Status)})
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -184,7 +187,7 @@ func (h *NetworkAccessHandler) UpdateSite(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateSite(c.Request.Context(), principal(c), c.Param("siteID"), domainnetworkaccess.SiteInput{Name: input.Name, Description: input.Description, Location: input.Location, Status: string(input.Status)})
+	item, err := h.service.UpdateSite(c.Request.Context(), principal(c), c.Param("siteID"), domainnetworkaccess.SiteInput{Name: input.Name, Description: input.Description, Location: input.Location, DeviceGovernance: string(input.DeviceGovernance), ManagementIssuerKey: input.ManagementIssuerKey, Status: string(input.Status)})
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -655,6 +658,18 @@ func (h *NetworkAccessHandler) PreviewPolicy(c *gin.Context) {
 	respondItem(c, http.StatusOK, item, err)
 }
 
+func (h *NetworkAccessHandler) PreviewAdmission(c *gin.Context) {
+	var input *sohaapi.NetworkAdmissionPreviewRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil || input == nil || decoder.Decode(&struct{}{}) != io.EOF {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid bounded admission preview payload")
+		return
+	}
+	item, err := h.service.PreviewAdmission(c.Request.Context(), principal(c), appnetworkaccess.AdmissionPreviewInput{DeviceID: input.DeviceID, NASBindingID: input.NasBindingID})
+	respondItem(c, http.StatusOK, item, err)
+}
+
 func resourceInput(input sohaapi.NetworkResourceInput) domainnetworkaccess.ResourceInput {
 	return domainnetworkaccess.ResourceInput{SpaceID: input.SpaceID, Name: input.Name, Kind: string(input.Kind), Target: input.Target, Protocol: string(input.Protocol), Ports: input.Ports, Protected: input.Protected, PathMode: string(input.PathMode)}
 }
@@ -721,6 +736,7 @@ func nasBindingInput(input sohaapi.NetworkNASBindingInput) domainnetworkaccess.N
 		NASID: input.NasID, RuntimeID: input.RuntimeID, SiteID: input.SiteID, Name: input.Name,
 		AccessMedium: string(input.AccessMedium), DeviceType: string(input.DeviceType), SSID: input.Ssid, ManagementAddress: input.ManagementAddress,
 		Status: string(input.Status), CoASupported: input.CoaSupported, DisconnectSupported: input.DisconnectSupported,
+		EAPServerTrust: input.EapServerTrust,
 	}
 }
 
@@ -747,7 +763,8 @@ func accessGrantDTO(item domainnetworkruntime.AccessGrant) sohaapi.NetworkAccess
 }
 
 func sessionDTO(item domainnetworkaccess.Session) sohaapi.NetworkSession {
-	return sohaapi.NetworkSession{
+	result := sohaapi.NetworkSession{
+		RestrictionProfile: sohaapi.NetworkAccessProfile(item.RestrictionProfile), RestrictionReason: item.RestrictionReason,
 		ID: item.ID, SubjectID: item.SubjectID, DeviceID: item.DeviceID, SiteID: item.SiteID,
 		GatewayID: item.GatewayID, NasID: item.NASID, Mode: sohaapi.NetworkAccessMode(item.Mode),
 		Path: sohaapi.NetworkPolicyPath(item.Path), AccessProfile: sohaapi.NetworkAccessProfile(item.AccessProfile),
@@ -755,6 +772,11 @@ func sessionDTO(item domainnetworkaccess.Session) sohaapi.NetworkSession {
 		NetworkLeaseIDs: item.NetworkLeaseIDs, ResourceLeaseIDs: item.ResourceLeaseIDs,
 		ReasonCode: item.ReasonCode, StartedAt: item.StartedAt, ExpiresAt: item.ExpiresAt,
 	}
+	if item.LatestCommand != nil {
+		command := sessionCommandDTO(*item.LatestCommand)
+		result.LatestCommand = &command
+	}
+	return result
 }
 
 func sessionActionPlanDTO(item domainnetworkaccess.SessionActionPlan) sohaapi.NetworkSessionActionPlan {
@@ -778,10 +800,17 @@ func sessionCommandDTO(item domainnetworkaccess.SessionCommand) sohaapi.NetworkS
 func policyInput(input sohaapi.NetworkAccessPolicyInput) domainnetworkaccess.PolicyInput {
 	return domainnetworkaccess.PolicyInput{
 		Name: input.Name, Enabled: input.Enabled, Priority: input.Priority, Effect: string(input.Effect),
-		Subjects: domainnetworkaccess.PolicySubjects{Users: input.Subjects.Users, Teams: input.Subjects.Teams, Tags: input.Subjects.Tags},
+		Subjects: domainnetworkaccess.PolicySubjects{Roles: input.Subjects.Roles, Users: input.Subjects.Users, Teams: input.Subjects.Teams, Tags: input.Subjects.Tags},
 		SiteIDs:  input.SiteIDs, ResourceIDs: input.ResourceIDs, Modes: stringValues(input.Modes),
-		DeviceStatuses: stringValues(input.DeviceStatuses), PostureStatuses: stringValues(input.PostureStatuses), AccessProfile: string(input.AccessProfile),
+		DeviceManagementStates: optionalStringValues(input.DeviceManagementStates), DeviceStatuses: stringValues(input.DeviceStatuses), PostureStatuses: stringValues(input.PostureStatuses), AccessProfile: string(input.AccessProfile),
 	}
+}
+
+func optionalStringValues[T ~string](values []T) []string {
+	if values == nil {
+		return nil
+	}
+	return stringValues(values)
 }
 
 func stringValues[T ~string](values []T) []string {
@@ -793,6 +822,17 @@ func stringValues[T ~string](values []T) []string {
 }
 
 func principal(c *gin.Context) domainidentity.Principal { return apiMiddleware.PrincipalFromContext(c) }
+
+// Registration must not silently accept administrative classification fields.
+func bindDeviceRegistration(c *gin.Context, target any) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid endpoint registration payload")
+		return false
+	}
+	return true
+}
 
 func bindNetworkJSON(c *gin.Context, target any) bool {
 	if err := c.ShouldBindJSON(target); err != nil {

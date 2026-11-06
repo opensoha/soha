@@ -1270,7 +1270,7 @@ func (r *Repository) deleteByID(ctx context.Context, tableName, id, label string
 	}
 	result := dbtx.DB(ctx, r.db).Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", tableName), strings.TrimSpace(id))
 	if result.Error != nil {
-		return fmt.Errorf("%s: %w", label, result.Error)
+		return fmt.Errorf("%s: %w", label, normalizeDLPDeletionError(result.Error))
 	}
 	if result.RowsAffected == 0 {
 		return ErrNotFound

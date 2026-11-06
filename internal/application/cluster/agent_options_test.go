@@ -51,3 +51,35 @@ func TestAgentManifestScopesCustomRulesAndEnablesDeliveryRunner(t *testing.T) {
 		t.Fatal("wildcard grant")
 	}
 }
+
+func TestAgentProfileDefaultsAndOmittedUpdatesPreserveCompatibility(t *testing.T) {
+	input := domaincluster.RegisterInput{}
+	if err := validateAgentOptions(&input, domaincluster.ConnectionModeAgent); err != nil {
+		t.Fatal(err)
+	}
+	if input.AgentActionProfile != "legacy" {
+		t.Fatalf("omitted API profile = %q", input.AgentActionProfile)
+	}
+	for _, profile := range []string{"legacy", "read-only", "workbench"} {
+		current := domaincluster.RegisterInput{AgentActionProfile: profile}
+		if err := validateAgentOptions(&current, domaincluster.ConnectionModeAgent); err != nil {
+			t.Fatal(err)
+		}
+		if current.AgentActionProfile != profile {
+			t.Fatalf("explicit %s became %s", profile, current.AgentActionProfile)
+		}
+	}
+	if agentActionProfile(nil) != "legacy" {
+		t.Fatal("old registrations without profile were elevated")
+	}
+	for _, metadata := range []map[string]any{nil, {"agent_action_profile": "read-only"}, {"agent_action_profile": "legacy"}} {
+		update := domaincluster.RegisterInput{}
+		mergeClusterObservabilityUpdate(&update, metadata)
+		if err := validateAgentOptions(&update, domaincluster.ConnectionModeAgent); err != nil {
+			t.Fatal(err)
+		}
+		if update.AgentActionProfile != agentActionProfile(metadata) {
+			t.Fatal("omitted update profile elevated existing registration")
+		}
+	}
+}

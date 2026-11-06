@@ -105,6 +105,14 @@ func (d *Direct) DeleteResource(ctx context.Context, clusterID, namespace, kind,
 	if strings.EqualFold(strings.TrimSpace(kind), "Pod") {
 		return d.DeletePod(ctx, clusterID, namespace, name)
 	}
+	return d.deleteManifest(ctx, clusterID, namespace, kind, name, "")
+}
+
+func (d *Direct) DeleteDeploymentWithExpectedUID(ctx context.Context, clusterID, namespace, name, expectedUID string) error {
+	return observedWorkloadDeleteError(d.deleteManifest(ctx, clusterID, namespace, "Deployment", name, expectedUID))
+}
+
+func (d *Direct) deleteManifest(ctx context.Context, clusterID, namespace, kind, name, expectedUID string) error {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return err
@@ -115,20 +123,43 @@ func (d *Direct) DeleteResource(ctx context.Context, clusterID, namespace, kind,
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return resourceMutationError(contractruntime.DeleteManifest(queryCtx, dynamicResource(bundle.Dynamic, gvr, namespaceScoped, namespace), name, ""))
+	return resourceMutationError(contractruntime.DeleteManifest(queryCtx, dynamicResource(bundle.Dynamic, gvr, namespaceScoped, namespace), name, expectedUID))
 }
 
 func (d *Direct) ApplyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
-	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false)
+	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false, false)
 	return view, err
 }
 
 func (d *Direct) DryRunResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceUpdateAnalysis, error) {
-	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true)
+	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true, false)
 	return analysis, err
 }
 
-func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string, dryRun bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+func (d *Direct) ApplyObservedResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
+	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false, true)
+	return view, observedResourceYAMLError(err)
+}
+
+func (d *Direct) DryRunObservedResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceUpdateAnalysis, error) {
+	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true, true)
+	return analysis, observedResourceYAMLError(err)
+}
+
+func observedResourceYAMLError(err error) error {
+	switch {
+	case apierrors.IsBadRequest(err), apierrors.IsInvalid(err):
+		return fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err)
+	case apierrors.IsForbidden(err), apierrors.IsUnauthorized(err):
+		return fmt.Errorf("%w: %v", apperrors.ErrAccessDenied, err)
+	case apierrors.IsNotFound(err):
+		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+	default:
+		return resourceMutationError(err)
+	}
+}
+
+func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string, dryRun, requireObserved bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
@@ -173,8 +204,9 @@ func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, ki
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	item.SetAPIVersion(gvr.GroupVersion().String())
-	item.SetResourceVersion(current.GetResourceVersion())
-	item.SetUID(current.GetUID())
+	if err := contractruntime.BindResourceEditIdentity(current, item, gvr.GroupResource(), requireObserved); err != nil {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
+	}
 	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(item.Object, "metadata", "creationTimestamp")
 	unstructured.RemoveNestedField(item.Object, "metadata", "generation")
@@ -182,7 +214,7 @@ func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, ki
 	analysis := analyzeResourceUpdate(current, item)
 	updated, err := contractruntime.ApplyResourceEdit(queryCtx, resource, current, item, resourceEditFieldManager, dryRun)
 	if err != nil {
-		if dryRun && apierrors.IsConflict(err) {
+		if dryRun && apierrors.IsConflict(err) && (!requireObserved || contractruntime.IsResourceEditOwnershipConflict(err)) {
 			analysis.Conflicts = conflictsFromError(err.Error(), analysis)
 			return domainresource.ResourceYAMLView{}, analysis, nil
 		}

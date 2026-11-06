@@ -3,6 +3,7 @@ package networkaccess
 import domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
 
 type PreviewInput struct {
+	NASBindingID  string `json:"nasBindingId,omitempty"`
 	SubjectUserID string `json:"subjectUserId"`
 	DeviceID      string `json:"deviceId"`
 	ResourceID    string `json:"resourceId"`
@@ -44,6 +45,9 @@ func EvaluatePolicy(input PreviewInput, subject domainnetworkaccess.Subject, dev
 		return deny("unsupported_access_mode")
 	}
 
+	if reason := resourceGovernanceReason(site, device, resource, networkLease, resourceLease); reason != "" {
+		return deny(reason)
+	}
 	if resource.Protected && (path == domainnetworkaccess.PathSiteDirect || path == domainnetworkaccess.PathWireGuard) {
 		return deny("protected_resource_requires_ztna")
 	}
@@ -81,7 +85,7 @@ func selectResourcePolicy(policies []domainnetworkaccess.Policy, input PreviewIn
 		if policy.Effect == domainnetworkaccess.PolicyEffectDeny {
 			return nil, "policy_deny:" + policy.ID
 		}
-		if policy.Effect == domainnetworkaccess.PolicyEffectAllow && (allow == nil || policy.Priority < allow.Priority) {
+		if policy.Effect == domainnetworkaccess.PolicyEffectAllow && governancePolicyAllows(site, device, *policy, resource.ID) && (allow == nil || policy.Priority < allow.Priority) {
 			allow = policy
 		}
 	}
@@ -107,7 +111,7 @@ func EvaluateAdmission(input AdmissionInput, subject domainnetworkaccess.Subject
 		if policy.Effect == domainnetworkaccess.PolicyEffectDeny {
 			return deny("policy_deny:" + policy.ID)
 		}
-		if policy.Effect == domainnetworkaccess.PolicyEffectAllow && (allow == nil || policy.Priority < allow.Priority) {
+		if policy.Effect == domainnetworkaccess.PolicyEffectAllow && governancePolicyAllows(site, device, *policy, "") && (allow == nil || policy.Priority < allow.Priority) {
 			allow = policy
 		}
 	}
@@ -120,6 +124,9 @@ func EvaluateAdmission(input AdmissionInput, subject domainnetworkaccess.Subject
 	path, networkLease, resourceLease, ok := accessModePath(input.Mode)
 	if !ok {
 		return deny("unsupported_access_mode")
+	}
+	if reason := admissionGovernanceReason(site, device, networkLease, resourceLease); reason != "" {
+		return deny(reason)
 	}
 	result.Decision, result.Path, result.NetworkProfile = domainnetworkaccess.DecisionAllow, path, allow.AccessProfile
 	result.NetworkLeaseRequired, result.ResourceLeaseRequired = networkLease, resourceLease
@@ -176,13 +183,15 @@ func matchesNetworkPolicy(policy domainnetworkaccess.Policy, input PreviewInput,
 
 func matchesPolicySelectors(policy domainnetworkaccess.Policy, subjectUserID, mode string, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site) bool {
 	return subject.UserID == subjectUserID &&
+		matchNetworkSlice(policy.Subjects.Roles, subject.Roles) &&
 		matchNetworkValue(policy.Subjects.Users, subject.UserID) &&
 		matchNetworkSlice(policy.Subjects.Teams, subject.Teams) &&
 		matchNetworkSlice(policy.Subjects.Tags, subject.Tags) &&
 		matchNetworkValue(policy.SiteIDs, site.ID) &&
 		matchNetworkValue(policy.Modes, mode) &&
 		matchNetworkValue(policy.DeviceStatuses, device.Status) &&
-		matchNetworkValue(policy.PostureStatuses, device.PostureStatus)
+		matchNetworkValue(policy.PostureStatuses, device.PostureStatus) &&
+		matchNetworkValue(policy.DeviceManagementStates, device.EffectiveManagementState())
 }
 
 func matchNetworkValue(allowed []string, actual string) bool {

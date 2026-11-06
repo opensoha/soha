@@ -37,6 +37,26 @@ type controlServiceStub struct {
 
 func (service *controlServiceStub) Ready() bool { return service.ready }
 
+func (service *controlServiceStub) IssueEAPCertificate(_ context.Context, identity networkidentity.Identity, raw []byte) (networkprotocol.RuntimeMessage, error) {
+	service.identity, service.raw = identity, append([]byte(nil), raw...)
+	return networkprotocol.RuntimeMessage{SchemaVersion: networkprotocol.RuntimeSchemaVersion, MessageType: networkprotocol.MessageEAPCertificateResult}, nil
+}
+
+func (service *controlServiceStub) ActivateEAPCertificate(_ context.Context, identity networkidentity.Identity, raw []byte) (networkprotocol.RuntimeMessage, error) {
+	service.identity, service.raw = identity, append([]byte(nil), raw...)
+	return networkprotocol.RuntimeMessage{SchemaVersion: networkprotocol.RuntimeSchemaVersion, MessageType: networkprotocol.MessageEAPCertificateActivateResult}, nil
+}
+
+func (service *controlServiceStub) EndpointPresence(_ context.Context, identity networkidentity.Identity, raw []byte) (networkprotocol.RuntimeMessage, error) {
+	service.identity, service.raw = identity, append([]byte(nil), raw...)
+	return networkprotocol.RuntimeMessage{SchemaVersion: networkprotocol.RuntimeSchemaVersion, MessageType: networkprotocol.MessageEndpointPresenceResult}, nil
+}
+
+func (service *controlServiceStub) NASAccounting(_ context.Context, identity networkidentity.Identity, raw []byte) error {
+	service.identity, service.raw = identity, append([]byte(nil), raw...)
+	return nil
+}
+
 func (service *controlServiceStub) Enroll(_ context.Context, identity networkidentity.Identity, token string, raw []byte) (networkprotocol.RuntimeMessage, error) {
 	service.identity, service.token, service.raw = identity, token, append([]byte(nil), raw...)
 	service.enrollCalls++

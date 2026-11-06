@@ -11,7 +11,10 @@ import (
 func TestRegisterNetworkAccessRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	registerNetworkAccessRoutes(router.Group("/api/v1"), Dependencies{NetworkAccess: &apiHandlers.NetworkAccessHandler{}})
+	registerNetworkAccessRoutes(router.Group("/api/v1"), Dependencies{
+		NetworkAccess: &apiHandlers.NetworkAccessHandler{},
+		NetworkProxy:  &apiHandlers.NetworkProxyHandler{},
+	})
 	registered := routeMethodPaths(router.Routes())
 	for _, route := range []string{
 		"GET /api/v1/network-access/devices",
@@ -73,7 +76,11 @@ func TestRegisterNetworkAccessRoutes(t *testing.T) {
 		"DELETE /api/v1/network-access/policies/:policyID",
 		"GET /api/v1/network-access/policy/snapshot",
 		"POST /api/v1/network-access/policy/preview",
+		"POST /api/v1/network-access/admission/preview",
 		"POST /api/v1/network-access/conflicts/analyze",
+		"GET /api/v1/network-access/proxy-instances/:instanceID/configuration-history",
+		"POST /api/v1/network-access/proxy-instances/:instanceID/configuration-history/:revision/restore",
+		"GET /api/v1/network-access/proxy-instances/:instanceID/close-commands/:commandID",
 	} {
 		if !slices.Contains(registered, route) {
 			t.Fatalf("missing route %s", route)

@@ -71,6 +71,10 @@ func (w *Workloads) GetPodDetail(ctx context.Context, principal domainidentity.P
 }
 
 func (w *Workloads) DeletePod(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
+	return w.DeletePodWithExpectedUID(ctx, principal, clusterID, namespace, name, "")
+}
+
+func (w *Workloads) DeletePodWithExpectedUID(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, expectedUID string) error {
 	s := w
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionDelete)
 	if err != nil {
@@ -82,7 +86,7 @@ func (w *Workloads) DeletePod(ctx context.Context, principal domainidentity.Prin
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionDelete), "failure", err.Error())
 		return err
 	}
-	auditFailure, err := route.DeletePod(ctx, namespace, name)
+	auditFailure, err := route.DeletePod(ctx, namespace, name, expectedUID)
 	if err != nil {
 		if auditFailure {
 			_ = s.recordAudit(ctx, principal, route.AuditClusterID(), namespace, "Pod", name, string(domainaccess.ActionDelete), "failure", err.Error())

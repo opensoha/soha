@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beevik/etree"
+	crewjam "github.com/openctemio/saml"
 	appidentityprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
@@ -138,6 +140,10 @@ func TestSignedResponseRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected assertion: %#v", assertion)
 	}
 
+	t.Run("assertion shape", func(t *testing.T) {
+		testSignedResponseShapes(t, sp, rawResponse, redirect.ID)
+	})
+
 	t.Run("destination", func(t *testing.T) {
 		wrong, signErr := idp.SignResponse(ResponseInput{
 			RequestID: redirect.ID, SPEntityID: "https://sp.example.test/metadata", ACSURL: "https://attacker.example.test/acs", NameID: "subject-123",
@@ -183,6 +189,74 @@ func TestSignedResponseRoundTrip(t *testing.T) {
 			t.Fatalf("expected weak algorithm rejection, got %v", validateErr)
 		}
 	})
+}
+
+func testSignedResponseShapes(t *testing.T, sp *ServiceProvider, rawResponse []byte, requestID string) {
+	t.Helper()
+	signer, err := crewjam.GetSigningContext(sp.provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remove := func(element *etree.Element) { element.Parent().RemoveChild(element) }
+	foreign := func(element *etree.Element) {
+		element.Space = "other"
+		element.CreateAttr("xmlns:other", "urn:example:other")
+	}
+	const subject = "./saml:Subject"
+	const confirmation = subject + "/saml:SubjectConfirmation"
+	const conditions = "./saml:Conditions"
+	for _, test := range []struct {
+		name   string
+		path   string
+		change func(*etree.Element)
+	}{
+		{name: "valid"},
+		{name: "missing issuer", path: "./saml:Issuer", change: remove},
+		{name: "missing subject", path: subject, change: remove},
+		{name: "missing conditions", path: conditions, change: remove},
+		{name: "missing confirmation data", path: confirmation + "/saml:SubjectConfirmationData", change: remove},
+		{name: "foreign name ID", path: subject + "/saml:NameID", change: foreign},
+		{name: "foreign confirmation", path: confirmation, change: foreign},
+		{name: "foreign audience restriction", path: conditions + "/saml:AudienceRestriction", change: foreign},
+		{name: "non-bearer confirmation", path: confirmation, change: func(element *etree.Element) {
+			element.CreateAttr("Method", "urn:oasis:names:tc:SAML:2.0:cm:holder-of-key")
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			document := etree.NewDocument()
+			if err := document.ReadFromBytes(rawResponse); err != nil {
+				t.Fatal(err)
+			}
+			response := document.Root()
+			assertion := response.FindElement("./saml:Assertion")
+			// Re-sign the modified response so validation reaches the assertion.
+			remove(response.FindElement("./ds:Signature"))
+			remove(assertion.FindElement("./ds:Signature"))
+			if test.change != nil {
+				element := assertion.FindElement(test.path)
+				if element == nil {
+					t.Fatalf("fixture missing %s", test.path)
+				}
+				test.change(element)
+			}
+			signed, err := signer.SignEnveloped(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := elementBytes(signed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := sp.ValidateResponse(base64.StdEncoding.EncodeToString(raw), requestID)
+			if test.change == nil {
+				if err != nil || result == nil || result.Subject != "subject-123" {
+					t.Fatalf("valid signed response = %#v, error = %v", result, err)
+				}
+			} else if err == nil || result != nil {
+				t.Fatalf("invalid signed response = %#v, error = %v", result, err)
+			}
+		})
+	}
 }
 
 func TestXMLSecurityLimits(t *testing.T) {

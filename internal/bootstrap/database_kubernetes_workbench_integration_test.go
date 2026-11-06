@@ -19,6 +19,9 @@ func TestKubernetesWorkbenchUpgradeWithPostgres(t *testing.T) {
 		{ID: "network", Path: "/network", LabelZH: "网络", LabelEN: "Network", IconKey: "network", SortOrder: 50, Enabled: true},
 		{ID: "network-services", ParentID: "network", Path: "/network/services", LabelZH: "Services", LabelEN: "Services", IconKey: "network", SortOrder: 41, Enabled: true},
 		{ID: "network-ingresses", ParentID: "network", Path: "/network/ingresses", LabelZH: "自定义入口", LabelEN: "Custom ingress", IconKey: "network", SortOrder: 42, Enabled: true},
+		{ID: "network-ingressclasses", ParentID: "network", Path: "/network/ingressclasses", SortOrder: 54, Enabled: true},
+		{ID: "network-gateway-api-gatewayclasses", ParentID: "network", Path: "/network/gateway-api/gatewayclasses", SortOrder: 43, Enabled: true},
+		{ID: "network-gateway-api-gateways", ParentID: "network", Path: "/network/gateway-api/gateways", SortOrder: 97, Enabled: true},
 	}
 	if err := upsertMenus(ctx, db, items, time.Now()); err != nil {
 		t.Fatal(err)
@@ -57,7 +60,13 @@ func TestKubernetesWorkbenchUpgradeWithPostgres(t *testing.T) {
 		t.Fatalf("retained bindings=%d, err=%v", count, err)
 	}
 	assertWorkbenchRolePermissions(t, db)
-	ids := []string{"network-services", "resource-monitoring", "resource-monitoring-cpu"}
+	for id, want := range map[string]int{"network-ingressclasses": 43, "network-gateway-api-gatewayclasses": 44, "network-gateway-api-gateways": 97} {
+		var sort int
+		if err := db.Raw(`SELECT sort_order FROM menus WHERE id = ?`, id).Scan(&sort).Error; err != nil || sort != want {
+			t.Fatalf("sort order for %s = %d, want %d, err=%v", id, sort, want, err)
+		}
+	}
+	ids := []string{"network-services", "resource-monitoring", "resource-monitoring-cpu", "network-ingressclasses", "network-gateway-api-gatewayclasses", "network-gateway-api-gateways"}
 	first := navigationRows(t, db, ids)
 	if err := seedDefaults(ctx, store, cfgpkg.Config{}); err != nil {
 		t.Fatal(err)

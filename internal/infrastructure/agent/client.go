@@ -18,6 +18,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/yamux"
+	"github.com/opensoha/soha-contracts/helmrelease"
 	contractresource "github.com/opensoha/soha-contracts/resource"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -230,10 +231,6 @@ type customResourceListRequest struct {
 
 type customResourceYAMLRequest = domainresource.CustomResourceYAMLRequest
 
-type helmReleaseValuesRequest struct {
-	Content string `json:"content"`
-}
-
 type terminalMessage struct {
 	Type    string `json:"type"`
 	Data    string `json:"data,omitempty"`
@@ -346,9 +343,6 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container stri
 		Data domainresource.PodLogsView `json:"data"`
 	}
 	values := url.Values{}
-	if expectedUID != "" {
-		values.Set("expectedUid", expectedUID)
-	}
 	values.Set("namespace", namespace)
 	if container != "" {
 		values.Set("container", container)
@@ -362,7 +356,7 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container stri
 	if previous {
 		values.Set("previous", "true")
 	}
-	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/logs?%s", url.PathEscape(name), values.Encode())
+	path := podSessionPath(name, "logs", expectedUID, values)
 	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
 		return domainresource.PodLogsView{}, err
 	}
@@ -392,9 +386,6 @@ func (c *Client) GetPodYAML(ctx context.Context, namespace, name string) (domain
 
 func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer, expectedUID string) error {
 	values := url.Values{}
-	if expectedUID != "" {
-		values.Set("expectedUid", expectedUID)
-	}
 	values.Set("namespace", namespace)
 	if container != "" {
 		values.Set("container", container)
@@ -405,7 +396,7 @@ func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container s
 	if sinceSeconds > 0 {
 		values.Set("sinceSeconds", fmt.Sprintf("%d", sinceSeconds))
 	}
-	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/logs/stream?%s", url.PathEscape(name), values.Encode())
+	path := podSessionPath(name, "logs/stream", expectedUID, values)
 	stream, err := c.openStream(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return err
@@ -462,9 +453,6 @@ func (c *Client) ExecPod(ctx context.Context, namespace, name, container, comman
 
 func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue, expectedUID string) error {
 	values := url.Values{}
-	if expectedUID != "" {
-		values.Set("expectedUid", expectedUID)
-	}
 	values.Set("namespace", namespace)
 	if container != "" {
 		values.Set("container", container)
@@ -472,7 +460,7 @@ func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, contain
 	if shell != "" {
 		values.Set("shell", shell)
 	}
-	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/terminal?%s", url.PathEscape(name), values.Encode())
+	path := podSessionPath(name, "terminal", expectedUID, values)
 	endpoint, err := c.websocketEndpoint(path)
 	if err != nil {
 		return err
@@ -486,6 +474,11 @@ func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, contain
 		if resp != nil {
 			if resp.Body != nil {
 				_ = resp.Body.Close()
+			}
+			if expectedUID != "" {
+				if responseErr := agentResponseError(path, resp); responseErr != nil {
+					return responseErr
+				}
 			}
 			return fmt.Errorf("agent terminal websocket failed with status %d", resp.StatusCode)
 		}
@@ -508,6 +501,30 @@ func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, contain
 		_ = writeAgentTerminalMessage(conn, &writeMu, terminalMessage{Type: "close"})
 		return ctx.Err()
 	}
+}
+
+const podSessionPathPrefix = "/api/v1/platform/workloads/pods/"
+
+func podSessionPath(name, session, expectedUID string, values url.Values) string {
+	if expectedUID != "" {
+		values.Set("expectedUid", expectedUID)
+		session = "uid-bound/" + session
+	}
+	return podSessionPathPrefix + url.PathEscape(name) + "/" + session + "?" + values.Encode()
+}
+
+func isUIDBoundPodSessionPath(path string) bool {
+	return strings.HasPrefix(path, podSessionPathPrefix) && strings.Contains(path, "/uid-bound/")
+}
+
+func uidBoundPodSessionResponseError(resp *http.Response) error {
+	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		return fmt.Errorf("%w: Agent redirected a UID-bound Pod session", apperrors.ErrUnsupportedOperation)
+	}
+	if resp.StatusCode == http.StatusMethodNotAllowed || (resp.StatusCode == http.StatusNotFound && !strings.Contains(resp.Header.Get("Content-Type"), "application/json")) {
+		return fmt.Errorf("%w: upgrade the Agent to support UID-bound Pod sessions", apperrors.ErrUnsupportedOperation)
+	}
+	return nil
 }
 
 func (c *Client) readAgentTerminalMessages(ctx context.Context, conn *websocket.Conn, stdout, stderr io.Writer, errCh chan<- error) {
@@ -1051,15 +1068,25 @@ func (c *Client) InstallHelmChart(ctx context.Context, input domainresource.Helm
 	return payload.Data, nil
 }
 
-func (c *Client) UpdateHelmReleaseValues(ctx context.Context, namespace, name, content string) (domainresource.HelmValuesView, error) {
+func (c *Client) UpdateHelmReleaseValues(ctx context.Context, namespace, name, content string, expectedRevision int) (domainresource.HelmValuesView, error) {
 	var payload struct {
 		Data domainresource.HelmValuesView `json:"data"`
 	}
-	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/values?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
-	if err := c.request(ctx, http.MethodPut, path, helmReleaseValuesRequest{Content: content}, &payload); err != nil {
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/values", url.PathEscape(name))
+	if expectedRevision != 0 {
+		path += "/conditional"
+	}
+	path += "?namespace=" + url.QueryEscape(namespace)
+	input := helmrelease.ValuesUpdateRequest{Content: content, ExpectedRevision: helmrelease.ValuesExpectedRevision(expectedRevision)}
+	if err := c.request(ctx, http.MethodPut, path, input, &payload); err != nil {
 		return domainresource.HelmValuesView{}, err
 	}
 	return payload.Data, nil
+}
+
+func helmValuesConditionalPath(path string) bool {
+	route, _, _ := strings.Cut(path, "?")
+	return strings.HasPrefix(route, "/api/v1/platform/helm/releases/") && strings.HasSuffix(route, "/values/conditional")
 }
 
 func (c *Client) DryRunHelmReleaseRollback(ctx context.Context, namespace, name string, input domainresource.HelmReleaseRollbackInput) error {
@@ -1706,10 +1733,15 @@ func (c *Client) DryRunResourceYAML(ctx context.Context, namespace, kind, name, 
 }
 
 func (c *Client) GetResourceGraph(ctx context.Context, namespace, kind, name string) (domainresource.ResourceGraph, error) {
+	if probe := resourceGraphCapabilityPath(kind); probe != "" {
+		if err := c.request(ctx, http.MethodHead, probe, nil, nil); err != nil {
+			return domainresource.ResourceGraph{}, err
+		}
+	}
 	var payload struct {
 		Data domainresource.ResourceGraph `json:"data"`
 	}
-	path := fmt.Sprintf("/api/v1/platform/resources/graph?namespace=%s&kind=%s&name=%s", url.QueryEscape(namespace), url.QueryEscape(kind), url.QueryEscape(name))
+	path := fmt.Sprintf("%s?namespace=%s&kind=%s&name=%s", resourceGraphPath, url.QueryEscape(namespace), url.QueryEscape(kind), url.QueryEscape(name))
 	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
 		return domainresource.ResourceGraph{}, err
 	}
@@ -2028,23 +2060,36 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	httpClient := c.httpClient
+	observedMutation := path == observedWorkloadDeletePath || strings.HasPrefix(path, observedResourceYAMLPath) || helmValuesConditionalPath(path)
+	if resourceGraphNoRedirect(method, path) || observedMutation || isUIDBoundPodSessionPath(path) {
+		probeClient := *httpClient
+		probeClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		httpClient = &probeClient
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("execute agent request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if err := agentResponseError(path, resp); err != nil {
+	if err := agentRequestError(path, resp, observedMutation); err != nil {
 		return err
 	}
 	if out == nil {
 		return nil
 	}
-	response, err := io.ReadAll(io.LimitReader(resp.Body, maxAgentJSONResponseBytes+1))
+	responseLimit := maxAgentJSONResponseBytes
+	if path == customGraphObjectPath {
+		responseLimit = customGraphObjectEnvelopeLimit
+	}
+	response, err := io.ReadAll(io.LimitReader(resp.Body, int64(responseLimit)+1))
 	if err != nil {
 		return fmt.Errorf("read agent response: %w", err)
 	}
-	if len(response) > maxAgentJSONResponseBytes {
-		return fmt.Errorf("agent response exceeds %d byte limit", maxAgentJSONResponseBytes)
+	if len(response) > responseLimit {
+		return fmt.Errorf("agent response exceeds %d byte limit", responseLimit)
 	}
 	if err := json.Unmarshal(response, out); err != nil {
 		return fmt.Errorf("decode agent response: %w", err)
@@ -2052,19 +2097,40 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	return nil
 }
 
-func agentResponseError(path string, resp *http.Response) error {
-	if strings.HasPrefix(path, basicMutationPath+"/infrastructure/nodes/") && strings.HasSuffix(path, "/drain") && resp.StatusCode == http.StatusConflict {
-		var envelope struct {
-			Error struct {
-				Code string `json:"code"`
-			} `json:"error"`
-		}
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 8193))
-		if err == nil && len(body) <= 8192 && json.Unmarshal(body, &envelope) == nil && contractresource.IsNodeDrainErrorCode(envelope.Error.Code) {
-			return &contractresource.NodeDrainError{Code: envelope.Error.Code}
+func agentRequestError(path string, resp *http.Response, observedMutation bool) error {
+	if observedMutation && resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		return fmt.Errorf("%w: Agent redirected a guarded mutation request", apperrors.ErrUnsupportedOperation)
+	}
+	if path == observedWorkloadDeletePath {
+		if err := observedWorkloadDeleteResponseError(resp); err != nil {
+			return err
 		}
 	}
-	if (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed) && (strings.HasPrefix(path, "/api/v1/platform/ownership-v2/") || strings.HasSuffix(path, "/custom-resources/access") || strings.HasSuffix(path, "/metrics/prometheus/query")) && !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+	if err := resourceGraphRequestError(path, resp); err != nil {
+		return err
+	}
+	return agentResponseError(path, resp)
+}
+
+func agentResponseError(path string, resp *http.Response) error {
+	if isUIDBoundPodSessionPath(path) {
+		if err := uidBoundPodSessionResponseError(resp); err != nil {
+			return err
+		}
+	}
+	if helmValuesConditionalPath(path) && (resp.StatusCode == http.StatusMethodNotAllowed ||
+		(resp.StatusCode == http.StatusNotFound && !strings.Contains(resp.Header.Get("Content-Type"), "application/json"))) {
+		return fmt.Errorf("%w: upgrade the Agent to support conditional Helm values updates", apperrors.ErrUnsupportedOperation)
+	}
+	if controllerHistoryRouteUnavailable(path, resp) {
+		return fmt.Errorf("%w: upgrade the Agent to support ControllerRevision history", apperrors.ErrUnsupportedOperation)
+	}
+	if strings.HasPrefix(path, basicMutationPath+"/infrastructure/nodes/") && strings.HasSuffix(path, "/drain") && resp.StatusCode == http.StatusConflict {
+		if err := agentNodeDrainError(resp.Body); err != nil {
+			return err
+		}
+	}
+	if agentOwnershipRouteUnavailable(path, resp) {
 		return fmt.Errorf("%w: upgrade the Agent to support ownership-protected resource mutations", apperrors.ErrUnsupportedOperation)
 	}
 	switch resp.StatusCode {
@@ -2084,6 +2150,26 @@ func agentResponseError(path string, resp *http.Response) error {
 		return fmt.Errorf("agent request failed with status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func agentNodeDrainError(reader io.Reader) error {
+	var envelope struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, 8193))
+	if err == nil && len(body) <= 8192 && json.Unmarshal(body, &envelope) == nil && contractresource.IsNodeDrainErrorCode(envelope.Error.Code) {
+		return &contractresource.NodeDrainError{Code: envelope.Error.Code}
+	}
+	return nil
+}
+
+func agentOwnershipRouteUnavailable(path string, resp *http.Response) bool {
+	if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed {
+		return false
+	}
+	return !strings.Contains(resp.Header.Get("Content-Type"), "application/json") && (strings.HasPrefix(path, "/api/v1/platform/ownership-v2/") || strings.HasSuffix(path, "/custom-resources/access") || strings.HasSuffix(path, "/metrics/prometheus/query"))
 }
 
 func (c *Client) openStream(ctx context.Context, method, path string, body any) (io.ReadCloser, error) {
@@ -2107,9 +2193,19 @@ func (c *Client) openStream(ctx context.Context, method, path string, body any) 
 	}
 	streamClient := *c.httpClient
 	streamClient.Timeout = 0
+	guardedSession := isUIDBoundPodSessionPath(path)
+	if guardedSession {
+		streamClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	}
 	resp, err := streamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute agent stream request: %w", err)
+	}
+	if guardedSession {
+		if err := agentResponseError(path, resp); err != nil {
+			_ = resp.Body.Close()
+			return nil, err
+		}
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		_ = resp.Body.Close()

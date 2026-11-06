@@ -3,10 +3,12 @@ package resource
 import (
 	"context"
 	"fmt"
-	"github.com/opensoha/soha-contracts/helmrelease"
 	"slices"
+	"time"
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha-contracts/helmrelease"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
@@ -36,6 +38,17 @@ func (h *Helm) AuthorizeHelmDelivery(ctx context.Context, principal domainidenti
 		return "", err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		if mutate {
+			if snapshot.Operation == sohaapi.HelmDeliverySnapshotOperationRollback {
+				action = domainaccess.ActionRollback
+			}
+			if err := h.requireClusterWideHelmMutation(ctx, principal, connection, snapshot.Namespace, action); err != nil {
+				return "", err
+			}
+			if err := h.requireAgentHelmDeliveryOptIn(ctx, connection, snapshot.Operation); err != nil {
+				return "", err
+			}
+		}
 		if helmrelease.IsInitialization(snapshot) {
 			if !slices.Contains(connection.Summary.Capabilities, helmrelease.InitializationCapability) {
 				return "", fmt.Errorf("%w: Agent does not support create-only Helm initialization", apperrors.ErrUnsupportedOperation)
@@ -48,6 +61,43 @@ func (h *Helm) AuthorizeHelmDelivery(ctx context.Context, principal domainidenti
 		return domaindelivery.HelmDirectInitializationProvider, nil
 	}
 	return "helm_direct", nil
+}
+
+// Older Agents did not enforce an action allowlist in the claimed-task runner.
+func (h *Helm) requireAgentHelmDeliveryOptIn(ctx context.Context, connection domaincluster.Connection, operation sohaapi.HelmDeliverySnapshotOperation) error {
+	var requiredAction string
+	switch operation {
+	case sohaapi.HelmDeliverySnapshotOperationInstall:
+		requiredAction = "platform.helm_releases.install"
+	case sohaapi.HelmDeliverySnapshotOperationUpgrade:
+		requiredAction = "platform.helm_releases.values_update"
+	case sohaapi.HelmDeliverySnapshotOperationRollback:
+		requiredAction = "platform.helm_releases.rollback"
+	default:
+		return fmt.Errorf("%w: invalid Helm delivery operation", apperrors.ErrInvalidArgument)
+	}
+	client, err := h.helmAgentClient(connection)
+	if err != nil {
+		return err
+	}
+	reader, ok := client.(interface {
+		GetActionChecks(context.Context) ([]contractresource.AgentActionCheck, error)
+	})
+	if !ok {
+		return fmt.Errorf("%w: Agent Helm action diagnostics unavailable", apperrors.ErrClusterUnready)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	checks, err := reader.GetActionChecks(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: Agent Helm action diagnostics unavailable", apperrors.ErrClusterUnready)
+	}
+	if !slices.ContainsFunc(checks, func(check contractresource.AgentActionCheck) bool {
+		return check.Action == requiredAction && check.Implementation == "supported" && check.Configured == "allowed"
+	}) {
+		return fmt.Errorf("%w: Agent Helm delivery action is not allowlisted", apperrors.ErrAccessDenied)
+	}
+	return nil
 }
 
 func (h *Helm) PrepareHelmDelivery(ctx context.Context, principal domainidentity.Principal, input sohaapi.HelmExecutionTaskPayload) (sohaapi.HelmExecutionTaskPayload, error) {

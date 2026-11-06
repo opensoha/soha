@@ -56,7 +56,9 @@ type PrometheusSettings struct {
 	DefaultRangeMinutes int    `json:"defaultRangeMinutes"`
 	StepSeconds         int    `json:"stepSeconds"`
 	ClusterLabel        string `json:"clusterLabel"`
-	GrafanaBaseURL      string `json:"grafanaBaseUrl"`
+	// ClusterLabelValue is connection-specific; it is not a global runtime setting.
+	ClusterLabelValue string `json:"-"`
+	GrafanaBaseURL    string `json:"grafanaBaseUrl"`
 }
 
 type AIWorkbenchModelSettings struct {

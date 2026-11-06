@@ -18,7 +18,7 @@ type PodReader interface {
 }
 
 type PodResourceEditor interface {
-	DeletePod(context.Context, domainidentity.Principal, string, string, string) error
+	DeletePodWithExpectedUID(context.Context, domainidentity.Principal, string, string, string, string) error
 	GetPodYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
 	ApplyPodYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 }
@@ -45,6 +45,8 @@ type DeploymentEditor interface {
 }
 
 type StatefulSetReader interface {
+	ListStatefulSetRolloutHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.RolloutHistoryView, error)
+	GetStatefulSetRevisionYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ListStatefulSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.StatefulSetView, error)
 	GetStatefulSetDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.StatefulSetDetailView, error)
 	GetStatefulSetYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
@@ -58,6 +60,8 @@ type StatefulSetEditor interface {
 }
 
 type DaemonSetReader interface {
+	ListDaemonSetRolloutHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.RolloutHistoryView, error)
+	GetDaemonSetRevisionYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ListDaemonSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.DaemonSetView, error)
 	GetDaemonSetDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.DaemonSetDetailView, error)
 	GetDaemonSetYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
@@ -70,6 +74,7 @@ type DaemonSetEditor interface {
 }
 
 type JobService interface {
+	GetJobMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
 	ListJobs(context.Context, domainidentity.Principal, string, string) ([]domainresource.JobView, error)
 	GetJobDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.JobDetailView, error)
 	GetJobYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
@@ -89,6 +94,8 @@ type WorkloadSnapshotService interface {
 }
 
 type WorkloadInventoryService interface {
+	GetReplicaSetMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
+	GetReplicationControllerMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
 	ListReplicaSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReplicaSetView, error)
 	GetReplicaSetDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ReplicaSetDetailView, error)
 	GetReplicationControllerDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ReplicationControllerDetailView, error)
@@ -128,6 +135,7 @@ type ConfigMapService interface {
 }
 
 type SecretService interface {
+	GetSecretCertificate(context.Context, domainidentity.Principal, string, string, string) (domainresource.SecretCertificateView, error)
 	ListSecrets(context.Context, domainidentity.Principal, string, string) ([]domainresource.SecretView, error)
 	GetSecretDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.SecretDetailView, error)
 	UpdateSecretData(context.Context, domainidentity.Principal, string, string, string, map[string]string) (domainresource.SecretDetailView, error)
@@ -268,7 +276,7 @@ type HelmReleaseReader interface {
 }
 
 type HelmReleaseEditor interface {
-	UpdateHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
+	UpdateHelmReleaseValuesWithRevision(context.Context, domainidentity.Principal, string, string, string, string, int) (domainresource.HelmValuesView, error)
 	PlanHelmReleaseRollback(context.Context, domainidentity.Principal, string, string, string, domainresource.HelmReleaseRollbackInput) (domainoperation.Plan, error)
 	RollbackHelmRelease(context.Context, domainidentity.Principal, string, string, string, domainresource.HelmReleaseRollbackInput) (domainresource.HelmReleaseDetailView, error)
 	DeleteHelmRelease(context.Context, domainidentity.Principal, string, string, string) error
@@ -300,6 +308,7 @@ type GenericResourceService interface {
 	PlanResourceYAMLUpdate(context.Context, domainidentity.Principal, string, domainresource.ResourceUpdatePlanRequest) (domainoperation.Plan, error)
 	ApplyResourceYAMLByKind(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	DeleteResourceByKind(context.Context, domainidentity.Principal, string, string, string, string) error
+	DeleteDeploymentWithExpectedUID(context.Context, domainidentity.Principal, string, string, string, string) error
 }
 
 type PortForwardService interface {
@@ -322,6 +331,7 @@ type ResourceEventStreamService interface {
 
 type ResourceGraphService interface {
 	GetResourceGraph(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceGraph, error)
+	GetCustomResourceGraph(context.Context, domainidentity.Principal, domainresource.ResourceRef, string) (domainresource.ResourceGraph, error)
 }
 
 type SecurityPostureService interface {

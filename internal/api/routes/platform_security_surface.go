@@ -52,9 +52,7 @@ func isReadOnlyPOST(method, path string) bool {
 		strings.HasSuffix(path, "/resources/update-plan") ||
 		strings.HasSuffix(path, "/rollback/plan") ||
 		strings.HasSuffix(path, "/access-control/access-reviews") ||
-		strings.HasSuffix(path, "/network-access/policy/preview") ||
-		strings.HasSuffix(path, "/network-access/conflicts/analyze") ||
-		strings.HasSuffix(path, "/network-access/sessions/:sessionID/actions/plan") ||
+		isNetworkSecurityReadOnlyPOST(path) ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
 		path == "/api/v1/ai-gateway/plans/validate" ||
 		strings.HasSuffix(path, "/logs/query") ||
@@ -103,6 +101,7 @@ func nonPlatformMutationSecuritySurface(method, path string) (nonPlatformMutatio
 }
 
 var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatformMutationSecuritySurfaceEntry, bool){
+	networkSecurityMutationSurface,
 	deliveryMutationSecuritySurface,
 	monitoringMutationSecuritySurface,
 	runtimeMutationSecuritySurface,

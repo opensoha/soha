@@ -502,10 +502,13 @@ func TestNetworkAccessLeafMenusRequireTheirOwnViewPermission(t *testing.T) {
 		path       string
 		permission string
 	}{
+		{id: "network-access-content-transfers", path: "/network-access/content-transfers", permission: "network_access.content_transfers.view"},
 		{id: "network-access-devices", path: "/network-access/devices", permission: appaccess.PermNetworkAccessEndpointDevicesView},
 		{id: "network-access-sites", path: "/network-access/sites", permission: appaccess.PermNetworkAccessSitesView},
 		{id: "network-access-user-admission", path: "/network-access/user-admission", permission: appaccess.PermNetworkAccessSitesView},
 		{id: "network-access-settings", path: "/network-access/settings", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-endpoint-response", path: "/network-access/endpoint-response", permission: "network_access.endpoint_response_policies.view"},
+		{id: "network-access-endpoint-response", path: "/network-access/endpoint-response", permission: "network_access.endpoint_response_events.maintenance"},
 		{id: "network-access-ssids", path: "/network-access/ssids", permission: appaccess.PermNetworkAccessSitesView},
 		{id: "network-access-wifi", path: "/network-access/wifi", permission: appaccess.PermNetworkAccessSitesView},
 		{id: "network-access-wired", path: "/network-access/wired", permission: appaccess.PermNetworkAccessSitesView},

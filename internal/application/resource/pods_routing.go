@@ -25,7 +25,7 @@ type podInteractiveRoute interface {
 }
 
 type podMutationRoute interface {
-	DeletePod(context.Context, string, string) (bool, error)
+	DeletePod(context.Context, string, string, string) (bool, error)
 }
 
 type podRoute interface {
@@ -34,7 +34,6 @@ type podRoute interface {
 	podMutationRoute
 	Source() string
 	AuditClusterID() string
-	SupportsUsageMetrics() bool
 	RuntimeError(error) error
 }
 
@@ -60,8 +59,11 @@ func (r agentPodRoute) GetPodDetail(ctx context.Context, namespace, name string)
 	return r.client.GetPodDetail(ctx, namespace, name)
 }
 
-func (r agentPodRoute) DeletePod(ctx context.Context, namespace, name string) (bool, error) {
-	return true, wrapAgentResourceError(r.client.DeletePod(ctx, namespace, name))
+func (r agentPodRoute) DeletePod(ctx context.Context, namespace, name, expectedUID string) (bool, error) {
+	if expectedUID == "" {
+		return true, wrapAgentResourceError(r.client.DeletePod(ctx, namespace, name))
+	}
+	return true, deleteObservedAgentWorkload(ctx, r.client, namespace, "Pod", name, expectedUID)
 }
 
 func (r agentPodRoute) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
@@ -101,10 +103,6 @@ func (r agentPodRoute) AuditClusterID() string {
 	return r.clusterID
 }
 
-func (agentPodRoute) SupportsUsageMetrics() bool {
-	return false
-}
-
 func (agentPodRoute) RuntimeError(err error) error {
 	return wrapAgentResourceError(err)
 }
@@ -135,8 +133,17 @@ func (r directPodRoute) GetPodDetail(ctx context.Context, namespace, name string
 	return r.backend.GetPodDetail(ctx, r.clusterID, namespace, name)
 }
 
-func (r directPodRoute) DeletePod(ctx context.Context, namespace, name string) (bool, error) {
-	return true, r.backend.DeletePod(ctx, r.clusterID, namespace, name)
+func (r directPodRoute) DeletePod(ctx context.Context, namespace, name, expectedUID string) (bool, error) {
+	if expectedUID == "" {
+		return true, r.backend.DeletePod(ctx, r.clusterID, namespace, name)
+	}
+	backend, ok := r.backend.(interface {
+		DeletePodWithExpectedUID(context.Context, string, string, string, string) error
+	})
+	if !ok {
+		return true, fmt.Errorf("%w: direct Pod backend does not support UID preconditions", apperrors.ErrUnsupportedOperation)
+	}
+	return true, backend.DeletePodWithExpectedUID(ctx, r.clusterID, namespace, name, expectedUID)
 }
 
 func (r directPodRoute) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
@@ -165,10 +172,6 @@ func (directPodRoute) Source() string {
 
 func (r directPodRoute) AuditClusterID() string {
 	return r.clusterID
-}
-
-func (directPodRoute) SupportsUsageMetrics() bool {
-	return true
 }
 
 func (directPodRoute) RuntimeError(err error) error {

@@ -264,4 +264,15 @@ bootstrap:
   seed_defaults: true
 
 kubernetes:
+  # Each cluster can use its existing Prometheus identity instead of the Soha ID:
+  # - id: <Soha cluster UUID>
+  #   name: production
+  #   kubeconfig: /path/to/kubeconfig
+  #   prometheus_url: http://prometheus:9090
+  #   prometheus_cluster_label: cluster
+  #   prometheus_cluster_label_value: production
+  # Omit the label value to use the Soha cluster ID as the exact matcher.
+  # For shared Prometheus, configure a cluster label that uniquely identifies
+  # each cluster. Omit both label fields only for a dedicated single-cluster
+  # endpoint. An empty scoped query never retries without its cluster label.
   clusters: []
