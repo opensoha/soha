@@ -22,7 +22,33 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+}
+.soha-service-detail[data-service-tab='pods'] .soha-service-pods {
+  gap: 8px;
+}
+.soha-service-detail[data-service-tab='pods'] .soha-pod-list-filter {
+  min-height: 48px;
+  padding-block: 1px;
+}
+.soha-pod-list-filter__summary {
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.soha-pod-list-filter__summary > .ant-typography + .ant-typography {
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-pod-list-scroll {
+  min-width: 0;
+}
+.soha-pod-list-scroll:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
 }
 .soha-pod-list-filter > .ant-input-affix-wrapper {
   width: 280px;

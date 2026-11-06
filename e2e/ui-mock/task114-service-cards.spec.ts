@@ -21,6 +21,9 @@ for (const width of [1440, 390]) {
     ]) {
       await expect(cards.getByText(kind, { exact: true })).toHaveCount(2)
     }
+    await page.getByText('列表', { exact: true }).click()
+    await expect(page.getByRole('table').getByRole('row')).toHaveCount(11)
+    await page.getByText('卡片', { exact: true }).click()
     await cards.getByRole('button', { name: '订单 API', exact: true }).click()
     await expect(page.getByRole('heading', { name: '订单 API', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '服务总览', exact: true }).click()
@@ -44,7 +47,7 @@ for (const width of [1440, 390]) {
   })
 }
 
-test('service cards refresh recorded workflow stages without copying them across services or environments', async ({
+test('service details refresh recorded workflow stages for the selected service', async ({
   context,
   page,
 }) => {
@@ -120,21 +123,20 @@ test('service cards refresh recorded workflow stages without copying them across
   const cards = page.getByRole('list', { name: '服务卡片', exact: true })
   const order = cards.getByRole('listitem', { name: '服务 订单 API', exact: true })
   const payment = cards.getByRole('listitem', { name: '服务 支付服务', exact: true })
-  await expect(order.getByRole('button', { name: '发布服务，执行中', exact: true })).toBeEnabled()
   await expect(order).toContainText('运行正常')
-  await expect(payment).not.toContainText('订单发布')
-  await expect(payment).toContainText('支付发布')
+  await expect(order).not.toContainText('订单发布')
+  await expect(payment).not.toContainText('支付发布')
+  await order.getByRole('button', { name: '订单 API', exact: true }).click()
+  await page.getByRole('tab', { name: '发布与工作流', exact: true }).click()
+  const workflow = page.getByRole('region', { name: '当前服务工作流', exact: true })
   await expect(
-    payment.getByRole('button', { name: '生产确认，等待审批', exact: true }),
+    workflow.getByRole('button', { name: '发布服务，执行中', exact: true }),
   ).toBeEnabled()
+  await expect(workflow).not.toContainText('支付发布')
   completed = true
   await page.getByRole('button', { name: '刷新当前环境', exact: true }).click()
-  await expect(order.getByRole('button', { name: '发布服务，已完成', exact: true })).toBeEnabled()
-  await page
-    .getByRole('navigation', { name: '选择环境', exact: true })
-    .getByRole('button', { name: /生产环境/ })
-    .click()
-  await expect(cards).not.toContainText('订单发布')
-  await expect(cards).toContainText('尚未部署')
+  await expect(
+    workflow.getByRole('button', { name: '发布服务，已完成', exact: true }),
+  ).toBeEnabled()
   verifyBrowserEvidence(evidence)
 })

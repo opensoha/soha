@@ -116,6 +116,7 @@ export function ResourceRelationsBrowser({
     const next = new URLSearchParams(params)
     next.set('serviceTab', 'metrics')
     next.set('metricUid', node.resource.uid!)
+    next.set('metricRoot', workload.targetId!)
     next.set('metricPod', node.resource.name)
     next.set('metricCluster', node.resource.clusterId)
     next.set('metricNamespace', node.resource.namespace!)

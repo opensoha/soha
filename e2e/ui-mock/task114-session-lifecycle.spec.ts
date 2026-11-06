@@ -3,7 +3,7 @@ import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { task114Response } from '../fixtures/task114-delivery'
 
 const target =
-  '/applications/retail?tab=services&applicationEnvironmentId=retail-test&serviceId=order-api'
+  '/applications/retail?tab=services&applicationEnvironmentId=retail-test&serviceId=order-api&serviceTab=pods'
 
 for (const kind of ['logs', 'terminal'] as const) {
   test(`Task114 ${kind}: minimize retains connection; scope exit, reload and pagehide require explicit restore`, async ({

@@ -1543,15 +1543,27 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.querySelector('.soha-service-detail-identity')?.textContent).toContain(
       '运行正常',
     )
-    expect(container.querySelector('[aria-label="服务运行事实"]')?.textContent).toContain('2 / 2')
+    const header = container.querySelector('header.soha-service-summary')!
+    expect(header.querySelector('[aria-label="服务运行事实"]')).toBeNull()
+    expect(header.querySelector('[role="tablist"]')).not.toBeNull()
+    expect(header.querySelector('[aria-label="返回服务总览"]')).not.toBeNull()
     expect(container.querySelectorAll('.soha-rollout-stages > li')).toHaveLength(0)
     expect(container.querySelector('.soha-service-summary details')).toBeNull()
     const serviceActions = container.querySelector('.soha-service-actions')
     expect(serviceActions?.textContent).toContain('发布')
-    expect(serviceActions?.textContent).toContain('资源清单')
+    expect(serviceActions?.querySelector('[aria-label="更多服务操作"]')).not.toBeNull()
     expect(serviceActions?.textContent).not.toContain('编辑服务')
-    expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
+    expect(container.querySelector('.soha-pod-card')).toBeNull()
     expect(container.querySelector('[aria-label="工作负载运行关系"]')).not.toBeNull()
+    expect(header.querySelector('.soha-service-pod-count')?.textContent).toBe('1')
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('.soha-service-runtime-overview__resources button')!
+        .click()
+      await vi.dynamicImportSettled()
+    })
+    expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
+    expect(container.querySelector('[aria-label="工作负载运行关系"]')).toBeNull()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
         .find((tab) => tab.textContent === '配置与模板')!
@@ -1576,7 +1588,7 @@ describe('ApplicationDetailPage workbench', () => {
     })
     expect(container.querySelector('.soha-service-card-list')).toBeNull()
     expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
-      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=pods',
+      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=runtime',
     )
     const selector = container.querySelector('.soha-service-selector')!
     expect(selector.querySelector('[aria-label="新建服务"]')).toBeNull()
@@ -1592,7 +1604,7 @@ describe('ApplicationDetailPage workbench', () => {
       settings: 'application',
       applicationEnvironmentId: 'binding-test',
       serviceId: 'svc-api',
-      serviceTab: 'pods',
+      serviceTab: 'runtime',
     })
     const settings = document.querySelector('.ant-drawer-open')!
     expect(settings.textContent).toContain('应用设置')
@@ -1602,7 +1614,7 @@ describe('ApplicationDetailPage workbench', () => {
       settings.querySelector<HTMLButtonElement>('.ant-drawer-close')!.click()
     })
     expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
-      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=pods',
+      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=runtime',
     )
   })
 
@@ -1640,7 +1652,6 @@ describe('ApplicationDetailPage workbench', () => {
       await act(async () => {
         await vi.dynamicImportSettled()
       })
-      expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
       expect(container.querySelector('.soha-service-runtime-actions')).toBeNull()
       expect(container.querySelector('.soha-service-actions')?.textContent).toContain('发布')
       for (const label of ['扩缩容', '重启'])
@@ -1649,6 +1660,13 @@ describe('ApplicationDetailPage workbench', () => {
             container.querySelectorAll<HTMLButtonElement>('.soha-service-actions button'),
           ).find((button) => button.textContent === label)?.disabled,
         ).toBe(true)
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
+          .find((tab) => tab.textContent?.startsWith('Pods'))!
+          .click()
+        await vi.dynamicImportSettled()
+      })
+      expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
     } finally {
       testState.apiGet.mockImplementation(previousGet)
     }
@@ -1720,7 +1738,7 @@ describe('ApplicationDetailPage workbench', () => {
             await new Promise((resolve) => setTimeout(resolve, 0))
           })
           if (serviceTab === 'pods') {
-            expect(container.textContent).toContain('cache-root')
+            expect(container.querySelector('.soha-service-runtime-overview')).toBeNull()
             expect(container.querySelector('.soha-pod-card')?.textContent).toContain(
               'checkout-api-pod',
             )
@@ -1797,7 +1815,7 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.textContent).toContain('当前环境尚未部署此服务')
     expect(
       Array.from(container.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent),
-    ).toEqual(['运行资源', '指标', '发布与工作流', '配置与模板', '状态与事件'])
+    ).toEqual(['运行资源', 'Pods', '指标', '发布与工作流', '配置与模板', '状态与事件'])
     expect(
       Array.from(container.querySelectorAll('[role="tab"]')).some(
         (tab) => tab.textContent === '配置',

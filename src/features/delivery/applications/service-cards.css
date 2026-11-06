@@ -1,0 +1,70 @@
+.soha-service-overview-grid {
+  min-width: 0;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+}
+.soha-service-catalog__toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+.soha-service-catalog__toolbar .ant-typography {
+  margin-inline-start: 6px;
+}
+.soha-service-catalog__scroll {
+  min-height: 0;
+  padding: 12px;
+}
+.soha-service-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 218px), 1fr));
+  gap: 12px;
+}
+.soha-service-card--compact .soha-service-card__body {
+  display: grid;
+  grid-template-rows: 24px 22px 40px;
+  gap: 8px;
+  padding: 12px;
+}
+.soha-service-card--compact .soha-service-card__heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.soha-service-card--compact .soha-service-card__heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-service-card--compact .soha-service-card__heading .ant-tag {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.soha-service-catalog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--soha-border-color);
+  padding-top: 6px;
+}
+.soha-service-catalog__footer > span {
+  display: grid;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.soha-service-catalog__footer small {
+  color: var(--soha-text-secondary);
+}
+.soha-service-catalog__scroll:focus-visible,
+.soha-pod-list-scroll:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
+}

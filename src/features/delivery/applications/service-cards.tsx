@@ -1,11 +1,13 @@
-import { Button, Card, Typography } from 'antd'
+import { useState } from 'react'
+import { Button, Card, Segmented, Typography } from 'antd'
+import './service-cards.css'
 import { DeploymentUnitOutlined } from '@ant-design/icons'
+import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import type {
   ApplicationRuntimeWorkload,
   ApplicationServiceComponent,
-  BuildSource,
   DeliveryApplicationBindingSummary,
   WorkflowRun,
 } from '../types'
@@ -79,105 +81,133 @@ export function ServiceWorkflowCard({
 
 export function ServiceCards({
   cards,
-  buildSources,
-  environmentId,
-  binding,
-  runs,
   statusFor,
   runtimeReady,
-  workflowState,
-  canViewWorkflows,
   canConfigure,
   onSelect,
   onConfigure,
-  onSelectStage,
 }: {
   cards: ServiceCard[]
-  buildSources: BuildSource[]
-  environmentId: string
-  binding?: DeliveryApplicationBindingSummary
-  runs?: WorkflowRun[]
   statusFor: (
     items: ApplicationRuntimeWorkload[],
     serviceId?: string,
   ) => { tone: string; label: string }
   runtimeReady: boolean
-  workflowState: 'ready' | 'loading' | 'error'
-  canViewWorkflows: boolean
   canConfigure: boolean
   onSelect: (id: string) => void
   onConfigure: (id: string) => void
-  onSelectStage: (runId: string, stageKey: string) => void
 }) {
+  const [layout, setLayout] = useState<string>('cards')
+  const items = cards.map((card) => ({
+    card,
+    status: statusFor(card.workloads, card.service?.id),
+    readiness: runtimeReady ? serviceReadiness(card.workloads) : undefined,
+  }))
+  const identity = (card: ServiceCard) => (
+    <button
+      type="button"
+      className="soha-service-card__identity"
+      title={card.name}
+      onClick={() => onSelect(card.id)}
+    >
+      <DeploymentUnitOutlined aria-hidden="true" />
+      <strong>{card.name}</strong>
+    </button>
+  )
+  const buildAction = (card: ServiceCard) =>
+    card.service && canConfigure ? (
+      <Button onClick={() => onConfigure(card.id)}>构建与更新</Button>
+    ) : null
+  type Item = (typeof items)[number]
+  const columns = [
+    { key: 'service', title: '服务', render: (_: unknown, { card }: Item) => identity(card) },
+    {
+      key: 'type',
+      title: '类型',
+      render: (_: unknown, { card }: Item) => <MetadataTag label={card.kind} />,
+    },
+    {
+      key: 'status',
+      title: '运行状态',
+      render: (_: unknown, { status }: Item) => (
+        <StatusTag value={status.tone} label={status.label} />
+      ),
+    },
+    {
+      key: 'ready',
+      title: '实例就绪',
+      render: (_: unknown, { readiness }: Item) =>
+        readiness ? `${readiness.ready} / ${readiness.desired}` : '待观测',
+    },
+    { key: 'actions', title: '操作', render: (_: unknown, { card }: Item) => buildAction(card) },
+  ]
   return (
     <section className="soha-service-overview-grid" aria-label="服务总览">
-      {!cards.length ? (
-        <ManagementState
-          compact
-          kind="empty"
-          title="没有匹配的服务"
-          description="调整名称或服务类型筛选。"
+      <div className="soha-service-catalog__toolbar">
+        <strong id="service-catalog-heading">
+          服务清单 <Typography.Text type="secondary">{cards.length} 个服务</Typography.Text>
+        </strong>
+        <Segmented
+          aria-label="服务显示方式"
+          value={layout}
+          onChange={setLayout}
+          options={[
+            { label: '卡片', value: 'cards' },
+            { label: '列表', value: 'list' },
+          ]}
         />
-      ) : (
-        <div className="soha-service-card-grid" role="list" aria-label="服务卡片">
-          {cards.map((card) => {
-            const status = statusFor(card.workloads, card.service?.id)
-            const readiness = runtimeReady ? serviceReadiness(card.workloads) : undefined
-            const source = buildSources.find((item) => item.id === card.service?.buildSourceId)
-            return (
+      </div>
+      <div
+        className="soha-service-catalog__scroll"
+        role="region"
+        aria-labelledby="service-catalog-heading"
+        tabIndex={cards.length ? 0 : undefined}
+      >
+        {!cards.length ? (
+          <ManagementState
+            compact
+            kind="empty"
+            title="没有匹配的服务"
+            description="调整名称或服务类型筛选。"
+          />
+        ) : layout === 'cards' ? (
+          <div className="soha-service-card-grid" role="list" aria-label="服务卡片">
+            {items.map(({ card, status, readiness }) => (
               <Card
                 key={card.id}
-                className="soha-service-card"
+                className="soha-service-card soha-service-card--compact"
                 classNames={{ body: 'soha-service-card__body' }}
                 role="listitem"
                 aria-label={`服务 ${card.name}`}
               >
                 <div className="soha-service-card__heading">
-                  <button
-                    type="button"
-                    className="soha-service-card__identity"
-                    onClick={() => onSelect(card.id)}
-                  >
-                    <DeploymentUnitOutlined aria-hidden="true" />
-                    <strong>{card.name}</strong>
-                  </button>
+                  {identity(card)}
                   <StatusTag value={status.tone} label={status.label} />
                 </div>
                 <MetadataTag label={card.kind} />
-                <dl className="soha-service-card__facts">
-                  <div>
-                    <dt>实例就绪</dt>
-                    <dd>{readiness ? `${readiness.ready} / ${readiness.desired}` : '待观测'}</dd>
-                  </div>
-                  <div>
-                    <dt>构建绑定</dt>
-                    <dd>
-                      {source?.name ||
-                        (card.service?.buildSourceId ? '构建定义不可读取' : '未绑定构建')}
-                    </dd>
-                  </div>
-                </dl>
-                <ServiceWorkflowCard
-                  service={card.service}
-                  environmentId={environmentId}
-                  binding={binding}
-                  runs={runs}
-                  workloads={card.workloads}
-                  canView={canViewWorkflows}
-                  state={workflowState}
-                  onSelectStage={onSelectStage}
-                />
-                <div className="soha-service-card__actions">
-                  <Button onClick={() => onSelect(card.id)}>查看服务</Button>
-                  {card.service && canConfigure ? (
-                    <Button onClick={() => onConfigure(card.id)}>构建与更新</Button>
-                  ) : null}
+                <div className="soha-service-catalog__footer">
+                  <span>
+                    <small>实例就绪</small>
+                    <strong>
+                      {readiness ? `${readiness.ready} / ${readiness.desired}` : '待观测'}
+                    </strong>
+                  </span>
+                  {buildAction(card)}
                 </div>
               </Card>
-            )
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        ) : (
+          <AdminTable
+            columns={columns}
+            dataSource={items}
+            rowKey={(item: Item) => item.card.id}
+            pagination={false}
+            enableColumnSelection={false}
+            scroll={{ x: 620 }}
+          />
+        )}
+      </div>
     </section>
   )
 }

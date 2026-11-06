@@ -2,7 +2,8 @@ import { MigrationAssessment, planMigrations } from '../template-migration'
 import { ManifestDeploymentState } from './manifest-deployment-state'
 import { WorkflowProgress, WorkloadProgress } from './delivery-progress'
 import { ServiceCards, ServiceWorkflowCard } from './service-cards'
-import { serviceDeliveryKind, serviceReadiness } from './service-workflow'
+import { visibleServiceInventory } from './helm-service-inventory'
+import { serviceDeliveryKind } from './service-workflow'
 import { EnvironmentNotice } from './environment-notice'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -16,6 +17,7 @@ import {
   Collapse,
   Descriptions,
   Drawer,
+  Dropdown,
   Form,
   Input,
   InputNumber,
@@ -30,11 +32,13 @@ import {
   type FormInstance,
 } from 'antd'
 import {
+  ArrowLeftOutlined,
   ArrowRightOutlined,
   DeleteOutlined,
   DeploymentUnitOutlined,
   EditOutlined,
   LinkOutlined,
+  MoreOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   SettingOutlined,
@@ -468,8 +472,10 @@ export function ApplicationDetailPage() {
   const requestedBuildSourceId = searchParams.get('buildSourceId') || ''
   const requestedEnvironmentId = searchParams.get('applicationEnvironmentId')?.trim() ?? ''
   const focusedServiceId = searchParams.get('serviceId')?.trim() ?? ''
-  const requestedServiceTab = searchParams.get('serviceTab') || 'pods'
+  const defaultServiceTab = searchParams.has('pod') ? 'pods' : 'runtime'
+  const requestedServiceTab = searchParams.get('serviceTab') || defaultServiceTab
   const serviceTab = [
+    'runtime',
     'pods',
     'metrics',
     'related-resources',
@@ -479,7 +485,8 @@ export function ApplicationDetailPage() {
     'events',
   ].includes(requestedServiceTab)
     ? requestedServiceTab
-    : 'pods'
+    : defaultServiceTab
+  const [observedPodCount, setObservedPodCount] = useState<{ scope: string; count?: number }>()
   const requestedSettingsKey =
     searchParams.get('settings') ||
     (requestedTab &&
@@ -536,7 +543,7 @@ export function ApplicationDetailPage() {
   }
   const setFocusedService = (
     serviceId?: string,
-    nextServiceTab = 'pods',
+    nextServiceTab = 'runtime',
     nextSettings?: string,
   ) => {
     const next = new URLSearchParams(searchParams)
@@ -550,6 +557,8 @@ export function ApplicationDetailPage() {
     next.delete('metricCluster')
     next.delete('metricNamespace')
     next.delete('metricRange')
+    next.delete('metricUid')
+    next.delete('metricRoot')
     if (serviceId) {
       next.delete('settings')
       next.set('tab', 'services')
@@ -1053,11 +1062,6 @@ export function ApplicationDetailPage() {
   const activeRuntimeClusterName =
     managementState.clustersQuery.data?.find((item) => item.id === activeRuntimeClusterId)?.name ||
     activeRuntimeClusterId
-  const activeRuntimeNamespace =
-    activeRuntimeBinding?.namespace ||
-    runtimeWorkloads[0]?.namespace ||
-    activeEnvironment?.targets?.[0]?.namespace ||
-    ''
   const selectedBindingId = deliveryActionModalVisible
     ? selectedDeliveryBindingId
     : activeEnvironmentId || requestedEnvironmentId
@@ -1356,7 +1360,14 @@ export function ApplicationDetailPage() {
     next.delete('podNamespace')
     next.delete('tool')
     next.delete('container')
-    for (const key of ['metricPod', 'metricCluster', 'metricNamespace', 'metricRange'])
+    for (const key of [
+      'metricPod',
+      'metricCluster',
+      'metricNamespace',
+      'metricRange',
+      'metricUid',
+      'metricRoot',
+    ])
       next.delete(key)
     if (activeEnvironmentId) next.set('applicationEnvironmentId', activeEnvironmentId)
     setSearchParams(next)
@@ -1449,7 +1460,12 @@ export function ApplicationDetailPage() {
     })),
   ]
   const currentServiceCard = serviceCards.find((service) => service.id === selectionValue)
-  const filteredServiceCards = serviceCards.filter(
+  const { visibleCards: visibleServiceCards, nestedServices } = visibleServiceInventory(
+    serviceCards,
+    activeRuntimeBinding?.targets ?? activeEnvironment?.targets ?? [],
+  )
+  const helmNestedServices = focusedService ? nestedServices.get(focusedService.id) : undefined
+  const filteredServiceCards = visibleServiceCards.filter(
     (service) =>
       (serviceKindFilter === 'all' || service.kind === serviceKindFilter) &&
       [service.name, service.id].some((value) =>
@@ -1457,13 +1473,50 @@ export function ApplicationDetailPage() {
       ),
   )
   const selectedStatus = serviceStatus(selectedWorkloads, focusedService?.id)
-  const readiness =
+  const serviceName = currentServiceCard?.name || focusedService?.name
+  const sourceRoots = selectedWorkloads.filter((workload) =>
+    ['CustomResource', 'HelmRelease'].includes(workload.workloadKind),
+  )
+  const runtimeRoot =
+    sourceRoots.length === 1
+      ? sourceRoots[0]
+      : selectedWorkloads.length === 1
+        ? selectedWorkloads[0]
+        : undefined
+  const runtimeTab = ['runtime', 'resources', 'related-resources'].includes(serviceTab)
+  const podView = runtimeTab
+    ? 'runtime'
+    : serviceTab === 'pods' || serviceTab === 'metrics'
+      ? serviceTab
+      : 'summary'
+  const runtimeReadable =
     !runtimePending &&
     !runtimeUnavailable &&
     !invalidEnvironment &&
     activeEnvironment?.status !== 'unavailable'
-      ? serviceReadiness(selectedWorkloads)
+  const podScope = JSON.stringify([
+    activeEnvironmentId,
+    selectionValue,
+    selectedPodWorkloads
+      .map(({ clusterId, namespace, workloadName, applicationEnvironmentId }) => [
+        clusterId,
+        namespace,
+        workloadName,
+        applicationEnvironmentId,
+      ])
+      .sort(),
+  ])
+  const podCount =
+    runtimeReadable && selectedPodWorkloads.length > 0 && observedPodCount?.scope === podScope
+      ? observedPodCount.count
       : undefined
+  const hasOtherPodSources = selectedWorkloads.some(
+    (workload) =>
+      workload.workloadKind !== 'HelmRelease' && !selectedPodWorkloads.includes(workload),
+  )
+  const serviceNamespaces = [
+    ...new Set(selectedWorkloads.map((item) => item.namespace).filter(Boolean)),
+  ]
   const runtimeActionUnavailable =
     selectedWorkloads.length > 0 &&
     !selectedWorkloads.some(
@@ -1473,149 +1526,185 @@ export function ApplicationDetailPage() {
   const runtimeActionReason = selectedWorkloads.some((workload) => workload.source)
     ? '外部来源关联：变更须经过配置来源、Plan 与发布控制权校验；不会直接修改 Helm 或 Operator 的子资源。'
     : '当前没有支持直接变更的 Deployment；请通过配置来源或对应 K8s 工作台操作。'
+  const metricRoot = searchParams.get('metricRoot')
+  const renderImportedServiceRuntime = (view: 'resources' | 'metrics') => (
+    <ImportedSourceBrowser
+      key={`${activeEnvironmentId}/${selectionValue}/${view === 'metrics' ? metricRoot : ''}`}
+      workloads={selectedWorkloads}
+      binding={activeRuntimeBinding}
+      presentation="runtime"
+      view={view}
+      metricRoot={view === 'metrics' ? metricRoot : undefined}
+      onOpenPlan={
+        canTriggerRelease
+          ? (targetId, revision) => {
+              populateDeliveryBinding(activeEnvironmentId)
+              deliveryForm.setFieldsValue({ targetId, manifestRevision: revision })
+              setDeliveryActionKind('deploy')
+              setDeliveryActionModalVisible(true)
+            }
+          : undefined
+      }
+    />
+  )
   const serviceDetails = (
-    <div className="soha-service-detail">
-      <div className="soha-service-summary">
-        <div className="soha-service-overview soha-service-detail-identity">
-          <div className="soha-service-overview__identity">
-            <Space wrap>
-              <h1>{currentServiceCard?.name || focusedService?.name || '服务'}</h1>
-              <MetadataTag label={currentServiceCard?.kind || '服务'} />
+    <div className="soha-service-detail" data-service-tab={serviceTab}>
+      <header className="soha-service-summary">
+        <div className="soha-service-summary__top">
+          <div className="soha-service-detail-identity">
+            <div className="soha-service-detail-identity__title">
+              <Button
+                type="text"
+                size="small"
+                icon={<ArrowLeftOutlined />}
+                aria-label="返回服务总览"
+                title="返回服务总览"
+                onClick={() => selectService('all')}
+              />
+              <h1>{serviceName || '服务'}</h1>
+              {serviceName ? <Text copyable={{ text: serviceName }} /> : null}
+            </div>
+            <div className="soha-service-location">
               <StatusTag value={selectedStatus.tone} label={selectedStatus.label} />
-            </Space>
+              {serviceNamespaces.length === 1 ? (
+                <MetadataTag label={serviceNamespaces[0]} tone="blue" />
+              ) : serviceNamespaces.length > 1 ? (
+                <Tooltip title={serviceNamespaces.join('、')}>
+                  <span tabIndex={0}>
+                    <MetadataTag label="多个命名空间" tone="blue" />
+                  </span>
+                </Tooltip>
+              ) : null}
+              {currentServiceCard?.kind ? (
+                <Text type="secondary">{currentServiceCard.kind}</Text>
+              ) : null}
+              {catalogEnvironment(activeEnvironment?.environmentId)?.isProduction ? (
+                <StatusTag value="warning" label="生产环境 PROD" />
+              ) : null}
+            </div>
           </div>
-        </div>
-        <div className="soha-service-location">
-          <Text type="secondary">
-            {[activeRuntimeClusterName, activeRuntimeNamespace].filter(Boolean).join(' / ')}
-          </Text>
-          {catalogEnvironment(activeEnvironment?.environmentId)?.isProduction ? (
-            <StatusTag value="warning" label="生产环境 PROD" />
-          ) : null}
-          <ManagementRefreshButton
-            tooltip="刷新当前环境"
-            loading={runtimeQuery.isFetching || detailQuery.isFetching}
-            onClick={() => {
-              void runtimeQuery.refetch()
-              void detailQuery.refetch()
-              if (workflowReadsEnabled) void serviceWorkflowsQuery.refetch()
-            }}
-          />
-        </div>
-        <Space size={8} className="soha-service-actions" wrap>
-          {runtimeActionUnavailable ? (
-            <>
-              <Tooltip title={runtimeActionReason}>
-                <span tabIndex={0} aria-label={runtimeActionReason}>
-                  <Button autoInsertSpace={false} disabled>
-                    扩缩容
-                  </Button>
-                </span>
-              </Tooltip>
-              <Tooltip title={runtimeActionReason}>
-                <span tabIndex={0} aria-label={runtimeActionReason}>
-                  <Button autoInsertSpace={false} disabled>
-                    重启
-                  </Button>
-                </span>
-              </Tooltip>
-            </>
-          ) : null}
-          <Button onClick={() => openServiceTab('configuration')}>更新</Button>
-          <Button onClick={() => openServiceTab('related-resources')}>关联资源</Button>
-          {focusedService ? (
-            <Button onClick={() => openServiceTab('resources')}>资源清单</Button>
-          ) : null}
-          {canTriggerRelease &&
-          (activeRuntimeBinding?.targets ?? []).some(
-            (target) =>
-              target.enabled &&
-              target.executorKind === 'manifest_ssa' &&
-              (!focusedService || target.metadata?.serviceId === focusedService.id),
-          ) ? (
-            <Button
-              icon={<DeploymentUnitOutlined />}
+          <Space size={8} className="soha-service-actions" wrap>
+            <ManagementRefreshButton
+              tooltip="刷新当前环境"
+              loading={runtimeQuery.isFetching || detailQuery.isFetching}
               onClick={() => {
-                const target = activeRuntimeBinding?.targets?.find(
-                  (item) =>
-                    item.enabled &&
-                    item.executorKind === 'manifest_ssa' &&
-                    (!focusedService || item.metadata?.serviceId === focusedService.id),
-                )
-                populateDeliveryBinding(activeEnvironmentId)
-                deliveryForm.setFieldsValue({ targetId: target?.id, manifestRevision: undefined })
-                setDeliveryActionKind('deploy')
-                setDeliveryActionModalVisible(true)
+                void runtimeQuery.refetch()
+                void detailQuery.refetch()
+                if (workflowReadsEnabled) void serviceWorkflowsQuery.refetch()
+              }}
+            />
+            {runtimeActionUnavailable ? (
+              <>
+                <Tooltip title={runtimeActionReason}>
+                  <span tabIndex={0} aria-label={runtimeActionReason}>
+                    <Button autoInsertSpace={false} disabled>
+                      扩缩容
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Tooltip title={runtimeActionReason}>
+                  <span tabIndex={0} aria-label={runtimeActionReason}>
+                    <Button autoInsertSpace={false} disabled>
+                      重启
+                    </Button>
+                  </span>
+                </Tooltip>
+              </>
+            ) : selectedWorkloads.length > 0 &&
+              !runtimePending &&
+              !runtimeUnavailable &&
+              !invalidEnvironment ? (
+              <Suspense fallback={null}>
+                <ServiceRuntimeActions
+                  key={`${activeEnvironmentId}/${selectionValue}`}
+                  applicationId={application.id}
+                  labelTargets={selectedWorkloads.length > 1}
+                  workloads={selectedWorkloads.filter((workload) => !workload.source)}
+                />
+              </Suspense>
+            ) : null}
+            <Button onClick={() => openServiceTab('configuration')}>更新配置</Button>
+            {canViewWorkflows || canViewBuilds ? (
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                onClick={() =>
+                  focusedService
+                    ? openServiceWorkflow(focusedService.id)
+                    : setActiveTab('delivery', activeEnvironmentId)
+                }
+              >
+                发布
+              </Button>
+            ) : null}
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'related-resources', label: '关联资源' },
+                  ...(focusedService ? [{ key: 'resources', label: '资源清单' }] : []),
+                ],
+                onClick: ({ key }) => openServiceTab(key),
               }}
             >
-              部署配置
-            </Button>
-          ) : null}
-          {selectedWorkloads.length > 0 &&
-          !runtimePending &&
-          !runtimeUnavailable &&
-          !invalidEnvironment ? (
-            <Suspense fallback={null}>
-              <ServiceRuntimeActions
-                key={`${activeEnvironmentId}/${selectionValue}`}
-                applicationId={application.id}
-                labelTargets={selectedWorkloads.length > 1}
-                workloads={selectedWorkloads.filter((workload) => !workload.source)}
-              />
-            </Suspense>
-          ) : null}
-          {canViewWorkflows || canViewBuilds ? (
-            <Button
-              type="primary"
-              icon={<PlayCircleOutlined />}
-              onClick={() =>
-                focusedService
-                  ? openServiceWorkflow(focusedService.id)
-                  : setActiveTab('delivery', activeEnvironmentId)
-              }
-            >
-              发布
-            </Button>
-          ) : null}
-        </Space>
-        <div className="soha-service-observation-facts" aria-label="服务运行事实">
-          <div>
-            <span>配置来源</span>
-            <strong>
-              {selectedWorkloads.some((w) => w.source)
-                ? '已关联集群资源'
-                : selectedManifestDeployments.length
-                  ? 'Soha 资源清单'
-                  : '服务配置'}
-            </strong>
-          </div>
-          <div>
-            <span>实例就绪</span>
-            <strong>{readiness ? `${readiness.ready} / ${readiness.desired}` : '待观测'}</strong>
-          </div>
-          <div>
-            <span>运行健康</span>
-            <strong>{selectedStatus.label}</strong>
-          </div>
-          <div>
-            <span>发布控制</span>
-            <strong>
-              {selectedWorkloads.some((w) => w.source) ? '按配置来源校验' : '按当前计划与权限'}
-            </strong>
-          </div>
+              <Button type="text" icon={<MoreOutlined />} aria-label="更多服务操作" />
+            </Dropdown>
+          </Space>
         </div>
-      </div>
-      {focusedService ? (
-        <ServiceWorkflowCard
-          service={focusedService}
-          environmentId={activeEnvironmentId}
-          binding={serviceWorkflowBinding}
-          runs={serviceWorkflows}
-          workloads={selectedWorkloads}
-          canView={canViewWorkflows}
-          state={workflowReadState}
-          onSelectStage={openWorkflowStage}
+        <Tabs
+          className="soha-resource-tabs is-header-only"
+          activeKey={runtimeTab ? 'runtime' : serviceTab}
+          onChange={openServiceTab}
+          items={[
+            { key: 'runtime', label: '运行资源' },
+            {
+              key: 'pods',
+              label: (
+                <>
+                  Pods
+                  {podCount !== undefined && !hasOtherPodSources ? (
+                    <>
+                      {' '}
+                      <span className="soha-service-pod-count">{podCount}</span>
+                    </>
+                  ) : null}
+                </>
+              ),
+            },
+            { key: 'metrics', label: '指标' },
+            { key: 'build', label: '发布与工作流' },
+            { key: 'configuration', label: '配置与模板' },
+            { key: 'events', label: '状态与事件' },
+          ]}
         />
+      </header>
+      {runtimeTab &&
+      canTriggerRelease &&
+      (activeRuntimeBinding?.targets ?? []).some(
+        (target) =>
+          target.enabled &&
+          target.executorKind === 'manifest_ssa' &&
+          (!focusedService || target.metadata?.serviceId === focusedService.id),
+      ) ? (
+        <Space>
+          <Button
+            icon={<DeploymentUnitOutlined />}
+            onClick={() => {
+              const target = activeRuntimeBinding?.targets?.find(
+                (item) =>
+                  item.enabled &&
+                  item.executorKind === 'manifest_ssa' &&
+                  (!focusedService || item.metadata?.serviceId === focusedService.id),
+              )
+              populateDeliveryBinding(activeEnvironmentId)
+              deliveryForm.setFieldsValue({ targetId: target?.id, manifestRevision: undefined })
+              setDeliveryActionKind('deploy')
+              setDeliveryActionModalVisible(true)
+            }}
+          >
+            部署配置
+          </Button>
+        </Space>
       ) : null}
       {!selectedNativeImports &&
       selectedWorkloads.some((workload) =>
@@ -1650,20 +1739,6 @@ export function ApplicationDetailPage() {
             <ManifestDeploymentState key={deployment.id} deployment={deployment} />
           ))
         : null}
-      <Tabs
-        className="soha-resource-tabs is-header-only"
-        activeKey={
-          serviceTab === 'related-resources' || serviceTab === 'resources' ? 'pods' : serviceTab
-        }
-        onChange={openServiceTab}
-        items={[
-          { key: 'pods', label: '运行资源' },
-          { key: 'metrics', label: '指标' },
-          { key: 'build', label: '发布与工作流' },
-          { key: 'configuration', label: '配置与模板' },
-          { key: 'events', label: '状态与事件' },
-        ]}
-      />
       {serviceTab === 'configuration' ? (
         <section className="soha-service-configuration" aria-label="配置与模板">
           <div className="soha-service-section-heading">
@@ -1772,6 +1847,18 @@ export function ApplicationDetailPage() {
       ) : serviceTab === 'build' ? (
         <section className="soha-service-workflow" aria-label="发布与工作流">
           <h2>当前服务交付</h2>
+          {focusedService ? (
+            <ServiceWorkflowCard
+              service={focusedService}
+              environmentId={activeEnvironmentId}
+              binding={serviceWorkflowBinding}
+              runs={serviceWorkflows}
+              workloads={selectedWorkloads}
+              canView={canViewWorkflows}
+              state={workflowReadState}
+              onSelectStage={openWorkflowStage}
+            />
+          ) : null}
           <Text type="secondary">
             构建来源、模板与执行记录复用现有交付工作区；配置采用不代表已发布。
           </Text>
@@ -1800,70 +1887,121 @@ export function ApplicationDetailPage() {
               ))
             : null}
 
-          <p>
-            <Text type="secondary">Pod 的重启、退出原因与事件可从下方保留的 Pod 卡片查看。</Text>
-          </p>
-          <Suspense fallback={<ManagementState compact kind="loading" />}>
-            <ServicePodWorkspace
-              key={`${activeEnvironmentId}/${selectionValue}/events`}
-              applicationId={application.id}
-              workloads={selectedPodWorkloads}
-              view="pods"
-            />
-          </Suspense>
+          <Button onClick={() => openServiceTab('pods')}>查看 Pod 重启与事件</Button>
         </section>
       ) : null}
 
-      {!['configuration', 'build', 'events'].includes(serviceTab) ? (
+      {podView !== 'summary' || (runtimeReadable && selectedPodWorkloads.length > 0) ? (
         <section
           className="soha-service-pods-panel"
-          aria-label={serviceTab === 'metrics' ? '服务指标' : 'Pods'}
+          hidden={podView === 'summary'}
+          aria-label={podView === 'metrics' ? '服务指标' : runtimeTab ? '运行资源' : 'Pods'}
         >
           <Suspense fallback={<ManagementState compact kind="loading" />}>
-            {runtimePending ||
-            runtimeUnavailable ||
-            invalidEnvironment ||
-            activeEnvironment?.status === 'unavailable' ? (
+            {!runtimeReadable ? (
               <ManagementState
                 compact
                 kind={runtimePending ? 'loading' : 'error'}
                 actions={<Button onClick={() => void runtimeQuery.refetch()}>重试</Button>}
               />
-            ) : selectedNativeImports ? (
+            ) : runtimeTab &&
+              (selectedNativeImports ||
+                selectedPodWorkloads.length > 0 ||
+                helmNestedServices?.length) ? (
+              <section className="soha-service-runtime-overview" aria-label="运行资源概览">
+                <div className="soha-service-section-heading">
+                  <h2>运行资源关系</h2>
+                  {focusedService ? (
+                    <Button onClick={() => openServiceTab('resources')}>资源清单</Button>
+                  ) : null}
+                </div>
+                <div className="soha-service-runtime-overview__resources">
+                  <div>
+                    <Text type="secondary">{runtimeRoot ? '配置根' : '工作负载'}</Text>
+                    <Text strong>
+                      {runtimeRoot?.workloadName ?? `${selectedWorkloads.length} 个工作负载`}
+                    </Text>
+                    <Text type="secondary">
+                      {runtimeRoot?.source?.resource.kind ??
+                        runtimeRoot?.workloadKind ??
+                        currentServiceCard?.kind}
+                    </Text>
+                  </div>
+                  <ArrowRightOutlined aria-hidden="true" />
+                  {selectedPodWorkloads.length ? (
+                    <button type="button" onClick={() => openServiceTab('pods')}>
+                      <Text type="secondary">运行实例</Text>
+                      <Text strong>
+                        {podCount !== undefined
+                          ? `${podCount} 个 ${hasOtherPodSources ? 'Deployment Pod' : 'Pod'}`
+                          : 'Pod 待观测'}
+                      </Text>
+                      <Text type="secondary">查看 Pods</Text>
+                    </button>
+                  ) : (
+                    <div>
+                      <Text type="secondary">运行实例</Text>
+                      <Text strong>从资源关系详情查看</Text>
+                    </div>
+                  )}
+                </div>
+                <details key={podScope} className="soha-service-runtime-overview__details">
+                  <summary>查看资源关系详情</summary>
+                  {selectedNativeImports ? renderImportedServiceRuntime('resources') : null}
+                  {helmNestedServices?.length ? (
+                    <section aria-label="Helm 工作负载">
+                      <Text strong>Helm 工作负载</Text>
+                      <Space wrap>
+                        {helmNestedServices.map((service) => (
+                          <Button
+                            key={service.id}
+                            type="link"
+                            onClick={() => setFocusedService(service.id)}
+                          >
+                            {service.name}
+                          </Button>
+                        ))}
+                      </Space>
+                    </section>
+                  ) : null}
+                  {selectedPodWorkloads.length > 0 ? (
+                    <ServicePodWorkspace
+                      key={podScope}
+                      showRelationships={!selectedNativeImports}
+                      applicationId={application.id}
+                      workloads={selectedPodWorkloads}
+                      view="runtime"
+                      podScope={podScope}
+                      onPodCount={setObservedPodCount}
+                    />
+                  ) : null}
+                </details>
+              </section>
+            ) : selectedPodWorkloads.length > 0 ||
+              (selectedNativeImports && podView === 'metrics') ? (
               <>
-                <ImportedSourceBrowser
-                  key={`${activeEnvironmentId}/${selectionValue}`}
-                  workloads={selectedWorkloads}
-                  binding={activeRuntimeBinding}
-                  presentation="runtime"
-                  view={serviceTab === 'metrics' ? 'metrics' : 'resources'}
-                  onOpenPlan={
-                    canTriggerRelease
-                      ? (targetId, revision) => {
-                          populateDeliveryBinding(activeEnvironmentId)
-                          deliveryForm.setFieldsValue({ targetId, manifestRevision: revision })
-                          setDeliveryActionKind('deploy')
-                          setDeliveryActionModalVisible(true)
-                        }
-                      : undefined
-                  }
-                />
+                {selectedNativeImports && podView === 'metrics'
+                  ? renderImportedServiceRuntime('metrics')
+                  : null}
                 {selectedPodWorkloads.length > 0 ? (
                   <ServicePodWorkspace
-                    key={`${activeEnvironmentId}/${selectionValue}/pods`}
-                    showRelationships={false}
+                    key={podScope}
                     applicationId={application.id}
                     workloads={selectedPodWorkloads}
-                    view={serviceTab === 'metrics' ? 'metrics' : 'pods'}
+                    view={podView}
+                    deploymentPodsOnly={hasOtherPodSources}
+                    podScope={podScope}
+                    onPodCount={setObservedPodCount}
                   />
                 ) : null}
               </>
-            ) : selectedPodWorkloads.length ? (
-              <ServicePodWorkspace
-                key={`${activeEnvironmentId}/${selectionValue}`}
-                applicationId={application.id}
-                workloads={selectedPodWorkloads}
-                view={serviceTab === 'metrics' ? 'metrics' : 'pods'}
+            ) : selectedNativeImports && podView === 'pods' ? (
+              <ManagementState
+                compact
+                bordered={false}
+                kind="not-configured"
+                title="此资源的 Pod 关联见运行资源"
+                actions={<Button onClick={() => openServiceTab('runtime')}>查看运行资源</Button>}
               />
             ) : (
               <ManagementState
@@ -1913,7 +2051,7 @@ export function ApplicationDetailPage() {
             serviceId={focusedService?.id}
             workloads={selectedWorkloads}
             mode={serviceTab}
-            onClose={() => openServiceTab('pods')}
+            onClose={() => openServiceTab('runtime')}
           />
         </Suspense>
       ) : null}
@@ -3114,13 +3252,17 @@ export function ApplicationDetailPage() {
               key: 'services',
               label: '服务',
               children: (
-                <section aria-label="服务工作台" className="soha-service-console">
+                <section
+                  aria-label="服务工作台"
+                  className="soha-service-console"
+                  data-scroll-view={serviceOverview || serviceTab === 'pods' ? true : undefined}
+                >
                   <aside className="soha-service-selector">
                     <div className="soha-service-selector__heading">
                       <strong>
                         服务{' '}
                         <Text type="secondary">
-                          {filteredServiceCards.length} / {serviceCards.length}
+                          {filteredServiceCards.length} / {visibleServiceCards.length}
                         </Text>
                       </strong>
                       <ManagementIconButton
@@ -3145,11 +3287,6 @@ export function ApplicationDetailPage() {
                     >
                       服务总览
                     </Button>
-                    {canCreateService ? (
-                      <Button block icon={<PlusOutlined />} onClick={() => openServiceModal()}>
-                        添加服务
-                      </Button>
-                    ) : null}
                     <Input
                       aria-label="搜索服务"
                       placeholder="搜索名称或标识"
@@ -3162,9 +3299,9 @@ export function ApplicationDetailPage() {
                       value={serviceKindFilter}
                       options={[
                         { value: 'all', label: '全部服务类型' },
-                        ...Array.from(new Set(serviceCards.map((service) => service.kind))).map(
-                          (kind) => ({ value: kind, label: kind }),
-                        ),
+                        ...Array.from(
+                          new Set(visibleServiceCards.map((service) => service.kind)),
+                        ).map((kind) => ({ value: kind, label: kind })),
                       ]}
                       onChange={setServiceKindFilter}
                     />
@@ -3177,26 +3314,26 @@ export function ApplicationDetailPage() {
                             type="button"
                             aria-current={selectionValue === service.id ? 'page' : undefined}
                             onClick={() => selectService(service.id)}
+                            title={service.name}
                           >
                             <span className="soha-service-selector__icon" aria-hidden="true">
                               <DeploymentUnitOutlined />
                             </span>
-                            <span>
+                            <span className="soha-service-selector__identity">
                               <strong>{service.name}</strong>
-                              <small>
-                                <span
-                                  className={`soha-service-status-dot is-${status.tone}`}
-                                  aria-hidden="true"
-                                />
-                                {status.label}
-                              </small>
                               <small>{service.kind}</small>
                             </span>
+                            <span
+                              className={`soha-service-status-dot is-${status.tone}`}
+                              role="img"
+                              aria-label={status.label}
+                              title={status.label}
+                            />
                           </button>
                         )
                       })}
                     </nav>
-                    {!filteredServiceCards.length && serviceCards.length ? (
+                    {!filteredServiceCards.length && visibleServiceCards.length ? (
                       <ManagementState
                         compact
                         bordered={false}
@@ -3217,10 +3354,15 @@ export function ApplicationDetailPage() {
                         .concat([{ value: 'all', label: '服务总览' }])}
                       onChange={selectService}
                     />
+                    {canCreateService ? (
+                      <Button block icon={<PlusOutlined />} onClick={() => openServiceModal()}>
+                        添加服务
+                      </Button>
+                    ) : null}
                   </aside>
                   <div className="soha-service-console__body">
                     {serviceRecordsState}
-                    {serviceOverview && serviceCards.length ? (
+                    {serviceOverview && visibleServiceCards.length ? (
                       <>
                         <div className="soha-service-overview-grid__toolbar">
                           <h2>服务总览</h2>
@@ -3236,19 +3378,8 @@ export function ApplicationDetailPage() {
                             }}
                           />
                         </div>
-                        {workflowReadsEnabled &&
-                        workflowReadState === 'ready' &&
-                        serviceWorkflows.length >= 200 ? (
-                          <Text type="secondary">
-                            当前展示此环境最近 200 条工作流记录；无匹配记录不代表从未执行。
-                          </Text>
-                        ) : null}
                         <ServiceCards
                           cards={filteredServiceCards}
-                          buildSources={application.buildSources ?? []}
-                          environmentId={activeEnvironmentId}
-                          binding={serviceWorkflowBinding}
-                          runs={serviceWorkflows}
                           statusFor={serviceStatus}
                           runtimeReady={
                             !runtimePending &&
@@ -3256,12 +3387,9 @@ export function ApplicationDetailPage() {
                             !invalidEnvironment &&
                             activeEnvironment?.status !== 'unavailable'
                           }
-                          workflowState={workflowReadState}
-                          canViewWorkflows={canViewWorkflows}
                           canConfigure={canViewWorkflows || canViewBuilds}
                           onSelect={selectService}
                           onConfigure={openServiceWorkflow}
-                          onSelectStage={openWorkflowStage}
                         />
                       </>
                     ) : serviceCards.length || focusedServiceId ? (

@@ -164,7 +164,11 @@ export function ApplicationsPage() {
             应用中心
           </h1>
           <div className="soha-application-center-panel">
-            <div className="soha-application-center-toolbar">
+            <Card
+              variant="outlined"
+              className="soha-management-query-card"
+              classNames={{ body: 'soha-application-center-toolbar' }}
+            >
               <Segmented<NonNullable<ApplicationListFilters['scope']>>
                 aria-label="应用列表范围"
                 name={`${catalogId}-scope`}
@@ -232,6 +236,18 @@ export function ApplicationsPage() {
                   />
                 </div>
                 <div className="soha-application-center-toolbar__actions">
+                  <ManagementRefreshButton
+                    tooltip="刷新"
+                    aria-label="刷新应用"
+                    loading={
+                      applicationsQuery.isFetching ||
+                      servicesQueries.some((query) => query.isRefetching)
+                    }
+                    onClick={() => {
+                      void applicationsQuery.refetch()
+                      for (const query of servicesQueries) void query.refetch()
+                    }}
+                  />
                   {canImport ? (
                     <Button
                       icon={<ImportOutlined />}
@@ -249,21 +265,9 @@ export function ApplicationsPage() {
                       创建应用
                     </Button>
                   ) : null}
-                  <ManagementRefreshButton
-                    tooltip="刷新"
-                    aria-label="刷新应用"
-                    loading={
-                      applicationsQuery.isFetching ||
-                      servicesQueries.some((query) => query.isRefetching)
-                    }
-                    onClick={() => {
-                      void applicationsQuery.refetch()
-                      for (const query of servicesQueries) void query.refetch()
-                    }}
-                  />
                 </div>
               </div>
-            </div>
+            </Card>
 
             {searchingServiceTypes || partialServiceSearch ? (
               <Text type="secondary" role="status">

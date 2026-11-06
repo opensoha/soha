@@ -39,6 +39,8 @@ export function applicationEnvironmentSearch(search: URLSearchParams, environmen
     'metricCluster',
     'metricNamespace',
     'metricRange',
+    'metricUid',
+    'metricRoot',
   ])
     next.delete(key)
   next.set('applicationEnvironmentId', environmentId)

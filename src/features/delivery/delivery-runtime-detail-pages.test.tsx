@@ -1047,12 +1047,26 @@ describe('delivery runtime detail pages', () => {
     )
     expect(document.body.textContent).toContain('只读')
   })
-  it('requests metrics only for page-visible Pods and opens the full monitor in the metrics tab', async () => {
+  it('requests metrics only for visible Pods in the continuous list and opens the full monitor in the metrics tab', async () => {
     testState.manyPods = true
-    const container = await renderPods()
-    expect(container.querySelectorAll('.soha-pod-card')).toHaveLength(10)
+    let observed = 0
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+        observe(target: Element) {
+          this.callback(
+            [{ target, isIntersecting: observed++ < 3 } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+        disconnect() {}
+      },
+    )
+    const container = await renderPods().finally(() => vi.unstubAllGlobals())
+    expect(container.querySelectorAll('.soha-pod-card')).toHaveLength(16)
     expect(testState.apiGet.mock.calls.filter(([path]) => path.includes('/metrics?'))).toHaveLength(
-      10,
+      3,
     )
     const monitor = container.querySelector<HTMLButtonElement>('.soha-pod-card-metrics')!
     const podName = monitor.getAttribute('aria-label')!.replace('查看监控 ', '')
@@ -1146,6 +1160,30 @@ describe('delivery runtime detail pages', () => {
     expect(
       container.querySelector('a[href*="configmaps/checkout-config"]')?.getAttribute('href'),
     ).toContain('/clusters/cluster-a/')
+  })
+  it('keeps the readable workload relationship when it has no Pods and another read fails', async () => {
+    testState.workloadPodsEmpty = true
+    const get = testState.apiGet.getMockImplementation()!
+    testState.apiGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/workloads/unavailable/runtime')) throw new Error('runtime unavailable')
+      return get(path)
+    })
+    try {
+      const container = await renderWithProviders(
+        <ServicePodWorkspace
+          applicationId="app-1"
+          workloads={[ref, { ...ref, workloadName: 'unavailable' }]}
+          view="runtime"
+        />,
+        base,
+      )
+      expect(container.querySelector('[aria-label="工作负载运行关系"]')?.textContent).toContain(
+        'checkout-config',
+      )
+      expect(container.textContent).toContain('读取失败')
+    } finally {
+      testState.apiGet.mockImplementation(get)
+    }
   })
   it('redirects legacy Pod links into the two-level workspace and preserves the tool', async () => {
     const container = await renderWithProviders(

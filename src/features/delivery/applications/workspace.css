@@ -72,6 +72,12 @@
   min-width: 160px;
   max-width: 100%;
 }
+.soha-content:has(.soha-application-workbench) {
+  padding-block-start: 12px !important;
+}
+.soha-page.soha-application-workbench {
+  row-gap: 12px;
+}
 .soha-application-pane {
   min-width: 0;
   display: flex;
@@ -166,19 +172,18 @@
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr);
   gap: 20px;
-  margin: -24px;
-  padding: 24px;
-  min-height: calc(100dvh - var(--soha-app-chrome-height));
+  margin: 0 -24px -24px;
+  padding: 0 24px 24px;
   background: var(--soha-bg-surface-muted);
 }
 .soha-service-selector {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   position: sticky;
   top: 0;
   align-self: start;
-  padding: 16px 12px;
+  padding: 12px;
   border: 1px solid var(--soha-border-color);
   border-radius: var(--soha-radius-panel);
   background: var(--soha-bg-surface);
@@ -188,22 +193,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 12px 16px;
+  padding: 0 0 4px;
 }
 .soha-service-selector__list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   max-height: min(64dvh, 800px);
   overflow-y: auto;
 }
 .soha-service-selector__list button {
-  display: flex;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 7px;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  min-height: 66px;
-  padding: 12px;
+  min-height: 44px;
+  padding: 4px 8px;
   text-align: left;
   font: inherit;
   color: var(--soha-text-primary);
@@ -215,31 +221,30 @@
     background 160ms ease,
     border-color 160ms ease;
 }
-.soha-service-selector__list button > span:last-child {
+.soha-service-selector__identity {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 0;
+}
+.soha-service-selector__identity > :is(strong, small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .soha-service-selector__list strong {
-  overflow-wrap: anywhere;
   font-weight: 600;
 }
 .soha-service-selector__list small {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   color: var(--soha-text-secondary);
 }
 .soha-service-selector__icon {
   display: grid;
   place-items: center;
-  flex: 0 0 32px;
-  height: 32px;
+  height: 20px;
   border-radius: var(--soha-radius-control);
   color: var(--soha-primary);
-  background: var(--soha-primary-light-default);
-  font-size: 18px;
+  font-size: 14px;
 }
 .soha-service-selector__list button:hover {
   background: var(--soha-fill-weak);
@@ -327,23 +332,18 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 8px;
   font-size: 12px;
 }
 .soha-service-location > .ant-typography {
   overflow-wrap: anywhere;
 }
-.soha-service-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}
 @media (max-width: 767px) {
   .soha-service-console {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr;
-    margin: -16px;
-    padding: 16px;
+    margin: 0 -16px -16px;
+    padding: 0 16px 16px;
     gap: 16px;
   }
   .soha-service-selector {
@@ -520,11 +520,6 @@
   margin: 0;
   font-size: var(--soha-font-size-section);
 }
-.soha-service-card-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
 .soha-service-card,
 .soha-service-card__body {
   min-width: 0;
@@ -619,16 +614,6 @@
     right: 50%;
     bottom: -26px;
     transform: rotate(90deg);
-  }
-}
-@media (max-width: 1200px) {
-  .soha-service-card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 600px) {
-  .soha-service-card-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 .soha-application-inline-disclosure {
@@ -890,8 +875,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 8px 16px;
-  margin-bottom: 20px;
+  min-height: 48px;
+  padding: 4px 16px;
   background: var(--soha-bg-surface);
   border: 1px solid var(--soha-border-color);
   border-radius: var(--soha-radius-panel);
@@ -912,7 +897,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 12px;
+  padding: 6px 12px;
   font: inherit;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -948,72 +933,78 @@
   width: min(420px, calc(100vw - 96px));
   max-width: 100%;
 }
-@media (max-width: 767px) {
-  .soha-application-environments {
-    padding: 12px;
+@media (max-width: 768px) {
+  .soha-content:has(.soha-application-workbench) {
+    padding-block-start: 8px !important;
   }
+  .soha-page.soha-application-workbench {
+    row-gap: 8px;
+  }
+  .soha-application-environments {
+    padding-inline: 12px;
+  }
+}
+@media (max-width: 767px) {
   .soha-application-identity__switcher {
     flex-wrap: wrap;
     width: auto;
   }
 }
 
-/* Task114 detail: runtime relationships lead; the existing Pod cards remain below. */
 .soha-service-detail {
   padding: 0;
   border: 0;
   background: transparent;
-  gap: 20px;
+  gap: 12px;
+}
+.soha-service-detail[data-service-tab='pods'] {
+  gap: 6px;
+}
+.soha-service-detail[data-service-tab='pods'] > .soha-service-pods-panel {
+  padding-block-start: 4px;
 }
 .soha-service-summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: 'identity actions' 'location actions' 'facts facts';
-  gap: 8px 16px;
-}
-.soha-service-detail-identity {
-  grid-area: identity;
-}
-.soha-service-detail-identity h1 {
-  font-size: 20px;
-  line-height: 1.5;
-}
-.soha-service-summary > .soha-service-location {
-  grid-area: location;
-  margin: 0;
-}
-.soha-service-summary > .soha-service-actions {
-  grid-area: actions;
-  justify-content: flex-end;
-  align-self: center;
-  max-width: 650px;
-}
-.soha-service-observation-facts {
-  grid-area: facts;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 16px;
-  margin-top: 8px;
   background: var(--soha-bg-surface);
   border: 1px solid var(--soha-border-color);
   border-radius: var(--soha-radius-panel);
 }
-.soha-service-observation-facts > div {
-  display: grid;
-  gap: 6px;
-  padding: 0 16px;
+.soha-service-summary__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px 16px;
+}
+.soha-service-detail-identity {
   min-width: 0;
+}
+.soha-service-detail-identity__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.soha-service-detail-identity__title > :not(h1) {
+  flex: none;
+}
+.soha-service-detail-identity__title > .ant-btn {
+  color: var(--soha-primary);
+}
+.soha-service-detail-identity h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
-.soha-service-observation-facts > div:first-child {
-  padding-left: 0;
+.soha-service-summary .soha-service-actions {
+  display: flex;
 }
-.soha-service-observation-facts > div + div {
-  border-left: 1px solid var(--soha-border-color);
+.soha-service-summary > .soha-resource-tabs {
+  padding-inline: 16px;
+  border-top: 1px solid var(--soha-border-color);
 }
-.soha-service-observation-facts span {
-  color: var(--soha-text-secondary);
-  font-size: var(--soha-font-size-supporting);
+.soha-service-summary > .soha-resource-tabs.ant-tabs > .ant-tabs-nav {
+  border-bottom: 0;
 }
 .soha-service-configuration {
   background: var(--soha-bg-surface);
@@ -1051,28 +1042,88 @@
   margin-bottom: 20px;
 }
 .soha-service-pods-panel > .soha-service-pods {
-  margin-top: 20px;
+  margin-top: 0;
 }
-@media (max-width: 1100px) {
-  .soha-service-summary {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'identity' 'location' 'actions' 'facts';
+.soha-service-pod-count {
+  margin-inline-start: 6px;
+  padding: 1px 5px;
+  border-radius: var(--soha-radius-control);
+  color: var(--soha-text-secondary);
+  background: var(--soha-fill-weak);
+  font-size: var(--soha-font-size-supporting);
+  font-variant-numeric: tabular-nums;
+}
+.soha-service-runtime-overview {
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+}
+.soha-service-runtime-overview__resources {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-block: 12px;
+}
+.soha-service-runtime-overview__resources > :is(div, button) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-bg-surface-muted);
+  text-align: start;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+.soha-service-runtime-overview__resources > button,
+.soha-service-runtime-overview__details > summary {
+  cursor: pointer;
+}
+.soha-service-runtime-overview__details > summary {
+  padding-top: 12px;
+  border-top: 1px solid var(--soha-border-color);
+  color: var(--soha-primary);
+}
+.soha-service-runtime-overview__details[open] > summary {
+  margin-bottom: 12px;
+}
+@media (min-width: 768px) and (min-height: 720px) {
+  .soha-service-console[data-scroll-view] {
+    height: calc(100dvh - var(--soha-app-chrome-height) - 88px);
+    grid-template-rows: minmax(0, 1fr);
   }
-  .soha-service-summary > .soha-service-actions {
-    justify-content: flex-start;
+  .soha-service-console[data-scroll-view] .soha-service-selector {
+    position: static;
+    align-self: stretch;
+    min-height: 0;
+  }
+  .soha-service-console[data-scroll-view] .soha-service-selector__list {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+  .soha-service-console[data-scroll-view] .soha-service-console__body,
+  .soha-service-console[data-scroll-view] .soha-service-overview-grid,
+  .soha-service-detail[data-service-tab='pods'],
+  .soha-service-detail[data-service-tab='pods'] .soha-service-pods-panel,
+  .soha-service-detail[data-service-tab='pods'] .soha-service-pods {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .soha-service-catalog__scroll,
+  .soha-pod-list-scroll {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
   }
 }
 @media (max-width: 600px) {
-  .soha-service-observation-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-  }
-  .soha-service-observation-facts > div {
-    padding: 0;
-  }
-  .soha-service-observation-facts > div + div {
-    border: 0;
-  }
   .soha-service-detail-identity h1 {
     font-size: var(--soha-font-size-section);
   }

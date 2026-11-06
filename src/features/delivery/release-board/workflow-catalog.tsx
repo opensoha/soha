@@ -288,7 +288,11 @@ export function WorkflowCatalog() {
       ) : editId && requestedWorkflow.isPending ? (
         <ManagementState compact kind="loading" />
       ) : null}
-      <div className="soha-workflow-catalog__toolbar">
+      <Card
+        variant="outlined"
+        className="soha-management-query-card"
+        classNames={{ body: 'soha-workflow-catalog__toolbar' }}
+      >
         <Segmented<WorkflowCenterView>
           aria-label={english ? 'Workflow view' : '工作流视图'}
           value={view}
@@ -357,7 +361,7 @@ export function WorkflowCatalog() {
             </Button>
           ) : null}
         </div>
-      </div>
+      </Card>
       {viewingDefinitions ? (
         <>
           <ReadFeedback query={catalog} label={english ? 'Workflow definitions' : '工作流定义'} />

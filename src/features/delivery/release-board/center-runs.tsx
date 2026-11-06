@@ -261,6 +261,13 @@ export function WorkflowCenterRuns({
       ? 'Recent executions'
       : '最近执行'
   if (!selected) return null
+  const timeFormat = new Intl.DateTimeFormat(english ? 'en-US' : 'zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
   return (
     <div className="soha-workflow-center__workbench">
       <section className="soha-workflow-center__panel" aria-label={title}>
@@ -269,15 +276,17 @@ export function WorkflowCenterRuns({
         </header>
         <div role="group" aria-label={english ? 'Choose execution' : '选择执行记录'}>
           {rows.map((run) => {
-            const applications = [...new Set(run.targets.map((target) => target.application))]
             const first = run.targets[0]
+            const applicationCount = new Set(run.targets.map((target) => target.applicationId)).size
+            const stage = first && active ? currentCenterStage(first.stages)?.name : undefined
             const context =
               run.targets.length > 1
-                ? [
-                    applications.slice(0, 2).join(' / '),
-                    english ? `${run.targets.length} targets` : `${run.targets.length} 个目标`,
-                  ]
-                : [first?.application, first?.service, first?.environment]
+                ? english
+                  ? `${applicationCount} apps · ${run.targets.length} targets`
+                  : `${applicationCount} 个应用 · ${run.targets.length} 个目标`
+                : [first?.application, stage].filter(Boolean).join(' · ')
+            const timestamp = new Date(run.createdAt)
+            const time = Number.isNaN(timestamp.getTime()) ? '—' : timeFormat.format(timestamp)
             return (
               <button
                 key={run.key}
@@ -286,15 +295,16 @@ export function WorkflowCenterRuns({
                 aria-pressed={run.key === selected.key}
                 onClick={() => onSelect(run.key)}
               >
-                <span className="soha-workflow-center__run-identity">
-                  <strong>{run.name}</strong>
-                  <small>{context.filter(Boolean).join(' · ')}</small>
-                  <small>{run.id}</small>
-                </span>
-                <span className="soha-workflow-center__run-facts">
-                  <RunStatus status={run.status} english={english} />
-                  <small>{formatDateTime(run.createdAt)}</small>
-                </span>
+                <strong className="soha-workflow-center__run-title" title={run.name}>
+                  {run.name}
+                </strong>
+                <RunStatus status={run.status} english={english} />
+                <small className="soha-workflow-center__run-context" title={context}>
+                  {context}
+                </small>
+                <time dateTime={run.createdAt} title={formatDateTime(run.createdAt)}>
+                  {time}
+                </time>
               </button>
             )
           })}

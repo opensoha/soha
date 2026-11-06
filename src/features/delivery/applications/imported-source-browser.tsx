@@ -26,6 +26,7 @@ export function ImportedSourceBrowser({
   workloads,
   binding,
   view = 'resources',
+  metricRoot,
   onOpenPlan,
   presentation = 'source',
 }: {
@@ -33,6 +34,7 @@ export function ImportedSourceBrowser({
   workloads: ApplicationRuntimeWorkload[]
   binding?: ApplicationEnvironment
   view?: 'resources' | 'metrics'
+  metricRoot?: string | null
   onOpenPlan?: (targetId: string, revision: number) => void
 }) {
   const [selectedKey, setSelectedKey] = useState('')
@@ -44,7 +46,10 @@ export function ImportedSourceBrowser({
   )
   const keyOf = (item: ApplicationRuntimeWorkload) =>
     `${item.applicationEnvironmentId}/${item.targetId}/${item.source?.resource.uid}`
-  const selected = sources.find((item) => keyOf(item) === selectedKey) ?? sources[0]
+  const selected =
+    sources.find((item) => keyOf(item) === selectedKey) ??
+    sources.find((item) => item.targetId === metricRoot) ??
+    sources[0]
   if (!selected)
     return view === 'metrics' ? null : (
       <ManagementState compact kind="not-configured" title="源身份尚未绑定" />

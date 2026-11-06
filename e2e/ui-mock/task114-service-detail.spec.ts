@@ -170,20 +170,15 @@ for (const width of [1440, 390]) {
       return base
     })
     await page.goto(
-      '/applications/retail?applicationEnvironmentId=retail-test&serviceId=order-api&serviceTab=pods',
+      '/applications/retail?applicationEnvironmentId=retail-test&serviceId=order-api&serviceTab=runtime',
     )
+    await page.getByText('查看资源关系详情', { exact: true }).click()
     const relations = page.getByRole('region', { name: '运行资源关系', exact: true })
     await expect(
       relations.getByRole('button', { name: '选择 ReplicaSet order-api-rs', exact: true }),
     ).toBeVisible()
     await expect(relations).toContainText('Service selector')
     await expect(page.locator('.soha-service-pods-panel .soha-resource-browser')).toHaveCount(0)
-    const pod = page.locator('.soha-pod-card').filter({ hasText: 'order-api-pod-0' })
-    await expect(pod).toContainText('worker-1')
-    for (const label of ['详情', '事件', 'YAML'])
-      await expect(pod.getByRole('button', { name: label, exact: true })).toBeVisible()
-    await expect(pod.getByRole('button', { name: '查看监控 order-api-pod-0' })).toBeVisible()
-    expect((await pod.boundingBox())!.height).toBeLessThan(240)
     const detail = page.getByRole('complementary', { name: '所选资源详情' })
     await relations.getByRole('button', { name: '选择 Secret order-secret', exact: true }).click()
     await expect(detail).toContainText('不回显数据')
@@ -213,6 +208,13 @@ for (const width of [1440, 390]) {
       }
       await expect(page.getByRole('heading', { name: '订单 API', exact: true })).toBeVisible()
     }
+    await page.getByRole('button', { name: /查看 Pods/ }).click()
+    const pod = page.locator('.soha-pod-card').filter({ hasText: 'order-api-pod-0' })
+    await expect(pod).toContainText('worker-1')
+    for (const label of ['详情', '事件', 'YAML'])
+      await expect(pod.getByRole('button', { name: label, exact: true })).toBeVisible()
+    await expect(pod.getByRole('button', { name: '查看监控 order-api-pod-0' })).toBeVisible()
+    expect((await pod.boundingBox())!.height).toBeLessThan(240)
     await expect(pod).toBeVisible()
     expect(
       await page.evaluate(

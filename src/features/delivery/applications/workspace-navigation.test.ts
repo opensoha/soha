@@ -32,7 +32,7 @@ afterEach(() => usePreferencesStore.setState({ applicationShortcuts: {} }))
 describe('application workspace context', () => {
   it('preserves the service and content tab while removing old environment targets', () => {
     const original = new URLSearchParams(
-      'tab=services&serviceId=api&serviceTab=metrics&applicationEnvironmentId=test&pod=api-1&podCluster=old&tool=terminal&metricPod=api-1&metricCluster=old&metricNamespace=test&metricRange=15&releaseId=old&settings=application',
+      'tab=services&serviceId=api&serviceTab=metrics&applicationEnvironmentId=test&pod=api-1&podCluster=old&tool=terminal&metricPod=api-1&metricCluster=old&metricNamespace=test&metricRange=15&metricUid=pod-uid&metricRoot=root-uid&releaseId=old&settings=application',
     )
     const next = applicationEnvironmentSearch(original, 'prod')
     expect(Object.fromEntries(next)).toEqual({

@@ -32,6 +32,16 @@ const target = {
     unrelated: 'keep',
   },
 }
+const otherSource = {
+  ...source,
+  resource: { ...source.resource, name: 'search-other', uid: 'unknown-root-other' },
+}
+const otherTarget = {
+  ...target,
+  id: 'root-other',
+  workloadName: 'search-other',
+  metadata: { ...target.metadata, resourceSource: JSON.stringify(otherSource) },
+}
 const binding = {
   id: 'retail-test',
   applicationId: 'retail',
@@ -40,7 +50,7 @@ const binding = {
   namespace: 'retail-test',
   createdAt: updatedAt,
   updatedAt,
-  targets: [target],
+  targets: [target, otherTarget],
 }
 const pod = {
   clusterId: 'cluster-a',
@@ -128,6 +138,15 @@ for (const width of [1440, 390]) {
           partial: true,
         })
       }
+      if (path === '/application-environments/retail-test/targets/root-other/relations')
+        return data({
+          root: otherSource.resource,
+          nodes: [{ resource: otherSource.resource, role: 'root', depth: 0 }],
+          edges: [],
+          coverage: [],
+          observedAt: updatedAt,
+          partial: false,
+        })
       if (path === '/clusters/cluster-a/workloads/pods/search-pod-0/detail')
         return data({
           ...pod,
@@ -148,29 +167,39 @@ for (const width of [1440, 390]) {
         for (const env of body.data.environments)
           if (env.environmentId === 'test')
             env.workloads = [
-              {
-                applicationEnvironmentId: 'retail-test',
-                targetId: 'root-test',
-                serviceId: 'search',
-                clusterId: 'cluster-a',
-                namespace: 'retail-test',
-                workloadKind: 'CustomResource',
-                workloadName: 'search',
-                sourceStatus: 'linked',
-                healthStatus: 'unknown',
-                desiredReplicas: 0,
-                readyReplicas: 0,
-                updatedReplicas: 0,
-                availableReplicas: 0,
-                source,
-              },
-            ]
+              { target: otherTarget, source: otherSource },
+              { target, source },
+            ].map(({ target, source }) => ({
+              applicationEnvironmentId: 'retail-test',
+              targetId: target.id,
+              serviceId: 'search',
+              clusterId: 'cluster-a',
+              namespace: 'retail-test',
+              workloadKind: 'CustomResource',
+              workloadName: target.workloadName,
+              sourceStatus: 'linked',
+              healthStatus: 'unknown',
+              desiredReplicas: 0,
+              readyReplicas: 0,
+              updatedReplicas: 0,
+              availableReplicas: 0,
+              source,
+            }))
       }
       return base
     })
     await page.goto(
       '/applications/retail?tab=services&applicationEnvironmentId=retail-test&serviceId=search',
     )
+    const openSearchRoot = async () => {
+      await page.getByText('查看资源关系详情', { exact: true }).click()
+      await page.getByRole('combobox', { name: '配置根选择' }).click()
+      await page
+        .locator('.ant-select-dropdown:visible')
+        .getByText('UnknownWidget / search', { exact: true })
+        .click()
+    }
+    await openSearchRoot()
     const relations = page.getByRole('region', { name: '运行资源关系', exact: true })
     await expect(relations).toContainText('UnknownWidget')
     await expect(relations).toContainText('关系不完整')
@@ -202,6 +231,7 @@ for (const width of [1440, 390]) {
     await expect(dialog.getByLabel('关系规则 JSON')).toHaveValue(/shared-service/)
     expect(writes).toHaveLength(1)
     await page.reload()
+    await openSearchRoot()
     await page.getByRole('button', { name: '编辑关系规则', exact: true }).click()
     await dialog.getByLabel('关系规则 JSON').fill(
       JSON.stringify({
@@ -229,7 +259,7 @@ for (const width of [1440, 390]) {
     await relations.getByRole('button', { name: '查看 search-pod-0 指标' }).click()
     await expect(page.getByRole('region', { name: '关联 Pod 指标', exact: true })).toBeVisible()
     await expect(page.getByRole('region', { name: '关联 Pod 指标', exact: true })).toContainText(
-      'Pod 指标',
+      'search-pod-0',
     )
     await expect(page.getByRole('button', { name: /实时会话/ })).toHaveCount(0)
     const geometry = await page.evaluate(() => ({

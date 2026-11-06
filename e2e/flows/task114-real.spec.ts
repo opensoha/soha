@@ -21,7 +21,7 @@ test('Task114 real application resources and explicit CR source access', async (
   const { target } = real
   const env = target.fixtures.environments.test
   await page.goto(
-    `${target.baseURL}/applications/${target.fixtures.application.id}?tab=services&applicationEnvironmentId=${env.imported.applicationEnvironmentId}&serviceId=${env.nativeServiceId}`,
+    `${target.baseURL}/applications/${target.fixtures.application.id}?tab=services&applicationEnvironmentId=${env.imported.applicationEnvironmentId}&serviceId=${env.nativeServiceId}&serviceTab=pods`,
   )
   await expect(page.getByRole('navigation', { name: '选择环境', exact: true })).toBeVisible()
   await expect(
@@ -31,6 +31,7 @@ test('Task114 real application resources and explicit CR source access', async (
   await page.goto(
     `${target.baseURL}/applications/${target.fixtures.application.id}?tab=services&applicationEnvironmentId=${env.imported.applicationEnvironmentId}&serviceId=${env.rootServiceId}`,
   )
+  await page.getByText('查看资源关系详情', { exact: true }).click()
   const relations = page.getByRole('region', { name: '运行资源关系', exact: true })
   await expect(relations).toContainText('Widget')
   await expect(relations).toContainText('operator-api')
@@ -129,7 +130,7 @@ for (const kind of ['logs', 'terminal'] as const) {
     if (target.role !== 'test-writer')
       throw new Error('Writer-only scenario must be selected by runner')
     const env = target.fixtures.environments.test
-    const url = `${target.baseURL}/applications/${target.fixtures.application.id}?tab=services&applicationEnvironmentId=${env.imported.applicationEnvironmentId}&serviceId=${env.nativeServiceId}`
+    const url = `${target.baseURL}/applications/${target.fixtures.application.id}?tab=services&applicationEnvironmentId=${env.imported.applicationEnvironmentId}&serviceId=${env.nativeServiceId}&serviceTab=pods`
     const sockets: Array<{ closed: boolean; url: string; output: string[] }> = []
     const attach = (current: Page) =>
       current.on('websocket', (socket) => {

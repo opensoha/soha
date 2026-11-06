@@ -6,7 +6,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Pagination,
   Popconfirm,
   Select,
   Space,
@@ -15,7 +14,7 @@ import {
 import { DeploymentUnitOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ManagementState } from '@/components/management-list'
+import { ManagementRefreshButton, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag, MetadataTag } from '@/components/status-tag'
 import { OverviewChartSlot } from '@/components/overview/overview-chart-slot'
@@ -608,17 +607,22 @@ export function ServicePodWorkspace({
   workloads,
   view,
   showRelationships = true,
+  deploymentPodsOnly = false,
+  podScope,
+  onPodCount,
 }: {
   showRelationships?: boolean
+  deploymentPodsOnly?: boolean
   applicationId: string
   workloads: ApplicationRuntimeWorkload[]
-  view: 'pods' | 'metrics' | 'related-resources'
+  view: 'runtime' | 'pods' | 'metrics' | 'summary' | 'related-resources'
+  podScope?: string
+  onPodCount?: (summary: { scope: string; count: number | undefined }) => void
 }) {
   const text = useText()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [phase, setPhase] = useState('all')
-  const [page, setPage] = useState(1)
   const permissions = usePermissionSnapshot().data?.data
   const canReadRuntime = hasPermission(permissions, 'delivery.applications.view')
   const canView = hasPermission(permissions, 'platform.pods.view')
@@ -633,30 +637,41 @@ export function ServicePodWorkspace({
           workloadName: workload.workloadName,
         },
         canReadRuntime,
-        5_000,
+        view === 'summary' ? false : 5_000,
       ),
     ),
   })
+  const snapshots = queries.flatMap((query) => {
+    const snapshot = readableQueryData(query)
+    return snapshot ? [snapshot] : []
+  })
   const rows = [
     ...new Map(
-      queries
-        .flatMap((query) => {
-          const runtime = readableQueryData(query)
-          return runtime
-            ? (runtime.pods ?? []).map((pod) => ({ pod, workload: runtime.workload }))
-            : []
-        })
+      snapshots
+        .flatMap((runtime) =>
+          (runtime.pods ?? []).map((pod) => ({ pod, workload: runtime.workload })),
+        )
         .map((row) => [rowKey(row), row]),
     ).values(),
   ]
   const filtered = rows.filter(
     ({ pod }) =>
-      (phase === 'all' || pod.phase === phase) &&
+      (phase === 'all' || (phase === 'restarted' ? pod.restarts > 0 : pod.phase === phase)) &&
       [pod.name, pod.nodeName, pod.podIp].some((value) =>
         value?.toLowerCase().includes(search.toLowerCase()),
       ),
   )
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / 10)))
+  const readyCount = rows.filter(({ pod }) => {
+    const [ready, total] = (pod.readyContainers || '').split('/').map(Number)
+    return pod.phase === 'Running' && total > 0 && ready === total
+  }).length
+  const podCount =
+    canReadRuntime && queries.length > 0 && queries.every((query) => query.isSuccess)
+      ? rows.length
+      : undefined
+  useEffect(() => {
+    if (podScope) onPodCount?.({ scope: podScope, count: podCount })
+  }, [onPodCount, podCount, podScope])
   const tool = searchParams.get('tool') || 'details'
   const selected = rows.filter(
     ({ pod, workload }) =>
@@ -672,10 +687,13 @@ export function ServicePodWorkspace({
       next.set('metricPod', row.pod.name)
       next.set('metricCluster', row.workload.clusterId)
       next.set('metricNamespace', row.pod.namespace)
+      next.delete('metricUid')
+      next.delete('metricRoot')
       for (const key of ['pod', 'podCluster', 'podNamespace', 'tool', 'container']) next.delete(key)
       setSearchParams(next)
       return
     }
+    if (view === 'runtime') next.set('serviceTab', 'pods')
     next.set('pod', row.pod.name)
     next.set('podCluster', row.workload.clusterId)
     next.set('podNamespace', row.pod.namespace)
@@ -697,6 +715,8 @@ export function ServicePodWorkspace({
     const next = new URLSearchParams(searchParams)
     next.set('serviceTab', 'metrics')
     next.set('metricPod', requestedPod)
+    next.delete('metricUid')
+    next.delete('metricRoot')
     for (const [source, target] of [
       ['podCluster', 'metricCluster'],
       ['podNamespace', 'metricNamespace'],
@@ -715,7 +735,11 @@ export function ServicePodWorkspace({
     logs: text('日志', 'Logs'),
     terminal: text('终端', 'Terminal'),
   }
-  if (!canReadRuntime) return <ManagementState compact kind="no-permission" />
+  if (view === 'summary') return null
+  if (!canReadRuntime)
+    return showRelationships || view !== 'runtime' ? (
+      <ManagementState compact kind="no-permission" />
+    ) : null
   if (view === 'metrics') {
     if (!canView) return <ManagementState compact kind="no-permission" />
     const requested = searchParams.get('metricPod')
@@ -808,7 +832,8 @@ export function ServicePodWorkspace({
   }
   return (
     <div className="soha-service-pods">
-      {failed && rows.length > 0 ? (
+      {failed &&
+      (rows.length > 0 || (view === 'runtime' && showRelationships && snapshots.length > 0)) ? (
         <ReadFeedback query={queries.find((query) => query.isError)!} label="Pod 运行数据" />
       ) : null}
       {view === 'related-resources' ? (
@@ -880,45 +905,65 @@ export function ServicePodWorkspace({
             />
           ) : null}
         </div>
+      ) : view === 'runtime' ? (
+        showRelationships ? (
+          waiting && !snapshots.length ? (
+            <ManagementState compact kind="loading" />
+          ) : failed && !snapshots.length ? (
+            <ManagementState
+              compact
+              kind="error"
+              actions={
+                <Button onClick={() => queries.forEach((query) => void query.refetch())}>
+                  {text('重试', 'Retry')}
+                </Button>
+              }
+            />
+          ) : (
+            <RuntimeRelationships snapshots={snapshots} onOpenTool={openTool} />
+          )
+        ) : null
       ) : (
         <>
-          {showRelationships ? (
-            <RuntimeRelationships
-              snapshots={queries.flatMap((query) => {
-                const snapshot = readableQueryData(query)
-                return snapshot ? [snapshot] : []
-              })}
-              onOpenTool={openTool}
-            />
-          ) : null}
           <div className="soha-pod-list-filter">
-            <Text strong>
-              Pods <Text type="secondary">{rows.length}</Text>
-            </Text>
+            <div className="soha-pod-list-filter__summary">
+              <Text strong>{deploymentPodsOnly ? 'Pods · Deployment' : 'Pods'}</Text>
+              {podCount !== undefined || rows.length > 0 ? (
+                <Text type="secondary">
+                  {podCount === undefined ? text('已读取 ', 'Loaded ') : ''}
+                  {rows.length} {text('个 Pod', 'Pods')} · {readyCount} {text('个就绪', 'ready')}
+                  {search || phase !== 'all'
+                    ? ` · ${filtered.length} ${text('个匹配', 'matching')}`
+                    : ''}
+                </Text>
+              ) : null}
+            </div>
             <Input
               aria-label={text('搜索 Pod', 'Search Pods')}
               prefix={<SearchOutlined />}
               placeholder={text('搜索名称、节点或 IP', 'Search name, node or IP')}
               value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(1)
-              }}
+              allowClear
+              onChange={(event) => setSearch(event.target.value)}
             />
             <Select
               aria-label={text('Pod 状态', 'Pod status')}
               value={phase}
-              onChange={(value) => {
-                setPhase(value)
-                setPage(1)
-              }}
+              onChange={setPhase}
               options={[
                 { value: 'all', label: text('全部状态', 'All statuses') },
+                { value: 'restarted', label: text('有重启记录', 'Has restarts') },
                 ...Array.from(new Set(rows.map(({ pod }) => pod.phase))).map((value) => ({
                   value,
                   label: value,
                 })),
               ]}
+            />
+            <ManagementRefreshButton
+              aria-label={text('刷新 Pods', 'Refresh Pods')}
+              tooltip={text('刷新 Pods', 'Refresh Pods')}
+              loading={queries.some((query) => query.isFetching)}
+              onClick={() => queries.forEach((query) => void query.refetch())}
             />
           </div>
           {waiting && !rows.length ? (
@@ -946,86 +991,85 @@ export function ServicePodWorkspace({
               }
             />
           ) : (
-            <ul className="soha-pod-card-list" aria-label={text('Pod 列表', 'Pod list')}>
-              {filtered.slice((currentPage - 1) * 10, currentPage * 10).map((row) => (
-                <li key={rowKey(row)} className="soha-pod-card">
-                  <div className="soha-pod-card-heading">
-                    <DeploymentUnitOutlined aria-hidden="true" />
-                    <Text strong className="soha-pod-card-name">
-                      {row.pod.name}
-                    </Text>
-                    <StatusTag
-                      value={
-                        row.pod.phase === 'Running' &&
-                        row.pod.readyContainers &&
-                        row.pod.readyContainers.split('/')[0] !==
-                          row.pod.readyContainers.split('/')[1]
-                          ? 'pending'
-                          : row.pod.phase
-                      }
-                      label={
-                        row.pod.phase === 'Running' &&
-                        row.pod.readyContainers &&
-                        row.pod.readyContainers.split('/')[0] !==
-                          row.pod.readyContainers.split('/')[1]
-                          ? text('未就绪', 'Not ready')
-                          : undefined
-                      }
-                    />
-                  </div>
-                  <div className="soha-pod-card-facts">
-                    <span>
-                      <span>{text('就绪', 'Ready')}</span>{' '}
-                      <strong>{row.pod.readyContainers || '—'}</strong>
-                    </span>
-                    <span>
-                      <span>{text('重启', 'Restarts')}</span> <strong>{row.pod.restarts}</strong>
-                    </span>
-                    <span>
-                      <span>{text('节点', 'Node')}</span> <strong>{row.pod.nodeName || '—'}</strong>
-                    </span>
-                    <span>
-                      <span>IP</span> <strong>{row.pod.podIp || '—'}</strong>
-                    </span>
-                    <span>
-                      <span>{text('时长', 'Age')}</span>{' '}
-                      <strong>{formatAgeSeconds(row.pod.ageSeconds)}</strong>
-                    </span>
-                  </div>
-                  {canView ? (
-                    <PodMetricsPreview row={row} onOpen={() => openTool(row, 'metrics')} />
-                  ) : null}
-                  <Space size={8} wrap className="soha-pod-card-actions">
-                    {['details', 'logs', 'terminal', 'events', 'yaml']
-                      .filter((item) =>
-                        item === 'logs' ? canLogs : item === 'terminal' ? canExec : canView,
-                      )
-                      .map((item) => (
-                        <Button
-                          autoInsertSpace={false}
-                          color="primary"
-                          variant="filled"
-                          size="small"
-                          key={item}
-                          onClick={() => openTool(row, item)}
-                        >
-                          {labels[item]}
-                        </Button>
-                      ))}
-                  </Space>
-                </li>
-              ))}
-            </ul>
+            <div
+              className="soha-pod-list-scroll"
+              role="region"
+              aria-label={text('Pod 列表', 'Pod list')}
+              tabIndex={0}
+            >
+              <ul className="soha-pod-card-list">
+                {filtered.map((row) => (
+                  <li key={rowKey(row)} className="soha-pod-card">
+                    <div className="soha-pod-card-heading">
+                      <DeploymentUnitOutlined aria-hidden="true" />
+                      <Text strong className="soha-pod-card-name">
+                        {row.pod.name}
+                      </Text>
+                      <StatusTag
+                        value={
+                          row.pod.phase === 'Running' &&
+                          row.pod.readyContainers &&
+                          row.pod.readyContainers.split('/')[0] !==
+                            row.pod.readyContainers.split('/')[1]
+                            ? 'pending'
+                            : row.pod.phase
+                        }
+                        label={
+                          row.pod.phase === 'Running' &&
+                          row.pod.readyContainers &&
+                          row.pod.readyContainers.split('/')[0] !==
+                            row.pod.readyContainers.split('/')[1]
+                            ? text('未就绪', 'Not ready')
+                            : undefined
+                        }
+                      />
+                    </div>
+                    <div className="soha-pod-card-facts">
+                      <span>
+                        <span>{text('就绪', 'Ready')}</span>{' '}
+                        <strong>{row.pod.readyContainers || '—'}</strong>
+                      </span>
+                      <span>
+                        <span>{text('重启', 'Restarts')}</span> <strong>{row.pod.restarts}</strong>
+                      </span>
+                      <span>
+                        <span>{text('节点', 'Node')}</span>{' '}
+                        <strong>{row.pod.nodeName || '—'}</strong>
+                      </span>
+                      <span>
+                        <span>IP</span> <strong>{row.pod.podIp || '—'}</strong>
+                      </span>
+                      <span>
+                        <span>{text('时长', 'Age')}</span>{' '}
+                        <strong>{formatAgeSeconds(row.pod.ageSeconds)}</strong>
+                      </span>
+                    </div>
+                    {canView ? (
+                      <PodMetricsPreview row={row} onOpen={() => openTool(row, 'metrics')} />
+                    ) : null}
+                    <Space size={8} wrap className="soha-pod-card-actions">
+                      {['details', 'logs', 'terminal', 'events', 'yaml']
+                        .filter((item) =>
+                          item === 'logs' ? canLogs : item === 'terminal' ? canExec : canView,
+                        )
+                        .map((item) => (
+                          <Button
+                            autoInsertSpace={false}
+                            color="primary"
+                            variant="filled"
+                            size="small"
+                            key={item}
+                            onClick={() => openTool(row, item)}
+                          >
+                            {labels[item]}
+                          </Button>
+                        ))}
+                    </Space>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
-          {filtered.length > 10 ? (
-            <Pagination
-              current={currentPage}
-              pageSize={10}
-              total={filtered.length}
-              showSizeChanger={false}
-              onChange={setPage}
-            />
-          ) : null}
         </>
       )}
       {requestedPod && session && selectedRow && allowed ? (

@@ -37,6 +37,16 @@
   justify-content: space-between;
 }
 
+.soha-workflow-catalog__toolbar > .ant-segmented {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.soha-workflow-catalog__actions {
+  margin-inline-start: auto;
+}
+
 .soha-workflow-catalog__clear-scope {
   justify-self: start;
 }
@@ -56,7 +66,6 @@
 }
 
 .soha-workflow-center__panel-head,
-.soha-workflow-center__run,
 .soha-workflow-center__target-group > button {
   display: flex;
   align-items: center;
@@ -114,17 +123,37 @@
   border-radius: 0 0 var(--soha-radius-panel) var(--soha-radius-panel);
 }
 
-.soha-workflow-center__run-identity,
-.soha-workflow-center__run-facts {
+.soha-workflow-center__run {
   display: grid;
-  min-width: 0;
-  gap: 2px;
-  overflow-wrap: anywhere;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 3px 10px;
 }
 
-.soha-workflow-center__run-facts {
-  flex: none;
-  justify-items: end;
+.soha-workflow-center__run-title {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.soha-workflow-center__run-context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-workflow-center__run > .ant-tag,
+.soha-workflow-center__run > time {
+  justify-self: end;
+}
+
+.soha-workflow-center__run time {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .soha-workflow-center__run:hover,

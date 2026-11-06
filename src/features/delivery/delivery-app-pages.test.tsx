@@ -1348,14 +1348,13 @@ describe('ApplicationsPage workspace layout', () => {
     expect(container.textContent).not.toContain('执行中')
     expect(container.textContent).not.toContain('失败待处理')
     expect(container.textContent).not.toContain('环境范围')
-    expect(container.querySelector('.soha-management-query-card')).toBeNull()
     expect(container.querySelector('input[placeholder="搜索应用或服务类型"]')).not.toBeNull()
-    expect(container.querySelector('.soha-application-center-toolbar')).not.toBeNull()
     const panel = container.querySelector('.soha-application-center-panel')!
-    expect(panel.querySelector('.soha-application-center-toolbar')).not.toBeNull()
-    expect(
-      panel.querySelector('.soha-application-center-toolbar [aria-label="应用列表范围"]'),
-    ).not.toBeNull()
+    const toolbar = panel.querySelector(
+      '.soha-management-query-card .soha-application-center-toolbar',
+    )!
+    expect(toolbar.querySelector('[aria-label="应用列表范围"]')).not.toBeNull()
+    expect(toolbar.querySelector('[aria-label="刷新应用"]')).not.toBeNull()
     expect(panel.querySelector('.soha-application-card-grid')).not.toBeNull()
     expect(container.querySelector('.soha-application-card-grid')).not.toBeNull()
     expect(container.querySelectorAll('.soha-application-card')).toHaveLength(2)
@@ -2219,7 +2218,10 @@ describe('ApplicationsPage workspace layout', () => {
     expect(testState.apiGet).toHaveBeenCalledWith('/delivery/workflow-catalog?offset=0&limit=12')
     expect(container.querySelector('section[aria-label="工作流中心"]')).not.toBeNull()
     expect(container.querySelector('.soha-workflow-catalog.ant-card')).toBeNull()
-    expect(container.querySelector('.soha-management-query-card')).toBeNull()
+    expect(
+      container.querySelector('.soha-management-query-card .soha-workflow-catalog__toolbar'),
+    ).not.toBeNull()
+    expect(container.querySelector('.soha-management-query-card form')).toBeNull()
     expect(container.querySelector('[role="tablist"]')).toBeNull()
     expect(container.querySelector('[aria-label="筛选环境"]')).toBeNull()
     expect(container.querySelector('.soha-release-board__runs')).toBeNull()
@@ -2243,7 +2245,13 @@ describe('ApplicationsPage workspace layout', () => {
     expect(
       container.querySelector('a[href="/workflows/workflow-running?stage=build"]'),
     ).not.toBeNull()
-    await clickButton(findButton(container, 'deploy-prod'))
+    const approvalRow = findButton(container, 'deploy-prod')
+    expect(approvalRow.textContent).toContain('待审批')
+    expect(approvalRow.textContent).not.toContain('workflow-1')
+    await clickButton(approvalRow)
+    expect(container.querySelector('[aria-label="所选执行"] header')?.textContent).toContain(
+      'workflow-1',
+    )
     expect(container.textContent).toContain('Waiting for production approver')
     expect(container.querySelector('a[href="/workflows/workflow-1?stage=approve"]')).not.toBeNull()
     await act(async () => {

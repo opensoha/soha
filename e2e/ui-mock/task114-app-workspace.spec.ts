@@ -20,6 +20,7 @@ for (const width of [1440, 390]) {
     await expect(rail).toContainText('没有匹配的服务')
     await expect(page.getByRole('heading', { name: '订单 API', exact: true })).toBeVisible()
     await rail.getByRole('textbox', { name: '搜索服务', exact: true }).fill('')
+    await page.getByRole('tab', { name: /^Pods/ }).click()
     const monitor = page.getByRole('button', { name: '查看监控 order-api-pod-0', exact: true })
     await monitor.scrollIntoViewIfNeeded()
     await expect(page.locator('.soha-pod-card-chart canvas').first()).toBeVisible()
