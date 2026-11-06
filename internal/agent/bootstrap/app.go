@@ -65,7 +65,7 @@ func New(ctx context.Context) (*App, error) {
 	runner.SetSSHExecutor(cfg.Kubernetes.ID, slices.Contains(cfg.Security.AllowedActions, "runtime.vm_ssh.connect") && slices.Contains(cfg.Security.AllowedActions, "runtime.vm_ssh.execute"))
 	if client != nil {
 		runner.SetManifestExecutor(client, cfg.Kubernetes.ID)
-		runner.SetHelmExecutor(client, cfg.Kubernetes.ID, cfg.Auth.BearerToken)
+		runner.SetHelmExecutor(client, cfg.Kubernetes.ID, cfg.Auth.BearerToken, cfg.Security.AllowedActions)
 	}
 	runner.Start(lifecycleCtx)
 	server := agentapi.New(cfg, logger, client, runner)

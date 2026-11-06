@@ -103,9 +103,11 @@ func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sag
 	}
 	platform := router.Group(fmt.Sprintf("%s/platform", cfg.HTTP.BasePath))
 	platform.Use(authMiddleware(cfg.Auth.BearerToken))
+	registerResourceGraphCapabilityRoute(platform)
 	registerResourceYAMLRoutes(platform, client, actions)
 	registerResourceCreationRoutes(platform, client, actions)
 	registerCustomResourceRoutes(platform, client, actions)
+	registerCustomResourceGraphRoutes(platform, client, actions, cfg.Auth.BearerToken)
 	registerPrometheusRoutes(platform, cfg.Prometheus)
 	origins := newWebSocketOriginPolicy(cfg.HTTP.AllowedOrigins, cfg.Auth.BearerToken)
 	registerPortForwardRoutes(
@@ -116,6 +118,8 @@ func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sag
 	)
 	registerHelmRoutes(platform, client, actions)
 	registerHelmDeliveryRoutes(platform, client, cfg.Kubernetes.ID)
+	// Dedicated UID-bound routes make older Agents reject sessions they cannot fence.
+	platform.GET("/workloads/pods/:name/uid-bound/logs", podLogSnapshotHandler(client, true))
 	registerPodStreamRoutes(platform, client)
 	registerAggregateLogRoutes(platform, client)
 	registerPodTerminalRoutes(platform, client, actions, origins)
@@ -139,6 +143,8 @@ func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sag
 		registerPlatformWorkloadMutationRoutes(owned, client, actions)
 	}
 	registerManifestRolloutRoutes(platform.Group("/ownership-v2"), client, cfg.Kubernetes.ID, actions)
+	registerObservedWorkloadDeleteRoute(platform.Group("/ownership-v2"), client, actions)
+	registerObservedResourceYAMLRoutes(platform.Group("/ownership-v2"), client, actions)
 }
 
 func (s *Server) Run() error {

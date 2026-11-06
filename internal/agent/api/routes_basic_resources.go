@@ -11,6 +11,14 @@ import (
 )
 
 func registerConfigurationObjectReadRoutes(platform *gin.RouterGroup, client *k8sagent.Client) {
+	platform.GET("/configuration/secrets/:name/certificate", func(c *gin.Context) {
+		item, err := client.GetSecretCertificate(c.Request.Context(), c.Query("namespace"), c.Param("name"))
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		apiresponse.Item(c, http.StatusOK, item)
+	})
 	platform.GET("/configuration/configmaps/:name/detail", func(c *gin.Context) {
 		item, err := client.GetConfigMapDetail(c.Request.Context(), c.Query("namespace"), c.Param("name"))
 		if err != nil {

@@ -30,7 +30,7 @@ SOHA_AGENT_CONFIG_FILE=configs/agent.config.yaml go run ./cmd/agent
 
 ## Production hardening
 
-The Kubernetes starter and development example use the explicit **workbench** action set: resource CRUD, node drain, workload actions, Pod exec, port forwarding and Helm mutations. Existing installations must review the action/RBAC diff before applying the updated starter. The development example additionally opts into Docker terminal access; this is not part of the Kubernetes preset. CRD definition deletion remains a separate opt-in.
+The Kubernetes starter and development example use the explicit **workbench** action set: resource CRUD, node drain, workload actions, Pod exec and port forwarding. Helm mutations require individual `platform.helm_releases` actions in the allowlist and cluster-wide Helm authorization in Core. Existing installations must review the action/RBAC diff before applying the updated starter. The development example additionally opts into Docker terminal access; this is not part of the Kubernetes preset. CRD definition deletion remains a separate opt-in.
 
 Soha-generated installations provide **legacy**, **workbench** and **read-only** presets. Existing cluster registrations retain legacy permissions until a preset is explicitly selected and the installation manifest is regenerated and applied. Read-only excludes writes and execution, while retaining authorization review creation for diagnostics. These are installation presets; the running Agent continues to enforce its explicit `security.allowed_actions` and Kubernetes permissions.
 
@@ -187,6 +187,6 @@ This repository is licensed under the Apache License 2.0. See
 
 ### Pod session identity
 
-Pod list/detail responses include `uid`. For saved log/terminal sessions, forward the original identity as `expectedUid` on `/api/v1/platform/workloads/pods/:name/logs`, `/logs/stream` and `/terminal`, alongside namespace/container. The Agent performs a live UID read before opening the Kubernetes subresource; a replacement or missing Pod is rejected. Omission remains compatible with legacy clients and must not be used to restore a saved session. Logs/exec still require normal Agent authentication, action policy and Kubernetes RBAC. Kubernetes log/exec APIs offer no atomic UID precondition.
+Pod list/detail responses include `uid`. For UID-bound sessions, forward the original identity as `expectedUid` to `/api/v1/platform/workloads/pods/:name/uid-bound/logs`, `/uid-bound/logs/stream` or `/uid-bound/terminal`, alongside namespace and container. These routes require a live UID match before opening the Kubernetes subresource. Keep the older routes for existing clients. A Core using the bound routes must reject an unsupported route without retrying on the older routes. Logs and exec retain normal Agent authentication, action policy and Kubernetes RBAC. Kubernetes log and exec APIs do not provide an atomic UID precondition.
 
 Terminal clients must read frames so ping/pong can run. A peer without pong is disconnected after 45 seconds; writes have finite deadlines. Closing the socket or sending `{ "type": "close" }` cancels the upstream; disconnect never requires an `exit` command. Only resource descriptors belong in persistent browser storage, never tickets, input or output.

@@ -102,9 +102,7 @@ func TestManifestAdmissionDoesNotLeakBetweenConcurrentClaims(t *testing.T) {
 func TestProtectedManifestClaimUsesClusterTokenAndFailsWithoutAdmission(t *testing.T) {
 	r := New(cfgpkg.ControlPlaneConfig{BaseURL: "http://core", BearerToken: "general-token", CallbackRetry: cfgpkg.CallbackRetryConfig{MaxAttempts: 1}}, zap.NewNop())
 	r.SetManifestExecutor(blockingManifestExecutor{}, "one")
-	r.SetHelmExecutor(nil, "one", "cluster-token")
-	// SetHelmExecutor's executor is only a gate here; no Helm operation executes.
-	r.helmExecutor = heldHelmExecutor{}
+	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token", nil)
 	statuses := []string{}
 	claims := 0
 	r.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {

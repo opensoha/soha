@@ -11,14 +11,11 @@ import (
 	"github.com/gin-gonic/gin"
 	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
 	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 )
 
 func registerPodStreamRoutes(platform *gin.RouterGroup, client *k8sagent.Client) {
-	platform.GET("/workloads/pods/:name/logs/stream", func(c *gin.Context) {
-		expectedUID, valid := podExpectedUID(c)
-		if !valid {
-			return
-		}
+	stream := func(c *gin.Context, expectedUID string) {
 		namespace := c.DefaultQuery("namespace", "default")
 		tailLines := int64(parseLimit(c.Query("tailLines"), 200))
 		sinceSeconds := int64(parseLimit(c.Query("sinceSeconds"), 0))
@@ -40,7 +37,9 @@ func registerPodStreamRoutes(platform *gin.RouterGroup, client *k8sagent.Client)
 			return
 		}
 		_, _ = fmt.Fprintln(writer, "\n[agent] pod log stream ended with an error")
-	})
+	}
+	platform.GET("/workloads/pods/:name/logs/stream", podSessionHandler(false, stream))
+	platform.GET("/workloads/pods/:name/uid-bound/logs/stream", podSessionHandler(true, stream))
 }
 
 type podLogStreamFlushWriter struct {
@@ -56,8 +55,16 @@ func (w podLogStreamFlushWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// An absent UID keeps the legacy protocol; an explicitly malformed UID never downgrades it.
-func podExpectedUID(c *gin.Context) (string, bool) {
+func podSessionHandler(requireUID bool, handle func(*gin.Context, string)) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if expectedUID, valid := podExpectedUID(c, requireUID); valid {
+			handle(c, expectedUID)
+		}
+	}
+}
+
+// Legacy routes accept omission; UID-bound routes reject invalid identity before opening a session.
+func podExpectedUID(c *gin.Context, requireUID bool) (string, bool) {
 	query, err := url.ParseQuery(c.Request.URL.RawQuery)
 	if err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "malformed session query")
@@ -65,11 +72,11 @@ func podExpectedUID(c *gin.Context) (string, bool) {
 		return "", false
 	}
 	values, present := query["expectedUid"]
-	if !present {
+	if !present && !requireUID {
 		return "", true
 	}
-	if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "expectedUid must be one non-empty value")
+	if len(values) != 1 || strings.TrimSpace(values[0]) == "" || (requireUID && !contractresource.ValidWorkloadUID(values[0])) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "expectedUid must be one valid, non-empty value")
 		c.Abort()
 		return "", false
 	}

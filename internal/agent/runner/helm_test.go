@@ -25,13 +25,13 @@ func (e heldHelmExecutor) ExecuteHelmDelivery(ctx context.Context, _ sohaapi.Hel
 }
 
 func TestHelmCancelWaitsForNativeStop(t *testing.T) {
-	payload := sohaapi.HelmExecutionTaskPayload{Action: sohaapi.Apply, Snapshot: sohaapi.HelmDeliverySnapshot{ClusterID: "one", Namespace: "dev", ReleaseName: "app", DeliveryPlanID: "plan", ApplicationID: "app", ApplicationEnvironmentID: "env", ServiceID: "svc", TargetID: "target"}}
+	payload := sohaapi.HelmExecutionTaskPayload{Action: sohaapi.Apply, Snapshot: sohaapi.HelmDeliverySnapshot{Operation: sohaapi.HelmDeliverySnapshotOperationUpgrade, ClusterID: "one", Namespace: "dev", ReleaseName: "app", DeliveryPlanID: "plan", ApplicationID: "app", ApplicationEnvironmentID: "env", ServiceID: "svc", TargetID: "target"}}
 	for _, beforeStart := range []bool{false, true} {
 		t.Run(map[bool]string{false: "running", true: "before start"}[beforeStart], func(t *testing.T) {
 			task := ExecutionTask{ID: "helm", TaskKind: "helm_apply", ProviderKind: "helm_agent.one", CallbackToken: "attempt", Payload: map[string]any{"helm": payload}}
 			r := New(cfgpkg.ControlPlaneConfig{BaseURL: "http://core", AgentID: "agent", BearerToken: "general", CallbackRetry: cfgpkg.CallbackRetryConfig{MaxAttempts: 1}}, zap.NewNop())
 			e := heldHelmExecutor{make(chan struct{}), make(chan struct{}), make(chan struct{})}
-			r.SetHelmExecutor(e, "one", "cluster-token")
+			r.SetHelmExecutor(e, "one", "cluster-token", []string{"platform.helm_releases.values_update"})
 			var mu sync.Mutex
 			statuses := []string{}
 			r.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -104,7 +104,7 @@ func TestHelmCancelWaitsForNativeStop(t *testing.T) {
 
 func TestHelmClaimUsesOnlyItsClusterAndCredential(t *testing.T) {
 	r := New(cfgpkg.ControlPlaneConfig{BaseURL: "http://core", AgentID: "agent", BearerToken: "general", ProviderKinds: []string{"ci_agent_runner"}}, zap.NewNop())
-	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token")
+	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token", nil)
 	r.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		var claim claimRequest
 		if err := json.NewDecoder(req.Body).Decode(&claim); err != nil {
@@ -122,7 +122,7 @@ func TestHelmClaimUsesOnlyItsClusterAndCredential(t *testing.T) {
 
 func TestInitializationManifestClaimUsesClusterCredential(t *testing.T) {
 	r := New(cfgpkg.ControlPlaneConfig{BaseURL: "http://core", AgentID: "agent", BearerToken: "general"}, zap.NewNop())
-	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token")
+	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token", nil)
 	r.SetManifestExecutor(&blockingManifestExecutor{}, "one")
 	r.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		var claim claimRequest
@@ -137,5 +137,30 @@ func TestInitializationManifestClaimUsesClusterCredential(t *testing.T) {
 	})}
 	if task, ok := r.claim(context.Background()); !ok || task.ID != "first" {
 		t.Fatal("initialization claim failed")
+	}
+}
+
+func TestHelmApplyRequiresExplicitOperationAction(t *testing.T) {
+	payload := sohaapi.HelmExecutionTaskPayload{
+		Action: sohaapi.Apply,
+		Snapshot: sohaapi.HelmDeliverySnapshot{
+			Operation: sohaapi.HelmDeliverySnapshotOperationRollback, ClusterID: "one", Namespace: "dev", ReleaseName: "app", DeliveryPlanID: "plan", ApplicationID: "app", ApplicationEnvironmentID: "env", ServiceID: "svc", TargetID: "target",
+		},
+	}
+	task := ExecutionTask{ID: "helm", TaskKind: "helm_apply", ProviderKind: "helm_agent.one", CallbackToken: "attempt", Payload: map[string]any{"helm": payload}}
+	r := New(cfgpkg.ControlPlaneConfig{BaseURL: "http://core", AgentID: "agent", BearerToken: "general", CallbackRetry: cfgpkg.CallbackRetryConfig{MaxAttempts: 1}}, zap.NewNop())
+	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token", []string{"platform.helm_releases.values_update"})
+	var statuses []string
+	r.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var callback callbackRequest
+		if err := json.NewDecoder(req.Body).Decode(&callback); err != nil {
+			return nil, err
+		}
+		statuses = append(statuses, callback.Status)
+		return jsonResponse(t, http.StatusOK, map[string]any{"data": task}), nil
+	})}
+	r.execute(context.Background(), task)
+	if len(statuses) != 1 || statuses[0] != "failed" {
+		t.Fatalf("unconfigured rollback was not stopped before execution: %v", statuses)
 	}
 }

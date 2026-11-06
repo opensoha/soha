@@ -29,11 +29,7 @@ func registerPodTerminalRoutes(
 	origins websocketOriginPolicy,
 ) {
 	upgrader := websocket.Upgrader{CheckOrigin: origins.Check}
-	platform.GET("/workloads/pods/:name/terminal", actions.Require(actionPlatformPodsExec), func(c *gin.Context) {
-		expectedUID, valid := podExpectedUID(c)
-		if !valid {
-			return
-		}
+	terminal := func(c *gin.Context, expectedUID string) {
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			return
@@ -125,7 +121,9 @@ func registerPodTerminalRoutes(
 		<-readDone
 		<-inputDone
 
-	})
+	}
+	platform.GET("/workloads/pods/:name/terminal", actions.Require(actionPlatformPodsExec), podSessionHandler(false, terminal))
+	platform.GET("/workloads/pods/:name/uid-bound/terminal", actions.Require(actionPlatformPodsExec), podSessionHandler(true, terminal))
 }
 
 func startPodTerminalHeartbeat(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {

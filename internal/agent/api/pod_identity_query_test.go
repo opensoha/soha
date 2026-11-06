@@ -1,10 +1,14 @@
 package api
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
+	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
 )
 
 func TestPodExpectedUIDDoesNotDowngradeMalformedInput(t *testing.T) {
@@ -20,7 +24,7 @@ func TestPodExpectedUIDDoesNotDowngradeMalformedInput(t *testing.T) {
 		t.Run(test.query, func(t *testing.T) {
 			router := gin.New()
 			router.GET("/session", func(c *gin.Context) {
-				uid, valid := podExpectedUID(c)
+				uid, valid := podExpectedUID(c, false)
 				if !valid {
 					return
 				}
@@ -32,5 +36,46 @@ func TestPodExpectedUIDDoesNotDowngradeMalformedInput(t *testing.T) {
 				t.Fatalf("response = %d %q", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestUIDBoundPodRoutesRequireAuthenticationAndValidIdentity(t *testing.T) {
+	server := New(cfgpkg.Config{
+		HTTP:     cfgpkg.HTTPConfig{BasePath: "/api/v1"},
+		Auth:     cfgpkg.AuthConfig{BearerToken: "agent-token"},
+		Security: cfgpkg.SecurityConfig{AllowedActions: []string{actionPlatformPodsExec}},
+	}, nil, &k8sagent.Client{}, nil)
+	for _, suffix := range []string{"logs", "logs/stream", "terminal"} {
+		t.Run(suffix, func(t *testing.T) {
+			path := "/api/v1/platform/workloads/pods/api-0/uid-bound/" + suffix
+			recorder := httptest.NewRecorder()
+			server.httpServer.Handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path+"?expectedUid=uid-a", nil))
+			if recorder.Code != http.StatusUnauthorized {
+				t.Fatalf("unauthenticated response = %d %s", recorder.Code, recorder.Body.String())
+			}
+			for _, query := range []string{"", "?expectedUid=", "?expectedUid=%20", "?expectedUid=uid-a%20", "?expectedUid=uid-a&expectedUid=uid-b", "?expectedUid=%XX", "?expectedUid=" + strings.Repeat("a", 129)} {
+				req := httptest.NewRequest(http.MethodGet, path+query, nil)
+				req.Header.Set("Authorization", "Bearer agent-token")
+				recorder := httptest.NewRecorder()
+				server.httpServer.Handler.ServeHTTP(recorder, req)
+				if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "invalid_argument") {
+					t.Fatalf("query %q response = %d %s", query, recorder.Code, recorder.Body.String())
+				}
+			}
+		})
+	}
+}
+
+func TestUIDBoundPodTerminalRequiresExecAction(t *testing.T) {
+	server := New(cfgpkg.Config{
+		HTTP: cfgpkg.HTTPConfig{BasePath: "/api/v1"},
+		Auth: cfgpkg.AuthConfig{BearerToken: "agent-token"},
+	}, nil, &k8sagent.Client{}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/workloads/pods/api-0/uid-bound/terminal?expectedUid=uid-a", nil)
+	req.Header.Set("Authorization", "Bearer agent-token")
+	recorder := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("terminal without exec allowlist = %d %s", recorder.Code, recorder.Body.String())
 	}
 }

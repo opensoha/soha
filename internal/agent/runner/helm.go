@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,8 +18,9 @@ type HelmExecutor interface {
 	ExecuteHelmDelivery(context.Context, sohaapi.HelmExecutionTaskPayload) (sohaapi.HelmExecutionTaskResult, error)
 }
 
-func (r *Runner) SetHelmExecutor(executor HelmExecutor, clusterID, token string) {
+func (r *Runner) SetHelmExecutor(executor HelmExecutor, clusterID, token string, allowedActions []string) {
 	r.helmExecutor, r.helmClusterID, r.helmClaimToken = executor, strings.TrimSpace(clusterID), strings.TrimSpace(token)
+	r.helmAllowedActions = slices.Clone(allowedActions)
 }
 
 func (r *Runner) claimHelmTask(ctx context.Context) (ExecutionTask, bool) {
@@ -59,6 +61,9 @@ func (r *Runner) executeHelmTask(ctx context.Context, task ExecutionTask) {
 	if err == nil && (r.helmExecutor == nil || payload.Snapshot.ClusterID != r.helmClusterID || task.ProviderKind != expectedProvider || task.TaskKind != "helm_"+string(payload.Action)) {
 		err = fmt.Errorf("helm runtime identity mismatch")
 	}
+	if err == nil && payload.Action == sohaapi.Apply && !r.helmMutationAllowed(payload.Snapshot.Operation) {
+		err = fmt.Errorf("Helm delivery mutation is not allowlisted")
+	}
 	if err == nil {
 		current, ok := r.callback(ctx, task, "running", map[string]any{"helm": sohaapi.HelmExecutionTaskResult{}})
 		if !ok {
@@ -88,6 +93,23 @@ func (r *Runner) executeHelmTask(ctx context.Context, task ExecutionTask) {
 	result.Diagnostics = nil
 	r.finalCallback(context.WithoutCancel(ctx), task, status, map[string]any{"helm": result})
 	r.metrics.markOutcome(metricScopeExecution, status)
+}
+
+func (r *Runner) helmMutationAllowed(operation sohaapi.HelmDeliverySnapshotOperation) bool {
+	var action string
+	switch operation {
+	case sohaapi.HelmDeliverySnapshotOperationInstall:
+		action = "platform.helm_releases.install"
+	case sohaapi.HelmDeliverySnapshotOperationUpgrade:
+		action = "platform.helm_releases.values_update"
+	case sohaapi.HelmDeliverySnapshotOperationRollback:
+		action = "platform.helm_releases.rollback"
+	default:
+		return false
+	}
+	return slices.ContainsFunc(r.helmAllowedActions, func(configured string) bool {
+		return strings.EqualFold(strings.TrimSpace(configured), action)
+	})
 }
 
 func (r *Runner) runHelmWithHeartbeat(ctx context.Context, task ExecutionTask, payload sohaapi.HelmExecutionTaskPayload) (sohaapi.HelmExecutionTaskResult, error) {

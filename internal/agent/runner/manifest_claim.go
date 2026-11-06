@@ -10,7 +10,7 @@ import (
 )
 
 // These wire values are owned by Contracts' claimExecutionTask specification.
-// The released v0.1.26 SDK already supports the required HTTP transport hook.
+// The SDK's HTTP transport hook lets the runner inspect the claim response.
 const manifestAdmissionProviderPrefix = "manifest_delivery_v1."
 const manifestAdmissionHeader = "X-Soha-Manifest-Admission-Version"
 
