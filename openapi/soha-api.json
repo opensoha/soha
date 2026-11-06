@@ -26493,10 +26493,11 @@
             "writeOnly": true
           },
           "prometheusClusterLabel": {
+            "description": "Omit on update to keep the saved label. An empty string disables label matching for a dedicated Prometheus source. Clusters sharing a source require the same label name and distinct values.",
             "type": "string"
           },
           "prometheusClusterLabelValue": {
-            "description": "Exact value of prometheusClusterLabel for this cluster. Omitted updates preserve the saved value; an explicit empty string restores the legacy Soha cluster ID default. A non-empty value requires a valid label name.",
+            "description": "Exact metric label value. Omit on update to keep the saved value unless the label name is cleared. With a label name configured, an empty value uses the Soha cluster ID. A non-empty value requires a valid label name.",
             "maxLength": 1024,
             "type": "string"
           },
@@ -32487,10 +32488,11 @@
             "type": "string"
           },
           "clusterLabel": {
+            "description": "Omitted or empty for a dedicated Prometheus source queried without a cluster label matcher.",
             "type": "string"
           },
           "clusterLabelValue": {
-            "description": "Configured metric cluster label value. Omitted or empty uses the Soha cluster ID for legacy compatibility.",
+            "description": "Configured metric cluster label value. When clusterLabel is configured, an omitted or empty value uses the Soha cluster ID.",
             "maxLength": 1024,
             "type": "string"
           },
