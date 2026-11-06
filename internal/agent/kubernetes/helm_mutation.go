@@ -102,7 +102,7 @@ func (c *Client) InstallHelmChart(ctx context.Context, input domainresource.Helm
 	return mapAgentHelmChartInstallResult(releaseV1), nil
 }
 
-func (c *Client) UpdateHelmReleaseValues(ctx context.Context, namespace, name, content string) (domainresource.HelmValuesView, error) {
+func (c *Client) UpdateHelmReleaseValues(ctx context.Context, namespace, name, content string, expectedRevision int) (domainresource.HelmValuesView, error) {
 	namespace = strings.TrimSpace(namespace)
 	name = strings.TrimSpace(name)
 	content = normalizeAgentHelmValuesContent(content)
@@ -134,6 +134,9 @@ func (c *Client) UpdateHelmReleaseValues(ctx context.Context, namespace, name, c
 	upgrader.WaitStrategy = kube.LegacyStrategy
 	upgrader.WaitForJobs = true
 	upgrader.Timeout = time.Duration(defaultAgentHelmTimeoutSeconds) * time.Second
+	if err := helmruntime.GuardValuesUpgradeRevision(actionConfig, upgrader, currentV1, expectedRevision); err != nil {
+		return domainresource.HelmValuesView{}, err
+	}
 	release, err := upgrader.RunWithContext(ctx, name, currentV1.Chart, values)
 	if err != nil {
 		return domainresource.HelmValuesView{}, fmt.Errorf("update helm release values %s: %w", name, err)

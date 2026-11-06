@@ -38,7 +38,7 @@ func TestWorkloadDetailsIncludeTargetedRelations(t *testing.T) {
 		return &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}}
 	}
 	owner := func(kind, name string, uid types.UID) []metav1.OwnerReference {
-		return []metav1.OwnerReference{{Kind: kind, Name: name, UID: uid, Controller: &controller}}
+		return []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: kind, Name: name, UID: uid, Controller: &controller}}
 	}
 	pod := func(name, app string, owners []metav1.OwnerReference) *corev1.Pod {
 		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{"app": app}, OwnerReferences: owners}}
@@ -46,17 +46,18 @@ func TestWorkloadDetailsIncludeTargetedRelations(t *testing.T) {
 
 	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: namespace, OwnerReferences: owner("Application", "shop", "app-uid")}, Spec: appsv1.DeploymentSpec{Selector: selector("web"), Template: template("web")}}
 	statefulSet := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: namespace}, Spec: appsv1.StatefulSetSpec{Selector: selector("db"), Template: template("db")}}
-	daemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "node-agent", Namespace: namespace}, Spec: appsv1.DaemonSetSpec{Selector: selector("node-agent"), Template: template("node-agent")}}
+	daemonSet := &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "node-agent", Namespace: namespace, UID: "ds-uid"}, Spec: appsv1.DaemonSetSpec{Selector: selector("node-agent"), Template: template("node-agent")}}
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "migrate", Namespace: namespace, UID: "job-uid", OwnerReferences: owner("CronJob", "nightly", "cron-uid")}, Spec: batchv1.JobSpec{Selector: selector("migrate"), Template: template("migrate")}}
 	cronJob := &batchv1.CronJob{ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: namespace, UID: "cron-uid"}, Spec: batchv1.CronJobSpec{JobTemplate: batchv1.JobTemplateSpec{Spec: batchv1.JobSpec{Template: template("nightly")}}}}
-	ownedJob := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "nightly-1", Namespace: namespace, OwnerReferences: owner("CronJob", "nightly", "cron-uid")}}
+	observed := metav1.Now()
+	ownedJob := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "nightly-1", Namespace: namespace, OwnerReferences: owner("CronJob", "nightly", "cron-uid")}, Status: batchv1.JobStatus{StartTime: &observed, Conditions: []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue, LastTransitionTime: observed}}}}
 	unownedJob := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "other-1", Namespace: namespace, OwnerReferences: owner("CronJob", "other", "other-uid")}}
 	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: namespace}, Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "web"}}}
 	ingress := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: namespace}, Spec: networkingv1.IngressSpec{Rules: []networkingv1.IngressRule{{IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{{Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: "web"}}}}}}}}}}
 
 	typed := kubernetesfake.NewSimpleClientset(
 		deployment, statefulSet, daemonSet, job, cronJob, ownedJob, unownedJob, service, ingress,
-		pod("web-1", "web", nil), pod("db-0", "db", nil), pod("node-agent-1", "node-agent", nil),
+		pod("web-1", "web", nil), pod("db-0", "db", nil), pod("node-agent-1", "node-agent", owner("DaemonSet", "node-agent", "ds-uid")), pod("old-ds-pod", "node-agent", owner("DaemonSet", "node-agent", "old-uid")), pod("unowned-ds-pod", "node-agent", nil),
 		pod("migrate-1", "migrate", owner("Job", "migrate", "job-uid")), pod("migrate-wrong-owner", "migrate", owner("Job", "other", "other-job-uid")),
 	)
 	client := &Client{typed: typed}
@@ -90,6 +91,11 @@ func TestWorkloadDetailsIncludeTargetedRelations(t *testing.T) {
 	cronJobDetail, err := client.GetCronJobDetail(ctx, namespace, cronJob.Name)
 	if err != nil || len(cronJobDetail.Jobs) != 2 || !hasJob(cronJobDetail.Jobs, ownedJob.Name) || hasJob(cronJobDetail.Jobs, unownedJob.Name) || !hasWorkloadRelation(cronJobDetail.RelatedResources, "Secret", "nightly-secret", "secret") {
 		t.Fatalf("cronjob detail = %#v, err = %v", cronJobDetail, err)
+	}
+	for _, execution := range cronJobDetail.Jobs {
+		if execution.Name == ownedJob.Name && (execution.StartTime == "" || len(execution.Conditions) != 1 || execution.Conditions[0].Type != "Complete") {
+			t.Fatalf("native execution data missing: %#v", execution)
+		}
 	}
 }
 

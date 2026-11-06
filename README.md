@@ -30,7 +30,7 @@ SOHA_AGENT_CONFIG_FILE=configs/agent.config.yaml go run ./cmd/agent
 
 ## Production hardening
 
-The Kubernetes starter and development example use the explicit **workbench** action set: resource CRUD, node drain, workload actions, Pod exec, port forwarding and Helm mutations. Existing installations must review the action/RBAC diff before applying the updated starter. The development example additionally opts into Docker terminal access; this is not part of the Kubernetes preset. CRD definition deletion remains a separate opt-in.
+The Kubernetes starter and development example use the explicit **workbench** action set: resource CRUD, node drain, workload actions, Pod exec and port forwarding. Helm mutations require individual `platform.helm_releases` actions in the allowlist and cluster-wide Helm authorization in Core. Existing installations must review the action/RBAC diff before applying the updated starter. The development example additionally opts into Docker terminal access; this is not part of the Kubernetes preset. CRD definition deletion remains a separate opt-in.
 
 Soha-generated installations provide **legacy**, **workbench** and **read-only** presets. Existing cluster registrations retain legacy permissions until a preset is explicitly selected and the installation manifest is regenerated and applied. Read-only excludes writes and execution, while retaining authorization review creation for diagnostics. These are installation presets; the running Agent continues to enforce its explicit `security.allowed_actions` and Kubernetes permissions.
 

@@ -143,6 +143,7 @@ type (
 	ConfigMapDetailView                     = contractsresource.ConfigMapDetailView
 	SecretView                              = contractsresource.SecretView
 	SecretDetailView                        = contractsresource.SecretDetailView
+	SecretCertificateView                   = contractsresource.SecretCertificateView
 	ServiceAccountView                      = contractsresource.ServiceAccountView
 	ServiceAccountDetailView                = contractsresource.ServiceAccountDetailView
 	RoleView                                = contractsresource.RoleView
