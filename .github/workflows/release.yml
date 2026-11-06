@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, for example v0.1.11"
+        description: "Release version, for example v0.1.12"
         required: true
-        default: "v0.1.11"
+        default: "v0.1.12"
       contracts_ref:
         description: "Optional assertion of the contracts version pinned in go.mod"
         required: false
