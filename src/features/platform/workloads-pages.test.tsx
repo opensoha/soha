@@ -39,6 +39,7 @@ const apiDeleteMock = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: null 
 const apiPostMock = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: null })))
 const withStreamTicketMock = vi.hoisted(() => vi.fn(async (url: string) => url))
 const openSessionMock = vi.hoisted(() => vi.fn())
+const adminTablePropsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/stores/platform-scope-store', () => ({
   usePlatformScopeStore: () => testState.scope,
@@ -139,6 +140,7 @@ type MockColumn = {
   dataIndex?: string | string[]
   key?: Key
   render?: (value: unknown, record: MockRecord, index: number) => ReactNode
+  sorter?: (left: MockRecord, right: MockRecord) => number
   title?: ReactNode
 }
 
@@ -148,6 +150,7 @@ vi.mock('@/components/admin-table', () => ({
     dataSource,
     headerExtra,
     loading,
+    localSorting,
     rowKey,
     rowSelection,
     title,
@@ -158,6 +161,7 @@ vi.mock('@/components/admin-table', () => ({
     dataSource?: MockRecord[]
     headerExtra?: ReactNode
     loading?: boolean
+    localSorting?: boolean
     rowKey?: string | ((record: MockRecord) => Key)
     rowSelection?: {
       onChange?: (keys: string[]) => void
@@ -167,6 +171,7 @@ vi.mock('@/components/admin-table', () => ({
     toolbar?: ReactNode
     toolbarExtra?: ReactNode
   }) => {
+    adminTablePropsMock({ columns, dataSource, localSorting })
     function mockCellValue(record: MockRecord, dataIndex?: string | string[]) {
       if (!dataIndex) return undefined
       if (Array.isArray(dataIndex)) {
@@ -1188,6 +1193,51 @@ describe('workloads pods page refresh controls', () => {
       container.querySelectorAll('input[aria-label^="select-monitoring/"]:checked'),
     ).toHaveLength(1)
   }, 15_000)
+
+  it('sorts Deployment status using the displayed health for the full local list', async () => {
+    const deployments = [
+      { name: 'scaled', desiredReplicas: 0, readyReplicas: 0, available: 0, updatedReplicas: 0 },
+      { name: 'healthy', desiredReplicas: 1, readyReplicas: 1, available: 1, updatedReplicas: 1 },
+      { name: 'degraded', desiredReplicas: 1, readyReplicas: 0, available: 0, updatedReplicas: 0 },
+      {
+        name: 'progressing',
+        desiredReplicas: 2,
+        readyReplicas: 1,
+        available: 1,
+        updatedReplicas: 1,
+      },
+    ].map((item) => ({ ...item, namespace: 'monitoring', ageSeconds: 1 }))
+    setResponses({ '/clusters/cluster-a/workloads/deployments?namespace=monitoring': deployments })
+
+    await renderWithProviders(<WorkloadsDeploymentsPage />, '/workloads/deployments')
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+
+    const props = adminTablePropsMock.mock.calls.at(-1)?.[0] as {
+      columns: MockColumn[]
+      dataSource: MockRecord[]
+      localSorting: boolean
+    }
+    const sorter = props.columns.find((column) => column.key === 'health')?.sorter
+    expect(props.localSorting).toBe(true)
+    expect(sorter).toBeTypeOf('function')
+    const sorted = [...props.dataSource].sort(sorter)
+    expect(sorted.map((item) => item.name)).toEqual([
+      'degraded',
+      'healthy',
+      'progressing',
+      'scaled',
+    ])
+    expect(sorted.reverse().map((item) => item.name)).toEqual([
+      'scaled',
+      'progressing',
+      'healthy',
+      'degraded',
+    ])
+  })
 
   it('keeps unavailable deployment actions disabled with reasons and prevents selection', async () => {
     const unsupportedReason = 'workload mutations are disabled for agent-connected clusters'

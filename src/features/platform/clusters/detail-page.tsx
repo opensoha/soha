@@ -449,11 +449,13 @@ function ClusterDetailContent({ clusterId }: { clusterId: string }) {
                     },
                     {
                       label: zh ? '集群标签值' : 'Cluster label value',
-                      children: monitoringConfig.clusterLabelValue || (
-                        <Text type="secondary">
-                          {summary.id} {zh ? '（默认集群 ID）' : '(default cluster ID)'}
-                        </Text>
-                      ),
+                      children: monitoringConfig.clusterLabel
+                        ? monitoringConfig.clusterLabelValue || (
+                            <Text type="secondary">
+                              {summary.id} {zh ? '（默认集群 ID）' : '(default cluster ID)'}
+                            </Text>
+                          )
+                        : '—',
                     },
                     {
                       label: 'Bearer Token',
