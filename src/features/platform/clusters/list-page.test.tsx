@@ -182,6 +182,7 @@ vi.mock('antd', async (importOriginal) => {
     return <div>{children}</div>
   }
   FormMock.useForm = actual.Form.useForm
+  FormMock.useWatch = actual.Form.useWatch
   FormMock.List = (props: ComponentProps<typeof actual.Form.List>) =>
     formLifecycleMocks.realForm ? (
       <actual.Form.List {...props} />
