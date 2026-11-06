@@ -6,6 +6,7 @@ import { podQueries } from './queries'
 const apiMocks = vi.hoisted(() => ({
   getPodDetail: vi.fn(),
   getPodMetrics: vi.fn(),
+  getPodContainerConfiguration: vi.fn(),
   listPodEvents: vi.fn(),
   listPods: vi.fn(),
 }))
@@ -50,5 +51,21 @@ describe('pod query options', () => {
       { name: 'scheduled' },
     ])
     expect(apiMocks.listPodEvents).toHaveBeenCalledWith({ scope, name: 'api-pod' })
+  })
+
+  it('isolates parsed container configuration from YAML draft data and other Pod scopes', async () => {
+    const query = podQueries.containerConfiguration(scope, 'api-pod')
+    expect(query.queryKey).not.toEqual(workloadKeys.yaml('pods', scope, 'api-pod'))
+    expect(query.queryKey).not.toEqual(
+      podQueries.containerConfiguration({ ...scope, namespace: 'other' }, 'api-pod').queryKey,
+    )
+    expect(
+      podQueries.containerConfiguration({ clusterId: 'cluster-a', namespace: null }, 'api-pod')
+        .enabled,
+    ).toBe(false)
+    apiMocks.getPodContainerConfiguration.mockResolvedValueOnce({ containers: [] })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    await expect(client.fetchQuery(query)).resolves.toEqual({ containers: [] })
+    expect(apiMocks.getPodContainerConfiguration).toHaveBeenCalledWith({ scope, name: 'api-pod' })
   })
 })

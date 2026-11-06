@@ -3,6 +3,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { expect, it, vi } from 'vitest'
 import { namespaceQueries } from '@/features/platform/cluster-resources/queries'
 import { toClusterScope } from '@/features/platform/cluster-resources/scope'
@@ -49,7 +50,9 @@ it('validates the selected namespace against the shared resource cache after nam
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
-          <PlatformScopeTrigger scopeMode="cluster" />
+          <MemoryRouter>
+            <PlatformScopeTrigger scopeMode="cluster" />
+          </MemoryRouter>
         </QueryClientProvider>,
       )
     })

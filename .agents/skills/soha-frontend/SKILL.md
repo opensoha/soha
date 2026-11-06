@@ -84,6 +84,13 @@ description: Implement or review soha-web React and Ant Design UI, shared tables
 - This import guard does not prove CSS, accessibility, pagination or visual compliance. Keep
   targeted component/page tests and actual visual review; preserve current accepted layouts.
 
+K8s full-array resource lists compose `features/platform/shared/kubernetes-resource-table` over
+AdminTable. Supply a stable resource key, display label, full unfiltered rows and a filter reset
+key; keep resource columns, queries and permission-aware actions in their owner. The composition
+owns continuous virtual browsing, truthful counts, layout preferences and refresh anchors.
+Server-paginated catalogs, embedded detail tables and other workbenches retain their existing
+AdminTable behavior. Do not copy the K8s control/viewport logic into each resource page.
+
 ## AI Workbench
 
 - Reuse Ant Design X primitives (`Conversations`, `Welcome`, `Prompts`, `Bubble.List`, `Sender`,

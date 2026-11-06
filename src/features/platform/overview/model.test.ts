@@ -72,7 +72,7 @@ describe('platform overview operational model', () => {
     expect(evidence.governance.approvalRequired).toBe(2)
   })
 
-  it('summarizes peak node pressure and readiness without averaging away saturation', () => {
+  it('separates peak node usage from Requests allocation without averaging away saturation', () => {
     const nodes: ClusterNode[] = [
       {
         name: 'node-a',
@@ -95,14 +95,27 @@ describe('platform overview operational model', () => {
     ]
 
     expect(summarizeNodeCapacity(nodes)).toEqual({
-      cpuPercent: 91,
-      memoryPercent: 77,
+      cpuPercent: 42,
+      memoryPercent: 61,
+      cpuRequestPercent: 91,
+      memoryRequestPercent: 77,
       podPercent: 63,
       readyNodes: 1,
       totalNodes: 2,
       unschedulableNodes: 1,
       signalNodes: 2,
     })
+    expect(summarizeNodeCapacity([nodes[1]])).toMatchObject({
+      cpuPercent: undefined,
+      memoryPercent: undefined,
+      cpuRequestPercent: 91,
+      memoryRequestPercent: 77,
+    })
+    expect(
+      summarizeNodeCapacity([
+        { ...nodes[0], resources: { usagePercentages: { cpu: 0, memory: 0 } } },
+      ]),
+    ).toMatchObject({ cpuPercent: 0, memoryPercent: 0 })
   })
 
   it('merges Kubernetes, audit, and operation evidence in descending time order', () => {

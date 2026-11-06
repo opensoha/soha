@@ -1,0 +1,52 @@
+.soha-namespace-label-preview.ant-btn {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding-inline: 0;
+}
+
+.soha-namespace-label-preview .soha-metadata-tag {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-inline-end: 0;
+}
+
+.soha-namespace-label-more {
+  flex-shrink: 0;
+  color: var(--soha-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-namespace-label-details {
+  display: grid;
+  gap: 10px;
+  width: min(440px, calc(100vw - 64px));
+  max-height: min(440px, 60vh);
+  overflow: auto;
+}
+
+.soha-namespace-label-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.soha-namespace-label-key {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-namespace-label-preview .ant-btn-content {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+}

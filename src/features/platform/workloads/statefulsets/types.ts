@@ -12,6 +12,7 @@ export interface StatefulSet {
 }
 
 export interface StatefulSetDetail {
+  allowedActions?: string[]
   name: string
   namespace: string
   labels?: Record<string, string>

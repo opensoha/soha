@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementState, ManagementTableToolbar } from '@/components/management-list'
 import { OverviewMetricCard, type OverviewMetricItem } from '@/components/overview-visuals'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -9,7 +9,6 @@ import { SecurityPosturePanel } from '@/features/platform/shared/resource-insigh
 import { buildKubernetesEventResourcePath } from '@/features/platform/shared/resource-ref'
 import { useKubernetesResourceStream } from '@/features/platform/shared/resource-stream'
 import { ResourceStreamStatus } from '@/features/platform/shared/resource-stream-status'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import { buildWorkloadListPagePath } from '@/features/platform/workloads-model'
 import '@/features/platform/workloads/styles.css'
 import { useI18n } from '@/i18n'
@@ -28,6 +27,8 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { Link } from 'react-router-dom'
+import { Segmented } from 'antd'
+import { useState } from 'react'
 import {
   useWorkloadTableDensity,
   WorkloadRefreshButton,
@@ -105,18 +106,34 @@ export function WorkloadsOverviewPage() {
     Boolean(clusterId) && hasPermission(permissionSnapshot, 'platform.workloads.overview.view')
       ? readableQueryData(eventsQuery)
       : undefined
-  const refreshOverview = () => {
-    void deploymentsQuery.refetch()
-    void podsQuery.refetch()
-    void statefulSetsQuery.refetch()
-    void daemonSetsQuery.refetch()
-    void jobsQuery.refetch()
-    void cronJobsQuery.refetch()
-    void eventsQuery.refetch()
+  const overviewReads = [
+    deploymentsQuery,
+    podsQuery,
+    statefulSetsQuery,
+    daemonSetsQuery,
+    jobsQuery,
+    cronJobsQuery,
+    eventsQuery,
+  ]
+  const refreshOverview = () =>
+    Promise.allSettled(
+      overviewReads.filter((query) => query.isEnabled).map((query) => query.refetch()),
+    )
+  const refreshingOverview = overviewReads.some((query) => query.isEnabled && query.isFetching)
+  const metricQueries: Record<string, typeof deploymentsQuery> = {
+    deployments: deploymentsQuery,
+    pods: podsQuery,
+    statefulsets: statefulSetsQuery,
+    daemonsets: daemonSetsQuery,
+    jobs: jobsQuery,
+    cronjobs: cronJobsQuery,
   }
+  const [eventType, setEventType] = useState('all')
   const workloadStream = useKubernetesResourceStream({
     clusterId,
     namespace,
+    enabled:
+      Boolean(clusterId) && hasPermission(permissionSnapshot, 'platform.workloads.overview.view'),
     kinds: ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob', 'Pod', 'Event'],
     onEvent: refreshOverview,
     onFallback: refreshOverview,
@@ -151,7 +168,7 @@ export function WorkloadsOverviewPage() {
       {
         key: 'pods',
         label: 'Pods',
-        helper: localeCode === 'zh_CN' ? '当前范围内运行实例' : 'Runtime instances in scope',
+        helper: localeCode === 'zh_CN' ? '当前范围的 Pod 资源' : 'Pod resources in scope',
         value: visiblePodsQueryData?.length ?? '—',
         icon: <ClusterOutlined />,
         tone: 'success',
@@ -194,7 +211,31 @@ export function WorkloadsOverviewPage() {
         path: buildWorkloadListPagePath('cronjobs', namespace, clusterId),
       },
     ] satisfies WorkloadOverviewMetricItem[]
-  ).filter((item) => workloadPermissions[item.key])
+  )
+    .filter((item) => workloadPermissions[item.key])
+    .map((item) => {
+      const query = metricQueries[item.key]
+      return {
+        ...item,
+        helper: query.isError
+          ? readableQueryData(query) === undefined
+            ? localeCode === 'zh_CN'
+              ? '读取失败'
+              : 'Read failed'
+            : localeCode === 'zh_CN'
+              ? '未更新，显示上次结果'
+              : 'Showing the previous result'
+          : query.isLoading
+            ? localeCode === 'zh_CN'
+              ? '正在加载'
+              : 'Loading'
+            : query.isFetching
+              ? localeCode === 'zh_CN'
+                ? '正在刷新'
+                : 'Refreshing'
+              : item.helper,
+      }
+    })
 
   const eventColumns: TableColumnsType<WorkloadEvent> = [
     {
@@ -238,6 +279,10 @@ export function WorkloadsOverviewPage() {
     },
   ]
   const events = visibleEventsQueryData ?? []
+  const filteredEvents =
+    eventType === 'warning'
+      ? events.filter((event) => event.type?.toLowerCase() === 'warning')
+      : events
 
   return (
     <div className="soha-page soha-overview-page soha-workloads-overview-page">
@@ -257,6 +302,26 @@ export function WorkloadsOverviewPage() {
       <ReadFeedback canRead={cronJobsQuery.isEnabled} query={cronJobsQuery} label="CronJob" />
       <ReadFeedback canRead={eventsQuery.isEnabled} query={eventsQuery} label="资源事件" />
 
+      <div className="soha-workload-overview-toolbar">
+        <span className="soha-kubernetes-resource-count">
+          {localeCode === 'zh_CN' ? `${stats.length} 类工作负载` : `${stats.length} workload types`}
+        </span>
+        <ManagementTableToolbar>
+          <ResourceStreamStatus
+            status={workloadStream.status}
+            refreshing={refreshingOverview}
+            refreshFailed={overviewReads.some((query) => query.isEnabled && query.isError)}
+            lastEventAt={workloadStream.lastEventAt}
+            localeCode={localeCode}
+          />
+          <WorkloadRefreshButton
+            label={localeCode === 'zh_CN' ? '刷新概览' : 'Refresh overview'}
+            loading={refreshingOverview}
+            disabled={refreshingOverview}
+            onRefresh={() => void refreshOverview()}
+          />
+        </ManagementTableToolbar>
+      </div>
       <div className="soha-overview-metric-grid soha-workload-overview-metric-grid">
         {stats.map((item) => (
           <Link
@@ -276,45 +341,70 @@ export function WorkloadsOverviewPage() {
         ))}
       </div>
       <SecurityPosturePanel scope={scope} />
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey="workload-events"
+        resourceLabel={localeCode === 'zh_CN' ? '当前返回的事件' : 'returned events'}
+        allRows={events}
+        filterKey={eventType}
+        error={eventsQuery.isEnabled === false ? null : eventsQuery.error}
+        hasReadData={eventsQuery.data !== undefined}
+        onRetry={eventsQuery.isEnabled === false ? undefined : () => eventsQuery.refetch()}
+        title={
+          <span className="soha-kubernetes-resource-count" role="status" aria-live="polite">
+            {visibleEventsQueryData === undefined
+              ? eventsQuery.isError
+                ? localeCode === 'zh_CN'
+                  ? '事件未加载'
+                  : 'Events unavailable'
+                : localeCode === 'zh_CN'
+                  ? '正在加载事件'
+                  : 'Loading events'
+              : localeCode === 'zh_CN'
+                ? `事件 ${filteredEvents.length} / 当前返回 ${events.length} 条`
+                : `${filteredEvents.length} events / ${events.length} returned`}
+          </span>
+        }
         className="soha-workload-overview-events soha-platform-table"
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
         headerExtra={
           <ManagementTableToolbar>
-            <ResourceStreamStatus
-              status={workloadStream.status}
-              lastEventAt={workloadStream.lastEventAt}
-              localeCode={localeCode}
+            <Segmented
+              aria-label={localeCode === 'zh_CN' ? '事件类型' : 'Event type'}
+              size="small"
+              value={eventType}
+              onChange={(value) => setEventType(String(value))}
+              options={[
+                { value: 'all', label: localeCode === 'zh_CN' ? '全部事件' : 'All events' },
+                { value: 'warning', label: localeCode === 'zh_CN' ? '警告事件' : 'Warnings' },
+              ]}
             />
             {densityButton}
             <WorkloadRefreshButton
               disabled={!clusterId}
-              label={t('common.refresh', 'Refresh')}
+              label={localeCode === 'zh_CN' ? '刷新事件' : 'Refresh events'}
               loading={eventsQuery.isFetching}
               onRefresh={() => void eventsQuery.refetch()}
             />
           </ManagementTableToolbar>
         }
         columns={eventColumns}
-        dataSource={events}
+        dataSource={filteredEvents}
         localSorting
         rowKey={(record) => `${record.namespace || ''}/${record.name}`}
         loading={eventsQuery.isLoading}
         empty={
           <WorkloadTableEmpty
             clusterId={clusterId}
-            filteredCount={events.length}
+            filteredCount={filteredEvents.length}
             localeCode={localeCode}
             resourceLabel={localeCode === 'zh_CN' ? '事件记录' : 'event records'}
             totalCount={events.length}
           />
         }
-        pageSize={K8S_TABLE_PAGE_SIZE}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
       />
     </div>
   )

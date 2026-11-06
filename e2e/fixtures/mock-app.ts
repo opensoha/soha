@@ -15,7 +15,11 @@ export type BrowserEvidence = {
   requests: string[]
 }
 type MockResponse = { body: unknown; status?: number } | undefined
-export type MockResolver = (url: URL, method: string, request: Request) => MockResponse
+export type MockResolver = (
+  url: URL,
+  method: string,
+  request: Request,
+) => MockResponse | Promise<MockResponse>
 
 export async function installMocks(context: BrowserContext, page: Page, resolve?: MockResolver) {
   const evidence: BrowserEvidence = { fatal: [], failures: [], missing: [], requests: [] }
@@ -42,11 +46,17 @@ export async function installMocks(context: BrowserContext, page: Page, resolve?
     }
     if (!url.pathname.startsWith('/api/')) return route.continue()
     evidence.requests.push(url.pathname + url.search)
-    const selected = resolve?.(url, request.method(), request)
+    const selected = await resolve?.(url, request.method(), request)
     const body = baselineResponse(url.pathname)
     const scoped =
-      !url.pathname.includes('/workloads/deployments/api/') ||
-      url.searchParams.get('namespace') === 'monitoring'
+      url.pathname === '/api/v1/clusters/cluster-a/resources/graph'
+        ? url.searchParams.get('namespace') === 'monitoring' &&
+          url.searchParams.get('kind') === 'Deployment' &&
+          url.searchParams.get('name') === 'api'
+        : url.pathname === '/api/v1/clusters/cluster-a/namespaces'
+          ? url.search === ''
+          : !url.pathname.includes('/workloads/deployments/api/') ||
+            url.searchParams.get('namespace') === 'monitoring'
     const response =
       selected ?? (body && scoped && request.method() === 'GET' ? { body } : undefined)
     // Refresh is POST in the actual API client; mock authentication never proves real login.

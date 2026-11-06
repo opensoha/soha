@@ -1,5 +1,6 @@
 import { localeText, type LocaleCode } from '@/i18n'
 import type { TopologyNode, TopologyEdge } from './types'
+import { relationshipLabel } from '../../shared/resource-insights/relationship-model'
 
 export const resolutionLabels: Record<string, string> = {
   resolved: '已解析',
@@ -124,11 +125,12 @@ export function filterTopology(
   }
 }
 
-export function edgeLabel(edge: TopologyEdge, localeCode: LocaleCode = 'zh_CN') {
+export function edgeLabel(edge: TopologyEdge, localeCode: LocaleCode = 'zh_CN', outgoing = true) {
   return [
-    edge.relation,
+    relationshipLabel(edge.relation, localeCode, outgoing),
     edge.protocol,
     edge.port && `:${edge.port}`,
+    edge.sectionName && `SectionName ${edge.sectionName}`,
     edge.weight !== undefined &&
       `${localeText(localeCode, '权重', 'Weight')} ${edge.weight}${edge.totalWeight !== undefined ? `/${edge.totalWeight}` : ''}`,
     edge.mirrorPercent !== undefined &&
@@ -142,6 +144,7 @@ export function topologyResourcePath(node: TopologyNode, clusterId: string) {
   const resource = node.resource
   if (
     !resource?.name ||
+    resource.clusterId !== clusterId ||
     !['resolved', 'external', 'no_ready_endpoints', 'unsupported_fragment', 'unresolved'].includes(
       node.resolutionState,
     )

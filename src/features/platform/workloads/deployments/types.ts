@@ -9,6 +9,7 @@ import type {
 export interface Deployment {
   name: string
   namespace: string
+  uid?: string
   labels?: Record<string, string>
   desiredReplicas: number
   readyReplicas: number
@@ -21,6 +22,7 @@ export interface Deployment {
 export interface DeploymentTarget {
   readonly scope: ScopeKey
   readonly name: string
+  readonly uid?: string
 }
 
 export interface ScaleDeploymentVariables extends DeploymentTarget {

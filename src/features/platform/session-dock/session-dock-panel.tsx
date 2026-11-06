@@ -487,6 +487,10 @@ export function RealtimeSessionDockPanel({
               <Tabs
                 activeKey={activeKey}
                 animated={false}
+                classNames={{
+                  body: 'soha-realtime-session-tabs-body',
+                  content: 'soha-realtime-session-tab-content',
+                }}
                 destroyOnHidden={false}
                 hideAdd
                 items={clusterSessions.map((session) => {

@@ -8,25 +8,32 @@ import {
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { App, Card, Spin, Typography } from 'antd'
+import { App, Card, Spin } from 'antd'
 import { useMemo } from 'react'
 import { nodeMutations } from './mutations'
 import { nodeQueries } from './queries'
 import type { ClusterScope } from './types'
 
-const { Text } = Typography
-
 export default function NodeYAMLPanel({
   scope,
   nodeName,
+  canApply = false,
+  active = true,
+  interval = false,
 }: {
   scope: ClusterScope
   nodeName: string
+  canApply?: boolean
+  active?: boolean
+  interval?: number | false | ((query: { state: { status: string } }) => number | false)
 }) {
-  const { localeCode, t } = useI18n()
+  const { t } = useI18n()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
-  const yamlQuery = useQuery(nodeQueries.yaml(scope, nodeName))
+  const yamlQuery = useQuery({
+    ...nodeQueries.yaml(scope, nodeName, active),
+    refetchInterval: interval,
+  })
   const visibleYamlQueryData = readableQueryData(yamlQuery)
   const applyYAMLMutation = usePlatformMutation(nodeMutations.applyYAML(queryClient), {
     label: ['应用节点 YAML', 'Apply node YAML'],
@@ -50,25 +57,16 @@ export default function NodeYAMLPanel({
     )
   }
 
-  if (yamlQuery.isError) {
-    return (
-      <Card className="soha-detail-card">
-        <Text type="warning">
-          {yamlQuery.error.message ||
-            (localeCode === 'zh_CN' ? '节点 YAML 暂不可用' : 'Node YAML is unavailable')}
-        </Text>
-      </Card>
-    )
-  }
-
   return (
     <>
       <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
       {applyYAMLMutation.feedback}
-      {yamlQuery.isError && visibleYamlQueryData === undefined ? null : (
+      {
         <K8sYamlEditor
           key={yamlState.resourceKey}
           value={draft}
+          loading={yamlQuery.isLoading}
+          error={yamlQuery.error}
           original={yamlState.original}
           serverChanged={yamlState.serverChanged}
           onCompareLatest={yamlState.compareLatest}
@@ -83,6 +81,9 @@ export default function NodeYAMLPanel({
             void message.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
           }}
           onApply={() =>
+            canApply &&
+            !platformWriteBlocked &&
+            !yamlQuery.isError &&
             applyYAMLMutation.mutate(
               { scope, name: nodeName, content: draft },
               {
@@ -93,10 +94,10 @@ export default function NodeYAMLPanel({
             )
           }
           saveDisabled={!draftStorageKey}
-          applyDisabled={platformWriteBlocked || !draft.trim()}
+          applyDisabled={!canApply || platformWriteBlocked || yamlQuery.isError || !draft.trim()}
           applying={applyYAMLMutation.isPending}
         />
-      )}
+      }
     </>
   )
 }

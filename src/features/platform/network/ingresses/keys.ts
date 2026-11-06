@@ -7,5 +7,7 @@ export const ingressKeys = {
   list: (scope: ScopeKey) => networkKeys.list('ingresses', scope),
   details: () => networkKeys.details('ingresses'),
   detail: (scope: ScopeKey, name: string) => networkKeys.detail('ingresses', scope, name),
+  events: (scope: ScopeKey, name: string) =>
+    [...ingressKeys.detail(scope, name), 'events'] as const,
   yaml: (scope: ScopeKey, name: string) => networkKeys.yaml('ingresses', scope, name),
 }

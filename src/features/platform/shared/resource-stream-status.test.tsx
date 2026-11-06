@@ -13,9 +13,9 @@ const captured = vi.hoisted(() => ({
 
 vi.mock('antd', async (importOriginal) => ({
   ...(await importOriginal<typeof import('antd')>()),
-  Badge: ({ status }: { status: string }) => {
+  Badge: ({ status, text }: { status: string; text?: ReactNode }) => {
     captured.badgeStatus = status
-    return <span />
+    return <span>{text}</span>
   },
   Tooltip: ({ children, title }: { children: ReactNode; title: string }) => {
     captured.tooltipTitle = title
@@ -75,4 +75,45 @@ describe('ResourceStreamStatus', () => {
 
     await act(async () => root.unmount())
   })
+  it('shows an explicit live label only when requested and keeps fallback status truthful', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () =>
+      root.render(<ResourceStreamStatus showLabel status="live" localeCode="zh_CN" />),
+    )
+    expect(container.textContent).toBe('实时更新')
+    await act(async () =>
+      root.render(<ResourceStreamStatus showLabel status="degraded" localeCode="zh_CN" />),
+    )
+    expect(container.textContent).not.toContain('实时更新')
+    expect(captured.badgeStatus).toBe('error')
+    await act(async () => root.unmount())
+  })
+
+  it.each([
+    [true, true, 'warning', 'Refreshing'],
+    [false, true, 'error', 'Refresh failed; retry'],
+  ] as const)(
+    'prioritizes actual read feedback while retaining the stream state',
+    async (refreshing, refreshFailed, tone, label) => {
+      const container = document.createElement('div')
+      const root = createRoot(container)
+      await act(async () =>
+        root.render(
+          <ResourceStreamStatus
+            status="live"
+            localeCode="en_US"
+            refreshing={refreshing}
+            refreshFailed={refreshFailed}
+          />,
+        ),
+      )
+      expect(captured.badgeStatus).toBe(tone)
+      expect(captured.tooltipTitle).toContain(label)
+      expect(captured.tooltipTitle).toContain('Live')
+      expect(container.textContent).toBe('')
+      await act(async () => root.unmount())
+    },
+  )
 })

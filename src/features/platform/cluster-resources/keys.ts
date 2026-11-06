@@ -18,6 +18,8 @@ export const clusterResourceKeys = {
       normalizeClusterScope(scope),
       normalizeName(name),
     ] as const,
+  nodeEvents: (scope: ClusterScope, name: string, limit = 100) =>
+    [...clusterResourceKeys.nodeDetail(scope, name), 'events', limit] as const,
   nodeYAML: (scope: ClusterScope, name: string) =>
     [...clusterResourceKeys.nodeDetail(scope, name), 'yaml'] as const,
   namespaces: () => [...clusterResourceKeys.all, 'namespaces'] as const,

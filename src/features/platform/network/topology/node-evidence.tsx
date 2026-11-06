@@ -203,13 +203,22 @@ export function NodeEvidence({
                       </Text>
                     )}
                     <Text type="secondary">
-                      {edgeLabel(edge, localeCode)} ·{' '}
+                      {edgeLabel(edge, localeCode, direction === 'down')} ·{' '}
                       {t(
                         `network.topology.resolution.${edge.resolutionState}`,
                         resolutionLabels[edge.resolutionState],
                       )}
                     </Text>
-                    {edge.note && <Text type="secondary">{edge.note}</Text>}
+                    {edge.fieldPath && (
+                      <Text type="secondary" className="soha-topology-wrap">
+                        {localeText(localeCode, '字段依据', 'Field path')}：{edge.fieldPath}
+                      </Text>
+                    )}
+                    {edge.note && (
+                      <Text type="secondary" className="soha-topology-wrap">
+                        {edge.note}
+                      </Text>
+                    )}
                   </div>
                 )
               })

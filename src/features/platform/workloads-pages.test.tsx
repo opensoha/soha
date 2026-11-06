@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { PodLogViewer } from '@/components/pod-log-viewer'
+import { ApiError } from '@/services/api-error'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntdApp } from 'antd'
 import type { Key, ReactNode } from 'react'
@@ -38,6 +39,7 @@ const apiDeleteMock = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: null 
 const apiPostMock = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: null })))
 const withStreamTicketMock = vi.hoisted(() => vi.fn(async (url: string) => url))
 const openSessionMock = vi.hoisted(() => vi.fn())
+const adminTablePropsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/stores/platform-scope-store', () => ({
   usePlatformScopeStore: () => testState.scope,
@@ -77,6 +79,7 @@ vi.mock('@/components/resource-events-timeline', () => ({
 }))
 
 vi.mock('@/components/status-tag', () => ({
+  MetadataTag: ({ label }: { label: ReactNode }) => <span>{label}</span>,
   BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
   StatusTag: ({ value }: { value: string }) => <span>{value}</span>,
 }))
@@ -137,6 +140,7 @@ type MockColumn = {
   dataIndex?: string | string[]
   key?: Key
   render?: (value: unknown, record: MockRecord, index: number) => ReactNode
+  sorter?: (left: MockRecord, right: MockRecord) => number
   title?: ReactNode
 }
 
@@ -146,6 +150,7 @@ vi.mock('@/components/admin-table', () => ({
     dataSource,
     headerExtra,
     loading,
+    localSorting,
     rowKey,
     rowSelection,
     title,
@@ -156,6 +161,7 @@ vi.mock('@/components/admin-table', () => ({
     dataSource?: MockRecord[]
     headerExtra?: ReactNode
     loading?: boolean
+    localSorting?: boolean
     rowKey?: string | ((record: MockRecord) => Key)
     rowSelection?: {
       onChange?: (keys: string[]) => void
@@ -165,6 +171,7 @@ vi.mock('@/components/admin-table', () => ({
     toolbar?: ReactNode
     toolbarExtra?: ReactNode
   }) => {
+    adminTablePropsMock({ columns, dataSource, localSorting })
     function mockCellValue(record: MockRecord, dataIndex?: string | string[]) {
       if (!dataIndex) return undefined
       if (Array.isArray(dataIndex)) {
@@ -253,6 +260,34 @@ async function flushAsyncWork() {
   })
 }
 
+async function flushQueryNotifications() {
+  await act(async () => vi.advanceTimersByTimeAsync(1))
+  await flushAsyncWork()
+}
+
+async function openPodActions(container: HTMLElement, name: string) {
+  const trigger = container.querySelector(`button[aria-label="更多操作：${name}"]`)
+  expect(trigger).toBeInstanceOf(HTMLButtonElement)
+  await act(async () => {
+    trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(0)
+  })
+  await flushAsyncWork()
+  const menu = document.body.querySelector('[role="menu"]')!
+  expect(menu).toBeTruthy()
+  return menu
+}
+
+async function selectPodAction(container: HTMLElement, name: string, label: string) {
+  const menu = await openPodActions(container, name)
+  const item = Array.from(menu.querySelectorAll('[role="menuitem"]')).find((node) =>
+    node.textContent?.includes(label),
+  )
+  expect(item).toBeTruthy()
+  await act(async () => item?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  await flushAsyncWork()
+}
+
 async function renderWithProviders(node: ReactNode, route = '/workloads/pods') {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -334,6 +369,7 @@ describe('workloads pods page refresh controls', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    apiDeleteMock.mockReset().mockResolvedValue({ data: null })
     testState.permissionKeys = [
       'platform.pods.delete',
       'platform.pods.exec',
@@ -364,6 +400,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
         {
           name: 'prometheus-0',
+          uid: 'prometheus-uid',
           namespace: 'monitoring',
           phase: 'Running',
           readyContainers: '1/1',
@@ -393,6 +430,48 @@ describe('workloads pods page refresh controls', () => {
     containers = []
     vi.useRealTimers()
     vi.clearAllMocks()
+  })
+
+  it('opens the scheduled node in the current cluster and leaves unassigned nodes as text', async () => {
+    testState.permissionKeys.push('platform.nodes.view')
+    const path = '/clusters/cluster-a/workloads/pods?namespace=monitoring'
+    const pod = (testState.responses[path] as Record<string, unknown>[])[0]
+    testState.responses[path] = [
+      pod,
+      { ...pod, name: 'pending-pod', nodeName: '' },
+      { ...pod, name: 'unknown-node-pod', nodeName: '-' },
+    ]
+    const container = await renderWithProviders(
+      <Routes>
+        <Route path="/workloads/pods" element={<WorkloadsPodsPage />} />
+        <Route path="/cluster-resources/nodes/:nodeName" element={<div>Node destination</div>} />
+      </Routes>,
+    )
+    await act(async () => {
+      vi.advanceTimersByTime(0)
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    const links = container.querySelectorAll<HTMLAnchorElement>('.soha-pod-table-node-link')
+    expect(links).toHaveLength(1)
+    expect(links[0].textContent).toBe('node-a')
+    expect(links[0].getAttribute('href')).toBe(
+      '/cluster-resources/nodes/node-a?clusterId=cluster-a',
+    )
+    await act(async () => links[0].dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushAsyncWork()
+    expect(container.textContent).toContain('Node destination')
+  })
+
+  it('keeps node names readable without node view permission', async () => {
+    const container = await renderWithProviders(<WorkloadsPodsPage />)
+    await act(async () => {
+      vi.advanceTimersByTime(0)
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    expect(container.querySelector('.soha-pod-table-node-link')).toBeNull()
+    expect(container.querySelector('.soha-pod-table-node-text')?.textContent).toBe('node-a')
   })
 
   it('manually refetches pod data from the refresh button', async () => {
@@ -426,7 +505,7 @@ describe('workloads pods page refresh controls', () => {
     expect(apiGetMock.mock.calls.filter(([path]) => path === podListPath)).toHaveLength(2)
   })
 
-  it('renders pod phase and ready container count in separate columns', async () => {
+  it('renders phase and container squares without inline readiness counts', async () => {
     const container = await renderWithProviders(<WorkloadsPodsPage />)
     await act(async () => {
       vi.advanceTimersByTime(0)
@@ -435,7 +514,11 @@ describe('workloads pods page refresh controls', () => {
     await flushAsyncWork()
 
     expect(container.querySelector('[data-column="phase"]')?.textContent).toBe('Running')
-    expect(container.querySelector('[data-column="readyContainers"]')?.textContent).toBe('就绪 1/1')
+    expect(container.querySelector('[data-column="readyContainers"]')?.textContent).toBe('')
+    expect(
+      container.querySelector('[data-column="readyContainers"] button')?.getAttribute('aria-label'),
+    ).toContain('逐容器状态未知')
+    expect(container.querySelector('[data-column="readyContainers"] .is-unknown')).not.toBeNull()
   })
 
   it('clears the previous cluster node filter when the cluster changes', async () => {
@@ -484,7 +567,7 @@ describe('workloads pods page refresh controls', () => {
     expect(container.textContent).toContain('worker-b')
   })
 
-  it('keeps pod usage values inside resource bars with request and limit markers', async () => {
+  it('keeps pod usage beside micro bars and request/limit details accessible', async () => {
     setResponses({
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
         {
@@ -521,11 +604,52 @@ describe('workloads pods page refresh controls', () => {
       expect(cell.tagName).toBe('BUTTON')
       expect(cell.querySelectorAll('.ant-progress')).toHaveLength(1)
       expect(cell.querySelector('.ant-progress')?.getAttribute('aria-hidden')).toBe('true')
-      expect(cell.querySelectorAll('.soha-pod-resource-marker.is-request')).toHaveLength(1)
-      expect(cell.querySelectorAll('.soha-pod-resource-marker.is-limit')).toHaveLength(1)
+      expect(cell.querySelectorAll('.soha-pod-resource-marker')).toHaveLength(0)
       expect(cell.getAttribute('aria-label')).toContain('使用')
+      expect(cell.getAttribute('aria-label')).toContain(index === 0 ? '请求 100m' : '请求 128Mi')
+      expect(cell.getAttribute('aria-label')).toContain(index === 0 ? '限制 200m' : '限制 256Mi')
       expect(cell.getAttribute('aria-label')).toContain('请求以内')
     }
+  })
+
+  it('uses the selected micro-bar design by default and preserves zero/missing data', async () => {
+    const base = {
+      namespace: 'monitoring',
+      phase: 'Running',
+      readyContainers: '1/1',
+      restarts: 0,
+      ageSeconds: 60,
+    }
+    setResponses({
+      '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
+        {
+          ...base,
+          name: 'zero',
+          cpu: '0',
+          memory: '0',
+          requests: { cpu: '100m', memory: '128Mi' },
+          limits: { memory: '256Mi' },
+        },
+        { ...base, name: 'missing' },
+      ],
+    })
+    const container = await renderWithProviders(<WorkloadsPodsPage />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await flushAsyncWork()
+    const cells = Array.from(container.querySelectorAll('.soha-pod-resource-limit-cell'))
+    expect(cells).toHaveLength(4)
+    const zeroCPU = container.querySelector('[aria-label^="zero · CPU"]')!
+    const missingCPU = container.querySelector('[aria-label^="missing · CPU"]')!
+    expect(zeroCPU.querySelector('.soha-pod-resource-value')?.textContent).toBe('0m')
+    expect(missingCPU.querySelector('.soha-pod-resource-value')?.textContent).toBe('—')
+    expect(missingCPU.getAttribute('aria-label')).toContain('暂无指标')
+    expect(zeroCPU.getAttribute('aria-label')).toContain('请求 100m')
+    expect(zeroCPU.getAttribute('aria-label')).toContain('限制 未设置')
+    expect(cells.every((cell) => cell.querySelector('.ant-progress'))).toBe(true)
+    expect(container.querySelectorAll('.soha-pod-resource-marker')).toHaveLength(0)
+    expect(container.querySelector('[role="group"][aria-label="指标展示方案"]')).toBeNull()
   })
 
   it('uses actual request and limit thresholds without turning missing metrics into zero', async () => {
@@ -603,6 +727,9 @@ describe('workloads pods page refresh controls', () => {
       },
       { name: 'no-request', cpu: '50m', limit: '500m', tone: 'success', usage: '50m', percent: 10 },
       { name: 'no-baseline', cpu: '50m', tone: 'unknown', usage: '50m', percent: 0 },
+      { name: 'one-core', cpu: '1000m', tone: 'unknown', usage: '1000m', percent: 0 },
+      { name: 'five-digits', cpu: '12345m', tone: 'unknown', usage: '12345m', percent: 0 },
+      { name: 'decimal-core', cpu: '12.345', tone: 'unknown', usage: '12345m', percent: 0 },
       {
         name: 'missing',
         cpu: '-',
@@ -650,12 +777,12 @@ describe('workloads pods page refresh controls', () => {
       expect(cell.querySelector('.soha-pod-resource-value')?.textContent, item.name).toBe(
         item.usage,
       )
-      const renderedPercent = (
-        cell.querySelector('.soha-pod-resource-progress-wrap') as HTMLElement
-      ).style.getPropertyValue('--soha-pod-resource-usage-percent')
+      const renderedPercent = (cell.querySelector('.ant-progress-track') as HTMLElement).style.width
       expect(Number.parseFloat(renderedPercent), item.name).toBeCloseTo(item.percent)
-      expect(cell.querySelectorAll('.is-limit'), item.name).toHaveLength(item.limit ? 1 : 0)
-      expect(cell.querySelectorAll('.is-request'), item.name).toHaveLength(item.request ? 1 : 0)
+      expect(cell.getAttribute('aria-label'), item.name).toContain(`限制 ${item.limit ?? '未设置'}`)
+      expect(cell.getAttribute('aria-label'), item.name).toContain(
+        `请求 ${item.request === '0' ? '0m' : (item.request ?? '未设置')}`,
+      )
     }
     const missing = container.querySelector('[aria-label^="missing · CPU"]')!
     expect(missing.getAttribute('aria-label')).toContain('暂无指标')
@@ -664,8 +791,8 @@ describe('workloads pods page refresh controls', () => {
     const noLimit = container.querySelector('[aria-label^="no-limit · CPU"]')!
     expect(noLimit.getAttribute('aria-label')).toContain('以请求为比例基准')
     expect(
-      container.querySelector('[aria-label^="above-limit · CPU"] .is-limit.is-passed'),
-    ).not.toBeNull()
+      container.querySelector('[aria-label^="above-limit · CPU"]')?.getAttribute('aria-label'),
+    ).toContain('接近或达到限制')
   })
 
   it('opens pod logs and terminal from row actions in the realtime dock', async () => {
@@ -704,6 +831,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
         {
           name: 'prometheus-0',
+          uid: 'prometheus-uid',
           namespace: 'monitoring',
           phase: 'Running',
           readyContainers: '1/1',
@@ -724,17 +852,13 @@ describe('workloads pods page refresh controls', () => {
       await Promise.resolve()
     })
     await flushAsyncWork()
-    const logsButton = container.querySelector('button[aria-label="打开日志会话"]')
-    const terminalButton = container.querySelector('button[aria-label="打开终端会话"]')
-    const deleteButton = container.querySelector('button[aria-label="删除 Pod"]')
-
-    expect(logsButton).toBeInstanceOf(HTMLButtonElement)
-    expect(terminalButton).toBeInstanceOf(HTMLButtonElement)
-    expect(deleteButton).toBeInstanceOf(HTMLButtonElement)
-    await act(async () => logsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await act(async () => terminalButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await act(async () => deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await flushAsyncWork()
+    expect(container.querySelector('button[aria-label="打开日志会话"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="打开终端会话"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="删除 Pod"]')).toBeNull()
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+    await selectPodAction(container, 'prometheus-0', '打开日志会话')
+    await selectPodAction(container, 'prometheus-0', '打开终端会话')
+    await selectPodAction(container, 'prometheus-0', '删除 Pod')
 
     expect(openSessionMock).toHaveBeenNthCalledWith(1, {
       clusterId: 'cluster-a',
@@ -752,7 +876,86 @@ describe('workloads pods page refresh controls', () => {
     })
 
     expect(document.body.textContent).toContain('确认删除 Pod prometheus-0？')
-    expect(container.querySelector('button[aria-label="更多 Pod 操作"]')).toBeNull()
+    expect(
+      container
+        .querySelector('button[aria-label="更多操作：prometheus-0"]')
+        ?.getAttribute('aria-haspopup'),
+    ).toBe('menu')
+  })
+
+  it.each(['cluster', 'namespace', 'permission', 'allowed action', 'uid'])(
+    'blocks a pending row delete confirmation after the %s changes',
+    async (changed) => {
+      const path = '/clusters/cluster-a/workloads/pods?namespace=monitoring'
+      const [record] = testState.responses[path] as Record<string, unknown>[]
+      const container = await renderWithProviders(<WorkloadsPodsPage />)
+      await flushQueryNotifications()
+      await selectPodAction(container, 'prometheus-0', '删除 Pod')
+      const dialog = document.body.querySelector('[role="dialog"]')!
+      const confirm = dialog.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+      expect(confirm.disabled).toBe(false)
+
+      if (changed === 'cluster' || changed === 'namespace') {
+        if (changed === 'cluster') testState.scope.clusterId = 'cluster-b'
+        else testState.scope.namespace = 'other'
+        await rerenderWithProviders(<WorkloadsPodsPage />)
+        await act(async () => vi.advanceTimersByTimeAsync(1000))
+        expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+      } else {
+        if (changed === 'permission') {
+          testState.permissionKeys = testState.permissionKeys.filter(
+            (key) => key !== 'platform.pods.delete',
+          )
+          await rerenderWithProviders(<WorkloadsPodsPage />)
+        } else {
+          testState.responses[path] = [
+            changed === 'uid'
+              ? { ...record, uid: 'replacement-uid' }
+              : { ...record, allowedActions: [] },
+          ]
+          await act(async () => {
+            await currentQueryClient?.invalidateQueries({ queryKey: ['platform', 'workloads'] })
+          })
+          await flushQueryNotifications()
+        }
+        expect(confirm.disabled).toBe(true)
+        expect(dialog.textContent).toContain('资源或操作权限已变化')
+      }
+      await act(async () => confirm.click())
+      expect(apiDeleteMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps the row delete confirmation fenced while a request is pending or uncertain', async () => {
+    let rejectDelete!: (error: Error) => void
+    apiDeleteMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDelete = reject
+        }),
+    )
+    const container = await renderWithProviders(<WorkloadsPodsPage />)
+    await flushQueryNotifications()
+    await selectPodAction(container, 'prometheus-0', '删除 Pod')
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    const confirm = dialog.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+    await act(async () => {
+      confirm.click()
+      confirm.click()
+    })
+    await flushQueryNotifications()
+    expect(apiDeleteMock).toHaveBeenCalledExactlyOnceWith(
+      '/clusters/cluster-a/workloads/pods/prometheus-0?namespace=monitoring&expectedUid=prometheus-uid',
+    )
+    expect(confirm.disabled).toBe(true)
+    await act(async () =>
+      rejectDelete(new ApiError(500, 'Synthetic uncertain delete', { method: 'DELETE' })),
+    )
+    await flushQueryNotifications()
+    expect(dialog.textContent).toContain('请求结果不明')
+    expect(confirm.disabled).toBe(true)
+    await act(async () => confirm.click())
+    expect(apiDeleteMock).toHaveBeenCalledTimes(1)
   })
 
   it('disables pod delete when agent mode does not support it', async () => {
@@ -778,6 +981,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
         {
           name: 'failed-pod',
+          uid: 'failed-pod-uid',
           namespace: 'monitoring',
           phase: 'Failed',
           readyContainers: '0/1',
@@ -799,10 +1003,13 @@ describe('workloads pods page refresh controls', () => {
     })
     await flushAsyncWork()
 
-    expect(
-      (container.querySelector('button[aria-label="删除 Pod"]') as HTMLButtonElement | null)
-        ?.disabled,
-    ).toBe(true)
+    const menu = await openPodActions(container, 'failed-pod')
+    const deleteItem = Array.from(menu.querySelectorAll('[role="menuitem"]')).find((item) =>
+      item.textContent?.includes('删除 Pod'),
+    )
+    expect(deleteItem?.getAttribute('aria-disabled')).toBe('true')
+    expect(deleteItem?.textContent).toContain(partialReason)
+    await act(async () => deleteItem?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(container.querySelector('input[aria-label="select-monitoring/failed-pod"]')).toBeNull()
     expect(container.textContent).not.toContain('批量删除')
     expect(apiDeleteMock).not.toHaveBeenCalled()
@@ -819,6 +1026,7 @@ describe('workloads pods page refresh controls', () => {
     await flushAsyncWork()
 
     expect(container.querySelector('button[aria-label="删除 Pod"]')).toBeNull()
+    expect(container.querySelector('button[aria-haspopup="menu"]')).toBeNull()
 
     const checkbox = container.querySelector('input[aria-label="select-monitoring/prometheus-0"]')
     await act(async () => {
@@ -856,9 +1064,10 @@ describe('workloads pods page refresh controls', () => {
     await flushAsyncWork()
 
     expect(container.querySelector('button[aria-label="删除 Pod"]')).toBeNull()
+    expect(container.querySelector('button[aria-haspopup="menu"]')).toBeNull()
   })
 
-  it('limits concurrent pod batch delete requests', async () => {
+  it('limits concurrent pod batch delete requests and preserves later selections', async () => {
     const podCount = 12
     const releaseDeleteRequests: Array<() => void> = []
     let activeDeletes = 0
@@ -906,9 +1115,10 @@ describe('workloads pods page refresh controls', () => {
         },
       ],
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': Array.from(
-        { length: podCount },
+        { length: podCount + 1 },
         (_, index) => ({
           name: `failed-pod-${index}`,
+          uid: `uid-${index}`,
           namespace: 'monitoring',
           phase: 'Failed',
           readyContainers: '0/1',
@@ -932,7 +1142,7 @@ describe('workloads pods page refresh controls', () => {
 
     for (let index = 0; index < podCount; index += 1) {
       const checkbox = container.querySelector(
-        `input[aria-label="select-monitoring/failed-pod-${index}"]`,
+        `input[aria-label="select-monitoring/failed-pod-${index}/uid-${index}"]`,
       )
       expect(checkbox).toBeInstanceOf(HTMLInputElement)
       await act(async () => {
@@ -962,6 +1172,8 @@ describe('workloads pods page refresh controls', () => {
 
     expect(apiDeleteMock).toHaveBeenCalledTimes(8)
     expect(maxActiveDeletes).toBeLessThanOrEqual(8)
+    const laterSelection = `input[aria-label="select-monitoring/failed-pod-${podCount}/uid-${podCount}"]`
+    await act(async () => container.querySelector<HTMLInputElement>(laterSelection)?.click())
 
     while (releaseDeleteRequests.length > 0) {
       const release = releaseDeleteRequests.shift()
@@ -972,11 +1184,62 @@ describe('workloads pods page refresh controls', () => {
       await flushAsyncWork()
     }
 
+    await flushQueryNotifications()
+
     expect(apiDeleteMock).toHaveBeenCalledTimes(podCount)
     expect(maxActiveDeletes).toBeLessThanOrEqual(8)
+    expect(container.querySelector<HTMLInputElement>(laterSelection)?.checked).toBe(true)
+    expect(
+      container.querySelectorAll('input[aria-label^="select-monitoring/"]:checked'),
+    ).toHaveLength(1)
   }, 15_000)
 
-  it('hides the deployment action column when the current cluster capability is unsupported', async () => {
+  it('sorts Deployment status using the displayed health for the full local list', async () => {
+    const deployments = [
+      { name: 'scaled', desiredReplicas: 0, readyReplicas: 0, available: 0, updatedReplicas: 0 },
+      { name: 'healthy', desiredReplicas: 1, readyReplicas: 1, available: 1, updatedReplicas: 1 },
+      { name: 'degraded', desiredReplicas: 1, readyReplicas: 0, available: 0, updatedReplicas: 0 },
+      {
+        name: 'progressing',
+        desiredReplicas: 2,
+        readyReplicas: 1,
+        available: 1,
+        updatedReplicas: 1,
+      },
+    ].map((item) => ({ ...item, namespace: 'monitoring', ageSeconds: 1 }))
+    setResponses({ '/clusters/cluster-a/workloads/deployments?namespace=monitoring': deployments })
+
+    await renderWithProviders(<WorkloadsDeploymentsPage />, '/workloads/deployments')
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+
+    const props = adminTablePropsMock.mock.calls.at(-1)?.[0] as {
+      columns: MockColumn[]
+      dataSource: MockRecord[]
+      localSorting: boolean
+    }
+    const sorter = props.columns.find((column) => column.key === 'health')?.sorter
+    expect(props.localSorting).toBe(true)
+    expect(sorter).toBeTypeOf('function')
+    const sorted = [...props.dataSource].sort(sorter)
+    expect(sorted.map((item) => item.name)).toEqual([
+      'degraded',
+      'healthy',
+      'progressing',
+      'scaled',
+    ])
+    expect(sorted.reverse().map((item) => item.name)).toEqual([
+      'scaled',
+      'progressing',
+      'healthy',
+      'degraded',
+    ])
+  })
+
+  it('keeps unavailable deployment actions disabled with reasons and prevents selection', async () => {
     const unsupportedReason = 'workload mutations are disabled for agent-connected clusters'
     setResponses({
       '/clusters': [
@@ -1006,6 +1269,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/deployments?namespace=monitoring': [
         {
           name: 'prometheus',
+          uid: 'deployment-uid',
           namespace: 'monitoring',
           desiredReplicas: 1,
           readyReplicas: 1,
@@ -1028,12 +1292,167 @@ describe('workloads pods page refresh controls', () => {
     await flushAsyncWork()
 
     expect(apiGetMock).toHaveBeenCalledWith('/clusters/capabilities')
-    expect(container.textContent).toContain('当前集群连接模式暂不支持该操作')
-    expect(container.textContent).not.toContain(unsupportedReason)
+    expect(container.textContent).toContain(unsupportedReason)
+    expect(container.textContent).not.toContain('当前集群连接模式暂不支持该操作')
     for (const label of ['重启', '扩缩', '删除', '回滚']) {
       expect(container.querySelector(`button[aria-label="${label}"]`)).toBeNull()
     }
     expect(container.querySelector('input[aria-label="select-monitoring/prometheus"]')).toBeNull()
+    const menu = await openPodActions(container, 'prometheus')
+    const items = [...menu.querySelectorAll('[role="menuitem"]')]
+    expect(items.length).toBe(4)
+    expect(items.every((item) => item.getAttribute('aria-disabled') === 'true')).toBe(true)
+    expect(menu.textContent).toContain(unsupportedReason)
+    expect(apiPostMock).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\/workloads\/deployments\//),
+      expect.anything(),
+    )
+    expect(apiDeleteMock).not.toHaveBeenCalled()
+  })
+
+  it('freezes batch scale targets and blocks confirmation after a target disappears or scope changes', async () => {
+    const path = '/clusters/cluster-a/workloads/deployments?namespace=monitoring'
+    const rows = ['api', 'worker'].map((name) => ({
+      name,
+      namespace: 'monitoring',
+      desiredReplicas: 2,
+      readyReplicas: 2,
+      updatedReplicas: 2,
+      available: 2,
+      ageSeconds: 60,
+      allowedActions: ['view', 'scale'],
+    }))
+    testState.responses[path] = rows
+    const container = await renderWithProviders(
+      <WorkloadsDeploymentsPage />,
+      '/workloads/deployments',
+    )
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    for (const name of ['api', 'worker']) {
+      const checkbox = container.querySelector(`input[aria-label="select-monitoring/${name}"]`)
+      expect(checkbox).toBeInstanceOf(HTMLInputElement)
+      await act(async () => checkbox?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    }
+    const batch = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('批量操作'),
+    )
+    await act(async () => {
+      batch?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    const item = [...document.body.querySelectorAll('[role="menuitem"]')].find((node) =>
+      node.textContent?.includes('批量扩缩'),
+    )
+    expect(item).toBeTruthy()
+    await act(async () => {
+      item?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await flushAsyncWork()
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('将对 2 个 Deployment 应用相同副本数')
+    testState.responses[path] = rows.slice(0, 1)
+    await act(async () => {
+      await currentQueryClient?.invalidateQueries({ queryKey: ['platform', 'workloads'] })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await flushAsyncWork()
+    expect(dialog.textContent).toContain('将对 2 个 Deployment 应用相同副本数')
+    const ok = dialog.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')
+    expect(ok?.disabled).toBe(true)
+    expect(apiPostMock).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\/workloads\/deployments\//),
+      expect.anything(),
+    )
+    expect(apiDeleteMock).not.toHaveBeenCalled()
+    testState.scope.clusterId = 'cluster-b'
+    await rerenderWithProviders(<WorkloadsDeploymentsPage />, '/workloads/deployments')
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(dialog.closest<HTMLElement>('.ant-modal-wrap')?.style.display).toBe('none')
+  })
+
+  it('keeps late batch failures and receipts in their original cluster after a scope change', async () => {
+    const entry = {
+      name: 'api',
+      namespace: 'monitoring',
+      desiredReplicas: 1,
+      readyReplicas: 1,
+      updatedReplicas: 1,
+      available: 1,
+      ageSeconds: 60,
+      allowedActions: ['view', 'restart'],
+    }
+    testState.responses['/clusters'] = ['cluster-a', 'cluster-b'].map((id) => ({
+      id,
+      name: id,
+      connectionMode: 'direct',
+      health: { status: 'healthy' },
+    }))
+    testState.responses['/clusters/cluster-a/workloads/deployments?namespace=monitoring'] = [entry]
+    testState.responses['/clusters/cluster-b/workloads/deployments?namespace=monitoring'] = [entry]
+    const container = await renderWithProviders(
+      <WorkloadsDeploymentsPage />,
+      '/workloads/deployments',
+    )
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    let rejectRequest!: (error: Error) => void
+    apiPostMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRequest = reject
+        }),
+    )
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[aria-label="select-monitoring/api"]')
+        ?.click(),
+    )
+    const batch = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('批量操作'),
+    )
+    await act(async () => {
+      batch?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    const restart = [...document.body.querySelectorAll('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes('批量重启'),
+    )
+    await act(async () => {
+      restart?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(apiPostMock).toHaveBeenCalledWith('/clusters/cluster-a/workloads/deployments/restart', {
+      name: 'api',
+      namespace: 'monitoring',
+    })
+    testState.scope.clusterId = 'cluster-b'
+    await rerenderWithProviders(<WorkloadsDeploymentsPage />, '/workloads/deployments')
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    await act(async () => {
+      rejectRequest(new Error('Synthetic rejected restart'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await flushAsyncWork()
+    expect(container.textContent).not.toContain('已选 1 个')
+    expect(
+      container.querySelector<HTMLInputElement>('input[aria-label="select-monitoring/api"]')
+        ?.checked,
+    ).toBe(false)
+    const feedback = container.querySelector('.soha-operation-feedback')!
+    expect(feedback.textContent).toContain('cluster-a / monitoring / api')
+    expect(feedback.textContent).not.toContain('cluster-b / monitoring / api')
   })
 
   it('renders statefulset restart, scale, and delete actions using workload permissions', async () => {
@@ -1079,17 +1498,7 @@ describe('workloads pods page refresh controls', () => {
     })
     await flushAsyncWork()
 
-    const restartButton = container.querySelector('button[aria-label="重启"]')
-    const scaleButton = container.querySelector('button[aria-label="扩缩"]')
-    const deleteButton = container.querySelector('button[aria-label="删除"]')
-    expect(restartButton).toBeInstanceOf(HTMLButtonElement)
-    expect(scaleButton).toBeInstanceOf(HTMLButtonElement)
-    expect(deleteButton).toBeInstanceOf(HTMLButtonElement)
-
-    await act(async () => {
-      restartButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flushAsyncWork()
+    await selectPodAction(container, 'prometheus', '重启')
     expect(apiPostMock).toHaveBeenCalledWith('/clusters/cluster-a/workloads/statefulsets/restart', {
       namespace: 'monitoring',
       name: 'prometheus',
@@ -1139,13 +1548,7 @@ describe('workloads pods page refresh controls', () => {
     })
     await flushAsyncWork()
 
-    const scaleButton = container.querySelector('button[aria-label="扩缩"]')
-    await act(async () => {
-      scaleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      vi.runOnlyPendingTimers()
-      await Promise.resolve()
-    })
-    await flushAsyncWork()
+    await selectPodAction(container, 'prometheus', '扩缩')
 
     const modalOkButton = document.body.querySelector('.ant-modal-footer .ant-btn-primary')
     expect(document.body.textContent).toContain('StatefulSet 扩缩容')
@@ -1206,15 +1609,7 @@ describe('workloads pods page refresh controls', () => {
     })
     await flushAsyncWork()
 
-    const restartButton = container.querySelector('button[aria-label="重启"]')
-    const deleteButton = container.querySelector('button[aria-label="删除"]')
-    expect(restartButton).toBeInstanceOf(HTMLButtonElement)
-    expect(deleteButton).toBeInstanceOf(HTMLButtonElement)
-
-    await act(async () => {
-      restartButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flushAsyncWork()
+    await selectPodAction(container, 'node-exporter', '重启')
     expect(apiPostMock).toHaveBeenCalledWith('/clusters/cluster-a/workloads/daemonsets/restart', {
       namespace: 'monitoring',
       name: 'node-exporter',
@@ -1269,13 +1664,13 @@ describe('workloads pods page refresh controls', () => {
     )
 
     await act(async () => {
-      vi.runAllTimers()
+      vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
 
     expect(container.textContent).toContain('容器')
-    expect(container.textContent).toContain('卷')
-    expect(container.textContent).toContain('相关资源')
+    expect(container.textContent).toContain('存储与挂载')
+    expect(container.textContent).toContain('关联资源')
   })
 
   it('hides pod logs and terminal tabs when the role lacks their permissions', async () => {
@@ -1298,7 +1693,7 @@ describe('workloads pods page refresh controls', () => {
       '/workloads/pods/demo-pod?namespace=monitoring',
     )
     await act(async () => {
-      vi.runAllTimers()
+      vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
     await flushAsyncWork()
@@ -1353,7 +1748,7 @@ describe('workloads pods page refresh controls', () => {
       '/workloads/pods/demo-pod?namespace=monitoring',
     )
     await act(async () => {
-      vi.runAllTimers()
+      vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
     await flushAsyncWork()
@@ -1425,7 +1820,7 @@ describe('workloads pods page refresh controls', () => {
     )
     await flushAsyncWork()
     await act(async () => {
-      vi.runAllTimers()
+      vi.runOnlyPendingTimers()
       await Promise.resolve()
     })
     await flushAsyncWork()

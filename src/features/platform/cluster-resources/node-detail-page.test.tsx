@@ -16,6 +16,7 @@ const testState = vi.hoisted(() => ({
     status: 'available' as 'available' | 'partial',
   },
   runtimeLoads: { yaml: 0 },
+  permissions: ['platform.nodes.view', 'platform.pods.view'],
   scope: {
     clusterId: 'stored-cluster' as string | null,
     namespace: null as string | null,
@@ -67,6 +68,14 @@ const apiGetMock = vi.hoisted(() =>
   }),
 )
 
+vi.mock('@/features/auth', () => ({
+  hasPermission: (_snapshot: unknown, key: string) => testState.permissions.includes(key),
+  hasAllowedAction: (a: string[] | undefined, k: string) => a?.includes(k) ?? false,
+  usePermissionSnapshot: () => ({
+    data: { data: { permissionKeys: testState.permissions } },
+    isPending: false,
+  }),
+}))
 vi.mock('@/services/api-client', () => ({
   api: { get: apiGetMock, put: vi.fn(async () => ({ data: { content: 'kind: Node' } })) },
 }))
@@ -75,6 +84,7 @@ vi.mock('@/stores/platform-scope-store', () => ({
 }))
 vi.mock('@/features/platform/cluster-capabilities', () => ({
   useClusterCapabilityForCluster: () => testState.capability,
+  useClusterCapability: () => testState.capability,
 }))
 vi.mock('@/i18n', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/i18n')>()),
@@ -89,12 +99,15 @@ vi.mock('@/components/k8s-yaml-editor', () => {
 })
 vi.mock('@/features/platform/node-resource-utils', () => ({
   NodeResourcePanel: () => <div>node-resource-panel</div>,
+  formatCpu: (v?: string) => v || '—',
+  formatBytesAsG: (v?: string) => v || '—',
   parseStringMap: () => ({}),
   parseTaints: () => [],
   stringifyMap: () => '{}',
   stringifyTaints: () => '[]',
 }))
 vi.mock('@/components/status-tag', () => ({
+  MetadataTag: ({ label }: { label: import('react').ReactNode }) => <span>{label}</span>,
   StatusTag: ({ value }: { value?: string }) => <span>{value}</span>,
 }))
 vi.mock('@/components/admin-table', () => ({
@@ -126,6 +139,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks()
   testState.runtimeLoads.yaml = 0
+  testState.permissions = ['platform.nodes.view', 'platform.pods.view']
   testState.scope.clusterId = 'stored-cluster'
   testState.capability.disabled = false
   testState.capability.isLoading = false
@@ -177,12 +191,15 @@ async function renderDetail() {
 describe('node detail lazy YAML boundary', () => {
   it('uses the shared overview without duplicating metadata and summarizes scheduled namespaces', async () => {
     const container = await renderDetail()
+    const headers = Array.from(container.querySelectorAll<HTMLElement>('.ant-collapse-header'))
+    expect(headers).toHaveLength(2)
+    for (const header of headers) await act(async () => header.click())
     const content = container.textContent ?? ''
 
     expect(content).toContain('node-role.kubernetes.io/worker')
     expect(content).toContain('example.com/hardware')
-    expect(content).toContain('dedicated=gpu:NoSchedule')
-    expect(content).toContain('承载命名空间')
+    expect(content).toContain('dedicated=gpu')
+    expect(content).toContain('命名空间数')
     expect(content).not.toContain('基础信息')
   })
 
@@ -211,6 +228,23 @@ describe('node detail lazy YAML boundary', () => {
     expect(requestedPaths()).toContain('/clusters/url-cluster/infrastructure/nodes/node-a/yaml')
     expect(testState.runtimeLoads.yaml).toBe(1)
     expect(container.querySelector('[data-testid="yaml-editor"]')).not.toBeNull()
+  })
+
+  it.each([
+    ['platform.workloads.overview.view', true],
+    ['platform.events.view', false],
+  ])('gates Node events using %s', async (permission, shouldRead) => {
+    testState.permissions.push(permission)
+    const container = await renderDetail()
+    const eventsTab = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find(
+      (item) => item.textContent?.includes('事件'),
+    )
+    expect(eventsTab).toBeDefined()
+    await act(async () => eventsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushAsyncWork()
+    expect(
+      apiGetMock.mock.calls.some(([path]) => path === '/clusters/url-cluster/events?limit=100'),
+    ).toBe(shouldRead)
   })
 
   it('requests node YAML when Agent support is partial but not disabled', async () => {

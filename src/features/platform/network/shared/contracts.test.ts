@@ -37,6 +37,12 @@ describe('network shared contracts', () => {
     expect(buildNetworkRoutePath('services', ' app/api ', ' team/a ', { tab: 'yaml' })).toBe(
       '/network/services/app%2Fapi?namespace=team%2Fa&tab=yaml',
     )
+    expect(
+      buildNetworkRoutePath('services', 'api', 'team', {
+        tab: 'backends',
+        clusterId: ' cluster-a ',
+      }),
+    ).toBe('/network/services/api?namespace=team&clusterId=cluster-a&tab=backends')
     expect(networkKeys.list('services', scope)).toEqual([
       'platform',
       'network',

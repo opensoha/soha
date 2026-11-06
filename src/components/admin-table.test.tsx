@@ -346,6 +346,37 @@ describe('AdminTable', () => {
     expect(captured.tableProps?.scroll.y).toBeUndefined()
   })
 
+  it('opts into a bounded virtual body without changing the paginated default', async () => {
+    await renderNode(<AdminTable columns={[]} dataSource={[]} rowKey="id" />)
+    expect(captured.tableProps.virtual).toBe(false)
+    expect(captured.tableProps.pagination.pageSize).toBe(15)
+    expect(captured.tableProps.scroll.y).toBeUndefined()
+
+    await renderNode(
+      <AdminTable
+        columns={[]}
+        dataSource={[]}
+        rowKey="id"
+        virtual
+        viewportScroll
+        pagination={false}
+        scroll={{ x: 'max-content', scrollToFirstRowOnChange: false }}
+      />,
+    )
+    expect(captured.tableProps.virtual).toBe(true)
+    expect(captured.tableProps.pagination).toBe(false)
+    expect(captured.tableProps.scroll).toEqual({
+      x: 960,
+      y: 240,
+      scrollToFirstRowOnChange: false,
+    })
+    const Body = captured.tableProps.components.body.wrapper
+    const body = await renderNode(<Body />)
+    expect(body.querySelector('[role="region"]')?.getAttribute('tabindex')).toBe('0')
+    expect(body.textContent).toBe('')
+    expect(body.querySelector('[aria-label="资源列表，可连续滚动"]')).not.toBeNull()
+  })
+
   it('adds local sorting to scalar columns without replacing explicit sorters', async () => {
     const explicitSorter = vi.fn(() => 0)
     await renderNode(
@@ -634,5 +665,22 @@ describe('AdminTable', () => {
     expect(actionColumn.width).toBe(112)
     expect(actionColumn.className).not.toContain('soha-table-actions-column--auto')
     expect(actionColumn.onHeaderCell().className).toContain('k8s-actions')
+  })
+
+  it('honors unfixed actions only for the opted-in column layout', async () => {
+    const columns = [
+      { ...tableColumnPresets.action, key: 'actions', fixed: false, render: () => null },
+    ]
+    await renderNode(
+      <AdminTable
+        columns={columns}
+        dataSource={[{ id: '1' }]}
+        rowKey="id"
+        columnLayoutKey="k8s-mobile"
+      />,
+    )
+    expect(captured.tableProps.columns[0].fixed).toBe(false)
+    await renderNode(<AdminTable columns={columns} dataSource={[{ id: '1' }]} rowKey="id" />)
+    expect(captured.tableProps.columns[0].fixed).toBe('right')
   })
 })

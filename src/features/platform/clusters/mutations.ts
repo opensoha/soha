@@ -19,6 +19,7 @@ import {
   upgradeAgent,
 } from './api'
 import { clusterKeys } from './keys'
+import { monitoringKeys } from '../resource-monitoring/keys'
 import type {
   ClusterPayload,
   ClusterTarget,
@@ -31,6 +32,17 @@ async function invalidateClusterTarget(queryClient: QueryClient, target: Cluster
     queryClient.invalidateQueries({ queryKey: clusterKeys.list() }),
     queryClient.invalidateQueries({ queryKey: clusterKeys.detail(target.scope) }),
     queryClient.invalidateQueries({ queryKey: clusterKeys.nodes(target.scope) }),
+    queryClient.invalidateQueries({
+      queryKey: monitoringKeys.all,
+      predicate: (query) =>
+        query.queryKey.some(
+          (part) =>
+            typeof part === 'object' &&
+            part !== null &&
+            'clusterId' in part &&
+            part.clusterId === target.scope.clusterId,
+        ),
+    }),
   ])
 }
 

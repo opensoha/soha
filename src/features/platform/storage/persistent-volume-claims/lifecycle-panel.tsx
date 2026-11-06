@@ -14,17 +14,16 @@ export function PersistentVolumeClaimLifecyclePanel({
     const zh = {
       lost: 'PVC 已进入 Lost 状态，请检查对应 PV 与存储后端。',
       pending: 'PVC 仍在等待绑定，请检查 StorageClass、容量和拓扑约束。',
-      unmounted: 'PVC 已绑定，但当前没有 Pod 挂载。',
-      'multi-node-rwo': 'ReadWriteOnce PVC 同时出现在多个节点，存在 Multi-Attach 风险。',
-      truncated: 'Pod 关系已截断，实际挂载范围可能更大。',
+      'multi-node-rwo':
+        'ReadWriteOnce PVC 的 Pod 引用涉及多个节点，可检查调度与挂载事件；尚不能确认 Multi-Attach 故障。',
+      truncated: 'Pod 引用已截断，仅展示当前返回范围。',
     }[risk]
     const en = {
       lost: 'The PVC is Lost; inspect the PV and storage backend.',
       pending: 'The PVC is waiting for binding; inspect StorageClass, capacity, and topology.',
-      unmounted: 'The PVC is bound but is not currently mounted by a Pod.',
       'multi-node-rwo':
-        'A ReadWriteOnce PVC appears on multiple nodes and may hit Multi-Attach errors.',
-      truncated: 'Pod relationships are truncated; the actual mount scope may be larger.',
+        'ReadWriteOnce Pod references span multiple nodes. Inspect scheduling and mount events; this does not confirm a Multi-Attach failure.',
+      truncated: 'Pod references are truncated; only the returned scope is shown.',
     }[risk]
     return localeCode === 'zh_CN' ? zh : en
   })
@@ -35,22 +34,22 @@ export function PersistentVolumeClaimLifecyclePanel({
         current={assessment.currentStep}
         size="small"
         items={[
-          { title: localeCode === 'zh_CN' ? '已申请' : 'Provisioned' },
-          { title: localeCode === 'zh_CN' ? '已绑定' : 'Bound' },
-          { title: localeCode === 'zh_CN' ? '已挂载' : 'Mounted' },
+          { title: localeCode === 'zh_CN' ? '已声明' : 'Declared', status: 'finish' },
+          {
+            title: localeCode === 'zh_CN' ? '已绑定' : 'Bound',
+            status: claim.status === 'Bound' ? 'finish' : 'wait',
+          },
+          {
+            title: localeCode === 'zh_CN' ? '发现 Pod 引用' : 'Pod references observed',
+            status: claim.pods?.length ? 'finish' : 'wait',
+          },
         ]}
       />
       {messages.map((message, index) => (
         <Alert
           key={assessment.risks[index]}
           showIcon
-          type={
-            assessment.risks[index] === 'lost' || assessment.risks[index] === 'multi-node-rwo'
-              ? 'error'
-              : assessment.risks[index] === 'unmounted'
-                ? 'info'
-                : 'warning'
-          }
+          type={assessment.risks[index] === 'lost' ? 'error' : 'warning'}
           title={message}
         />
       ))}

@@ -6,6 +6,8 @@ import {
   listDaemonSetEvents,
   listDaemonSets,
   restartDaemonSet,
+  listDaemonSetRollouts,
+  getDaemonSetRevision,
 } from './api'
 
 const apiMocks = vi.hoisted(() => ({
@@ -80,5 +82,33 @@ describe('daemonset api', () => {
       restartDaemonSet({ scope: { clusterId: 'cluster-a', namespace: null }, name: 'agent' }),
     ).rejects.toThrow('A namespace is required')
     expect(apiMocks.post).not.toHaveBeenCalled()
+  })
+  it('encodes retained revision paths and keeps native matching metadata', async () => {
+    const record = {
+      name: 'node/agent-abc',
+      namespace: 'team/a',
+      revision: '7',
+      replicas: 1,
+      readyReplicas: 1,
+      podRevisionHash: 'abc',
+      matchesCurrentTemplate: false,
+    }
+    apiMocks.get.mockResolvedValueOnce({ data: [record] })
+    await expect(listDaemonSetRollouts(target)).resolves.toEqual([record])
+    expect(apiMocks.get.mock.calls[0][0]).toBe(
+      '/clusters/cluster-a/workloads/daemonsets/node%2Fagent/rollouts?namespace=team%2Fa',
+    )
+    apiMocks.get.mockResolvedValueOnce({
+      data: {
+        content:
+          'kind: ControllerRevision\nmetadata: {name: node/agent-abc, namespace: team/a}\nrevision: 7\ndata: {spec: {template: {spec: {containers: [{name: agent, image: agent:v2}]}}}}',
+      },
+    })
+    await expect(getDaemonSetRevision(target, record)).resolves.toMatchObject({
+      template: expect.stringContaining('agent:v2'),
+    })
+    expect(apiMocks.get.mock.calls[1][0]).toBe(
+      '/clusters/cluster-a/workloads/daemonsets/node%2Fagent/rollouts/node%2Fagent-abc/yaml?namespace=team%2Fa',
+    )
   })
 })

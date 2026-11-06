@@ -13,6 +13,7 @@ export default function StorageYAMLPanel({
   onApply,
   onChange,
   onReset,
+  readOnly = false,
 }: {
   applying: boolean
   blocked?: boolean
@@ -24,12 +25,14 @@ export default function StorageYAMLPanel({
   onApply: () => void
   onChange: (value: string) => void
   onReset: () => void
+  readOnly?: boolean
 }) {
   const { localeCode } = useI18n()
   const { message } = App.useApp()
   return (
     <div style={{ height: 620 }}>
       <K8sYamlEditor
+        readOnly={readOnly}
         error={error}
         original={original}
         serverChanged={serverChanged}

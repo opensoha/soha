@@ -108,6 +108,7 @@ export async function updateHelmReleaseValues(
 ): Promise<HelmValues> {
   const response = await api.put<ApiResponse<HelmValues>>(buildHelmReleaseValuesPath(variables), {
     content: variables.content,
+    expectedRevision: variables.expectedRevision,
   })
   return response.data
 }

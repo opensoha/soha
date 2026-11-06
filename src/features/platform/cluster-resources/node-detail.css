@@ -1,0 +1,144 @@
+.soha-node-detail .soha-workload-detail-tabs > .ant-tabs-content-holder {
+  padding-inline: 0;
+}
+.soha-node-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.soha-node-resource-grid > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.soha-node-usage {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  max-width: 160px;
+  min-width: 80px;
+  position: relative;
+  font-variant-numeric: tabular-nums;
+}
+.soha-node-usage .ant-progress {
+  margin: 0;
+  line-height: 1;
+  grid-area: 1 / 1;
+}
+.soha-node-usage > span:last-child {
+  grid-area: 1 / 1;
+  z-index: 1;
+  text-align: center;
+  color: var(--soha-text-primary);
+  font-size: 12px;
+  white-space: nowrap;
+  padding: 2px 4px;
+}
+.soha-node-detail .soha-node-usage {
+  max-width: none;
+}
+.soha-node-conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.soha-node-conditions > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.soha-node-taints {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.soha-node-taint-trigger {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.soha-node-taint-trigger:focus-visible,
+.soha-node-usage:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-node-taint-label {
+  display: block;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-node-taint-details {
+  display: grid;
+  gap: 8px;
+  max-width: min(560px, calc(100vw - 48px));
+  overflow-wrap: anywhere;
+}
+.soha-node-metrics-toolbar {
+  display: flex;
+  justify-content: end;
+  margin-bottom: 16px;
+}
+.soha-node-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.soha-node-metrics-grid > .ant-card {
+  min-width: 0;
+}
+.soha-node-metrics-grid .soha-monitoring-chart {
+  height: 230px;
+}
+.soha-node-metric-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+.soha-node-metric-summary strong,
+.soha-node-capacity strong {
+  font-size: 24px;
+  font-weight: 600;
+}
+.soha-node-capacity {
+  min-height: 120px;
+  padding: 16px 0;
+  font-variant-numeric: tabular-nums;
+}
+.soha-node-capacity .ant-progress {
+  margin-top: 24px;
+}
+.soha-node-metric-empty {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  color: var(--soha-text-secondary);
+}
+@media (max-width: 767px) {
+  .soha-node-metrics-grid,
+  .soha-node-resource-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-node-metrics-toolbar {
+    overflow-x: auto;
+    justify-content: start;
+  }
+}
+
+.soha-node-usage-rail {
+  grid-area: 1 / 1;
+  height: 20px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-medium);
+}

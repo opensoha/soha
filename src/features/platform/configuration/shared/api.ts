@@ -93,7 +93,10 @@ export async function updateConfigurationYAML(
 ): Promise<ConfigurationYAML> {
   const response = await api.put<ApiResponse<ConfigurationYAML>>(
     buildConfigurationYAMLPath(kind, variables.scope, variables.name),
-    { content: variables.content },
+    {
+      content: variables.content,
+      ...(variables.requireObservedIdentity ? { requireObservedIdentity: true } : {}),
+    },
   )
   return response.data
 }

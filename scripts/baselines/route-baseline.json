@@ -54,14 +54,14 @@
     ]
   },
   "summary": {
-    "runtimePaths": 295,
-    "metadataPaths": 295,
-    "overlappingPaths": 295,
+    "runtimePaths": 298,
+    "metadataPaths": 298,
+    "overlappingPaths": 298,
     "runtimeOnlyPaths": 0,
     "metadataOnlyPaths": 0,
     "inlineJsxPaths": 0,
-    "lazyRouteLoads": 242,
-    "lazySourceModules": 228
+    "lazyRouteLoads": 245,
+    "lazySourceModules": 231
   },
   "paths": {
     "runtime": [
@@ -146,6 +146,7 @@
       "/configuration/hpas",
       "/configuration/hpas/:name",
       "/configuration/leases",
+      "/configuration/leases/:name",
       "/configuration/limitranges",
       "/configuration/limitranges/:name",
       "/configuration/mutatingwebhookconfigurations",
@@ -153,9 +154,11 @@
       "/configuration/poddisruptionbudgets",
       "/configuration/poddisruptionbudgets/:name",
       "/configuration/priorityclasses",
+      "/configuration/priorityclasses/:name",
       "/configuration/resourcequotas",
       "/configuration/resourcequotas/:name",
       "/configuration/runtimeclasses",
+      "/configuration/runtimeclasses/:name",
       "/configuration/secrets",
       "/configuration/secrets/:secretName",
       "/configuration/validatingwebhookconfigurations",
@@ -443,6 +446,7 @@
       "/configuration/hpas",
       "/configuration/hpas/:name",
       "/configuration/leases",
+      "/configuration/leases/:name",
       "/configuration/limitranges",
       "/configuration/limitranges/:name",
       "/configuration/mutatingwebhookconfigurations",
@@ -450,9 +454,11 @@
       "/configuration/poddisruptionbudgets",
       "/configuration/poddisruptionbudgets/:name",
       "/configuration/priorityclasses",
+      "/configuration/priorityclasses/:name",
       "/configuration/resourcequotas",
       "/configuration/resourcequotas/:name",
       "/configuration/runtimeclasses",
+      "/configuration/runtimeclasses/:name",
       "/configuration/secrets",
       "/configuration/secrets/:secretName",
       "/configuration/validatingwebhookconfigurations",
@@ -740,6 +746,7 @@
       "/configuration/hpas",
       "/configuration/hpas/:name",
       "/configuration/leases",
+      "/configuration/leases/:name",
       "/configuration/limitranges",
       "/configuration/limitranges/:name",
       "/configuration/mutatingwebhookconfigurations",
@@ -747,9 +754,11 @@
       "/configuration/poddisruptionbudgets",
       "/configuration/poddisruptionbudgets/:name",
       "/configuration/priorityclasses",
+      "/configuration/priorityclasses/:name",
       "/configuration/resourcequotas",
       "/configuration/resourcequotas/:name",
       "/configuration/runtimeclasses",
+      "/configuration/runtimeclasses/:name",
       "/configuration/secrets",
       "/configuration/secrets/:secretName",
       "/configuration/validatingwebhookconfigurations",
@@ -1247,6 +1256,11 @@
         "source": "@/features/platform/configuration/hpas/list-page"
       },
       {
+        "exportName": "ConfigurationLeaseDetailPage",
+        "moduleExport": "ConfigurationLeaseDetailPage",
+        "source": "@/features/platform/configuration/leases/detail-page"
+      },
+      {
         "exportName": "ConfigurationLeasesPage",
         "moduleExport": "ConfigurationLeasesPage",
         "source": "@/features/platform/configuration/leases/list-page"
@@ -1282,6 +1296,11 @@
         "source": "@/features/platform/configuration/poddisruptionbudgets/list-page"
       },
       {
+        "exportName": "ConfigurationPriorityClassDetailPage",
+        "moduleExport": "ConfigurationPriorityClassDetailPage",
+        "source": "@/features/platform/configuration/priorityclasses/detail-page"
+      },
+      {
         "exportName": "ConfigurationPriorityClassesPage",
         "moduleExport": "ConfigurationPriorityClassesPage",
         "source": "@/features/platform/configuration/priorityclasses/list-page"
@@ -1295,6 +1314,11 @@
         "exportName": "ConfigurationResourceQuotasPage",
         "moduleExport": "ConfigurationResourceQuotasPage",
         "source": "@/features/platform/configuration/resourcequotas/list-page"
+      },
+      {
+        "exportName": "ConfigurationRuntimeClassDetailPage",
+        "moduleExport": "ConfigurationRuntimeClassDetailPage",
+        "source": "@/features/platform/configuration/runtimeclasses/detail-page"
       },
       {
         "exportName": "ConfigurationRuntimeClassesPage",
@@ -2306,6 +2330,7 @@
       "@/features/platform/configuration/configmaps/list-page",
       "@/features/platform/configuration/hpas/detail-page",
       "@/features/platform/configuration/hpas/list-page",
+      "@/features/platform/configuration/leases/detail-page",
       "@/features/platform/configuration/leases/list-page",
       "@/features/platform/configuration/limitranges/detail-page",
       "@/features/platform/configuration/limitranges/list-page",
@@ -2313,9 +2338,11 @@
       "@/features/platform/configuration/mutatingwebhookconfigurations/list-page",
       "@/features/platform/configuration/poddisruptionbudgets/detail-page",
       "@/features/platform/configuration/poddisruptionbudgets/list-page",
+      "@/features/platform/configuration/priorityclasses/detail-page",
       "@/features/platform/configuration/priorityclasses/list-page",
       "@/features/platform/configuration/resourcequotas/detail-page",
       "@/features/platform/configuration/resourcequotas/list-page",
+      "@/features/platform/configuration/runtimeclasses/detail-page",
       "@/features/platform/configuration/runtimeclasses/list-page",
       "@/features/platform/configuration/secrets/detail-page",
       "@/features/platform/configuration/secrets/list-page",
@@ -2576,6 +2603,7 @@
       "@/features/platform/configuration/configmaps/list-page": ["ConfigurationConfigMapsPage"],
       "@/features/platform/configuration/hpas/detail-page": ["ConfigurationHPADetailPage"],
       "@/features/platform/configuration/hpas/list-page": ["ConfigurationHPAPage"],
+      "@/features/platform/configuration/leases/detail-page": ["ConfigurationLeaseDetailPage"],
       "@/features/platform/configuration/leases/list-page": ["ConfigurationLeasesPage"],
       "@/features/platform/configuration/limitranges/detail-page": [
         "ConfigurationLimitRangeDetailPage"
@@ -2593,6 +2621,9 @@
       "@/features/platform/configuration/poddisruptionbudgets/list-page": [
         "ConfigurationPodDisruptionBudgetsPage"
       ],
+      "@/features/platform/configuration/priorityclasses/detail-page": [
+        "ConfigurationPriorityClassDetailPage"
+      ],
       "@/features/platform/configuration/priorityclasses/list-page": [
         "ConfigurationPriorityClassesPage"
       ],
@@ -2601,6 +2632,9 @@
       ],
       "@/features/platform/configuration/resourcequotas/list-page": [
         "ConfigurationResourceQuotasPage"
+      ],
+      "@/features/platform/configuration/runtimeclasses/detail-page": [
+        "ConfigurationRuntimeClassDetailPage"
       ],
       "@/features/platform/configuration/runtimeclasses/list-page": [
         "ConfigurationRuntimeClassesPage"
@@ -2735,5 +2769,5 @@
       "@/features/virtualization/virtual-machines/list-page": ["VirtualizationVmsPage"]
     }
   },
-  "generatedAt": "2026-10-31T07:11:30.049Z"
+  "generatedAt": "2026-11-06T09:46:56.339Z"
 }

@@ -16,6 +16,7 @@ import { crdMutations } from './mutations'
 import { crdQueries } from './queries'
 import type { CRD, CRDResourceInstance, CustomResourceTarget } from './types'
 import { buildDefaultCustomResourceTemplate, isNamespacedCRD } from './utils'
+import type { CRDEditorState } from './use-navigation-guard'
 
 const K8sYamlEditor = lazy(async () => {
   const module = await import('@/components/k8s-yaml-editor')
@@ -24,15 +25,19 @@ const K8sYamlEditor = lazy(async () => {
 
 export interface CRDResourceEditorModalProps {
   crd: CRD
+  namespaceOverride?: string | null
   customResourceCapabilityReason?: string
   customResourceMutationsDisabled?: boolean
   mode: 'create' | 'edit'
   onClose: () => void
+  onLeave?: (action: () => void) => void
+  onStateChange?: (state: CRDEditorState) => void
   resource?: CRDResourceInstance | null
 }
 
 export function CRDResourceEditor({
   crd,
+  namespaceOverride,
   customResourceCapabilityReason,
   customResourceMutationsDisabled = false,
   mode,
@@ -50,13 +55,16 @@ export function CRDResourceEditor({
   const { t, localeCode } = useI18n()
   const { message } = App.useApp()
   const { clusterId, namespace } = usePlatformScopeStore()
+  const listNamespace = namespaceOverride === undefined ? namespace : namespaceOverride
   const queryClient = useQueryClient()
   const readOnly =
     mode === 'edit' &&
     (!editable ||
       !hasAllowedAction(resource?.allowedActions, 'update') ||
       Boolean(resource?.deletingAt))
-  const effectiveNamespace = isNamespacedCRD(crd) ? (resource?.namespace ?? namespace ?? '') : ''
+  const effectiveNamespace = isNamespacedCRD(crd)
+    ? (resource?.namespace ?? listNamespace ?? '')
+    : ''
   const target: CustomResourceTarget | null =
     clusterId && mode === 'edit' && resource
       ? {
@@ -81,7 +89,7 @@ export function CRDResourceEditor({
   const yamlState = useYamlDraft(
     JSON.stringify([mode, clusterId, crd.name, effectiveNamespace, resource?.name]),
     mode === 'create'
-      ? buildDefaultCustomResourceTemplate(crd, namespace)
+      ? buildDefaultCustomResourceTemplate(crd, listNamespace)
       : visibleYamlQueryData?.content,
     draftStorageKey,
   )
@@ -92,6 +100,7 @@ export function CRDResourceEditor({
       busy: applyMutation.blocked,
     })
   }, [onStateChange, readOnly, draft, yamlState.original, applyMutation.blocked])
+  useEffect(() => () => onStateChange?.({ dirty: false, busy: false }), [onStateChange])
 
   const apply = () => {
     if (
@@ -191,7 +200,11 @@ export function CRDResourceEditor({
                 error={mode === 'edit' && yamlQuery.isError ? yamlQuery.error : undefined}
                 serverChanged={mode === 'edit' && yamlState.serverChanged}
                 onCompareLatest={yamlState.compareLatest}
-                onChange={setDraft}
+                onChange={(value) => {
+                  setDraft(value)
+                  if (!readOnly && yamlState.original !== undefined && value !== yamlState.original)
+                    onStateChange?.({ dirty: true, busy: applyMutation.blocked })
+                }}
                 onReset={() => {
                   yamlState.reset()
                   void message.success(t('yamlEditor.resetSuccess', 'YAML draft reset'))
@@ -245,24 +258,47 @@ export function CRDResourceEditor({
 
 export function CRDResourceEditorModal(props: CRDResourceEditorModalProps) {
   const { localeCode } = useI18n()
+  const { modal } = App.useApp()
   const [editorState, setEditorState] = useState({ dirty: false, busy: false })
+  useEffect(() => {
+    props.onStateChange?.(editorState)
+    return () => props.onStateChange?.({ dirty: false, busy: false })
+  }, [editorState, props.onStateChange])
   const readOnly =
     props.mode === 'edit' &&
     (!hasAllowedAction(props.resource?.allowedActions, 'update') ||
       Boolean(props.resource?.deletingAt))
+  const requestClose = () => {
+    if (editorState.busy) return
+    if (props.onLeave) return props.onLeave(props.onClose)
+    if (!editorState.dirty) props.onClose()
+    else
+      modal.confirm({
+        title: localeCode === 'zh_CN' ? '放弃未应用的更改？' : 'Discard unapplied changes?',
+        content:
+          localeCode === 'zh_CN'
+            ? '已保存的本地草稿仍会保留。'
+            : 'Saved local drafts are retained.',
+        okText: localeCode === 'zh_CN' ? '放弃并关闭' : 'Discard and close',
+        onOk: props.onClose,
+      })
+  }
   return (
     <Modal
+      className="soha-crd-editor-modal"
       title={`${localeCode === 'zh_CN' ? (readOnly ? '查看' : props.mode === 'create' ? '新建' : '编辑') : readOnly ? 'View' : props.mode === 'create' ? 'Create' : 'Edit'} ${props.crd.kind}`}
       open
-      onCancel={() => {
-        if (!editorState.busy) props.onClose?.()
-      }}
+      onCancel={requestClose}
+      closable={!editorState.busy}
+      keyboard={!editorState.busy}
+      style={{ top: 32, maxWidth: 'calc(100vw - 32px)' }}
+      styles={{ body: { maxHeight: 'calc(100dvh - 160px)', overflowY: 'auto' } }}
       footer={null}
       width={1080}
       destroyOnHidden
       mask={{ closable: false }}
     >
-      <CRDResourceEditor {...props} onStateChange={setEditorState} />
+      <CRDResourceEditor {...props} onClose={requestClose} onStateChange={setEditorState} />
     </Modal>
   )
 }

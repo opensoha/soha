@@ -1,0 +1,42 @@
+.soha-pdb-detail {
+  min-width: 0;
+}
+.soha-pdb-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-pdb-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-pdb-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-pdb-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.soha-pdb-card-title .ant-btn,
+.soha-pdb-muted,
+.soha-pdb-selector {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.soha-pdb-selector .ant-tag {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.soha-pdb-workload {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+.soha-pdb-workload > span {
+  color: var(--soha-text-secondary);
+}

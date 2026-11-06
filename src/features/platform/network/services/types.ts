@@ -41,4 +41,6 @@ export interface ServiceBackendPod {
   readonly ageSeconds: number
 }
 
-export type ServiceEvent = NetworkEvent
+export interface ServiceEvent extends NetworkEvent {
+  readonly lastTimestamp?: string
+}

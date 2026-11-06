@@ -1,0 +1,50 @@
+.soha-workload-history-list {
+  display: grid;
+  max-height: 640px;
+  overflow: auto;
+  margin-top: 16px;
+}
+.soha-workload-history-row {
+  min-width: 0;
+  padding: 18px 4px;
+  border-bottom: 1px solid var(--soha-border-color);
+  overflow-wrap: anywhere;
+}
+.soha-workload-history-row > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 32px;
+}
+.soha-workload-history-row .ant-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.soha-workload-history-row > p {
+  margin-block: 12px;
+  font-size: 12px;
+  color: var(--soha-text-secondary);
+}
+.soha-workload-history-row > details > summary {
+  cursor: pointer;
+}
+.soha-workload-history .soha-k8s-detail-toolbar > .ant-input-affix-wrapper {
+  width: min(360px, 100%);
+}
+
+.soha-workload-history-list {
+  scrollbar-gutter: stable;
+}
+.soha-workload-history-list:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-workload-history-row > div > .ant-btn {
+  margin-left: auto;
+}
+
+.soha-workload-history-row > div > .soha-metadata-tag {
+  align-self: center;
+}
