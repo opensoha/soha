@@ -31,7 +31,14 @@ func (s *metricsSupport) doPrometheusRequest(ctx context.Context, request *http.
 				return nil, err
 			}
 			params := request.URL.Query()
-			query := contractresource.PrometheusQuery{Endpoint: strings.TrimRight(metadataValue(connection.Metadata, "prometheus_url"), "/"), Query: params.Get("query"), Kind: "instant"}
+			endpoint := *request.URL
+			endpoint.RawQuery = ""
+			endpoint.Path = strings.TrimSuffix(strings.TrimSuffix(endpoint.Path, "/api/v1/query_range"), "/api/v1/query")
+			endpoint.RawPath = strings.TrimSuffix(strings.TrimSuffix(endpoint.RawPath, "/api/v1/query_range"), "/api/v1/query")
+			if endpoint.String() != strings.TrimRight(strings.TrimSpace(metadataValue(connection.Metadata, "prometheus_url")), "/") {
+				return nil, fmt.Errorf("%w: Prometheus source changed while preparing the query", apperrors.ErrClusterUnready)
+			}
+			query := contractresource.PrometheusQuery{Endpoint: endpoint.String(), Query: params.Get("query"), Kind: "instant"}
 			if strings.HasSuffix(request.URL.Path, "/query_range") {
 				query.Kind = "range"
 				query.Start, _ = strconv.ParseInt(params.Get("start"), 10, 64)

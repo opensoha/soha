@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -59,6 +60,8 @@ type podUsageSummary struct {
 type podUsageValue struct {
 	CPUCores    float64
 	MemoryBytes float64
+	CPUKnown    bool
+	MemoryKnown bool
 }
 
 type podIdentity struct {
@@ -122,22 +125,8 @@ func (w *Workloads) GetPodMetrics(ctx context.Context, principal domainidentity.
 
 	view.Configured = true
 	queryRange := time.Duration(rangeMinutes) * time.Minute
-	definitions := buildPodMetricDefinitions(namespace, podName, clusterID, settings.ClusterLabel)
-	fallbackDefinitions := []metricDefinition(nil)
-	if hasPrometheusClusterMatcher(clusterID, settings.ClusterLabel) {
-		fallbackDefinitions = buildPodMetricDefinitions(namespace, podName, "", "")
-	}
-	series, firstError := s.queryMetricSeriesWithFallback(
-		ctx,
-		settings.BaseURL,
-		settings.BearerToken,
-		definitions,
-		fallbackDefinitions,
-		namespace,
-		[]string{podName},
-		queryRange,
-		time.Duration(stepSeconds)*time.Second,
-	)
+	definitions := buildPodMetricDefinitions(namespace, podName, prometheusClusterValue(settings, clusterID), settings.ClusterLabel)
+	series, firstError := s.queryMetricSeries(ctx, settings.BaseURL, settings.BearerToken, definitions, queryRange, time.Duration(stepSeconds)*time.Second)
 	view.Series = series
 	if firstError != "" && len(series) == 0 {
 		view.Message = firstError
@@ -162,6 +151,51 @@ func (w *Workloads) GetStatefulSetMetrics(ctx context.Context, principal domaini
 func (w *Workloads) GetDaemonSetMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, daemonSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
 	request := newWorkloadMetricsRequest(principal, clusterID, namespace, "DaemonSet", daemonSetName, rangeMinutes, stepSeconds)
 	return getWorkloadMetrics(ctx, w, request, bindWorkloadDetail(w, ctx, request, (*Workloads).GetDaemonSetDetail), daemonSetSelector)
+}
+
+// GetJobMetrics uses the current Job's owned Pods, not a reusable name selector.
+func (w *Workloads) GetJobMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	detail, err := w.GetJobDetail(ctx, principal, clusterID, namespace, name)
+	if err != nil {
+		return domainresource.ResourceMetricsView{}, err
+	}
+	return w.queryResourceMetrics(ctx, principal, clusterID, namespace, "Job", name, ownedPodNames(detail.Pods, namespace), rangeMinutes, stepSeconds)
+}
+
+// GetReplicaSetMetrics reuses the provider's current-UID Pod membership, never a label-only selector.
+func (w *Workloads) GetReplicaSetMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		namespace = "default"
+	}
+	detail, err := w.GetReplicaSetDetail(ctx, principal, clusterID, namespace, name)
+	if err != nil {
+		return domainresource.ResourceMetricsView{}, err
+	}
+	return w.queryResourceMetrics(ctx, principal, clusterID, namespace, "ReplicaSet", name, ownedPodNames(detail.Pods, namespace), rangeMinutes, stepSeconds)
+}
+
+// GetReplicationControllerMetrics reuses the provider's current-UID Pod membership, never a label-only selector.
+func (w *Workloads) GetReplicationControllerMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		namespace = "default"
+	}
+	detail, err := w.GetReplicationControllerDetail(ctx, principal, clusterID, namespace, name)
+	if err != nil {
+		return domainresource.ResourceMetricsView{}, err
+	}
+	return w.queryResourceMetrics(ctx, principal, clusterID, namespace, "ReplicationController", name, ownedPodNames(detail.Pods, namespace), rangeMinutes, stepSeconds)
+}
+
+func ownedPodNames(pods []domainresource.PodView, namespace string) []string {
+	names := make([]string, 0, len(pods))
+	for _, pod := range pods {
+		if pod.Namespace == namespace && strings.TrimSpace(pod.Name) != "" {
+			names = append(names, pod.Name)
+		}
+	}
+	return names
 }
 
 func newWorkloadMetricsRequest(principal domainidentity.Principal, clusterID, namespace, kind, name string, rangeMinutes, stepSeconds int) workloadMetricsRequest {
@@ -319,28 +353,14 @@ func (s *metricsSupport) queryResourceMetrics(ctx context.Context, principal dom
 		view.Message = "prometheus is not configured"
 		return view, nil
 	}
+	view.Configured = true
 	if len(podNames) == 0 {
 		view.Message = "no matching pods were resolved for the selected resource"
 		return view, nil
 	}
-	view.Configured = true
 	queryRange := time.Duration(rangeMinutes) * time.Minute
-	definitions := buildPodSetMetricDefinitions(namespace, podNames, clusterID, settings.ClusterLabel)
-	fallbackDefinitions := []metricDefinition(nil)
-	if hasPrometheusClusterMatcher(clusterID, settings.ClusterLabel) {
-		fallbackDefinitions = buildPodSetMetricDefinitions(namespace, podNames, "", "")
-	}
-	series, firstError := s.queryMetricSeriesWithFallback(
-		ctx,
-		settings.BaseURL,
-		settings.BearerToken,
-		definitions,
-		fallbackDefinitions,
-		namespace,
-		podNames,
-		queryRange,
-		time.Duration(stepSeconds)*time.Second,
-	)
+	definitions := buildPodSetMetricDefinitions(namespace, podNames, prometheusClusterValue(settings, clusterID), settings.ClusterLabel)
+	series, firstError := s.queryMetricSeries(ctx, settings.BaseURL, settings.BearerToken, definitions, queryRange, time.Duration(stepSeconds)*time.Second)
 	view.Series = series
 	if firstError != "" && len(series) == 0 {
 		view.Message = firstError
@@ -488,7 +508,7 @@ func buildPodSetMetricMatcher(namespace string, podNames []string, clusterID, cl
 	return strings.Join(matchers, ",")
 }
 
-func (s *metricsSupport) listPodUsageSummaries(ctx context.Context, clusterID, namespace string, pods []domainresource.PodView) map[string]podUsageSummary {
+func (s *metricsSupport) listPodUsageSummaries(ctx context.Context, clusterID string, pods []domainresource.PodView) map[string]podUsageSummary {
 	if len(pods) == 0 {
 		return nil
 	}
@@ -503,7 +523,7 @@ func (s *metricsSupport) listPodUsageSummaries(ctx context.Context, clusterID, n
 		rawPods = append(rawPods, podIdentity{Name: pod.Name, Namespace: pod.Namespace})
 	}
 
-	values, err := s.listPodUsageValues(ctx, settings, clusterID, rawPods)
+	values, err := s.listScopedPodUsageValues(ctx, settings, clusterID, rawPods)
 	if err != nil {
 		return nil
 	}
@@ -512,10 +532,10 @@ func (s *metricsSupport) listPodUsageSummaries(ctx context.Context, clusterID, n
 	for _, pod := range pods {
 		if value, ok := values[podMetricsKey(pod.Namespace, pod.Name)]; ok {
 			summary := podUsageSummary{}
-			if value.CPUCores > 0 {
+			if value.CPUKnown {
 				summary.CPU = formatCPUUsage(value.CPUCores)
 			}
-			if value.MemoryBytes > 0 {
+			if value.MemoryKnown {
 				summary.Memory = formatMemoryBytes(value.MemoryBytes)
 			}
 			if summary.CPU != "" || summary.Memory != "" {
@@ -532,10 +552,18 @@ func (s *metricsSupport) resolveClusterPrometheusSettings(ctx context.Context, c
 		StepSeconds:         60,
 	}
 	applyPrometheusMetadataOverride(&settings, s.clusterPrometheusMetadata(ctx, clusterID))
+	if !domaincluster.ValidPrometheusMetricIdentity(settings.ClusterLabel, settings.ClusterLabelValue) {
+		settings.Enabled = false
+		return settings
+	}
 	if strings.TrimSpace(settings.BaseURL) != "" {
 		settings.Enabled = true
 	}
 	return settings
+}
+
+type prometheusSourceValidator interface {
+	HasPrometheusSourceConflict(context.Context, domaincluster.Connection) (bool, error)
 }
 
 func (s *metricsSupport) clusterPrometheusMetadata(ctx context.Context, clusterID string) map[string]any {
@@ -545,6 +573,11 @@ func (s *metricsSupport) clusterPrometheusMetadata(ctx context.Context, clusterI
 	connection, err := s.resolver.GetConnection(ctx, clusterID)
 	if err != nil {
 		return nil
+	}
+	if validator, ok := s.resolver.(prometheusSourceValidator); ok && strings.TrimSpace(metadataValue(connection.Metadata, "prometheus_url")) != "" {
+		if conflict, err := validator.HasPrometheusSourceConflict(ctx, connection); err != nil || conflict {
+			return nil
+		}
 	}
 	return connection.Metadata
 }
@@ -563,6 +596,7 @@ func applyPrometheusMetadataOverride(settings *domainsettings.PrometheusSettings
 	if value := strings.TrimSpace(metadataValue(metadata, "prometheus_cluster_label")); value != "" {
 		settings.ClusterLabel = value
 	}
+	settings.ClusterLabelValue = strings.TrimSpace(metadataValue(metadata, "prometheus_cluster_label_value"))
 	if value := strings.TrimSpace(metadataValue(metadata, "grafana_base_url")); value != "" {
 		settings.GrafanaBaseURL = value
 	}
@@ -631,21 +665,11 @@ type namespacePodUsage struct {
 }
 
 func (s *metricsSupport) queryNamespacePodUsage(ctx context.Context, settings domainsettings.PrometheusSettings, clusterID, namespace string, names []string) namespacePodUsage {
-	filter := buildPodSetMetricMatcher(namespace, names, clusterID, settings.ClusterLabel)
+	filter := buildPodSetMetricMatcher(namespace, names, prometheusClusterValue(settings, clusterID), settings.ClusterLabel)
 	if filter == "" {
 		return namespacePodUsage{}
 	}
-	usage := s.queryPodUsageWithFilter(ctx, settings, filter)
-	if !hasPrometheusClusterMatcher(clusterID, settings.ClusterLabel) || len(usage.cpu) > 0 || len(usage.memory) > 0 {
-		return usage
-	}
-	fallback := s.queryPodUsageWithFilter(ctx, settings, buildPodSetMetricMatcher(namespace, names, "", ""))
-	if len(fallback.cpu) > 0 || len(fallback.memory) > 0 {
-		return fallback
-	}
-	usage.cpuErr = firstNonNilError(usage.cpuErr, fallback.cpuErr)
-	usage.memoryErr = firstNonNilError(usage.memoryErr, fallback.memoryErr)
-	return usage
+	return s.queryPodUsageWithFilter(ctx, settings, filter)
 }
 
 func (s *metricsSupport) queryPodUsageWithFilter(ctx context.Context, settings domainsettings.PrometheusSettings, filter string) namespacePodUsage {
@@ -658,42 +682,24 @@ func mergeNamespacePodUsage(out map[string]podUsageValue, namespace string, name
 	for _, name := range names {
 		key := podMetricsKey(namespace, name)
 		usage := out[key]
-		if value, ok := values.cpu[name]; ok {
+		if value, ok := values.cpu[name]; ok && validPodUsageValue(value) {
 			usage.CPUCores = value
+			usage.CPUKnown = true
 		}
-		if value, ok := values.memory[name]; ok {
+		if value, ok := values.memory[name]; ok && validPodUsageValue(value) {
 			usage.MemoryBytes = value
+			usage.MemoryKnown = true
 		}
-		if usage.CPUCores > 0 || usage.MemoryBytes > 0 {
+		if usage.CPUKnown || usage.MemoryKnown {
 			out[key] = usage
 		}
 	}
 }
 
-func hasPrometheusClusterMatcher(clusterID, clusterLabel string) bool {
-	return strings.TrimSpace(clusterID) != "" && strings.TrimSpace(clusterLabel) != ""
-}
-
-func (s *metricsSupport) canUseUnscopedPodMetricsFallback(ctx context.Context, baseURL, bearerToken, namespace string, podNames []string) (bool, error) {
-	filter := buildPodSetMetricMatcher(namespace, podNames, "", "")
-	if filter == "" {
-		return false, nil
-	}
-	counts, err := s.queryPrometheusInstantByPod(
-		ctx,
-		baseURL,
-		bearerToken,
-		fmt.Sprintf(`count by (pod) (count by (pod, job, instance) (container_memory_working_set_bytes{%s}))`, filter),
-	)
-	if err != nil || len(counts) == 0 {
-		return false, nil
-	}
-	for _, count := range counts {
-		if count > 1.001 {
-			return false, fmt.Errorf("prometheus fallback was skipped because matching pod metrics were ambiguous without the configured cluster label")
-		}
-	}
-	return true, nil
+// CPU and memory usage must be finite and nonnegative; zero is a real sample.
+// Keep this restriction local to usage, since other metric families may be signed.
+func validPodUsageValue(value float64) bool {
+	return value >= 0 && !math.IsInf(value, 0)
 }
 
 func firstNonNilError(errors ...error) error {
@@ -706,6 +712,8 @@ func firstNonNilError(errors ...error) error {
 }
 
 func (s *metricsSupport) queryMetricSeries(ctx context.Context, baseURL, bearerToken string, definitions []metricDefinition, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	series := make([]domainresource.MetricSeriesView, 0, len(definitions))
 	var firstError string
 	for _, definition := range definitions {
@@ -726,33 +734,6 @@ func (s *metricsSupport) queryMetricSeries(ctx context.Context, baseURL, bearerT
 			Latest: latest,
 			Points: points,
 		})
-	}
-	return series, firstError
-}
-
-func (s *metricsSupport) queryMetricSeriesWithFallback(ctx context.Context, baseURL, bearerToken string, definitions, fallbackDefinitions []metricDefinition, namespace string, podNames []string, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	series, firstError := s.queryMetricSeries(ctx, baseURL, bearerToken, definitions, queryRange, step)
-	if len(series) > 0 || len(fallbackDefinitions) == 0 {
-		return series, firstError
-	}
-	canFallback, fallbackCheckErr := s.canUseUnscopedPodMetricsFallback(ctx, baseURL, bearerToken, namespace, podNames)
-	if fallbackCheckErr != nil {
-		if firstError == "" {
-			firstError = fallbackCheckErr.Error()
-		}
-		return series, firstError
-	}
-	if !canFallback {
-		return series, firstError
-	}
-	fallbackSeries, fallbackError := s.queryMetricSeries(ctx, baseURL, bearerToken, fallbackDefinitions, queryRange, step)
-	if len(fallbackSeries) > 0 {
-		return fallbackSeries, ""
-	}
-	if firstError == "" {
-		firstError = fallbackError
 	}
 	return series, firstError
 }

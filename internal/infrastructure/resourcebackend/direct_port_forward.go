@@ -1,13 +1,11 @@
 package resourcebackend
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"net/http"
+	"io"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	appresource "github.com/opensoha/soha/internal/application/resource"
@@ -17,95 +15,34 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/portforward"
-	"k8s.io/client-go/transport/spdy"
 )
-
-type directPortForwardSession struct {
-	stopCh  chan struct{}
-	doneCh  chan struct{}
-	once    sync.Once
-	errMu   sync.RWMutex
-	lastErr string
-}
 
 func (d *Direct) StartPortForward(ctx context.Context, clusterID string, view domainresource.PortForwardSessionView) (appresource.DirectPortForwardSession, error) {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
-	podName, targetPort, err := resolvePortForwardTarget(ctx, bundle, view.Namespace, view.TargetKind, view.TargetName, view.RemotePort)
-	if err != nil {
-		return nil, err
-	}
-	serverURL, err := buildPortForwardURL(bundle.RESTConfig.Host, view.Namespace, podName)
-	if err != nil {
-		return nil, err
-	}
-	roundTripper, upgrader, err := spdy.RoundTripperFor(bundle.RESTConfig)
-	if err != nil {
-		return nil, fmt.Errorf("build spdy transport: %w", err)
-	}
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: roundTripper}, http.MethodPost, serverURL)
-	stopCh := make(chan struct{})
-	readyCh := make(chan struct{})
-	doneCh := make(chan struct{})
-	errBuf := &bytes.Buffer{}
-	forwarder, err := portforward.NewOnAddresses(
-		dialer, []string{"127.0.0.1"}, []string{fmt.Sprintf("%d:%d", view.LocalPort, targetPort)},
-		stopCh, readyCh, bytes.NewBuffer(nil), errBuf,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("build port forwarder: %w", err)
-	}
-	session := &directPortForwardSession{stopCh: stopCh, doneCh: doneCh}
-	go func() {
-		defer close(doneCh)
-		if err := forwarder.ForwardPorts(); err != nil {
-			session.setError(err)
+	return startDirectPortForward(ctx, func(attemptCtx context.Context, readyCh chan struct{}) (portForwardRunner, error) {
+		// Resolve Services again after a disconnect so a replacement ready Pod can be selected.
+		podName, targetPort, err := resolvePortForwardTarget(attemptCtx, bundle, view.Namespace, view.TargetKind, view.TargetName, view.RemotePort)
+		if err != nil {
+			return nil, err
 		}
-	}()
-	select {
-	case <-readyCh:
-		return session, nil
-	case <-time.After(10 * time.Second):
-		session.Stop()
-		return nil, fmt.Errorf("port forward did not become ready within 10s (stderr: %s)", strings.TrimSpace(errBuf.String()))
-	case <-ctx.Done():
-		session.Stop()
-		return nil, ctx.Err()
-	}
-}
-
-func (s *directPortForwardSession) Stop() {
-	if s == nil {
-		return
-	}
-	s.once.Do(func() {
-		close(s.stopCh)
-		select {
-		case <-s.doneCh:
-		case <-time.After(5 * time.Second):
+		serverURL, err := buildPortForwardURL(bundle.RESTConfig.Host, view.Namespace, podName)
+		if err != nil {
+			return nil, err
 		}
+		dialer, err := newDirectPortForwardDialer(attemptCtx, bundle.RESTConfig, serverURL)
+		if err != nil {
+			return nil, err
+		}
+		return portforward.NewOnAddresses(
+			dialer, []string{"127.0.0.1"}, []string{fmt.Sprintf("%d:%d", view.LocalPort, targetPort)},
+			attemptCtx.Done(), readyCh, io.Discard, io.Discard,
+		)
 	})
-}
-
-func (s *directPortForwardSession) LastError() string {
-	if s == nil {
-		return ""
-	}
-	s.errMu.RLock()
-	defer s.errMu.RUnlock()
-	return s.lastErr
-}
-
-func (s *directPortForwardSession) setError(err error) {
-	if err == nil {
-		return
-	}
-	s.errMu.Lock()
-	s.lastErr = err.Error()
-	s.errMu.Unlock()
 }
 
 func buildPortForwardURL(restHost, namespace, podName string) (*url.URL, error) {
@@ -132,12 +69,15 @@ func resolvePortForwardTarget(ctx context.Context, bundle *k8sinfra.Bundle, name
 		if len(svc.Spec.Selector) == 0 {
 			return "", 0, fmt.Errorf("%w: service %s has no pod selector", apperrors.ErrInvalidArgument, name)
 		}
-		targetPort := port
-		for _, servicePort := range svc.Spec.Ports {
-			if int(servicePort.Port) == port && servicePort.TargetPort.IntValue() > 0 {
-				targetPort = servicePort.TargetPort.IntValue()
+		var servicePort *corev1.ServicePort
+		for i := range svc.Spec.Ports {
+			if int(svc.Spec.Ports[i].Port) == port && (svc.Spec.Ports[i].Protocol == "" || svc.Spec.Ports[i].Protocol == corev1.ProtocolTCP) {
+				servicePort = &svc.Spec.Ports[i]
 				break
 			}
+		}
+		if servicePort == nil {
+			return "", 0, fmt.Errorf("service %s does not declare TCP port %d", name, port)
 		}
 		podList, err := bundle.Typed.CoreV1().Pods(namespace).List(queryCtx, metav1.ListOptions{
 			LabelSelector: labels.SelectorFromSet(svc.Spec.Selector).String(),
@@ -145,10 +85,19 @@ func resolvePortForwardTarget(ctx context.Context, bundle *k8sinfra.Bundle, name
 		if err != nil {
 			return "", 0, fmt.Errorf("list pods: %w", err)
 		}
+		var targetError error
 		for _, pod := range podList.Items {
 			if pod.Status.Phase == corev1.PodRunning && isPodReady(pod) {
-				return pod.Name, targetPort, nil
+				targetPort, err := resolveTCPServiceTargetPort(svc, *servicePort, &pod)
+				if err != nil {
+					targetError = err
+					continue
+				}
+				return pod.Name, int(targetPort), nil
 			}
+		}
+		if targetError != nil {
+			return "", 0, fmt.Errorf("resolve service target port: %w", targetError)
 		}
 		return "", 0, fmt.Errorf("%w: no ready pod found for service %s", apperrors.ErrNotFound, name)
 	case "pod":
@@ -159,6 +108,29 @@ func resolvePortForwardTarget(ctx context.Context, bundle *k8sinfra.Bundle, name
 	default:
 		return "", 0, fmt.Errorf("%w: unsupported target kind %s", apperrors.ErrInvalidArgument, kind)
 	}
+}
+
+func resolveTCPServiceTargetPort(service *corev1.Service, port corev1.ServicePort, pod *corev1.Pod) (int32, error) {
+	if service.Spec.ClusterIP == corev1.ClusterIPNone {
+		return port.Port, nil
+	}
+	if port.TargetPort.Type == intstr.Int {
+		if port.TargetPort.IntVal == 0 {
+			return port.Port, nil
+		}
+		return port.TargetPort.IntVal, nil
+	}
+	name := port.TargetPort.StrVal
+	for _, containers := range [][]corev1.Container{pod.Spec.Containers, pod.Spec.InitContainers} {
+		for _, container := range containers {
+			for _, candidate := range container.Ports {
+				if candidate.Name == name && (candidate.Protocol == "" || candidate.Protocol == corev1.ProtocolTCP) {
+					return candidate.ContainerPort, nil
+				}
+			}
+		}
+	}
+	return 0, fmt.Errorf("pod %s has no TCP container port named %s", pod.Name, name)
 }
 
 func isPodReady(pod corev1.Pod) bool {

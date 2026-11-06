@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -24,7 +23,7 @@ func (s *ResourceCreation) ResolveCreateTargets(ctx context.Context, principal d
 	if err := s.authorizeResourceCreationEntry(ctx, principal, request.Source); err != nil {
 		return nil, err
 	}
-	_, manifests, err := s.resolveCreateManifests(ctx, clusterID, request.Content)
+	_, manifests, err := s.resolveCreateManifests(ctx, principal, clusterID, request)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +35,8 @@ func (s *ResourceCreation) ResolveCreateTargets(ctx context.Context, principal d
 	}
 	refs := make([]domainresource.ResourceCreateRef, len(manifests))
 	for i, manifest := range manifests {
-		if err := s.authorizeCreateRef(ctx, principal, clusterID, manifest.Ref); err != nil {
+		family := resourceGroupForResolvedResource(manifest.Group, manifest.Resource, manifest.Ref.Kind)
+		if _, _, err := s.authorizeResolvedResourceCreate(ctx, principal, clusterID, family, manifest); err != nil {
 			return nil, err
 		}
 		refs[i] = manifest.Ref
@@ -64,7 +64,8 @@ func (s *ResourceCreation) authorizeCreateRef(ctx context.Context, principal dom
 		resource += "s"
 	}
 	family := resourceGroupForResolvedResource(group, resource, ref.Kind)
-	_, _, err := s.authorizeResourceGroup(ctx, principal, clusterID, ref.Namespace, family, ref.Kind, domainaccess.ActionCreate)
+	manifest := domainresource.ResolvedCreateManifest{Ref: ref, Group: group, Version: version, Resource: resource}
+	_, _, err := s.authorizeResolvedResourceCreate(ctx, principal, clusterID, family, manifest)
 	return err
 }
 

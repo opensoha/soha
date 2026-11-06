@@ -2,6 +2,7 @@ package resourcebackend
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -41,7 +42,10 @@ func (d *Direct) ListCRDs(ctx context.Context, clusterID string) ([]domainresour
 		}
 		return listFullCRDs(queryCtx, bundle)
 	}
-	resources, discoveryErr := listServerResources(bundle, 8*time.Second)
+	resources, discoveryErr := listServerResources(queryCtx, bundle, 8*time.Second)
+	if err := queryCtx.Err(); err != nil {
+		return nil, err
+	}
 	if discoveryErr != nil && len(resources) == 0 {
 		return listFullCRDs(queryCtx, bundle)
 	}
@@ -60,14 +64,14 @@ func (d *Direct) ListCRDs(ctx context.Context, clusterID string) ([]domainresour
 	return views, nil
 }
 
-func listServerResources(bundle *k8sinfra.Bundle, timeout time.Duration) ([]*metav1.APIResourceList, error) {
+func listServerResources(ctx context.Context, bundle *k8sinfra.Bundle, timeout time.Duration) ([]*metav1.APIResourceList, error) {
 	config := rest.CopyConfig(bundle.RESTConfig)
 	config.Timeout = timeout
 	client, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
 		return nil, err
 	}
-	_, resources, err := client.ServerGroupsAndResources()
+	_, resources, err := client.ServerGroupsAndResourcesWithContext(ctx)
 	return resources, err
 }
 
@@ -264,6 +268,9 @@ func mapCRD(item unstructured.Unstructured) domainresource.CRDView {
 	for _, raw := range versionItems {
 		value, ok := raw.(map[string]any)
 		if !ok {
+			continue
+		}
+		if served, _ := value["served"].(bool); !served {
 			continue
 		}
 		if name, _ := value["name"].(string); strings.TrimSpace(name) != "" {
@@ -517,3 +524,50 @@ func firstValue(values ...string) string {
 }
 
 var _ appresource.DirectCustomResource = (*Direct)(nil)
+
+// ListResourceGraphCRDs never falls back to complete CRD schema reads. Graph
+// requires one bounded metadata page and exact served discovery observations.
+func (d *Direct) ListResourceGraphCRDs(ctx context.Context, clusterID string) ([]domainresource.CRDView, error) {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	return listResourceGraphCRDs(queryCtx, bundle)
+}
+
+const resourceGraphCRDLimit = 500
+
+func listResourceGraphCRDs(ctx context.Context, bundle *k8sinfra.Bundle) ([]domainresource.CRDView, error) {
+	client, err := metadataRESTClient(bundle, crdGVR)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := readMetadataResponse(ctx, client, crdGVR, false, "", metav1.ListOptions{Limit: resourceGraphCRDLimit + 1}, partialMetadataListAcceptType, false)
+	if err != nil {
+		return nil, err
+	}
+	var page metav1.PartialObjectMetadataList
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return nil, err
+	}
+	if len(page.Items) > resourceGraphCRDLimit || page.Continue != "" {
+		return nil, fmt.Errorf("resource graph CRD metadata catalog exceeds single-page budget")
+	}
+	if len(page.Items) == 0 {
+		return []domainresource.CRDView{}, ctx.Err()
+	}
+	resources, err := listServerResources(ctx, bundle, 8*time.Second)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil && len(resources) == 0 {
+		return nil, fmt.Errorf("resource graph CRD discovery unavailable")
+	}
+	views, missing := mapCRDMetadata(page.Items, resources)
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("resource graph CRD discovery incomplete")
+	}
+	return views, nil
+}

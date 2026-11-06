@@ -10,6 +10,7 @@ import (
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 var errStubNotFound = errors.New("not found")
@@ -55,7 +56,10 @@ func (r *stubRepository) GetConnection(_ context.Context, clusterID string) (dom
 	return r.connection, nil
 }
 
-func (r *stubRepository) UpsertRegistration(_ context.Context, connection domaincluster.Connection) error {
+func (r *stubRepository) CreateRegistration(_ context.Context, connection domaincluster.Connection) error {
+	if r.connection.Summary.ID == connection.Summary.ID {
+		return apperrors.ErrConflict
+	}
 	r.connection = connection
 	return nil
 }
@@ -106,7 +110,9 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 	}
 
 	service := newTestService(t, repo)
+	service.authorizer = stubAuthorizer{}
 
+	prometheusURL := "http://prometheus.internal:9090"
 	_, err := service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{
 		Name:                   "cluster-1",
 		Region:                 "local",
@@ -114,7 +120,7 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 		Labels:                 map[string]string{"provider": "local"},
 		ConnectionMode:         domaincluster.ConnectionModeAgent,
 		AgentEndpoint:          "http://agent.internal",
-		PrometheusBaseURL:      "http://prometheus.internal:9090",
+		PrometheusBaseURL:      &prometheusURL,
 		PrometheusBearerToken:  "prom-token",
 		PrometheusClusterLabel: "k8s_cluster",
 		GrafanaBaseURL:         "http://grafana.internal:3000",

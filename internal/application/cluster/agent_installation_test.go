@@ -213,6 +213,35 @@ func TestAgentReadOnlyProfileRejectsCustomWriteGrants(t *testing.T) {
 
 func assertAgentProfileRBAC(t *testing.T, profile string, rules []rbacv1.PolicyRule) {
 	t.Helper()
+	historicalRead := false
+	endpointWrites := false
+	for _, rule := range rules {
+		if slices.Contains(rule.APIGroups, "discovery.k8s.io") && slices.Contains(rule.Resources, "endpointslices") && slices.Contains(rule.Verbs, "create") && slices.Contains(rule.Verbs, "update") && slices.Contains(rule.Verbs, "patch") && slices.Contains(rule.Verbs, "delete") {
+			endpointWrites = true
+		}
+		if slices.Contains(rule.APIGroups, "apps") && slices.Contains(rule.Resources, "controllerrevisions") {
+			historicalRead = slices.Contains(rule.Verbs, "get") && slices.Contains(rule.Verbs, "list") && slices.Contains(rule.Verbs, "watch")
+			for _, verb := range rule.Verbs {
+				if verb != "get" && verb != "list" && verb != "watch" {
+					t.Fatal("ControllerRevision history implicitly grants mutation")
+				}
+			}
+		}
+		if slices.Contains(rule.APIGroups, "*") || slices.Contains(rule.Resources, "*") {
+			t.Fatal("Agent profile grants wildcard resources")
+		}
+		for _, verb := range rule.Verbs {
+			if verb == "impersonate" || verb == "bind" || verb == "escalate" {
+				t.Fatalf("unexpected privilege %s", verb)
+			}
+		}
+	}
+	if endpointWrites != (profile != "read-only") {
+		t.Fatalf("profile %s EndpointSlice write grant = %v", profile, endpointWrites)
+	}
+	if !historicalRead {
+		t.Fatal("Agent profile lacks ControllerRevision history reads")
+	}
 	for _, rule := range rules {
 		crd := slices.Contains(rule.APIGroups, "apiextensions.k8s.io") && slices.Contains(rule.Resources, "customresourcedefinitions")
 		for _, verb := range rule.Verbs {

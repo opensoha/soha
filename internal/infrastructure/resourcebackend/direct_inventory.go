@@ -411,7 +411,8 @@ func buildNodeDetail(node corev1.Node, pods []corev1.Pod) domainresource.NodeDet
 func buildNodeView(node corev1.Node, aggregate nodeAggregate) domainresource.NodeView {
 	capacity, allocatable := resourceTotalsFromList(node.Status.Capacity), resourceTotalsFromList(node.Status.Allocatable)
 	return domainresource.NodeView{
-		Name: node.Name, Status: nodeStatus(node), Unschedulable: node.Spec.Unschedulable, Roles: nodeRoles(node), Version: node.Status.NodeInfo.KubeletVersion,
+		Labels: cloneMap(node.Labels),
+		Name:   node.Name, Status: nodeStatus(node), Unschedulable: node.Spec.Unschedulable, Roles: nodeRoles(node), Version: node.Status.NodeInfo.KubeletVersion,
 		InternalIP: nodeInternalIP(node), PodCount: aggregate.podCount, AgeSeconds: secondsSince(node.CreationTimestamp.Time),
 		Taints: mapNodeTaints(node.Spec.Taints), Conditions: mapNodeConditions(node),
 		Resources: domainresource.NodeResourceSummaryView{

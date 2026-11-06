@@ -15,7 +15,9 @@ import (
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
+	"github.com/opensoha/soha/internal/policy"
 )
 
 type topologyDirectFixture struct {
@@ -33,6 +35,144 @@ func (f *topologyDirectFixture) NetworkTopologySnapshot(_ context.Context, clust
 type topologyScopedAuthorizer struct {
 	permissions exactPermissionAuthorizer
 	scope       *domainaccess.ResourceScope
+}
+
+type topologyAgentFixture struct{ source *topologyDirectFixture }
+
+func (f topologyAgentFixture) NetworkTopologySnapshot(ctx context.Context, input cr.NetworkTopologySnapshotRequest) (cr.NetworkTopologySnapshot, error) {
+	return f.source.NetworkTopologySnapshot(ctx, "c", input)
+}
+
+func TestTopologyDoesNotReadCollectionsWithNamedResourceDeny(t *testing.T) {
+	for _, mode := range []domaincluster.ConnectionMode{domaincluster.ConnectionModeDirectKubeconfig, domaincluster.ConnectionModeAgent} {
+		for _, tc := range []struct {
+			name, namespace, denyNamespace, kind, sourceID string
+			blocked                                        bool
+		}{
+			{"named Service in selected namespace", "team", "team", "Service", "kubernetes.services", true},
+			{"named Service in another namespace", "team", "other", "Service", "kubernetes.services", false},
+			{"named GatewayClass", "", "", "GatewayClass", "gateway.gatewayclasses", true},
+		} {
+			t.Run(string(mode)+"/"+tc.name, func(t *testing.T) {
+				deny := domainaccess.Policy{Effect: domainaccess.EffectDeny, Priority: 20, Resources: domainaccess.ResourceMatcher{Kinds: []string{tc.kind}, Names: []string{"web"}}}
+				if tc.denyNamespace != "" {
+					deny.Namespaces.Names = []string{tc.denyNamespace}
+				}
+				allow := domainaccess.Policy{Effect: domainaccess.EffectAllow, Priority: 10, Resources: domainaccess.ResourceMatcher{Kinds: []string{"NetworkTopology", "Ingress", tc.kind}}}
+				engine := policy.NewEngine()
+				authorizer := rbacGraphTestAuthorizer(func(request domainaccess.Request) domainaccess.Decision {
+					decision, err := engine.Evaluate(context.Background(), request, []domainaccess.Policy{allow, deny})
+					if err != nil {
+						t.Fatal(err)
+					}
+					return decision
+				})
+				provider := &topologyDirectFixture{}
+				connection := domaincluster.Connection{Summary: domaincluster.Summary{ID: "c", ConnectionMode: mode}}
+				network := &Network{
+					resourceAccess: &resourceAccess{resolver: stubConnectionResolver{connection: connection}, authorizer: authorizer, audit: discardAuditRecorder{}},
+					topologyDirect: provider,
+					topologyAgent: func(domaincluster.Connection) (TopologySourceAgent, error) {
+						return topologyAgentFixture{source: provider}, nil
+					},
+				}
+				view, err := network.GetNetworkTopology(context.Background(), domainidentity.Principal{}, "c", tc.namespace)
+				if err != nil {
+					t.Fatal(err)
+				}
+				denied, targetRead, ingressRead := false, false, false
+				for _, item := range view.Coverage {
+					denied = denied || item.SourceID == tc.sourceID && item.State == "denied"
+				}
+				for _, query := range provider.queries {
+					targetRead = targetRead || query.SourceID == tc.sourceID
+					ingressRead = ingressRead || query.SourceID == "kubernetes.ingresses"
+				}
+				if denied != tc.blocked || targetRead == tc.blocked || !ingressRead {
+					t.Fatalf("wrong source authorization: queries=%+v coverage=%+v", provider.queries, view.Coverage)
+				}
+			})
+		}
+	}
+}
+
+type topologyWidePolicy struct {
+	denyAction domainaccess.Action
+	requests   []domainaccess.Request
+}
+
+func (a *topologyWidePolicy) Authorize(_ context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	a.requests = append(a.requests, request)
+	switch request.Resource.Kind {
+	case "Service":
+		return domainaccess.Decision{Allowed: !request.RequireClusterWideNamespace || request.Action != a.denyAction}, nil
+	case "Ingress", "NetworkTopology":
+		return domainaccess.Decision{Allowed: true}, nil
+	default:
+		return domainaccess.Decision{}, nil
+	}
+}
+
+func TestTopologyRequiresStrictWideScopeBeforeNamespacedSourceRead(t *testing.T) {
+	for _, namespace := range []string{"", "team"} {
+		t.Run("namespace="+namespace, func(t *testing.T) {
+			auth := &topologyWidePolicy{denyAction: domainaccess.ActionView}
+			direct := &topologyDirectFixture{}
+			connection := domaincluster.Connection{Summary: domaincluster.Summary{ID: "c", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig}}
+			network := &Network{resourceAccess: &resourceAccess{resolver: stubConnectionResolver{connection: connection}, authorizer: auth, audit: discardAuditRecorder{}}, topologyDirect: direct}
+			view, err := network.GetNetworkTopology(context.Background(), domainidentity.Principal{}, "c", namespace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var wide, service, ingress bool
+			for _, request := range auth.requests {
+				if request.Resource.Kind == "Service" && request.RequireClusterWideNamespace {
+					wide = true
+				}
+			}
+			for _, query := range direct.queries {
+				service = service || query.SourceID == "kubernetes.services"
+				ingress = ingress || query.SourceID == "kubernetes.ingresses"
+				if query.Namespace != namespace {
+					t.Fatalf("unexpected source namespace: %+v", query)
+				}
+			}
+			if wide != (namespace == "") || service != (namespace != "") || !ingress {
+				t.Fatalf("incorrect source scope proof: wide=%t service=%t ingress=%t coverage=%+v", wide, service, ingress, view.Coverage)
+			}
+		})
+	}
+}
+
+type topologyLegacyNetworkReader struct {
+	DirectNetworkReader
+	serviceReads, ingressReads int
+}
+
+func (r *topologyLegacyNetworkReader) ListServices(context.Context, string, string) ([]domainresource.ServiceView, string, error) {
+	r.serviceReads++
+	return nil, "test", nil
+}
+
+func (r *topologyLegacyNetworkReader) ListIngresses(context.Context, string, string) ([]domainresource.IngressView, string, error) {
+	r.ingressReads++
+	return []domainresource.IngressView{{Name: "visible", Namespace: "team", BackendServices: []string{"hidden-service"}}}, "test", nil
+}
+
+func TestTopologyLegacyFallbackCannotReadARestrictedSource(t *testing.T) {
+	for _, namespace := range []string{"", "team"} {
+		t.Run("namespace="+namespace, func(t *testing.T) {
+			auth := &topologyWidePolicy{denyAction: domainaccess.ActionList}
+			legacy := &topologyLegacyNetworkReader{}
+			connection := domaincluster.Connection{Summary: domaincluster.Summary{ID: "c", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig}}
+			network := &Network{resourceAccess: &resourceAccess{resolver: stubConnectionResolver{connection: connection}, authorizer: auth, audit: discardAuditRecorder{}}, topologyDirect: &topologyDirectFixture{err: cr.ErrNetworkTopologySnapshotUnsupported}, directReader: legacy}
+			view, err := network.GetNetworkTopology(context.Background(), domainidentity.Principal{}, "c", namespace)
+			raw, _ := json.Marshal(view)
+			if err != nil || legacy.serviceReads != 0 || legacy.ingressReads != 1 || len(view.Coverage) != 1 || view.Coverage[0].SourceID != "legacy.inventory" || len(view.Traces) != 1 || strings.Contains(string(raw), "hidden-service") {
+				t.Fatalf("legacy fallback bypassed policy or lost an authorized source: services=%d ingresses=%d view=%s err=%v", legacy.serviceReads, legacy.ingressReads, raw, err)
+			}
+		})
+	}
 }
 
 func (a topologyScopedAuthorizer) Authorize(ctx context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
@@ -106,8 +246,9 @@ func TestTopologyVendorReadsKeepSavedGrantsWithoutUnrelatedActionReviews(t *test
 				}, audit: discardAuditRecorder{}}
 				// No Agent client is supplied: actual LIST, rather than five SSARs, checks Kubernetes RBAC.
 				network := &Network{resourceAccess: access, customResources: &CustomResources{resourceAccess: access}}
-				if got := network.canReadTopologyVendor(context.Background(), domainidentity.Principal{}, connection, source, test.namespace); got != test.want {
-					t.Fatalf("allowed = %v, want %v", got, test.want)
+				got, err := network.canReadTopologyVendor(context.Background(), domainidentity.Principal{}, connection, source, test.namespace)
+				if got != test.want || (got && err != nil) {
+					t.Fatalf("allowed = %v, err = %v, want %v", got, err, test.want)
 				}
 			})
 		}
