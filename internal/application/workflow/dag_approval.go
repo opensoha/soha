@@ -78,7 +78,32 @@ func newDAGApproval(principal domainidentity.Principal, state dagApprovalState, 
 	}
 }
 
-func (s *Service) applyDAGApprovalDecision(ctx context.Context, state dagApprovalState, action, comment, actorName string) domainworkflow.Run {
+func (s *Service) applyDAGApprovalDecision(ctx context.Context, principal domainidentity.Principal, state dagApprovalState, action, comment string) (domainworkflow.Run, error) {
+	var continuation dagRunTask
+	if action == "approved" {
+		var err error
+		continuation, err = s.approvalContinuation(ctx, principal, state)
+		if err != nil {
+			return domainworkflow.Run{}, err
+		}
+	}
+	approval := newDAGApproval(principal, state, action, comment)
+	run := dagRunWithApprovalDecision(state, action, comment, principal.UserName)
+	updated, err := s.repo.UpdateApplicationRunIfCurrent(ctx, run, workflowStatusWaitingApproval, &approval)
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	s.publishRunUpdate(updated)
+	if action == "approved" {
+		continuation.run = updated
+		if err := s.enqueueDAGRun(ctx, continuation); err != nil {
+			return s.failRun(context.Background(), updated, state.definition, fmt.Sprintf("workflow runner enqueue failed after approval: %v", err)), nil
+		}
+	}
+	return updated, nil
+}
+
+func dagRunWithApprovalDecision(state dagApprovalState, action, comment, actorName string) domainworkflow.Run {
 	nodeStatus, nodeSummary, runStatus := dagApprovalDecision(action, actorName)
 	for index := range state.run.NodeRuns {
 		if state.run.NodeRuns[index].NodeID != state.nodeID {
@@ -95,18 +120,17 @@ func (s *Service) applyDAGApprovalDecision(ctx context.Context, state dagApprova
 	}
 	state.run.Metadata["approvalDecision"] = action
 	state.run.Metadata["approvalComment"] = strings.TrimSpace(comment)
-	state.run = syncRunNodeState(state.run, state.definition, restoreNodeRuns(state.definition, state.run.NodeRuns))
-	return s.updateRun(ctx, state.run)
+	return syncRunNodeState(state.run, state.definition, restoreNodeRuns(state.definition, state.run.NodeRuns))
 }
 
 func dagApprovalDecision(action, actorName string) (string, string, string) {
 	if action == "rejected" {
 		return "failed", fmt.Sprintf("rejected by %s", actorName), "failed"
 	}
-	return "completed", fmt.Sprintf("approved by %s", actorName), "running"
+	return "completed", fmt.Sprintf("approved by %s", actorName), "queued"
 }
 
-func (s *Service) resumeDAGAfterApproval(ctx context.Context, principal domainidentity.Principal, state dagApprovalState, run domainworkflow.Run) (domainworkflow.Run, error) {
+func (s *Service) approvalContinuation(ctx context.Context, principal domainidentity.Principal, state dagApprovalState) (dagRunTask, error) {
 	input := domainworkflow.Input{
 		ApplicationID:            state.run.ApplicationID,
 		ApplicationEnvironmentID: configString(state.run.Metadata, "bindingId"),
@@ -117,24 +141,17 @@ func (s *Service) resumeDAGAfterApproval(ctx context.Context, principal domainid
 	}
 	binding, err := s.findApplicationEnvironmentBinding(ctx, input)
 	if err != nil {
-		return domainworkflow.Run{}, err
+		return dagRunTask{}, err
 	}
 	if binding == nil {
-		return domainworkflow.Run{}, fmt.Errorf("%w: application environment binding is missing", apperrors.ErrInvalidArgument)
+		return dagRunTask{}, fmt.Errorf("%w: application environment binding is missing", apperrors.ErrInvalidArgument)
 	}
-	run.Status = "queued"
-	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	run = s.updateRun(ctx, run)
-	if err := s.enqueueDAGRun(ctx, dagRunTask{
+	return dagRunTask{
 		principal:   principal,
 		app:         state.app,
 		input:       input,
 		binding:     *binding,
 		definition:  state.definition,
-		run:         run,
 		requestMeta: requestctx.FromContext(ctx),
-	}); err != nil {
-		return s.failRun(context.Background(), run, state.definition, fmt.Sprintf("workflow runner enqueue failed after approval: %v", err)), nil
-	}
-	return run, nil
+	}, nil
 }

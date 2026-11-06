@@ -70,16 +70,35 @@ func (r *stubWorkflowRepository) Get(_ context.Context, runID string) (domainwor
 func (r *stubWorkflowRepository) Update(_ context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cloned := cloneWorkflowRun(item)
-	r.updated = append(r.updated, cloned)
-	return cloneWorkflowRun(cloned), nil
+	return r.saveUpdate(item), nil
 }
 
-func (r *stubWorkflowRepository) CreateApproval(_ context.Context, item domainworkflow.Approval) error {
+func (r *stubWorkflowRepository) UpdateApplicationRunIfCurrent(_ context.Context, item domainworkflow.Run, pausedStatus string, approval *domainworkflow.Approval) (domainworkflow.Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.approvals = append(r.approvals, cloneWorkflowApproval(item))
-	return nil
+	for _, current := range r.items {
+		if current.ID == item.ID && current.Status == pausedStatus && current.Version == item.Version {
+			if approval != nil {
+				r.approvals = append(r.approvals, cloneWorkflowApproval(*approval))
+			}
+			return r.saveUpdate(item), nil
+		}
+	}
+	return domainworkflow.Run{}, apperrors.ErrConflict
+}
+
+func (r *stubWorkflowRepository) saveUpdate(item domainworkflow.Run) domainworkflow.Run {
+	item.Version++
+	cloned := cloneWorkflowRun(item)
+	r.updated = append(r.updated, cloned)
+	for index, current := range r.items {
+		if current.ID == item.ID {
+			r.items[index] = cloned
+			return cloneWorkflowRun(cloned)
+		}
+	}
+	r.items = append(r.items, cloned)
+	return cloneWorkflowRun(cloned)
 }
 
 func (r *stubWorkflowRepository) DeleteByIDs(_ context.Context, ids []string) error {
@@ -350,6 +369,17 @@ type recordingWorkflowArtifactStore struct {
 	items []domaindelivery.ExecutionArtifact
 	tasks []domaindelivery.ExecutionTask
 	logs  []domaindelivery.ExecutionLog
+}
+
+func (s *recordingWorkflowArtifactStore) GetExecutionTask(_ context.Context, id string) (domaindelivery.ExecutionTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, task := range s.tasks {
+		if task.ID == id {
+			return task, nil
+		}
+	}
+	return domaindelivery.ExecutionTask{}, apperrors.ErrNotFound
 }
 
 func (s *recordingWorkflowArtifactStore) UpsertExecutionArtifact(_ context.Context, item domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error) {
