@@ -11,17 +11,20 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
-	crewjam "github.com/crewjam/saml"
-	"github.com/crewjam/saml/samlsp"
+	crewjam "github.com/openctemio/saml"
+	"github.com/openctemio/saml/samlsp"
 	dsig "github.com/russellhaering/goxmldsig"
 )
 
 const (
 	BindingRedirect = crewjam.HTTPRedirectBinding
 	BindingPOST     = crewjam.HTTPPostBinding
+
+	bearerConfirmationMethod = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
 )
 
 type Metadata struct {
@@ -281,15 +284,24 @@ func (sp *ServiceProvider) ValidateResponse(encodedResponse, requestID string) (
 	if err != nil {
 		return nil, fmt.Errorf("validate SAML response: %w", err)
 	}
-	if err := validateAssertionTime(verified, now, sp.clockSkew); err != nil {
+	if err := validateBrowserSSOAssertion(verified, now, sp.clockSkew); err != nil {
 		return nil, err
 	}
 	return mapAssertion(verified, shape), nil
 }
 
-func validateAssertionTime(assertion *crewjam.Assertion, now time.Time, skew time.Duration) error {
+func validateBrowserSSOAssertion(assertion *crewjam.Assertion, now time.Time, skew time.Duration) error {
 	if assertion.Conditions == nil || assertion.Subject == nil || assertion.Subject.NameID == nil {
 		return fmt.Errorf("%w: assertion is missing required conditions or subject", ErrInvalidXML)
+	}
+	// Browser SSO requires these signed elements. Foreign lookalikes are ignored by the parser.
+	if len(assertion.Conditions.AudienceRestrictions) == 0 {
+		return fmt.Errorf("%w: assertion is missing an audience restriction", ErrInvalidXML)
+	}
+	if !slices.ContainsFunc(assertion.Subject.SubjectConfirmations, func(confirmation crewjam.SubjectConfirmation) bool {
+		return confirmation.Method == bearerConfirmationMethod
+	}) {
+		return fmt.Errorf("%w: assertion is missing a bearer subject confirmation", ErrInvalidXML)
 	}
 	if assertion.Conditions.NotBefore.Add(-skew).After(now) || !now.Before(assertion.Conditions.NotOnOrAfter.Add(skew)) {
 		return fmt.Errorf("%w: assertion is outside its validity window", ErrInvalidXML)
