@@ -1,0 +1,13 @@
+{
+  "decision": "allow",
+  "path": "site_direct",
+  "policyVersion": 2,
+  "attributeVersion": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "protected": false,
+  "networkLeaseRequired": false,
+  "resourceLeaseRequired": false,
+  "networkProfile": "restricted",
+  "reasons": [
+    "policy_allow:office"
+  ]
+}

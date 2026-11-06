@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "endpoint-controls/v1alpha1",
+  "deviceId": "device",
+  "runtimeId": "endpoint",
+  "credentialId": "credential",
+  "policyVersion": 1,
+  "challenge": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "observedAt": "2026-10-28T00:00:00Z",
+  "channels": [
+    {
+      "name": "usb",
+      "scope": "current_usb_volumes",
+      "state": "controlled",
+      "targets": 1,
+      "controlled": 1,
+      "reasonCode": "native_scope_only"
+    },
+    {
+      "name": "print",
+      "scope": "local_new_print_jobs",
+      "state": "controlled",
+      "targets": 1,
+      "controlled": 1,
+      "reasonCode": "native_scope_only"
+    },
+    {
+      "name": "clipboard",
+      "scope": "enrolled_console_win32",
+      "state": "controlled",
+      "targets": 1,
+      "controlled": 1,
+      "reasonCode": "native_scope_only"
+    }
+  ]
+}

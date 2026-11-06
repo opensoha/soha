@@ -1,7 +1,7 @@
 {
   "schemaVersion": "authorization.opensoha.io/v1",
   "catalogVersion": "2.0.0",
-  "contentHash": "sha256:2d98b53189afa67c09a2917325e3b1b1b70aafe00d370bdabaef7d6b11ef493c",
+  "contentHash": "sha256:bd4a7240d34750d3fcf38b4649f6dbe67b17fb0f6ebeb96a32f8d874685e5150",
   "permissions": [
     {
       "key": "access.directory.create",
@@ -3625,6 +3625,86 @@
       "assignable": true
     },
     {
+      "key": "docker.dlp-appeals.review",
+      "domain": "docker",
+      "resource": "dlp-appeals",
+      "action": "approve",
+      "displayName": "审查卷文件 DLP 申诉",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "docker.dlp-events.view",
+      "domain": "docker",
+      "resource": "dlp-events",
+      "action": "view",
+      "displayName": "查看卷文件 DLP 事件",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "docker.dlp-policy.publish",
+      "domain": "docker",
+      "resource": "dlp-policy",
+      "action": "trigger",
+      "displayName": "发布卷文件 DLP 策略",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "docker.dlp-policy.update",
+      "domain": "docker",
+      "resource": "dlp-policy",
+      "action": "update",
+      "displayName": "编辑卷文件 DLP 草稿",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "docker.dlp-policy.view",
+      "domain": "docker",
+      "resource": "dlp-policy",
+      "action": "view",
+      "displayName": "查看卷文件 DLP 策略",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
       "key": "docker.hosts.create",
       "domain": "docker",
       "resource": "hosts",
@@ -4743,6 +4823,214 @@
       "assignable": true
     },
     {
+      "key": "network_access.content_destinations.publish",
+      "domain": "network_access",
+      "resource": "content_destinations",
+      "action": "publish",
+      "displayName": "发布受管内容目的连接",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.content_destinations.update",
+      "domain": "network_access",
+      "resource": "content_destinations",
+      "action": "update",
+      "displayName": "编辑受管内容目的连接",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.content_destinations.view",
+      "domain": "network_access",
+      "resource": "content_destinations",
+      "action": "view",
+      "displayName": "查看受管内容目的连接",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.content_transfer_appeals.review",
+      "domain": "network_access",
+      "resource": "content_transfer_appeals",
+      "action": "review",
+      "displayName": "审查受管内容申诉",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.content_transfer_events.view",
+      "domain": "network_access",
+      "resource": "content_transfer_events",
+      "action": "view",
+      "displayName": "查看受管内容安全事件",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.content_transfers.create",
+      "domain": "network_access",
+      "resource": "content_transfers",
+      "action": "create",
+      "displayName": "提交受管内容传输",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.content_transfers.delete",
+      "domain": "network_access",
+      "resource": "content_transfers",
+      "action": "delete",
+      "displayName": "删除自己的受管文件",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.content_transfers.download",
+      "domain": "network_access",
+      "resource": "content_transfers",
+      "action": "download",
+      "displayName": "下载自己的受管文件",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.content_transfers.view",
+      "domain": "network_access",
+      "resource": "content_transfers",
+      "action": "view",
+      "displayName": "查看自己的受管内容记录",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.dlp_linkage.manage",
+      "domain": "network_access",
+      "resource": "dlp_linkage",
+      "action": "update",
+      "displayName": "管理全主体 DLP 网络联动",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_controls.publish",
+      "domain": "network_access",
+      "resource": "endpoint_controls",
+      "action": "publish",
+      "displayName": "发布端点通道控制",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_controls.update",
+      "domain": "network_access",
+      "resource": "endpoint_controls",
+      "action": "update",
+      "displayName": "编辑端点通道策略",
+      "riskLevel": "high",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_controls.view",
+      "domain": "network_access",
+      "resource": "endpoint_controls",
+      "action": "view",
+      "displayName": "查看端点通道策略与回执",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "eligible",
+      "status": "active",
+      "assignable": true
+    },
+    {
       "key": "network_access.endpoint_devices.update",
       "domain": "network_access",
       "resource": "endpoint_devices",
@@ -4764,6 +5052,150 @@
       "resource": "endpoint_devices",
       "action": "view",
       "displayName": "查看网络接入设备",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_events.maintenance",
+      "domain": "network_access",
+      "resource": "endpoint_response_events",
+      "action": "maintenance",
+      "displayName": "管理终端维护例外",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_events.restore",
+      "domain": "network_access",
+      "resource": "endpoint_response_events",
+      "action": "restore",
+      "displayName": "解除终端联动限制",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_events.view",
+      "domain": "network_access",
+      "resource": "endpoint_response_events",
+      "action": "view",
+      "displayName": "查看终端联动事件",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_policies.create",
+      "domain": "network_access",
+      "resource": "endpoint_response_policies",
+      "action": "create",
+      "displayName": "创建终端联动策略",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_policies.delete",
+      "domain": "network_access",
+      "resource": "endpoint_response_policies",
+      "action": "delete",
+      "displayName": "停用终端联动策略",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_policies.preview",
+      "domain": "network_access",
+      "resource": "endpoint_response_policies",
+      "action": "preview",
+      "displayName": "预览终端联动策略",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_policies.publish",
+      "domain": "network_access",
+      "resource": "endpoint_response_policies",
+      "action": "publish",
+      "displayName": "发布终端联动策略",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_policies.update",
+      "domain": "network_access",
+      "resource": "endpoint_response_policies",
+      "action": "update",
+      "displayName": "修改终端联动策略",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.endpoint_response_policies.view",
+      "domain": "network_access",
+      "resource": "endpoint_response_policies",
+      "action": "view",
+      "displayName": "查看终端联动策略",
       "riskLevel": "read",
       "scopeKinds": [
         "tenant",
@@ -5468,6 +5900,54 @@
       "resource": "vpn_selection_policies",
       "action": "view",
       "displayName": "查看VPN 选择策略",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.vpn_sessions.release",
+      "domain": "network_access",
+      "resource": "vpn_sessions",
+      "action": "release",
+      "displayName": "解除 VPN 重连限制",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.vpn_sessions.revoke",
+      "domain": "network_access",
+      "resource": "vpn_sessions",
+      "action": "revoke",
+      "displayName": "撤销 VPN 会话与重连",
+      "riskLevel": "execute",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.vpn_sessions.view",
+      "domain": "network_access",
+      "resource": "vpn_sessions",
+      "action": "view",
+      "displayName": "查看 VPN 会话限制",
       "riskLevel": "read",
       "scopeKinds": [
         "tenant",

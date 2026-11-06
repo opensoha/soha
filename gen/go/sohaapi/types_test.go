@@ -153,6 +153,15 @@ func TestLegacyEnumAliasesRemainSourceCompatible(t *testing.T) {
 	}
 }
 
+func TestIdentityAndEnvironmentEnumAliasesRemainSourceCompatible(t *testing.T) {
+	if OIDC != IdentityProviderUserMetadataProtocolOIDC || Proxy != IdentityProviderUserMetadataProtocolProxy || Saml != IdentityProviderUserMetadataProtocolSaml {
+		t.Fatal("identity provider protocol aliases changed")
+	}
+	if ObserveOnly != PersonalEnvironmentTemplateModeObserveOnly || RestrictedWrite != PersonalEnvironmentTemplateModeRestrictedWrite {
+		t.Fatal("personal environment template mode aliases changed")
+	}
+}
+
 func TestApprovalScopeKeepsMapCompatibility(t *testing.T) {
 	var item ApprovalRequest
 	if err := json.Unmarshal([]byte(`{"resourceScope":{"projectId":"project-1","invocationScopes":[{"hostId":"host-1","projectId":"project-1"}]}}`), &item); err != nil {

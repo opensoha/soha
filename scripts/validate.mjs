@@ -8,6 +8,7 @@ const root = new URL("..", import.meta.url);
 const openapiPath = "openapi/soha-api.yaml";
 
 const requiredJsonSchemas = [
+  { file: "endpointcontrol/protocol.schema.json", fixtureDir: "fixtures/json-schema/endpoint-controls" },
   {
     file: "capabilities/cluster-capability-matrix.schema.json",
     fixtureDir: "fixtures/json-schema/cluster-capability-matrix",

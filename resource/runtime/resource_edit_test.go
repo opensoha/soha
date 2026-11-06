@@ -30,6 +30,38 @@ func editConflict(manager string) error {
 	return apierrors.NewApplyConflict([]metav1.StatusCause{{Type: metav1.CauseTypeFieldManagerConflict, Field: ".data.phase", Message: fmt.Sprintf("conflict with %q using v1", manager)}}, "field conflict")
 }
 
+func TestBindResourceEditIdentity(t *testing.T) {
+	resource := schema.GroupResource{Resource: "configmaps"}
+	current := editFixture()
+	for _, tc := range []struct {
+		name, uid, version string
+		strict             bool
+		wantError          func(error) bool
+	}{
+		{name: "legacy name only"},
+		{name: "observed current object", uid: "original", version: "1", strict: true},
+		{name: "missing observed identity", uid: "original", strict: true, wantError: apierrors.IsBadRequest},
+		{name: "same name replacement", uid: "deleted", version: "1", strict: true, wantError: apierrors.IsConflict},
+		{name: "same UID newer version", uid: "original", version: "0", strict: true, wantError: apierrors.IsConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			desired := current.DeepCopy()
+			desired.SetUID(types.UID(tc.uid))
+			desired.SetResourceVersion(tc.version)
+			err := BindResourceEditIdentity(current, desired, resource, tc.strict)
+			if tc.wantError != nil {
+				if !tc.wantError(err) || string(desired.GetUID()) != tc.uid || desired.GetResourceVersion() != tc.version {
+					t.Fatalf("stale request unexpectedly rebound: uid=%q version=%q err=%v", desired.GetUID(), desired.GetResourceVersion(), err)
+				}
+				return
+			}
+			if err != nil || desired.GetUID() != current.GetUID() || desired.GetResourceVersion() != current.GetResourceVersion() {
+				t.Fatalf("current identity not preserved: uid=%q version=%q err=%v", desired.GetUID(), desired.GetResourceVersion(), err)
+			}
+		})
+	}
+}
+
 func TestApplyResourceEditMigratesOnlyItsOwnCreationFields(t *testing.T) {
 	for _, test := range []struct {
 		name                                                     string

@@ -57,6 +57,11 @@ for authorization, routing, firewall configuration or accounting.
   reply attribute and require NAS accounting to echo it as `sessionId` when
   available. Session commands repeat the bound `subjectId` and `deviceId` so
   the adapter can target CoA/Disconnect without querying management APIs.
+- Capability `nas-session-accounting-v1` enables the optional command target
+  `stationId`, `accountingSessionId` and `nasPortId`. For EAP-TLS, station identity
+  comes from saved authorization/accounting, never the opaque Soha device ID.
+  A runtime that cannot receive the required target binding must report
+  unsupported rather than send a command to a guessed station.
 - If a requested CoA is unsupported, issue a disconnect command when the NAS
   binding supports it; otherwise fail closed and record the unsupported
   enforcement result.
@@ -166,3 +171,32 @@ for authorization, routing, firewall configuration or accounting.
 Consumers must cover these rules with deterministic tests. Failure is
 fail-closed for control messages and bounded reject/drop-with-counter behavior
 for telemetry.
+
+## Endpoint presence and RADIUS response
+
+- `endpoint.presence.request` goes to
+  `POST /api/network-control/v1/runtimes/{runtimeId}/endpoint:presence` using the
+  enrolled endpoint's control identity and `endpoint-presence-v1` capability.
+  `bootId` identifies the protected service incarnation; a new incarnation
+  starts a new sequence and retires the previous one. A duplicate must not
+  refresh server-side liveness. UI presence never implies a healthy service.
+- `POST /api/network-control/v1/runtimes/{runtimeId}/nas:accounting` uses
+  the enrolled NAS control identity and the existing RADIUS Accounting schema.
+  The control plane checks NAS, subject, station and accounting-session binding
+  against the saved authorization before updating session evidence. The
+  separate ingest submission remains telemetry and cannot change admission.
+- A Stop remains terminal for that Core session. A reused accounting ID,
+  conflicting binding, restart after Start, or missing Start remains unknown.
+  Received time alone cannot refresh an old observation. Accounting evidence
+  cannot authorize access or prove that a VLAN/ACL was applied.
+- Persist response restrictions before delivering NAS commands. A new
+  authentication must observe every active restriction. Policy retirement
+  never removes an existing restriction, and restoration requires current
+  health plus authorization rather than replaying a previous allow decision.
+
+## Dedicated EAP certificates and native profiles
+
+- `eap.certificate.request` uses `POST /api/network-control/v1/runtimes/{runtimeId}/eap:certificate`; `eap.certificate.activate.request` uses the same prefix with `eap:activate`. Both require the endpoint control identity and `eap-profile-v1` plus `radius-eap-tls-v1`. CSR private keys stay on the endpoint. Core binds the subject and device from enrollment and ignores CSR identity extensions.
+- A dedicated EAP issuer signs only client authentication certificates with a `network-eap` URI. EAP certificates cannot authenticate control or ingest requests. Without an issuer, issuance is unavailable. Existing runtime certificates are accepted for legacy EAP only when enrollment explicitly declares `radius-eap-tls-v1`; ordinary control credentials do not imply EAP permission.
+- Issuance is idempotent per runtime/request ID and CSR. Certificates start pending and cannot grant network access. After native installation and readback, activation atomically replaces the old EAP certificate under the parent runtime credential lock. A retired or expired parent invalidates every child. Replaying an older activation cannot revive it.
+- `admission.profiles` is delivered only to `eap-profile-v1` endpoints, with exact EAP server names, CA certificates, subject and the dedicated active EAP certificate fingerprint. Configuration export, installation, 802.1X connection and actual NAS enforcement are separate results.

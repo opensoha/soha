@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-dns-1",
+  "messageType": "dns.observations",
+  "producerId": "gateway-site-a",
+  "runtimeId": "gateway-site-a",
+  "runtimeKind": "gateway",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "payload": {
+    "configurationVersion": 12,
+    "policyVersion": 7,
+    "observations": [
+      {
+        "resourceId": "resource-payroll",
+        "hostname": "payroll.example.internal",
+        "addresses": [
+          "fd20::10"
+        ],
+        "observedAt": "2026-09-02T08:00:00Z",
+        "ttlSeconds": 60
+      }
+    ]
+  }
+}

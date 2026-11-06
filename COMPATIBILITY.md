@@ -22,6 +22,16 @@ Current stream: `0.1.x`.
 - `1.0.0` starts the stable contract line. After `1.0.0`, breaking changes
   require a major version bump, a migration note, and consumer coordination.
 
+## Proxy Configuration Inputs
+
+The proxy configuration endpoint accepts partial updates through
+`NetworkProxyConfigurationPatchInput`. Its optional `content` distinguishes omission
+from an explicit empty value. Existing Go consumers retain
+`NetworkProxyConfigurationInput.Content` as a string and the full-input
+`UpdateNetworkProxyConfigurationJSONRequestBody` alias. New Go consumers that omit
+encrypted content must explicitly use the Patch input. TypeScript operation types
+follow the partial HTTP schema. Both full and partial requests use the same endpoint.
+
 ## Version Synchronization
 
 Each release must keep these values aligned:
@@ -52,9 +62,10 @@ Release order for `0.1.x`:
 3. Run `npm test`, `npm pack --dry-run`, `npm run release:artifacts`, and
    the consumer matrix.
 4. Create tag `v<version>`.
-5. Let the release workflow publish npm when `NPM_TOKEN` is configured and
-   create the GitHub release with the npm tarball, `.sha256` checksum, and
-   release manifest attached.
+5. Let the release workflow stage the npm package with `NPM_TOKEN`. After a
+   maintainer approves the stage with 2FA, dispatch recovery for the same tag.
+   The workflow verifies the public npm package and Go tag before attaching
+   the tarball, checksums, and release manifest to the GitHub release.
 
 ## Compatibility Baseline
 
@@ -573,3 +584,16 @@ New runners also reject known old application Plan tasks (`fieldManager` begins
 providers. This prevents an old Core from being treated as a standalone Manifest
 executor for those Plans. Markers are rejection hints only, not identity or grants.
 Unassociated standalone tasks and read-only Git synchronization keep their behavior.
+
+## Pod session identity in Agent mode
+
+Core sends UID-bound log snapshots, log streams and terminals to the Agent
+GET routes under `/api/v1/platform/workloads/pods/:name/uid-bound/` with
+`expectedUid`. The matching suffixes are `logs`, `logs/stream` and `terminal`.
+Each route uses the corresponding existing action authorization and requires a
+live UID match on the Agent before opening the subresource. Returning a UID in
+Pod detail does not imply support for these routes.
+
+Core fails closed if the Agent lacks the bound route. It never retries a
+UID-bound operation through a legacy route, including during rollback or a mixed
+Agent rollout. Requests without a UID continue to use the existing routes.

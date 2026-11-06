@@ -10,6 +10,14 @@ on:
         description: Existing release tag to recover
         required: true
         type: string
+      publish_mode:
+        description: Stage for human approval, or recover an already approved version
+        required: true
+        default: stage
+        type: choice
+        options:
+          - stage
+          - recover
 
 jobs:
   verify:
@@ -90,6 +98,8 @@ jobs:
       id-token: write
     env:
       HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
+      NPM_PUBLISH_MODE: ${{ inputs.publish_mode || 'stage' }}
+      CONTRACTS_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -99,6 +109,8 @@ jobs:
           node-version: "22"
           cache: npm
           registry-url: "https://registry.npmjs.org"
+      - name: Install staged-publishing CLI
+        run: npm install --global npm@11.21.1
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
@@ -106,9 +118,14 @@ jobs:
       - run: npm ci
       - name: Validate release tag
         run: |
-          expected="v$(node -p 'require("./package.json").version')"
-          actual="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          test "${actual}" = "${expected}"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
+          const tag = process.env.CONTRACTS_RELEASE_TAG;
+          if (typeof version !== 'string' || !/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(tag || '') || tag !== `v${version}`) {
+            throw new Error('Release tag must be a version tag matching package.json');
+          }
+          NODE
       - uses: actions/download-artifact@v4
         with:
           pattern: consumer-matrix-*
@@ -150,22 +167,53 @@ jobs:
         run: |
           echo "NPM_TOKEN is required for contracts tag releases." >&2
           exit 1
-      - name: Publish npm package
-        if: (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && env.HAS_NPM_TOKEN == 'true'
-        run: |
-          version="${{ steps.artifacts.outputs.version }}"
-          tarball="${{ steps.artifacts.outputs.tarball }}"
-          if published_integrity=$(npm view "@opensoha/contracts@${version}" dist.integrity); then
-            local_integrity="sha512-$(openssl dgst -sha512 -binary "${tarball}" | openssl base64 -A)"
-            test "${published_integrity}" = "${local_integrity}"
-            echo "Verified identical @opensoha/contracts@${version}; continuing release recovery."
-          else
-            npm publish "${tarball}" --provenance --access public
-          fi
+      - name: Verify public package or stage for approval
+        id: publish
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          CONTRACTS_NPM_VERSION: ${{ steps.artifacts.outputs.version }}
+          CONTRACTS_NPM_TARBALL: ${{ steps.artifacts.outputs.tarball }}
+        run: |
+          case "${NPM_PUBLISH_MODE}" in
+            stage|recover) ;;
+            *) echo "Unsupported npm publish mode" >&2; exit 1 ;;
+          esac
+          version="${CONTRACTS_NPM_VERSION}"
+          tarball="${CONTRACTS_NPM_TARBALL}"
+          local_integrity="sha512-$(openssl dgst -sha512 -binary "${tarball}" | openssl base64 -A)"
+          if published_integrity=$(npm view "@opensoha/contracts@${version}" dist.integrity); then
+            test "${published_integrity}" = "${local_integrity}"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Verified identical public @opensoha/contracts@${version}."
+          elif [ "${NPM_PUBLISH_MODE}" = "recover" ]; then
+            echo "The requested npm version is not public; approve its stage before recovery." >&2
+            exit 1
+          else
+            npm stage publish "${tarball}" --provenance --access public --json > dist/release/npm-stage.json
+            node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          const raw = JSON.parse(readFileSync('dist/release/npm-stage.json', 'utf8'));
+          const items = Array.isArray(raw) ? raw : [raw, ...Object.values(raw)];
+          const stage = items.find((item) => item && typeof item === 'object' && typeof item.stageId === 'string');
+          const integrity = `sha512-${createHash('sha512').update(readFileSync(process.env.CONTRACTS_NPM_TARBALL)).digest('base64')}`;
+          if (!stage || stage.name !== '@opensoha/contracts' || stage.version !== process.env.CONTRACTS_NPM_VERSION || stage.integrity !== integrity || stage.stageId.length !== 36 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stage.stageId)) {
+            throw new Error('Stage receipt does not match the package, version, integrity or stage ID');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `published=false\nstage_id=${stage.stageId}\n`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### npm stage pending approval\n\n@opensoha/contracts@${stage.version} is staged, not public.\n\nStage ID: ${stage.stageId}\n\nA maintainer must approve it with 2FA on npmjs.com. Then dispatch this workflow with the same tag and publish_mode=recover.\n`);
+          NODE
+          fi
+      - name: Save pending stage receipt and release candidate
+        if: steps.publish.outputs.published == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: contracts-staged-${{ steps.artifacts.outputs.version }}
+          path: dist/release/
+          if-no-files-found: error
       - name: Verify published npm package and Go module tag
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: steps.publish.outputs.published == 'true'
         run: |
           version="${{ steps.artifacts.outputs.version }}"
           for attempt in $(seq 1 40); do
@@ -180,9 +228,10 @@ jobs:
           done
           go list -m -json "github.com/opensoha/soha-contracts@v${version}"
       - name: GitHub release
+        if: steps.publish.outputs.published == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          tag_name: ${{ env.CONTRACTS_RELEASE_TAG }}
           generate_release_notes: true
           files: |
             ${{ steps.artifacts.outputs.tarball }}
@@ -194,6 +243,7 @@ jobs:
             ${{ steps.artifacts.outputs.manifest }}
             dist/release/consumer-matrix.json
       - name: Download published release assets and verify
+        if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -205,7 +255,7 @@ jobs:
           provenance_policy_name="$(basename "${{ steps.artifacts.outputs.provenance_policy }}")"
           provenance_policy_checksum_name="$(basename "${{ steps.artifacts.outputs.provenance_policy_checksum }}")"
           manifest_name="$(basename "${{ steps.artifacts.outputs.manifest }}")"
-          gh release download "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}" \
+          gh release download "${CONTRACTS_RELEASE_TAG}" \
             --pattern "${tarball_name}" \
             --pattern "${checksum_name}" \
             --pattern "${sbom_name}" \

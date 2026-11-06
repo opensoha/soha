@@ -1,0 +1,6 @@
+{
+  "name": "Shanghai Office",
+  "status": "active",
+  "location": "Shanghai",
+  "deviceGovernance": "trust_everyone"
+}

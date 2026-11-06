@@ -1,0 +1,1 @@
+{"decision":"allow","path":"site_direct","policyVersion":2,"attributeVersion":"unversioned","protected":false,"networkLeaseRequired":false,"resourceLeaseRequired":false,"reasons":["policy_allow:office"]}

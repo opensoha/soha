@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "presence-1",
+  "messageType": "endpoint.presence.request",
+  "producerId": "endpoint-lab",
+  "runtimeId": "endpoint-lab",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-10-14T00:00:00Z",
+  "expiresAt": "2026-10-14T00:00:30Z",
+  "payload": {
+    "deviceId": "device-lab",
+    "bootId": "boot-1",
+    "sequence": 1,
+    "status": "healthy",
+    "configurationVersion": 1,
+    "policyVersion": 1,
+    "uiState": "unknown",
+    "capabilities": [
+      "endpoint-presence-v1"
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "mode": "block",
+  "detectors": [
+    "private_key"
+  ],
+  "rules": [],
+  "allowed": true
+}

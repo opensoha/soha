@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	AgentBearerAuthScopes   agentBearerAuthContextKey   = "agentBearerAuth.Scopes"
-	BearerAuthScopes        bearerAuthContextKey        = "bearerAuth.Scopes"
-	RuntimeBearerAuthScopes runtimeBearerAuthContextKey = "runtimeBearerAuth.Scopes"
-	SohaXAPIKeyScopes       sohaXAPIKeyContextKey       = "sohaXAPIKey.Scopes"
+	AgentBearerAuthScopes    agentBearerAuthContextKey    = "agentBearerAuth.Scopes"
+	BearerAuthScopes         bearerAuthContextKey         = "bearerAuth.Scopes"
+	NetworkControlMTLSScopes networkControlMTLSContextKey = "networkControlMTLS.Scopes"
+	RuntimeBearerAuthScopes  runtimeBearerAuthContextKey  = "runtimeBearerAuth.Scopes"
+	SohaXAPIKeyScopes        sohaXAPIKeyContextKey        = "sohaXAPIKey.Scopes"
 )
 
 // Defines values for AIEnvironmentTemplateBackend.
@@ -1880,6 +1881,132 @@ func (e ComputeTaskVerificationStatus) Valid() bool {
 	}
 }
 
+// Defines values for DLPDataLevel.
+const (
+	DLPDataLevelConfidential DLPDataLevel = "confidential"
+	DLPDataLevelInternal     DLPDataLevel = "internal"
+	DLPDataLevelPublic       DLPDataLevel = "public"
+	DLPDataLevelRestricted   DLPDataLevel = "restricted"
+)
+
+// Valid indicates whether the value is a known member of the DLPDataLevel enum.
+func (e DLPDataLevel) Valid() bool {
+	switch e {
+	case DLPDataLevelConfidential:
+		return true
+	case DLPDataLevelInternal:
+		return true
+	case DLPDataLevelPublic:
+		return true
+	case DLPDataLevelRestricted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DLPShadowDecisionDataLevel.
+const (
+	DLPShadowDecisionDataLevelConfidential DLPShadowDecisionDataLevel = "confidential"
+	DLPShadowDecisionDataLevelInternal     DLPShadowDecisionDataLevel = "internal"
+	DLPShadowDecisionDataLevelPublic       DLPShadowDecisionDataLevel = "public"
+	DLPShadowDecisionDataLevelRestricted   DLPShadowDecisionDataLevel = "restricted"
+	DLPShadowDecisionDataLevelUnclassified DLPShadowDecisionDataLevel = "unclassified"
+	DLPShadowDecisionDataLevelUnknown      DLPShadowDecisionDataLevel = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the DLPShadowDecisionDataLevel enum.
+func (e DLPShadowDecisionDataLevel) Valid() bool {
+	switch e {
+	case DLPShadowDecisionDataLevelConfidential:
+		return true
+	case DLPShadowDecisionDataLevelInternal:
+		return true
+	case DLPShadowDecisionDataLevelPublic:
+		return true
+	case DLPShadowDecisionDataLevelRestricted:
+		return true
+	case DLPShadowDecisionDataLevelUnclassified:
+		return true
+	case DLPShadowDecisionDataLevelUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DLPShadowDecisionDetectorVersion.
+const (
+	DLPShadowDecisionDetectorVersionArchiveV2        DLPShadowDecisionDetectorVersion = "content-dlp-archive-v2"
+	DLPShadowDecisionDetectorVersionContentDlpTextV1 DLPShadowDecisionDetectorVersion = "content-dlp-text-v1"
+)
+
+// Valid indicates whether the value is a known member of the DLPShadowDecisionDetectorVersion enum.
+func (e DLPShadowDecisionDetectorVersion) Valid() bool {
+	switch e {
+	case DLPShadowDecisionDetectorVersionArchiveV2:
+		return true
+	case DLPShadowDecisionDetectorVersionContentDlpTextV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DLPShadowDecisionMode.
+const (
+	DLPShadowDecisionModeAudit DLPShadowDecisionMode = "audit"
+	DLPShadowDecisionModeBlock DLPShadowDecisionMode = "block"
+	DLPShadowDecisionModeWarn  DLPShadowDecisionMode = "warn"
+)
+
+// Valid indicates whether the value is a known member of the DLPShadowDecisionMode enum.
+func (e DLPShadowDecisionMode) Valid() bool {
+	switch e {
+	case DLPShadowDecisionModeAudit:
+		return true
+	case DLPShadowDecisionModeBlock:
+		return true
+	case DLPShadowDecisionModeWarn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DLPShadowDecisionStatus.
+const (
+	DLPShadowDecisionStatusClean       DLPShadowDecisionStatus = "clean"
+	DLPShadowDecisionStatusEncrypted   DLPShadowDecisionStatus = "encrypted"
+	DLPShadowDecisionStatusError       DLPShadowDecisionStatus = "error"
+	DLPShadowDecisionStatusMatched     DLPShadowDecisionStatus = "matched"
+	DLPShadowDecisionStatusTimeout     DLPShadowDecisionStatus = "timeout"
+	DLPShadowDecisionStatusTooLarge    DLPShadowDecisionStatus = "too_large"
+	DLPShadowDecisionStatusUnsupported DLPShadowDecisionStatus = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the DLPShadowDecisionStatus enum.
+func (e DLPShadowDecisionStatus) Valid() bool {
+	switch e {
+	case DLPShadowDecisionStatusClean:
+		return true
+	case DLPShadowDecisionStatusEncrypted:
+		return true
+	case DLPShadowDecisionStatusError:
+		return true
+	case DLPShadowDecisionStatusMatched:
+		return true
+	case DLPShadowDecisionStatusTimeout:
+		return true
+	case DLPShadowDecisionStatusTooLarge:
+		return true
+	case DLPShadowDecisionStatusUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DeliveryAccessResultAuthentication.
 const (
 	DeliveryAccessResultAuthenticationRequired DeliveryAccessResultAuthentication = "required"
@@ -3305,6 +3432,579 @@ func (e DockerProjectDeployInputAction) Valid() bool {
 	}
 }
 
+// Defines values for DockerVolumeDLPAppealReasonCode.
+const (
+	DockerVolumeDLPAppealReasonCodeBusinessNeed  DockerVolumeDLPAppealReasonCode = "business_need"
+	DockerVolumeDLPAppealReasonCodeFalsePositive DockerVolumeDLPAppealReasonCode = "false_positive"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPAppealReasonCode enum.
+func (e DockerVolumeDLPAppealReasonCode) Valid() bool {
+	switch e {
+	case DockerVolumeDLPAppealReasonCodeBusinessNeed:
+		return true
+	case DockerVolumeDLPAppealReasonCodeFalsePositive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPAppealReviewReason.
+const (
+	DockerVolumeDLPAppealReviewReasonApprovedBusinessException DockerVolumeDLPAppealReviewReason = "approved_business_exception"
+	DockerVolumeDLPAppealReviewReasonConfirmedFalsePositive    DockerVolumeDLPAppealReviewReason = "confirmed_false_positive"
+	DockerVolumeDLPAppealReviewReasonInsufficientContext       DockerVolumeDLPAppealReviewReason = "insufficient_context"
+	DockerVolumeDLPAppealReviewReasonPolicyRequired            DockerVolumeDLPAppealReviewReason = "policy_required"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPAppealReviewReason enum.
+func (e DockerVolumeDLPAppealReviewReason) Valid() bool {
+	switch e {
+	case DockerVolumeDLPAppealReviewReasonApprovedBusinessException:
+		return true
+	case DockerVolumeDLPAppealReviewReasonConfirmedFalsePositive:
+		return true
+	case DockerVolumeDLPAppealReviewReasonInsufficientContext:
+		return true
+	case DockerVolumeDLPAppealReviewReasonPolicyRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPAppealStatus.
+const (
+	DockerVolumeDLPAppealStatusApproved DockerVolumeDLPAppealStatus = "approved"
+	DockerVolumeDLPAppealStatusPending  DockerVolumeDLPAppealStatus = "pending"
+	DockerVolumeDLPAppealStatusRejected DockerVolumeDLPAppealStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPAppealStatus enum.
+func (e DockerVolumeDLPAppealStatus) Valid() bool {
+	switch e {
+	case DockerVolumeDLPAppealStatusApproved:
+		return true
+	case DockerVolumeDLPAppealStatusPending:
+		return true
+	case DockerVolumeDLPAppealStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPAppealInputReasonCode.
+const (
+	DockerVolumeDLPAppealInputReasonCodeBusinessNeed  DockerVolumeDLPAppealInputReasonCode = "business_need"
+	DockerVolumeDLPAppealInputReasonCodeFalsePositive DockerVolumeDLPAppealInputReasonCode = "false_positive"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPAppealInputReasonCode enum.
+func (e DockerVolumeDLPAppealInputReasonCode) Valid() bool {
+	switch e {
+	case DockerVolumeDLPAppealInputReasonCodeBusinessNeed:
+		return true
+	case DockerVolumeDLPAppealInputReasonCodeFalsePositive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPAppealReviewInputReasonCode.
+const (
+	DockerVolumeDLPAppealReviewInputReasonCodeApprovedBusinessException DockerVolumeDLPAppealReviewInputReasonCode = "approved_business_exception"
+	DockerVolumeDLPAppealReviewInputReasonCodeConfirmedFalsePositive    DockerVolumeDLPAppealReviewInputReasonCode = "confirmed_false_positive"
+	DockerVolumeDLPAppealReviewInputReasonCodeInsufficientContext       DockerVolumeDLPAppealReviewInputReasonCode = "insufficient_context"
+	DockerVolumeDLPAppealReviewInputReasonCodePolicyRequired            DockerVolumeDLPAppealReviewInputReasonCode = "policy_required"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPAppealReviewInputReasonCode enum.
+func (e DockerVolumeDLPAppealReviewInputReasonCode) Valid() bool {
+	switch e {
+	case DockerVolumeDLPAppealReviewInputReasonCodeApprovedBusinessException:
+		return true
+	case DockerVolumeDLPAppealReviewInputReasonCodeConfirmedFalsePositive:
+		return true
+	case DockerVolumeDLPAppealReviewInputReasonCodeInsufficientContext:
+		return true
+	case DockerVolumeDLPAppealReviewInputReasonCodePolicyRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPAppealReviewInputResolution.
+const (
+	DockerVolumeDLPAppealReviewInputResolutionApproved DockerVolumeDLPAppealReviewInputResolution = "approved"
+	DockerVolumeDLPAppealReviewInputResolutionRejected DockerVolumeDLPAppealReviewInputResolution = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPAppealReviewInputResolution enum.
+func (e DockerVolumeDLPAppealReviewInputResolution) Valid() bool {
+	switch e {
+	case DockerVolumeDLPAppealReviewInputResolutionApproved:
+		return true
+	case DockerVolumeDLPAppealReviewInputResolutionRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPAuthorizationInputAction.
+const (
+	DockerVolumeDLPAuthorizationInputActionAcknowledge    DockerVolumeDLPAuthorizationInputAction = "acknowledge"
+	DockerVolumeDLPAuthorizationInputActionApprovedAppeal DockerVolumeDLPAuthorizationInputAction = "approved_appeal"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPAuthorizationInputAction enum.
+func (e DockerVolumeDLPAuthorizationInputAction) Valid() bool {
+	switch e {
+	case DockerVolumeDLPAuthorizationInputActionAcknowledge:
+		return true
+	case DockerVolumeDLPAuthorizationInputActionApprovedAppeal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPDecisionAuthorizationKind.
+const (
+	DockerVolumeDLPDecisionAuthorizationKindAcknowledge    DockerVolumeDLPDecisionAuthorizationKind = "acknowledge"
+	DockerVolumeDLPDecisionAuthorizationKindApprovedAppeal DockerVolumeDLPDecisionAuthorizationKind = "approved_appeal"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPDecisionAuthorizationKind enum.
+func (e DockerVolumeDLPDecisionAuthorizationKind) Valid() bool {
+	switch e {
+	case DockerVolumeDLPDecisionAuthorizationKindAcknowledge:
+		return true
+	case DockerVolumeDLPDecisionAuthorizationKindApprovedAppeal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPDecisionDataLevel.
+const (
+	DLPDecisionDataLevelConfidential DockerVolumeDLPDecisionDataLevel = "confidential"
+	DLPDecisionDataLevelInternal     DockerVolumeDLPDecisionDataLevel = "internal"
+	DLPDecisionDataLevelPublic       DockerVolumeDLPDecisionDataLevel = "public"
+	DLPDecisionDataLevelRestricted   DockerVolumeDLPDecisionDataLevel = "restricted"
+	DLPDecisionDataLevelUnclassified DockerVolumeDLPDecisionDataLevel = "unclassified"
+	DLPDecisionDataLevelUnknown      DockerVolumeDLPDecisionDataLevel = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPDecisionDataLevel enum.
+func (e DockerVolumeDLPDecisionDataLevel) Valid() bool {
+	switch e {
+	case DLPDecisionDataLevelConfidential:
+		return true
+	case DLPDecisionDataLevelInternal:
+		return true
+	case DLPDecisionDataLevelPublic:
+		return true
+	case DLPDecisionDataLevelRestricted:
+		return true
+	case DLPDecisionDataLevelUnclassified:
+		return true
+	case DLPDecisionDataLevelUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPDecisionDetectorVersion.
+const (
+	DockerVolumeDLPDecisionDetectorVersionContentDlpArchiveV2 DockerVolumeDLPDecisionDetectorVersion = "content-dlp-archive-v2"
+	DockerVolumeDLPDecisionDetectorVersionContentDlpTextV1    DockerVolumeDLPDecisionDetectorVersion = "content-dlp-text-v1"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPDecisionDetectorVersion enum.
+func (e DockerVolumeDLPDecisionDetectorVersion) Valid() bool {
+	switch e {
+	case DockerVolumeDLPDecisionDetectorVersionContentDlpArchiveV2:
+		return true
+	case DockerVolumeDLPDecisionDetectorVersionContentDlpTextV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPDecisionMode.
+const (
+	DockerVolumeDLPDecisionModeAudit DockerVolumeDLPDecisionMode = "audit"
+	DockerVolumeDLPDecisionModeBlock DockerVolumeDLPDecisionMode = "block"
+	DockerVolumeDLPDecisionModeWarn  DockerVolumeDLPDecisionMode = "warn"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPDecisionMode enum.
+func (e DockerVolumeDLPDecisionMode) Valid() bool {
+	switch e {
+	case DockerVolumeDLPDecisionModeAudit:
+		return true
+	case DockerVolumeDLPDecisionModeBlock:
+		return true
+	case DockerVolumeDLPDecisionModeWarn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPDecisionRequiredAction.
+const (
+	DockerVolumeDLPDecisionRequiredActionAcknowledge DockerVolumeDLPDecisionRequiredAction = "acknowledge"
+	DockerVolumeDLPDecisionRequiredActionAppeal      DockerVolumeDLPDecisionRequiredAction = "appeal"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPDecisionRequiredAction enum.
+func (e DockerVolumeDLPDecisionRequiredAction) Valid() bool {
+	switch e {
+	case DockerVolumeDLPDecisionRequiredActionAcknowledge:
+		return true
+	case DockerVolumeDLPDecisionRequiredActionAppeal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPDecisionStatus.
+const (
+	DockerVolumeDLPDecisionStatusClean       DockerVolumeDLPDecisionStatus = "clean"
+	DockerVolumeDLPDecisionStatusEncrypted   DockerVolumeDLPDecisionStatus = "encrypted"
+	DockerVolumeDLPDecisionStatusError       DockerVolumeDLPDecisionStatus = "error"
+	DockerVolumeDLPDecisionStatusMatched     DockerVolumeDLPDecisionStatus = "matched"
+	DockerVolumeDLPDecisionStatusTimeout     DockerVolumeDLPDecisionStatus = "timeout"
+	DockerVolumeDLPDecisionStatusTooLarge    DockerVolumeDLPDecisionStatus = "too_large"
+	DockerVolumeDLPDecisionStatusUnsupported DockerVolumeDLPDecisionStatus = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPDecisionStatus enum.
+func (e DockerVolumeDLPDecisionStatus) Valid() bool {
+	switch e {
+	case DockerVolumeDLPDecisionStatusClean:
+		return true
+	case DockerVolumeDLPDecisionStatusEncrypted:
+		return true
+	case DockerVolumeDLPDecisionStatusError:
+		return true
+	case DockerVolumeDLPDecisionStatusMatched:
+		return true
+	case DockerVolumeDLPDecisionStatusTimeout:
+		return true
+	case DockerVolumeDLPDecisionStatusTooLarge:
+		return true
+	case DockerVolumeDLPDecisionStatusUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPEventAction.
+const (
+	AppealAuthorizationIssued DockerVolumeDLPEventAction = "appeal_authorization_issued"
+	AppealReviewed            DockerVolumeDLPEventAction = "appeal_reviewed"
+	AppealSubmitted           DockerVolumeDLPEventAction = "appeal_submitted"
+	PolicyPublished           DockerVolumeDLPEventAction = "policy_published"
+	PolicySaved               DockerVolumeDLPEventAction = "policy_saved"
+	Transfer                  DockerVolumeDLPEventAction = "transfer"
+	WarningAcknowledged       DockerVolumeDLPEventAction = "warning_acknowledged"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPEventAction enum.
+func (e DockerVolumeDLPEventAction) Valid() bool {
+	switch e {
+	case AppealAuthorizationIssued:
+		return true
+	case AppealReviewed:
+		return true
+	case AppealSubmitted:
+		return true
+	case PolicyPublished:
+		return true
+	case PolicySaved:
+		return true
+	case Transfer:
+		return true
+	case WarningAcknowledged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPEventAuthorizationKind.
+const (
+	DockerVolumeDLPEventAuthorizationKindAcknowledge    DockerVolumeDLPEventAuthorizationKind = "acknowledge"
+	DockerVolumeDLPEventAuthorizationKindApprovedAppeal DockerVolumeDLPEventAuthorizationKind = "approved_appeal"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPEventAuthorizationKind enum.
+func (e DockerVolumeDLPEventAuthorizationKind) Valid() bool {
+	switch e {
+	case DockerVolumeDLPEventAuthorizationKindAcknowledge:
+		return true
+	case DockerVolumeDLPEventAuthorizationKindApprovedAppeal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPEventDataLevel.
+const (
+	DLPEventDataLevelConfidential DockerVolumeDLPEventDataLevel = "confidential"
+	DLPEventDataLevelInternal     DockerVolumeDLPEventDataLevel = "internal"
+	DLPEventDataLevelPublic       DockerVolumeDLPEventDataLevel = "public"
+	DLPEventDataLevelRestricted   DockerVolumeDLPEventDataLevel = "restricted"
+	DLPEventDataLevelUnclassified DockerVolumeDLPEventDataLevel = "unclassified"
+	DLPEventDataLevelUnknown      DockerVolumeDLPEventDataLevel = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPEventDataLevel enum.
+func (e DockerVolumeDLPEventDataLevel) Valid() bool {
+	switch e {
+	case DLPEventDataLevelConfidential:
+		return true
+	case DLPEventDataLevelInternal:
+		return true
+	case DLPEventDataLevelPublic:
+		return true
+	case DLPEventDataLevelRestricted:
+		return true
+	case DLPEventDataLevelUnclassified:
+		return true
+	case DLPEventDataLevelUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPEventDetectorVersion.
+const (
+	DockerVolumeDLPEventDetectorVersionContentDlpArchiveV2 DockerVolumeDLPEventDetectorVersion = "content-dlp-archive-v2"
+	DockerVolumeDLPEventDetectorVersionContentDlpTextV1    DockerVolumeDLPEventDetectorVersion = "content-dlp-text-v1"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPEventDetectorVersion enum.
+func (e DockerVolumeDLPEventDetectorVersion) Valid() bool {
+	switch e {
+	case DockerVolumeDLPEventDetectorVersionContentDlpArchiveV2:
+		return true
+	case DockerVolumeDLPEventDetectorVersionContentDlpTextV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPEventMode.
+const (
+	DockerVolumeDLPEventModeAudit DockerVolumeDLPEventMode = "audit"
+	DockerVolumeDLPEventModeBlock DockerVolumeDLPEventMode = "block"
+	DockerVolumeDLPEventModeWarn  DockerVolumeDLPEventMode = "warn"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPEventMode enum.
+func (e DockerVolumeDLPEventMode) Valid() bool {
+	switch e {
+	case DockerVolumeDLPEventModeAudit:
+		return true
+	case DockerVolumeDLPEventModeBlock:
+		return true
+	case DockerVolumeDLPEventModeWarn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPEventRequiredAction.
+const (
+	Acknowledge DockerVolumeDLPEventRequiredAction = "acknowledge"
+	Appeal      DockerVolumeDLPEventRequiredAction = "appeal"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPEventRequiredAction enum.
+func (e DockerVolumeDLPEventRequiredAction) Valid() bool {
+	switch e {
+	case Acknowledge:
+		return true
+	case Appeal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPEventStatus.
+const (
+	DockerVolumeDLPEventStatusClean       DockerVolumeDLPEventStatus = "clean"
+	DockerVolumeDLPEventStatusEncrypted   DockerVolumeDLPEventStatus = "encrypted"
+	DockerVolumeDLPEventStatusError       DockerVolumeDLPEventStatus = "error"
+	DockerVolumeDLPEventStatusMatched     DockerVolumeDLPEventStatus = "matched"
+	DockerVolumeDLPEventStatusTimeout     DockerVolumeDLPEventStatus = "timeout"
+	DockerVolumeDLPEventStatusTooLarge    DockerVolumeDLPEventStatus = "too_large"
+	DockerVolumeDLPEventStatusUnsupported DockerVolumeDLPEventStatus = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPEventStatus enum.
+func (e DockerVolumeDLPEventStatus) Valid() bool {
+	switch e {
+	case DockerVolumeDLPEventStatusClean:
+		return true
+	case DockerVolumeDLPEventStatusEncrypted:
+		return true
+	case DockerVolumeDLPEventStatusError:
+		return true
+	case DockerVolumeDLPEventStatusMatched:
+		return true
+	case DockerVolumeDLPEventStatusTimeout:
+		return true
+	case DockerVolumeDLPEventStatusTooLarge:
+		return true
+	case DockerVolumeDLPEventStatusUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DockerVolumeDLPNetworkTargetKind.
+const (
+	DockerVolumeDLPNetworkTargetKindConfiguration     DockerVolumeDLPNetworkTargetKind = "configuration"
+	DockerVolumeDLPNetworkTargetKindNas               DockerVolumeDLPNetworkTargetKind = "nas"
+	DockerVolumeDLPNetworkTargetKindProxy             DockerVolumeDLPNetworkTargetKind = "proxy"
+	DockerVolumeDLPNetworkTargetKindUnattributedProxy DockerVolumeDLPNetworkTargetKind = "unattributed_proxy"
+)
+
+// Valid indicates whether the value is a known member of the DockerVolumeDLPNetworkTargetKind enum.
+func (e DockerVolumeDLPNetworkTargetKind) Valid() bool {
+	switch e {
+	case DockerVolumeDLPNetworkTargetKindConfiguration:
+		return true
+	case DockerVolumeDLPNetworkTargetKindNas:
+		return true
+	case DockerVolumeDLPNetworkTargetKindProxy:
+		return true
+	case DockerVolumeDLPNetworkTargetKindUnattributedProxy:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointChannelReceiptName.
+const (
+	Clipboard EndpointChannelReceiptName = "clipboard"
+	Print     EndpointChannelReceiptName = "print"
+	Usb       EndpointChannelReceiptName = "usb"
+)
+
+// Valid indicates whether the value is a known member of the EndpointChannelReceiptName enum.
+func (e EndpointChannelReceiptName) Valid() bool {
+	switch e {
+	case Clipboard:
+		return true
+	case Print:
+		return true
+	case Usb:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointChannelReceiptScope.
+const (
+	CurrentUsbVolumes    EndpointChannelReceiptScope = "current_usb_volumes"
+	EnrolledConsoleWin32 EndpointChannelReceiptScope = "enrolled_console_win32"
+	LocalNewPrintJobs    EndpointChannelReceiptScope = "local_new_print_jobs"
+)
+
+// Valid indicates whether the value is a known member of the EndpointChannelReceiptScope enum.
+func (e EndpointChannelReceiptScope) Valid() bool {
+	switch e {
+	case CurrentUsbVolumes:
+		return true
+	case EnrolledConsoleWin32:
+		return true
+	case LocalNewPrintJobs:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointChannelReceiptState.
+const (
+	EndpointChannelReceiptStateConflict     EndpointChannelReceiptState = "conflict"
+	EndpointChannelReceiptStateControlled   EndpointChannelReceiptState = "controlled"
+	EndpointChannelReceiptStateFailed       EndpointChannelReceiptState = "failed"
+	EndpointChannelReceiptStateNotPresent   EndpointChannelReceiptState = "not_present"
+	EndpointChannelReceiptStateOff          EndpointChannelReceiptState = "off"
+	EndpointChannelReceiptStatePartial      EndpointChannelReceiptState = "partial"
+	EndpointChannelReceiptStateUnconfigured EndpointChannelReceiptState = "unconfigured"
+	EndpointChannelReceiptStateUnsupported  EndpointChannelReceiptState = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the EndpointChannelReceiptState enum.
+func (e EndpointChannelReceiptState) Valid() bool {
+	switch e {
+	case EndpointChannelReceiptStateConflict:
+		return true
+	case EndpointChannelReceiptStateControlled:
+		return true
+	case EndpointChannelReceiptStateFailed:
+		return true
+	case EndpointChannelReceiptStateNotPresent:
+		return true
+	case EndpointChannelReceiptStateOff:
+		return true
+	case EndpointChannelReceiptStatePartial:
+		return true
+	case EndpointChannelReceiptStateUnconfigured:
+		return true
+	case EndpointChannelReceiptStateUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndpointDeviceManagementState.
+const (
+	EndpointDeviceManagementStateManaged   EndpointDeviceManagementState = "managed"
+	EndpointDeviceManagementStateUnknown   EndpointDeviceManagementState = "unknown"
+	EndpointDeviceManagementStateUnmanaged EndpointDeviceManagementState = "unmanaged"
+)
+
+// Valid indicates whether the value is a known member of the EndpointDeviceManagementState enum.
+func (e EndpointDeviceManagementState) Valid() bool {
+	switch e {
+	case EndpointDeviceManagementStateManaged:
+		return true
+	case EndpointDeviceManagementStateUnknown:
+		return true
+	case EndpointDeviceManagementStateUnmanaged:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EndpointDeviceOwnershipType.
 const (
 	EndpointDeviceOwnershipTypeCompany    EndpointDeviceOwnershipType = "company"
@@ -4135,19 +4835,19 @@ func (e IdentityProviderType) Valid() bool {
 
 // Defines values for IdentityProviderUserMetadataProtocol.
 const (
-	OIDC  IdentityProviderUserMetadataProtocol = "oidc"
-	Proxy IdentityProviderUserMetadataProtocol = "proxy"
-	Saml  IdentityProviderUserMetadataProtocol = "saml"
+	IdentityProviderUserMetadataProtocolOIDC  IdentityProviderUserMetadataProtocol = "oidc"
+	IdentityProviderUserMetadataProtocolProxy IdentityProviderUserMetadataProtocol = "proxy"
+	IdentityProviderUserMetadataProtocolSaml  IdentityProviderUserMetadataProtocol = "saml"
 )
 
 // Valid indicates whether the value is a known member of the IdentityProviderUserMetadataProtocol enum.
 func (e IdentityProviderUserMetadataProtocol) Valid() bool {
 	switch e {
-	case OIDC:
+	case IdentityProviderUserMetadataProtocolOIDC:
 		return true
-	case Proxy:
+	case IdentityProviderUserMetadataProtocolProxy:
 		return true
-	case Saml:
+	case IdentityProviderUserMetadataProtocolSaml:
 		return true
 	default:
 		return false
@@ -4814,6 +5514,51 @@ func (e KubernetesImportedTargetWorkloadKind) Valid() bool {
 	}
 }
 
+// Defines values for KubernetesPodContainerStatusKind.
+const (
+	KubernetesPodContainerStatusKindContainer KubernetesPodContainerStatusKind = "container"
+	KubernetesPodContainerStatusKindInit      KubernetesPodContainerStatusKind = "init"
+	KubernetesPodContainerStatusKindSidecar   KubernetesPodContainerStatusKind = "sidecar"
+)
+
+// Valid indicates whether the value is a known member of the KubernetesPodContainerStatusKind enum.
+func (e KubernetesPodContainerStatusKind) Valid() bool {
+	switch e {
+	case KubernetesPodContainerStatusKindContainer:
+		return true
+	case KubernetesPodContainerStatusKindInit:
+		return true
+	case KubernetesPodContainerStatusKindSidecar:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for KubernetesPodContainerStatusState.
+const (
+	KubernetesPodContainerStatusStateRunning    KubernetesPodContainerStatusState = "running"
+	KubernetesPodContainerStatusStateTerminated KubernetesPodContainerStatusState = "terminated"
+	KubernetesPodContainerStatusStateUnknown    KubernetesPodContainerStatusState = "unknown"
+	KubernetesPodContainerStatusStateWaiting    KubernetesPodContainerStatusState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the KubernetesPodContainerStatusState enum.
+func (e KubernetesPodContainerStatusState) Valid() bool {
+	switch e {
+	case KubernetesPodContainerStatusStateRunning:
+		return true
+	case KubernetesPodContainerStatusStateTerminated:
+		return true
+	case KubernetesPodContainerStatusStateUnknown:
+		return true
+	case KubernetesPodContainerStatusStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for KubernetesPrometheusTransport.
 const (
 	KubernetesPrometheusTransportAgent  KubernetesPrometheusTransport = "agent"
@@ -5120,6 +5865,30 @@ func (e KubernetesResourceStreamEventType) Valid() bool {
 	}
 }
 
+// Defines values for KubernetesSecretCertificateStatus.
+const (
+	KubernetesSecretCertificateStatusAvailable       KubernetesSecretCertificateStatus = "available"
+	KubernetesSecretCertificateStatusInvalid         KubernetesSecretCertificateStatus = "invalid"
+	KubernetesSecretCertificateStatusMissing         KubernetesSecretCertificateStatus = "missing"
+	KubernetesSecretCertificateStatusUnsupportedType KubernetesSecretCertificateStatus = "unsupported_type"
+)
+
+// Valid indicates whether the value is a known member of the KubernetesSecretCertificateStatus enum.
+func (e KubernetesSecretCertificateStatus) Valid() bool {
+	switch e {
+	case KubernetesSecretCertificateStatusAvailable:
+		return true
+	case KubernetesSecretCertificateStatusInvalid:
+		return true
+	case KubernetesSecretCertificateStatusMissing:
+		return true
+	case KubernetesSecretCertificateStatusUnsupportedType:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for KubernetesSecurityFindingCategory.
 const (
 	Configuration KubernetesSecurityFindingCategory = "configuration"
@@ -5293,29 +6062,50 @@ func (e KubernetesTopologyCoverageState) Valid() bool {
 
 // Defines values for KubernetesTopologyGraphEdgeRelation.
 const (
-	KubernetesTopologyGraphEdgeRelationForwards  KubernetesTopologyGraphEdgeRelation = "forwards"
-	KubernetesTopologyGraphEdgeRelationMatches   KubernetesTopologyGraphEdgeRelation = "matches"
-	KubernetesTopologyGraphEdgeRelationMirrors   KubernetesTopologyGraphEdgeRelation = "mirrors"
-	KubernetesTopologyGraphEdgeRelationProcesses KubernetesTopologyGraphEdgeRelation = "processes"
-	KubernetesTopologyGraphEdgeRelationResolves  KubernetesTopologyGraphEdgeRelation = "resolves"
-	KubernetesTopologyGraphEdgeRelationSelects   KubernetesTopologyGraphEdgeRelation = "selects"
-	KubernetesTopologyGraphEdgeRelationWeights   KubernetesTopologyGraphEdgeRelation = "weights"
+	KubernetesTopologyGraphEdgeRelationAuthorizesReference KubernetesTopologyGraphEdgeRelation = "authorizes-reference"
+	KubernetesTopologyGraphEdgeRelationForwards            KubernetesTopologyGraphEdgeRelation = "forwards"
+	KubernetesTopologyGraphEdgeRelationMatches             KubernetesTopologyGraphEdgeRelation = "matches"
+	KubernetesTopologyGraphEdgeRelationMirrors             KubernetesTopologyGraphEdgeRelation = "mirrors"
+	KubernetesTopologyGraphEdgeRelationParameters          KubernetesTopologyGraphEdgeRelation = "parameters"
+	KubernetesTopologyGraphEdgeRelationPolicyPeer          KubernetesTopologyGraphEdgeRelation = "policy-peer"
+	KubernetesTopologyGraphEdgeRelationProcesses           KubernetesTopologyGraphEdgeRelation = "processes"
+	KubernetesTopologyGraphEdgeRelationResolves            KubernetesTopologyGraphEdgeRelation = "resolves"
+	KubernetesTopologyGraphEdgeRelationSelects             KubernetesTopologyGraphEdgeRelation = "selects"
+	KubernetesTopologyGraphEdgeRelationTargets             KubernetesTopologyGraphEdgeRelation = "targets"
+	KubernetesTopologyGraphEdgeRelationUsesClass           KubernetesTopologyGraphEdgeRelation = "uses-class"
+	KubernetesTopologyGraphEdgeRelationUsesConfig          KubernetesTopologyGraphEdgeRelation = "uses-config"
+	KubernetesTopologyGraphEdgeRelationUsesSecret          KubernetesTopologyGraphEdgeRelation = "uses-secret"
+	KubernetesTopologyGraphEdgeRelationWeights             KubernetesTopologyGraphEdgeRelation = "weights"
 )
 
 // Valid indicates whether the value is a known member of the KubernetesTopologyGraphEdgeRelation enum.
 func (e KubernetesTopologyGraphEdgeRelation) Valid() bool {
 	switch e {
+	case KubernetesTopologyGraphEdgeRelationAuthorizesReference:
+		return true
 	case KubernetesTopologyGraphEdgeRelationForwards:
 		return true
 	case KubernetesTopologyGraphEdgeRelationMatches:
 		return true
 	case KubernetesTopologyGraphEdgeRelationMirrors:
 		return true
+	case KubernetesTopologyGraphEdgeRelationParameters:
+		return true
+	case KubernetesTopologyGraphEdgeRelationPolicyPeer:
+		return true
 	case KubernetesTopologyGraphEdgeRelationProcesses:
 		return true
 	case KubernetesTopologyGraphEdgeRelationResolves:
 		return true
 	case KubernetesTopologyGraphEdgeRelationSelects:
+		return true
+	case KubernetesTopologyGraphEdgeRelationTargets:
+		return true
+	case KubernetesTopologyGraphEdgeRelationUsesClass:
+		return true
+	case KubernetesTopologyGraphEdgeRelationUsesConfig:
+		return true
+	case KubernetesTopologyGraphEdgeRelationUsesSecret:
 		return true
 	case KubernetesTopologyGraphEdgeRelationWeights:
 		return true
@@ -6266,6 +7056,219 @@ func (e MFAWebAuthnRequestOptionsUserVerification) Valid() bool {
 	}
 }
 
+// Defines values for ManagedContentAppealInputReasonCode.
+const (
+	ManagedContentAppealInputReasonCodeBusinessException ManagedContentAppealInputReasonCode = "business_exception"
+	ManagedContentAppealInputReasonCodeFalsePositive     ManagedContentAppealInputReasonCode = "false_positive"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentAppealInputReasonCode enum.
+func (e ManagedContentAppealInputReasonCode) Valid() bool {
+	switch e {
+	case ManagedContentAppealInputReasonCodeBusinessException:
+		return true
+	case ManagedContentAppealInputReasonCodeFalsePositive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentAuthorizeInputAction.
+const (
+	ManagedContentAuthorizeInputActionAcknowledge ManagedContentAuthorizeInputAction = "acknowledge"
+	ManagedContentAuthorizeInputActionUseApproval ManagedContentAuthorizeInputAction = "use_approval"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentAuthorizeInputAction enum.
+func (e ManagedContentAuthorizeInputAction) Valid() bool {
+	switch e {
+	case ManagedContentAuthorizeInputActionAcknowledge:
+		return true
+	case ManagedContentAuthorizeInputActionUseApproval:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentDestinationConfigKind.
+const (
+	ManagedContentDestinationConfigKindS3     ManagedContentDestinationConfigKind = "s3"
+	ManagedContentDestinationConfigKindWebdav ManagedContentDestinationConfigKind = "webdav"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentDestinationConfigKind enum.
+func (e ManagedContentDestinationConfigKind) Valid() bool {
+	switch e {
+	case ManagedContentDestinationConfigKindS3:
+		return true
+	case ManagedContentDestinationConfigKindWebdav:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentDestinationSummaryKind.
+const (
+	ManagedContentDestinationSummaryKindS3     ManagedContentDestinationSummaryKind = "s3"
+	ManagedContentDestinationSummaryKindWebdav ManagedContentDestinationSummaryKind = "webdav"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentDestinationSummaryKind enum.
+func (e ManagedContentDestinationSummaryKind) Valid() bool {
+	switch e {
+	case ManagedContentDestinationSummaryKindS3:
+		return true
+	case ManagedContentDestinationSummaryKindWebdav:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentDestinationSummaryMode.
+const (
+	ManagedContentDestinationSummaryModeAudit ManagedContentDestinationSummaryMode = "audit"
+	ManagedContentDestinationSummaryModeBlock ManagedContentDestinationSummaryMode = "block"
+	ManagedContentDestinationSummaryModeWarn  ManagedContentDestinationSummaryMode = "warn"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentDestinationSummaryMode enum.
+func (e ManagedContentDestinationSummaryMode) Valid() bool {
+	switch e {
+	case ManagedContentDestinationSummaryModeAudit:
+		return true
+	case ManagedContentDestinationSummaryModeBlock:
+		return true
+	case ManagedContentDestinationSummaryModeWarn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentRecordAction.
+const (
+	ManagedContentRecordActionCopy     ManagedContentRecordAction = "copy"
+	ManagedContentRecordActionDelete   ManagedContentRecordAction = "delete"
+	ManagedContentRecordActionDownload ManagedContentRecordAction = "download"
+	ManagedContentRecordActionPaste    ManagedContentRecordAction = "paste"
+	ManagedContentRecordActionUpload   ManagedContentRecordAction = "upload"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentRecordAction enum.
+func (e ManagedContentRecordAction) Valid() bool {
+	switch e {
+	case ManagedContentRecordActionCopy:
+		return true
+	case ManagedContentRecordActionDelete:
+		return true
+	case ManagedContentRecordActionDownload:
+		return true
+	case ManagedContentRecordActionPaste:
+		return true
+	case ManagedContentRecordActionUpload:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentRecordAppealStatus.
+const (
+	ManagedContentRecordAppealStatusApproved ManagedContentRecordAppealStatus = "approved"
+	ManagedContentRecordAppealStatusNone     ManagedContentRecordAppealStatus = "none"
+	ManagedContentRecordAppealStatusPending  ManagedContentRecordAppealStatus = "pending"
+	ManagedContentRecordAppealStatusRejected ManagedContentRecordAppealStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentRecordAppealStatus enum.
+func (e ManagedContentRecordAppealStatus) Valid() bool {
+	switch e {
+	case ManagedContentRecordAppealStatusApproved:
+		return true
+	case ManagedContentRecordAppealStatusNone:
+		return true
+	case ManagedContentRecordAppealStatusPending:
+		return true
+	case ManagedContentRecordAppealStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentRecordState.
+const (
+	ManagedContentRecordStateBlocked   ManagedContentRecordState = "blocked"
+	ManagedContentRecordStateCompleted ManagedContentRecordState = "completed"
+	ManagedContentRecordStateFailed    ManagedContentRecordState = "failed"
+	ManagedContentRecordStatePrepared  ManagedContentRecordState = "prepared"
+	ManagedContentRecordStateSending   ManagedContentRecordState = "sending"
+	ManagedContentRecordStateUnknown   ManagedContentRecordState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentRecordState enum.
+func (e ManagedContentRecordState) Valid() bool {
+	switch e {
+	case ManagedContentRecordStateBlocked:
+		return true
+	case ManagedContentRecordStateCompleted:
+		return true
+	case ManagedContentRecordStateFailed:
+		return true
+	case ManagedContentRecordStatePrepared:
+		return true
+	case ManagedContentRecordStateSending:
+		return true
+	case ManagedContentRecordStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentReviewInputReasonCode.
+const (
+	ManagedContentReviewInputReasonCodeBusinessException         ManagedContentReviewInputReasonCode = "business_exception"
+	ManagedContentReviewInputReasonCodeFalsePositive             ManagedContentReviewInputReasonCode = "false_positive"
+	ManagedContentReviewInputReasonCodeInsufficientJustification ManagedContentReviewInputReasonCode = "insufficient_justification"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentReviewInputReasonCode enum.
+func (e ManagedContentReviewInputReasonCode) Valid() bool {
+	switch e {
+	case ManagedContentReviewInputReasonCodeBusinessException:
+		return true
+	case ManagedContentReviewInputReasonCodeFalsePositive:
+		return true
+	case ManagedContentReviewInputReasonCodeInsufficientJustification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManagedContentReviewInputResolution.
+const (
+	ManagedContentReviewInputResolutionApprove ManagedContentReviewInputResolution = "approve"
+	ManagedContentReviewInputResolutionReject  ManagedContentReviewInputResolution = "reject"
+)
+
+// Valid indicates whether the value is a known member of the ManagedContentReviewInputResolution enum.
+func (e ManagedContentReviewInputResolution) Valid() bool {
+	switch e {
+	case ManagedContentReviewInputResolutionApprove:
+		return true
+	case ManagedContentReviewInputResolutionReject:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ManifestConditionType.
 const (
 	Drifted            ManifestConditionType = "Drifted"
@@ -7019,6 +8022,234 @@ func (e NetworkConnectionAuthentication) Valid() bool {
 	}
 }
 
+// Defines values for NetworkDeviceGovernanceMode.
+const (
+	NetworkDeviceGovernanceModeLegacy              NetworkDeviceGovernanceMode = "legacy"
+	NetworkDeviceGovernanceModeManagedOnly         NetworkDeviceGovernanceMode = "managed_only"
+	NetworkDeviceGovernanceModeRestrictedUnmanaged NetworkDeviceGovernanceMode = "restricted_unmanaged"
+	NetworkDeviceGovernanceModeVerifiedManagedOnly NetworkDeviceGovernanceMode = "verified_managed_only"
+)
+
+// Valid indicates whether the value is a known member of the NetworkDeviceGovernanceMode enum.
+func (e NetworkDeviceGovernanceMode) Valid() bool {
+	switch e {
+	case NetworkDeviceGovernanceModeLegacy:
+		return true
+	case NetworkDeviceGovernanceModeManagedOnly:
+		return true
+	case NetworkDeviceGovernanceModeRestrictedUnmanaged:
+		return true
+	case NetworkDeviceGovernanceModeVerifiedManagedOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEAPServerTrustWifiSecurity.
+const (
+	NetworkEAPServerTrustWifiSecurityWpa2Enterprise NetworkEAPServerTrustWifiSecurity = "wpa2-enterprise"
+	NetworkEAPServerTrustWifiSecurityWpa3Enterprise NetworkEAPServerTrustWifiSecurity = "wpa3-enterprise"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEAPServerTrustWifiSecurity enum.
+func (e NetworkEAPServerTrustWifiSecurity) Valid() bool {
+	switch e {
+	case NetworkEAPServerTrustWifiSecurityWpa2Enterprise:
+		return true
+	case NetworkEAPServerTrustWifiSecurityWpa3Enterprise:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEndpointPresenceServiceState.
+const (
+	NetworkEndpointPresenceServiceStateDegraded NetworkEndpointPresenceServiceState = "degraded"
+	NetworkEndpointPresenceServiceStateHealthy  NetworkEndpointPresenceServiceState = "healthy"
+	NetworkEndpointPresenceServiceStateOffline  NetworkEndpointPresenceServiceState = "offline"
+	NetworkEndpointPresenceServiceStateUnknown  NetworkEndpointPresenceServiceState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEndpointPresenceServiceState enum.
+func (e NetworkEndpointPresenceServiceState) Valid() bool {
+	switch e {
+	case NetworkEndpointPresenceServiceStateDegraded:
+		return true
+	case NetworkEndpointPresenceServiceStateHealthy:
+		return true
+	case NetworkEndpointPresenceServiceStateOffline:
+		return true
+	case NetworkEndpointPresenceServiceStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEndpointPresenceUIState.
+const (
+	NetworkEndpointPresenceUIStateOffline NetworkEndpointPresenceUIState = "offline"
+	NetworkEndpointPresenceUIStateOnline  NetworkEndpointPresenceUIState = "online"
+	NetworkEndpointPresenceUIStateUnknown NetworkEndpointPresenceUIState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEndpointPresenceUIState enum.
+func (e NetworkEndpointPresenceUIState) Valid() bool {
+	switch e {
+	case NetworkEndpointPresenceUIStateOffline:
+		return true
+	case NetworkEndpointPresenceUIStateOnline:
+		return true
+	case NetworkEndpointPresenceUIStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEndpointResponseAction.
+const (
+	NetworkEndpointResponseActionDisconnect NetworkEndpointResponseAction = "disconnect"
+	NetworkEndpointResponseActionNotify     NetworkEndpointResponseAction = "notify"
+	NetworkEndpointResponseActionRecord     NetworkEndpointResponseAction = "record"
+	NetworkEndpointResponseActionRestrict   NetworkEndpointResponseAction = "restrict"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEndpointResponseAction enum.
+func (e NetworkEndpointResponseAction) Valid() bool {
+	switch e {
+	case NetworkEndpointResponseActionDisconnect:
+		return true
+	case NetworkEndpointResponseActionNotify:
+		return true
+	case NetworkEndpointResponseActionRecord:
+		return true
+	case NetworkEndpointResponseActionRestrict:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEndpointResponseEventStatus.
+const (
+	NetworkEndpointResponseEventStatusActive             NetworkEndpointResponseEventStatus = "active"
+	NetworkEndpointResponseEventStatusDisconnected       NetworkEndpointResponseEventStatus = "disconnected"
+	NetworkEndpointResponseEventStatusEnforcementUnknown NetworkEndpointResponseEventStatus = "enforcement_unknown"
+	NetworkEndpointResponseEventStatusEnforcing          NetworkEndpointResponseEventStatus = "enforcing"
+	NetworkEndpointResponseEventStatusObserving          NetworkEndpointResponseEventStatus = "observing"
+	NetworkEndpointResponseEventStatusRecovering         NetworkEndpointResponseEventStatus = "recovering"
+	NetworkEndpointResponseEventStatusRestored           NetworkEndpointResponseEventStatus = "restored"
+	NetworkEndpointResponseEventStatusRestricted         NetworkEndpointResponseEventStatus = "restricted"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEndpointResponseEventStatus enum.
+func (e NetworkEndpointResponseEventStatus) Valid() bool {
+	switch e {
+	case NetworkEndpointResponseEventStatusActive:
+		return true
+	case NetworkEndpointResponseEventStatusDisconnected:
+		return true
+	case NetworkEndpointResponseEventStatusEnforcementUnknown:
+		return true
+	case NetworkEndpointResponseEventStatusEnforcing:
+		return true
+	case NetworkEndpointResponseEventStatusObserving:
+		return true
+	case NetworkEndpointResponseEventStatusRecovering:
+		return true
+	case NetworkEndpointResponseEventStatusRestored:
+		return true
+	case NetworkEndpointResponseEventStatusRestricted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEndpointResponseNotificationState.
+const (
+	NetworkEndpointResponseNotificationStateDelivered    NetworkEndpointResponseNotificationState = "delivered"
+	NetworkEndpointResponseNotificationStateFailed       NetworkEndpointResponseNotificationState = "failed"
+	NetworkEndpointResponseNotificationStateNotRequested NetworkEndpointResponseNotificationState = "not_requested"
+	NetworkEndpointResponseNotificationStatePending      NetworkEndpointResponseNotificationState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEndpointResponseNotificationState enum.
+func (e NetworkEndpointResponseNotificationState) Valid() bool {
+	switch e {
+	case NetworkEndpointResponseNotificationStateDelivered:
+		return true
+	case NetworkEndpointResponseNotificationStateFailed:
+		return true
+	case NetworkEndpointResponseNotificationStateNotRequested:
+		return true
+	case NetworkEndpointResponseNotificationStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEndpointResponsePolicyConfigurationFailureAction.
+const (
+	NetworkEndpointResponsePolicyConfigurationFailureActionDisconnect NetworkEndpointResponsePolicyConfigurationFailureAction = "disconnect"
+	NetworkEndpointResponsePolicyConfigurationFailureActionRecord     NetworkEndpointResponsePolicyConfigurationFailureAction = "record"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEndpointResponsePolicyConfigurationFailureAction enum.
+func (e NetworkEndpointResponsePolicyConfigurationFailureAction) Valid() bool {
+	switch e {
+	case NetworkEndpointResponsePolicyConfigurationFailureActionDisconnect:
+		return true
+	case NetworkEndpointResponsePolicyConfigurationFailureActionRecord:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEndpointResponseSignal.
+const (
+	NetworkEndpointResponseSignalServiceUnavailable NetworkEndpointResponseSignal = "service_unavailable"
+	NetworkEndpointResponseSignalServiceUnhealthy   NetworkEndpointResponseSignal = "service_unhealthy"
+	NetworkEndpointResponseSignalUIUnavailable      NetworkEndpointResponseSignal = "ui_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEndpointResponseSignal enum.
+func (e NetworkEndpointResponseSignal) Valid() bool {
+	switch e {
+	case NetworkEndpointResponseSignalServiceUnavailable:
+		return true
+	case NetworkEndpointResponseSignalServiceUnhealthy:
+		return true
+	case NetworkEndpointResponseSignalUIUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkEndpointResponseStepTargetAccessProfile.
+const (
+	NetworkEndpointResponseStepTargetAccessProfileQuarantine NetworkEndpointResponseStepTargetAccessProfile = "quarantine"
+	NetworkEndpointResponseStepTargetAccessProfileRestricted NetworkEndpointResponseStepTargetAccessProfile = "restricted"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEndpointResponseStepTargetAccessProfile enum.
+func (e NetworkEndpointResponseStepTargetAccessProfile) Valid() bool {
+	switch e {
+	case NetworkEndpointResponseStepTargetAccessProfileQuarantine:
+		return true
+	case NetworkEndpointResponseStepTargetAccessProfileRestricted:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkGatewayAdministrativeStatus.
 const (
 	NetworkGatewayAdministrativeStatusActive   NetworkGatewayAdministrativeStatus = "active"
@@ -7187,6 +8418,48 @@ func (e NetworkNASBindingStatus) Valid() bool {
 	}
 }
 
+// Defines values for NetworkNASSessionEvidenceState.
+const (
+	NetworkNASSessionEvidenceStateActive  NetworkNASSessionEvidenceState = "active"
+	NetworkNASSessionEvidenceStateStopped NetworkNASSessionEvidenceState = "stopped"
+	NetworkNASSessionEvidenceStateUnknown NetworkNASSessionEvidenceState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkNASSessionEvidenceState enum.
+func (e NetworkNASSessionEvidenceState) Valid() bool {
+	switch e {
+	case NetworkNASSessionEvidenceStateActive:
+		return true
+	case NetworkNASSessionEvidenceStateStopped:
+		return true
+	case NetworkNASSessionEvidenceStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkNASSessionEvidenceVerificationState.
+const (
+	NetworkNASSessionEvidenceVerificationStateObserved NetworkNASSessionEvidenceVerificationState = "observed"
+	NetworkNASSessionEvidenceVerificationStateUnknown  NetworkNASSessionEvidenceVerificationState = "unknown"
+	NetworkNASSessionEvidenceVerificationStateVerified NetworkNASSessionEvidenceVerificationState = "verified"
+)
+
+// Valid indicates whether the value is a known member of the NetworkNASSessionEvidenceVerificationState enum.
+func (e NetworkNASSessionEvidenceVerificationState) Valid() bool {
+	switch e {
+	case NetworkNASSessionEvidenceVerificationStateObserved:
+		return true
+	case NetworkNASSessionEvidenceVerificationStateUnknown:
+		return true
+	case NetworkNASSessionEvidenceVerificationStateVerified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkPathMode.
 const (
 	NetworkPathModeAccessProxy   NetworkPathMode = "access_proxy"
@@ -7279,9 +8552,12 @@ func (e NetworkPolicyPath) Valid() bool {
 
 // Defines values for NetworkProxyCapability.
 const (
-	NetworkProxyCapabilityCloseConnection NetworkProxyCapability = "close_connection"
-	NetworkProxyCapabilityConnections     NetworkProxyCapability = "connections"
-	NetworkProxyCapabilityTraffic         NetworkProxyCapability = "traffic"
+	NetworkProxyCapabilityCloseConnection         NetworkProxyCapability = "close_connection"
+	NetworkProxyCapabilityConnections             NetworkProxyCapability = "connections"
+	NetworkProxyCapabilityGuardedDNSTCPV1         NetworkProxyCapability = "guarded_dns_tcp_v1"
+	NetworkProxyCapabilityProtectedDestinationsV1 NetworkProxyCapability = "protected_destinations_v1"
+	NetworkProxyCapabilityProtectionRulesReadback NetworkProxyCapability = "protection_rules_readback"
+	NetworkProxyCapabilityTraffic                 NetworkProxyCapability = "traffic"
 )
 
 // Valid indicates whether the value is a known member of the NetworkProxyCapability enum.
@@ -7290,6 +8566,12 @@ func (e NetworkProxyCapability) Valid() bool {
 	case NetworkProxyCapabilityCloseConnection:
 		return true
 	case NetworkProxyCapabilityConnections:
+		return true
+	case NetworkProxyCapabilityGuardedDNSTCPV1:
+		return true
+	case NetworkProxyCapabilityProtectedDestinationsV1:
+		return true
+	case NetworkProxyCapabilityProtectionRulesReadback:
 		return true
 	case NetworkProxyCapabilityTraffic:
 		return true
@@ -8614,19 +9896,19 @@ func (e PersonalAgentAccessStatus) Valid() bool {
 
 // Defines values for PersonalAgentAccessDecisionStatus.
 const (
-	PersonalAgentAccessDecisionStatusApproved PersonalAgentAccessDecisionStatus = "approved"
-	PersonalAgentAccessDecisionStatusRejected PersonalAgentAccessDecisionStatus = "rejected"
-	PersonalAgentAccessDecisionStatusRevoked  PersonalAgentAccessDecisionStatus = "revoked"
+	Approved PersonalAgentAccessDecisionStatus = "approved"
+	Rejected PersonalAgentAccessDecisionStatus = "rejected"
+	Revoked  PersonalAgentAccessDecisionStatus = "revoked"
 )
 
 // Valid indicates whether the value is a known member of the PersonalAgentAccessDecisionStatus enum.
 func (e PersonalAgentAccessDecisionStatus) Valid() bool {
 	switch e {
-	case PersonalAgentAccessDecisionStatusApproved:
+	case Approved:
 		return true
-	case PersonalAgentAccessDecisionStatusRejected:
+	case Rejected:
 		return true
-	case PersonalAgentAccessDecisionStatusRevoked:
+	case Revoked:
 		return true
 	default:
 		return false
@@ -8776,16 +10058,16 @@ func (e PersonalEnvironmentActionRequestAction) Valid() bool {
 
 // Defines values for PersonalEnvironmentTemplateBackend.
 const (
-	Container PersonalEnvironmentTemplateBackend = "container"
-	VM        PersonalEnvironmentTemplateBackend = "vm"
+	PersonalEnvironmentTemplateBackendContainer PersonalEnvironmentTemplateBackend = "container"
+	PersonalEnvironmentTemplateBackendVM        PersonalEnvironmentTemplateBackend = "vm"
 )
 
 // Valid indicates whether the value is a known member of the PersonalEnvironmentTemplateBackend enum.
 func (e PersonalEnvironmentTemplateBackend) Valid() bool {
 	switch e {
-	case Container:
+	case PersonalEnvironmentTemplateBackendContainer:
 		return true
-	case VM:
+	case PersonalEnvironmentTemplateBackendVM:
 		return true
 	default:
 		return false
@@ -10918,25 +12200,25 @@ func (e WorkbenchAgentStatusEventProviderKind) Valid() bool {
 
 // Defines values for WorkbenchAgentStatusEventStatus.
 const (
-	WorkbenchAgentStatusEventStatusCancelled WorkbenchAgentStatusEventStatus = "cancelled"
-	WorkbenchAgentStatusEventStatusFailed    WorkbenchAgentStatusEventStatus = "failed"
-	WorkbenchAgentStatusEventStatusQueued    WorkbenchAgentStatusEventStatus = "queued"
-	WorkbenchAgentStatusEventStatusRunning   WorkbenchAgentStatusEventStatus = "running"
-	WorkbenchAgentStatusEventStatusSucceeded WorkbenchAgentStatusEventStatus = "succeeded"
+	Cancelled WorkbenchAgentStatusEventStatus = "cancelled"
+	Failed    WorkbenchAgentStatusEventStatus = "failed"
+	Queued    WorkbenchAgentStatusEventStatus = "queued"
+	Running   WorkbenchAgentStatusEventStatus = "running"
+	Succeeded WorkbenchAgentStatusEventStatus = "succeeded"
 )
 
 // Valid indicates whether the value is a known member of the WorkbenchAgentStatusEventStatus enum.
 func (e WorkbenchAgentStatusEventStatus) Valid() bool {
 	switch e {
-	case WorkbenchAgentStatusEventStatusCancelled:
+	case Cancelled:
 		return true
-	case WorkbenchAgentStatusEventStatusFailed:
+	case Failed:
 		return true
-	case WorkbenchAgentStatusEventStatusQueued:
+	case Queued:
 		return true
-	case WorkbenchAgentStatusEventStatusRunning:
+	case Running:
 		return true
-	case WorkbenchAgentStatusEventStatusSucceeded:
+	case Succeeded:
 		return true
 	default:
 		return false
@@ -16109,6 +17391,70 @@ type CreatedServiceAccountTokenEnvelope struct {
 	Data CreatedServiceAccountToken `json:"data"`
 }
 
+// DLPDataLevel defines model for DLPDataLevel.
+type DLPDataLevel string
+
+// DLPShadowDecision defines model for DLPShadowDecision.
+type DLPShadowDecision struct {
+	Allowed bool `json:"allowed"`
+
+	// DataLevel Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+	DataLevel        DLPShadowDecisionDataLevel       `json:"dataLevel,omitempty"`
+	DetectorVersion  DLPShadowDecisionDetectorVersion `json:"detectorVersion"`
+	Enabled          bool                             `json:"enabled"`
+	MatchedRuleIDs   []string                         `json:"matchedRuleIds"`
+	MinimumDataLevel DLPDataLevel                     `json:"minimumDataLevel,omitempty"`
+	Mode             DLPShadowDecisionMode            `json:"mode"`
+	RuleSetVersion   string                           `json:"ruleSetVersion,omitempty"`
+	Status           DLPShadowDecisionStatus          `json:"status"`
+
+	// StepUpRequired The matched sample would require recent MFA in addition to the configured release workflow. Shadow evaluation issues no MFA challenge or transfer token.
+	StepUpRequired bool `json:"stepUpRequired,omitempty"`
+}
+
+// DLPShadowDecisionDataLevel Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+type DLPShadowDecisionDataLevel string
+
+// DLPShadowDecisionDetectorVersion defines model for DLPShadowDecision.DetectorVersion.
+type DLPShadowDecisionDetectorVersion string
+
+// DLPShadowDecisionMode defines model for DLPShadowDecision.Mode.
+type DLPShadowDecisionMode string
+
+// DLPShadowDecisionStatus defines model for DLPShadowDecision.Status.
+type DLPShadowDecisionStatus string
+
+// DLPShadowEnvelope defines model for DLPShadowEnvelope.
+type DLPShadowEnvelope struct {
+	Data DLPShadowResult `json:"data"`
+}
+
+// DLPShadowInput defines model for DLPShadowInput.
+type DLPShadowInput struct {
+	ExpectedRevision int64    `json:"expectedRevision"`
+	Samples          [][]byte `json:"samples"`
+}
+
+// DLPShadowResult defines model for DLPShadowResult.
+type DLPShadowResult struct {
+	Changed             int               `json:"changed"`
+	DraftRuleSetVersion string            `json:"draftRuleSetVersion"`
+	PublishedVersion    int64             `json:"publishedVersion"`
+	Revision            int64             `json:"revision"`
+	Samples             []DLPShadowSample `json:"samples"`
+	Uninspected         int               `json:"uninspected"`
+	WouldBlock          int               `json:"wouldBlock"`
+	WouldWarn           int               `json:"wouldWarn"`
+}
+
+// DLPShadowSample defines model for DLPShadowSample.
+type DLPShadowSample struct {
+	Draft     DLPShadowDecision  `json:"draft"`
+	Index     int                `json:"index"`
+	Published *DLPShadowDecision `json:"published,omitempty"`
+	SizeBytes int64              `json:"sizeBytes"`
+}
+
 // DeliveryAccessResult A deployment entry candidate and optional bounded probe from the Soha control plane. This does not establish reachability from a developer's network or business correctness.
 type DeliveryAccessResult struct {
 	Authentication     DeliveryAccessResultAuthentication     `json:"authentication"`
@@ -17917,24 +19263,431 @@ type DockerQuickCreateHostInput struct {
 	VMTemplateID               string `json:"vmTemplateId,omitempty"`
 }
 
+// DockerVolumeDLPAppeal defines model for DockerVolumeDLPAppeal.
+type DockerVolumeDLPAppeal struct {
+	ActorID      string                            `json:"actorId"`
+	CreatedAt    time.Time                         `json:"createdAt"`
+	EventID      string                            `json:"eventId"`
+	ProjectID    string                            `json:"projectId"`
+	ReasonCode   DockerVolumeDLPAppealReasonCode   `json:"reasonCode"`
+	ReviewReason DockerVolumeDLPAppealReviewReason `json:"reviewReason,omitempty"`
+	ReviewerID   string                            `json:"reviewerId,omitempty"`
+	Revision     int64                             `json:"revision"`
+	Status       DockerVolumeDLPAppealStatus       `json:"status"`
+	UpdatedAt    time.Time                         `json:"updatedAt"`
+}
+
+// DockerVolumeDLPAppealReasonCode defines model for DockerVolumeDLPAppeal.ReasonCode.
+type DockerVolumeDLPAppealReasonCode string
+
+// DockerVolumeDLPAppealReviewReason defines model for DockerVolumeDLPAppeal.ReviewReason.
+type DockerVolumeDLPAppealReviewReason string
+
+// DockerVolumeDLPAppealStatus defines model for DockerVolumeDLPAppeal.Status.
+type DockerVolumeDLPAppealStatus string
+
+// DockerVolumeDLPAppealEnvelope defines model for DockerVolumeDLPAppealEnvelope.
+type DockerVolumeDLPAppealEnvelope struct {
+	Data DockerVolumeDLPAppeal `json:"data"`
+}
+
+// DockerVolumeDLPAppealInput defines model for DockerVolumeDLPAppealInput.
+type DockerVolumeDLPAppealInput struct {
+	ReasonCode DockerVolumeDLPAppealInputReasonCode `json:"reasonCode"`
+}
+
+// DockerVolumeDLPAppealInputReasonCode defines model for DockerVolumeDLPAppealInput.ReasonCode.
+type DockerVolumeDLPAppealInputReasonCode string
+
+// DockerVolumeDLPAppealReviewInput defines model for DockerVolumeDLPAppealReviewInput.
+type DockerVolumeDLPAppealReviewInput struct {
+	ExpectedRevision int64                                      `json:"expectedRevision"`
+	ReasonCode       DockerVolumeDLPAppealReviewInputReasonCode `json:"reasonCode"`
+	Resolution       DockerVolumeDLPAppealReviewInputResolution `json:"resolution"`
+}
+
+// DockerVolumeDLPAppealReviewInputReasonCode defines model for DockerVolumeDLPAppealReviewInput.ReasonCode.
+type DockerVolumeDLPAppealReviewInputReasonCode string
+
+// DockerVolumeDLPAppealReviewInputResolution defines model for DockerVolumeDLPAppealReviewInput.Resolution.
+type DockerVolumeDLPAppealReviewInputResolution string
+
+// DockerVolumeDLPAuthorization defines model for DockerVolumeDLPAuthorization.
+type DockerVolumeDLPAuthorization struct {
+	ExpiresAt time.Time `json:"expiresAt"`
+	Token     string    `json:"token"`
+}
+
+// DockerVolumeDLPAuthorizationEnvelope defines model for DockerVolumeDLPAuthorizationEnvelope.
+type DockerVolumeDLPAuthorizationEnvelope struct {
+	Data DockerVolumeDLPAuthorization `json:"data"`
+}
+
+// DockerVolumeDLPAuthorizationInput defines model for DockerVolumeDLPAuthorizationInput.
+type DockerVolumeDLPAuthorizationInput struct {
+	Action DockerVolumeDLPAuthorizationInputAction `json:"action"`
+}
+
+// DockerVolumeDLPAuthorizationInputAction defines model for DockerVolumeDLPAuthorizationInput.Action.
+type DockerVolumeDLPAuthorizationInputAction string
+
+// DockerVolumeDLPCase defines model for DockerVolumeDLPCase.
+type DockerVolumeDLPCase struct {
+	Appeal  *DockerVolumeDLPAppeal      `json:"appeal,omitempty"`
+	Event   DockerVolumeDLPEvent        `json:"event"`
+	Linkage *DockerVolumeDLPNetworkHold `json:"linkage,omitempty"`
+}
+
+// DockerVolumeDLPCaseEnvelope defines model for DockerVolumeDLPCaseEnvelope.
+type DockerVolumeDLPCaseEnvelope struct {
+	Data DockerVolumeDLPCase `json:"data"`
+}
+
+// DockerVolumeDLPCaseListEnvelope defines model for DockerVolumeDLPCaseListEnvelope.
+type DockerVolumeDLPCaseListEnvelope struct {
+	Items []DockerVolumeDLPCase `json:"items"`
+}
+
+// DockerVolumeDLPContent defines model for DockerVolumeDLPContent.
+type DockerVolumeDLPContent = interface{}
+
+// DockerVolumeDLPDecision defines model for DockerVolumeDLPDecision.
+type DockerVolumeDLPDecision struct {
+	Allowed            bool                                     `json:"allowed"`
+	AuthorizationKind  DockerVolumeDLPDecisionAuthorizationKind `json:"authorizationKind,omitempty"`
+	ContentFingerprint string                                   `json:"contentFingerprint,omitempty"`
+
+	// DataLevel Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+	DataLevel        DockerVolumeDLPDecisionDataLevel       `json:"dataLevel,omitempty"`
+	DetectorVersion  DockerVolumeDLPDecisionDetectorVersion `json:"detectorVersion"`
+	EventID          string                                 `json:"eventId"`
+	MatchedRuleIDs   []string                               `json:"matchedRuleIds"`
+	MinimumDataLevel DLPDataLevel                           `json:"minimumDataLevel,omitempty"`
+	Mode             DockerVolumeDLPDecisionMode            `json:"mode"`
+	OriginEventID    string                                 `json:"originEventId,omitempty"`
+	PolicyVersion    int64                                  `json:"policyVersion"`
+	RequiredAction   DockerVolumeDLPDecisionRequiredAction  `json:"requiredAction,omitempty"`
+	RuleSetVersion   string                                 `json:"ruleSetVersion,omitempty"`
+	Status           DockerVolumeDLPDecisionStatus          `json:"status"`
+
+	// StepUpRequired A matched release additionally requires recent MFA in the authenticated issuing session; no content or MFA secret is returned.
+	StepUpRequired bool `json:"stepUpRequired,omitempty"`
+}
+
+// DockerVolumeDLPDecisionAuthorizationKind defines model for DockerVolumeDLPDecision.AuthorizationKind.
+type DockerVolumeDLPDecisionAuthorizationKind string
+
+// DockerVolumeDLPDecisionDataLevel Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+type DockerVolumeDLPDecisionDataLevel string
+
+// DockerVolumeDLPDecisionDetectorVersion defines model for DockerVolumeDLPDecision.DetectorVersion.
+type DockerVolumeDLPDecisionDetectorVersion string
+
+// DockerVolumeDLPDecisionMode defines model for DockerVolumeDLPDecision.Mode.
+type DockerVolumeDLPDecisionMode string
+
+// DockerVolumeDLPDecisionRequiredAction defines model for DockerVolumeDLPDecision.RequiredAction.
+type DockerVolumeDLPDecisionRequiredAction string
+
+// DockerVolumeDLPDecisionStatus defines model for DockerVolumeDLPDecision.Status.
+type DockerVolumeDLPDecisionStatus string
+
+// DockerVolumeDLPEvent defines model for DockerVolumeDLPEvent.
+type DockerVolumeDLPEvent struct {
+	Action             DockerVolumeDLPEventAction            `json:"action"`
+	ActorID            string                                `json:"actorId"`
+	Allowed            bool                                  `json:"allowed"`
+	AuthorizationKind  DockerVolumeDLPEventAuthorizationKind `json:"authorizationKind,omitempty"`
+	ContentFingerprint string                                `json:"contentFingerprint,omitempty"`
+	CreatedAt          time.Time                             `json:"createdAt"`
+
+	// DataLevel Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+	DataLevel         DockerVolumeDLPEventDataLevel       `json:"dataLevel,omitempty"`
+	DetectorVersion   DockerVolumeDLPEventDetectorVersion `json:"detectorVersion"`
+	EventID           string                              `json:"eventId"`
+	ID                string                              `json:"id"`
+	InspectedBytes    int64                               `json:"inspectedBytes"`
+	MatchedRuleIDs    []string                            `json:"matchedRuleIds"`
+	MinimumDataLevel  DLPDataLevel                        `json:"minimumDataLevel,omitempty"`
+	Mode              DockerVolumeDLPEventMode            `json:"mode"`
+	NetworkHoldID     string                              `json:"networkHoldId,omitempty"`
+	OriginEventID     string                              `json:"originEventId,omitempty"`
+	PolicyVersion     int64                               `json:"policyVersion"`
+	ProjectID         string                              `json:"projectId"`
+	RequiredAction    DockerVolumeDLPEventRequiredAction  `json:"requiredAction,omitempty"`
+	Revision          int64                               `json:"revision"`
+	RuleSetVersion    string                              `json:"ruleSetVersion,omitempty"`
+	SizeBytes         int64                               `json:"sizeBytes"`
+	Status            DockerVolumeDLPEventStatus          `json:"status"`
+	TargetFingerprint string                              `json:"targetFingerprint,omitempty"`
+}
+
+// DockerVolumeDLPEventAction defines model for DockerVolumeDLPEvent.Action.
+type DockerVolumeDLPEventAction string
+
+// DockerVolumeDLPEventAuthorizationKind defines model for DockerVolumeDLPEvent.AuthorizationKind.
+type DockerVolumeDLPEventAuthorizationKind string
+
+// DockerVolumeDLPEventDataLevel Maximum matched rule level; clean is unclassified, uninspected is unknown. Not a proof that a file is public.
+type DockerVolumeDLPEventDataLevel string
+
+// DockerVolumeDLPEventDetectorVersion defines model for DockerVolumeDLPEvent.DetectorVersion.
+type DockerVolumeDLPEventDetectorVersion string
+
+// DockerVolumeDLPEventMode defines model for DockerVolumeDLPEvent.Mode.
+type DockerVolumeDLPEventMode string
+
+// DockerVolumeDLPEventRequiredAction defines model for DockerVolumeDLPEvent.RequiredAction.
+type DockerVolumeDLPEventRequiredAction string
+
+// DockerVolumeDLPEventStatus defines model for DockerVolumeDLPEvent.Status.
+type DockerVolumeDLPEventStatus string
+
+// DockerVolumeDLPEventListEnvelope defines model for DockerVolumeDLPEventListEnvelope.
+type DockerVolumeDLPEventListEnvelope struct {
+	Items []DockerVolumeDLPEvent `json:"items"`
+}
+
+// DockerVolumeDLPNetworkHold defines model for DockerVolumeDLPNetworkHold.
+type DockerVolumeDLPNetworkHold struct {
+	Active        bool                           `json:"active"`
+	CreatedAt     time.Time                      `json:"createdAt"`
+	ID            string                         `json:"id"`
+	ProjectID     string                         `json:"projectId"`
+	ReleasedAt    *time.Time                     `json:"releasedAt,omitempty"`
+	Revision      int64                          `json:"revision"`
+	SourceEventID string                         `json:"sourceEventId"`
+	SubjectID     string                         `json:"subjectId"`
+	Targets       []DockerVolumeDLPNetworkTarget `json:"targets"`
+}
+
+// DockerVolumeDLPNetworkTarget defines model for DockerVolumeDLPNetworkTarget.
+type DockerVolumeDLPNetworkTarget struct {
+	BaseVersion     int64                            `json:"baseVersion"`
+	CommandID       string                           `json:"commandId,omitempty"`
+	Kind            DockerVolumeDLPNetworkTargetKind `json:"kind"`
+	ObservedVersion int64                            `json:"observedVersion"`
+	RuntimeID       string                           `json:"runtimeId,omitempty"`
+	SessionID       string                           `json:"sessionId,omitempty"`
+	Status          string                           `json:"status"`
+}
+
+// DockerVolumeDLPNetworkTargetKind defines model for DockerVolumeDLPNetworkTarget.Kind.
+type DockerVolumeDLPNetworkTargetKind string
+
+// DockerVolumeDLPPolicy defines model for DockerVolumeDLPPolicy.
+type DockerVolumeDLPPolicy struct {
+	Draft            DockerVolumeDLPContent  `json:"draft"`
+	ProjectID        string                  `json:"projectId"`
+	Published        *DockerVolumeDLPContent `json:"published,omitempty"`
+	PublishedVersion int64                   `json:"publishedVersion"`
+	Revision         int64                   `json:"revision"`
+	UpdatedAt        time.Time               `json:"updatedAt"`
+}
+
+// DockerVolumeDLPPolicyEnvelope defines model for DockerVolumeDLPPolicyEnvelope.
+type DockerVolumeDLPPolicyEnvelope struct {
+	Data DockerVolumeDLPPolicy `json:"data"`
+}
+
+// DockerVolumeDLPPublishInput defines model for DockerVolumeDLPPublishInput.
+type DockerVolumeDLPPublishInput struct {
+	ExpectedRevision int64 `json:"expectedRevision"`
+}
+
+// DockerVolumeDLPRule defines model for DockerVolumeDLPRule.
+type DockerVolumeDLPRule struct {
+	DataLevel  DLPDataLevel `json:"dataLevel,omitempty"`
+	Expression string       `json:"expression"`
+	ID         string       `json:"id"`
+}
+
+// DockerVolumeDLPSaveInput defines model for DockerVolumeDLPSaveInput.
+type DockerVolumeDLPSaveInput struct {
+	Draft            DockerVolumeDLPContent `json:"draft"`
+	ExpectedRevision int64                  `json:"expectedRevision"`
+}
+
+// DockerVolumeFileContent defines model for DockerVolumeFileContent.
+type DockerVolumeFileContent struct {
+	Content     string                   `json:"content"`
+	Dlp         *DockerVolumeDLPDecision `json:"dlp,omitempty"`
+	Path        string                   `json:"path"`
+	ProjectID   string                   `json:"projectId"`
+	ServiceName string                   `json:"serviceName"`
+	SizeBytes   int64                    `json:"sizeBytes"`
+	Target      string                   `json:"target"`
+	Truncated   bool                     `json:"truncated"`
+}
+
+// DockerVolumeFileContentEnvelope defines model for DockerVolumeFileContentEnvelope.
+type DockerVolumeFileContentEnvelope struct {
+	Data DockerVolumeFileContent `json:"data"`
+}
+
+// DockerVolumeFileReadInput defines model for DockerVolumeFileReadInput.
+type DockerVolumeFileReadInput struct {
+	// Authorization Single-use opaque authorization, never a URL parameter.
+	Authorization string `json:"authorization,omitempty"`
+	LimitBytes    int64  `json:"limitBytes,omitempty"`
+	Path          string `json:"path"`
+	ServiceName   string `json:"serviceName,omitempty"`
+	Target        string `json:"target"`
+}
+
+// DockerVolumeTransferResult defines model for DockerVolumeTransferResult.
+type DockerVolumeTransferResult struct {
+	Decision *DockerVolumeDLPDecision `json:"decision,omitempty"`
+	File     *DockerVolumeFileContent `json:"file,omitempty"`
+	union    json.RawMessage
+}
+
+// DockerVolumeTransferResult0 defines model for .
+type DockerVolumeTransferResult0 struct {
+	File DockerVolumeFileContent `json:"file"`
+}
+
+// DockerVolumeTransferResult1 defines model for .
+type DockerVolumeTransferResult1 struct {
+	Decision DockerVolumeDLPDecision `json:"decision"`
+}
+
+// DockerVolumeTransferResultEnvelope defines model for DockerVolumeTransferResultEnvelope.
+type DockerVolumeTransferResultEnvelope struct {
+	Data DockerVolumeTransferResult `json:"data"`
+}
+
+// EndpointChannelControls defines model for EndpointChannelControls.
+type EndpointChannelControls struct {
+	Clipboard bool `json:"clipboard"`
+	Print     bool `json:"print"`
+	Usb       bool `json:"usb"`
+}
+
+// EndpointChannelDesired defines model for EndpointChannelDesired.
+type EndpointChannelDesired struct {
+	Challenge string `json:"challenge"`
+
+	// Configured False means unconfigured; never a release. Release requires a higher explicit published version.
+	Configured    bool                    `json:"configured"`
+	Controls      EndpointChannelControls `json:"controls"`
+	CredentialID  string                  `json:"credentialId"`
+	DeviceID      string                  `json:"deviceId"`
+	IssuedAt      time.Time               `json:"issuedAt"`
+	PolicyVersion int64                   `json:"policyVersion"`
+	RuntimeID     string                  `json:"runtimeId"`
+	SchemaVersion string                  `json:"schemaVersion"`
+	ValidUntil    time.Time               `json:"validUntil"`
+}
+
+// EndpointChannelDesiredEnvelope defines model for EndpointChannelDesiredEnvelope.
+type EndpointChannelDesiredEnvelope struct {
+	Data EndpointChannelDesired `json:"data"`
+}
+
+// EndpointChannelObservation defines model for EndpointChannelObservation.
+type EndpointChannelObservation struct {
+	Channels      []EndpointChannelReceipt `json:"channels"`
+	CredentialID  string                   `json:"credentialId"`
+	ObservedAt    time.Time                `json:"observedAt"`
+	PolicyVersion int64                    `json:"policyVersion"`
+	RuntimeID     string                   `json:"runtimeId"`
+}
+
+// EndpointChannelPolicy defines model for EndpointChannelPolicy.
+type EndpointChannelPolicy struct {
+	DeviceID         string                   `json:"deviceId"`
+	Draft            EndpointChannelControls  `json:"draft"`
+	Published        *EndpointChannelControls `json:"published,omitempty"`
+	PublishedVersion int64                    `json:"publishedVersion"`
+	Revision         int64                    `json:"revision"`
+	UpdatedAt        time.Time                `json:"updatedAt"`
+}
+
+// EndpointChannelPolicyEnvelope defines model for EndpointChannelPolicyEnvelope.
+type EndpointChannelPolicyEnvelope struct {
+	Data EndpointChannelPolicy `json:"data"`
+}
+
+// EndpointChannelPublishInput defines model for EndpointChannelPublishInput.
+type EndpointChannelPublishInput struct {
+	ExpectedRevision int64 `json:"expectedRevision"`
+}
+
+// EndpointChannelReceipt defines model for EndpointChannelReceipt.
+type EndpointChannelReceipt struct {
+	Controlled int                         `json:"controlled"`
+	Name       EndpointChannelReceiptName  `json:"name"`
+	ReasonCode string                      `json:"reasonCode"`
+	Scope      EndpointChannelReceiptScope `json:"scope"`
+	State      EndpointChannelReceiptState `json:"state"`
+	Targets    int                         `json:"targets"`
+}
+
+// EndpointChannelReceiptName defines model for EndpointChannelReceipt.Name.
+type EndpointChannelReceiptName string
+
+// EndpointChannelReceiptScope defines model for EndpointChannelReceipt.Scope.
+type EndpointChannelReceiptScope string
+
+// EndpointChannelReceiptState defines model for EndpointChannelReceipt.State.
+type EndpointChannelReceiptState string
+
+// EndpointChannelReport defines model for EndpointChannelReport.
+type EndpointChannelReport struct {
+	Challenge     string                   `json:"challenge"`
+	Channels      []EndpointChannelReceipt `json:"channels"`
+	CredentialID  string                   `json:"credentialId"`
+	DeviceID      string                   `json:"deviceId"`
+	ObservedAt    time.Time                `json:"observedAt"`
+	PolicyVersion int64                    `json:"policyVersion"`
+	RuntimeID     string                   `json:"runtimeId"`
+	SchemaVersion string                   `json:"schemaVersion"`
+}
+
+// EndpointChannelSaveInput defines model for EndpointChannelSaveInput.
+type EndpointChannelSaveInput struct {
+	Draft            EndpointChannelControls `json:"draft"`
+	ExpectedRevision int64                   `json:"expectedRevision"`
+}
+
+// EndpointChannelView defines model for EndpointChannelView.
+type EndpointChannelView struct {
+	Fresh               bool                        `json:"fresh"`
+	PendingRuntimeCount int                         `json:"pendingRuntimeCount"`
+	Policy              EndpointChannelPolicy       `json:"policy"`
+	Receipt             *EndpointChannelObservation `json:"receipt,omitempty"`
+	ReceivedAt          *time.Time                  `json:"receivedAt,omitempty"`
+	RuntimeCount        int                         `json:"runtimeCount"`
+}
+
+// EndpointChannelViewEnvelope defines model for EndpointChannelViewEnvelope.
+type EndpointChannelViewEnvelope struct {
+	Data EndpointChannelView `json:"data"`
+}
+
 // EndpointDevice defines model for EndpointDevice.
 type EndpointDevice struct {
-	CreatedAt            time.Time                    `json:"createdAt"`
-	CredentialGeneration int                          `json:"credentialGeneration,omitempty"`
-	DeviceType           EndpointDeviceType           `json:"deviceType,omitempty"`
-	Hostname             string                       `json:"hostname,omitempty"`
-	ID                   string                       `json:"id"`
-	LastSeenAt           *time.Time                   `json:"lastSeenAt,omitempty"`
-	Name                 string                       `json:"name"`
-	OwnerUserID          string                       `json:"ownerUserId"`
-	OwnershipType        EndpointDeviceOwnershipType  `json:"ownershipType,omitempty"`
-	Platform             string                       `json:"platform"`
-	PostureStatus        EndpointDevicePostureStatus  `json:"postureStatus"`
-	PostureVersion       int                          `json:"postureVersion"`
-	ReportedFacts        *EndpointDeviceReportedFacts `json:"reportedFacts,omitempty"`
-	SiteID               string                       `json:"siteId,omitempty"`
-	Status               EndpointDeviceStatus         `json:"status"`
-	UpdatedAt            time.Time                    `json:"updatedAt"`
+	CreatedAt            time.Time          `json:"createdAt"`
+	CredentialGeneration int                `json:"credentialGeneration,omitempty"`
+	DeviceType           EndpointDeviceType `json:"deviceType,omitempty"`
+	Hostname             string             `json:"hostname,omitempty"`
+	ID                   string             `json:"id"`
+	LastSeenAt           *time.Time         `json:"lastSeenAt,omitempty"`
+
+	// ManagementState Administrator-maintained management classification. Ownership and endpoint-reported facts cannot promote this value; unknown is the default and this is not attestation.
+	ManagementState         EndpointDeviceManagementState `json:"managementState,omitempty"`
+	ManagementVerifiedUntil *time.Time                    `json:"managementVerifiedUntil,omitempty"`
+	Name                    string                        `json:"name"`
+	OwnerUserID             string                        `json:"ownerUserId"`
+	OwnershipType           EndpointDeviceOwnershipType   `json:"ownershipType,omitempty"`
+	Platform                string                        `json:"platform"`
+	PostureStatus           EndpointDevicePostureStatus   `json:"postureStatus"`
+	PostureVersion          int                           `json:"postureVersion"`
+	ReportedFacts           *EndpointDeviceReportedFacts  `json:"reportedFacts,omitempty"`
+	SiteID                  string                        `json:"siteId,omitempty"`
+	Status                  EndpointDeviceStatus          `json:"status"`
+	UpdatedAt               time.Time                     `json:"updatedAt"`
 }
 
 // EndpointDeviceEnvelope defines model for EndpointDeviceEnvelope.
@@ -17944,18 +19697,24 @@ type EndpointDeviceEnvelope struct {
 
 // EndpointDeviceInput defines model for EndpointDeviceInput.
 type EndpointDeviceInput struct {
-	DeviceType    EndpointDeviceType          `json:"deviceType,omitempty"`
-	Name          string                      `json:"name"`
-	OwnershipType EndpointDeviceOwnershipType `json:"ownershipType,omitempty"`
-	PostureStatus EndpointDevicePostureStatus `json:"postureStatus,omitempty"`
-	SiteID        string                      `json:"siteId,omitempty"`
-	Status        EndpointDeviceStatus        `json:"status"`
+	DeviceType EndpointDeviceType `json:"deviceType,omitempty"`
+
+	// ManagementState Administrator-maintained management classification. Ownership and endpoint-reported facts cannot promote this value; unknown is the default and this is not attestation.
+	ManagementState EndpointDeviceManagementState `json:"managementState,omitempty"`
+	Name            string                        `json:"name"`
+	OwnershipType   EndpointDeviceOwnershipType   `json:"ownershipType,omitempty"`
+	PostureStatus   EndpointDevicePostureStatus   `json:"postureStatus,omitempty"`
+	SiteID          string                        `json:"siteId,omitempty"`
+	Status          EndpointDeviceStatus          `json:"status"`
 }
 
 // EndpointDeviceListEnvelope defines model for EndpointDeviceListEnvelope.
 type EndpointDeviceListEnvelope struct {
 	Items []EndpointDevice `json:"items"`
 }
+
+// EndpointDeviceManagementState Administrator-maintained management classification. Ownership and endpoint-reported facts cannot promote this value; unknown is the default and this is not attestation.
+type EndpointDeviceManagementState string
 
 // EndpointDeviceOwnershipType defines model for EndpointDeviceOwnershipType.
 type EndpointDeviceOwnershipType string
@@ -20703,7 +22462,10 @@ type KubernetesDeployment struct {
 	Name            string               `json:"name"`
 	Namespace       string               `json:"namespace"`
 	ReadyReplicas   int32                `json:"readyReplicas"`
-	UpdatedReplicas int32                `json:"updatedReplicas"`
+
+	// UID Kubernetes object UID for identity-checked deletion. Omitted if unavailable.
+	UID             string `json:"uid,omitempty"`
+	UpdatedReplicas int32  `json:"updatedReplicas"`
 }
 
 // KubernetesDeploymentDetail defines model for KubernetesDeploymentDetail.
@@ -20724,7 +22486,10 @@ type KubernetesDeploymentDetail struct {
 	RelatedResources   []KubernetesWorkloadRelation  `json:"relatedResources,omitempty"`
 	Selector           *KubernetesStringMap          `json:"selector,omitempty"`
 	Strategy           string                        `json:"strategy"`
-	UpdatedReplicas    int32                         `json:"updatedReplicas"`
+
+	// UID Kubernetes object UID for identity-checked deletion. Omitted if unavailable.
+	UID             string `json:"uid,omitempty"`
+	UpdatedReplicas int32  `json:"updatedReplicas"`
 }
 
 // KubernetesDeploymentDetailEnvelope defines model for KubernetesDeploymentDetailEnvelope.
@@ -20739,13 +22504,19 @@ type KubernetesDeploymentListEnvelope struct {
 
 // KubernetesDeploymentRollout defines model for KubernetesDeploymentRollout.
 type KubernetesDeploymentRollout struct {
-	CreatedAt     string   `json:"createdAt,omitempty"`
-	Images        []string `json:"images,omitempty"`
-	Name          string   `json:"name"`
-	Namespace     string   `json:"namespace"`
-	ReadyReplicas int32    `json:"readyReplicas"`
-	Replicas      int32    `json:"replicas"`
-	Revision      string   `json:"revision"`
+	CreatedAt string   `json:"createdAt,omitempty"`
+	Images    []string `json:"images,omitempty"`
+
+	// MatchesCurrentTemplate When supplied, whether the retained ControllerRevision patch exactly matches the current DaemonSet Pod template. False is a confirmed mismatch; omission means this endpoint did not evaluate it.
+	MatchesCurrentTemplate *bool  `json:"matchesCurrentTemplate,omitempty"`
+	Name                   string `json:"name"`
+	Namespace              string `json:"namespace"`
+
+	// PodRevisionHash Observed controller-revision-hash used by owned Pods; omitted when unavailable. Do not infer it from resource names.
+	PodRevisionHash string `json:"podRevisionHash,omitempty"`
+	ReadyReplicas   int32  `json:"readyReplicas"`
+	Replicas        int32  `json:"replicas"`
+	Revision        string `json:"revision"`
 }
 
 // KubernetesDeploymentRolloutListEnvelope defines model for KubernetesDeploymentRolloutListEnvelope.
@@ -21253,6 +23024,32 @@ type KubernetesHelmReleaseRollbackInput struct {
 	Wait           bool `json:"wait,omitempty"`
 }
 
+// KubernetesHelmReleaseValues defines model for KubernetesHelmReleaseValues.
+type KubernetesHelmReleaseValues struct {
+	AllowedActions []string `json:"allowedActions,omitempty"`
+	Content        string   `json:"content"`
+	DiffEnabled    bool     `json:"diffEnabled"`
+	Editable       bool     `json:"editable"`
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	Original       string   `json:"original,omitempty"`
+	Revision       string   `json:"revision,omitempty"`
+}
+
+// KubernetesHelmReleaseValuesEnvelope defines model for KubernetesHelmReleaseValuesEnvelope.
+type KubernetesHelmReleaseValuesEnvelope struct {
+	Data KubernetesHelmReleaseValues `json:"data"`
+}
+
+// KubernetesHelmReleaseValuesUpdateInput defines model for KubernetesHelmReleaseValuesUpdateInput.
+type KubernetesHelmReleaseValuesUpdateInput struct {
+	// Content Complete Helm values YAML.
+	Content string `json:"content"`
+
+	// ExpectedRevision Latest Helm revision observed by the editor. When supplied, a changed revision returns 409 and an Agent without conditional updates returns 501.
+	ExpectedRevision int `json:"expectedRevision,omitempty"`
+}
+
 // KubernetesHorizontalPodAutoscaler defines model for KubernetesHorizontalPodAutoscaler.
 type KubernetesHorizontalPodAutoscaler struct {
 	AgeSeconds      int64    `json:"ageSeconds"`
@@ -21487,31 +23284,46 @@ type KubernetesJob struct {
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
 	CompletionMode string   `json:"completionMode,omitempty"`
-	Completions    int32    `json:"completions"`
-	Failed         int32    `json:"failed"`
-	Name           string   `json:"name"`
-	Namespace      string   `json:"namespace"`
-	Succeeded      int32    `json:"succeeded"`
+
+	// CompletionTarget Native spec.completions when specified; absence is not a zero completion target.
+	CompletionTarget *int32                        `json:"completionTarget,omitempty"`
+	CompletionTime   string                        `json:"completionTime,omitempty"`
+	Completions      int32                         `json:"completions"`
+	Conditions       []KubernetesWorkloadCondition `json:"conditions,omitempty"`
+	Failed           int32                         `json:"failed"`
+	Name             string                        `json:"name"`
+	Namespace        string                        `json:"namespace"`
+	StartTime        string                        `json:"startTime,omitempty"`
+	Succeeded        int32                         `json:"succeeded"`
+	Suspend          *bool                         `json:"suspend,omitempty"`
 }
 
 // KubernetesJobDetail defines model for KubernetesJobDetail.
 type KubernetesJobDetail struct {
-	Active           int32                        `json:"active"`
-	AllowedActions   []string                     `json:"allowedActions,omitempty"`
-	Annotations      *KubernetesStringMap         `json:"annotations,omitempty"`
-	CompletionMode   string                       `json:"completionMode,omitempty"`
-	CompletionTime   string                       `json:"completionTime,omitempty"`
-	Completions      int32                        `json:"completions"`
-	CreatedAt        string                       `json:"createdAt,omitempty"`
-	Failed           int32                        `json:"failed"`
-	Labels           *KubernetesStringMap         `json:"labels,omitempty"`
-	Name             string                       `json:"name"`
-	Namespace        string                       `json:"namespace"`
-	Parallelism      int32                        `json:"parallelism"`
-	Pods             []KubernetesPod              `json:"pods,omitempty"`
-	RelatedResources []KubernetesWorkloadRelation `json:"relatedResources,omitempty"`
-	StartTime        string                       `json:"startTime,omitempty"`
-	Succeeded        int32                        `json:"succeeded"`
+	Active                int32                `json:"active"`
+	ActiveDeadlineSeconds *int64               `json:"activeDeadlineSeconds,omitempty"`
+	AllowedActions        []string             `json:"allowedActions,omitempty"`
+	Annotations           *KubernetesStringMap `json:"annotations,omitempty"`
+	BackoffLimit          *int32               `json:"backoffLimit,omitempty"`
+	CompletionMode        string               `json:"completionMode,omitempty"`
+
+	// CompletionTarget Native spec.completions when specified; absence is not a zero completion target.
+	CompletionTarget        *int32                        `json:"completionTarget,omitempty"`
+	CompletionTime          string                        `json:"completionTime,omitempty"`
+	Completions             int32                         `json:"completions"`
+	Conditions              []KubernetesWorkloadCondition `json:"conditions,omitempty"`
+	CreatedAt               string                        `json:"createdAt,omitempty"`
+	Failed                  int32                         `json:"failed"`
+	Labels                  *KubernetesStringMap          `json:"labels,omitempty"`
+	Name                    string                        `json:"name"`
+	Namespace               string                        `json:"namespace"`
+	Parallelism             int32                         `json:"parallelism"`
+	Pods                    []KubernetesPod               `json:"pods,omitempty"`
+	RelatedResources        []KubernetesWorkloadRelation  `json:"relatedResources,omitempty"`
+	StartTime               string                        `json:"startTime,omitempty"`
+	Succeeded               int32                         `json:"succeeded"`
+	Suspend                 *bool                         `json:"suspend,omitempty"`
+	TTLSecondsAfterFinished *int32                        `json:"ttlSecondsAfterFinished,omitempty"`
 }
 
 // KubernetesJobDetailEnvelope defines model for KubernetesJobDetailEnvelope.
@@ -21770,13 +23582,16 @@ type KubernetesNode struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 
 	// Conditions Current Node conditions, independent of scheduling and drain operations.
-	Conditions []KubernetesWorkloadCondition  `json:"conditions,omitempty"`
-	InternalIP string                         `json:"internalIp,omitempty"`
-	Name       string                         `json:"name"`
-	PodCount   int                            `json:"podCount"`
-	Resources  *KubernetesNodeResourceSummary `json:"resources,omitempty"`
-	Roles      []string                       `json:"roles,omitempty"`
-	Status     string                         `json:"status"`
+	Conditions []KubernetesWorkloadCondition `json:"conditions,omitempty"`
+	InternalIP string                        `json:"internalIp,omitempty"`
+
+	// Labels Kubernetes Node labels available to the current reader.
+	Labels    map[string]string              `json:"labels,omitempty"`
+	Name      string                         `json:"name"`
+	PodCount  int                            `json:"podCount"`
+	Resources *KubernetesNodeResourceSummary `json:"resources,omitempty"`
+	Roles     []string                       `json:"roles,omitempty"`
+	Status    string                         `json:"status"`
 
 	// Taints Current Node spec taints. Empty means none; null or absent means not reported.
 	Taints        []KubernetesNodeTaint `json:"taints,omitempty"`
@@ -21866,6 +23681,14 @@ type KubernetesNodeTaint struct {
 type KubernetesNodeUpdateInput struct {
 	Labels *KubernetesStringMap  `json:"labels,omitempty"`
 	Taints []KubernetesNodeTaint `json:"taints,omitempty"`
+}
+
+// KubernetesObservedResourceYamlInput defines model for KubernetesObservedResourceYamlInput.
+type KubernetesObservedResourceYamlInput struct {
+	Content string `json:"content"`
+
+	// RequireObservedIdentity Require the YAML to include the UID and resource version of the object read before editing. A changed or replaced object returns conflict.
+	RequireObservedIdentity bool `json:"requireObservedIdentity,omitempty"`
 }
 
 // KubernetesPersistentVolume defines model for KubernetesPersistentVolume.
@@ -21958,26 +23781,49 @@ type KubernetesPersistentVolumeListEnvelope struct {
 
 // KubernetesPod defines model for KubernetesPod.
 type KubernetesPod struct {
-	AgeSeconds             int64                       `json:"ageSeconds"`
-	AllowedActions         []string                    `json:"allowedActions,omitempty"`
-	CPU                    string                      `json:"cpu,omitempty"`
-	CreatedAt              string                      `json:"createdAt,omitempty"`
-	Labels                 *KubernetesStringMap        `json:"labels,omitempty"`
-	Limits                 *KubernetesResourceQuantity `json:"limits,omitempty"`
-	Memory                 string                      `json:"memory,omitempty"`
-	Name                   string                      `json:"name"`
-	Namespace              string                      `json:"namespace"`
-	NodeName               string                      `json:"nodeName,omitempty"`
-	PersistentVolumeClaims []string                    `json:"persistentVolumeClaims,omitempty"`
-	Phase                  string                      `json:"phase"`
-	PodIP                  string                      `json:"podIp,omitempty"`
-	ReadyContainers        string                      `json:"readyContainers"`
-	Requests               *KubernetesResourceQuantity `json:"requests,omitempty"`
-	Restarts               int32                       `json:"restarts"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
 
-	// UID Immutable Pod identity. Required by clients restoring a saved live session; absent on older providers.
+	// ContainerStatuses Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers.
+	ContainerStatuses      []KubernetesPodContainerStatus `json:"containerStatuses,omitempty"`
+	CPU                    string                         `json:"cpu,omitempty"`
+	CreatedAt              string                         `json:"createdAt,omitempty"`
+	Labels                 *KubernetesStringMap           `json:"labels,omitempty"`
+	Limits                 *KubernetesResourceQuantity    `json:"limits,omitempty"`
+	Memory                 string                         `json:"memory,omitempty"`
+	Name                   string                         `json:"name"`
+	Namespace              string                         `json:"namespace"`
+	NodeName               string                         `json:"nodeName,omitempty"`
+	PersistentVolumeClaims []string                       `json:"persistentVolumeClaims,omitempty"`
+	Phase                  string                         `json:"phase"`
+	PodIP                  string                         `json:"podIp,omitempty"`
+
+	// QosClass Kubernetes status.qosClass, omitted when not reported.
+	QosClass        string                      `json:"qosClass,omitempty"`
+	ReadyContainers string                      `json:"readyContainers"`
+	Requests        *KubernetesResourceQuantity `json:"requests,omitempty"`
+	Restarts        int32                       `json:"restarts"`
+
+	// UID Immutable Pod identity for restoring saved live sessions and identity-checked deletion. Older providers may omit it.
 	UID string `json:"uid,omitempty"`
 }
+
+// KubernetesPodContainerStatus defines model for KubernetesPodContainerStatus.
+type KubernetesPodContainerStatus struct {
+	// ExitCode Present only when the current container state is terminated, including a successful zero exit code.
+	ExitCode *int32                            `json:"exitCode,omitempty"`
+	Kind     KubernetesPodContainerStatusKind  `json:"kind"`
+	Name     string                            `json:"name"`
+	Ready    bool                              `json:"ready"`
+	Reason   string                            `json:"reason,omitempty"`
+	State    KubernetesPodContainerStatusState `json:"state"`
+}
+
+// KubernetesPodContainerStatusKind defines model for KubernetesPodContainerStatus.Kind.
+type KubernetesPodContainerStatusKind string
+
+// KubernetesPodContainerStatusState defines model for KubernetesPodContainerStatus.State.
+type KubernetesPodContainerStatusState string
 
 // KubernetesPodDetail defines model for KubernetesPodDetail.
 type KubernetesPodDetail struct {
@@ -22000,7 +23846,7 @@ type KubernetesPodDetail struct {
 	ServiceAccountName string                         `json:"serviceAccountName,omitempty"`
 	StartTime          string                         `json:"startTime,omitempty"`
 
-	// UID Immutable Pod identity. Required by clients restoring a saved live session; absent on older providers.
+	// UID Immutable Pod identity for restoring saved live sessions and identity-checked deletion. Older providers may omit it.
 	UID     string                `json:"uid,omitempty"`
 	Volumes []KubernetesPodVolume `json:"volumes,omitempty"`
 }
@@ -22125,11 +23971,14 @@ type KubernetesPriorityClassListEnvelope struct {
 
 // KubernetesPrometheusDetail defines model for KubernetesPrometheusDetail.
 type KubernetesPrometheusDetail struct {
-	BaseURL        string                        `json:"baseUrl,omitempty"`
-	ClusterLabel   string                        `json:"clusterLabel,omitempty"`
-	GrafanaBaseURL string                        `json:"grafanaBaseUrl,omitempty"`
-	HasBearerToken bool                          `json:"hasBearerToken"`
-	Transport      KubernetesPrometheusTransport `json:"transport,omitempty"`
+	BaseURL      string `json:"baseUrl,omitempty"`
+	ClusterLabel string `json:"clusterLabel,omitempty"`
+
+	// ClusterLabelValue Configured metric cluster label value. Omitted or empty uses the Soha cluster ID for legacy compatibility.
+	ClusterLabelValue string                        `json:"clusterLabelValue,omitempty"`
+	GrafanaBaseURL    string                        `json:"grafanaBaseUrl,omitempty"`
+	HasBearerToken    bool                          `json:"hasBearerToken"`
+	Transport         KubernetesPrometheusTransport `json:"transport,omitempty"`
 }
 
 // KubernetesPrometheusTransport defines model for KubernetesPrometheusTransport.
@@ -22478,10 +24327,17 @@ type KubernetesResourceGraph struct {
 
 // KubernetesResourceGraphEdge defines model for KubernetesResourceGraphEdge.
 type KubernetesResourceGraphEdge struct {
-	ID       string `json:"id"`
-	Relation string `json:"relation"`
-	SourceID string `json:"sourceId"`
-	TargetID string `json:"targetId"`
+	FieldPath       string                 `json:"fieldPath,omitempty"`
+	ID              string                 `json:"id"`
+	Note            string                 `json:"note,omitempty"`
+	Port            string                 `json:"port,omitempty"`
+	Protocol        string                 `json:"protocol,omitempty"`
+	Relation        string                 `json:"relation"`
+	ResolutionState string                 `json:"resolutionState,omitempty"`
+	SectionName     string                 `json:"sectionName,omitempty"`
+	SourceID        string                 `json:"sourceId"`
+	SourceRef       *KubernetesResourceRef `json:"sourceRef,omitempty"`
+	TargetID        string                 `json:"targetId"`
 }
 
 // KubernetesResourceGraphEnvelope defines model for KubernetesResourceGraphEnvelope.
@@ -22672,6 +24528,9 @@ type KubernetesResourceUpdatePlanRequest struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
+
+	// RequireObservedIdentity Require the YAML to identify the observed Kubernetes object by metadata.uid and metadata.resourceVersion.
+	RequireObservedIdentity bool `json:"requireObservedIdentity,omitempty"`
 }
 
 // KubernetesResourceWarning defines model for KubernetesResourceWarning.
@@ -22775,6 +24634,26 @@ type KubernetesRuntimeClass struct {
 // KubernetesRuntimeClassListEnvelope defines model for KubernetesRuntimeClassListEnvelope.
 type KubernetesRuntimeClassListEnvelope struct {
 	Items []KubernetesRuntimeClass `json:"items"`
+}
+
+// KubernetesSecretCertificate defines model for KubernetesSecretCertificate.
+type KubernetesSecretCertificate struct {
+	Name      string     `json:"name"`
+	Namespace string     `json:"namespace"`
+	NotAfter  *time.Time `json:"notAfter,omitempty"`
+	NotBefore *time.Time `json:"notBefore,omitempty"`
+
+	// SelfSigned The first certificate is signed by its own key; this is not a trust validation result.
+	SelfSigned *bool                             `json:"selfSigned,omitempty"`
+	Status     KubernetesSecretCertificateStatus `json:"status"`
+}
+
+// KubernetesSecretCertificateStatus defines model for KubernetesSecretCertificate.Status.
+type KubernetesSecretCertificateStatus string
+
+// KubernetesSecretCertificateEnvelope defines model for KubernetesSecretCertificateEnvelope.
+type KubernetesSecretCertificateEnvelope struct {
+	Data KubernetesSecretCertificate `json:"data"`
 }
 
 // KubernetesSecretDataInput Data values are plain text. The response detail returns Kubernetes Base64-encoded values.
@@ -23123,6 +25002,7 @@ type KubernetesTopologyCondition struct {
 // KubernetesTopologyCoverage defines model for KubernetesTopologyCoverage.
 type KubernetesTopologyCoverage struct {
 	CheckedAt      *time.Time                      `json:"checkedAt,omitempty"`
+	Name           string                          `json:"name,omitempty"`
 	Namespace      string                          `json:"namespace,omitempty"`
 	ObservedAt     *time.Time                      `json:"observedAt,omitempty"`
 	Provider       KubernetesTopologyProvider      `json:"provider"`
@@ -23138,6 +25018,7 @@ type KubernetesTopologyCoverageState string
 
 // KubernetesTopologyGraphEdge defines model for KubernetesTopologyGraphEdge.
 type KubernetesTopologyGraphEdge struct {
+	FieldPath       string                              `json:"fieldPath,omitempty"`
 	ID              string                              `json:"id"`
 	MirrorPercent   *float32                            `json:"mirrorPercent,omitempty"`
 	Note            string                              `json:"note,omitempty"`
@@ -23146,6 +25027,7 @@ type KubernetesTopologyGraphEdge struct {
 	Relation        KubernetesTopologyGraphEdgeRelation `json:"relation"`
 	ResolutionState KubernetesTopologyResolution        `json:"resolutionState"`
 	RuleRef         string                              `json:"ruleRef,omitempty"`
+	SectionName     string                              `json:"sectionName,omitempty"`
 	Source          string                              `json:"source"`
 	SourceRef       *KubernetesResourceRef              `json:"sourceRef,omitempty"`
 	Target          string                              `json:"target"`
@@ -24211,6 +26093,234 @@ type MFAWebAuthnResponse struct {
 	UserHandle        string `json:"userHandle,omitempty"`
 }
 
+// ManagedContentAdminDestinationsEnvelope defines model for ManagedContentAdminDestinationsEnvelope.
+type ManagedContentAdminDestinationsEnvelope struct {
+	Data []ManagedContentDestination `json:"data"`
+}
+
+// ManagedContentAppealInput defines model for ManagedContentAppealInput.
+type ManagedContentAppealInput struct {
+	ReasonCode ManagedContentAppealInputReasonCode `json:"reasonCode"`
+}
+
+// ManagedContentAppealInputReasonCode defines model for ManagedContentAppealInput.ReasonCode.
+type ManagedContentAppealInputReasonCode string
+
+// ManagedContentAuthorization defines model for ManagedContentAuthorization.
+type ManagedContentAuthorization struct {
+	AttemptID openapi_types.UUID `json:"attemptId"`
+	Token     string             `json:"token"`
+}
+
+// ManagedContentAuthorizationEnvelope defines model for ManagedContentAuthorizationEnvelope.
+type ManagedContentAuthorizationEnvelope struct {
+	Data DockerVolumeDLPAuthorization `json:"data"`
+}
+
+// ManagedContentAuthorizeInput defines model for ManagedContentAuthorizeInput.
+type ManagedContentAuthorizeInput struct {
+	Action ManagedContentAuthorizeInputAction `json:"action"`
+}
+
+// ManagedContentAuthorizeInputAction defines model for ManagedContentAuthorizeInput.Action.
+type ManagedContentAuthorizeInputAction string
+
+// ManagedContentCopyInput defines model for ManagedContentCopyInput.
+type ManagedContentCopyInput struct {
+	Authorization *ManagedContentAuthorization `json:"authorization,omitempty"`
+	DestinationID openapi_types.UUID           `json:"destinationId"`
+	RequestID     openapi_types.UUID           `json:"requestId"`
+}
+
+// ManagedContentDestination defines model for ManagedContentDestination.
+type ManagedContentDestination struct {
+	Draft            ManagedContentDestinationConfig  `json:"draft"`
+	ID               openapi_types.UUID               `json:"id"`
+	OwnerID          string                           `json:"ownerId"`
+	Published        *ManagedContentDestinationConfig `json:"published,omitempty"`
+	PublishedVersion int                              `json:"publishedVersion"`
+	Revision         int                              `json:"revision"`
+	UpdatedAt        time.Time                        `json:"updatedAt"`
+}
+
+// ManagedContentDestinationConfig defines model for ManagedContentDestinationConfig.
+type ManagedContentDestinationConfig struct {
+	BaseURL              string                              `json:"baseUrl,omitempty"`
+	Enabled              bool                                `json:"enabled"`
+	Kind                 ManagedContentDestinationConfigKind `json:"kind"`
+	Name                 string                              `json:"name"`
+	Policy               ManagedContentPolicy                `json:"policy"`
+	PrivateCIDRs         []string                            `json:"privateCIDRs,omitempty"`
+	SecretRef            string                              `json:"secretRef,omitempty"`
+	StorageIntegrationID string                              `json:"storageIntegrationId,omitempty"`
+}
+
+// ManagedContentDestinationConfigKind defines model for ManagedContentDestinationConfig.Kind.
+type ManagedContentDestinationConfigKind string
+
+// ManagedContentDestinationEnvelope defines model for ManagedContentDestinationEnvelope.
+type ManagedContentDestinationEnvelope struct {
+	Data ManagedContentDestination `json:"data"`
+}
+
+// ManagedContentDestinationSummary defines model for ManagedContentDestinationSummary.
+type ManagedContentDestinationSummary struct {
+	ID               openapi_types.UUID                   `json:"id"`
+	Kind             ManagedContentDestinationSummaryKind `json:"kind"`
+	Mode             ManagedContentDestinationSummaryMode `json:"mode"`
+	Name             string                               `json:"name"`
+	PublishedVersion int                                  `json:"publishedVersion"`
+}
+
+// ManagedContentDestinationSummaryKind defines model for ManagedContentDestinationSummary.Kind.
+type ManagedContentDestinationSummaryKind string
+
+// ManagedContentDestinationSummaryMode defines model for ManagedContentDestinationSummary.Mode.
+type ManagedContentDestinationSummaryMode string
+
+// ManagedContentDestinationsEnvelope defines model for ManagedContentDestinationsEnvelope.
+type ManagedContentDestinationsEnvelope struct {
+	Data []ManagedContentDestinationSummary `json:"data"`
+}
+
+// ManagedContentGate defines model for ManagedContentGate.
+type ManagedContentGate struct {
+	DestinationID openapi_types.UUID `json:"destinationId"`
+	PolicyVersion int                `json:"policyVersion"`
+}
+
+// ManagedContentNetworkEnvelope defines model for ManagedContentNetworkEnvelope.
+type ManagedContentNetworkEnvelope struct {
+	Data ManagedContentNetworkHold `json:"data"`
+}
+
+// ManagedContentNetworkHold defines model for ManagedContentNetworkHold.
+type ManagedContentNetworkHold struct {
+	Active         bool                           `json:"active"`
+	CreatedAt      time.Time                      `json:"createdAt"`
+	DestinationID  openapi_types.UUID             `json:"destinationId"`
+	ID             string                         `json:"id"`
+	ReleasedAt     *time.Time                     `json:"releasedAt,omitempty"`
+	Revision       int64                          `json:"revision"`
+	SourceRecordID openapi_types.UUID             `json:"sourceRecordId"`
+	SubjectID      string                         `json:"subjectId"`
+	Targets        []DockerVolumeDLPNetworkTarget `json:"targets"`
+}
+
+// ManagedContentPasteInput defines model for ManagedContentPasteInput.
+type ManagedContentPasteInput struct {
+	Authorization *ManagedContentAuthorization `json:"authorization,omitempty"`
+	DestinationID openapi_types.UUID           `json:"destinationId"`
+	FileName      string                       `json:"fileName"`
+	RequestID     openapi_types.UUID           `json:"requestId"`
+	Text          string                       `json:"text"`
+}
+
+// ManagedContentPolicy defines model for ManagedContentPolicy.
+type ManagedContentPolicy = interface{}
+
+// ManagedContentPublishInput defines model for ManagedContentPublishInput.
+type ManagedContentPublishInput struct {
+	ExpectedRevision int `json:"expectedRevision"`
+}
+
+// ManagedContentRecord defines model for ManagedContentRecord.
+type ManagedContentRecord struct {
+	Action        ManagedContentRecordAction       `json:"action"`
+	ActorID       string                           `json:"actorId"`
+	AppealReason  string                           `json:"appealReason,omitempty"`
+	AppealStatus  ManagedContentRecordAppealStatus `json:"appealStatus"`
+	CreatedAt     time.Time                        `json:"createdAt"`
+	Decision      *DockerVolumeDLPDecision         `json:"decision,omitempty"`
+	DeletedAt     *time.Time                       `json:"deletedAt,omitempty"`
+	DestinationID openapi_types.UUID               `json:"destinationId"`
+	ErrorCode     string                           `json:"errorCode,omitempty"`
+	FileName      string                           `json:"fileName"`
+	Gates         []ManagedContentGate             `json:"gates"`
+	ID            openapi_types.UUID               `json:"id"`
+	NameRedacted  bool                             `json:"nameRedacted,omitempty"`
+	NetworkHoldID openapi_types.UUID               `json:"networkHoldId,omitempty"`
+	ReviewReason  string                           `json:"reviewReason,omitempty"`
+	ReviewerID    string                           `json:"reviewerId,omitempty"`
+	Revision      int                              `json:"revision"`
+	SizeBytes     int                              `json:"sizeBytes"`
+	SourceID      openapi_types.UUID               `json:"sourceId,omitempty"`
+	State         ManagedContentRecordState        `json:"state"`
+	UpdatedAt     time.Time                        `json:"updatedAt"`
+}
+
+// ManagedContentRecordAction defines model for ManagedContentRecord.Action.
+type ManagedContentRecordAction string
+
+// ManagedContentRecordAppealStatus defines model for ManagedContentRecord.AppealStatus.
+type ManagedContentRecordAppealStatus string
+
+// ManagedContentRecordState defines model for ManagedContentRecord.State.
+type ManagedContentRecordState string
+
+// ManagedContentRecordEnvelope defines model for ManagedContentRecordEnvelope.
+type ManagedContentRecordEnvelope struct {
+	Data ManagedContentRecord `json:"data"`
+}
+
+// ManagedContentRecordPage defines model for ManagedContentRecordPage.
+type ManagedContentRecordPage struct {
+	Items  []ManagedContentRecord `json:"items"`
+	Limit  int                    `json:"limit"`
+	Offset int                    `json:"offset"`
+	Total  int                    `json:"total"`
+}
+
+// ManagedContentRecordPageEnvelope defines model for ManagedContentRecordPageEnvelope.
+type ManagedContentRecordPageEnvelope struct {
+	Data ManagedContentRecordPage `json:"data"`
+}
+
+// ManagedContentRequest defines model for ManagedContentRequest.
+type ManagedContentRequest struct {
+	Authorization *ManagedContentAuthorization `json:"authorization,omitempty"`
+	RequestID     openapi_types.UUID           `json:"requestId"`
+}
+
+// ManagedContentResult defines model for ManagedContentResult.
+type ManagedContentResult struct {
+	ContentBase64 []byte               `json:"contentBase64,omitempty"`
+	Record        ManagedContentRecord `json:"record"`
+}
+
+// ManagedContentResultEnvelope defines model for ManagedContentResultEnvelope.
+type ManagedContentResultEnvelope struct {
+	Data ManagedContentResult `json:"data"`
+}
+
+// ManagedContentReviewInput defines model for ManagedContentReviewInput.
+type ManagedContentReviewInput struct {
+	ExpectedRevision int                                 `json:"expectedRevision"`
+	ReasonCode       ManagedContentReviewInputReasonCode `json:"reasonCode"`
+	Resolution       ManagedContentReviewInputResolution `json:"resolution"`
+}
+
+// ManagedContentReviewInputReasonCode defines model for ManagedContentReviewInput.ReasonCode.
+type ManagedContentReviewInputReasonCode string
+
+// ManagedContentReviewInputResolution defines model for ManagedContentReviewInput.Resolution.
+type ManagedContentReviewInputResolution string
+
+// ManagedContentSaveInput defines model for ManagedContentSaveInput.
+type ManagedContentSaveInput struct {
+	Draft            ManagedContentDestinationConfig `json:"draft"`
+	ExpectedRevision int                             `json:"expectedRevision"`
+}
+
+// ManagedContentUploadInput defines model for ManagedContentUploadInput.
+type ManagedContentUploadInput struct {
+	Authorization *ManagedContentAuthorization `json:"authorization,omitempty"`
+	ContentBase64 []byte                       `json:"contentBase64"`
+	DestinationID openapi_types.UUID           `json:"destinationId"`
+	FileName      string                       `json:"fileName"`
+	RequestID     openapi_types.UUID           `json:"requestId"`
+}
+
 // ManifestBinding defines model for ManifestBinding.
 type ManifestBinding struct {
 	ApplicationEnvironmentID string                     `json:"applicationEnvironmentId"`
@@ -25235,21 +27345,24 @@ type NetworkAccessMode string
 
 // NetworkAccessPolicy defines model for NetworkAccessPolicy.
 type NetworkAccessPolicy struct {
-	AccessProfile   NetworkAccessProfile          `json:"accessProfile"`
-	CreatedAt       time.Time                     `json:"createdAt"`
-	DeviceStatuses  []EndpointDeviceStatus        `json:"deviceStatuses"`
-	Effect          NetworkPolicyEffect           `json:"effect"`
-	Enabled         bool                          `json:"enabled"`
-	ID              string                        `json:"id"`
-	Modes           []NetworkAccessMode           `json:"modes"`
-	Name            string                        `json:"name"`
-	PostureStatuses []EndpointDevicePostureStatus `json:"postureStatuses"`
-	Priority        int                           `json:"priority"`
-	ResourceIDs     []string                      `json:"resourceIds"`
-	SiteIDs         []string                      `json:"siteIds"`
-	Subjects        NetworkPolicySubjects         `json:"subjects"`
-	UpdatedAt       time.Time                     `json:"updatedAt"`
-	Version         int                           `json:"version"`
+	AccessProfile NetworkAccessProfile `json:"accessProfile"`
+	CreatedAt     time.Time            `json:"createdAt"`
+
+	// DeviceManagementStates Administrator-managed device classifications. Omission on update preserves the current selector; an explicit empty array clears it. Site governance constraints still apply.
+	DeviceManagementStates []EndpointDeviceManagementState `json:"deviceManagementStates,omitempty"`
+	DeviceStatuses         []EndpointDeviceStatus          `json:"deviceStatuses"`
+	Effect                 NetworkPolicyEffect             `json:"effect"`
+	Enabled                bool                            `json:"enabled"`
+	ID                     string                          `json:"id"`
+	Modes                  []NetworkAccessMode             `json:"modes"`
+	Name                   string                          `json:"name"`
+	PostureStatuses        []EndpointDevicePostureStatus   `json:"postureStatuses"`
+	Priority               int                             `json:"priority"`
+	ResourceIDs            []string                        `json:"resourceIds"`
+	SiteIDs                []string                        `json:"siteIds"`
+	Subjects               NetworkPolicySubjects           `json:"subjects"`
+	UpdatedAt              time.Time                       `json:"updatedAt"`
+	Version                int                             `json:"version"`
 }
 
 // NetworkAccessPolicyEnvelope defines model for NetworkAccessPolicyEnvelope.
@@ -25259,17 +27372,20 @@ type NetworkAccessPolicyEnvelope struct {
 
 // NetworkAccessPolicyInput defines model for NetworkAccessPolicyInput.
 type NetworkAccessPolicyInput struct {
-	AccessProfile   NetworkAccessProfile          `json:"accessProfile"`
-	DeviceStatuses  []EndpointDeviceStatus        `json:"deviceStatuses"`
-	Effect          NetworkPolicyEffect           `json:"effect"`
-	Enabled         bool                          `json:"enabled"`
-	Modes           []NetworkAccessMode           `json:"modes"`
-	Name            string                        `json:"name"`
-	PostureStatuses []EndpointDevicePostureStatus `json:"postureStatuses"`
-	Priority        int                           `json:"priority"`
-	ResourceIDs     []string                      `json:"resourceIds"`
-	SiteIDs         []string                      `json:"siteIds"`
-	Subjects        NetworkPolicySubjects         `json:"subjects"`
+	AccessProfile NetworkAccessProfile `json:"accessProfile"`
+
+	// DeviceManagementStates Administrator-managed device classifications. Omission on update preserves the current selector; an explicit empty array clears it. Site governance constraints still apply.
+	DeviceManagementStates []EndpointDeviceManagementState `json:"deviceManagementStates,omitempty"`
+	DeviceStatuses         []EndpointDeviceStatus          `json:"deviceStatuses"`
+	Effect                 NetworkPolicyEffect             `json:"effect"`
+	Enabled                bool                            `json:"enabled"`
+	Modes                  []NetworkAccessMode             `json:"modes"`
+	Name                   string                          `json:"name"`
+	PostureStatuses        []EndpointDevicePostureStatus   `json:"postureStatuses"`
+	Priority               int                             `json:"priority"`
+	ResourceIDs            []string                        `json:"resourceIds"`
+	SiteIDs                []string                        `json:"siteIds"`
+	Subjects               NetworkPolicySubjects           `json:"subjects"`
 }
 
 // NetworkAccessPolicyListEnvelope defines model for NetworkAccessPolicyListEnvelope.
@@ -25279,6 +27395,31 @@ type NetworkAccessPolicyListEnvelope struct {
 
 // NetworkAccessProfile defines model for NetworkAccessProfile.
 type NetworkAccessProfile string
+
+// NetworkAdmissionPreviewEnvelope defines model for NetworkAdmissionPreviewEnvelope.
+type NetworkAdmissionPreviewEnvelope struct {
+	Data NetworkAdmissionPreviewResult `json:"data"`
+}
+
+// NetworkAdmissionPreviewRequest defines model for NetworkAdmissionPreviewRequest.
+type NetworkAdmissionPreviewRequest struct {
+	DeviceID     string `json:"deviceId"`
+	NasBindingID string `json:"nasBindingId"`
+}
+
+// NetworkAdmissionPreviewResult defines model for NetworkAdmissionPreviewResult.
+type NetworkAdmissionPreviewResult struct {
+	AttributeVersion      string                `json:"attributeVersion"`
+	Decision              NetworkPolicyDecision `json:"decision"`
+	EvaluatedAt           time.Time             `json:"evaluatedAt"`
+	NetworkLeaseRequired  bool                  `json:"networkLeaseRequired"`
+	NetworkProfile        string                `json:"networkProfile,omitempty"`
+	Path                  NetworkPolicyPath     `json:"path"`
+	PolicyVersion         int                   `json:"policyVersion"`
+	Protected             bool                  `json:"protected"`
+	Reasons               []string              `json:"reasons"`
+	ResourceLeaseRequired bool                  `json:"resourceLeaseRequired"`
+}
 
 // NetworkConflict defines model for NetworkConflict.
 type NetworkConflict struct {
@@ -25310,8 +27451,8 @@ type NetworkConflictAnalysisResult struct {
 
 // NetworkConflictRange defines model for NetworkConflictRange.
 type NetworkConflictRange struct {
-	// Cidr IPv4 CIDR accepted by the first network-access slice; consumers must additionally require canonical network addresses.
-	Cidr       NetworkIPv4CIDR           `json:"cidr"`
+	// Cidr Non-default IPv4 or IPv6 CIDR syntax; Core additionally validates canonical network-address bits and compressed spelling.
+	Cidr       NetworkIPCIDR             `json:"cidr"`
 	Name       string                    `json:"name"`
 	SourceID   string                    `json:"sourceId,omitempty"`
 	SourceType NetworkConflictSourceType `json:"sourceType"`
@@ -25325,12 +27466,14 @@ type NetworkConnectionAuthentication string
 
 // NetworkConnectionOption defines model for NetworkConnectionOption.
 type NetworkConnectionOption struct {
-	AccessMedium   NetworkAccessMedium             `json:"accessMedium"`
-	AccessProfile  NetworkAccessProfile            `json:"accessProfile"`
-	Authentication NetworkConnectionAuthentication `json:"authentication"`
-	PolicyVersion  int                             `json:"policyVersion"`
-	SiteID         string                          `json:"siteId"`
-	SiteName       string                          `json:"siteName"`
+	AccessMedium          NetworkAccessMedium             `json:"accessMedium"`
+	AccessProfile         NetworkAccessProfile            `json:"accessProfile"`
+	Authentication        NetworkConnectionAuthentication `json:"authentication"`
+	PolicyVersion         int                             `json:"policyVersion"`
+	ProvisioningAvailable bool                            `json:"provisioningAvailable,omitempty"`
+	ProvisioningReason    string                          `json:"provisioningReason,omitempty"`
+	SiteID                string                          `json:"siteId"`
+	SiteName              string                          `json:"siteName"`
 
 	// Ssid Present only for Wi-Fi options.
 	Ssid string `json:"ssid,omitempty"`
@@ -25341,38 +27484,282 @@ type NetworkConnectionOptionListEnvelope struct {
 	Items []NetworkConnectionOption `json:"items"`
 }
 
+// NetworkDeviceGovernanceMode Explicit site governance rollout. Legacy preserves existing behavior; managed_only requires managed devices; restricted_unmanaged limits other devices to explicitly authorized unprotected resource ZTNA or restricted admission profiles.
+type NetworkDeviceGovernanceMode string
+
+// NetworkEAPServerTrust defines model for NetworkEAPServerTrust.
+type NetworkEAPServerTrust struct {
+	CaCertificates []string                          `json:"caCertificates"`
+	ServerNames    []string                          `json:"serverNames"`
+	WifiSecurity   NetworkEAPServerTrustWifiSecurity `json:"wifiSecurity"`
+}
+
+// NetworkEAPServerTrustWifiSecurity defines model for NetworkEAPServerTrust.WifiSecurity.
+type NetworkEAPServerTrustWifiSecurity string
+
+// NetworkEndpointMaintenance defines model for NetworkEndpointMaintenance.
+type NetworkEndpointMaintenance struct {
+	ActorID   string    `json:"actorId"`
+	CreatedAt time.Time `json:"createdAt"`
+	DeviceID  string    `json:"deviceId"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	ID        string    `json:"id"`
+	Reason    string    `json:"reason"`
+	SiteID    string    `json:"siteId"`
+}
+
+// NetworkEndpointMaintenanceEnvelope defines model for NetworkEndpointMaintenanceEnvelope.
+type NetworkEndpointMaintenanceEnvelope struct {
+	Data NetworkEndpointMaintenance `json:"data"`
+}
+
+// NetworkEndpointMaintenanceInput defines model for NetworkEndpointMaintenanceInput.
+type NetworkEndpointMaintenanceInput struct {
+	DeviceID  string    `json:"deviceId"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Reason    string    `json:"reason"`
+	SiteID    string    `json:"siteId"`
+}
+
+// NetworkEndpointMaintenanceListEnvelope defines model for NetworkEndpointMaintenanceListEnvelope.
+type NetworkEndpointMaintenanceListEnvelope struct {
+	Items []NetworkEndpointMaintenance `json:"items"`
+}
+
+// NetworkEndpointPresence defines model for NetworkEndpointPresence.
+type NetworkEndpointPresence struct {
+	BootID               string                              `json:"bootId,omitempty"`
+	ConfigurationVersion int                                 `json:"configurationVersion,omitempty"`
+	DeviceID             string                              `json:"deviceId"`
+	HealthySamples       int                                 `json:"healthySamples"`
+	HealthySince         *time.Time                          `json:"healthySince,omitempty"`
+	LastObservedAt       *time.Time                          `json:"lastObservedAt,omitempty"`
+	LastReceivedAt       *time.Time                          `json:"lastReceivedAt,omitempty"`
+	PolicyVersion        int                                 `json:"policyVersion,omitempty"`
+	ReasonCode           string                              `json:"reasonCode,omitempty"`
+	RuntimeID            string                              `json:"runtimeId,omitempty"`
+	Sequence             int                                 `json:"sequence,omitempty"`
+	ServiceState         NetworkEndpointPresenceServiceState `json:"serviceState"`
+	UIHealthySamples     int                                 `json:"uiHealthySamples,omitempty"`
+	UIHealthySince       *time.Time                          `json:"uiHealthySince,omitempty"`
+	UILastObservedAt     *time.Time                          `json:"uiLastObservedAt,omitempty"`
+	UIState              NetworkEndpointPresenceUIState      `json:"uiState"`
+}
+
+// NetworkEndpointPresenceServiceState defines model for NetworkEndpointPresence.ServiceState.
+type NetworkEndpointPresenceServiceState string
+
+// NetworkEndpointPresenceUIState defines model for NetworkEndpointPresence.UIState.
+type NetworkEndpointPresenceUIState string
+
+// NetworkEndpointPresenceEnvelope defines model for NetworkEndpointPresenceEnvelope.
+type NetworkEndpointPresenceEnvelope struct {
+	Data NetworkEndpointPresence `json:"data"`
+}
+
+// NetworkEndpointResponseAction defines model for NetworkEndpointResponseAction.
+type NetworkEndpointResponseAction string
+
+// NetworkEndpointResponseEvent defines model for NetworkEndpointResponseEvent.
+type NetworkEndpointResponseEvent struct {
+	Action             NetworkEndpointResponseAction            `json:"action"`
+	CommandIDs         []string                                 `json:"commandIds"`
+	DeviceID           string                                   `json:"deviceId"`
+	ID                 string                                   `json:"id"`
+	NasEvidence        *NetworkNASSessionEvidence               `json:"nasEvidence,omitempty"`
+	NasID              string                                   `json:"nasId"`
+	NotificationReason string                                   `json:"notificationReason,omitempty"`
+	NotificationState  NetworkEndpointResponseNotificationState `json:"notificationState"`
+	PolicyID           string                                   `json:"policyId"`
+	PolicyRevision     int                                      `json:"policyRevision"`
+	Presence           *NetworkEndpointPresence                 `json:"presence,omitempty"`
+	ReasonCode         string                                   `json:"reasonCode"`
+	RestoredAt         *time.Time                               `json:"restoredAt,omitempty"`
+	RestrictionEpoch   int                                      `json:"restrictionEpoch"`
+	Revision           int                                      `json:"revision"`
+	SessionID          string                                   `json:"sessionId"`
+	Signal             NetworkEndpointResponseSignal            `json:"signal"`
+	SiteID             string                                   `json:"siteId"`
+	Stage              int                                      `json:"stage"`
+	Status             NetworkEndpointResponseEventStatus       `json:"status"`
+	SubjectID          string                                   `json:"subjectId"`
+	TriggeredAt        time.Time                                `json:"triggeredAt"`
+	UpdatedAt          time.Time                                `json:"updatedAt"`
+}
+
+// NetworkEndpointResponseEventEnvelope defines model for NetworkEndpointResponseEventEnvelope.
+type NetworkEndpointResponseEventEnvelope struct {
+	Data NetworkEndpointResponseEvent `json:"data"`
+}
+
+// NetworkEndpointResponseEventListEnvelope defines model for NetworkEndpointResponseEventListEnvelope.
+type NetworkEndpointResponseEventListEnvelope struct {
+	Items []NetworkEndpointResponseEvent `json:"items"`
+}
+
+// NetworkEndpointResponseEventStatus defines model for NetworkEndpointResponseEventStatus.
+type NetworkEndpointResponseEventStatus string
+
+// NetworkEndpointResponseNotificationState defines model for NetworkEndpointResponseNotificationState.
+type NetworkEndpointResponseNotificationState string
+
+// NetworkEndpointResponsePolicy defines model for NetworkEndpointResponsePolicy.
+type NetworkEndpointResponsePolicy struct {
+	Configuration          NetworkEndpointResponsePolicyConfiguration  `json:"configuration"`
+	CreatedAt              time.Time                                   `json:"createdAt"`
+	ID                     string                                      `json:"id"`
+	PublishedAt            *time.Time                                  `json:"publishedAt,omitempty"`
+	PublishedConfiguration *NetworkEndpointResponsePolicyConfiguration `json:"publishedConfiguration,omitempty"`
+	PublishedRevision      int                                         `json:"publishedRevision"`
+	Revision               int                                         `json:"revision"`
+	UpdatedAt              time.Time                                   `json:"updatedAt"`
+}
+
+// NetworkEndpointResponsePolicyConfiguration defines model for NetworkEndpointResponsePolicyConfiguration.
+type NetworkEndpointResponsePolicyConfiguration struct {
+	AccountingFreshnessSeconds int                                                     `json:"accountingFreshnessSeconds"`
+	AutoRestore                bool                                                    `json:"autoRestore"`
+	DeviceIDs                  []string                                                `json:"deviceIds"`
+	Enabled                    bool                                                    `json:"enabled"`
+	FailureAction              NetworkEndpointResponsePolicyConfigurationFailureAction `json:"failureAction"`
+	GracePeriodSeconds         int                                                     `json:"gracePeriodSeconds"`
+	HeartbeatIntervalSeconds   int                                                     `json:"heartbeatIntervalSeconds"`
+	MissedHeartbeats           int                                                     `json:"missedHeartbeats"`
+	Name                       string                                                  `json:"name"`
+	NasBindingIDs              []string                                                `json:"nasBindingIds"`
+	NotificationPolicyID       string                                                  `json:"notificationPolicyId,omitempty"`
+	RequireHealthyForAdmission bool                                                    `json:"requireHealthyForAdmission"`
+	RestoreHeartbeats          int                                                     `json:"restoreHeartbeats"`
+	RestoreObservationSeconds  int                                                     `json:"restoreObservationSeconds"`
+	Signal                     NetworkEndpointResponseSignal                           `json:"signal"`
+	SiteIDs                    []string                                                `json:"siteIds"`
+
+	// Steps Steps execute in array order. afterSeconds must strictly increase and disconnect must be the last step. The service rejects configurations that violate these cross-step rules.
+	Steps    []NetworkEndpointResponseStep `json:"steps"`
+	Subjects NetworkPolicySubjects         `json:"subjects"`
+}
+
+// NetworkEndpointResponsePolicyConfigurationFailureAction defines model for NetworkEndpointResponsePolicyConfiguration.FailureAction.
+type NetworkEndpointResponsePolicyConfigurationFailureAction string
+
+// NetworkEndpointResponsePolicyEnvelope defines model for NetworkEndpointResponsePolicyEnvelope.
+type NetworkEndpointResponsePolicyEnvelope struct {
+	Data NetworkEndpointResponsePolicy `json:"data"`
+}
+
+// NetworkEndpointResponsePolicyInput defines model for NetworkEndpointResponsePolicyInput.
+type NetworkEndpointResponsePolicyInput struct {
+	Configuration    NetworkEndpointResponsePolicyConfiguration `json:"configuration"`
+	ExpectedRevision int                                        `json:"expectedRevision"`
+}
+
+// NetworkEndpointResponsePolicyListEnvelope defines model for NetworkEndpointResponsePolicyListEnvelope.
+type NetworkEndpointResponsePolicyListEnvelope struct {
+	Items []NetworkEndpointResponsePolicy `json:"items"`
+}
+
+// NetworkEndpointResponsePolicyPublishInput defines model for NetworkEndpointResponsePolicyPublishInput.
+type NetworkEndpointResponsePolicyPublishInput struct {
+	ExpectedRevision int `json:"expectedRevision"`
+}
+
+// NetworkEndpointResponsePolicyRevision defines model for NetworkEndpointResponsePolicyRevision.
+type NetworkEndpointResponsePolicyRevision struct {
+	ActorID       string                                     `json:"actorId"`
+	Configuration NetworkEndpointResponsePolicyConfiguration `json:"configuration"`
+	CreatedAt     time.Time                                  `json:"createdAt"`
+	Revision      int                                        `json:"revision"`
+}
+
+// NetworkEndpointResponsePolicyRevisionListEnvelope defines model for NetworkEndpointResponsePolicyRevisionListEnvelope.
+type NetworkEndpointResponsePolicyRevisionListEnvelope struct {
+	Items []NetworkEndpointResponsePolicyRevision `json:"items"`
+}
+
+// NetworkEndpointResponsePolicyRollbackInput defines model for NetworkEndpointResponsePolicyRollbackInput.
+type NetworkEndpointResponsePolicyRollbackInput struct {
+	ExpectedRevision int `json:"expectedRevision"`
+	Revision         int `json:"revision"`
+}
+
+// NetworkEndpointResponsePreview defines model for NetworkEndpointResponsePreview.
+type NetworkEndpointResponsePreview struct {
+	DeviceID           string                          `json:"deviceId"`
+	Matched            bool                            `json:"matched"`
+	PolicyID           string                          `json:"policyId"`
+	Presence           NetworkEndpointPresence         `json:"presence"`
+	ReasonCode         string                          `json:"reasonCode"`
+	Revision           int                             `json:"revision"`
+	Sessions           []NetworkNASSessionEvidence     `json:"sessions"`
+	Steps              []NetworkEndpointResponseStep   `json:"steps"`
+	TriggerAfter       *time.Time                      `json:"triggerAfter,omitempty"`
+	UnsupportedActions []NetworkEndpointResponseAction `json:"unsupportedActions"`
+}
+
+// NetworkEndpointResponsePreviewEnvelope defines model for NetworkEndpointResponsePreviewEnvelope.
+type NetworkEndpointResponsePreviewEnvelope struct {
+	Data NetworkEndpointResponsePreview `json:"data"`
+}
+
+// NetworkEndpointResponsePreviewInput defines model for NetworkEndpointResponsePreviewInput.
+type NetworkEndpointResponsePreviewInput struct {
+	DeviceID  string `json:"deviceId"`
+	SessionID string `json:"sessionId,omitempty"`
+}
+
+// NetworkEndpointResponseRestoreInput defines model for NetworkEndpointResponseRestoreInput.
+type NetworkEndpointResponseRestoreInput struct {
+	ExpectedRevision int    `json:"expectedRevision"`
+	Reason           string `json:"reason"`
+}
+
+// NetworkEndpointResponseSignal defines model for NetworkEndpointResponseSignal.
+type NetworkEndpointResponseSignal string
+
+// NetworkEndpointResponseStep defines model for NetworkEndpointResponseStep.
+type NetworkEndpointResponseStep struct {
+	Action              NetworkEndpointResponseAction                  `json:"action"`
+	AfterSeconds        int                                            `json:"afterSeconds"`
+	TargetAccessProfile NetworkEndpointResponseStepTargetAccessProfile `json:"targetAccessProfile,omitempty"`
+}
+
+// NetworkEndpointResponseStepTargetAccessProfile defines model for NetworkEndpointResponseStep.TargetAccessProfile.
+type NetworkEndpointResponseStepTargetAccessProfile string
+
 // NetworkGateway defines model for NetworkGateway.
 type NetworkGateway struct {
-	AcceptNewConnections       *bool                              `json:"acceptNewConnections,omitempty"`
-	AdministrativeStatus       NetworkGatewayAdministrativeStatus `json:"administrativeStatus"`
-	AdvertisedCidrs            []NetworkIPv4CIDR                  `json:"advertisedCidrs,omitempty"`
-	AppliedAt                  *time.Time                         `json:"appliedAt,omitempty"`
-	Capabilities               []string                           `json:"capabilities,omitempty"`
-	CreatedAt                  time.Time                          `json:"createdAt"`
-	DNSServers                 []string                           `json:"dnsServers"`
-	HubGatewayID               string                             `json:"hubGatewayId,omitempty"`
-	ID                         string                             `json:"id"`
-	LastHeartbeatAt            *time.Time                         `json:"lastHeartbeatAt,omitempty"`
-	MaxSessions                int                                `json:"maxSessions,omitempty"`
-	Mtu                        int                                `json:"mtu"`
-	Name                       string                             `json:"name"`
-	OverlayCidr                string                             `json:"overlayCidr"`
-	PersistentKeepaliveSeconds int                                `json:"persistentKeepaliveSeconds"`
-	PolicyVersion              int                                `json:"policyVersion,omitempty"`
-	ProbeURL                   string                             `json:"probeURL,omitempty"`
-	ProviderCode               string                             `json:"providerCode,omitempty"`
-	ProviderName               string                             `json:"providerName,omitempty"`
-	PublicEndpointHost         string                             `json:"publicEndpointHost"`
-	PublicEndpointPort         int                                `json:"publicEndpointPort"`
-	Region                     string                             `json:"region,omitempty"`
-	RoutingMode                NetworkGatewayRoutingMode          `json:"routingMode"`
-	RuntimeID                  string                             `json:"runtimeId"`
-	SelectionPriority          int                                `json:"selectionPriority,omitempty"`
-	SiteID                     string                             `json:"siteId"`
-	Status                     NetworkGatewayStatus               `json:"status"`
-	UpdatedAt                  time.Time                          `json:"updatedAt"`
-	Version                    string                             `json:"version,omitempty"`
-	WireguardPublicKey         string                             `json:"wireguardPublicKey,omitempty"`
+	AcceptNewConnections *bool                              `json:"acceptNewConnections,omitempty"`
+	AdministrativeStatus NetworkGatewayAdministrativeStatus `json:"administrativeStatus"`
+	AdvertisedCidrs      []NetworkIPCIDR                    `json:"advertisedCidrs,omitempty"`
+	AppliedAt            *time.Time                         `json:"appliedAt,omitempty"`
+	Capabilities         []string                           `json:"capabilities,omitempty"`
+	CreatedAt            time.Time                          `json:"createdAt"`
+	DNSServers           []NetworkIPAddress                 `json:"dnsServers"`
+	HubGatewayID         string                             `json:"hubGatewayId,omitempty"`
+	ID                   string                             `json:"id"`
+	LastHeartbeatAt      *time.Time                         `json:"lastHeartbeatAt,omitempty"`
+	MaxSessions          int                                `json:"maxSessions,omitempty"`
+	Mtu                  int                                `json:"mtu"`
+	Name                 string                             `json:"name"`
+
+	// OverlayCidr Non-default IPv4 or IPv6 CIDR syntax; Core additionally validates canonical network-address bits and compressed spelling.
+	OverlayCidr                NetworkIPCIDR             `json:"overlayCidr"`
+	PersistentKeepaliveSeconds int                       `json:"persistentKeepaliveSeconds"`
+	PolicyVersion              int                       `json:"policyVersion,omitempty"`
+	ProbeURL                   string                    `json:"probeURL,omitempty"`
+	ProviderCode               string                    `json:"providerCode,omitempty"`
+	ProviderName               string                    `json:"providerName,omitempty"`
+	PublicEndpointHost         string                    `json:"publicEndpointHost"`
+	PublicEndpointPort         int                       `json:"publicEndpointPort"`
+	Region                     string                    `json:"region,omitempty"`
+	RoutingMode                NetworkGatewayRoutingMode `json:"routingMode"`
+	RuntimeID                  string                    `json:"runtimeId"`
+	SelectionPriority          int                       `json:"selectionPriority,omitempty"`
+	SiteID                     string                    `json:"siteId"`
+	Status                     NetworkGatewayStatus      `json:"status"`
+	UpdatedAt                  time.Time                 `json:"updatedAt"`
+	Version                    string                    `json:"version,omitempty"`
+	WireguardPublicKey         string                    `json:"wireguardPublicKey,omitempty"`
 }
 
 // NetworkGatewayAdministrativeStatus defines model for NetworkGatewayAdministrativeStatus.
@@ -25385,26 +27772,28 @@ type NetworkGatewayEnvelope struct {
 
 // NetworkGatewayInput defines model for NetworkGatewayInput.
 type NetworkGatewayInput struct {
-	AcceptNewConnections       *bool                              `json:"acceptNewConnections,omitempty"`
-	AdministrativeStatus       NetworkGatewayAdministrativeStatus `json:"administrativeStatus"`
-	AdvertisedCidrs            []NetworkIPv4CIDR                  `json:"advertisedCidrs,omitempty"`
-	DNSServers                 []string                           `json:"dnsServers"`
-	HubGatewayID               string                             `json:"hubGatewayId,omitempty"`
-	MaxSessions                *int                               `json:"maxSessions,omitempty"`
-	Mtu                        int                                `json:"mtu"`
-	Name                       string                             `json:"name"`
-	OverlayCidr                string                             `json:"overlayCidr"`
-	PersistentKeepaliveSeconds int                                `json:"persistentKeepaliveSeconds"`
-	ProbeURL                   *string                            `json:"probeURL,omitempty"`
-	ProviderCode               *string                            `json:"providerCode,omitempty"`
-	ProviderName               *string                            `json:"providerName,omitempty"`
-	PublicEndpointHost         string                             `json:"publicEndpointHost"`
-	PublicEndpointPort         int                                `json:"publicEndpointPort"`
-	Region                     *string                            `json:"region,omitempty"`
-	RoutingMode                NetworkGatewayRoutingMode          `json:"routingMode"`
-	RuntimeID                  string                             `json:"runtimeId"`
-	SelectionPriority          *int                               `json:"selectionPriority,omitempty"`
-	SiteID                     string                             `json:"siteId"`
+	AcceptNewConnections *bool                              `json:"acceptNewConnections,omitempty"`
+	AdministrativeStatus NetworkGatewayAdministrativeStatus `json:"administrativeStatus"`
+	AdvertisedCidrs      []NetworkIPCIDR                    `json:"advertisedCidrs,omitempty"`
+	DNSServers           []NetworkIPAddress                 `json:"dnsServers"`
+	HubGatewayID         string                             `json:"hubGatewayId,omitempty"`
+	MaxSessions          *int                               `json:"maxSessions,omitempty"`
+	Mtu                  int                                `json:"mtu"`
+	Name                 string                             `json:"name"`
+
+	// OverlayCidr Non-default IPv4 or IPv6 CIDR syntax; Core additionally validates canonical network-address bits and compressed spelling.
+	OverlayCidr                NetworkIPCIDR             `json:"overlayCidr"`
+	PersistentKeepaliveSeconds int                       `json:"persistentKeepaliveSeconds"`
+	ProbeURL                   *string                   `json:"probeURL,omitempty"`
+	ProviderCode               *string                   `json:"providerCode,omitempty"`
+	ProviderName               *string                   `json:"providerName,omitempty"`
+	PublicEndpointHost         string                    `json:"publicEndpointHost"`
+	PublicEndpointPort         int                       `json:"publicEndpointPort"`
+	Region                     *string                   `json:"region,omitempty"`
+	RoutingMode                NetworkGatewayRoutingMode `json:"routingMode"`
+	RuntimeID                  string                    `json:"runtimeId"`
+	SelectionPriority          *int                      `json:"selectionPriority,omitempty"`
+	SiteID                     string                    `json:"siteId"`
 }
 
 // NetworkGatewayListEnvelope defines model for NetworkGatewayListEnvelope.
@@ -25418,8 +27807,20 @@ type NetworkGatewayRoutingMode string
 // NetworkGatewayStatus defines model for NetworkGatewayStatus.
 type NetworkGatewayStatus string
 
+// NetworkIPAddress Canonical unicast IPv4 or IPv6 address; mapped, scoped and unspecified addresses are rejected.
+type NetworkIPAddress = string
+
+// NetworkIPCIDR Non-default IPv4 or IPv6 CIDR syntax; Core additionally validates canonical network-address bits and compressed spelling.
+type NetworkIPCIDR = string
+
 // NetworkIPv4CIDR IPv4 CIDR accepted by the first network-access slice; consumers must additionally require canonical network addresses.
 type NetworkIPv4CIDR = string
+
+// NetworkManagementProofInput defines model for NetworkManagementProofInput.
+type NetworkManagementProofInput struct {
+	Payload   string `json:"payload"`
+	Signature string `json:"signature"`
+}
 
 // NetworkMihomoDNSMode defines model for NetworkMihomoDNSMode.
 type NetworkMihomoDNSMode string
@@ -25442,7 +27843,7 @@ type NetworkMihomoMode string
 
 // NetworkMihomoProfile defines model for NetworkMihomoProfile.
 type NetworkMihomoProfile struct {
-	BypassCidrs    []NetworkIPv4CIDR    `json:"bypassCidrs"`
+	BypassCidrs    []NetworkIPCIDR      `json:"bypassCidrs"`
 	BypassHosts    []string             `json:"bypassHosts"`
 	ControllerPort int                  `json:"controllerPort"`
 	CreatedAt      time.Time            `json:"createdAt"`
@@ -25473,7 +27874,7 @@ type NetworkMihomoProfileEnvelope struct {
 
 // NetworkMihomoProfileInput defines model for NetworkMihomoProfileInput.
 type NetworkMihomoProfileInput struct {
-	BypassCidrs    []NetworkIPv4CIDR    `json:"bypassCidrs"`
+	BypassCidrs    []NetworkIPCIDR      `json:"bypassCidrs"`
 	BypassHosts    []string             `json:"bypassHosts"`
 	ControllerPort int                  `json:"controllerPort"`
 	DeviceID       string               `json:"deviceId"`
@@ -25513,6 +27914,7 @@ type NetworkNASBinding struct {
 	CreatedAt           time.Time               `json:"createdAt"`
 	DeviceType          NetworkAccessDeviceType `json:"deviceType,omitempty"`
 	DisconnectSupported bool                    `json:"disconnectSupported"`
+	EapServerTrust      *NetworkEAPServerTrust  `json:"eapServerTrust,omitempty"`
 	ID                  string                  `json:"id"`
 	ManagementAddress   string                  `json:"managementAddress,omitempty"`
 	Name                string                  `json:"name"`
@@ -25535,6 +27937,7 @@ type NetworkNASBindingInput struct {
 	CoaSupported        bool                    `json:"coaSupported"`
 	DeviceType          NetworkAccessDeviceType `json:"deviceType,omitempty"`
 	DisconnectSupported bool                    `json:"disconnectSupported"`
+	EapServerTrust      *NetworkEAPServerTrust  `json:"eapServerTrust,omitempty"`
 
 	// ManagementAddress Administrative IP address or hostname of the switch, access point, or controller. Credentials are never stored here.
 	ManagementAddress string `json:"managementAddress,omitempty"`
@@ -25555,6 +27958,27 @@ type NetworkNASBindingListEnvelope struct {
 
 // NetworkNASBindingStatus defines model for NetworkNASBindingStatus.
 type NetworkNASBindingStatus string
+
+// NetworkNASSessionEvidence defines model for NetworkNASSessionEvidence.
+type NetworkNASSessionEvidence struct {
+	AccountingSessionID   string                                     `json:"accountingSessionId,omitempty"`
+	LastObservedAt        *time.Time                                 `json:"lastObservedAt,omitempty"`
+	LastReceivedAt        *time.Time                                 `json:"lastReceivedAt,omitempty"`
+	NasID                 string                                     `json:"nasId"`
+	ObservedAccessProfile NetworkAccessProfile                       `json:"observedAccessProfile,omitempty"`
+	RuntimeID             string                                     `json:"runtimeId"`
+	SessionID             string                                     `json:"sessionId"`
+	StartedAt             *time.Time                                 `json:"startedAt,omitempty"`
+	State                 NetworkNASSessionEvidenceState             `json:"state"`
+	StoppedAt             *time.Time                                 `json:"stoppedAt,omitempty"`
+	VerificationState     NetworkNASSessionEvidenceVerificationState `json:"verificationState"`
+}
+
+// NetworkNASSessionEvidenceState defines model for NetworkNASSessionEvidence.State.
+type NetworkNASSessionEvidenceState string
+
+// NetworkNASSessionEvidenceVerificationState defines model for NetworkNASSessionEvidence.VerificationState.
+type NetworkNASSessionEvidenceVerificationState string
 
 // NetworkPathMode defines model for NetworkPathMode.
 type NetworkPathMode string
@@ -25584,7 +28008,9 @@ type NetworkPolicyPreviewRequest struct {
 
 // NetworkPolicyPreviewResult defines model for NetworkPolicyPreviewResult.
 type NetworkPolicyPreviewResult struct {
+	AttributeVersion      string                `json:"attributeVersion,omitempty"`
 	Decision              NetworkPolicyDecision `json:"decision"`
+	EvaluatedAt           *time.Time            `json:"evaluatedAt,omitempty"`
 	NetworkLeaseRequired  bool                  `json:"networkLeaseRequired"`
 	NetworkProfile        string                `json:"networkProfile,omitempty"`
 	Path                  NetworkPolicyPath     `json:"path"`
@@ -25610,9 +28036,18 @@ type NetworkPolicySnapshotEnvelope struct {
 
 // NetworkPolicySubjects defines model for NetworkPolicySubjects.
 type NetworkPolicySubjects struct {
+	// Roles Current role binding IDs. Removing a binding removes this selector match on re-evaluation.
+	Roles []string `json:"roles,omitempty"`
 	Tags  []string `json:"tags"`
 	Teams []string `json:"teams"`
 	Users []string `json:"users"`
+}
+
+// NetworkProxyBinding Administrative placement only. Does not authenticate proxy users or grant resource access.
+type NetworkProxyBinding struct {
+	DeviceID    string   `json:"deviceId"`
+	ResourceIDs []string `json:"resourceIds"`
+	SiteID      string   `json:"siteId"`
 }
 
 // NetworkProxyCapability defines model for NetworkProxyCapability.
@@ -25620,19 +28055,47 @@ type NetworkProxyCapability string
 
 // NetworkProxyCloseCommandEnvelope defines model for NetworkProxyCloseCommandEnvelope.
 type NetworkProxyCloseCommandEnvelope struct {
-	CommandID string                                 `json:"commandId"`
-	ExpiresAt time.Time                              `json:"expiresAt"`
-	Status    NetworkProxyCloseCommandEnvelopeStatus `json:"status"`
+	CommandID    string                                 `json:"commandId"`
+	ConnectionID string                                 `json:"connectionId,omitempty"`
+	ExpiresAt    time.Time                              `json:"expiresAt"`
+	ReasonCode   string                                 `json:"reasonCode,omitempty"`
+	Status       NetworkProxyCloseCommandEnvelopeStatus `json:"status"`
 }
 
 // NetworkProxyCloseCommandEnvelopeStatus defines model for NetworkProxyCloseCommandEnvelope.Status.
 type NetworkProxyCloseCommandEnvelopeStatus string
 
-// NetworkProxyConfigurationInput defines model for NetworkProxyConfigurationInput.
+// NetworkProxyConfigurationHistoryEnvelope defines model for NetworkProxyConfigurationHistoryEnvelope.
+type NetworkProxyConfigurationHistoryEnvelope struct {
+	Items []NetworkProxyConfigurationRevision `json:"items"`
+}
+
+// NetworkProxyConfigurationInput Retained full-configuration SDK input for existing consumers. New partial updates use NetworkProxyConfigurationPatchInput; the HTTP endpoint still accepts full configurations.
 type NetworkProxyConfigurationInput struct {
 	Content          string `json:"content,omitempty"`
 	Enabled          bool   `json:"enabled"`
 	ExpectedRevision int64  `json:"expectedRevision"`
+}
+
+// NetworkProxyConfigurationPatchInput defines model for NetworkProxyConfigurationPatchInput.
+type NetworkProxyConfigurationPatchInput struct {
+	// Binding Administrative placement only. Does not authenticate proxy users or grant resource access.
+	Binding *NetworkProxyBinding `json:"binding,omitempty"`
+
+	// ClearBinding Only permitted when disabled. Requires scope authorization for the existing and unbound instance.
+	ClearBinding bool `json:"clearBinding,omitempty"`
+
+	// Content Omission retains the stored encrypted configuration. Required for the first configuration.
+	Content          *string `json:"content,omitempty"`
+	Enabled          bool    `json:"enabled"`
+	ExpectedRevision int64   `json:"expectedRevision"`
+}
+
+// NetworkProxyConfigurationRevision defines model for NetworkProxyConfigurationRevision.
+type NetworkProxyConfigurationRevision struct {
+	ContentHash string    `json:"contentHash"`
+	CreatedAt   time.Time `json:"createdAt"`
+	Revision    int       `json:"revision"`
 }
 
 // NetworkProxyConnection defines model for NetworkProxyConnection.
@@ -25678,21 +28141,28 @@ type NetworkProxyFlowSummary struct {
 
 // NetworkProxyInstance defines model for NetworkProxyInstance.
 type NetworkProxyInstance struct {
-	Capabilities     []NetworkProxyCapability   `json:"capabilities"`
-	CreatedAt        time.Time                  `json:"createdAt"`
-	DesiredRevision  int64                      `json:"desiredRevision"`
-	Enabled          bool                       `json:"enabled"`
-	Engine           NetworkProxyEngine         `json:"engine"`
-	EngineVersion    string                     `json:"engineVersion,omitempty"`
-	Host             string                     `json:"host,omitempty"`
-	ID               string                     `json:"id"`
-	LastSampleAt     *time.Time                 `json:"lastSampleAt,omitempty"`
-	LastSeenAt       *time.Time                 `json:"lastSeenAt,omitempty"`
-	Name             string                     `json:"name"`
-	ObservedRevision int64                      `json:"observedRevision"`
-	ReasonCode       string                     `json:"reasonCode,omitempty"`
-	Status           NetworkProxyInstanceStatus `json:"status"`
-	UpdatedAt        time.Time                  `json:"updatedAt"`
+	// Binding Administrative placement only. Does not authenticate proxy users or grant resource access.
+	Binding               *NetworkProxyBinding     `json:"binding,omitempty"`
+	Capabilities          []NetworkProxyCapability `json:"capabilities"`
+	CreatedAt             time.Time                `json:"createdAt"`
+	DesiredRevision       int64                    `json:"desiredRevision"`
+	Enabled               bool                     `json:"enabled"`
+	Engine                NetworkProxyEngine       `json:"engine"`
+	EngineVersion         string                   `json:"engineVersion,omitempty"`
+	Host                  string                   `json:"host,omitempty"`
+	ID                    string                   `json:"id"`
+	LastSampleAt          *time.Time               `json:"lastSampleAt,omitempty"`
+	LastSeenAt            *time.Time               `json:"lastSeenAt,omitempty"`
+	Name                  string                   `json:"name"`
+	ObservedPolicyVersion int                      `json:"observedPolicyVersion,omitempty"`
+	ObservedRevision      int64                    `json:"observedRevision"`
+	PolicyVersion         int                      `json:"policyVersion,omitempty"`
+	ReasonCode            string                   `json:"reasonCode,omitempty"`
+
+	// SecurityRestricted Owner-bound managed runtime suspension; not per-flow user attribution.
+	SecurityRestricted bool                       `json:"securityRestricted,omitempty"`
+	Status             NetworkProxyInstanceStatus `json:"status"`
+	UpdatedAt          time.Time                  `json:"updatedAt"`
 }
 
 // NetworkProxyInstanceEnvelope defines model for NetworkProxyInstanceEnvelope.
@@ -25715,6 +28185,11 @@ type NetworkProxyInstanceListEnvelope struct {
 
 // NetworkProxyInstanceStatus defines model for NetworkProxyInstanceStatus.
 type NetworkProxyInstanceStatus string
+
+// NetworkProxyRestoreInput defines model for NetworkProxyRestoreInput.
+type NetworkProxyRestoreInput struct {
+	ExpectedRevision int `json:"expectedRevision"`
+}
 
 // NetworkProxyTrafficEnvelope defines model for NetworkProxyTrafficEnvelope.
 type NetworkProxyTrafficEnvelope struct {
@@ -25832,22 +28307,31 @@ type NetworkRuntimeKind string
 
 // NetworkSession defines model for NetworkSession.
 type NetworkSession struct {
-	AccessProfile    NetworkAccessProfile `json:"accessProfile"`
-	DeviceID         string               `json:"deviceId"`
-	ExpiresAt        time.Time            `json:"expiresAt"`
-	GatewayID        string               `json:"gatewayId,omitempty"`
-	ID               string               `json:"id"`
-	Mode             NetworkAccessMode    `json:"mode"`
-	NasID            string               `json:"nasId,omitempty"`
-	NetworkLeaseIDs  []string             `json:"networkLeaseIds"`
-	Path             NetworkPolicyPath    `json:"path"`
-	PolicyVersion    int                  `json:"policyVersion"`
-	ReasonCode       string               `json:"reasonCode,omitempty"`
-	ResourceLeaseIDs []string             `json:"resourceLeaseIds"`
-	SiteID           string               `json:"siteId,omitempty"`
-	StartedAt        time.Time            `json:"startedAt"`
-	Status           NetworkSessionStatus `json:"status"`
-	SubjectID        string               `json:"subjectId"`
+	AccessProfile NetworkAccessProfile `json:"accessProfile"`
+
+	// AdmissionAttributeVersion Original NAS decision input version, including health and persisted restrictions; absent for legacy or non-NAS sessions.
+	AdmissionAttributeVersion string `json:"admissionAttributeVersion,omitempty"`
+
+	// AdmissionPolicyVersion Policy version used by the original NAS authentication decision.
+	AdmissionPolicyVersion int                    `json:"admissionPolicyVersion,omitempty"`
+	DeviceID               string                 `json:"deviceId"`
+	ExpiresAt              time.Time              `json:"expiresAt"`
+	GatewayID              string                 `json:"gatewayId,omitempty"`
+	ID                     string                 `json:"id"`
+	LatestCommand          *NetworkSessionCommand `json:"latestCommand,omitempty"`
+	Mode                   NetworkAccessMode      `json:"mode"`
+	NasID                  string                 `json:"nasId,omitempty"`
+	NetworkLeaseIDs        []string               `json:"networkLeaseIds"`
+	Path                   NetworkPolicyPath      `json:"path"`
+	PolicyVersion          int                    `json:"policyVersion"`
+	ReasonCode             string                 `json:"reasonCode,omitempty"`
+	ResourceLeaseIDs       []string               `json:"resourceLeaseIds"`
+	RestrictionProfile     NetworkAccessProfile   `json:"restrictionProfile,omitempty"`
+	RestrictionReason      string                 `json:"restrictionReason,omitempty"`
+	SiteID                 string                 `json:"siteId,omitempty"`
+	StartedAt              time.Time              `json:"startedAt"`
+	Status                 NetworkSessionStatus   `json:"status"`
+	SubjectID              string                 `json:"subjectId"`
 }
 
 // NetworkSessionAction defines model for NetworkSessionAction.
@@ -25928,13 +28412,19 @@ type NetworkSessionStatus string
 
 // NetworkSite defines model for NetworkSite.
 type NetworkSite struct {
-	CreatedAt   time.Time         `json:"createdAt"`
-	Description string            `json:"description,omitempty"`
-	ID          string            `json:"id"`
-	Location    string            `json:"location,omitempty"`
-	Name        string            `json:"name"`
-	Status      NetworkSiteStatus `json:"status"`
-	UpdatedAt   time.Time         `json:"updatedAt"`
+	CreatedAt   time.Time `json:"createdAt"`
+	Description string    `json:"description,omitempty"`
+
+	// DeviceGovernance Explicit site governance rollout. Legacy preserves existing behavior; managed_only requires managed devices; restricted_unmanaged limits other devices to explicitly authorized unprotected resource ZTNA or restricted admission profiles.
+	DeviceGovernance NetworkDeviceGovernanceMode `json:"deviceGovernance,omitempty"`
+	ID               string                      `json:"id"`
+	Location         string                      `json:"location,omitempty"`
+
+	// ManagementIssuerKey Base64 Ed25519 public key for the site MDM issuer; empty clears and omission preserves.
+	ManagementIssuerKey *string           `json:"managementIssuerKey,omitempty"`
+	Name                string            `json:"name"`
+	Status              NetworkSiteStatus `json:"status"`
+	UpdatedAt           time.Time         `json:"updatedAt"`
 }
 
 // NetworkSiteEnvelope defines model for NetworkSiteEnvelope.
@@ -25944,10 +28434,16 @@ type NetworkSiteEnvelope struct {
 
 // NetworkSiteInput defines model for NetworkSiteInput.
 type NetworkSiteInput struct {
-	Description string            `json:"description,omitempty"`
-	Location    string            `json:"location,omitempty"`
-	Name        string            `json:"name"`
-	Status      NetworkSiteStatus `json:"status"`
+	Description string `json:"description,omitempty"`
+
+	// DeviceGovernance Explicit site governance rollout. Legacy preserves existing behavior; managed_only requires managed devices; restricted_unmanaged limits other devices to explicitly authorized unprotected resource ZTNA or restricted admission profiles.
+	DeviceGovernance NetworkDeviceGovernanceMode `json:"deviceGovernance,omitempty"`
+	Location         string                      `json:"location,omitempty"`
+
+	// ManagementIssuerKey Base64 Ed25519 public key for the site MDM issuer; empty clears and omission preserves.
+	ManagementIssuerKey *string           `json:"managementIssuerKey,omitempty"`
+	Name                string            `json:"name"`
+	Status              NetworkSiteStatus `json:"status"`
 }
 
 // NetworkSiteListEnvelope defines model for NetworkSiteListEnvelope.
@@ -25991,7 +28487,7 @@ type NetworkSiteStatus string
 
 // NetworkSpace defines model for NetworkSpace.
 type NetworkSpace struct {
-	Cidrs     []NetworkIPv4CIDR  `json:"cidrs"`
+	Cidrs     []NetworkIPCIDR    `json:"cidrs"`
 	CreatedAt time.Time          `json:"createdAt"`
 	ID        string             `json:"id"`
 	Name      string             `json:"name"`
@@ -26007,7 +28503,7 @@ type NetworkSpaceEnvelope struct {
 
 // NetworkSpaceInput defines model for NetworkSpaceInput.
 type NetworkSpaceInput struct {
-	Cidrs  []NetworkIPv4CIDR  `json:"cidrs"`
+	Cidrs  []NetworkIPCIDR    `json:"cidrs"`
 	Name   string             `json:"name"`
 	SiteID string             `json:"siteId"`
 	Status NetworkSpaceStatus `json:"status"`
@@ -26323,6 +28819,49 @@ type NetworkVPNRevisionInput struct {
 	ExpectedRevision int `json:"expectedRevision"`
 }
 
+// NetworkVPNRevocation defines model for NetworkVPNRevocation.
+type NetworkVPNRevocation struct {
+	Active     bool                            `json:"active"`
+	CreatedAt  time.Time                       `json:"createdAt"`
+	DeviceID   string                          `json:"deviceId"`
+	Epoch      int                             `json:"epoch"`
+	Executions []NetworkVPNRevocationExecution `json:"executions"`
+	ReasonCode string                          `json:"reasonCode"`
+	ReleasedAt *time.Time                      `json:"releasedAt,omitempty"`
+	SessionID  string                          `json:"sessionId"`
+	SiteID     string                          `json:"siteId"`
+	SubjectID  string                          `json:"subjectId"`
+}
+
+// NetworkVPNRevocationEnvelope defines model for NetworkVPNRevocationEnvelope.
+type NetworkVPNRevocationEnvelope struct {
+	Data NetworkVPNRevocation `json:"data"`
+}
+
+// NetworkVPNRevocationExecution defines model for NetworkVPNRevocationExecution.
+type NetworkVPNRevocationExecution struct {
+	AppliedAt *time.Time `json:"appliedAt,omitempty"`
+
+	// ApplyStatus Configuration receipt only. Pending or missing receipt does not prove enforcement.
+	ApplyStatus          string `json:"applyStatus"`
+	ConfigurationVersion int    `json:"configurationVersion"`
+	ReasonCode           string `json:"reasonCode,omitempty"`
+	RuntimeID            string `json:"runtimeId"`
+}
+
+// NetworkVPNRevocationReleaseInput defines model for NetworkVPNRevocationReleaseInput.
+type NetworkVPNRevocationReleaseInput struct {
+	ExpectedEpoch int `json:"expectedEpoch"`
+}
+
+// NetworkVPNRevocationStateEnvelope defines model for NetworkVPNRevocationStateEnvelope.
+type NetworkVPNRevocationStateEnvelope struct {
+	Data struct {
+		Present    bool                  `json:"present"`
+		Revocation *NetworkVPNRevocation `json:"revocation,omitempty"`
+	} `json:"data"`
+}
+
 // NetworkVPNRollbackInput defines model for NetworkVPNRollbackInput.
 type NetworkVPNRollbackInput struct {
 	ExpectedRevision int `json:"expectedRevision"`
@@ -26401,6 +28940,43 @@ type NetworkVPNSeriesPoint struct {
 	LatencyP95Ms  *float32  `json:"latencyP95Ms,omitempty"`
 	Successes     int       `json:"successes"`
 	UploadBytes   int       `json:"uploadBytes,omitempty"`
+}
+
+// NetworkWorkloadBinding defines model for NetworkWorkloadBinding.
+type NetworkWorkloadBinding struct {
+	DeviceID         string    `json:"deviceId"`
+	Enabled          bool      `json:"enabled"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+	ID               string    `json:"id"`
+	NetworkSpaceID   string    `json:"networkSpaceId"`
+	ResourceIDs      []string  `json:"resourceIds"`
+	Revision         int       `json:"revision"`
+	RuntimeID        string    `json:"runtimeId"`
+	ServiceAccountID string    `json:"serviceAccountId"`
+	SiteID           string    `json:"siteId"`
+}
+
+// NetworkWorkloadBindingEnvelope defines model for NetworkWorkloadBindingEnvelope.
+type NetworkWorkloadBindingEnvelope struct {
+	Data NetworkWorkloadBinding `json:"data"`
+}
+
+// NetworkWorkloadBindingInput defines model for NetworkWorkloadBindingInput.
+type NetworkWorkloadBindingInput struct {
+	DeviceID         string    `json:"deviceId"`
+	Enabled          bool      `json:"enabled"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+	NetworkSpaceID   string    `json:"networkSpaceId"`
+	ResourceIDs      []string  `json:"resourceIds"`
+	Revision         int       `json:"revision"`
+	RuntimeID        string    `json:"runtimeId"`
+	ServiceAccountID string    `json:"serviceAccountId"`
+	SiteID           string    `json:"siteId"`
+}
+
+// NetworkWorkloadBindingListEnvelope defines model for NetworkWorkloadBindingListEnvelope.
+type NetworkWorkloadBindingListEnvelope struct {
+	Items []NetworkWorkloadBinding `json:"items"`
 }
 
 // OIDCClient defines model for OIDCClient.
@@ -32952,6 +35528,9 @@ type KubernetesDeploymentName = string
 // KubernetesEventLimitQuery defines model for KubernetesEventLimitQuery.
 type KubernetesEventLimitQuery = int
 
+// KubernetesExpectedWorkloadUID defines model for KubernetesExpectedWorkloadUID.
+type KubernetesExpectedWorkloadUID = string
+
 // KubernetesJobName defines model for KubernetesJobName.
 type KubernetesJobName = string
 
@@ -33197,6 +35776,9 @@ type agentBearerAuthContextKey string
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
+
+// networkControlMTLSContextKey is the context key for networkControlMTLS security scheme
+type networkControlMTLSContextKey string
 
 // runtimeBearerAuthContextKey is the context key for runtimeBearerAuth security scheme
 type runtimeBearerAuthContextKey string
@@ -34108,6 +36690,11 @@ type ListKubernetesSecretMetadataParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
+// GetKubernetesSecretCertificateParams defines parameters for GetKubernetesSecretCertificate.
+type GetKubernetesSecretCertificateParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
+}
+
 // UpdateKubernetesSecretDataParams defines parameters for UpdateKubernetesSecretData.
 type UpdateKubernetesSecretDataParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -34124,6 +36711,11 @@ type GetKubernetesSecretDetailParams struct {
 type ListKubernetesSecretReferencesParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// ApplyKubernetesSecretYamlParams defines parameters for ApplyKubernetesSecretYaml.
+type ApplyKubernetesSecretYamlParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
 }
 
 // ListKubernetesClusterEventsParams defines parameters for ListKubernetesClusterEvents.
@@ -34207,6 +36799,11 @@ type RollbackKubernetesHelmReleaseParams struct {
 type PlanKubernetesHelmReleaseRollbackParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// UpdateKubernetesHelmReleaseValuesParams defines parameters for UpdateKubernetesHelmReleaseValues.
+type UpdateKubernetesHelmReleaseValuesParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
 }
 
 // ListKubernetesBackendTLSPoliciesParams defines parameters for ListKubernetesBackendTLSPolicies.
@@ -34335,6 +36932,11 @@ type GetKubernetesIngressDetailParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
+// ApplyKubernetesIngressYamlParams defines parameters for ApplyKubernetesIngressYaml.
+type ApplyKubernetesIngressYamlParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
+}
+
 // ListKubernetesNetworkPoliciesParams defines parameters for ListKubernetesNetworkPolicies.
 type ListKubernetesNetworkPoliciesParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -34398,6 +37000,11 @@ type GetKubernetesServiceMetricsParams struct {
 	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
 }
 
+// ApplyKubernetesServiceYamlParams defines parameters for ApplyKubernetesServiceYaml.
+type ApplyKubernetesServiceYamlParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
+}
+
 // GetKubernetesNetworkTopologyParams defines parameters for GetKubernetesNetworkTopology.
 type GetKubernetesNetworkTopologyParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -34425,6 +37032,12 @@ type GetKubernetesResourceGraphParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 	Kind      string                   `form:"kind" json:"kind"`
 	Name      string                   `form:"name" json:"name"`
+
+	// APIVersion Exact served group/version for a CRD instance, or apiextensions.k8s.io/v1 for a CRD definition. Required together with resource for explicit CRD graphs.
+	APIVersion string `form:"apiVersion,omitempty" json:"apiVersion,omitempty"`
+
+	// Resource Exact CRD plural resource name. For a CRD definition use customresourcedefinitions.
+	Resource string `form:"resource,omitempty" json:"resource,omitempty"`
 }
 
 // SearchKubernetesResourcesParams defines parameters for SearchKubernetesResources.
@@ -34510,6 +37123,16 @@ type GetKubernetesDaemonSetMetricsParams struct {
 	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
 }
 
+// ListKubernetesDaemonSetRolloutsParams defines parameters for ListKubernetesDaemonSetRollouts.
+type ListKubernetesDaemonSetRolloutsParams struct {
+	Namespace KubernetesNamespaceDefaultQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// GetKubernetesDaemonSetRevisionYamlParams defines parameters for GetKubernetesDaemonSetRevisionYaml.
+type GetKubernetesDaemonSetRevisionYamlParams struct {
+	Namespace KubernetesNamespaceDefaultQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
 // GetKubernetesDaemonSetYamlParams defines parameters for GetKubernetesDaemonSetYaml.
 type GetKubernetesDaemonSetYamlParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -34520,6 +37143,15 @@ type GetKubernetesDaemonSetYamlParams struct {
 type ListKubernetesDeploymentsParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// DeleteKubernetesDeploymentParams defines parameters for DeleteKubernetesDeployment.
+type DeleteKubernetesDeploymentParams struct {
+	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
+	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+
+	// ExpectedUID Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement.
+	ExpectedUID KubernetesExpectedWorkloadUID `form:"expectedUid,omitempty" json:"expectedUid,omitempty"`
 }
 
 // GetKubernetesDeploymentDetailParams defines parameters for GetKubernetesDeploymentDetail.
@@ -34563,6 +37195,15 @@ type GetKubernetesJobDetailParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
+// GetKubernetesJobMetricsParams defines parameters for GetKubernetesJobMetrics.
+type GetKubernetesJobMetricsParams struct {
+	Namespace    KubernetesNamespaceDefaultQuery    `form:"namespace,omitempty" json:"namespace,omitempty"`
+	RangeMinutes KubernetesMetricsRangeMinutesQuery `form:"rangeMinutes,omitempty" json:"rangeMinutes,omitempty"`
+
+	// StepSeconds Requested step. The server may increase it to keep the response below 1440 points per series.
+	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
+}
+
 // GetKubernetesJobYamlParams defines parameters for GetKubernetesJobYaml.
 type GetKubernetesJobYamlParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -34585,6 +37226,9 @@ type ListKubernetesPodsParams struct {
 type DeleteKubernetesPodParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+
+	// ExpectedUID Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement.
+	ExpectedUID KubernetesExpectedWorkloadUID `form:"expectedUid,omitempty" json:"expectedUid,omitempty"`
 }
 
 // GetKubernetesPodDetailParams defines parameters for GetKubernetesPodDetail.
@@ -34630,6 +37274,15 @@ type GetKubernetesReplicaSetDetailParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
+// GetKubernetesReplicaSetMetricsParams defines parameters for GetKubernetesReplicaSetMetrics.
+type GetKubernetesReplicaSetMetricsParams struct {
+	Namespace    KubernetesNamespaceDefaultQuery    `form:"namespace,omitempty" json:"namespace,omitempty"`
+	RangeMinutes KubernetesMetricsRangeMinutesQuery `form:"rangeMinutes,omitempty" json:"rangeMinutes,omitempty"`
+
+	// StepSeconds Requested step. The server may increase it to keep the response below 1440 points per series.
+	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
+}
+
 // GetKubernetesReplicaSetYamlParams defines parameters for GetKubernetesReplicaSetYaml.
 type GetKubernetesReplicaSetYamlParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -34652,6 +37305,15 @@ type DeleteKubernetesReplicationControllerParams struct {
 type GetKubernetesReplicationControllerDetailParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// GetKubernetesReplicationControllerMetricsParams defines parameters for GetKubernetesReplicationControllerMetrics.
+type GetKubernetesReplicationControllerMetricsParams struct {
+	Namespace    KubernetesNamespaceDefaultQuery    `form:"namespace,omitempty" json:"namespace,omitempty"`
+	RangeMinutes KubernetesMetricsRangeMinutesQuery `form:"rangeMinutes,omitempty" json:"rangeMinutes,omitempty"`
+
+	// StepSeconds Requested step. The server may increase it to keep the response below 1440 points per series.
+	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
 }
 
 // GetKubernetesReplicationControllerYamlParams defines parameters for GetKubernetesReplicationControllerYaml.
@@ -34679,6 +37341,16 @@ type GetKubernetesStatefulSetMetricsParams struct {
 
 	// StepSeconds Requested step. The server may increase it to keep the response below 1440 points per series.
 	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
+}
+
+// ListKubernetesStatefulSetRolloutsParams defines parameters for ListKubernetesStatefulSetRollouts.
+type ListKubernetesStatefulSetRolloutsParams struct {
+	Namespace KubernetesNamespaceDefaultQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// GetKubernetesStatefulSetRevisionYamlParams defines parameters for GetKubernetesStatefulSetRevisionYaml.
+type GetKubernetesStatefulSetRevisionYamlParams struct {
+	Namespace KubernetesNamespaceDefaultQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
 // GetKubernetesStatefulSetYamlParams defines parameters for GetKubernetesStatefulSetYaml.
@@ -35048,6 +37720,14 @@ type DeployDockerProjectParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ReadDockerProjectVolumeFileParams defines parameters for ReadDockerProjectVolumeFile.
+type ReadDockerProjectVolumeFileParams struct {
+	ServiceName string `form:"serviceName,omitempty" json:"serviceName,omitempty"`
+	Target      string `form:"target" json:"target"`
+	Path        string `form:"path" json:"path"`
+	LimitBytes  int64  `form:"limitBytes,omitempty" json:"limitBytes,omitempty"`
+}
+
 // GetIdentityProviderUserMetadataParams defines parameters for GetIdentityProviderUserMetadata.
 type GetIdentityProviderUserMetadataParams struct {
 	// ClientID OIDC client record ID. Required for OIDC; the client must belong to this provider.
@@ -35095,6 +37775,24 @@ type ListCurrentNetworkConnectionOptionsParams struct {
 	DeviceID string `form:"deviceId" json:"deviceId"`
 }
 
+// ListManagedContentCasesParams defines parameters for ListManagedContentCases.
+type ListManagedContentCasesParams struct {
+	Offset int `form:"offset,omitempty" json:"offset,omitempty"`
+	Limit  int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListManagedContentFilesParams defines parameters for ListManagedContentFiles.
+type ListManagedContentFilesParams struct {
+	Offset int `form:"offset,omitempty" json:"offset,omitempty"`
+	Limit  int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListManagedContentRecordsParams defines parameters for ListManagedContentRecords.
+type ListManagedContentRecordsParams struct {
+	Offset int `form:"offset,omitempty" json:"offset,omitempty"`
+	Limit  int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListEndpointDevicesParams defines parameters for ListEndpointDevices.
 type ListEndpointDevicesParams struct {
 	Search      string               `form:"search,omitempty" json:"search,omitempty"`
@@ -35102,6 +37800,34 @@ type ListEndpointDevicesParams struct {
 	OwnerUserID string               `form:"ownerUserId,omitempty" json:"ownerUserId,omitempty"`
 	SiteID      string               `form:"siteId,omitempty" json:"siteId,omitempty"`
 	Limit       int                  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListNetworkEndpointMaintenanceWindowsParams defines parameters for ListNetworkEndpointMaintenanceWindows.
+type ListNetworkEndpointMaintenanceWindowsParams struct {
+	SiteID   string `form:"siteId,omitempty" json:"siteId,omitempty"`
+	DeviceID string `form:"deviceId,omitempty" json:"deviceId,omitempty"`
+	Limit    int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListNetworkEndpointResponseEventsParams defines parameters for ListNetworkEndpointResponseEvents.
+type ListNetworkEndpointResponseEventsParams struct {
+	SiteID   string                             `form:"siteId,omitempty" json:"siteId,omitempty"`
+	DeviceID string                             `form:"deviceId,omitempty" json:"deviceId,omitempty"`
+	Limit    int                                `form:"limit,omitempty" json:"limit,omitempty"`
+	PolicyID string                             `form:"policyId,omitempty" json:"policyId,omitempty"`
+	Status   NetworkEndpointResponseEventStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// ListNetworkEndpointResponsePoliciesParams defines parameters for ListNetworkEndpointResponsePolicies.
+type ListNetworkEndpointResponsePoliciesParams struct {
+	SiteID   string `form:"siteId,omitempty" json:"siteId,omitempty"`
+	DeviceID string `form:"deviceId,omitempty" json:"deviceId,omitempty"`
+	Limit    int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// DeleteNetworkEndpointResponsePolicyParams defines parameters for DeleteNetworkEndpointResponsePolicy.
+type DeleteNetworkEndpointResponsePolicyParams struct {
+	ExpectedRevision int `form:"expectedRevision" json:"expectedRevision"`
 }
 
 // ListNetworkRuntimeEnrollmentsParams defines parameters for ListNetworkRuntimeEnrollments.
@@ -35947,11 +38673,17 @@ type ApplyKubernetesPodDisruptionBudgetYamlJSONRequestBody = KubernetesResourceY
 // UpdateKubernetesSecretDataJSONRequestBody defines body for UpdateKubernetesSecretData for application/json ContentType.
 type UpdateKubernetesSecretDataJSONRequestBody = KubernetesSecretDataInput
 
+// ApplyKubernetesSecretYamlJSONRequestBody defines body for ApplyKubernetesSecretYaml for application/json ContentType.
+type ApplyKubernetesSecretYamlJSONRequestBody = KubernetesObservedResourceYamlInput
+
 // RollbackKubernetesHelmReleaseJSONRequestBody defines body for RollbackKubernetesHelmRelease for application/json ContentType.
 type RollbackKubernetesHelmReleaseJSONRequestBody = KubernetesHelmReleaseRollbackInput
 
 // PlanKubernetesHelmReleaseRollbackJSONRequestBody defines body for PlanKubernetesHelmReleaseRollback for application/json ContentType.
 type PlanKubernetesHelmReleaseRollbackJSONRequestBody = KubernetesHelmReleaseRollbackInput
+
+// UpdateKubernetesHelmReleaseValuesJSONRequestBody defines body for UpdateKubernetesHelmReleaseValues for application/json ContentType.
+type UpdateKubernetesHelmReleaseValuesJSONRequestBody = KubernetesHelmReleaseValuesUpdateInput
 
 // UpdateKubernetesNodeJSONRequestBody defines body for UpdateKubernetesNode for application/json ContentType.
 type UpdateKubernetesNodeJSONRequestBody = KubernetesNodeUpdateInput
@@ -35986,8 +38718,14 @@ type ApplyKubernetesGRPCRouteYamlJSONRequestBody = KubernetesResourceYamlInput
 // ApplyKubernetesHTTPRouteYamlJSONRequestBody defines body for ApplyKubernetesHTTPRouteYaml for application/json ContentType.
 type ApplyKubernetesHTTPRouteYamlJSONRequestBody = KubernetesResourceYamlInput
 
+// ApplyKubernetesIngressYamlJSONRequestBody defines body for ApplyKubernetesIngressYaml for application/json ContentType.
+type ApplyKubernetesIngressYamlJSONRequestBody = KubernetesObservedResourceYamlInput
+
 // ApplyKubernetesReferenceGrantYamlJSONRequestBody defines body for ApplyKubernetesReferenceGrantYaml for application/json ContentType.
 type ApplyKubernetesReferenceGrantYamlJSONRequestBody = KubernetesResourceYamlInput
+
+// ApplyKubernetesServiceYamlJSONRequestBody defines body for ApplyKubernetesServiceYaml for application/json ContentType.
+type ApplyKubernetesServiceYamlJSONRequestBody = KubernetesObservedResourceYamlInput
 
 // DisableClusterLogCollectionJSONRequestBody defines body for DisableClusterLogCollection for application/json ContentType.
 type DisableClusterLogCollectionJSONRequestBody = LogCollectionDisableInput
@@ -36310,6 +39048,24 @@ type ClaimDockerOperationJSONRequestBody = DockerOperationClaimRequest
 // CreateDockerProjectJSONRequestBody defines body for CreateDockerProject for application/json ContentType.
 type CreateDockerProjectJSONRequestBody = DockerProjectInput
 
+// SaveDockerVolumeDLPPolicyJSONRequestBody defines body for SaveDockerVolumeDLPPolicy for application/json ContentType.
+type SaveDockerVolumeDLPPolicyJSONRequestBody = DockerVolumeDLPSaveInput
+
+// AppealDockerVolumeDLPTransferJSONRequestBody defines body for AppealDockerVolumeDLPTransfer for application/json ContentType.
+type AppealDockerVolumeDLPTransferJSONRequestBody = DockerVolumeDLPAppealInput
+
+// ReviewDockerVolumeDLPAppealJSONRequestBody defines body for ReviewDockerVolumeDLPAppeal for application/json ContentType.
+type ReviewDockerVolumeDLPAppealJSONRequestBody = DockerVolumeDLPAppealReviewInput
+
+// AuthorizeDockerVolumeDLPTransferJSONRequestBody defines body for AuthorizeDockerVolumeDLPTransfer for application/json ContentType.
+type AuthorizeDockerVolumeDLPTransferJSONRequestBody = DockerVolumeDLPAuthorizationInput
+
+// PreviewDockerContentDLPPolicyJSONRequestBody defines body for PreviewDockerContentDLPPolicy for application/json ContentType.
+type PreviewDockerContentDLPPolicyJSONRequestBody = DLPShadowInput
+
+// PublishDockerVolumeDLPPolicyJSONRequestBody defines body for PublishDockerVolumeDLPPolicy for application/json ContentType.
+type PublishDockerVolumeDLPPolicyJSONRequestBody = DockerVolumeDLPPublishInput
+
 // DeployDockerProjectJSONRequestBody defines body for DeployDockerProject for application/json ContentType.
 type DeployDockerProjectJSONRequestBody = DockerProjectDeployInput
 
@@ -36321,6 +39077,9 @@ type QueryDockerProjectLogsJSONRequestBody = LogQuery
 
 // IssueDockerProjectLogStreamTicketJSONRequestBody defines body for IssueDockerProjectLogStreamTicket for application/json ContentType.
 type IssueDockerProjectLogStreamTicketJSONRequestBody = LogQuery
+
+// ReadDockerProjectVolumeTransferJSONRequestBody defines body for ReadDockerProjectVolumeTransfer for application/json ContentType.
+type ReadDockerProjectVolumeTransferJSONRequestBody = DockerVolumeFileReadInput
 
 // CreateIdentityApplicationJSONRequestBody defines body for CreateIdentityApplication for application/json ContentType.
 type CreateIdentityApplicationJSONRequestBody = IdentityApplicationInput
@@ -36409,14 +39168,80 @@ type UpdateMenuJSONRequestBody = MenuInput
 // CreateNetworkAccessGrantJSONRequestBody defines body for CreateNetworkAccessGrant for application/json ContentType.
 type CreateNetworkAccessGrantJSONRequestBody = NetworkAccessGrantInput
 
+// PreviewNetworkAdmissionJSONRequestBody defines body for PreviewNetworkAdmission for application/json ContentType.
+type PreviewNetworkAdmissionJSONRequestBody = NetworkAdmissionPreviewRequest
+
 // AnalyzeNetworkAccessConflictsJSONRequestBody defines body for AnalyzeNetworkAccessConflicts for application/json ContentType.
 type AnalyzeNetworkAccessConflictsJSONRequestBody = NetworkConflictAnalysisRequest
+
+// SaveManagedContentDestinationJSONRequestBody defines body for SaveManagedContentDestination for application/json ContentType.
+type SaveManagedContentDestinationJSONRequestBody = ManagedContentSaveInput
+
+// PreviewManagedContentDestinationJSONRequestBody defines body for PreviewManagedContentDestination for application/json ContentType.
+type PreviewManagedContentDestinationJSONRequestBody = DLPShadowInput
+
+// PublishManagedContentDestinationJSONRequestBody defines body for PublishManagedContentDestination for application/json ContentType.
+type PublishManagedContentDestinationJSONRequestBody = ManagedContentPublishInput
+
+// PerformManagedContentFileCopyJSONRequestBody defines body for PerformManagedContentFileCopy for application/json ContentType.
+type PerformManagedContentFileCopyJSONRequestBody = ManagedContentCopyInput
+
+// PerformManagedContentFileDeleteJSONRequestBody defines body for PerformManagedContentFileDelete for application/json ContentType.
+type PerformManagedContentFileDeleteJSONRequestBody = ManagedContentRequest
+
+// PerformManagedContentFileReadJSONRequestBody defines body for PerformManagedContentFileRead for application/json ContentType.
+type PerformManagedContentFileReadJSONRequestBody = ManagedContentRequest
+
+// SubmitManagedContentPastesJSONRequestBody defines body for SubmitManagedContentPastes for application/json ContentType.
+type SubmitManagedContentPastesJSONRequestBody = ManagedContentPasteInput
+
+// HandleManagedContentAppealJSONRequestBody defines body for HandleManagedContentAppeal for application/json ContentType.
+type HandleManagedContentAppealJSONRequestBody = ManagedContentAppealInput
+
+// HandleManagedContentAuthorizeJSONRequestBody defines body for HandleManagedContentAuthorize for application/json ContentType.
+type HandleManagedContentAuthorizeJSONRequestBody = ManagedContentAuthorizeInput
+
+// HandleManagedContentReviewJSONRequestBody defines body for HandleManagedContentReview for application/json ContentType.
+type HandleManagedContentReviewJSONRequestBody = ManagedContentReviewInput
+
+// SubmitManagedContentUploadsJSONRequestBody defines body for SubmitManagedContentUploads for application/json ContentType.
+type SubmitManagedContentUploadsJSONRequestBody = ManagedContentUploadInput
 
 // UpdateEndpointDeviceJSONRequestBody defines body for UpdateEndpointDevice for application/json ContentType.
 type UpdateEndpointDeviceJSONRequestBody = EndpointDeviceInput
 
+// SubmitNetworkManagementProofJSONRequestBody defines body for SubmitNetworkManagementProof for application/json ContentType.
+type SubmitNetworkManagementProofJSONRequestBody = NetworkManagementProofInput
+
 // RegisterEndpointDeviceJSONRequestBody defines body for RegisterEndpointDevice for application/json ContentType.
 type RegisterEndpointDeviceJSONRequestBody = EndpointDeviceRegistrationInput
+
+// SaveEndpointChannelControlsJSONRequestBody defines body for SaveEndpointChannelControls for application/json ContentType.
+type SaveEndpointChannelControlsJSONRequestBody = EndpointChannelSaveInput
+
+// PublishEndpointChannelControlsJSONRequestBody defines body for PublishEndpointChannelControls for application/json ContentType.
+type PublishEndpointChannelControlsJSONRequestBody = EndpointChannelPublishInput
+
+// CreateNetworkEndpointMaintenanceWindowJSONRequestBody defines body for CreateNetworkEndpointMaintenanceWindow for application/json ContentType.
+type CreateNetworkEndpointMaintenanceWindowJSONRequestBody = NetworkEndpointMaintenanceInput
+
+// RestoreNetworkEndpointResponseEventJSONRequestBody defines body for RestoreNetworkEndpointResponseEvent for application/json ContentType.
+type RestoreNetworkEndpointResponseEventJSONRequestBody = NetworkEndpointResponseRestoreInput
+
+// CreateNetworkEndpointResponsePolicyJSONRequestBody defines body for CreateNetworkEndpointResponsePolicy for application/json ContentType.
+type CreateNetworkEndpointResponsePolicyJSONRequestBody = NetworkEndpointResponsePolicyInput
+
+// UpdateNetworkEndpointResponsePolicyJSONRequestBody defines body for UpdateNetworkEndpointResponsePolicy for application/json ContentType.
+type UpdateNetworkEndpointResponsePolicyJSONRequestBody = NetworkEndpointResponsePolicyInput
+
+// PreviewNetworkEndpointResponsePolicyJSONRequestBody defines body for PreviewNetworkEndpointResponsePolicy for application/json ContentType.
+type PreviewNetworkEndpointResponsePolicyJSONRequestBody = NetworkEndpointResponsePreviewInput
+
+// PublishNetworkEndpointResponsePolicyJSONRequestBody defines body for PublishNetworkEndpointResponsePolicy for application/json ContentType.
+type PublishNetworkEndpointResponsePolicyJSONRequestBody = NetworkEndpointResponsePolicyPublishInput
+
+// RollbackNetworkEndpointResponsePolicyJSONRequestBody defines body for RollbackNetworkEndpointResponsePolicy for application/json ContentType.
+type RollbackNetworkEndpointResponsePolicyJSONRequestBody = NetworkEndpointResponsePolicyRollbackInput
 
 // CreateNetworkRuntimeEnrollmentJSONRequestBody defines body for CreateNetworkRuntimeEnrollment for application/json ContentType.
 type CreateNetworkRuntimeEnrollmentJSONRequestBody = NetworkRuntimeEnrollmentInput
@@ -36454,6 +39279,9 @@ type CreateNetworkProxyInstanceJSONRequestBody = NetworkProxyInstanceInput
 // UpdateNetworkProxyConfigurationJSONRequestBody defines body for UpdateNetworkProxyConfiguration for application/json ContentType.
 type UpdateNetworkProxyConfigurationJSONRequestBody = NetworkProxyConfigurationInput
 
+// RestoreNetworkProxyConfigurationJSONRequestBody defines body for RestoreNetworkProxyConfiguration for application/json ContentType.
+type RestoreNetworkProxyConfigurationJSONRequestBody = NetworkProxyRestoreInput
+
 // CreateNetworkResourceJSONRequestBody defines body for CreateNetworkResource for application/json ContentType.
 type CreateNetworkResourceJSONRequestBody = NetworkResourceInput
 
@@ -36465,6 +39293,9 @@ type ExecuteNetworkSessionActionJSONRequestBody = NetworkSessionActionExecuteInp
 
 // PlanNetworkSessionActionJSONRequestBody defines body for PlanNetworkSessionAction for application/json ContentType.
 type PlanNetworkSessionActionJSONRequestBody = NetworkSessionActionInput
+
+// ReleaseNetworkVPNSessionRevocationJSONRequestBody defines body for ReleaseNetworkVPNSessionRevocation for application/json ContentType.
+type ReleaseNetworkVPNSessionRevocationJSONRequestBody = NetworkVPNRevocationReleaseInput
 
 // CreateNetworkSiteProfileBindingJSONRequestBody defines body for CreateNetworkSiteProfileBinding for application/json ContentType.
 type CreateNetworkSiteProfileBindingJSONRequestBody = NetworkSiteProfileBindingInput
@@ -36513,6 +39344,12 @@ type RollbackNetworkVPNSelectionPolicyJSONRequestBody = NetworkVPNRollbackInput
 
 // PreviewNetworkVPNSelectionJSONRequestBody defines body for PreviewNetworkVPNSelection for application/json ContentType.
 type PreviewNetworkVPNSelectionJSONRequestBody = NetworkVPNPreviewInput
+
+// PutNetworkWorkloadBindingJSONRequestBody defines body for PutNetworkWorkloadBinding for application/json ContentType.
+type PutNetworkWorkloadBindingJSONRequestBody = NetworkWorkloadBindingInput
+
+// ReportRuntimeChannelControlsJSONRequestBody defines body for ReportRuntimeChannelControls for application/json ContentType.
+type ReportRuntimeChannelControlsJSONRequestBody = EndpointChannelReport
 
 // ImportGrafanaDashboardJSONRequestBody defines body for ImportGrafanaDashboard for application/json ContentType.
 type ImportGrafanaDashboardJSONRequestBody = ObservabilityGrafanaDashboardImportInput
@@ -43729,6 +46566,116 @@ func (t *DockerPayloadValue) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsDockerVolumeTransferResult0 returns the union data inside the DockerVolumeTransferResult as a DockerVolumeTransferResult0
+func (t DockerVolumeTransferResult) AsDockerVolumeTransferResult0() (DockerVolumeTransferResult0, error) {
+	var body DockerVolumeTransferResult0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromDockerVolumeTransferResult0 overwrites any union data inside the DockerVolumeTransferResult as the provided DockerVolumeTransferResult0
+func (t *DockerVolumeTransferResult) FromDockerVolumeTransferResult0(v DockerVolumeTransferResult0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeDockerVolumeTransferResult0 performs a merge with any union data inside the DockerVolumeTransferResult, using the provided DockerVolumeTransferResult0
+func (t *DockerVolumeTransferResult) MergeDockerVolumeTransferResult0(v DockerVolumeTransferResult0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsDockerVolumeTransferResult1 returns the union data inside the DockerVolumeTransferResult as a DockerVolumeTransferResult1
+func (t DockerVolumeTransferResult) AsDockerVolumeTransferResult1() (DockerVolumeTransferResult1, error) {
+	var body DockerVolumeTransferResult1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromDockerVolumeTransferResult1 overwrites any union data inside the DockerVolumeTransferResult as the provided DockerVolumeTransferResult1
+func (t *DockerVolumeTransferResult) FromDockerVolumeTransferResult1(v DockerVolumeTransferResult1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeDockerVolumeTransferResult1 performs a merge with any union data inside the DockerVolumeTransferResult, using the provided DockerVolumeTransferResult1
+func (t *DockerVolumeTransferResult) MergeDockerVolumeTransferResult1(v DockerVolumeTransferResult1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t DockerVolumeTransferResult) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	object := make(map[string]json.RawMessage)
+	if t.union != nil {
+		err = json.Unmarshal(b, &object)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if t.Decision != nil {
+		object["decision"], err = json.Marshal(t.Decision)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'decision': %w", err)
+		}
+	}
+
+	if t.File != nil {
+		object["file"], err = json.Marshal(t.File)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'file': %w", err)
+		}
+	}
+	b, err = json.Marshal(object)
+	return b, err
+}
+
+func (t *DockerVolumeTransferResult) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	if err != nil {
+		return err
+	}
+	object := make(map[string]json.RawMessage)
+	err = json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["decision"]; found {
+		err = json.Unmarshal(raw, &t.Decision)
+		if err != nil {
+			return fmt.Errorf("error reading 'decision': %w", err)
+		}
+	}
+
+	if raw, found := object["file"]; found {
+		err = json.Unmarshal(raw, &t.File)
+		if err != nil {
+			return fmt.Errorf("error reading 'file': %w", err)
+		}
+	}
+
+	return err
+}
+
 // AsEnvironmentServiceReferenceCandidateInput0 returns the union data inside the EnvironmentServiceReferenceCandidateInput as a EnvironmentServiceReferenceCandidateInput0
 func (t EnvironmentServiceReferenceCandidateInput) AsEnvironmentServiceReferenceCandidateInput0() (EnvironmentServiceReferenceCandidateInput0, error) {
 	var body EnvironmentServiceReferenceCandidateInput0
@@ -44603,13 +47550,19 @@ const Draft DeliveryPlanStatus = "draft"
 const WaitingApproval DeliveryPlanStatus = "waiting_approval"
 
 // Retained for Go SDK source compatibility.
-const Approved PersonalAgentAccessDecisionStatus = "approved"
+const OIDC IdentityProviderUserMetadataProtocol = "oidc"
 
 // Retained for Go SDK source compatibility.
-const Rejected PersonalAgentAccessDecisionStatus = "rejected"
+const Proxy IdentityProviderUserMetadataProtocol = "proxy"
 
 // Retained for Go SDK source compatibility.
-const Revoked PersonalAgentAccessDecisionStatus = "revoked"
+const Saml IdentityProviderUserMetadataProtocol = "saml"
+
+// Retained for Go SDK source compatibility.
+const ObserveOnly PersonalEnvironmentTemplateMode = "observe-only"
+
+// Retained for Go SDK source compatibility.
+const RestrictedWrite PersonalEnvironmentTemplateMode = "restricted-write"
 
 // Retained for Go SDK source compatibility.
 const Browser PersonalGuestRuntimeInputKind = "browser"
@@ -44645,6 +47598,21 @@ const Job DeliveryDraftServiceServiceKind = "job"
 const KubernetesWorkload DeliveryDraftServiceServiceKind = "kubernetes_workload"
 
 // Retained for Go SDK source compatibility.
+const PersonalAgentAccessDecisionStatusApproved PersonalAgentAccessDecisionStatus = "approved"
+
+// Retained for Go SDK source compatibility.
+const PersonalAgentAccessDecisionStatusRejected PersonalAgentAccessDecisionStatus = "rejected"
+
+// Retained for Go SDK source compatibility.
+const PersonalAgentAccessDecisionStatusRevoked PersonalAgentAccessDecisionStatus = "revoked"
+
+// Retained for Go SDK source compatibility.
+const Container PersonalEnvironmentTemplateBackend = "container"
+
+// Retained for Go SDK source compatibility.
+const VM PersonalEnvironmentTemplateBackend = "vm"
+
+// Retained for Go SDK source compatibility.
 const ListAIGatewayRelayUpstreamsParamsStatusActive ListAIGatewayRelayUpstreamsParamsStatus = "active"
 
 // Retained for Go SDK source compatibility.
@@ -44663,19 +47631,19 @@ const RuntimeNetworkUsageScopeProcess RuntimeNetworkUsageScope = "process"
 const RuntimeNetworkUsageScopeUnavailable RuntimeNetworkUsageScope = "unavailable"
 
 // Retained for Go SDK source compatibility.
-const Cancelled WorkbenchAgentStatusEventStatus = "cancelled"
+const WorkbenchAgentStatusEventStatusCancelled WorkbenchAgentStatusEventStatus = "cancelled"
 
 // Retained for Go SDK source compatibility.
-const Failed WorkbenchAgentStatusEventStatus = "failed"
+const WorkbenchAgentStatusEventStatusFailed WorkbenchAgentStatusEventStatus = "failed"
 
 // Retained for Go SDK source compatibility.
-const Queued WorkbenchAgentStatusEventStatus = "queued"
+const WorkbenchAgentStatusEventStatusQueued WorkbenchAgentStatusEventStatus = "queued"
 
 // Retained for Go SDK source compatibility.
-const Running WorkbenchAgentStatusEventStatus = "running"
+const WorkbenchAgentStatusEventStatusRunning WorkbenchAgentStatusEventStatus = "running"
 
 // Retained for Go SDK source compatibility.
-const Succeeded WorkbenchAgentStatusEventStatus = "succeeded"
+const WorkbenchAgentStatusEventStatusSucceeded WorkbenchAgentStatusEventStatus = "succeeded"
 
 // Retained for Go SDK source compatibility.
 const CreateAIGatewayAnthropicMessageParamsXSohaCacheModeBypass CreateAIGatewayAnthropicMessageParamsXSohaCacheMode = "bypass"

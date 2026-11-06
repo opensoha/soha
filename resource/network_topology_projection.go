@@ -124,28 +124,32 @@ func redactTopologyMatches(value any, key string) {
 }
 
 var topologyProjectionPaths = map[string][]string{
-	"kubernetes.services":       strings.Fields("spec.type spec.externalName spec.clusterIP spec.selector.* spec.ports.name spec.ports.port spec.ports.targetPort spec.ports.protocol spec.publishNotReadyAddresses"),
-	"kubernetes.pods":           strings.Fields("metadata.labels.* status.phase status.conditions.type status.conditions.status"),
-	"kubernetes.endpointslices": strings.Fields("metadata.labels.* addressType ports.name ports.port ports.protocol endpoints.addresses endpoints.conditions.ready endpoints.conditions.serving endpoints.conditions.terminating endpoints.targetRef.kind endpoints.targetRef.namespace endpoints.targetRef.name endpoints.targetRef.uid"),
-	"kubernetes.ingresses":      strings.Fields("spec.ingressClassName spec.defaultBackend.service.name spec.defaultBackend.service.port.name spec.defaultBackend.service.port.number spec.defaultBackend.resource.kind spec.rules.host spec.rules.http.paths.path spec.rules.http.paths.pathType spec.rules.http.paths.backend.service.name spec.rules.http.paths.backend.service.port.name spec.rules.http.paths.backend.service.port.number spec.rules.http.paths.backend.resource.kind spec.tls.hosts"),
-	"kubernetes.ingressclasses": strings.Fields("spec.controller"),
-	"gateway.gateways":          strings.Fields("spec.gatewayClassName spec.listeners.name spec.listeners.port spec.listeners.protocol spec.listeners.hostname spec.listeners.allowedRoutes.namespaces.from spec.listeners.allowedRoutes.namespaces.selector.matchLabels.* spec.listeners.allowedRoutes.kinds.kind spec.listeners.allowedRoutes.kinds.group spec.listeners.tls.mode"),
-	"gateway.gatewayclasses":    strings.Fields("spec.controllerName"),
-	"gateway.httproutes":        gatewayTopologyPaths(),
-	"gateway.grpcroutes":        gatewayTopologyPaths(),
-	"gateway.tcproutes":         gatewayL4TopologyPaths(),
-	"gateway.tlsroutes":         gatewayL4TopologyPaths(),
-	"gateway.udproutes":         gatewayL4TopologyPaths(),
-	"gateway.referencegrants":   strings.Fields("spec.from.group spec.from.kind spec.from.namespace spec.to.group spec.to.kind spec.to.name"),
-	"traefik.ingressroutes":     traefikTopologyPaths(),
-	"traefik.ingressroutetcps":  traefikTopologyPaths(),
-	"traefik.ingressrouteudps":  traefikTopologyPaths(),
-	"traefik.traefikservices":   strings.Fields("spec.weighted.services.name spec.weighted.services.namespace spec.weighted.services.kind spec.weighted.services.port spec.weighted.services.weight spec.mirroring.name spec.mirroring.namespace spec.mirroring.kind spec.mirroring.port spec.mirroring.mirrors.name spec.mirroring.mirrors.namespace spec.mirroring.mirrors.kind spec.mirroring.mirrors.port spec.mirroring.mirrors.percent"),
-	"traefik.middlewares":       strings.Fields("spec.chain.middlewares.name spec.chain.middlewares.namespace"),
-	"traefik.middlewaretcps":    strings.Fields("spec.chain.middlewares.name spec.chain.middlewares.namespace"),
-	"apisix.apisixroutes":       apisixTopologyPaths(),
-	"apisix.apisixupstreams":    strings.Fields("spec.scheme spec.loadbalancer.type spec.externalNodes.type spec.externalNodes.name spec.externalNodes.port spec.externalNodes.weight spec.subsets.name spec.subsets.labels.*"),
-	"apisix.apisixtls":          strings.Fields("spec.hosts spec.secret.name spec.secret.namespace"),
+	"kubernetes.namespaces":      strings.Fields("metadata.labels.*"),
+	"kubernetes.configmaps":      {},
+	"kubernetes.networkpolicies": networkPolicyTopologyPaths(),
+	"gateway.backendtlspolicies": strings.Fields("spec.targetRefs.group spec.targetRefs.kind spec.targetRefs.name spec.targetRefs.sectionName spec.targetRef.group spec.targetRef.kind spec.targetRef.name spec.targetRef.sectionName spec.validation.caCertificateRefs.group spec.validation.caCertificateRefs.kind spec.validation.caCertificateRefs.name"),
+	"kubernetes.services":        strings.Fields("spec.type spec.externalName spec.clusterIP spec.selector.* spec.ports.name spec.ports.port spec.ports.targetPort spec.ports.protocol spec.publishNotReadyAddresses"),
+	"kubernetes.pods":            strings.Fields("metadata.labels.* status.phase status.conditions.type status.conditions.status"),
+	"kubernetes.endpointslices":  strings.Fields("metadata.labels.* addressType ports.name ports.port ports.protocol endpoints.addresses endpoints.conditions.ready endpoints.conditions.serving endpoints.conditions.terminating endpoints.targetRef.apiVersion endpoints.targetRef.kind endpoints.targetRef.namespace endpoints.targetRef.name endpoints.targetRef.uid"),
+	"kubernetes.ingresses":       strings.Fields("spec.ingressClassName spec.defaultBackend.service.name spec.defaultBackend.service.port.name spec.defaultBackend.service.port.number spec.defaultBackend.resource.kind spec.rules.host spec.rules.http.paths.path spec.rules.http.paths.pathType spec.rules.http.paths.backend.service.name spec.rules.http.paths.backend.service.port.name spec.rules.http.paths.backend.service.port.number spec.rules.http.paths.backend.resource.kind spec.tls.hosts spec.tls.secretName"),
+	"kubernetes.ingressclasses":  strings.Fields("spec.controller spec.parameters.apiGroup spec.parameters.kind spec.parameters.name spec.parameters.namespace spec.parameters.scope"),
+	"gateway.gateways":           strings.Fields("spec.gatewayClassName spec.listeners.name spec.listeners.port spec.listeners.protocol spec.listeners.hostname spec.listeners.allowedRoutes.namespaces.from spec.listeners.allowedRoutes.namespaces.selector.matchLabels.* spec.listeners.allowedRoutes.kinds.kind spec.listeners.allowedRoutes.kinds.group spec.listeners.tls.mode spec.listeners.tls.certificateRefs.group spec.listeners.tls.certificateRefs.kind spec.listeners.tls.certificateRefs.name spec.listeners.tls.certificateRefs.namespace spec.listeners.allowedRoutes.namespaces.selector.matchExpressions.key spec.listeners.allowedRoutes.namespaces.selector.matchExpressions.operator spec.listeners.allowedRoutes.namespaces.selector.matchExpressions.values"),
+	"gateway.gatewayclasses":     strings.Fields("spec.controllerName spec.parametersRef.group spec.parametersRef.kind spec.parametersRef.name spec.parametersRef.namespace"),
+	"gateway.httproutes":         gatewayTopologyPaths(),
+	"gateway.grpcroutes":         gatewayTopologyPaths(),
+	"gateway.tcproutes":          gatewayL4TopologyPaths(),
+	"gateway.tlsroutes":          gatewayL4TopologyPaths(),
+	"gateway.udproutes":          gatewayL4TopologyPaths(),
+	"gateway.referencegrants":    strings.Fields("spec.from.group spec.from.kind spec.from.namespace spec.to.group spec.to.kind spec.to.name"),
+	"traefik.ingressroutes":      traefikTopologyPaths(),
+	"traefik.ingressroutetcps":   traefikTopologyPaths(),
+	"traefik.ingressrouteudps":   traefikTopologyPaths(),
+	"traefik.traefikservices":    strings.Fields("spec.weighted.services.name spec.weighted.services.namespace spec.weighted.services.kind spec.weighted.services.port spec.weighted.services.weight spec.mirroring.name spec.mirroring.namespace spec.mirroring.kind spec.mirroring.port spec.mirroring.mirrors.name spec.mirroring.mirrors.namespace spec.mirroring.mirrors.kind spec.mirroring.mirrors.port spec.mirroring.mirrors.percent"),
+	"traefik.middlewares":        strings.Fields("spec.chain.middlewares.name spec.chain.middlewares.namespace"),
+	"traefik.middlewaretcps":     strings.Fields("spec.chain.middlewares.name spec.chain.middlewares.namespace"),
+	"apisix.apisixroutes":        apisixTopologyPaths(),
+	"apisix.apisixupstreams":     strings.Fields("spec.scheme spec.loadbalancer.type spec.externalNodes.type spec.externalNodes.name spec.externalNodes.port spec.externalNodes.weight spec.subsets.name spec.subsets.labels.*"),
+	"apisix.apisixtls":           strings.Fields("spec.hosts spec.secret.name spec.secret.namespace"),
 }
 
 func gatewayTopologyPaths() []string {
@@ -205,4 +209,14 @@ func topologyMiddlewareTypes(input map[string]any) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+func networkPolicyTopologyPaths() []string {
+	paths := strings.Fields("spec.podSelector.matchLabels.* spec.podSelector.matchExpressions.key spec.podSelector.matchExpressions.operator spec.podSelector.matchExpressions.values spec.policyTypes")
+	for _, direction := range []string{"ingress.from", "egress.to"} {
+		for _, field := range strings.Fields("podSelector.matchLabels.* podSelector.matchExpressions.key podSelector.matchExpressions.operator podSelector.matchExpressions.values namespaceSelector.matchLabels.* namespaceSelector.matchExpressions.key namespaceSelector.matchExpressions.operator namespaceSelector.matchExpressions.values ipBlock.cidr ipBlock.except") {
+			paths = append(paths, "spec."+direction+"."+field)
+		}
+	}
+	return paths
 }

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "presence-1",
+  "messageType": "eap.certificate.request",
+  "producerId": "endpoint-lab",
+  "runtimeId": "endpoint-lab",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-10-14T00:00:00Z",
+  "expiresAt": "2026-10-14T00:00:30Z",
+  "payload": {
+    "requestId": "eap-rotation-1",
+    "csrPem": "-----BEGIN CERTIFICATE REQUEST-----\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n-----END CERTIFICATE REQUEST-----\n",
+    "privateKey": "never-transmit"
+  }
+}

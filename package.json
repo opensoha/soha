@@ -1,6 +1,6 @@
 {
   "name": "@opensoha/contracts",
-  "version": "0.1.26",
+  "version": "0.1.29",
   "private": false,
   "description": "Shared OpenSoha API, agent, MCP, skill, event, and auth contracts.",
   "license": "Apache-2.0",
@@ -105,7 +105,8 @@
     "./agent/personal-guest-runtime-result.schema.json": "./agent/personal-guest-runtime-result.schema.json",
     "./agent/personal-guest-tools.schema.json": "./agent/personal-guest-tools.schema.json",
     "./agent/personal-browser-network-request.schema.json": "./agent/personal-browser-network-request.schema.json",
-    "./agent/personal-browser-network-response.schema.json": "./agent/personal-browser-network-response.schema.json"
+    "./agent/personal-browser-network-response.schema.json": "./agent/personal-browser-network-response.schema.json",
+    "./endpointcontrol/protocol.schema.json": "./endpointcontrol/protocol.schema.json"
   },
   "files": [
     "delivery",
@@ -136,7 +137,9 @@
     "connectors",
     "network",
     "knowledge",
-    "memory"
+    "memory",
+    "proxytransport",
+    "endpointcontrol"
   ],
   "devDependencies": {
     "ajv": "^8.20.0",

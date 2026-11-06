@@ -10,12 +10,34 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/csaupgrade"
 	"k8s.io/utils/ptr"
 )
+
+// BindResourceEditIdentity keeps legacy name-based edits and validates observed edits
+// before attaching the live object's optimistic concurrency preconditions.
+func BindResourceEditIdentity(current, desired *unstructured.Unstructured, resource schema.GroupResource, requireObserved bool) error {
+	if requireObserved {
+		if desired.GetUID() == "" || desired.GetResourceVersion() == "" {
+			return apierrors.NewBadRequest("observed YAML must include metadata.uid and metadata.resourceVersion")
+		}
+		if desired.GetUID() != current.GetUID() || desired.GetResourceVersion() != current.GetResourceVersion() {
+			return apierrors.NewConflict(resource, current.GetName(), errors.New("resource changed since the YAML was read"))
+		}
+	}
+	desired.SetUID(current.GetUID())
+	desired.SetResourceVersion(current.GetResourceVersion())
+	return nil
+}
+
+// IsResourceEditOwnershipConflict separates a dry-run ownership report from stale identity.
+func IsResourceEditOwnershipConflict(err error) bool {
+	return apierrors.HasStatusCause(err, metav1.CauseTypeFieldManagerConflict)
+}
 
 // ApplyResourceEdit preserves SSA conflicts while migrating this editor's own Create/Update fields.
 // Dry-run migration validates a complete manifest with Update; it never changes live ownership.
