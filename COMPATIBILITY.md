@@ -62,9 +62,10 @@ Release order for `0.1.x`:
 3. Run `npm test`, `npm pack --dry-run`, `npm run release:artifacts`, and
    the consumer matrix.
 4. Create tag `v<version>`.
-5. Let the release workflow publish npm when `NPM_TOKEN` is configured and
-   create the GitHub release with the npm tarball, `.sha256` checksum, and
-   release manifest attached.
+5. Let the release workflow stage the npm package with `NPM_TOKEN`. After a
+   maintainer approves the stage with 2FA, dispatch recovery for the same tag.
+   The workflow verifies the public npm package and Go tag before attaching
+   the tarball, checksums, and release manifest to the GitHub release.
 
 ## Compatibility Baseline
 

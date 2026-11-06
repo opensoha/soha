@@ -12648,6 +12648,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** @description Request deletion of a Pod. With expectedUid, a same-name replacement is rejected and an Agent that cannot enforce the precondition returns 501. */
         delete: operations["deleteKubernetesPod"];
         options?: never;
         head?: never;
@@ -14634,6 +14635,220 @@ export interface paths {
          */
         get: operations["listManagedContentReviewDestinations"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/deployments/{deploymentName}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Request deletion of a Deployment. With expectedUid, a same-name replacement is rejected and an Agent that cannot enforce the precondition returns 501. */
+        delete: operations["deleteKubernetesDeployment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/statefulsets/{statefulSetName}/rollouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retained ControllerRevisions controlled by the selected StatefulSet UID. Replica counts include only Pods controlled by that StatefulSet and referencing the revision, not replicas inferred from the template. */
+        get: operations["listKubernetesStatefulSetRollouts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/statefulsets/{statefulSetName}/rollouts/{revisionName}/yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read a retained ControllerRevision only when its controlling owner UID matches the selected StatefulSet in the same namespace. Does not resolve Secret references. Inline template values may be sensitive, as in workload YAML. */
+        get: operations["getKubernetesStatefulSetRevisionYaml"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/daemonsets/{daemonSetName}/rollouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retained ControllerRevisions controlled by the selected DaemonSet UID. Replica counts include only Pods controlled by that DaemonSet and referencing the ControllerRevision hash label, not replicas inferred from template names. podRevisionHash is the observed history label; matchesCurrentTemplate compares the native stored patch with the selected DaemonSet template and does not imply every Pod is updated. */
+        get: operations["listKubernetesDaemonSetRollouts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/daemonsets/{daemonSetName}/rollouts/{revisionName}/yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read a retained ControllerRevision only when its controlling owner UID matches the selected DaemonSet in the same namespace. Does not resolve Secret references. Inline template values may be sensitive, as in workload YAML. */
+        get: operations["getKubernetesDaemonSetRevisionYaml"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/jobs/{jobName}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getKubernetesJobMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/replicasets/{replicaSetName}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getKubernetesReplicaSetMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/workloads/replicationcontrollers/{name}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getKubernetesReplicationControllerMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/helm/releases/{releaseName}/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateKubernetesHelmReleaseValues"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/configuration/secrets/{name}/certificate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Public metadata for the first tls.crt certificate of a TLS Secret. Requires resource-scoped Secret view; never returns certificate PEM, Secret data or private keys. Dates do not establish certificate trust, host matching or controller deployment. */
+        get: operations["getKubernetesSecretCertificate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/network/services/{serviceName}/yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["applyKubernetesServiceYaml"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/network/ingresses/{name}/yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["applyKubernetesIngressYaml"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clusters/{clusterID}/configuration/secrets/{name}/yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["applyKubernetesSecretYaml"];
         post?: never;
         delete?: never;
         options?: never;
@@ -24948,7 +25163,10 @@ export interface components {
             agentToken?: string;
             prometheusBaseUrl?: string;
             prometheusBearerToken?: string;
+            /** @description Omit on update to keep the saved label. An empty string disables label matching for a dedicated Prometheus source. Clusters sharing a source require the same label name and distinct values. */
             prometheusClusterLabel?: string;
+            /** @description Exact metric label value. Omit on update to keep the saved value unless the label name is cleared. With a label name configured, an empty value uses the Soha cluster ID. A non-empty value requires a valid label name. */
+            prometheusClusterLabelValue?: string;
             grafanaBaseUrl?: string;
             prometheusTransport?: components["schemas"]["KubernetesPrometheusTransport"];
             agentActionProfile?: components["schemas"]["KubernetesAgentActionProfile"];
@@ -24980,7 +25198,10 @@ export interface components {
         };
         KubernetesPrometheusDetail: {
             baseUrl?: string;
+            /** @description Omitted or empty for a dedicated Prometheus source queried without a cluster label matcher. */
             clusterLabel?: string;
+            /** @description Configured metric cluster label value. When clusterLabel is configured, an omitted or empty value uses the Soha cluster ID. */
+            clusterLabelValue?: string;
             grafanaBaseUrl?: string;
             hasBearerToken: boolean;
             transport?: components["schemas"]["KubernetesPrometheusTransport"];
@@ -25040,6 +25261,10 @@ export interface components {
             name: string;
             status: string;
             unschedulable: boolean;
+            /** @description Kubernetes Node labels available to the current reader. */
+            labels?: {
+                [key: string]: string;
+            };
             /** @description Current Node spec taints. Empty means none; null or absent means not reported. */
             taints?: components["schemas"]["KubernetesNodeTaint"][] | null;
             /** @description Current Node conditions, independent of scheduling and drain operations. */
@@ -25145,7 +25370,7 @@ export interface components {
             data: components["schemas"]["KubernetesWorkloadOverview"];
         };
         KubernetesPod: {
-            /** @description Immutable Pod identity. Required by clients restoring a saved live session; absent on older providers. */
+            /** @description Immutable Pod identity for restoring saved live sessions and identity-checked deletion. Older providers may omit it. */
             uid?: string;
             name: string;
             namespace: string;
@@ -25165,6 +25390,10 @@ export interface components {
             /** Format: int64 */
             ageSeconds: number;
             allowedActions?: string[];
+            /** @description Kubernetes status.qosClass, omitted when not reported. */
+            qosClass?: string;
+            /** @description Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers. */
+            containerStatuses?: components["schemas"]["KubernetesPodContainerStatus"][];
         };
         KubernetesPodListEnvelope: {
             items: components["schemas"]["KubernetesPod"][];
@@ -25215,7 +25444,7 @@ export interface components {
             relation?: string;
         };
         KubernetesPodDetail: {
-            /** @description Immutable Pod identity. Required by clients restoring a saved live session; absent on older providers. */
+            /** @description Immutable Pod identity for restoring saved live sessions and identity-checked deletion. Older providers may omit it. */
             uid?: string;
             name: string;
             namespace: string;
@@ -25243,6 +25472,8 @@ export interface components {
         KubernetesDeployment: {
             name: string;
             namespace: string;
+            /** @description Kubernetes object UID for identity-checked deletion. Omitted if unavailable. */
+            uid?: string;
             labels?: components["schemas"]["KubernetesStringMap"];
             /** Format: int32 */
             desiredReplicas: number;
@@ -25262,6 +25493,8 @@ export interface components {
         KubernetesDeploymentDetail: {
             name: string;
             namespace: string;
+            /** @description Kubernetes object UID for identity-checked deletion. Omitted if unavailable. */
+            uid?: string;
             /** Format: int32 */
             desiredReplicas: number;
             /** Format: int32 */
@@ -25658,6 +25891,8 @@ export interface components {
             kind: string;
             name: string;
             content: string;
+            /** @description Require the YAML to identify the observed Kubernetes object by metadata.uid and metadata.resourceVersion. */
+            requireObservedIdentity?: boolean;
         };
         KubernetesManagedFieldOwner: {
             manager: string;
@@ -25759,6 +25994,10 @@ export interface components {
             /** Format: int32 */
             readyReplicas: number;
             createdAt?: string;
+            /** @description Observed controller-revision-hash used by owned Pods; omitted when unavailable. Do not infer it from resource names. */
+            podRevisionHash?: string;
+            /** @description When supplied, whether the retained ControllerRevision patch exactly matches the current DaemonSet Pod template. False is a confirmed mismatch; omission means this endpoint did not evaluate it. */
+            matchesCurrentTemplate?: boolean;
         };
         KubernetesDeploymentRolloutListEnvelope: {
             items: components["schemas"]["KubernetesDeploymentRollout"][];
@@ -25863,6 +26102,15 @@ export interface components {
             completionMode?: string;
             /** Format: int64 */
             ageSeconds: number;
+            /**
+             * Format: int32
+             * @description Native spec.completions when specified; absence is not a zero completion target.
+             */
+            completionTarget?: number;
+            suspend?: boolean;
+            conditions?: components["schemas"]["KubernetesWorkloadCondition"][];
+            startTime?: string;
+            completionTime?: string;
             allowedActions?: string[];
         };
         KubernetesJobListEnvelope: {
@@ -25889,6 +26137,19 @@ export interface components {
             annotations?: components["schemas"]["KubernetesStringMap"];
             pods?: components["schemas"]["KubernetesPod"][];
             relatedResources?: components["schemas"]["KubernetesWorkloadRelation"][];
+            /**
+             * Format: int32
+             * @description Native spec.completions when specified; absence is not a zero completion target.
+             */
+            completionTarget?: number;
+            suspend?: boolean;
+            conditions?: components["schemas"]["KubernetesWorkloadCondition"][];
+            /** Format: int32 */
+            backoffLimit?: number;
+            /** Format: int64 */
+            activeDeadlineSeconds?: number;
+            /** Format: int32 */
+            ttlSecondsAfterFinished?: number;
             allowedActions?: string[];
         };
         KubernetesJobDetailEnvelope: {
@@ -26839,10 +27100,12 @@ export interface components {
             source: string;
             target: string;
             /** @enum {string} */
-            relation: "matches" | "processes" | "forwards" | "weights" | "mirrors" | "resolves" | "selects";
+            relation: "matches" | "processes" | "forwards" | "weights" | "mirrors" | "resolves" | "selects" | "uses-class" | "uses-secret" | "uses-config" | "parameters" | "targets" | "authorizes-reference" | "policy-peer";
             resolutionState: components["schemas"]["KubernetesTopologyResolution"];
             protocol?: string;
             port?: string;
+            sectionName?: string;
+            fieldPath?: string;
             /** Format: int64 */
             weight?: number;
             /** Format: int64 */
@@ -26858,6 +27121,7 @@ export interface components {
             /** @enum {string} */
             state: "available" | "not_installed" | "unsupported" | "denied" | "error" | "partial";
             namespace?: string;
+            name?: string;
             supportedKinds?: string[];
             reasonCode?: string;
             /** Format: date-time */
@@ -26868,8 +27132,9 @@ export interface components {
         };
         KubernetesTopologySourceQuery: {
             /** @enum {string} */
-            sourceId: "kubernetes.services" | "kubernetes.pods" | "kubernetes.endpointslices" | "kubernetes.ingresses" | "kubernetes.ingressclasses" | "gateway.gateways" | "gateway.gatewayclasses" | "gateway.httproutes" | "gateway.grpcroutes" | "gateway.tcproutes" | "gateway.tlsroutes" | "gateway.udproutes" | "gateway.referencegrants" | "traefik.ingressroutes" | "traefik.ingressroutetcps" | "traefik.ingressrouteudps" | "traefik.traefikservices" | "traefik.middlewares" | "traefik.middlewaretcps" | "apisix.apisixroutes" | "apisix.apisixupstreams" | "apisix.apisixtls";
+            sourceId: "kubernetes.networkpolicies" | "kubernetes.namespaces" | "kubernetes.configmaps" | "gateway.backendtlspolicies" | "kubernetes.services" | "kubernetes.pods" | "kubernetes.endpointslices" | "kubernetes.ingresses" | "kubernetes.ingressclasses" | "gateway.gateways" | "gateway.gatewayclasses" | "gateway.httproutes" | "gateway.grpcroutes" | "gateway.tcproutes" | "gateway.tlsroutes" | "gateway.udproutes" | "gateway.referencegrants" | "traefik.ingressroutes" | "traefik.ingressroutetcps" | "traefik.ingressrouteudps" | "traefik.traefikservices" | "traefik.middlewares" | "traefik.middlewaretcps" | "apisix.apisixroutes" | "apisix.apisixupstreams" | "apisix.apisixtls";
             namespace?: string;
+            name?: string;
         } & unknown;
         KubernetesTopologySnapshotRequest: {
             queries: components["schemas"]["KubernetesTopologySourceQuery"][];
@@ -28667,6 +28932,13 @@ export interface components {
             sourceId: string;
             targetId: string;
             relation: string;
+            resolutionState?: string;
+            protocol?: string;
+            port?: string;
+            sectionName?: string;
+            fieldPath?: string;
+            note?: string;
+            sourceRef?: components["schemas"]["KubernetesResourceRef"];
         };
         KubernetesResourceEvidence: {
             id: string;
@@ -33291,6 +33563,59 @@ export interface components {
         ManagedContentNetworkEnvelope: {
             data: components["schemas"]["ManagedContentNetworkHold"];
         };
+        KubernetesPodContainerStatus: {
+            name: string;
+            /** @enum {string} */
+            kind: "init" | "sidecar" | "container";
+            ready: boolean;
+            /** @enum {string} */
+            state: "running" | "waiting" | "terminated" | "unknown";
+            reason?: string;
+            /**
+             * Format: int32
+             * @description Present only when the current container state is terminated, including a successful zero exit code.
+             */
+            exitCode?: number;
+        };
+        KubernetesObservedResourceYamlInput: {
+            content: string;
+            /** @description Require the YAML to include the UID and resource version of the object read before editing. A changed or replaced object returns conflict. */
+            requireObservedIdentity?: boolean;
+        };
+        KubernetesSecretCertificate: {
+            name: string;
+            namespace: string;
+            /** @enum {string} */
+            status: "available" | "missing" | "invalid" | "unsupported_type";
+            /** Format: date-time */
+            notBefore?: string;
+            /** Format: date-time */
+            notAfter?: string;
+            /** @description The first certificate is signed by its own key; this is not a trust validation result. */
+            selfSigned?: boolean;
+        };
+        KubernetesSecretCertificateEnvelope: {
+            data: components["schemas"]["KubernetesSecretCertificate"];
+        };
+        KubernetesHelmReleaseValuesUpdateInput: {
+            /** @description Complete Helm values YAML. */
+            content: string;
+            /** @description Latest Helm revision observed by the editor. When supplied, a changed revision returns 409 and an Agent without conditional updates returns 501. */
+            expectedRevision?: number;
+        };
+        KubernetesHelmReleaseValues: {
+            name: string;
+            namespace: string;
+            revision?: string;
+            content: string;
+            original?: string;
+            editable: boolean;
+            diffEnabled: boolean;
+            allowedActions?: string[];
+        };
+        KubernetesHelmReleaseValuesEnvelope: {
+            data: components["schemas"]["KubernetesHelmReleaseValues"];
+        };
     };
     responses: {
         /** @description Stable redacted Identity protocol or management error. */
@@ -33474,6 +33799,8 @@ export interface components {
         SohaRouteTraceHeader: boolean;
         /** @description Optional relay cache behavior hint. */
         SohaCacheModeHeader: "default" | "bypass" | "read-only" | "refresh";
+        /** @description Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement. */
+        KubernetesExpectedWorkloadUID: string;
     };
     requestBodies: never;
     headers: {
@@ -35724,6 +36051,13 @@ export type DLPShadowResult = components['schemas']['DLPShadowResult'];
 export type DLPShadowEnvelope = components['schemas']['DLPShadowEnvelope'];
 export type ManagedContentNetworkHold = components['schemas']['ManagedContentNetworkHold'];
 export type ManagedContentNetworkEnvelope = components['schemas']['ManagedContentNetworkEnvelope'];
+export type KubernetesPodContainerStatus = components['schemas']['KubernetesPodContainerStatus'];
+export type KubernetesObservedResourceYamlInput = components['schemas']['KubernetesObservedResourceYamlInput'];
+export type KubernetesSecretCertificate = components['schemas']['KubernetesSecretCertificate'];
+export type KubernetesSecretCertificateEnvelope = components['schemas']['KubernetesSecretCertificateEnvelope'];
+export type KubernetesHelmReleaseValuesUpdateInput = components['schemas']['KubernetesHelmReleaseValuesUpdateInput'];
+export type KubernetesHelmReleaseValues = components['schemas']['KubernetesHelmReleaseValues'];
+export type KubernetesHelmReleaseValuesEnvelope = components['schemas']['KubernetesHelmReleaseValuesEnvelope'];
 export type ResponseIdentityError = components['responses']['IdentityError'];
 export type ResponseError = components['responses']['Error'];
 export type ResponseComputeError = components['responses']['ComputeError'];
@@ -35867,6 +36201,7 @@ export type ParameterOpenAiCompatibleProvider = components['parameters']['OpenAI
 export type ParameterSohaUpstreamIdHeader = components['parameters']['SohaUpstreamIDHeader'];
 export type ParameterSohaRouteTraceHeader = components['parameters']['SohaRouteTraceHeader'];
 export type ParameterSohaCacheModeHeader = components['parameters']['SohaCacheModeHeader'];
+export type ParameterKubernetesExpectedWorkloadUid = components['parameters']['KubernetesExpectedWorkloadUID'];
 export type HeaderSohaRouteIdHeader = components['headers']['SohaRouteIDHeader'];
 export type HeaderSohaSelectedUpstreamIdHeader = components['headers']['SohaSelectedUpstreamIDHeader'];
 export type HeaderSohaProviderKindHeader = components['headers']['SohaProviderKindHeader'];
@@ -50473,6 +50808,10 @@ export interface operations {
                 namespace?: components["parameters"]["KubernetesNamespaceQuery"];
                 kind: string;
                 name: string;
+                /** @description Exact served group/version for a CRD instance, or apiextensions.k8s.io/v1 for a CRD definition. Required together with resource for explicit CRD graphs. */
+                apiVersion?: string;
+                /** @description Exact CRD plural resource name. For a CRD definition use customresourcedefinitions. */
+                resource?: string;
             };
             header?: never;
             path: {
@@ -62208,6 +62547,8 @@ export interface operations {
             query?: {
                 /** @description Omit to aggregate across namespaces when the operation supports cluster-wide reads. */
                 namespace?: components["parameters"]["KubernetesNamespaceQuery"];
+                /** @description Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement. */
+                expectedUid?: components["parameters"]["KubernetesExpectedWorkloadUID"];
             };
             header?: never;
             path: {
@@ -62229,6 +62570,7 @@ export interface operations {
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
             503: components["responses"]["Error"];
         };
     };
@@ -66703,6 +67045,418 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    deleteKubernetesDeployment: {
+        parameters: {
+            query?: {
+                /** @description Omit to aggregate across namespaces when the operation supports cluster-wide reads. */
+                namespace?: components["parameters"]["KubernetesNamespaceQuery"];
+                /** @description Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement. */
+                expectedUid?: components["parameters"]["KubernetesExpectedWorkloadUID"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                deploymentName: components["parameters"]["KubernetesDeploymentName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deletion requested. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listKubernetesStatefulSetRollouts: {
+        parameters: {
+            query?: {
+                namespace?: components["parameters"]["KubernetesNamespaceDefaultQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                statefulSetName: components["parameters"]["KubernetesStatefulSetName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retained StatefulSet ControllerRevisions. Revision is the native ControllerRevision sequence, name is the ControllerRevision name, and zero replicas means no currently observed owned Pod references this revision. This is not a permanent change archive. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesDeploymentRolloutListEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesStatefulSetRevisionYaml: {
+        parameters: {
+            query?: {
+                namespace?: components["parameters"]["KubernetesNamespaceDefaultQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                statefulSetName: components["parameters"]["KubernetesStatefulSetName"];
+                revisionName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized ControllerRevision YAML; it is a stored template patch, not a live StatefulSet object. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceYamlEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listKubernetesDaemonSetRollouts: {
+        parameters: {
+            query?: {
+                namespace?: components["parameters"]["KubernetesNamespaceDefaultQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                daemonSetName: components["parameters"]["KubernetesDaemonSetName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retained DaemonSet ControllerRevisions. Revision is the native ControllerRevision sequence, name is the ControllerRevision name, and zero replicas means no currently observed owned Pod references this revision. This is not a permanent change archive. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesDeploymentRolloutListEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesDaemonSetRevisionYaml: {
+        parameters: {
+            query?: {
+                namespace?: components["parameters"]["KubernetesNamespaceDefaultQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                daemonSetName: components["parameters"]["KubernetesDaemonSetName"];
+                revisionName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized ControllerRevision YAML; it is a stored template patch, not a live DaemonSet object. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceYamlEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesJobMetrics: {
+        parameters: {
+            query?: {
+                namespace?: components["parameters"]["KubernetesNamespaceDefaultQuery"];
+                rangeMinutes?: components["parameters"]["KubernetesMetricsRangeMinutesQuery"];
+                /** @description Requested step. The server may increase it to keep the response below 1440 points per series. */
+                stepSeconds?: components["parameters"]["KubernetesMetricsStepSecondsQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                jobName: components["parameters"]["KubernetesJobName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prometheus metrics aggregated from Pods owned by the current Job UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceMetricsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesReplicaSetMetrics: {
+        parameters: {
+            query?: {
+                namespace?: components["parameters"]["KubernetesNamespaceDefaultQuery"];
+                rangeMinutes?: components["parameters"]["KubernetesMetricsRangeMinutesQuery"];
+                /** @description Requested step. The server may increase it to keep the response below 1440 points per series. */
+                stepSeconds?: components["parameters"]["KubernetesMetricsStepSecondsQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                replicaSetName: components["parameters"]["KubernetesReplicaSetName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prometheus metrics aggregated from Pods owned by the current ReplicaSet UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceMetricsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesReplicationControllerMetrics: {
+        parameters: {
+            query?: {
+                namespace?: components["parameters"]["KubernetesNamespaceDefaultQuery"];
+                rangeMinutes?: components["parameters"]["KubernetesMetricsRangeMinutesQuery"];
+                /** @description Requested step. The server may increase it to keep the response below 1440 points per series. */
+                stepSeconds?: components["parameters"]["KubernetesMetricsStepSecondsQuery"];
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                name: components["parameters"]["KubernetesResourceName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prometheus metrics aggregated from Pods owned by the current ReplicationController UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceMetricsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    updateKubernetesHelmReleaseValues: {
+        parameters: {
+            query: {
+                namespace: string;
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                releaseName: components["parameters"]["KubernetesReleaseName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesHelmReleaseValuesUpdateInput"];
+            };
+        };
+        responses: {
+            /** @description Helm release values after upgrade. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesHelmReleaseValuesEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            502: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getKubernetesSecretCertificate: {
+        parameters: {
+            query: {
+                namespace: string;
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                name: components["parameters"]["KubernetesResourceName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public certificate metadata, including explicit missing or invalid certificate state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesSecretCertificateEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    applyKubernetesServiceYaml: {
+        parameters: {
+            query: {
+                namespace: string;
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                serviceName: components["parameters"]["KubernetesServiceName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesObservedResourceYamlInput"];
+            };
+        };
+        responses: {
+            /** @description Updated Kubernetes resource YAML. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceYamlEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    applyKubernetesIngressYaml: {
+        parameters: {
+            query: {
+                namespace: string;
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                name: components["parameters"]["KubernetesResourceName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesObservedResourceYamlInput"];
+            };
+        };
+        responses: {
+            /** @description Updated Kubernetes resource YAML. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceYamlEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    applyKubernetesSecretYaml: {
+        parameters: {
+            query: {
+                namespace: string;
+            };
+            header?: never;
+            path: {
+                clusterID: components["parameters"]["ClusterID"];
+                name: components["parameters"]["KubernetesResourceName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesObservedResourceYamlInput"];
+            };
+        };
+        responses: {
+            /** @description Updated Kubernetes resource YAML. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesResourceYamlEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
 }

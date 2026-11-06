@@ -240,17 +240,16 @@ the tarball checksum, manifest metadata, packed `package.json`, every exported
 package entrypoint, both OpenAPI artifact hashes, the SBOM identity and
 checksum, the provenance policy and checksum, and the consumer matrix summary.
 
-The tag workflow runs `npm test`, `npm pack --dry-run`, the strict consumer
-matrix, requires `NPM_TOKEN`, publishes npm with provenance, verifies the npm
-package and Go module tag after publish, and attaches the tarball, checksum,
-SBOM, SBOM checksum, provenance policy, provenance policy checksum, manifest,
-and consumer matrix to the GitHub release. It then downloads the published
-release assets and runs `release:verify` against the downloaded tarball.
+The tag workflow runs `npm test`, `npm pack --dry-run`, and the strict consumer
+matrix, then uses `NPM_TOKEN` to stage the npm tarball with provenance. A
+maintainer approves the stage on npmjs.com with 2FA. Dispatch the release
+workflow with the same tag and `publish_mode=recover` after approval. Recovery
+verifies the public npm package and Go module tag, attaches the release
+artifacts to GitHub, and verifies the downloaded tarball.
 
 The local release manifest records the provenance policy expected from the tag
-workflow. It does not prove a remote npm registry attestation by itself; that
-evidence is produced and checked only after the tag workflow publishes with
-`npm publish --provenance`.
+workflow. Verify the registry attestation's artifact digest and source revision
+after approval makes the package public.
 
 During private staging, consumers intentionally use sibling repository
 checkouts, `go.work` / `replace` entries, and `file:../soha-contracts` package

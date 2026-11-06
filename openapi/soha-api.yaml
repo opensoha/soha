@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Soha API
-  version: 0.1.28
+  version: 0.1.29
   description: >
     Public OpenSoha core API contract. This first contract focuses on stable cross-repository boundaries: auth, health, runner-facing control-plane callbacks, AI Gateway, and MCP capability discovery. Pod session WebSocket targets and their UID-aware ticket requirements are described separately in x-soha-websocket-paths to preserve HTTP client generation.
 servers:
@@ -11735,7 +11735,7 @@ paths:
         "503": { $ref: "#/components/responses/Error" }
   /clusters/{clusterID}/resources/graph:
     get:
-      tags: [ Platform ]
+      tags: [Platform]
       operationId: getKubernetesResourceGraph
       x-soha-permissions:
         mode: resource
@@ -11750,6 +11750,14 @@ paths:
         - name: name
           in: query
           required: true
+          schema: { type: string, minLength: 1 }
+        - name: apiVersion
+          in: query
+          description: Exact served group/version for a CRD instance, or apiextensions.k8s.io/v1 for a CRD definition. Required together with resource for explicit CRD graphs.
+          schema: { type: string, minLength: 1 }
+        - name: resource
+          in: query
+          description: Exact CRD plural resource name. For a CRD definition use customresourcedefinitions.
           schema: { type: string, minLength: 1 }
       responses:
         "200": { description: Permission-filtered resource relationship graph and recent evidence., content: { application/json: { schema: { $ref: "#/components/schemas/KubernetesResourceGraphEnvelope" } } } }
@@ -21395,10 +21403,12 @@ paths:
         keys:
           - platform.pods.delete
       x-soha-implementation-status: implemented
+      description: Request deletion of a Pod. With expectedUid, a same-name replacement is rejected and an Agent that cannot enforce the precondition returns 501.
       parameters:
         - $ref: "#/components/parameters/ClusterID"
         - $ref: "#/components/parameters/KubernetesPodName"
         - $ref: "#/components/parameters/KubernetesNamespaceQuery"
+        - $ref: "#/components/parameters/KubernetesExpectedWorkloadUID"
       responses:
         "204":
           description: Operation completed.
@@ -21409,6 +21419,8 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "409":
+          $ref: "#/components/responses/Error"
+        "501":
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
@@ -25816,6 +25828,373 @@ paths:
         - NetworkAccess
       x-permission-keys:
         - network_access.content_transfer_events.view
+  /clusters/{clusterID}/workloads/deployments/{deploymentName}:
+    delete:
+      tags: [Platform]
+      operationId: deleteKubernetesDeployment
+      x-soha-permissions: { mode: all, keys: [platform.deployment.delete] }
+      x-soha-implementation-status: implemented
+      description: Request deletion of a Deployment. With expectedUid, a same-name replacement is rejected and an Agent that cannot enforce the precondition returns 501.
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesDeploymentName"
+        - $ref: "#/components/parameters/KubernetesNamespaceQuery"
+        - $ref: "#/components/parameters/KubernetesExpectedWorkloadUID"
+      responses:
+        "204": { description: Deletion requested. }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "501": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/workloads/statefulsets/{statefulSetName}/rollouts:
+    get:
+      tags: [Platform]
+      operationId: listKubernetesStatefulSetRollouts
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.workloads.stateful-sets.view
+      x-soha-implementation-status: implemented
+      description: Retained ControllerRevisions controlled by the selected StatefulSet UID. Replica counts include only Pods controlled by that StatefulSet and referencing the revision, not replicas inferred from the template.
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesStatefulSetName"
+        - $ref: "#/components/parameters/KubernetesNamespaceDefaultQuery"
+      responses:
+        "200":
+          description: Retained StatefulSet ControllerRevisions. Revision is the native ControllerRevision sequence, name is the ControllerRevision name, and zero replicas means no currently observed owned Pod references this revision. This is not a permanent change archive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesDeploymentRolloutListEnvelope"
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/workloads/statefulsets/{statefulSetName}/rollouts/{revisionName}/yaml:
+    get:
+      tags: [Platform]
+      operationId: getKubernetesStatefulSetRevisionYaml
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.workloads.stateful-sets.view
+      x-soha-implementation-status: implemented
+      description: Read a retained ControllerRevision only when its controlling owner UID matches the selected StatefulSet in the same namespace. Does not resolve Secret references. Inline template values may be sensitive, as in workload YAML.
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesStatefulSetName"
+        - $ref: "#/components/parameters/KubernetesNamespaceDefaultQuery"
+        - name: revisionName
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Authorized ControllerRevision YAML; it is a stored template patch, not a live StatefulSet object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesResourceYamlEnvelope"
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/workloads/daemonsets/{daemonSetName}/rollouts:
+    get:
+      tags: [Platform]
+      operationId: listKubernetesDaemonSetRollouts
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.workloads.daemon-sets.view
+      x-soha-implementation-status: implemented
+      description: Retained ControllerRevisions controlled by the selected DaemonSet UID. Replica counts include only Pods controlled by that DaemonSet and referencing the ControllerRevision hash label, not replicas inferred from template names. podRevisionHash is the observed history label; matchesCurrentTemplate compares the native stored patch with the selected DaemonSet template and does not imply every Pod is updated.
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesDaemonSetName"
+        - $ref: "#/components/parameters/KubernetesNamespaceDefaultQuery"
+      responses:
+        "200":
+          description: Retained DaemonSet ControllerRevisions. Revision is the native ControllerRevision sequence, name is the ControllerRevision name, and zero replicas means no currently observed owned Pod references this revision. This is not a permanent change archive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesDeploymentRolloutListEnvelope"
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/workloads/daemonsets/{daemonSetName}/rollouts/{revisionName}/yaml:
+    get:
+      tags: [Platform]
+      operationId: getKubernetesDaemonSetRevisionYaml
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.workloads.daemon-sets.view
+      x-soha-implementation-status: implemented
+      description: Read a retained ControllerRevision only when its controlling owner UID matches the selected DaemonSet in the same namespace. Does not resolve Secret references. Inline template values may be sensitive, as in workload YAML.
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesDaemonSetName"
+        - $ref: "#/components/parameters/KubernetesNamespaceDefaultQuery"
+        - name: revisionName
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Authorized ControllerRevision YAML; it is a stored template patch, not a live DaemonSet object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesResourceYamlEnvelope"
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/workloads/jobs/{jobName}/metrics:
+    get:
+      tags: [Platform]
+      operationId: getKubernetesJobMetrics
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.workloads.jobs.view
+      x-soha-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesJobName"
+        - $ref: "#/components/parameters/KubernetesNamespaceDefaultQuery"
+        - $ref: "#/components/parameters/KubernetesMetricsRangeMinutesQuery"
+        - $ref: "#/components/parameters/KubernetesMetricsStepSecondsQuery"
+      responses:
+        "200":
+          description: Prometheus metrics aggregated from Pods owned by the current Job UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesResourceMetricsEnvelope"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/workloads/replicasets/{replicaSetName}/metrics:
+    get:
+      tags: [Platform]
+      operationId: getKubernetesReplicaSetMetrics
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.workloads.replica-sets.view
+      x-soha-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesReplicaSetName"
+        - $ref: "#/components/parameters/KubernetesNamespaceDefaultQuery"
+        - $ref: "#/components/parameters/KubernetesMetricsRangeMinutesQuery"
+        - $ref: "#/components/parameters/KubernetesMetricsStepSecondsQuery"
+      responses:
+        "200":
+          description: Prometheus metrics aggregated from Pods owned by the current ReplicaSet UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesResourceMetricsEnvelope"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/workloads/replicationcontrollers/{name}/metrics:
+    get:
+      tags: [Platform]
+      operationId: getKubernetesReplicationControllerMetrics
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.workloads.replication-controllers.view
+      x-soha-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesResourceName"
+        - $ref: "#/components/parameters/KubernetesNamespaceDefaultQuery"
+        - $ref: "#/components/parameters/KubernetesMetricsRangeMinutesQuery"
+        - $ref: "#/components/parameters/KubernetesMetricsStepSecondsQuery"
+      responses:
+        "200":
+          description: Prometheus metrics aggregated from Pods owned by the current ReplicationController UID in the selected namespace; retained Pods only, with explicit missing or unconfigured results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesResourceMetricsEnvelope"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/helm/releases/{releaseName}/values:
+    put:
+      tags: [Platform]
+      operationId: updateKubernetesHelmReleaseValues
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.helm.releases.update
+      x-soha-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesReleaseName"
+        - name: namespace
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/KubernetesHelmReleaseValuesUpdateInput" } } }
+      responses:
+        "200": { description: Helm release values after upgrade., content: { application/json: { schema: { $ref: "#/components/schemas/KubernetesHelmReleaseValuesEnvelope" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "501": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/configuration/secrets/{name}/certificate:
+    get:
+      tags: [Platform]
+      operationId: getKubernetesSecretCertificate
+      description: Public metadata for the first tls.crt certificate of a TLS Secret. Requires resource-scoped Secret view; never returns certificate PEM, Secret data or private keys. Dates do not establish certificate trust, host matching or controller deployment.
+      x-soha-permissions:
+        mode: all
+        keys: [platform.configuration.secrets.view]
+      x-soha-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesResourceName"
+        - name: namespace
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Public certificate metadata, including explicit missing or invalid certificate state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesSecretCertificateEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /clusters/{clusterID}/network/services/{serviceName}/yaml:
+    put:
+      tags: [Platform]
+      operationId: applyKubernetesServiceYaml
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.network.services.update
+      x-soha-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesServiceName"
+        - name: namespace
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KubernetesObservedResourceYamlInput"
+      responses:
+        "200":
+          description: Updated Kubernetes resource YAML.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesResourceYamlEnvelope"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "501": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/network/ingresses/{name}/yaml:
+    put:
+      tags: [Platform]
+      operationId: applyKubernetesIngressYaml
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.network.ingresses.update
+      x-soha-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesResourceName"
+        - name: namespace
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KubernetesObservedResourceYamlInput"
+      responses:
+        "200":
+          description: Updated Kubernetes resource YAML.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesResourceYamlEnvelope"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "501": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /clusters/{clusterID}/configuration/secrets/{name}/yaml:
+    put:
+      tags: [Platform]
+      operationId: applyKubernetesSecretYaml
+      x-soha-permissions:
+        mode: all
+        keys:
+          - platform.configuration.secret-data.view
+          - platform.configuration.secrets.update
+      x-soha-implementation-status: implemented
+      parameters:
+        - $ref: "#/components/parameters/ClusterID"
+        - $ref: "#/components/parameters/KubernetesResourceName"
+        - name: namespace
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KubernetesObservedResourceYamlInput"
+      responses:
+        "200":
+          description: Updated Kubernetes resource YAML.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesResourceYamlEnvelope"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "501": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearerAuth:
@@ -26761,6 +27140,12 @@ components:
         enum: [ default, bypass, read-only, refresh ]
         x-enum-varnames: [ CreateAIGatewayOpenAICompatibleProviderResponseParamsXSohaCacheModeDefault, CreateAIGatewayOpenAICompatibleProviderResponseParamsXSohaCacheModeBypass, CreateAIGatewayOpenAICompatibleProviderResponseParamsXSohaCacheModeReadOnly, CreateAIGatewayOpenAICompatibleProviderResponseParamsXSohaCacheModeRefresh ]
       description: Optional relay cache behavior hint.
+    KubernetesExpectedWorkloadUID:
+      name: expectedUid
+      in: query
+      required: false
+      description: Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement.
+      schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._-]+$' }
   headers:
     SohaRouteIDHeader:
       schema:
@@ -44462,7 +44847,13 @@ components:
         agentToken: { type: string, writeOnly: true }
         prometheusBaseUrl: { type: string }
         prometheusBearerToken: { type: string, writeOnly: true }
-        prometheusClusterLabel: { type: string }
+        prometheusClusterLabel:
+          type: string
+          description: Omit on update to keep the saved label. An empty string disables label matching for a dedicated Prometheus source. Clusters sharing a source require the same label name and distinct values.
+        prometheusClusterLabelValue:
+          type: string
+          maxLength: 1024
+          description: Exact metric label value. Omit on update to keep the saved value unless the label name is cleared. With a label name configured, an empty value uses the Soha cluster ID. A non-empty value requires a valid label name.
         grafanaBaseUrl: { type: string }
         prometheusTransport: { $ref: "#/components/schemas/KubernetesPrometheusTransport" }
         agentActionProfile: { $ref: "#/components/schemas/KubernetesAgentActionProfile" }
@@ -44521,12 +44912,17 @@ components:
       additionalProperties: false
     KubernetesPrometheusDetail:
       type: object
-      required: [ hasBearerToken ]
+      required: [hasBearerToken]
       properties:
         baseUrl:
           type: string
         clusterLabel:
           type: string
+          description: Omitted or empty for a dedicated Prometheus source queried without a cluster label matcher.
+        clusterLabelValue:
+          type: string
+          maxLength: 1024
+          description: Configured metric cluster label value. When clusterLabel is configured, an omitted or empty value uses the Soha cluster ID.
         grafanaBaseUrl:
           type: string
         hasBearerToken:
@@ -44645,7 +45041,7 @@ components:
       additionalProperties: false
     KubernetesNode:
       type: object
-      required: [ name, status, unschedulable, podCount, ageSeconds ]
+      required: [name, status, unschedulable, podCount, ageSeconds]
       properties:
         name:
           type: string
@@ -44653,6 +45049,11 @@ components:
           type: string
         unschedulable:
           type: boolean
+        labels:
+          type: object
+          description: Kubernetes Node labels available to the current reader.
+          additionalProperties:
+            type: string
         taints:
           type: array
           nullable: true
@@ -44910,12 +45311,20 @@ components:
       additionalProperties: false
     KubernetesPod:
       type: object
-      required: [ name, namespace, phase, readyContainers, restarts, ageSeconds ]
+      required:
+        - name
+        - namespace
+        - phase
+        - readyContainers
+        - restarts
+        - ageSeconds
       properties:
         uid:
           type: string
           minLength: 1
-          description: Immutable Pod identity. Required by clients restoring a saved live session; absent on older providers.
+          description: Immutable Pod identity for restoring saved live sessions and identity-checked deletion. Older providers may omit it.
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._-]+$
         name:
           type: string
         namespace:
@@ -44956,6 +45365,14 @@ components:
           type: array
           items:
             type: string
+        qosClass:
+          type: string
+          description: Kubernetes status.qosClass, omitted when not reported.
+        containerStatuses:
+          type: array
+          description: Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers.
+          items:
+            $ref: "#/components/schemas/KubernetesPodContainerStatus"
       additionalProperties: false
     KubernetesPodListEnvelope:
       type: object
@@ -45073,12 +45490,17 @@ components:
       additionalProperties: false
     KubernetesPodDetail:
       type: object
-      required: [ name, namespace, phase ]
+      required:
+        - name
+        - namespace
+        - phase
       properties:
         uid:
           type: string
           minLength: 1
-          description: Immutable Pod identity. Required by clients restoring a saved live session; absent on older providers.
+          description: Immutable Pod identity for restoring saved live sessions and identity-checked deletion. Older providers may omit it.
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._-]+$
         name:
           type: string
         namespace:
@@ -45137,12 +45559,18 @@ components:
       additionalProperties: false
     KubernetesDeployment:
       type: object
-      required: [ name, namespace, desiredReplicas, readyReplicas, updatedReplicas, available, ageSeconds ]
+      required: [name, namespace, desiredReplicas, readyReplicas, updatedReplicas, available, ageSeconds]
       properties:
         name:
           type: string
         namespace:
           type: string
+        uid:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._-]+$'
+          description: Kubernetes object UID for identity-checked deletion. Omitted if unavailable.
         labels:
           $ref: "#/components/schemas/KubernetesStringMap"
         desiredReplicas:
@@ -45181,12 +45609,18 @@ components:
       additionalProperties: false
     KubernetesDeploymentDetail:
       type: object
-      required: [ name, namespace, desiredReplicas, readyReplicas, updatedReplicas, availableReplicas, observedGeneration, strategy ]
+      required: [name, namespace, desiredReplicas, readyReplicas, updatedReplicas, availableReplicas, observedGeneration, strategy]
       properties:
         name:
           type: string
         namespace:
           type: string
+        uid:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._-]+$'
+          description: Kubernetes object UID for identity-checked deletion. Omitted if unavailable.
         desiredReplicas:
           type: integer
           format: int32
@@ -46138,12 +46572,15 @@ components:
       additionalProperties: false
     KubernetesResourceUpdatePlanRequest:
       type: object
-      required: [ kind, name, content ]
+      required: [kind, name, content]
       properties:
         namespace: { type: string }
         kind: { type: string, minLength: 1 }
         name: { type: string, minLength: 1 }
         content: { type: string, minLength: 1 }
+        requireObservedIdentity:
+          type: boolean
+          description: Require the YAML to identify the observed Kubernetes object by metadata.uid and metadata.resourceVersion.
       additionalProperties: false
     KubernetesManagedFieldOwner:
       type: object
@@ -46294,7 +46731,7 @@ components:
       additionalProperties: false
     KubernetesDeploymentRollout:
       type: object
-      required: [ name, namespace, revision, replicas, readyReplicas ]
+      required: [name, namespace, revision, replicas, readyReplicas]
       properties:
         name: { type: string }
         namespace: { type: string }
@@ -46305,6 +46742,13 @@ components:
         replicas: { type: integer, format: int32, minimum: 0 }
         readyReplicas: { type: integer, format: int32, minimum: 0 }
         createdAt: { type: string }
+        podRevisionHash:
+          type: string
+          description: Observed controller-revision-hash used by owned Pods; omitted when unavailable. Do not infer it from resource names.
+        matchesCurrentTemplate:
+          type: boolean
+          x-go-pointer: true
+          description: When supplied, whether the retained ControllerRevision patch exactly matches the current DaemonSet Pod template. False is a confirmed mismatch; omission means this endpoint did not evaluate it.
       additionalProperties: false
     KubernetesDeploymentRolloutListEnvelope:
       type: object
@@ -46430,7 +46874,7 @@ components:
       additionalProperties: false
     KubernetesJob:
       type: object
-      required: [ name, namespace, completions, succeeded, failed, active, ageSeconds ]
+      required: [name, namespace, completions, succeeded, failed, active, ageSeconds]
       properties:
         name: { type: string }
         namespace: { type: string }
@@ -46440,6 +46884,18 @@ components:
         active: { type: integer, format: int32, minimum: 0 }
         completionMode: { type: string }
         ageSeconds: { type: integer, format: int64, minimum: 0 }
+        completionTarget:
+          type: integer
+          x-go-pointer: true
+          format: int32
+          minimum: 0
+          description: Native spec.completions when specified; absence is not a zero completion target.
+        suspend: { type: boolean, x-go-pointer: true }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/KubernetesWorkloadCondition" }
+        startTime: { type: string }
+        completionTime: { type: string }
         allowedActions:
           type: array
           items: { type: string }
@@ -46454,7 +46910,7 @@ components:
       additionalProperties: false
     KubernetesJobDetail:
       type: object
-      required: [ name, namespace, completions, parallelism, succeeded, failed, active ]
+      required: [name, namespace, completions, parallelism, succeeded, failed, active]
       properties:
         name: { type: string }
         namespace: { type: string }
@@ -46475,6 +46931,19 @@ components:
         relatedResources:
           type: array
           items: { $ref: "#/components/schemas/KubernetesWorkloadRelation" }
+        completionTarget:
+          type: integer
+          x-go-pointer: true
+          format: int32
+          minimum: 0
+          description: Native spec.completions when specified; absence is not a zero completion target.
+        suspend: { type: boolean, x-go-pointer: true }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/KubernetesWorkloadCondition" }
+        backoffLimit: { type: integer, format: int32, minimum: 0, x-go-pointer: true }
+        activeDeadlineSeconds: { type: integer, format: int64, minimum: 0, x-go-pointer: true }
+        ttlSecondsAfterFinished: { type: integer, format: int32, minimum: 0, x-go-pointer: true }
         allowedActions:
           type: array
           items: { type: string }
@@ -48046,18 +48515,20 @@ components:
       additionalProperties: false
     KubernetesTopologyGraphEdge:
       type: object
-      required: [ id, source, target, relation, resolutionState ]
+      required: [id, source, target, relation, resolutionState]
       properties:
         id: { type: string, minLength: 1, maxLength: 2048 }
         source: { type: string, minLength: 1, maxLength: 2048 }
         target: { type: string, minLength: 1, maxLength: 2048 }
         relation:
           type: string
-          enum: [ matches, processes, forwards, weights, mirrors, resolves, selects ]
-          x-enum-varnames: [ KubernetesTopologyGraphEdgeRelationMatches, KubernetesTopologyGraphEdgeRelationProcesses, KubernetesTopologyGraphEdgeRelationForwards, KubernetesTopologyGraphEdgeRelationWeights, KubernetesTopologyGraphEdgeRelationMirrors, KubernetesTopologyGraphEdgeRelationResolves, KubernetesTopologyGraphEdgeRelationSelects ]
+          enum: [matches, processes, forwards, weights, mirrors, resolves, selects, uses-class, uses-secret, uses-config, parameters, targets, authorizes-reference, policy-peer]
+          x-enum-varnames: [KubernetesTopologyGraphEdgeRelationMatches, KubernetesTopologyGraphEdgeRelationProcesses, KubernetesTopologyGraphEdgeRelationForwards, KubernetesTopologyGraphEdgeRelationWeights, KubernetesTopologyGraphEdgeRelationMirrors, KubernetesTopologyGraphEdgeRelationResolves, KubernetesTopologyGraphEdgeRelationSelects, KubernetesTopologyGraphEdgeRelationUsesClass, KubernetesTopologyGraphEdgeRelationUsesSecret, KubernetesTopologyGraphEdgeRelationUsesConfig, KubernetesTopologyGraphEdgeRelationParameters, KubernetesTopologyGraphEdgeRelationTargets, KubernetesTopologyGraphEdgeRelationAuthorizesReference, KubernetesTopologyGraphEdgeRelationPolicyPeer]
         resolutionState: { $ref: "#/components/schemas/KubernetesTopologyResolution" }
         protocol: { type: string, maxLength: 16 }
         port: { type: string, maxLength: 64 }
+        sectionName: { type: string, maxLength: 253 }
+        fieldPath: { type: string, maxLength: 1024 }
         weight: { type: integer, format: int64, minimum: 0 }
         totalWeight: { type: integer, format: int64, minimum: 0 }
         mirrorPercent: { type: number, minimum: 0, maximum: 100 }
@@ -48067,15 +48538,16 @@ components:
       additionalProperties: false
     KubernetesTopologyCoverage:
       type: object
-      required: [ provider, sourceId, state ]
+      required: [provider, sourceId, state]
       properties:
         provider: { $ref: "#/components/schemas/KubernetesTopologyProvider" }
         sourceId: { type: string, maxLength: 128 }
         state:
           type: string
-          enum: [ available, not_installed, unsupported, denied, error, partial ]
-          x-enum-varnames: [ KubernetesTopologyCoverageStateAvailable, KubernetesTopologyCoverageStateNotInstalled, KubernetesTopologyCoverageStateUnsupported, KubernetesTopologyCoverageStateDenied, KubernetesTopologyCoverageStateError, KubernetesTopologyCoverageStatePartial ]
+          enum: [available, not_installed, unsupported, denied, error, partial]
+          x-enum-varnames: [KubernetesTopologyCoverageStateAvailable, KubernetesTopologyCoverageStateNotInstalled, KubernetesTopologyCoverageStateUnsupported, KubernetesTopologyCoverageStateDenied, KubernetesTopologyCoverageStateError, KubernetesTopologyCoverageStatePartial]
         namespace: { type: string, maxLength: 63 }
+        name: { type: string, maxLength: 253 }
         supportedKinds:
           type: array
           maxItems: 32
@@ -48087,18 +48559,19 @@ components:
       additionalProperties: false
     KubernetesTopologySourceQuery:
       type: object
-      required: [ sourceId ]
+      required: [sourceId]
       properties:
         sourceId:
           type: string
-          enum: [ kubernetes.services, kubernetes.pods, kubernetes.endpointslices, kubernetes.ingresses, kubernetes.ingressclasses, gateway.gateways, gateway.gatewayclasses, gateway.httproutes, gateway.grpcroutes, gateway.tcproutes, gateway.tlsroutes, gateway.udproutes, gateway.referencegrants, traefik.ingressroutes, traefik.ingressroutetcps, traefik.ingressrouteudps, traefik.traefikservices, traefik.middlewares, traefik.middlewaretcps, apisix.apisixroutes, apisix.apisixupstreams, apisix.apisixtls ]
-          x-enum-varnames: [ KubernetesTopologySourceKubernetesServices, KubernetesTopologySourceKubernetesPods, KubernetesTopologySourceKubernetesEndpointslices, KubernetesTopologySourceKubernetesIngresses, KubernetesTopologySourceKubernetesIngressclasses, KubernetesTopologySourceGatewayGateways, KubernetesTopologySourceGatewayGatewayclasses, KubernetesTopologySourceGatewayHttproutes, KubernetesTopologySourceGatewayGrpcroutes, KubernetesTopologySourceGatewayTcproutes, KubernetesTopologySourceGatewayTlsroutes, KubernetesTopologySourceGatewayUdproutes, KubernetesTopologySourceGatewayReferencegrants, KubernetesTopologySourceTraefikIngressroutes, KubernetesTopologySourceTraefikIngressroutetcps, KubernetesTopologySourceTraefikIngressrouteudps, KubernetesTopologySourceTraefikTraefikservices, KubernetesTopologySourceTraefikMiddlewares, KubernetesTopologySourceTraefikMiddlewaretcps, KubernetesTopologySourceApisixApisixroutes, KubernetesTopologySourceApisixApisixupstreams, KubernetesTopologySourceApisixApisixtls ]
+          enum: [kubernetes.networkpolicies, kubernetes.namespaces, kubernetes.configmaps, gateway.backendtlspolicies, kubernetes.services, kubernetes.pods, kubernetes.endpointslices, kubernetes.ingresses, kubernetes.ingressclasses, gateway.gateways, gateway.gatewayclasses, gateway.httproutes, gateway.grpcroutes, gateway.tcproutes, gateway.tlsroutes, gateway.udproutes, gateway.referencegrants, traefik.ingressroutes, traefik.ingressroutetcps, traefik.ingressrouteudps, traefik.traefikservices, traefik.middlewares, traefik.middlewaretcps, apisix.apisixroutes, apisix.apisixupstreams, apisix.apisixtls]
+          x-enum-varnames: [KubernetesTopologySourceKubernetesNetworkpolicies, KubernetesTopologySourceKubernetesNamespaces, KubernetesTopologySourceKubernetesConfigmaps, KubernetesTopologySourceGatewayBackendtlspolicies, KubernetesTopologySourceKubernetesServices, KubernetesTopologySourceKubernetesPods, KubernetesTopologySourceKubernetesEndpointslices, KubernetesTopologySourceKubernetesIngresses, KubernetesTopologySourceKubernetesIngressclasses, KubernetesTopologySourceGatewayGateways, KubernetesTopologySourceGatewayGatewayclasses, KubernetesTopologySourceGatewayHttproutes, KubernetesTopologySourceGatewayGrpcroutes, KubernetesTopologySourceGatewayTcproutes, KubernetesTopologySourceGatewayTlsroutes, KubernetesTopologySourceGatewayUdproutes, KubernetesTopologySourceGatewayReferencegrants, KubernetesTopologySourceTraefikIngressroutes, KubernetesTopologySourceTraefikIngressroutetcps, KubernetesTopologySourceTraefikIngressrouteudps, KubernetesTopologySourceTraefikTraefikservices, KubernetesTopologySourceTraefikMiddlewares, KubernetesTopologySourceTraefikMiddlewaretcps, KubernetesTopologySourceApisixApisixroutes, KubernetesTopologySourceApisixApisixupstreams, KubernetesTopologySourceApisixApisixtls]
         namespace: { type: string, maxLength: 63, pattern: '^$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?$' }
+        name: { type: string, maxLength: 253 }
       allOf:
         - if:
             properties:
-              sourceId: { enum: [ kubernetes.ingressclasses, gateway.gatewayclasses ] }
-            required: [ sourceId ]
+              sourceId: { enum: [kubernetes.ingressclasses, gateway.gatewayclasses, kubernetes.namespaces] }
+            required: [sourceId]
           then:
             properties:
               namespace: { type: string, maxLength: 0 }
@@ -48137,9 +48610,9 @@ components:
       additionalProperties: false
     KubernetesTopologySnapshot:
       type: object
-      required: [ version, sources ]
+      required: [version, sources]
       properties:
-        version: { type: string, pattern: '^v1$' }
+        version: { type: string, pattern: '^v1$|^network\.topology\.(snapshot|named-root)\.v1$' }
         sources:
           type: array
           maxItems: 64
@@ -51716,12 +52189,19 @@ components:
       additionalProperties: false
     KubernetesResourceGraphEdge:
       type: object
-      required: [ id, sourceId, targetId, relation ]
+      required: [id, sourceId, targetId, relation]
       properties:
         id: { type: string, minLength: 1 }
         sourceId: { type: string, minLength: 1 }
         targetId: { type: string, minLength: 1 }
         relation: { type: string, minLength: 1 }
+        resolutionState: { type: string }
+        protocol: { type: string }
+        port: { type: string }
+        sectionName: { type: string }
+        fieldPath: { type: string }
+        note: { type: string }
+        sourceRef: { $ref: "#/components/schemas/KubernetesResourceRef" }
       additionalProperties: false
     KubernetesResourceEvidence:
       type: object
@@ -61641,3 +62121,86 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/ManagedContentNetworkHold"
+    KubernetesPodContainerStatus:
+      type: object
+      required: [name, kind, ready, state]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [init, sidecar, container]
+        ready:
+          type: boolean
+        state:
+          type: string
+          enum: [running, waiting, terminated, unknown]
+        reason:
+          type: string
+        exitCode:
+          type: integer
+          format: int32
+          x-go-type-skip-optional-pointer: false
+          description: Present only when the current container state is terminated, including a successful zero exit code.
+      additionalProperties: false
+    KubernetesObservedResourceYamlInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1 }
+        requireObservedIdentity:
+          type: boolean
+          description: Require the YAML to include the UID and resource version of the object read before editing. A changed or replaced object returns conflict.
+      additionalProperties: false
+    KubernetesSecretCertificate:
+      type: object
+      required: [name, namespace, status]
+      properties:
+        name: { type: string }
+        namespace: { type: string }
+        status:
+          type: string
+          enum: [available, missing, invalid, unsupported_type]
+        notBefore: { type: string, format: date-time }
+        notAfter: { type: string, format: date-time }
+        selfSigned:
+          type: boolean
+          x-go-pointer: true
+          description: The first certificate is signed by its own key; this is not a trust validation result.
+      additionalProperties: false
+    KubernetesSecretCertificateEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/KubernetesSecretCertificate" }
+      additionalProperties: false
+    KubernetesHelmReleaseValuesUpdateInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string, description: Complete Helm values YAML. }
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 2147483646
+          description: Latest Helm revision observed by the editor. When supplied, a changed revision returns 409 and an Agent without conditional updates returns 501.
+      additionalProperties: false
+    KubernetesHelmReleaseValues:
+      type: object
+      required: [name, namespace, content, editable, diffEnabled]
+      properties:
+        name: { type: string }
+        namespace: { type: string }
+        revision: { type: string }
+        content: { type: string }
+        original: { type: string }
+        editable: { type: boolean }
+        diffEnabled: { type: boolean }
+        allowedActions: { type: array, items: { type: string } }
+      additionalProperties: false
+    KubernetesHelmReleaseValuesEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/KubernetesHelmReleaseValues" }
+      additionalProperties: false

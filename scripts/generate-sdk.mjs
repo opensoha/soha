@@ -196,6 +196,15 @@ async function patchGoEntrypoint(url) {
     )
     .replace("type AnyValue = interface{}", "type AnyValue = any")
     .replaceAll("map[string]interface{}", "map[string]any");
+  // New enums can change collision detection; keep the published reasoning names.
+  const reasoningStart = generated.indexOf("// Defines values for WorkbenchModelOptionReasoningEfforts.");
+  const reasoningEnd = generated.indexOf("\n// Defines values for ", reasoningStart + 1);
+  if (reasoningStart < 0 || reasoningEnd < 0) throw new Error("reasoning effort enum is missing");
+  let reasoning = generated.slice(reasoningStart, reasoningEnd);
+  for (const suffix of ["High", "Medium", "Low"]) {
+    reasoning = reasoning.replaceAll(new RegExp(`\\b${suffix}\\b`, "g"), `WorkbenchModelOptionReasoningEfforts${suffix}`);
+  }
+  generated = generated.slice(0, reasoningStart) + reasoning + generated.slice(reasoningEnd);
   generated += `
 
 // Deprecated: use the SAMLAttributeMappingTarget-prefixed constants in new code.
@@ -239,9 +248,14 @@ const (
     ["PersonalGuestRuntimeInputKind", [["Browser", "browser"], ["Docker", "docker"], ["Execute", "execute"], ["FileRead", "file_read"], ["FileWrite", "file_write"]]],
     ["ExportDeliveryDocumentParamsFormat", [["JSON", "json"], ["Yaml", "yaml"]]],
     ["DeliveryDraftServiceServiceKind", [["ExternalService", "external_service"], ["HelmRelease", "helm_release"], ["Job", "job"], ["KubernetesWorkload", "kubernetes_workload"]]],
+    ["PersonalAgentAccessDecisionStatus", [["Approved", "approved"], ["Rejected", "rejected"], ["Revoked", "revoked"]]],
+    ["PersonalEnvironmentTemplateBackend", [["Container", "container"], ["VM", "vm"]]],
+    ["PersonalWorkspaceRuntimeBrowserControlOwner", [["Agent", "agent"], ["Released", "released"], ["User", "user"]]],
     ["ListAIGatewayRelayUpstreamsParamsStatus", [["Active", "active"], ["Degraded", "degraded"], ["Disabled", "disabled"]]],
     ["DeliveryPlanStatus", [["Draft", "draft"], ["WaitingApproval", "waiting_approval"], ["Confirming", "confirming"], ["Confirmed", "confirmed"]]],
     ["RuntimeNetworkUsageScope", [["NetworkNamespace", "network_namespace"], ["Process", "process"], ["Unavailable", "unavailable"]]],
+    // Rejected already belongs to the published PersonalAgentAccessDecisionStatus.
+    ["WorkflowRequestReceiptSubmissionStatus", [["Accepted", "accepted"], ["Unknown", "unknown"]]],
     ["WorkbenchAgentStatusEventStatus", [["Cancelled", "cancelled"], ["Failed", "failed"], ["Queued", "queued"], ["Running", "running"], ["Succeeded", "succeeded"]]],
   ]) {
     for (const [suffix, value] of values) {

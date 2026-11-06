@@ -1,0 +1,67 @@
+{
+  "items": [
+    {
+      "name": "api",
+      "namespace": "apps",
+      "phase": "Running",
+      "readyContainers": "1/3",
+      "restarts": 2,
+      "ageSeconds": 60,
+      "qosClass": "Burstable",
+      "containerStatuses": [
+        {
+          "name": "migrate",
+          "kind": "init",
+          "ready": false,
+          "state": "terminated",
+          "reason": "Completed",
+          "exitCode": 0
+        },
+        {
+          "name": "proxy-init",
+          "kind": "sidecar",
+          "ready": true,
+          "state": "running"
+        },
+        {
+          "name": "api",
+          "ready": true,
+          "state": "running",
+          "kind": "container"
+        },
+        {
+          "name": "proxy",
+          "ready": false,
+          "state": "waiting",
+          "reason": "CrashLoopBackOff",
+          "kind": "container"
+        },
+        {
+          "name": "worker",
+          "ready": false,
+          "state": "unknown",
+          "kind": "container"
+        }
+      ]
+    },
+    {
+      "name": "job",
+      "namespace": "apps",
+      "phase": "Succeeded",
+      "readyContainers": "0/1",
+      "restarts": 0,
+      "ageSeconds": 30,
+      "qosClass": "BestEffort",
+      "containerStatuses": [
+        {
+          "name": "job",
+          "ready": false,
+          "state": "terminated",
+          "reason": "Completed",
+          "exitCode": 0,
+          "kind": "container"
+        }
+      ]
+    }
+  ]
+}

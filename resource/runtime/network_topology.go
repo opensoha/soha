@@ -29,6 +29,12 @@ func ReadNetworkTopologySnapshot(ctx context.Context, client rest.Interface, clu
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	output := resource.NetworkTopologySnapshot{Version: resource.NetworkTopologySnapshotFeature, Sources: make([]resource.NetworkTopologySourceResult, len(input.Queries))}
+	for _, query := range input.Queries {
+		if query.Name != "" {
+			output.Version = resource.NetworkTopologyNamedRootFeature
+			break
+		}
+	}
 	budget := &topologyReadBudget{remaining: resource.NetworkTopologyMaxTotalBytes}
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
@@ -47,6 +53,9 @@ func ReadNetworkTopologySnapshot(ctx context.Context, client rest.Interface, clu
 		}(index, query)
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return resource.NetworkTopologySnapshot{}, err
+	}
 	total := 0
 	for i := range output.Sources {
 		source := &output.Sources[i]
@@ -69,10 +78,13 @@ func ReadNetworkTopologySnapshot(ctx context.Context, client rest.Interface, clu
 
 func topologySourceFailure(query resource.NetworkTopologySourceQuery, state, reason string) resource.NetworkTopologySourceResult {
 	definition, _ := resource.LookupNetworkTopologySource(query.SourceID)
-	return resource.NetworkTopologySourceResult{Coverage: resource.NetworkTopologyCoverage{Provider: definition.Provider, SourceID: query.SourceID, Namespace: query.Namespace, State: state, ReasonCode: reason, CheckedAt: time.Now().UTC().Format(time.RFC3339), SupportedKinds: []string{definition.Kind}}, Objects: []resource.NetworkTopologySourceObject{}}
+	return resource.NetworkTopologySourceResult{Coverage: resource.NetworkTopologyCoverage{Provider: definition.Provider, SourceID: query.SourceID, Name: query.Name, Namespace: query.Namespace, State: state, ReasonCode: reason, CheckedAt: time.Now().UTC().Format(time.RFC3339), SupportedKinds: []string{definition.Kind}}, Objects: []resource.NetworkTopologySourceObject{}}
 }
 
 func readTopologySource(ctx context.Context, client rest.Interface, clusterID string, query resource.NetworkTopologySourceQuery, budget *topologyReadBudget) resource.NetworkTopologySourceResult {
+	if query.Name != "" {
+		return readNetworkGraphNamedSource(ctx, client, clusterID, query, budget)
+	}
 	definition, _ := resource.LookupNetworkTopologySource(query.SourceID)
 	result := topologySourceFailure(query, "available", "")
 	version, err := discoverTopologySource(ctx, client, definition, budget)
@@ -142,10 +154,10 @@ func topologyAPIBase(group, version string) string {
 }
 
 func discoverTopologySource(ctx context.Context, client rest.Interface, definition resource.NetworkTopologySourceDefinition, budget *topologyReadBudget) (string, error) {
-	versions := []string{definition.Version}
-	if definition.FallbackVersion != "" {
-		versions = append(versions, definition.FallbackVersion)
-	}
+	return discoverTopologySourceVersions(ctx, client, definition, budget, resource.NetworkTopologySourceVersions(definition))
+}
+
+func discoverTopologySourceVersions(ctx context.Context, client rest.Interface, definition resource.NetworkTopologySourceDefinition, budget *topologyReadBudget, versions []string) (string, error) {
 	for _, version := range versions {
 		raw, err := boundedTopologyGET(ctx, client, topologyAPIBase(definition.Group, version), false, budget)
 		if apierrors.IsNotFound(err) {

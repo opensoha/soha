@@ -1,6 +1,7 @@
 package resource
 
 const (
+	NetworkTopologyNamedRootFeature = "network.topology.named-root.v1"
 	NetworkTopologySnapshotFeature  = "network.topology.snapshot.v1"
 	NetworkTopologyGatewayL4Feature = "network.topology.gateway-l4.v1"
 	NetworkTopologyMaxQueries       = 64
@@ -36,6 +37,8 @@ type NetworkTopologyGraphEdge struct {
 	ResolutionState string       `json:"resolutionState"`
 	Protocol        string       `json:"protocol,omitempty"`
 	Port            string       `json:"port,omitempty"`
+	SectionName     string       `json:"sectionName,omitempty"`
+	FieldPath       string       `json:"fieldPath,omitempty"`
 	Weight          *int64       `json:"weight,omitempty"`
 	TotalWeight     *int64       `json:"totalWeight,omitempty"`
 	MirrorPercent   *float64     `json:"mirrorPercent,omitempty"`
@@ -74,6 +77,7 @@ type NetworkTopologyCondition struct {
 }
 
 type NetworkTopologyCoverage struct {
+	Name           string   `json:"name,omitempty"`
 	Provider       string   `json:"provider"`
 	SourceID       string   `json:"sourceId"`
 	State          string   `json:"state"`
@@ -87,6 +91,7 @@ type NetworkTopologyCoverage struct {
 
 // Snapshot queries name a fixed source, never a caller-supplied GVR or field path.
 type NetworkTopologySourceQuery struct {
+	Name      string `json:"name,omitempty"`
 	SourceID  string `json:"sourceId"`
 	Namespace string `json:"namespace,omitempty"`
 }
@@ -120,6 +125,10 @@ type NetworkTopologySourceDefinition struct {
 }
 
 var networkTopologySources = [...]NetworkTopologySourceDefinition{
+	{ID: "kubernetes.networkpolicies", Provider: "kubernetes", CRDResourceDefinition: CRDResourceDefinition{Kind: "NetworkPolicy", Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies", Namespaced: true}},
+	{ID: "kubernetes.namespaces", Provider: "kubernetes", CRDResourceDefinition: CRDResourceDefinition{Kind: "Namespace", Version: "v1", Resource: "namespaces"}},
+	{ID: "kubernetes.configmaps", Provider: "kubernetes", CRDResourceDefinition: CRDResourceDefinition{Kind: "ConfigMap", Version: "v1", Resource: "configmaps", Namespaced: true}},
+	{ID: "gateway.backendtlspolicies", Provider: "gateway", FallbackVersion: "v1alpha3", CRDResourceDefinition: CRDResourceDefinition{Kind: "BackendTLSPolicy", Group: "gateway.networking.k8s.io", Version: "v1", Resource: "backendtlspolicies", Namespaced: true}},
 	{ID: "kubernetes.services", Provider: "kubernetes", CRDResourceDefinition: CRDResourceDefinition{Kind: "Service", Version: "v1", Resource: "services", Namespaced: true}},
 	{ID: "kubernetes.pods", Provider: "kubernetes", CRDResourceDefinition: CRDResourceDefinition{Kind: "Pod", Version: "v1", Resource: "pods", Namespaced: true}},
 	{ID: "kubernetes.endpointslices", Provider: "kubernetes", CRDResourceDefinition: CRDResourceDefinition{Kind: "EndpointSlice", Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices", Namespaced: true}},
@@ -163,4 +172,17 @@ func LookupNetworkTopologySource(id string) (NetworkTopologySourceDefinition, bo
 		}
 	}
 	return NetworkTopologySourceDefinition{}, false
+}
+
+// NetworkTopologySourceVersions is the explicit served-version allowlist. Legacy
+// BackendTLSPolicy v1alpha2 uses targetRef rather than targetRefs.
+func NetworkTopologySourceVersions(d NetworkTopologySourceDefinition) []string {
+	versions := []string{d.Version}
+	if d.FallbackVersion != "" {
+		versions = append(versions, d.FallbackVersion)
+	}
+	if d.ID == "gateway.backendtlspolicies" {
+		versions = append(versions, "v1alpha2")
+	}
+	return versions
 }

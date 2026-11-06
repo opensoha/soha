@@ -50,6 +50,19 @@ func TestRuntimeAndWorkbenchLegacyEnumConstants(t *testing.T) {
 	}
 }
 
+func TestPersonalAgentAccessDecisionPublishedConstants(t *testing.T) {
+	statuses := map[PersonalAgentAccessDecisionStatus]string{
+		PersonalAgentAccessDecisionStatusApproved: "approved",
+		PersonalAgentAccessDecisionStatusRejected: "rejected",
+		PersonalAgentAccessDecisionStatusRevoked:  "revoked",
+	}
+	for status, want := range statuses {
+		if string(status) != want || !status.Valid() {
+			t.Fatalf("PersonalAgentAccessDecisionStatus %q is not the compatible value %q", status, want)
+		}
+	}
+}
+
 func TestObservabilityCredentialKeyLegacyTypes(t *testing.T) {
 	dataSource := ObservabilityDataSource{
 		CredentialKeys: []ObservabilityDataSourceCredentialKeys{

@@ -1,0 +1,5 @@
+{
+  "prometheusBaseUrl": "https://prometheus.example.invalid",
+  "prometheusClusterLabel": "",
+  "prometheusClusterLabelValue": ""
+}

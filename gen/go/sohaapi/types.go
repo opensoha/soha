@@ -5961,6 +5961,51 @@ func (e KubernetesImportedTargetWorkloadKind) Valid() bool {
 	}
 }
 
+// Defines values for KubernetesPodContainerStatusKind.
+const (
+	KubernetesPodContainerStatusKindContainer KubernetesPodContainerStatusKind = "container"
+	KubernetesPodContainerStatusKindInit      KubernetesPodContainerStatusKind = "init"
+	KubernetesPodContainerStatusKindSidecar   KubernetesPodContainerStatusKind = "sidecar"
+)
+
+// Valid indicates whether the value is a known member of the KubernetesPodContainerStatusKind enum.
+func (e KubernetesPodContainerStatusKind) Valid() bool {
+	switch e {
+	case KubernetesPodContainerStatusKindContainer:
+		return true
+	case KubernetesPodContainerStatusKindInit:
+		return true
+	case KubernetesPodContainerStatusKindSidecar:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for KubernetesPodContainerStatusState.
+const (
+	KubernetesPodContainerStatusStateRunning    KubernetesPodContainerStatusState = "running"
+	KubernetesPodContainerStatusStateTerminated KubernetesPodContainerStatusState = "terminated"
+	KubernetesPodContainerStatusStateUnknown    KubernetesPodContainerStatusState = "unknown"
+	KubernetesPodContainerStatusStateWaiting    KubernetesPodContainerStatusState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the KubernetesPodContainerStatusState enum.
+func (e KubernetesPodContainerStatusState) Valid() bool {
+	switch e {
+	case KubernetesPodContainerStatusStateRunning:
+		return true
+	case KubernetesPodContainerStatusStateTerminated:
+		return true
+	case KubernetesPodContainerStatusStateUnknown:
+		return true
+	case KubernetesPodContainerStatusStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for KubernetesPodExecutionOutputStatus.
 const (
 	KubernetesPodExecutionOutputStatusCanceled      KubernetesPodExecutionOutputStatus = "canceled"
@@ -6450,6 +6495,30 @@ func (e KubernetesResourceStreamEventType) Valid() bool {
 	}
 }
 
+// Defines values for KubernetesSecretCertificateStatus.
+const (
+	KubernetesSecretCertificateStatusAvailable       KubernetesSecretCertificateStatus = "available"
+	KubernetesSecretCertificateStatusInvalid         KubernetesSecretCertificateStatus = "invalid"
+	KubernetesSecretCertificateStatusMissing         KubernetesSecretCertificateStatus = "missing"
+	KubernetesSecretCertificateStatusUnsupportedType KubernetesSecretCertificateStatus = "unsupported_type"
+)
+
+// Valid indicates whether the value is a known member of the KubernetesSecretCertificateStatus enum.
+func (e KubernetesSecretCertificateStatus) Valid() bool {
+	switch e {
+	case KubernetesSecretCertificateStatusAvailable:
+		return true
+	case KubernetesSecretCertificateStatusInvalid:
+		return true
+	case KubernetesSecretCertificateStatusMissing:
+		return true
+	case KubernetesSecretCertificateStatusUnsupportedType:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for KubernetesSecurityFindingCategory.
 const (
 	Configuration KubernetesSecurityFindingCategory = "configuration"
@@ -6623,29 +6692,50 @@ func (e KubernetesTopologyCoverageState) Valid() bool {
 
 // Defines values for KubernetesTopologyGraphEdgeRelation.
 const (
-	KubernetesTopologyGraphEdgeRelationForwards  KubernetesTopologyGraphEdgeRelation = "forwards"
-	KubernetesTopologyGraphEdgeRelationMatches   KubernetesTopologyGraphEdgeRelation = "matches"
-	KubernetesTopologyGraphEdgeRelationMirrors   KubernetesTopologyGraphEdgeRelation = "mirrors"
-	KubernetesTopologyGraphEdgeRelationProcesses KubernetesTopologyGraphEdgeRelation = "processes"
-	KubernetesTopologyGraphEdgeRelationResolves  KubernetesTopologyGraphEdgeRelation = "resolves"
-	KubernetesTopologyGraphEdgeRelationSelects   KubernetesTopologyGraphEdgeRelation = "selects"
-	KubernetesTopologyGraphEdgeRelationWeights   KubernetesTopologyGraphEdgeRelation = "weights"
+	KubernetesTopologyGraphEdgeRelationAuthorizesReference KubernetesTopologyGraphEdgeRelation = "authorizes-reference"
+	KubernetesTopologyGraphEdgeRelationForwards            KubernetesTopologyGraphEdgeRelation = "forwards"
+	KubernetesTopologyGraphEdgeRelationMatches             KubernetesTopologyGraphEdgeRelation = "matches"
+	KubernetesTopologyGraphEdgeRelationMirrors             KubernetesTopologyGraphEdgeRelation = "mirrors"
+	KubernetesTopologyGraphEdgeRelationParameters          KubernetesTopologyGraphEdgeRelation = "parameters"
+	KubernetesTopologyGraphEdgeRelationPolicyPeer          KubernetesTopologyGraphEdgeRelation = "policy-peer"
+	KubernetesTopologyGraphEdgeRelationProcesses           KubernetesTopologyGraphEdgeRelation = "processes"
+	KubernetesTopologyGraphEdgeRelationResolves            KubernetesTopologyGraphEdgeRelation = "resolves"
+	KubernetesTopologyGraphEdgeRelationSelects             KubernetesTopologyGraphEdgeRelation = "selects"
+	KubernetesTopologyGraphEdgeRelationTargets             KubernetesTopologyGraphEdgeRelation = "targets"
+	KubernetesTopologyGraphEdgeRelationUsesClass           KubernetesTopologyGraphEdgeRelation = "uses-class"
+	KubernetesTopologyGraphEdgeRelationUsesConfig          KubernetesTopologyGraphEdgeRelation = "uses-config"
+	KubernetesTopologyGraphEdgeRelationUsesSecret          KubernetesTopologyGraphEdgeRelation = "uses-secret"
+	KubernetesTopologyGraphEdgeRelationWeights             KubernetesTopologyGraphEdgeRelation = "weights"
 )
 
 // Valid indicates whether the value is a known member of the KubernetesTopologyGraphEdgeRelation enum.
 func (e KubernetesTopologyGraphEdgeRelation) Valid() bool {
 	switch e {
+	case KubernetesTopologyGraphEdgeRelationAuthorizesReference:
+		return true
 	case KubernetesTopologyGraphEdgeRelationForwards:
 		return true
 	case KubernetesTopologyGraphEdgeRelationMatches:
 		return true
 	case KubernetesTopologyGraphEdgeRelationMirrors:
 		return true
+	case KubernetesTopologyGraphEdgeRelationParameters:
+		return true
+	case KubernetesTopologyGraphEdgeRelationPolicyPeer:
+		return true
 	case KubernetesTopologyGraphEdgeRelationProcesses:
 		return true
 	case KubernetesTopologyGraphEdgeRelationResolves:
 		return true
 	case KubernetesTopologyGraphEdgeRelationSelects:
+		return true
+	case KubernetesTopologyGraphEdgeRelationTargets:
+		return true
+	case KubernetesTopologyGraphEdgeRelationUsesClass:
+		return true
+	case KubernetesTopologyGraphEdgeRelationUsesConfig:
+		return true
+	case KubernetesTopologyGraphEdgeRelationUsesSecret:
 		return true
 	case KubernetesTopologyGraphEdgeRelationWeights:
 		return true
@@ -10598,16 +10688,16 @@ func (e PersonalEnvironmentActionRequestAction) Valid() bool {
 
 // Defines values for PersonalEnvironmentTemplateBackend.
 const (
-	Container PersonalEnvironmentTemplateBackend = "container"
-	VM        PersonalEnvironmentTemplateBackend = "vm"
+	PersonalEnvironmentTemplateBackendContainer PersonalEnvironmentTemplateBackend = "container"
+	PersonalEnvironmentTemplateBackendVM        PersonalEnvironmentTemplateBackend = "vm"
 )
 
 // Valid indicates whether the value is a known member of the PersonalEnvironmentTemplateBackend enum.
 func (e PersonalEnvironmentTemplateBackend) Valid() bool {
 	switch e {
-	case Container:
+	case PersonalEnvironmentTemplateBackendContainer:
 		return true
-	case VM:
+	case PersonalEnvironmentTemplateBackendVM:
 		return true
 	default:
 		return false
@@ -13553,19 +13643,19 @@ func (e WorkflowNodeRunStage) Valid() bool {
 
 // Defines values for WorkflowRequestReceiptSubmissionStatus.
 const (
-	Accepted WorkflowRequestReceiptSubmissionStatus = "accepted"
-	Rejected WorkflowRequestReceiptSubmissionStatus = "rejected"
-	Unknown  WorkflowRequestReceiptSubmissionStatus = "unknown"
+	WorkflowRequestReceiptSubmissionStatusAccepted WorkflowRequestReceiptSubmissionStatus = "accepted"
+	WorkflowRequestReceiptSubmissionStatusRejected WorkflowRequestReceiptSubmissionStatus = "rejected"
+	WorkflowRequestReceiptSubmissionStatusUnknown  WorkflowRequestReceiptSubmissionStatus = "unknown"
 )
 
 // Valid indicates whether the value is a known member of the WorkflowRequestReceiptSubmissionStatus enum.
 func (e WorkflowRequestReceiptSubmissionStatus) Valid() bool {
 	switch e {
-	case Accepted:
+	case WorkflowRequestReceiptSubmissionStatusAccepted:
 		return true
-	case Rejected:
+	case WorkflowRequestReceiptSubmissionStatusRejected:
 		return true
-	case Unknown:
+	case WorkflowRequestReceiptSubmissionStatusUnknown:
 		return true
 	default:
 		return false
@@ -14771,16 +14861,16 @@ func (e SearchWorkbenchMessagesParamsWorkspace) Valid() bool {
 
 // Defines values for ExportDeliveryDocumentParamsFormat.
 const (
-	ExportDeliveryDocumentParamsFormatJSON ExportDeliveryDocumentParamsFormat = "json"
-	ExportDeliveryDocumentParamsFormatYaml ExportDeliveryDocumentParamsFormat = "yaml"
+	JSON ExportDeliveryDocumentParamsFormat = "json"
+	Yaml ExportDeliveryDocumentParamsFormat = "yaml"
 )
 
 // Valid indicates whether the value is a known member of the ExportDeliveryDocumentParamsFormat enum.
 func (e ExportDeliveryDocumentParamsFormat) Valid() bool {
 	switch e {
-	case ExportDeliveryDocumentParamsFormatJSON:
+	case JSON:
 		return true
-	case ExportDeliveryDocumentParamsFormatYaml:
+	case Yaml:
 		return true
 	default:
 		return false
@@ -23657,7 +23747,10 @@ type KubernetesDeployment struct {
 	Name            string               `json:"name"`
 	Namespace       string               `json:"namespace"`
 	ReadyReplicas   int32                `json:"readyReplicas"`
-	UpdatedReplicas int32                `json:"updatedReplicas"`
+
+	// UID Kubernetes object UID for identity-checked deletion. Omitted if unavailable.
+	UID             string `json:"uid,omitempty"`
+	UpdatedReplicas int32  `json:"updatedReplicas"`
 }
 
 // KubernetesDeploymentDetail defines model for KubernetesDeploymentDetail.
@@ -23678,7 +23771,10 @@ type KubernetesDeploymentDetail struct {
 	RelatedResources   []KubernetesWorkloadRelation  `json:"relatedResources,omitempty"`
 	Selector           *KubernetesStringMap          `json:"selector,omitempty"`
 	Strategy           string                        `json:"strategy"`
-	UpdatedReplicas    int32                         `json:"updatedReplicas"`
+
+	// UID Kubernetes object UID for identity-checked deletion. Omitted if unavailable.
+	UID             string `json:"uid,omitempty"`
+	UpdatedReplicas int32  `json:"updatedReplicas"`
 }
 
 // KubernetesDeploymentDetailEnvelope defines model for KubernetesDeploymentDetailEnvelope.
@@ -23693,13 +23789,19 @@ type KubernetesDeploymentListEnvelope struct {
 
 // KubernetesDeploymentRollout defines model for KubernetesDeploymentRollout.
 type KubernetesDeploymentRollout struct {
-	CreatedAt     string   `json:"createdAt,omitempty"`
-	Images        []string `json:"images,omitempty"`
-	Name          string   `json:"name"`
-	Namespace     string   `json:"namespace"`
-	ReadyReplicas int32    `json:"readyReplicas"`
-	Replicas      int32    `json:"replicas"`
-	Revision      string   `json:"revision"`
+	CreatedAt string   `json:"createdAt,omitempty"`
+	Images    []string `json:"images,omitempty"`
+
+	// MatchesCurrentTemplate When supplied, whether the retained ControllerRevision patch exactly matches the current DaemonSet Pod template. False is a confirmed mismatch; omission means this endpoint did not evaluate it.
+	MatchesCurrentTemplate *bool  `json:"matchesCurrentTemplate,omitempty"`
+	Name                   string `json:"name"`
+	Namespace              string `json:"namespace"`
+
+	// PodRevisionHash Observed controller-revision-hash used by owned Pods; omitted when unavailable. Do not infer it from resource names.
+	PodRevisionHash string `json:"podRevisionHash,omitempty"`
+	ReadyReplicas   int32  `json:"readyReplicas"`
+	Replicas        int32  `json:"replicas"`
+	Revision        string `json:"revision"`
 }
 
 // KubernetesDeploymentRolloutListEnvelope defines model for KubernetesDeploymentRolloutListEnvelope.
@@ -24207,6 +24309,32 @@ type KubernetesHelmReleaseRollbackInput struct {
 	Wait           bool `json:"wait,omitempty"`
 }
 
+// KubernetesHelmReleaseValues defines model for KubernetesHelmReleaseValues.
+type KubernetesHelmReleaseValues struct {
+	AllowedActions []string `json:"allowedActions,omitempty"`
+	Content        string   `json:"content"`
+	DiffEnabled    bool     `json:"diffEnabled"`
+	Editable       bool     `json:"editable"`
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	Original       string   `json:"original,omitempty"`
+	Revision       string   `json:"revision,omitempty"`
+}
+
+// KubernetesHelmReleaseValuesEnvelope defines model for KubernetesHelmReleaseValuesEnvelope.
+type KubernetesHelmReleaseValuesEnvelope struct {
+	Data KubernetesHelmReleaseValues `json:"data"`
+}
+
+// KubernetesHelmReleaseValuesUpdateInput defines model for KubernetesHelmReleaseValuesUpdateInput.
+type KubernetesHelmReleaseValuesUpdateInput struct {
+	// Content Complete Helm values YAML.
+	Content string `json:"content"`
+
+	// ExpectedRevision Latest Helm revision observed by the editor. When supplied, a changed revision returns 409 and an Agent without conditional updates returns 501.
+	ExpectedRevision int `json:"expectedRevision,omitempty"`
+}
+
 // KubernetesHorizontalPodAutoscaler defines model for KubernetesHorizontalPodAutoscaler.
 type KubernetesHorizontalPodAutoscaler struct {
 	AgeSeconds      int64    `json:"ageSeconds"`
@@ -24438,31 +24566,46 @@ type KubernetesJob struct {
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
 	CompletionMode string   `json:"completionMode,omitempty"`
-	Completions    int32    `json:"completions"`
-	Failed         int32    `json:"failed"`
-	Name           string   `json:"name"`
-	Namespace      string   `json:"namespace"`
-	Succeeded      int32    `json:"succeeded"`
+
+	// CompletionTarget Native spec.completions when specified; absence is not a zero completion target.
+	CompletionTarget *int32                        `json:"completionTarget,omitempty"`
+	CompletionTime   string                        `json:"completionTime,omitempty"`
+	Completions      int32                         `json:"completions"`
+	Conditions       []KubernetesWorkloadCondition `json:"conditions,omitempty"`
+	Failed           int32                         `json:"failed"`
+	Name             string                        `json:"name"`
+	Namespace        string                        `json:"namespace"`
+	StartTime        string                        `json:"startTime,omitempty"`
+	Succeeded        int32                         `json:"succeeded"`
+	Suspend          *bool                         `json:"suspend,omitempty"`
 }
 
 // KubernetesJobDetail defines model for KubernetesJobDetail.
 type KubernetesJobDetail struct {
-	Active           int32                        `json:"active"`
-	AllowedActions   []string                     `json:"allowedActions,omitempty"`
-	Annotations      *KubernetesStringMap         `json:"annotations,omitempty"`
-	CompletionMode   string                       `json:"completionMode,omitempty"`
-	CompletionTime   string                       `json:"completionTime,omitempty"`
-	Completions      int32                        `json:"completions"`
-	CreatedAt        string                       `json:"createdAt,omitempty"`
-	Failed           int32                        `json:"failed"`
-	Labels           *KubernetesStringMap         `json:"labels,omitempty"`
-	Name             string                       `json:"name"`
-	Namespace        string                       `json:"namespace"`
-	Parallelism      int32                        `json:"parallelism"`
-	Pods             []KubernetesPod              `json:"pods,omitempty"`
-	RelatedResources []KubernetesWorkloadRelation `json:"relatedResources,omitempty"`
-	StartTime        string                       `json:"startTime,omitempty"`
-	Succeeded        int32                        `json:"succeeded"`
+	Active                int32                `json:"active"`
+	ActiveDeadlineSeconds *int64               `json:"activeDeadlineSeconds,omitempty"`
+	AllowedActions        []string             `json:"allowedActions,omitempty"`
+	Annotations           *KubernetesStringMap `json:"annotations,omitempty"`
+	BackoffLimit          *int32               `json:"backoffLimit,omitempty"`
+	CompletionMode        string               `json:"completionMode,omitempty"`
+
+	// CompletionTarget Native spec.completions when specified; absence is not a zero completion target.
+	CompletionTarget        *int32                        `json:"completionTarget,omitempty"`
+	CompletionTime          string                        `json:"completionTime,omitempty"`
+	Completions             int32                         `json:"completions"`
+	Conditions              []KubernetesWorkloadCondition `json:"conditions,omitempty"`
+	CreatedAt               string                        `json:"createdAt,omitempty"`
+	Failed                  int32                         `json:"failed"`
+	Labels                  *KubernetesStringMap          `json:"labels,omitempty"`
+	Name                    string                        `json:"name"`
+	Namespace               string                        `json:"namespace"`
+	Parallelism             int32                         `json:"parallelism"`
+	Pods                    []KubernetesPod               `json:"pods,omitempty"`
+	RelatedResources        []KubernetesWorkloadRelation  `json:"relatedResources,omitempty"`
+	StartTime               string                        `json:"startTime,omitempty"`
+	Succeeded               int32                         `json:"succeeded"`
+	Suspend                 *bool                         `json:"suspend,omitempty"`
+	TTLSecondsAfterFinished *int32                        `json:"ttlSecondsAfterFinished,omitempty"`
 }
 
 // KubernetesJobDetailEnvelope defines model for KubernetesJobDetailEnvelope.
@@ -24721,13 +24864,16 @@ type KubernetesNode struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 
 	// Conditions Current Node conditions, independent of scheduling and drain operations.
-	Conditions []KubernetesWorkloadCondition  `json:"conditions,omitempty"`
-	InternalIP string                         `json:"internalIp,omitempty"`
-	Name       string                         `json:"name"`
-	PodCount   int                            `json:"podCount"`
-	Resources  *KubernetesNodeResourceSummary `json:"resources,omitempty"`
-	Roles      []string                       `json:"roles,omitempty"`
-	Status     string                         `json:"status"`
+	Conditions []KubernetesWorkloadCondition `json:"conditions,omitempty"`
+	InternalIP string                        `json:"internalIp,omitempty"`
+
+	// Labels Kubernetes Node labels available to the current reader.
+	Labels    map[string]string              `json:"labels,omitempty"`
+	Name      string                         `json:"name"`
+	PodCount  int                            `json:"podCount"`
+	Resources *KubernetesNodeResourceSummary `json:"resources,omitempty"`
+	Roles     []string                       `json:"roles,omitempty"`
+	Status    string                         `json:"status"`
 
 	// Taints Current Node spec taints. Empty means none; null or absent means not reported.
 	Taints        []KubernetesNodeTaint `json:"taints,omitempty"`
@@ -24817,6 +24963,14 @@ type KubernetesNodeTaint struct {
 type KubernetesNodeUpdateInput struct {
 	Labels *KubernetesStringMap  `json:"labels,omitempty"`
 	Taints []KubernetesNodeTaint `json:"taints,omitempty"`
+}
+
+// KubernetesObservedResourceYamlInput defines model for KubernetesObservedResourceYamlInput.
+type KubernetesObservedResourceYamlInput struct {
+	Content string `json:"content"`
+
+	// RequireObservedIdentity Require the YAML to include the UID and resource version of the object read before editing. A changed or replaced object returns conflict.
+	RequireObservedIdentity bool `json:"requireObservedIdentity,omitempty"`
 }
 
 // KubernetesPersistentVolume defines model for KubernetesPersistentVolume.
@@ -24909,24 +25063,30 @@ type KubernetesPersistentVolumeListEnvelope struct {
 
 // KubernetesPod defines model for KubernetesPod.
 type KubernetesPod struct {
-	AgeSeconds             int64                       `json:"ageSeconds"`
-	AllowedActions         []string                    `json:"allowedActions,omitempty"`
-	CPU                    string                      `json:"cpu,omitempty"`
-	CreatedAt              string                      `json:"createdAt,omitempty"`
-	Labels                 *KubernetesStringMap        `json:"labels,omitempty"`
-	Limits                 *KubernetesResourceQuantity `json:"limits,omitempty"`
-	Memory                 string                      `json:"memory,omitempty"`
-	Name                   string                      `json:"name"`
-	Namespace              string                      `json:"namespace"`
-	NodeName               string                      `json:"nodeName,omitempty"`
-	PersistentVolumeClaims []string                    `json:"persistentVolumeClaims,omitempty"`
-	Phase                  string                      `json:"phase"`
-	PodIP                  string                      `json:"podIp,omitempty"`
-	ReadyContainers        string                      `json:"readyContainers"`
-	Requests               *KubernetesResourceQuantity `json:"requests,omitempty"`
-	Restarts               int32                       `json:"restarts"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
 
-	// UID Immutable Pod identity. Required by clients restoring a saved live session; absent on older providers.
+	// ContainerStatuses Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers.
+	ContainerStatuses      []KubernetesPodContainerStatus `json:"containerStatuses,omitempty"`
+	CPU                    string                         `json:"cpu,omitempty"`
+	CreatedAt              string                         `json:"createdAt,omitempty"`
+	Labels                 *KubernetesStringMap           `json:"labels,omitempty"`
+	Limits                 *KubernetesResourceQuantity    `json:"limits,omitempty"`
+	Memory                 string                         `json:"memory,omitempty"`
+	Name                   string                         `json:"name"`
+	Namespace              string                         `json:"namespace"`
+	NodeName               string                         `json:"nodeName,omitempty"`
+	PersistentVolumeClaims []string                       `json:"persistentVolumeClaims,omitempty"`
+	Phase                  string                         `json:"phase"`
+	PodIP                  string                         `json:"podIp,omitempty"`
+
+	// QosClass Kubernetes status.qosClass, omitted when not reported.
+	QosClass        string                      `json:"qosClass,omitempty"`
+	ReadyContainers string                      `json:"readyContainers"`
+	Requests        *KubernetesResourceQuantity `json:"requests,omitempty"`
+	Restarts        int32                       `json:"restarts"`
+
+	// UID Immutable Pod identity for restoring saved live sessions and identity-checked deletion. Older providers may omit it.
 	UID string `json:"uid,omitempty"`
 }
 
@@ -24939,6 +25099,23 @@ type KubernetesPodArgvInput struct {
 	StdinBase64    string   `json:"stdinBase64,omitempty"`
 	TimeoutSeconds int64    `json:"timeoutSeconds,omitempty"`
 }
+
+// KubernetesPodContainerStatus defines model for KubernetesPodContainerStatus.
+type KubernetesPodContainerStatus struct {
+	// ExitCode Present only when the current container state is terminated, including a successful zero exit code.
+	ExitCode *int32                            `json:"exitCode,omitempty"`
+	Kind     KubernetesPodContainerStatusKind  `json:"kind"`
+	Name     string                            `json:"name"`
+	Ready    bool                              `json:"ready"`
+	Reason   string                            `json:"reason,omitempty"`
+	State    KubernetesPodContainerStatusState `json:"state"`
+}
+
+// KubernetesPodContainerStatusKind defines model for KubernetesPodContainerStatus.Kind.
+type KubernetesPodContainerStatusKind string
+
+// KubernetesPodContainerStatusState defines model for KubernetesPodContainerStatus.State.
+type KubernetesPodContainerStatusState string
 
 // KubernetesPodDetail defines model for KubernetesPodDetail.
 type KubernetesPodDetail struct {
@@ -24961,7 +25138,7 @@ type KubernetesPodDetail struct {
 	ServiceAccountName string                         `json:"serviceAccountName,omitempty"`
 	StartTime          string                         `json:"startTime,omitempty"`
 
-	// UID Immutable Pod identity. Required by clients restoring a saved live session; absent on older providers.
+	// UID Immutable Pod identity for restoring saved live sessions and identity-checked deletion. Older providers may omit it.
 	UID     string                `json:"uid,omitempty"`
 	Volumes []KubernetesPodVolume `json:"volumes,omitempty"`
 }
@@ -25204,11 +25381,16 @@ type KubernetesPriorityClassListEnvelope struct {
 
 // KubernetesPrometheusDetail defines model for KubernetesPrometheusDetail.
 type KubernetesPrometheusDetail struct {
-	BaseURL        string                        `json:"baseUrl,omitempty"`
-	ClusterLabel   string                        `json:"clusterLabel,omitempty"`
-	GrafanaBaseURL string                        `json:"grafanaBaseUrl,omitempty"`
-	HasBearerToken bool                          `json:"hasBearerToken"`
-	Transport      KubernetesPrometheusTransport `json:"transport,omitempty"`
+	BaseURL string `json:"baseUrl,omitempty"`
+
+	// ClusterLabel Omitted or empty for a dedicated Prometheus source queried without a cluster label matcher.
+	ClusterLabel string `json:"clusterLabel,omitempty"`
+
+	// ClusterLabelValue Configured metric cluster label value. When clusterLabel is configured, an omitted or empty value uses the Soha cluster ID.
+	ClusterLabelValue string                        `json:"clusterLabelValue,omitempty"`
+	GrafanaBaseURL    string                        `json:"grafanaBaseUrl,omitempty"`
+	HasBearerToken    bool                          `json:"hasBearerToken"`
+	Transport         KubernetesPrometheusTransport `json:"transport,omitempty"`
 }
 
 // KubernetesPrometheusTransport defines model for KubernetesPrometheusTransport.
@@ -25578,10 +25760,17 @@ type KubernetesResourceGraph struct {
 
 // KubernetesResourceGraphEdge defines model for KubernetesResourceGraphEdge.
 type KubernetesResourceGraphEdge struct {
-	ID       string `json:"id"`
-	Relation string `json:"relation"`
-	SourceID string `json:"sourceId"`
-	TargetID string `json:"targetId"`
+	FieldPath       string                 `json:"fieldPath,omitempty"`
+	ID              string                 `json:"id"`
+	Note            string                 `json:"note,omitempty"`
+	Port            string                 `json:"port,omitempty"`
+	Protocol        string                 `json:"protocol,omitempty"`
+	Relation        string                 `json:"relation"`
+	ResolutionState string                 `json:"resolutionState,omitempty"`
+	SectionName     string                 `json:"sectionName,omitempty"`
+	SourceID        string                 `json:"sourceId"`
+	SourceRef       *KubernetesResourceRef `json:"sourceRef,omitempty"`
+	TargetID        string                 `json:"targetId"`
 }
 
 // KubernetesResourceGraphEnvelope defines model for KubernetesResourceGraphEnvelope.
@@ -25795,6 +25984,9 @@ type KubernetesResourceUpdatePlanRequest struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
+
+	// RequireObservedIdentity Require the YAML to identify the observed Kubernetes object by metadata.uid and metadata.resourceVersion.
+	RequireObservedIdentity bool `json:"requireObservedIdentity,omitempty"`
 }
 
 // KubernetesResourceWarning defines model for KubernetesResourceWarning.
@@ -25898,6 +26090,26 @@ type KubernetesRuntimeClass struct {
 // KubernetesRuntimeClassListEnvelope defines model for KubernetesRuntimeClassListEnvelope.
 type KubernetesRuntimeClassListEnvelope struct {
 	Items []KubernetesRuntimeClass `json:"items"`
+}
+
+// KubernetesSecretCertificate defines model for KubernetesSecretCertificate.
+type KubernetesSecretCertificate struct {
+	Name      string     `json:"name"`
+	Namespace string     `json:"namespace"`
+	NotAfter  *time.Time `json:"notAfter,omitempty"`
+	NotBefore *time.Time `json:"notBefore,omitempty"`
+
+	// SelfSigned The first certificate is signed by its own key; this is not a trust validation result.
+	SelfSigned *bool                             `json:"selfSigned,omitempty"`
+	Status     KubernetesSecretCertificateStatus `json:"status"`
+}
+
+// KubernetesSecretCertificateStatus defines model for KubernetesSecretCertificate.Status.
+type KubernetesSecretCertificateStatus string
+
+// KubernetesSecretCertificateEnvelope defines model for KubernetesSecretCertificateEnvelope.
+type KubernetesSecretCertificateEnvelope struct {
+	Data KubernetesSecretCertificate `json:"data"`
 }
 
 // KubernetesSecretDataInput Data values are plain text. The response detail returns Kubernetes Base64-encoded values.
@@ -26246,6 +26458,7 @@ type KubernetesTopologyCondition struct {
 // KubernetesTopologyCoverage defines model for KubernetesTopologyCoverage.
 type KubernetesTopologyCoverage struct {
 	CheckedAt      *time.Time                      `json:"checkedAt,omitempty"`
+	Name           string                          `json:"name,omitempty"`
 	Namespace      string                          `json:"namespace,omitempty"`
 	ObservedAt     *time.Time                      `json:"observedAt,omitempty"`
 	Provider       KubernetesTopologyProvider      `json:"provider"`
@@ -26261,6 +26474,7 @@ type KubernetesTopologyCoverageState string
 
 // KubernetesTopologyGraphEdge defines model for KubernetesTopologyGraphEdge.
 type KubernetesTopologyGraphEdge struct {
+	FieldPath       string                              `json:"fieldPath,omitempty"`
 	ID              string                              `json:"id"`
 	MirrorPercent   *float32                            `json:"mirrorPercent,omitempty"`
 	Note            string                              `json:"note,omitempty"`
@@ -26269,6 +26483,7 @@ type KubernetesTopologyGraphEdge struct {
 	Relation        KubernetesTopologyGraphEdgeRelation `json:"relation"`
 	ResolutionState KubernetesTopologyResolution        `json:"resolutionState"`
 	RuleRef         string                              `json:"ruleRef,omitempty"`
+	SectionName     string                              `json:"sectionName,omitempty"`
 	Source          string                              `json:"source"`
 	SourceRef       *KubernetesResourceRef              `json:"sourceRef,omitempty"`
 	Target          string                              `json:"target"`
@@ -36897,6 +37112,9 @@ type KubernetesDeploymentName = string
 // KubernetesEventLimitQuery defines model for KubernetesEventLimitQuery.
 type KubernetesEventLimitQuery = int
 
+// KubernetesExpectedWorkloadUID defines model for KubernetesExpectedWorkloadUID.
+type KubernetesExpectedWorkloadUID = string
+
 // KubernetesJobName defines model for KubernetesJobName.
 type KubernetesJobName = string
 
@@ -38033,6 +38251,11 @@ type ListKubernetesSecretMetadataParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
+// GetKubernetesSecretCertificateParams defines parameters for GetKubernetesSecretCertificate.
+type GetKubernetesSecretCertificateParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
+}
+
 // UpdateKubernetesSecretDataParams defines parameters for UpdateKubernetesSecretData.
 type UpdateKubernetesSecretDataParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -38049,6 +38272,11 @@ type GetKubernetesSecretDetailParams struct {
 type ListKubernetesSecretReferencesParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// ApplyKubernetesSecretYamlParams defines parameters for ApplyKubernetesSecretYaml.
+type ApplyKubernetesSecretYamlParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
 }
 
 // ListKubernetesClusterEventsParams defines parameters for ListKubernetesClusterEvents.
@@ -38132,6 +38360,11 @@ type RollbackKubernetesHelmReleaseParams struct {
 type PlanKubernetesHelmReleaseRollbackParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// UpdateKubernetesHelmReleaseValuesParams defines parameters for UpdateKubernetesHelmReleaseValues.
+type UpdateKubernetesHelmReleaseValuesParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
 }
 
 // ListKubernetesBackendTLSPoliciesParams defines parameters for ListKubernetesBackendTLSPolicies.
@@ -38260,6 +38493,11 @@ type GetKubernetesIngressDetailParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
+// ApplyKubernetesIngressYamlParams defines parameters for ApplyKubernetesIngressYaml.
+type ApplyKubernetesIngressYamlParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
+}
+
 // ListKubernetesNetworkPoliciesParams defines parameters for ListKubernetesNetworkPolicies.
 type ListKubernetesNetworkPoliciesParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -38323,6 +38561,11 @@ type GetKubernetesServiceMetricsParams struct {
 	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
 }
 
+// ApplyKubernetesServiceYamlParams defines parameters for ApplyKubernetesServiceYaml.
+type ApplyKubernetesServiceYamlParams struct {
+	Namespace string `form:"namespace" json:"namespace"`
+}
+
 // GetKubernetesNetworkTopologyParams defines parameters for GetKubernetesNetworkTopology.
 type GetKubernetesNetworkTopologyParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -38350,6 +38593,12 @@ type GetKubernetesResourceGraphParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 	Kind      string                   `form:"kind" json:"kind"`
 	Name      string                   `form:"name" json:"name"`
+
+	// APIVersion Exact served group/version for a CRD instance, or apiextensions.k8s.io/v1 for a CRD definition. Required together with resource for explicit CRD graphs.
+	APIVersion string `form:"apiVersion,omitempty" json:"apiVersion,omitempty"`
+
+	// Resource Exact CRD plural resource name. For a CRD definition use customresourcedefinitions.
+	Resource string `form:"resource,omitempty" json:"resource,omitempty"`
 }
 
 // SearchKubernetesResourcesParams defines parameters for SearchKubernetesResources.
@@ -38472,6 +38721,16 @@ type GetKubernetesDaemonSetMetricsParams struct {
 	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
 }
 
+// ListKubernetesDaemonSetRolloutsParams defines parameters for ListKubernetesDaemonSetRollouts.
+type ListKubernetesDaemonSetRolloutsParams struct {
+	Namespace KubernetesNamespaceDefaultQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// GetKubernetesDaemonSetRevisionYamlParams defines parameters for GetKubernetesDaemonSetRevisionYaml.
+type GetKubernetesDaemonSetRevisionYamlParams struct {
+	Namespace KubernetesNamespaceDefaultQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
 // GetKubernetesDaemonSetYamlParams defines parameters for GetKubernetesDaemonSetYaml.
 type GetKubernetesDaemonSetYamlParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -38482,6 +38741,15 @@ type GetKubernetesDaemonSetYamlParams struct {
 type ListKubernetesDeploymentsParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// DeleteKubernetesDeploymentParams defines parameters for DeleteKubernetesDeployment.
+type DeleteKubernetesDeploymentParams struct {
+	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
+	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+
+	// ExpectedUID Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement.
+	ExpectedUID KubernetesExpectedWorkloadUID `form:"expectedUid,omitempty" json:"expectedUid,omitempty"`
 }
 
 // GetKubernetesDeploymentDetailParams defines parameters for GetKubernetesDeploymentDetail.
@@ -38525,6 +38793,15 @@ type GetKubernetesJobDetailParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
+// GetKubernetesJobMetricsParams defines parameters for GetKubernetesJobMetrics.
+type GetKubernetesJobMetricsParams struct {
+	Namespace    KubernetesNamespaceDefaultQuery    `form:"namespace,omitempty" json:"namespace,omitempty"`
+	RangeMinutes KubernetesMetricsRangeMinutesQuery `form:"rangeMinutes,omitempty" json:"rangeMinutes,omitempty"`
+
+	// StepSeconds Requested step. The server may increase it to keep the response below 1440 points per series.
+	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
+}
+
 // GetKubernetesJobYamlParams defines parameters for GetKubernetesJobYaml.
 type GetKubernetesJobYamlParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -38547,6 +38824,9 @@ type ListKubernetesPodsParams struct {
 type DeleteKubernetesPodParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+
+	// ExpectedUID Kubernetes UID observed in the workload list or detail. When supplied, deletion requires this identity and rejects a same-name replacement.
+	ExpectedUID KubernetesExpectedWorkloadUID `form:"expectedUid,omitempty" json:"expectedUid,omitempty"`
 }
 
 // GetKubernetesPodDetailParams defines parameters for GetKubernetesPodDetail.
@@ -38634,6 +38914,15 @@ type GetKubernetesReplicaSetDetailParams struct {
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
+// GetKubernetesReplicaSetMetricsParams defines parameters for GetKubernetesReplicaSetMetrics.
+type GetKubernetesReplicaSetMetricsParams struct {
+	Namespace    KubernetesNamespaceDefaultQuery    `form:"namespace,omitempty" json:"namespace,omitempty"`
+	RangeMinutes KubernetesMetricsRangeMinutesQuery `form:"rangeMinutes,omitempty" json:"rangeMinutes,omitempty"`
+
+	// StepSeconds Requested step. The server may increase it to keep the response below 1440 points per series.
+	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
+}
+
 // GetKubernetesReplicaSetYamlParams defines parameters for GetKubernetesReplicaSetYaml.
 type GetKubernetesReplicaSetYamlParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
@@ -38656,6 +38945,15 @@ type DeleteKubernetesReplicationControllerParams struct {
 type GetKubernetesReplicationControllerDetailParams struct {
 	// Namespace Omit to aggregate across namespaces when the operation supports cluster-wide reads.
 	Namespace KubernetesNamespaceQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// GetKubernetesReplicationControllerMetricsParams defines parameters for GetKubernetesReplicationControllerMetrics.
+type GetKubernetesReplicationControllerMetricsParams struct {
+	Namespace    KubernetesNamespaceDefaultQuery    `form:"namespace,omitempty" json:"namespace,omitempty"`
+	RangeMinutes KubernetesMetricsRangeMinutesQuery `form:"rangeMinutes,omitempty" json:"rangeMinutes,omitempty"`
+
+	// StepSeconds Requested step. The server may increase it to keep the response below 1440 points per series.
+	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
 }
 
 // GetKubernetesReplicationControllerYamlParams defines parameters for GetKubernetesReplicationControllerYaml.
@@ -38683,6 +38981,16 @@ type GetKubernetesStatefulSetMetricsParams struct {
 
 	// StepSeconds Requested step. The server may increase it to keep the response below 1440 points per series.
 	StepSeconds KubernetesMetricsStepSecondsQuery `form:"stepSeconds,omitempty" json:"stepSeconds,omitempty"`
+}
+
+// ListKubernetesStatefulSetRolloutsParams defines parameters for ListKubernetesStatefulSetRollouts.
+type ListKubernetesStatefulSetRolloutsParams struct {
+	Namespace KubernetesNamespaceDefaultQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// GetKubernetesStatefulSetRevisionYamlParams defines parameters for GetKubernetesStatefulSetRevisionYaml.
+type GetKubernetesStatefulSetRevisionYamlParams struct {
+	Namespace KubernetesNamespaceDefaultQuery `form:"namespace,omitempty" json:"namespace,omitempty"`
 }
 
 // GetKubernetesStatefulSetYamlParams defines parameters for GetKubernetesStatefulSetYaml.
@@ -40079,11 +40387,17 @@ type ApplyKubernetesPodDisruptionBudgetYamlJSONRequestBody = KubernetesResourceY
 // UpdateKubernetesSecretDataJSONRequestBody defines body for UpdateKubernetesSecretData for application/json ContentType.
 type UpdateKubernetesSecretDataJSONRequestBody = KubernetesSecretDataInput
 
+// ApplyKubernetesSecretYamlJSONRequestBody defines body for ApplyKubernetesSecretYaml for application/json ContentType.
+type ApplyKubernetesSecretYamlJSONRequestBody = KubernetesObservedResourceYamlInput
+
 // RollbackKubernetesHelmReleaseJSONRequestBody defines body for RollbackKubernetesHelmRelease for application/json ContentType.
 type RollbackKubernetesHelmReleaseJSONRequestBody = KubernetesHelmReleaseRollbackInput
 
 // PlanKubernetesHelmReleaseRollbackJSONRequestBody defines body for PlanKubernetesHelmReleaseRollback for application/json ContentType.
 type PlanKubernetesHelmReleaseRollbackJSONRequestBody = KubernetesHelmReleaseRollbackInput
+
+// UpdateKubernetesHelmReleaseValuesJSONRequestBody defines body for UpdateKubernetesHelmReleaseValues for application/json ContentType.
+type UpdateKubernetesHelmReleaseValuesJSONRequestBody = KubernetesHelmReleaseValuesUpdateInput
 
 // UpdateKubernetesNodeJSONRequestBody defines body for UpdateKubernetesNode for application/json ContentType.
 type UpdateKubernetesNodeJSONRequestBody = KubernetesNodeUpdateInput
@@ -40118,8 +40432,14 @@ type ApplyKubernetesGRPCRouteYamlJSONRequestBody = KubernetesResourceYamlInput
 // ApplyKubernetesHTTPRouteYamlJSONRequestBody defines body for ApplyKubernetesHTTPRouteYaml for application/json ContentType.
 type ApplyKubernetesHTTPRouteYamlJSONRequestBody = KubernetesResourceYamlInput
 
+// ApplyKubernetesIngressYamlJSONRequestBody defines body for ApplyKubernetesIngressYaml for application/json ContentType.
+type ApplyKubernetesIngressYamlJSONRequestBody = KubernetesObservedResourceYamlInput
+
 // ApplyKubernetesReferenceGrantYamlJSONRequestBody defines body for ApplyKubernetesReferenceGrantYaml for application/json ContentType.
 type ApplyKubernetesReferenceGrantYamlJSONRequestBody = KubernetesResourceYamlInput
+
+// ApplyKubernetesServiceYamlJSONRequestBody defines body for ApplyKubernetesServiceYaml for application/json ContentType.
+type ApplyKubernetesServiceYamlJSONRequestBody = KubernetesObservedResourceYamlInput
 
 // DisableClusterLogCollectionJSONRequestBody defines body for DisableClusterLogCollection for application/json ContentType.
 type DisableClusterLogCollectionJSONRequestBody = LogCollectionDisableInput
@@ -49077,10 +49397,10 @@ const FileRead PersonalGuestRuntimeInputKind = "file_read"
 const FileWrite PersonalGuestRuntimeInputKind = "file_write"
 
 // Retained for Go SDK source compatibility.
-const JSON ExportDeliveryDocumentParamsFormat = "json"
+const ExportDeliveryDocumentParamsFormatJSON ExportDeliveryDocumentParamsFormat = "json"
 
 // Retained for Go SDK source compatibility.
-const Yaml ExportDeliveryDocumentParamsFormat = "yaml"
+const ExportDeliveryDocumentParamsFormatYaml ExportDeliveryDocumentParamsFormat = "yaml"
 
 // Retained for Go SDK source compatibility.
 const ExternalService DeliveryDraftServiceServiceKind = "external_service"
@@ -49093,6 +49413,30 @@ const Job DeliveryDraftServiceServiceKind = "job"
 
 // Retained for Go SDK source compatibility.
 const KubernetesWorkload DeliveryDraftServiceServiceKind = "kubernetes_workload"
+
+// Retained for Go SDK source compatibility.
+const Approved PersonalAgentAccessDecisionStatus = "approved"
+
+// Retained for Go SDK source compatibility.
+const Rejected PersonalAgentAccessDecisionStatus = "rejected"
+
+// Retained for Go SDK source compatibility.
+const Revoked PersonalAgentAccessDecisionStatus = "revoked"
+
+// Retained for Go SDK source compatibility.
+const Container PersonalEnvironmentTemplateBackend = "container"
+
+// Retained for Go SDK source compatibility.
+const VM PersonalEnvironmentTemplateBackend = "vm"
+
+// Retained for Go SDK source compatibility.
+const PersonalWorkspaceRuntimeBrowserControlOwnerAgent PersonalWorkspaceRuntimeBrowserControlOwner = "agent"
+
+// Retained for Go SDK source compatibility.
+const PersonalWorkspaceRuntimeBrowserControlOwnerReleased PersonalWorkspaceRuntimeBrowserControlOwner = "released"
+
+// Retained for Go SDK source compatibility.
+const PersonalWorkspaceRuntimeBrowserControlOwnerUser PersonalWorkspaceRuntimeBrowserControlOwner = "user"
 
 // Retained for Go SDK source compatibility.
 const ListAIGatewayRelayUpstreamsParamsStatusActive ListAIGatewayRelayUpstreamsParamsStatus = "active"
@@ -49123,6 +49467,12 @@ const RuntimeNetworkUsageScopeProcess RuntimeNetworkUsageScope = "process"
 
 // Retained for Go SDK source compatibility.
 const RuntimeNetworkUsageScopeUnavailable RuntimeNetworkUsageScope = "unavailable"
+
+// Retained for Go SDK source compatibility.
+const Accepted WorkflowRequestReceiptSubmissionStatus = "accepted"
+
+// Retained for Go SDK source compatibility.
+const Unknown WorkflowRequestReceiptSubmissionStatus = "unknown"
 
 // Retained for Go SDK source compatibility.
 const WorkbenchAgentStatusEventStatusCancelled WorkbenchAgentStatusEventStatus = "cancelled"
