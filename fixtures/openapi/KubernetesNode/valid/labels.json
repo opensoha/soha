@@ -1,0 +1,11 @@
+{
+  "name": "worker-a",
+  "status": "Ready",
+  "unschedulable": false,
+  "podCount": 0,
+  "ageSeconds": 0,
+  "labels": {
+    "node-role.kubernetes.io/worker": "",
+    "pool": "gpu"
+  }
+}

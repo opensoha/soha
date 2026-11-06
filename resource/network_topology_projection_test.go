@@ -11,6 +11,10 @@ func TestTopologyProjectionExcludesCredentialsAndPreservesAlternatives(t *testin
 		source, input string
 		keep          []string
 	}{
+		{"kubernetes.configmaps", `{"metadata":{"name":"ca","uid":"ca-uid","annotations":{"key":"secret-value"}},"data":{"ca.crt":"secret-value"},"binaryData":{"key":"secret-value"}}`, []string{"ca-uid"}},
+		{"kubernetes.namespaces", `{"metadata":{"name":"team","labels":{"access":"permitted"},"annotations":{"token":"secret-value"}}}`, []string{"permitted"}},
+		{"kubernetes.networkpolicies", `{"spec":{"podSelector":{"matchLabels":{"app":"web"}},"ingress":[{"from":[{"namespaceSelector":{"matchLabels":{"role":"client"}},"podSelector":{"matchExpressions":[{"key":"tier","operator":"In","values":["frontend"]}]}},{"ipBlock":{"cidr":"10.0.0.0/8","except":["10.1.0.0/16"]}}]}]},"data":"secret-value"}`, []string{"frontend", "10.1.0.0/16"}},
+		{"gateway.backendtlspolicies", `{"spec":{"targetRefs":[{"group":"","kind":"Service","name":"web","sectionName":"https"}],"targetRef":{"kind":"Service","name":"legacy"},"validation":{"caCertificateRefs":[{"kind":"ConfigMap","name":"ca"}],"privateKey":"secret-value"}}}`, []string{"https", "legacy", "ca"}},
 		{"kubernetes.pods", `{"metadata":{"name":"p","namespace":"n","annotations":{"token":"secret-value"},"labels":{"app":"web"}},"spec":{"containers":[{"env":[{"value":"secret-value"}]}]},"status":{"phase":"Running"}}`, []string{"Running", "web"}},
 		{"gateway.httproutes", `{"metadata":{"name":"r"},"spec":{"rules":[{"matches":[{"method":"GET","headers":[{"name":"Authorization","value":"secret-value"}],"queryParams":[{"name":"token","value":"secret-value"}]}],"backendRefs":[{"name":"web","weight":0,"port":80}]}]}}`, []string{"GET", "[redacted]", "\"weight\":0"}},
 		{"gateway.tcproutes", `{"spec":{"parentRefs":[{"name":"gw","sectionName":"tcp","port":9000}],"rules":[{"backendRefs":[{"name":"web","port":9000,"weight":0}],"filters":[{"secret":"secret-value"}]}]}}`, []string{"tcp", "9000", "\"weight\":0"}},
