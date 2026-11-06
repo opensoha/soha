@@ -1,293 +1,365 @@
-import { useResourceDetailTab } from '@/features/platform/shared/resource-detail-header'
-import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
-import { BooleanTag } from '@/components/status-tag'
 import { useYamlDraft } from '@/components/use-yaml-draft'
+import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
+import {
+  ResourceDetailHeader,
+  useResourceDetailTab,
+} from '@/features/platform/shared/resource-detail-header'
+import { resourceCollectionPath } from '@/features/platform/shared/resource-collection-path'
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import {
   platformResourceTarget,
   usePlatformMutation,
 } from '@/features/platform/shared/use-platform-mutation'
 import { useI18n } from '@/i18n'
-import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import type { PersistentVolume, PersistentVolumeClaim } from '@/types/platform'
+import type { StorageClassDetail } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Descriptions, Spin } from 'antd'
-import { lazy, Suspense } from 'react'
+import { Button, Card, Spin } from 'antd'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  StorageDetailShell,
-  StorageDetailTabs,
-  StorageResourceOverview,
-} from '../shared/detail-layout'
-import { toClusterStorageScope } from '../shared/scope'
+import { useIsCurrentDetailTarget, useWorkloadDetailScope } from '../../workloads/shared/detail-scope'
+import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
+import { StorageDetailShell, StorageDetailTabs } from '../shared/detail-layout'
+import { scConfiguration } from './detail-model'
 import { storageClassMutations } from './mutations'
 import { storageClassQueries } from './queries'
+import { ScOverview } from './overview'
+import { ScRelations } from './relations'
+import { toClusterStorageScope } from '../shared/scope'
+import './styles.css'
 
+const StorageRelationships = lazy(async () => {
+  const module = await import('@/features/platform/shared/resource-insights/workload-relationships')
+  return { default: module.WorkloadRelationships }
+})
 const StorageYAMLPanel = lazy(() => import('../shared/yaml-panel'))
+const permission = 'platform.storage.storage-classes'
 
 export function StorageClassDetailPage() {
-  const { localeCode } = useI18n()
-  const navigate = useNavigate()
   const { name = '' } = useParams()
-  const { clusterId } = usePlatformScopeStore()
+  const { clusterId } = useWorkloadDetailScope()
+  return (
+    <ScDetailContent
+      key={JSON.stringify([clusterId, name])}
+      clusterId={clusterId || ''}
+      name={name}
+    />
+  )
+}
+function ScDetailContent({ clusterId, name }: { clusterId: string; name: string }) {
+  const { localeCode } = useI18n()
+  const zh = localeCode === 'zh_CN'
+  const navigate = useNavigate()
+  const client = useQueryClient()
+  const [tab, setTab] = useResourceDetailTab()
+  const active = ['overview', 'volumes', 'claims', 'relationships', 'yaml'].includes(tab)
+    ? tab
+    : 'overview'
+  const [visitedYaml, setVisitedYaml] = useState(active === 'yaml')
+  const [draftError, setDraftError] = useState<string | null>(null)
+  useEffect(() => {
+    if (active !== tab) setTab('overview')
+    if (active === 'yaml') setVisitedYaml(true)
+  }, [active, tab, setTab])
+  const refresh = useWorkloadRefresh()
+  const permissionsQuery = usePermissionSnapshot()
+  const snapshot = readableQueryData(permissionsQuery)?.data
+  const canRead = hasPermission(snapshot, `${permission}.view`)
   const scope = toClusterStorageScope(clusterId)
-  const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useResourceDetailTab()
-  const detailQuery = useQuery(storageClassQueries.detail(scope, name))
-  const visibleDetailQueryData = readableQueryData(detailQuery)
+  const target = { scope, name }
+  const options = storageClassQueries.detail(scope, name)
+  const detailQuery = useQuery({
+    ...options,
+    enabled: Boolean(options.enabled) && canRead,
+    refetchInterval: refresh.interval,
+  })
   const yamlOptions = storageClassQueries.yaml(scope, name)
   const yamlQuery = useQuery({
     ...yamlOptions,
-    enabled: Boolean(yamlOptions.enabled) && activeTab === 'yaml',
+    enabled: Boolean(yamlOptions.enabled) && canRead,
+    refetchInterval: refresh.interval,
   })
-  const visibleYamlQueryData =
-    Boolean(yamlOptions.enabled) && activeTab === 'yaml' ? readableQueryData(yamlQuery) : undefined
-  const updateYAMLMutation = usePlatformMutation(storageClassMutations.updateYAML(queryClient), {
-    label: ['应用 YAML', 'Apply YAML'],
+  const candidate = canRead ? readableQueryData(detailQuery) : undefined
+  const identityError = Boolean(candidate && candidate.name !== name)
+  const detail = !identityError ? candidate : undefined
+  const yaml = canRead ? readableQueryData(yamlQuery) : undefined
+  const parsed = useMemo(() => {
+    if (!yaml) return {}
+    try {
+      return { configuration: scConfiguration(yaml.content, name) }
+    } catch {
+      return { error: true }
+    }
+  }, [yaml, name])
+  const yamlState = useYamlDraft(
+    JSON.stringify([clusterId, name]),
+    parsed.error ? undefined : yaml?.content,
+  )
+  const update = usePlatformMutation(storageClassMutations.updateYAML(client), {
+    label: ['应用 StorageClass YAML', 'Apply StorageClass YAML'],
     target: platformResourceTarget,
   })
-  const platformWriteBlocked = updateYAMLMutation.blocked
-
-  const yamlState = useYamlDraft(
-    JSON.stringify([scope.clusterId, scope.namespace, name]),
-    visibleYamlQueryData?.content,
+  const remove = usePlatformMutation(storageClassMutations.remove(client), {
+    label: ['删除 StorageClass', 'Delete StorageClass'],
+    target: platformResourceTarget,
+  })
+  const canUpdate = Boolean(
+    detail &&
+    !detailQuery.error &&
+    hasPermission(snapshot, `${permission}.update`) &&
+    hasAllowedAction(detail.allowedActions, 'update'),
   )
-  const { value: yamlDraft, setValue: setYAMLDraft } = yamlState
-
-  if (!clusterId) {
-    return (
-      <div className="soha-page">
-        <ManagementState
-          kind="select-scope"
-          description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'}
-        />
-      </div>
-    )
+  const canDelete = Boolean(
+    detail &&
+    !detailQuery.error &&
+    hasPermission(snapshot, `${permission}.delete`) &&
+    hasAllowedAction(detail.allowedActions, 'delete'),
+  )
+  const blocked =
+    update.blocked ||
+    remove.blocked ||
+    update.isPending ||
+    remove.isPending ||
+    Boolean(detailQuery.error)
+  const applyBlocked = blocked || Boolean(yamlQuery.error) || Boolean(parsed.error)
+  const collection = resourceCollectionPath(
+    '/storage/storageclasses',
+    '?' + new URLSearchParams({ clusterId }),
+    null,
+  )
+  const targetIdentity = JSON.stringify([clusterId, name])
+  const isCurrentTarget = useIsCurrentDetailTarget(targetIdentity)
+  const actions = useKubernetesResourceActions<StorageClassDetail>({
+    resourceKey: 'sc-detail',
+    resourceLabel: 'StorageClass',
+    scopeKey: targetIdentity,
+    records: detail ? [detail] : [],
+    getName: (record) => record.name,
+    getKey: (record) => record.name,
+    actions: () =>
+      canDelete
+        ? [
+            {
+              key: 'delete',
+              label: zh ? '删除' : 'Delete',
+              danger: true,
+              disabled: blocked,
+              confirm: kubernetesDeleteConfirmation(
+                { name },
+                localeCode,
+                zh
+                  ? '删除此存储类会影响后续置备；不代表已有 PV、PVC 或底层数据被删除。'
+                  : 'Deleting this storage class affects future provisioning; it does not mean existing volumes, claims or data were deleted.',
+              ),
+              prepare: () => remove.reset(),
+              feedback: remove.feedback,
+              run: async () => {
+                await remove.mutateAsync(target)
+                if (!isCurrentTarget()) return
+                navigate(collection)
+              },
+            },
+          ]
+        : [],
+  })
+  const apply = async () => {
+    if (!canRead || !canUpdate || applyBlocked || !yaml || !yamlState.value.trim()) return
+    try {
+      scConfiguration(yamlState.value, name)
+    } catch {
+      setDraftError(
+        zh
+          ? 'YAML 无法解析或资源身份不匹配，未提交。'
+          : 'Invalid YAML or resource identity mismatch; nothing was submitted.',
+      )
+      return
+    }
+    setDraftError(null)
+    const result = await update.mutateAsync({ ...target, content: yamlState.value })
+    yamlState.applied(result.content ?? yamlState.value)
   }
-  if (detailQuery.isLoading) return <Card loading className="soha-detail-card" />
-  const detail = visibleDetailQueryData
-  if (detailQuery.isError && !detail)
-    return <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
-  if (!detail) {
+  if (!clusterId)
     return (
-      <div className="soha-page">
-        <ManagementState
-          kind="not-found"
-          description={localeCode === 'zh_CN' ? 'StorageClass 未找到' : 'StorageClass not found'}
-        />
-      </div>
+      <ManagementState kind="select-scope" description={zh ? '请选择集群' : 'Select a cluster'} />
     )
-  }
-
+  if (permissionsQuery.isPending || (canRead && detailQuery.isPending))
+    return <ManagementState kind="loading" />
+  if (!canRead || (detailQuery.isError && !detail))
+    return <ReadFeedback canRead={canRead} query={detailQuery} label="StorageClass" />
+  if (identityError)
+    return (
+      <ManagementState
+        kind="error"
+        title={zh ? 'StorageClass 详情身份不匹配' : 'StorageClass detail identity mismatch'}
+        description={
+          zh
+            ? '未展示其他资源的数据，请重新读取。'
+            : 'The response belongs to another resource. Read it again.'
+        }
+        actions={
+          <Button onClick={() => void detailQuery.refetch()}>{zh ? '重试' : 'Retry'}</Button>
+        }
+      />
+    )
+  if (!detail)
+    return (
+      <ManagementState
+        kind="not-found"
+        title={zh ? 'StorageClass 未找到' : 'StorageClass not found'}
+      />
+    )
   return (
-    <StorageDetailShell
-      kind="StorageClass"
-      name={detail.name}
-      detail={detail}
-      queryKey={storageClassQueries.detail(scope, name).queryKey}
-    >
-      <ReadFeedback canRead={detailQuery.isEnabled} query={detailQuery} label="资源详情" />
-      <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
-
-      {updateYAMLMutation.feedback}
-
-      <StorageDetailTabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          {
-            key: 'overview',
-            label: localeCode === 'zh_CN' ? '概览' : 'Overview',
-            children: (
-              <div className="soha-storage-detail-stack">
-                <StorageResourceOverview
-                  name={detail.name}
-                  namespace="-"
-                  createdAt={detail.createdAt}
-                  ageSeconds={detail.ageSeconds}
-                  labels={detail.labels}
-                  annotations={detail.annotations}
-                  extra={[
-                    { key: 'Provisioner', value: detail.provisioner },
-                    { key: 'ReclaimPolicy', value: detail.reclaimPolicy || '-' },
-                    { key: 'BindingMode', value: detail.volumeBindingMode || '-' },
-                    {
-                      key: localeCode === 'zh_CN' ? '允许扩容' : 'Expansion',
-                      value: (
-                        <BooleanTag
-                          value={detail.allowVolumeExpansion}
-                          trueLabel="Yes"
-                          falseLabel="No"
-                        />
-                      ),
-                    },
-                  ]}
+    <div className="soha-sc-detail">
+      {actions.confirmation}
+      <StorageDetailShell
+        kind="StorageClass"
+        name={name}
+        detail={detail}
+        scope={scope}
+        header={
+          <ResourceDetailHeader
+            kind="StorageClass"
+            name={name}
+            createdAt={detail.createdAt}
+            ageSeconds={detail.ageSeconds}
+            backTo="/storage/storageclasses"
+            facts={<span>{detail.provisioner}</span>}
+            actions={
+              <>
+                <WorkloadRefresh
+                  settings={refresh}
+                  queries={[detailQuery, yamlQuery]}
+                  resourceLabel="StorageClass"
+                  onRefresh={() => client.invalidateQueries({ queryKey: options.queryKey })}
+                  beforeRefresh={
+                    canUpdate ? (
+                      <Button disabled={blocked} onClick={() => setTab('yaml')}>
+                        {zh ? '编辑 YAML' : 'Edit YAML'}
+                      </Button>
+                    ) : undefined
+                  }
                 />
-                <Card
-                  className="soha-detail-card"
-                  title={localeCode === 'zh_CN' ? '参数' : 'Parameters'}
-                >
-                  {detail.parameters && Object.keys(detail.parameters).length > 0 ? (
-                    <Descriptions
-                      column={1}
-                      items={Object.entries(detail.parameters).map(([key, value]) => ({
-                        key,
-                        label: key,
-                        children: value,
-                      }))}
-                    />
-                  ) : (
-                    <ManagementState
-                      bordered={false}
-                      compact
-                      description={localeCode === 'zh_CN' ? '暂无参数' : 'No parameters'}
-                    />
-                  )}
-                </Card>
-                <Card
-                  className="soha-detail-card"
-                  title={`${localeCode === 'zh_CN' ? '关联 PV' : 'Related PVs'}${detail.volumesTruncated ? ' (first 200)' : ''}`}
-                >
-                  <AdminTable
-                    dataSource={detail.volumes ?? []}
-                    rowKey="name"
-                    pagination={false}
-                    tableSize="small"
-                    enableColumnSelection={false}
-                    columns={[
-                      {
-                        title: 'PV',
-                        dataIndex: 'name',
-                        render: (value: string) => (
-                          <Button
-                            type="link"
-                            onClick={() =>
-                              navigate(`/storage/persistentvolumes/${encodeURIComponent(value)}`)
-                            }
-                          >
-                            {value}
-                          </Button>
-                        ),
-                      },
-                      { title: localeCode === 'zh_CN' ? '状态' : 'Status', dataIndex: 'status' },
-                      {
-                        title: localeCode === 'zh_CN' ? '容量' : 'Capacity',
-                        dataIndex: 'capacity',
-                        render: (value?: string) => value || '-',
-                      },
-                      {
-                        title: 'Claim',
-                        dataIndex: 'claimRef',
-                        render: (value: string | undefined, volume: PersistentVolume) =>
-                          volume.claimName && volume.claimNamespace ? (
-                            <Button
-                              type="link"
-                              onClick={() =>
-                                navigate(
-                                  `/storage/persistentvolumeclaims/${encodeURIComponent(volume.claimName!)}?namespace=${encodeURIComponent(volume.claimNamespace!)}`,
-                                )
-                              }
-                            >
-                              {value || `${volume.claimNamespace}/${volume.claimName}`}
-                            </Button>
-                          ) : (
-                            value || '-'
-                          ),
-                      },
-                    ]}
-                  />
-                </Card>
-                <Card
-                  className="soha-detail-card"
-                  title={`${localeCode === 'zh_CN' ? '关联 PVC' : 'Related PVCs'}${detail.claimsTruncated ? ' (first 200)' : ''}`}
-                >
-                  <AdminTable
-                    dataSource={detail.claims ?? []}
-                    rowKey={(claim) => `${claim.namespace}/${claim.name}`}
-                    pagination={false}
-                    tableSize="small"
-                    enableColumnSelection={false}
-                    columns={[
-                      {
-                        title: 'PVC',
-                        dataIndex: 'name',
-                        render: (value: string, claim: PersistentVolumeClaim) => (
-                          <Button
-                            type="link"
-                            onClick={() =>
-                              navigate(
-                                `/storage/persistentvolumeclaims/${encodeURIComponent(value)}?namespace=${encodeURIComponent(claim.namespace)}`,
-                              )
-                            }
-                          >
-                            {value}
-                          </Button>
-                        ),
-                      },
-                      {
-                        title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-                        dataIndex: 'namespace',
-                      },
-                      { title: localeCode === 'zh_CN' ? '状态' : 'Status', dataIndex: 'status' },
-                      {
-                        title: 'PV',
-                        dataIndex: 'volumeName',
-                        render: (value?: string) =>
-                          value ? (
-                            <Button
-                              type="link"
-                              onClick={() =>
-                                navigate(`/storage/persistentvolumes/${encodeURIComponent(value)}`)
-                              }
-                            >
-                              {value}
-                            </Button>
-                          ) : (
-                            '-'
-                          ),
-                      },
-                    ]}
-                  />
-                </Card>
-              </div>
-            ),
-          },
-          {
-            key: 'yaml',
-            label: 'YAML',
-            children:
-              activeTab === 'yaml' ? (
-                <Suspense fallback={<Spin size="large" />}>
-                  {yamlQuery.isError && visibleYamlQueryData === undefined ? null : (
+                {canDelete ? (
+                  <Button
+                    danger
+                    disabled={blocked}
+                    onClick={() => actions.selectAction(detail, 'delete')}
+                  >
+                    {zh ? '删除' : 'Delete'}
+                  </Button>
+                ) : null}
+              </>
+            }
+          />
+        }
+      >
+        <ReadFeedback canRead={canRead} query={detailQuery} label="StorageClass" />
+        <ReadFeedback
+          canRead={canRead}
+          query={yamlQuery}
+          label={zh ? 'StorageClass 补充配置' : 'StorageClass configuration'}
+        />
+        {parsed.error ? (
+          <ManagementState
+            kind="error"
+            title={
+              zh
+                ? 'StorageClass 补充配置无法解析'
+                : 'StorageClass configuration could not be parsed'
+            }
+            description={
+              zh
+                ? '资源身份或配置字段无法确认，已保留可读详情并暂停应用。'
+                : 'Identity or fields could not be confirmed. Readable detail remains; apply is disabled.'
+            }
+            actions={
+              <Button onClick={() => void yamlQuery.refetch()}>{zh ? '重试' : 'Retry'}</Button>
+            }
+          />
+        ) : null}
+        {!actions.isConfirming && remove.feedback}
+        {update.feedback}
+        {draftError ? <ManagementState kind="error" title={draftError} /> : null}
+        <StorageDetailTabs
+          activeKey={active}
+          onChange={setTab}
+          items={[
+            {
+              key: 'overview',
+              label: zh ? '概览' : 'Overview',
+              children: (
+                <ScOverview
+                  detail={detail}
+                  clusterId={clusterId}
+                  configuration={parsed.configuration}
+                  onTab={setTab}
+                />
+              ),
+            },
+            {
+              key: 'volumes',
+              label: 'PVs',
+              children: <ScRelations detail={detail} clusterId={clusterId} kind="volumes" />,
+            },
+            {
+              key: 'claims',
+              label: 'PVCs',
+              children: <ScRelations detail={detail} clusterId={clusterId} kind="claims" />,
+            },
+            {
+              key: 'relationships',
+              label: zh ? '关系' : 'Relationships',
+              children:
+                active === 'relationships' ? (
+                  <Suspense fallback={<ManagementState kind="loading" />}>
+                    <StorageRelationships kind="StorageClass" name={name} scope={scope} />
+                  </Suspense>
+                ) : null,
+            },
+            {
+              key: 'yaml',
+              label: 'YAML',
+              children:
+                (active === 'yaml' || visitedYaml) && yaml && !parsed.error ? (
+                  <Suspense
+                    fallback={
+                      <Card loading>
+                        <Spin />
+                      </Card>
+                    }
+                  >
                     <StorageYAMLPanel
-                      blocked={platformWriteBlocked}
+                      readOnly={!canUpdate}
+                      blocked={applyBlocked}
                       error={yamlQuery.error}
                       original={yamlState.original}
                       serverChanged={yamlState.serverChanged}
                       onCompareLatest={yamlState.compareLatest}
-                      applying={updateYAMLMutation.isPending}
-                      draft={yamlDraft}
-                      onChange={setYAMLDraft}
-                      onReset={yamlState.reset}
-                      onApply={() =>
-                        updateYAMLMutation.mutate(
-                          { scope, name, content: yamlDraft },
-                          {
-                            onSuccess: (resourceYAML) => {
-                              yamlState.applied(resourceYAML.content ?? yamlDraft)
-                            },
-                          },
-                        )
-                      }
+                      applying={update.isPending}
+                      draft={yamlState.value}
+                      onChange={(value) => {
+                        setDraftError(null)
+                        yamlState.setValue(value)
+                      }}
+                      onReset={() => {
+                        setDraftError(null)
+                        yamlState.reset()
+                      }}
+                      onApply={() => void apply().catch(() => undefined)}
                     />
-                  )}
-                </Suspense>
-              ) : null,
-          },
-        ]}
-      />
-    </StorageDetailShell>
+                  </Suspense>
+                ) : active === 'yaml' && yamlQuery.isPending ? (
+                  <ManagementState kind="loading" />
+                ) : null,
+            },
+          ]}
+        />
+      </StorageDetailShell>
+    </div>
   )
 }

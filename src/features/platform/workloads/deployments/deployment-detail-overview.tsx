@@ -1,5 +1,3 @@
-import { AdminTable } from '@/components/admin-table'
-import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import type { DeploymentDetail, DeploymentRolloutStatus, ScopeKey } from '@/types'
 import { formatDateTime } from '@/utils/time'
@@ -11,7 +9,8 @@ import {
   WorkloadOverviewMetadata,
 } from '../shared/workload-overview'
 import { DeploymentDetailPods } from './deployment-detail-pods'
-import type { buildDeploymentRelationships } from './deployment-detail-model'
+import { WorkloadConditions } from '../shared/workload-conditions'
+import type { buildDeploymentFacts } from './deployment-detail-model'
 
 export function deploymentDetailState(detail: DeploymentDetail, status?: DeploymentRolloutStatus) {
   const counts = [
@@ -41,7 +40,7 @@ export function DeploymentDetailOverview({
   detail: DeploymentDetail
   status?: DeploymentRolloutStatus
   scope: ScopeKey
-  model: ReturnType<typeof buildDeploymentRelationships>
+  model: ReturnType<typeof buildDeploymentFacts>
   onTabChange: (key: string) => void
 }) {
   const { localeCode } = useI18n()
@@ -201,39 +200,9 @@ export function DeploymentDetailOverview({
         compact
         onShowAll={() => onTabChange('pods')}
       />
-      <Card className="soha-detail-card" title={zh ? '运行条件' : 'Conditions'}>
-        <details>
-          <summary>
-            {(status?.conditions?.length ? status.conditions : detail.conditions)?.map(
-              (condition) => (
-                <span key={condition.type}>
-                  {condition.type}{' '}
-                  {['True', 'False'].includes(condition.status) ? (
-                    <BooleanTag value={condition.status === 'True'} />
-                  ) : (
-                    <StatusTag value={condition.status} />
-                  )}
-                </span>
-              ),
-            )}
-            {!(status?.conditions?.length || detail.conditions?.length) &&
-              (zh ? '未返回运行条件' : 'No conditions returned')}
-          </summary>
-          <AdminTable
-            pagination={false}
-            enableColumnSelection={false}
-            rowKey="type"
-            dataSource={status?.conditions?.length ? status.conditions : detail.conditions || []}
-            columns={[
-              { title: zh ? '条件' : 'Condition', dataIndex: 'type', width: 230 },
-              { title: zh ? '状态' : 'Status', dataIndex: 'status', width: 100 },
-              { title: zh ? '原因' : 'Reason', dataIndex: 'reason', width: 180 },
-              { title: zh ? '消息' : 'Message', dataIndex: 'message' },
-            ]}
-            scroll={{ x: 800 }}
-          />
-        </details>
-      </Card>
+      <WorkloadConditions
+        conditions={status?.conditions?.length ? status.conditions : detail.conditions}
+      />
       <WorkloadOverviewMetadata labels={detail.labels} annotations={detail.annotations} />
     </WorkloadOverview>
   )

@@ -14,15 +14,17 @@ export type PodMetrics = PlatformResourceMetrics
 export interface PodTarget {
   readonly scope: ScopeKey
   readonly name: string
+  readonly uid?: string
 }
 
 export function podTargetFromRecord(
   clusterId: string | null | undefined,
-  record: Pick<Pod, 'name' | 'namespace'>,
+  record: Pick<Pod, 'name' | 'namespace' | 'uid'>,
 ): PodTarget {
   return {
     scope: toScopeKey(clusterId, record.namespace),
     name: record.name,
+    ...(record.uid ? { uid: record.uid } : {}),
   }
 }
 

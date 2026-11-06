@@ -1,5 +1,4 @@
 import { localeText, useI18n } from '@/i18n'
-import { StatusTag } from '@/components/status-tag'
 import { AdminTable } from '@/components/admin-table'
 import { ManagementRefreshButton, ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -20,6 +19,7 @@ import {
   type Node,
   type NodeProps,
   type Edge,
+  type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
@@ -27,7 +27,6 @@ import {
   Button,
   Card,
   Drawer,
-  Empty,
   Grid,
   Input,
   Segmented,
@@ -36,6 +35,7 @@ import {
   Switch,
   Tag,
   Typography,
+  Tooltip,
   type TableColumnsType,
 } from 'antd'
 import dagre from 'dagre'
@@ -43,7 +43,6 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   connectedPath,
-  coverageLabels,
   edgeLabel,
   filterTopology,
   resolutionLabels,
@@ -52,6 +51,7 @@ import {
 import { topologyQueries } from './queries'
 import type { TopologyNode, TopologyEdge } from './types'
 import { NodeEvidence, Resolution } from './node-evidence'
+import { TopologyCoveragePanel } from './coverage-panel'
 import './topology.css'
 
 const { Text } = Typography
@@ -117,11 +117,13 @@ function TopologyCanvas({
   edges,
   onSelect,
   selected,
+  viewport,
 }: {
   nodes: TopologyNode[]
   edges: TopologyEdge[]
   onSelect: (id: string) => void
   selected: string
+  viewport: { current: Viewport | undefined }
 }) {
   const { localeCode } = useI18n()
   const entrySummaries = useMemo(
@@ -136,7 +138,7 @@ function TopologyCanvas({
   const positions = useMemo(() => {
     const [sizes, links] = JSON.parse(shape) as [[string, number][], [string, string][]]
     const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
-    graph.setGraph({ rankdir: 'LR', ranksep: 90, nodesep: 36 })
+    graph.setGraph({ rankdir: 'LR', ranksep: 220, nodesep: 36 })
     sizes.forEach(([id, height]) => graph.setNode(id, { width: 252, height }))
     links.forEach(([source, target]) => graph.setEdge(source, target))
     dagre.layout(graph)
@@ -187,7 +189,12 @@ function TopologyCanvas({
         nodeTypes={nodeTypes}
         nodesDraggable={false}
         nodesConnectable={false}
-        fitView
+        defaultViewport={viewport.current}
+        fitView={!viewport.current}
+        fitViewOptions={{ maxZoom: 1, padding: 0.18 }}
+        onMoveEnd={(_, value) => {
+          viewport.current = value
+        }}
         minZoom={0.15}
         maxZoom={1.8}
         onNodesChange={(changes) => {
@@ -212,7 +219,7 @@ function TopologyCanvas({
 }
 
 export function NetworkTopologyRuntimePage() {
-  const { localeCode, t } = useI18n()
+  const { localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
   const permissionQuery = usePermissionSnapshot()
   const snapshot = readableQueryData(permissionQuery)?.data
@@ -223,15 +230,43 @@ export function NetworkTopologyRuntimePage() {
     ...topologyQueries.detail(toScopeKey(clusterId, namespace), principal, permissionSignature),
     enabled: Boolean(clusterId) && canRead,
   })
-  const data = canRead ? readableQueryData(query) : undefined
+  const readableData = canRead ? readableQueryData(query) : undefined
+  const data = readableData?.clusterId === clusterId ? readableData : undefined
   const [params, setParams] = useSearchParams()
   const loadedScope = useRef('')
   const currentScope = JSON.stringify([clusterId, namespace || null])
-  const [selected, setSelected] = useState('')
+  const selectionScope = JSON.stringify([
+    principal,
+    clusterId,
+    namespace || null,
+    snapshot?.permissionKeys?.slice().sort(),
+  ])
+  const [selection, setSelection] = useState({ scope: '', id: '' })
+  const selected = selection.scope === selectionScope ? selection.id : ''
+  const selectionOrigin = useRef<HTMLElement | null>(null)
+  const coverageButton = useRef<HTMLButtonElement>(null)
+  const setSelected = (id: string) => {
+    if (id && !selected) selectionOrigin.current = document.activeElement as HTMLElement | null
+    setSelection({ scope: selectionScope, id })
+  }
+  const closeEvidence = () => {
+    setSelected('')
+    const origin = selectionOrigin.current
+    if (origin?.isConnected) origin.focus()
+    else coverageButton.current?.focus()
+  }
+  const viewports = useRef(new Map<string, { current: Viewport | undefined }>())
+  if (!viewports.current.has(selectionScope))
+    viewports.current.set(selectionScope, { current: undefined })
+  const viewport = viewports.current.get(selectionScope)!
   const [coverageOpen, setCoverageOpen] = useState(false)
   const screens = Grid.useBreakpoint()
   const wide = Boolean(screens.xl)
-  const mode = params.get('view') || (screens.md ? 'graph' : 'table')
+  const mode = ['graph', 'table'].includes(params.get('view') || '')
+    ? params.get('view')!
+    : screens.md
+      ? 'graph'
+      : 'table'
   const provider = params.get('provider') || ''
   const protocol = params.get('protocol') || ''
   const keyword = useDeferredValue(params.get('q') || '')
@@ -285,9 +320,54 @@ export function NetworkTopologyRuntimePage() {
   const graphEdges = filtered.edges.filter(
     (edge) => graphIDs.has(edge.source) && graphIDs.has(edge.target),
   )
-  const selectedNode = nodes.find((node) => node.id === selected)
+  const selectedNode = filtered.nodes.find((node) => node.id === selected)
   const failures = (data?.coverage ?? []).filter((item) => item.state !== 'available')
-  const ready = clusterId && canRead && !query.isLoading
+  const hasFilters = Boolean(provider || protocol || keyword.trim() || issues || focus)
+  const resetFilters = () =>
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        for (const key of ['provider', 'protocol', 'q', 'issues', 'focus']) next.delete(key)
+        return next
+      },
+      { replace: true },
+    )
+  const refreshState = query.isFetching
+    ? 'loading'
+    : query.isError
+      ? 'error'
+      : !data
+        ? 'unknown'
+        : failures.length || data.truncated || !data.graphVersion
+          ? 'partial'
+          : 'success'
+  const refreshLabel = localeText(
+    localeCode,
+    query.isFetching
+      ? '正在读取拓扑'
+      : query.isError
+        ? '读取失败，请重试'
+        : !data
+          ? '尚未读取拓扑'
+          : refreshState === 'partial'
+            ? '已读取，覆盖不完整'
+            : '拓扑读取正常',
+    query.isFetching
+      ? 'Reading topology'
+      : query.isError
+        ? 'Read failed. Retry.'
+        : !data
+          ? 'Topology not loaded'
+          : refreshState === 'partial'
+            ? 'Loaded with incomplete coverage'
+            : 'Topology read succeeded',
+  )
+  const refreshHint = `${refreshLabel} · ${localeText(localeCode, '手动刷新', 'Manual refresh')}${data ? ` · ${formatDateTime(data.generatedAt)}` : ''}`
+  useEffect(() => {
+    if (data && selected && !filtered.nodes.some((node) => node.id === selected)) {
+      setSelection({ scope: selectionScope, id: '' })
+    }
+  }, [data, selected, filtered.nodes, selectionScope])
   const permissions: Record<string, string> = {
     Service: 'platform.network.services.view',
     Pod: 'platform.pods.view',
@@ -318,6 +398,7 @@ export function NetworkTopologyRuntimePage() {
     {
       title: localeText(localeCode, '来源', 'Source'),
       key: 'source',
+      width: 230,
       render: (_, edge) => (
         <Button type="link" onClick={() => setSelected(edge.source)}>
           {nodes.find((node) => node.id === edge.source)?.label ||
@@ -328,6 +409,7 @@ export function NetworkTopologyRuntimePage() {
     {
       title: localeText(localeCode, '目标', 'Target'),
       key: 'target',
+      width: 230,
       render: (_, edge) => (
         <Button type="link" onClick={() => setSelected(edge.target)}>
           {nodes.find((node) => node.id === edge.target)?.label ||
@@ -342,11 +424,13 @@ export function NetworkTopologyRuntimePage() {
         'Relationship / Protocol / Port / Weight',
       ),
       key: 'relation',
+      width: 300,
       render: (_, edge) => edgeLabel(edge, localeCode),
     },
     {
       title: localeText(localeCode, '解析状态', 'Resolution'),
       dataIndex: 'resolutionState',
+      width: 160,
       render: (value: string) => <Resolution value={value} />,
     },
   ]
@@ -376,38 +460,10 @@ export function NetworkTopologyRuntimePage() {
           )}
         />
       ) : null}
-      <Card className="soha-detail-card" styles={{ body: { padding: 16 } }}>
-        <div className="soha-topology-toolbar">
-          <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {localeText(localeCode, '网络拓扑', 'Network topology')}
-            </Typography.Title>
-            <Text type="secondary">
-              {localeText(
-                localeCode,
-                '配置关系与控制器观测 · 已加载',
-                'Configuration and controller observations · Loaded ',
-              )}
-              {nodes.length} {localeText(localeCode, '节点 /', ' nodes / ')}
-              {edges.length} {localeText(localeCode, '关系', ' relationships')}
-            </Text>
-          </div>
-          <Space wrap>
-            <Button onClick={() => setCoverageOpen(true)} disabled={!data}>
-              {localeText(localeCode, '数据覆盖', 'Data coverage')}
-              {failures.length
-                ? ` · ${failures.length} ${localeText(localeCode, '项需关注', 'need attention')}`
-                : ''}
-            </Button>
-            <ManagementRefreshButton
-              aria-label={localeText(localeCode, '刷新网络拓扑', 'Refresh network topology')}
-              tooltip={localeText(localeCode, '刷新网络拓扑', 'Refresh network topology')}
-              disabled={!clusterId || !canRead}
-              loading={query.isFetching}
-              onClick={() => void query.refetch()}
-            />
-          </Space>
-        </div>
+      <h1 className="soha-topology-sr-only">
+        {localeText(localeCode, '网络拓扑', 'Network topology')}
+      </h1>
+      <Card className="soha-detail-card soha-topology-filter-card">
         <div className="soha-topology-filters">
           <Input
             aria-label={localeText(localeCode, '搜索已加载节点', 'Search loaded nodes')}
@@ -441,33 +497,9 @@ export function NetworkTopologyRuntimePage() {
               ...['HTTP', 'GRPC', 'TCP', 'UDP', 'TLS'].map((value) => ({ value, label: value })),
             ]}
           />
-          <Space>
-            <Switch
-              checked={issues}
-              onChange={(value) => update('issues', value ? '1' : '')}
-              aria-label={localeText(localeCode, '只看未解析节点', 'Show unresolved nodes')}
-            />
-            <Text>{localeText(localeCode, '未解析', 'Unresolved')}</Text>
-          </Space>
-          {mode === 'graph' && (
-            <Space>
-              <Switch
-                aria-label={localeText(localeCode, '展开 Pod 节点', 'Expand Pod nodes')}
-                checked={showPods}
-                onChange={(value) => update('pods', value ? '1' : '')}
-              />
-              <Text>{localeText(localeCode, '展开 Pod', 'Expand Pods')}</Text>
-            </Space>
-          )}
-          <Segmented
-            aria-label={localeText(localeCode, '拓扑显示方式', 'Topology display')}
-            value={mode}
-            options={[
-              { label: localeText(localeCode, '关系图', 'Graph'), value: 'graph' },
-              { label: localeText(localeCode, '关系表', 'Table'), value: 'table' },
-            ]}
-            onChange={(value) => update('view', String(value))}
-          />
+          <Button onClick={resetFilters} disabled={!hasFilters}>
+            {localeText(localeCode, '重置', 'Reset')}
+          </Button>
         </div>
         {focus && (
           <Space>
@@ -484,55 +516,136 @@ export function NetworkTopologyRuntimePage() {
             </Text>
           </Space>
         )}
-        {data && (!data.graphVersion || data.truncated || failures.length > 0) && (
-          <Alert
-            type="warning"
-            showIcon
-            title={
-              !data.graphVersion
-                ? localeText(
-                    localeCode,
-                    '旧版 Agent 仅提供资源摘要，请升级以查看规则级拓扑',
-                    'This older Agent only provides summaries. Upgrade for rule-level topology.',
-                  )
-                : data.truncated
-                  ? localeText(
-                      localeCode,
-                      '当前结果已达到预算，请缩小命名空间范围',
-                      'The result reached its budget. Narrow the namespace scope.',
-                    )
-                  : localeText(
-                      localeCode,
-                      '部分来源不可读取，请查看数据覆盖',
-                      'Some sources could not be read. Check data coverage.',
-                    )
-            }
-            description={localeText(
-              localeCode,
-              '计数仅包含当前已加载内容；未观测到的引用不会判定为不存在。',
-              'Counts cover loaded content only. Unobserved references are not treated as absent.',
-            )}
-          />
-        )}
-        {data && (
-          <Text type="secondary" className="soha-topology-time">
-            {localeText(localeCode, '生成于', 'Generated ')}
-            {formatDateTime(data.generatedAt)}{' '}
-            {localeText(localeCode, '· 来源采样', ' · Source observed ')}
-            {data.observedAt
-              ? formatDateTime(data.observedAt)
-              : localeText(localeCode, '未提供', 'Unavailable')}{' '}
-            {localeText(
-              localeCode,
-              '· 图中关系不表示实时流量',
-              ' · Relationships do not represent live traffic',
-            )}
-          </Text>
-        )}
       </Card>
       <div className={`soha-topology-workspace ${wide && selectedNode ? 'has-inspector' : ''}`}>
-        <Card className="soha-detail-card" styles={{ body: { padding: 12 } }}>
-          {queryAccessDenied(query) ? (
+        <Card className="soha-detail-card soha-topology-main-card">
+          <div className="soha-topology-toolbar">
+            <span className="soha-topology-count" role="status">
+              {localeText(localeCode, '已加载 ', 'Loaded ')}
+              {nodes.length} {localeText(localeCode, '个资源', 'resources')} · {edges.length}{' '}
+              {localeText(localeCode, '条关系', 'relationships')}
+              {hasFilters && (
+                <Text type="secondary">
+                  {' '}
+                  ·{' '}
+                  {localeText(
+                    localeCode,
+                    `筛选后 ${filtered.nodes.length} 个资源`,
+                    `${filtered.nodes.length} resources after filtering`,
+                  )}
+                </Text>
+              )}
+            </span>
+            <Space wrap size={12}>
+              <Button ref={coverageButton} onClick={() => setCoverageOpen(true)} disabled={!data}>
+                {localeText(localeCode, '数据覆盖', 'Data coverage')}
+                {failures.length ? ` · ${failures.length}` : ''}
+              </Button>
+              <Tooltip title={refreshHint} trigger={['hover', 'focus']}>
+                <span
+                  role="status"
+                  tabIndex={0}
+                  aria-label={refreshHint}
+                  className={`soha-topology-read-status is-${refreshState}`}
+                />
+              </Tooltip>
+              <ManagementRefreshButton
+                aria-label={localeText(localeCode, '刷新网络拓扑', 'Refresh network topology')}
+                tooltip={localeText(localeCode, '刷新网络拓扑', 'Refresh network topology')}
+                disabled={!clusterId || !canRead}
+                loading={query.isFetching}
+                onClick={() => void query.refetch()}
+              />
+            </Space>
+          </div>
+          <div className="soha-topology-view-controls">
+            <Space wrap size={16}>
+              <Segmented
+                aria-label={localeText(localeCode, '拓扑显示方式', 'Topology display')}
+                value={mode}
+                options={[
+                  { label: localeText(localeCode, '关系图', 'Graph'), value: 'graph' },
+                  { label: localeText(localeCode, '关系表', 'Table'), value: 'table' },
+                ]}
+                onChange={(value) => update('view', String(value))}
+              />
+              <Space size={6}>
+                <Switch
+                  size="small"
+                  checked={issues}
+                  onChange={(value) => update('issues', value ? '1' : '')}
+                  aria-label={localeText(localeCode, '只看未解析节点', 'Show unresolved nodes')}
+                />
+                <Text>{localeText(localeCode, '未解析', 'Unresolved')}</Text>
+              </Space>
+              {mode === 'graph' && (
+                <Space size={6}>
+                  <Switch
+                    size="small"
+                    aria-label={localeText(localeCode, '展开 Pod 节点', 'Expand Pod nodes')}
+                    checked={showPods}
+                    onChange={(value) => update('pods', value ? '1' : '')}
+                  />
+                  <Text>{localeText(localeCode, '展开 Pod', 'Expand Pods')}</Text>
+                </Space>
+              )}
+            </Space>
+            <Tooltip
+              title={localeText(
+                localeCode,
+                '筛选包含匹配资源的上下游；图中关系不表示实时流量。',
+                'Filters include upstream and downstream context; relationships do not represent live traffic.',
+              )}
+            >
+              <Text type="secondary" className="soha-topology-context">
+                {localeText(localeCode, '配置关系', 'Configuration relationships')}
+              </Text>
+            </Tooltip>
+          </div>
+          {data && (!data.graphVersion || data.truncated || failures.length > 0) && (
+            <Alert
+              className="soha-topology-coverage-alert"
+              type="warning"
+              showIcon
+              title={
+                !data.graphVersion
+                  ? localeText(
+                      localeCode,
+                      '旧版 Agent 仅提供资源摘要，请升级以查看规则级拓扑',
+                      'This older Agent only provides summaries. Upgrade for rule-level topology.',
+                    )
+                  : data.truncated
+                    ? localeText(
+                        localeCode,
+                        '已达到数据预算，请缩小命名空间范围',
+                        'Data budget reached. Narrow the namespace scope.',
+                      )
+                    : localeText(
+                        localeCode,
+                        `${failures.length} 项来源不可完整读取，计数仅包含已加载内容`,
+                        `${failures.length} sources have incomplete coverage. Counts cover loaded content only.`,
+                      )
+              }
+              action={
+                <Button size="small" onClick={() => setCoverageOpen(true)}>
+                  {localeText(localeCode, '查看覆盖', 'View coverage')}
+                </Button>
+              }
+            />
+          )}
+          {!clusterId ||
+          (!canRead && !permissionQuery.isLoading) ? null : permissionQuery.isLoading ||
+            (query.isPending && !data) ? (
+            <ManagementState
+              kind="loading"
+              bordered={false}
+              title={localeText(
+                localeCode,
+                '正在读取配置关系',
+                'Reading configuration relationships',
+              )}
+            />
+          ) : queryAccessDenied(query) ? (
             <ManagementState
               kind="error"
               title={localeText(
@@ -544,26 +657,103 @@ export function NetworkTopologyRuntimePage() {
           ) : query.isError && !data ? (
             <ManagementState
               kind="error"
-              title={localeText(
+              title={localeText(localeCode, '拓扑读取失败', 'Topology read failed')}
+              description={localeText(
                 localeCode,
-                '拓扑读取失败，请查看请求反馈后重试',
-                'Topology read failed. Check request feedback and retry.',
+                '请重试读取当前集群与命名空间。',
+                'Retry reading this cluster and namespace.',
+              )}
+              actions={
+                <Button onClick={() => void query.refetch()}>
+                  {localeText(localeCode, '重试', 'Retry')}
+                </Button>
+              }
+            />
+          ) : !data || !data.graphVersion ? (
+            <ManagementState
+              bordered={false}
+              title={localeText(localeCode, '没有规则级拓扑数据', 'No rule-level topology data')}
+              description={localeText(
+                localeCode,
+                '请确认当前集群与 Agent 的拓扑能力。',
+                'Check topology support for this cluster and Agent.',
               )}
             />
-          ) : ready && filtered.nodes.length === 0 ? (
-            <Empty
-              description={
-                data?.graphVersion
+          ) : nodes.length === 0 && failures.length > 0 ? (
+            <ManagementState
+              bordered={false}
+              title={localeText(
+                localeCode,
+                '尚未读取到拓扑资源',
+                'Topology resources could not be loaded',
+              )}
+              description={localeText(
+                localeCode,
+                '部分来源读取失败或不可访问，当前结果无法确认资源是否为空。',
+                'Some sources failed or are inaccessible. This result cannot establish an empty inventory.',
+              )}
+              actions={
+                <Button onClick={() => setCoverageOpen(true)}>
+                  {localeText(localeCode, '检查数据覆盖', 'Check data coverage')}
+                </Button>
+              }
+            />
+          ) : filtered.nodes.length === 0 ? (
+            <ManagementState
+              bordered={false}
+              title={
+                hasFilters
                   ? localeText(
                       localeCode,
-                      '当前筛选范围没有已加载节点',
-                      'No loaded nodes match these filters',
+                      '没有匹配的已加载资源',
+                      'No loaded resources match these filters',
                     )
-                  : localeText(localeCode, '没有规则级拓扑数据', 'No rule-level topology data')
+                  : localeText(
+                      localeCode,
+                      '当前范围没有拓扑资源',
+                      'No topology resources in this scope',
+                    )
+              }
+              description={
+                hasFilters
+                  ? localeText(
+                      localeCode,
+                      '调整筛选可查看其他已加载关系。',
+                      'Adjust filters to inspect other loaded relationships.',
+                    )
+                  : localeText(
+                      localeCode,
+                      '已读取的来源未返回资源，可切换命名空间或刷新。',
+                      'Loaded sources returned no resources. Change namespace or refresh.',
+                    )
+              }
+              actions={
+                hasFilters && (
+                  <Button onClick={resetFilters}>
+                    {localeText(localeCode, '清除筛选', 'Clear filters')}
+                  </Button>
+                )
+              }
+            />
+          ) : mode === 'graph' && graphNodes.length === 0 ? (
+            <ManagementState
+              bordered={false}
+              title={localeText(
+                localeCode,
+                '当前资源均为已收起的 Pod',
+                'All matching resources are collapsed Pods',
+              )}
+              description=""
+              actions={
+                <Button onClick={() => update('pods', '1')}>
+                  {localeText(localeCode, '展开 Pod', 'Expand Pods')}
+                </Button>
               }
             />
           ) : mode === 'graph' ? (
             <TopologyCanvas
+              key={selectionScope}
+              viewport={viewport}
               nodes={graphNodes}
               edges={graphEdges}
               onSelect={setSelected}
@@ -577,7 +767,7 @@ export function NetworkTopologyRuntimePage() {
               enableColumnSelection={false}
               pagination={false}
               virtual
-              scroll={{ x: 1200, y: 520 }}
+              scroll={{ x: 920, y: 520 }}
             />
           )}
           {mode === 'table' && unassociatedNodes.length > 0 && (
@@ -601,10 +791,10 @@ export function NetworkTopologyRuntimePage() {
         </Card>
         {wide && selectedNode && (
           <Card
-            className="soha-detail-card"
+            className="soha-detail-card soha-topology-inspector"
             title={localeText(localeCode, '关系证据', 'Relationship evidence')}
             extra={
-              <Button type="text" onClick={() => setSelected('')}>
+              <Button type="text" onClick={closeEvidence}>
                 {localeText(localeCode, '关闭', 'Close')}
               </Button>
             }
@@ -617,7 +807,7 @@ export function NetworkTopologyRuntimePage() {
         title={localeText(localeCode, '关系证据', 'Relationship evidence')}
         open={!wide && Boolean(selectedNode)}
         size="min(400px, 100vw)"
-        onClose={() => setSelected('')}
+        onClose={closeEvidence}
       >
         {evidence}
       </Drawer>
@@ -625,65 +815,14 @@ export function NetworkTopologyRuntimePage() {
         title={localeText(localeCode, '数据覆盖', 'Data coverage')}
         open={coverageOpen}
         onClose={() => setCoverageOpen(false)}
-        size="min(500px, 100vw)"
+        size="min(680px, 100vw)"
       >
-        <Text type="secondary">
-          {localeText(
-            localeCode,
-            '读取权限、API 安装和数据预算分别影响覆盖范围。插件读取需要 Agent 动作、已保存的自定义资源授权及 Kubernetes RBAC。',
-            'Read permissions, installed APIs and data budgets determine coverage. Provider reads require the Agent action, saved custom-resource grants and Kubernetes RBAC.',
-          )}
-        </Text>
-        <Typography.Paragraph style={{ marginTop: 12 }}>
-          Traefik：<Text code>traefik.io</Text>{' '}
-          {localeText(
-            localeCode,
-            '的 ingressroutes、ingressroutetcps、ingressrouteudps、traefikservices、middlewares、middlewaretcps。APISIX：',
-            ' resources: ingressroutes, ingressroutetcps, ingressrouteudps, traefikservices, middlewares, middlewaretcps. APISIX: ',
-          )}
-          <Text code>apisix.apache.org</Text>{' '}
-          {localeText(
-            localeCode,
-            '的 apisixroutes、apisixupstreams、apisixtls。拓扑所需最小资源动作为 list，Agent 还需',
-            ' resources: apisixroutes, apisixupstreams, apisixtls. The minimum resource verb is list; Agent also requires ',
-          )}{' '}
-          <Text code>platform.custom_resources.list</Text>
-          {localeText(
-            localeCode,
-            '。先在集群保存指定 namespace 的授权，再审查并应用生成的 RBAC；保存配置不会自动扩大运行中 Agent 权限。',
-            '. Save the required namespace grants in cluster settings, then review and apply generated RBAC. Saving settings does not expand the running Agent permissions.',
-          )}
-        </Typography.Paragraph>
-        {(data?.coverage ?? []).map((item, index) => (
-          <div
-            className="soha-topology-coverage"
-            key={`${item.sourceId}:${item.namespace}:${index}`}
-          >
-            <Space wrap>
-              <Text strong>{item.sourceId}</Text>
-              <StatusTag
-                value={item.state === 'available' ? 'healthy' : 'warning'}
-                label={t(
-                  `network.topology.coverage.${item.state}`,
-                  coverageLabels[item.state] || item.state,
-                )}
-              />
-            </Space>
-            <Text>
-              {item.namespace ||
-                localeText(localeCode, '查询范围全部命名空间', 'All namespaces in scope')}
-            </Text>
-            <Text type="secondary">
-              {item.reasonCode || localeText(localeCode, '已完成读取', 'Read completed')}
-              {item.truncated ? localeText(localeCode, '· 已截断', ' · Truncated') : ''}
-            </Text>
-            <Text type="secondary">
-              {item.observedAt || item.checkedAt
-                ? formatDateTime(item.observedAt || item.checkedAt)
-                : localeText(localeCode, '采样时间未知', 'Observation time unknown')}
-            </Text>
-          </div>
-        ))}
+        <TopologyCoveragePanel
+          key={selectionScope}
+          coverage={data?.coverage ?? []}
+          generatedAt={data?.generatedAt}
+          observedAt={data?.observedAt}
+        />
       </Drawer>
     </div>
   )

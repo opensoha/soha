@@ -7,7 +7,17 @@ const path = '/cluster-resources/namespaces'
 async function setup(
   context: BrowserContext,
   page: Page,
-  { readonly = false, noPods = false, count = 60 } = {},
+  {
+    readonly = false,
+    noPods = false,
+    count = 60,
+    pendingRead,
+  }: {
+    readonly?: boolean
+    noPods?: boolean
+    count?: number
+    pendingRead?: Promise<void>
+  } = {},
 ) {
   const state = {
     rows: Array.from({ length: count }, (_, i) => ({
@@ -52,7 +62,7 @@ async function setup(
       JSON.stringify({ state: { clusterId: 'cluster-a', namespace: 'monitoring' }, version: 0 }),
     ),
   )
-  const evidence = await installMocks(context, page, (url, method) => {
+  const evidence = await installMocks(context, page, async (url, method) => {
     if (method === 'GET') state.reads.push(url.pathname + url.search)
     else state.writes.push(method + ' ' + url.pathname + url.search)
     if (url.pathname === '/api/v1/access/permission-snapshot') {
@@ -66,13 +76,15 @@ async function setup(
       )
       return { body }
     }
-    if (url.pathname === root + '/namespaces' && method === 'GET')
+    if (url.pathname === root + '/namespaces' && !url.search && method === 'GET') {
+      if (pendingRead) await pendingRead
       return state.failNamespaces
         ? {
             status: 503,
             body: { error: { code: 'unavailable', message: 'Namespace read failed' } },
           }
         : { body: { data: state.rows } }
+    }
     if (url.pathname.startsWith(root + '/namespaces') && method !== 'GET')
       return state.failWrite
         ? {
@@ -352,21 +364,20 @@ test('Namespace name sorting initializes before a slow first response', async ({
   context,
   page,
 }) => {
-  const { state, evidence } = await setup(context, page, { count: 3 })
   let release!: () => void
   const pending = new Promise<void>((resolve) => {
     release = resolve
   })
-  await context.route('**/api/v1/clusters/cluster-a/namespaces', async (route) => {
-    evidence.requests.push(root + '/namespaces')
-    state.reads.push(root + '/namespaces')
-    await pending
-    await route.fulfill({ json: { data: [...state.rows].reverse() } })
-  })
-  await page.goto(path)
-  await expect(page.locator('.soha-namespaces-list')).toBeVisible()
-  await expect(rows(page)).toHaveCount(0)
-  release()
+  const { state, evidence } = await setup(context, page, { count: 3, pendingRead: pending })
+  state.rows.reverse()
+  try {
+    await page.goto(path)
+    await expect(page.locator('.soha-namespaces-list')).toBeVisible()
+    await expect.poll(() => state.reads).toContain(root + '/namespaces')
+    await expect(rows(page)).toHaveCount(0)
+  } finally {
+    release()
+  }
   await expect(rows(page).first()).toContainText('team-000')
   await expect(page.getByRole('columnheader', { name: '名称', exact: true })).toHaveAttribute(
     'aria-sort',

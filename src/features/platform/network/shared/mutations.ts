@@ -23,10 +23,13 @@ export const networkMutations = {
       mutationFn: (target: NetworkTarget) => deleteNetworkResource(kind, target),
       onSuccess: (_data, target) => invalidateNetworkCaches(queryClient, kind, target),
     }),
-  updateYAML: (kind: NetworkKind, queryClient: QueryClient) =>
+  updateYAML: (kind: NetworkKind, queryClient: QueryClient, beforeUpdate?: () => Promise<void>) =>
     mutationOptions({
       mutationKey: [...networkKeys.resource(kind), 'update-yaml'] as const,
-      mutationFn: (variables: UpdateNetworkYAMLVariables) => updateNetworkYAML(kind, variables),
+      mutationFn: async (variables: UpdateNetworkYAMLVariables) => {
+        await beforeUpdate?.()
+        return updateNetworkYAML(kind, variables)
+      },
       onSuccess: (yaml, variables) => {
         queryClient.setQueryData(networkKeys.yaml(kind, variables.scope, variables.name), yaml)
         return invalidateNetworkCaches(queryClient, kind, variables)

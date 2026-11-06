@@ -6,6 +6,7 @@ function deployments(count = 80) {
   return Array.from({ length: count }, (_, index) => ({
     name: `deployment-${String(index).padStart(3, '0')}`,
     namespace: 'monitoring',
+    uid: `deployment-uid-${index}`,
     readyReplicas: 2,
     desiredReplicas: 3,
     updatedReplicas: 2,
@@ -309,7 +310,7 @@ test('row scale/restart/rollback and delete failure keep exact target, feedback 
   await expect(dialog).toBeVisible()
   expect(state.writes.at(-1)).toMatchObject({
     method: 'DELETE',
-    path: '/api/v1/clusters/cluster-a/workloads/deployments/deployment-000?namespace=monitoring',
+    path: '/api/v1/clusters/cluster-a/workloads/deployments/deployment-000?namespace=monitoring&expectedUid=deployment-uid-0',
   })
   verifyBrowserEvidence(evidence)
 })
@@ -458,5 +459,52 @@ test('batch scale retries only rejected targets after partial success', async ({
   ])
   await expect(dialog).not.toBeVisible()
   await expect(page.getByRole('button', { name: '批量操作', exact: true })).toHaveCount(0)
+  verifyBrowserEvidence(evidence)
+})
+
+test('batch rollback ignores revision reads from a cancelled draft in another scope', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await setup(context, page, { allNamespaces: true })
+  let releaseOldRead!: () => void
+  const oldRead = new Promise<void>((resolve) => {
+    releaseOldRead = resolve
+  })
+  await page.route('**/workloads/deployments/*/rollouts?*', async (route) => {
+    const old = route.request().url().includes('/deployment-000/')
+    if (old) await oldRead
+    await route.fulfill({ json: { data: [{ revision: '3' }, { revision: old ? '11' : '22' }] } })
+  })
+  const openRollback = async () => {
+    await page.getByRole('button', { name: '批量操作', exact: true }).click()
+    await batchMenu(page).getByRole('menuitem', { name: '批量回滚', exact: true }).click()
+  }
+  const dialog = page.getByRole('dialog', { name: '批量回滚', exact: true })
+  const confirm = dialog.getByRole('button', { name: /确\s*定|OK/, exact: true })
+  await row(page, 'deployment-000').getByRole('checkbox').check()
+  const oldRequest = page.waitForRequest((request) =>
+    request.url().includes('/deployment-000/rollouts?'),
+  )
+  await openRollback()
+  await oldRequest
+  await expect(confirm).toBeDisabled()
+  await dialog.getByRole('button', { name: /^取\s*消$|^Cancel$/ }).click()
+  await page.getByRole('button', { name: '切换到命名空间 kube-system', exact: true }).click()
+  await expect.poll(() => state.namespaceReads.at(-1)).toBe('kube-system')
+  await page.locator('[data-row-key="kube-system/deployment-001"]').getByRole('checkbox').check()
+  await openRollback()
+  await expect(dialog).toContainText('deployment-001')
+  await expect(dialog).toContainText('22')
+  const oldResponse = page.waitForResponse((response) =>
+    response.url().includes('/deployment-000/rollouts?'),
+  )
+  releaseOldRead()
+  await (await oldResponse).finished()
+  await expect(dialog).not.toContainText('deployment-000')
+  await confirm.click()
+  await expect
+    .poll(() => state.writes.map((write) => write.body))
+    .toEqual([{ name: 'deployment-001', namespace: 'kube-system', revision: '22' }])
   verifyBrowserEvidence(evidence)
 })

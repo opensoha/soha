@@ -36,8 +36,19 @@ import { formatAgeSeconds } from '@/utils/time'
 import { CodeOutlined, DeleteOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MenuProps, TableColumnsType } from 'antd'
-import { App, Button, Popconfirm, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import {
+  Alert,
+  Button,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { workloadKeys } from '../shared/keys'
 import {
@@ -49,13 +60,17 @@ import {
 } from '../shared/list-controls'
 import { podMutations } from './mutations'
 import { podQueries } from './queries'
-import { podTargetFromRecord, type Pod } from './types'
+import { podTargetFromRecord, type Pod, type PodTarget } from './types'
 import { PodContainersCell } from './pod-containers-cell'
 import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import { getPodResourceAmount, podResourceMinimumWidth, PodResourceCell } from './pod-resource-cell'
 import { podContentWidths } from './pod-column-widths'
 
 const { Link, Text } = Typography
+
+function podRowKey(pod: { namespace?: string | null; name: string; uid?: string }) {
+  return `${pod.namespace}/${pod.name}${pod.uid ? `/${pod.uid}` : ''}`
+}
 
 /* ─── Pods ─── */
 
@@ -89,12 +104,12 @@ function renderPodNameCell(record: Pod, onClick: () => void) {
 
 export function WorkloadsPodsPage() {
   const { t, localeCode } = useI18n()
-  const { message, modal } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
-  const permissionSnapshot = permissionSnapshotQuery.data?.data
-  const canDeletePods = hasPermission(permissionSnapshot, 'platform.pods.delete')
+  const permissionSnapshot = readableQueryData(permissionSnapshotQuery)?.data
+  const canDeletePods =
+    !permissionSnapshotQuery.isError && hasPermission(permissionSnapshot, 'platform.pods.delete')
   const canExecPods = hasPermission(permissionSnapshot, 'platform.pods.exec')
   const canViewPodLogs = hasPermission(permissionSnapshot, 'platform.pods.logs')
   const canViewNodes = hasPermission(permissionSnapshot, 'platform.nodes.view')
@@ -111,7 +126,29 @@ export function WorkloadsPodsPage() {
   const [restartFilter, setRestartFilter] = useState('all')
   const [pvcFilter, setPvcFilter] = useState('all')
   const [nodeFilter, setNodeFilter] = useState('all')
+  const selectionScope = useMemo(
+    () => ({
+      clusterId,
+      namespace,
+      searchKeyword,
+      phaseFilter,
+      restartFilter,
+      pvcFilter,
+      nodeFilter,
+    }),
+    [clusterId, namespace, searchKeyword, phaseFilter, restartFilter, pvcFilter, nodeFilter],
+  )
+  const activeSelectionScope = useRef(selectionScope)
+  activeSelectionScope.current = selectionScope
   const [selectedPodKeys, setSelectedPodKeys] = useState<string[]>([])
+  const [rowDeleteDraft, setRowDeleteDraft] = useState<{
+    scope: typeof selectionScope
+    target: PodTarget
+  } | null>(null)
+  const [batchDeleteDraft, setBatchDeleteDraft] = useState<{
+    scope: typeof selectionScope
+    targets: PodTarget[]
+  } | null>(null)
   const { densityButton, tableSize } = useWorkloadTableDensity(localeCode)
 
   useEffect(() => {
@@ -120,7 +157,9 @@ export function WorkloadsPodsPage() {
 
   useEffect(() => {
     setSelectedPodKeys([])
-  }, [clusterId, namespace, searchKeyword, phaseFilter, restartFilter, pvcFilter, nodeFilter])
+    setRowDeleteDraft(null)
+    setBatchDeleteDraft(null)
+  }, [selectionScope])
 
   const listScope = toScopeKey(clusterId, namespace)
   const podsQueryOptions = podQueries.list(listScope)
@@ -199,20 +238,18 @@ export function WorkloadsPodsPage() {
   )
 
   useEffect(() => {
-    const currentKeys = new Set(
-      (visiblePodsQueryData ?? []).map((pod) => `${pod.namespace}/${pod.name}`),
-    )
+    const currentKeys = new Set((visiblePodsQueryData ?? []).map(podRowKey))
     setSelectedPodKeys((keys) => {
       const retained = keys.filter((key) => currentKeys.has(key))
       return retained.length === keys.length ? keys : retained
     })
   }, [visiblePodsQueryData])
   const selectedPods = useMemo(
-    () => pods.filter((item) => selectedPodKeys.includes(`${item.namespace}/${item.name}`)),
-    [pods, selectedPodKeys],
+    () => filteredPods.filter((item) => selectedPodKeys.includes(podRowKey(item))),
+    [filteredPods, selectedPodKeys],
   )
   const hasSelectedPodsWithoutDeleteAction = selectedPods.some(
-    (item) => !hasAllowedAction(item.allowedActions, 'delete'),
+    (item) => !item.uid || !hasAllowedAction(item.allowedActions, 'delete'),
   )
   const podDeleteDisabled =
     podDeleteCapability.isLoading ||
@@ -221,7 +258,7 @@ export function WorkloadsPodsPage() {
   const canShowPodDeleteActions =
     canDeletePods &&
     !podDeleteDisabled &&
-    pods.some((item) => hasAllowedAction(item.allowedActions, 'delete'))
+    pods.some((item) => item.uid && hasAllowedAction(item.allowedActions, 'delete'))
   const podDeleteDisabledReason = podDeleteDisabled
     ? podDeleteCapability.isLoading
       ? localeCode === 'zh_CN'
@@ -234,6 +271,7 @@ export function WorkloadsPodsPage() {
     : ''
   const canDeleteSelectedPods =
     !!clusterId &&
+    canDeletePods &&
     selectedPods.length > 0 &&
     !hasSelectedPodsWithoutDeleteAction &&
     !podDeleteDisabled
@@ -262,6 +300,32 @@ export function WorkloadsPodsPage() {
       platformBatchReceipt(results, variables.targets.map(platformResourceTarget), localeCode),
   })
   const platformWriteBlocked = deletePodMutation.blocked || batchDeletePodsMutation.blocked
+  const rowDeleteUnavailable = podDeleteDisabled || podsQuery.isError
+  const rowDeleteTarget =
+    rowDeleteDraft?.scope === selectionScope ? rowDeleteDraft.target : undefined
+  const rowDeleteOpen = Boolean(rowDeleteTarget)
+  const rowDeleteAllowed = Boolean(
+    rowDeleteTarget?.uid &&
+    canDeletePods &&
+    !rowDeleteUnavailable &&
+    pods.some(
+      (item) =>
+        item.namespace === rowDeleteTarget.scope.namespace &&
+        item.name === rowDeleteTarget.name &&
+        item.uid === rowDeleteTarget.uid &&
+        hasAllowedAction(item.allowedActions, 'delete'),
+    ),
+  )
+  const batchDeleteOpen = batchDeleteDraft?.scope === selectionScope
+  const selectedPodIdentity = new Set(selectedPods.map(podRowKey))
+  const canConfirmBatchDelete =
+    batchDeleteOpen &&
+    canDeleteSelectedPods &&
+    !platformWriteBlocked &&
+    batchDeleteDraft.targets.length === selectedPods.length &&
+    batchDeleteDraft.targets.every((target) =>
+      selectedPodIdentity.has(podRowKey({ ...target, namespace: target.scope.namespace })),
+    )
 
   const handleRefresh = async () => {
     if (!clusterId || manualRefreshPending) {
@@ -418,7 +482,8 @@ export function WorkloadsPodsPage() {
       render: (_value: string, record: Pod) => {
         const canOpenLogs = canViewPodLogs && hasAllowedAction(record.allowedActions, 'logs')
         const canOpenTerminal = canExecPods && hasAllowedAction(record.allowedActions, 'exec')
-        const canDeletePod = canDeletePods && hasAllowedAction(record.allowedActions, 'delete')
+        const canDeletePod =
+          canDeletePods && Boolean(record.uid) && hasAllowedAction(record.allowedActions, 'delete')
         const logsDisabled = !clusterId || podLogsCapability.isLoading || podLogsCapability.disabled
         const terminalDisabled =
           !clusterId ||
@@ -480,37 +545,19 @@ export function WorkloadsPodsPage() {
             key: 'delete',
             label: actionLabel(deleteLabel, podDeleteCapability.reason),
             danger: true,
-            disabled: platformWriteBlocked || podDeleteDisabled || deletePodMutation.isPending,
+            disabled: platformWriteBlocked || rowDeleteUnavailable,
             icon: deletePodMutation.isPending ? (
               <LoadingOutlined aria-hidden />
             ) : (
               <DeleteOutlined aria-hidden />
             ),
           })
-          actions.delete = async () => {
-            // Await mode keeps rejected onOk feedback local to the open confirmation.
-            await modal.confirm({
-              title:
-                localeCode === 'zh_CN'
-                  ? `确认删除 Pod ${record.name}？`
-                  : `Delete pod ${record.name}?`,
-              content:
-                localeCode === 'zh_CN'
-                  ? '独立 Pod 会直接消失；受控制器管理的 Pod 可能会自动创建替代实例。'
-                  : 'Standalone pods are removed. A controller-managed pod may be replaced automatically.',
-              okText: localeCode === 'zh_CN' ? '删除' : 'Delete',
-              cancelText: localeCode === 'zh_CN' ? '取消' : 'Cancel',
-              okButtonProps: { danger: true },
-              onOk: async () => {
-                try {
-                  await deletePodMutation.mutateAsync(podTargetFromRecord(clusterId, record))
-                  void message.success(localeCode === 'zh_CN' ? 'Pod 已删除' : 'Pod deleted')
-                  void podsQuery.refetch()
-                } catch (error) {
-                  void message.error(error instanceof Error ? error.message : String(error))
-                  throw error
-                }
-              },
+          actions.delete = () => {
+            if (!clusterId || !canDeletePod || rowDeleteUnavailable || platformWriteBlocked) return
+            deletePodMutation.reset()
+            setRowDeleteDraft({
+              scope: selectionScope,
+              target: podTargetFromRecord(clusterId, record),
             })
           }
         }
@@ -686,8 +733,8 @@ export function WorkloadsPodsPage() {
             <Popconfirm
               title={
                 localeCode === 'zh_CN'
-                  ? `确认删除 ${selectedPods.length} 个 Pod？`
-                  : `Delete ${selectedPods.length} pods?`
+                  ? `确认删除 ${batchDeleteDraft?.targets.length ?? selectedPods.length} 个 Pod？`
+                  : `Delete ${batchDeleteDraft?.targets.length ?? selectedPods.length} pods?`
               }
               description={
                 localeCode === 'zh_CN'
@@ -697,33 +744,47 @@ export function WorkloadsPodsPage() {
               okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
               cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
               okButtonProps={{
-                disabled: platformWriteBlocked,
+                disabled: !canConfirmBatchDelete,
                 danger: true,
                 loading: batchDeletePodsMutation.isPending,
               }}
               placement="topRight"
-              disabled={!canDeleteSelectedPods}
-              onConfirm={() =>
-                batchDeletePodsMutation.mutate(
-                  {
+              open={batchDeleteOpen}
+              onOpenChange={(open) => {
+                if (!open) setBatchDeleteDraft(null)
+                else if (canDeleteSelectedPods && !platformWriteBlocked)
+                  setBatchDeleteDraft({
+                    scope: selectionScope,
                     targets: selectedPods.map((item) => podTargetFromRecord(clusterId, item)),
-                  },
+                  })
+              }}
+              onConfirm={() => {
+                if (!canConfirmBatchDelete) return
+                const { scope, targets } = batchDeleteDraft
+                batchDeletePodsMutation.mutate(
+                  { targets },
                   {
                     onSuccess: (results, variables) => {
-                      setSelectedPodKeys(
-                        variables.targets
-                          .filter((_target, index) => results[index].status === 'rejected')
-                          .map((target) => `${target.scope.namespace}/${target.name}`),
+                      if (activeSelectionScope.current !== scope) return
+                      const removedKeys = new Set(
+                        variables.targets.flatMap((target, index) =>
+                          results[index].status === 'fulfilled'
+                            ? [podRowKey({ ...target, namespace: target.scope.namespace })]
+                            : [],
+                        ),
+                      )
+                      setSelectedPodKeys((current) =>
+                        current.filter((key) => !removedKeys.has(key)),
                       )
                     },
                   },
                 )
-              }
+              }}
             >
               <Button
                 autoInsertSpace={false}
                 danger
-                disabled={!canDeleteSelectedPods}
+                disabled={!canDeleteSelectedPods || platformWriteBlocked}
                 loading={batchDeletePodsMutation.isPending}
                 size="small"
                 variant="outlined"
@@ -781,7 +842,7 @@ export function WorkloadsPodsPage() {
 
   return (
     <div className="soha-page">
-      {deletePodMutation.feedback}
+      {!rowDeleteOpen && deletePodMutation.feedback}
       {batchDeletePodsMutation.feedback}
 
       {podQueryPanel}
@@ -806,7 +867,7 @@ export function WorkloadsPodsPage() {
         headerExtra={podToolbarExtra}
         columns={columns}
         dataSource={orderedPods}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
+        rowKey={podRowKey}
         onRow={(record: Pod) => ({
           'data-ai-context': encodeAIContextForElement({
             sourceWorkbench: 'platform',
@@ -860,6 +921,50 @@ export function WorkloadsPodsPage() {
             : undefined
         }
       />
+      <Modal
+        destroyOnHidden
+        open={rowDeleteOpen}
+        title={
+          localeCode === 'zh_CN'
+            ? `确认删除 Pod ${rowDeleteDraft?.target.name ?? ''}？`
+            : `Delete pod ${rowDeleteDraft?.target.name ?? ''}?`
+        }
+        okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+        cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+        confirmLoading={deletePodMutation.isPending}
+        okButtonProps={{ danger: true, disabled: !rowDeleteAllowed || platformWriteBlocked }}
+        cancelButtonProps={{ disabled: deletePodMutation.isPending }}
+        onCancel={() => {
+          if (!deletePodMutation.isPending) setRowDeleteDraft(null)
+        }}
+        onOk={() => {
+          if (!rowDeleteDraft || !rowDeleteAllowed || platformWriteBlocked) return
+          deletePodMutation.mutate(rowDeleteDraft.target, {
+            onSuccess: () =>
+              setRowDeleteDraft((current) => (current === rowDeleteDraft ? null : current)),
+          })
+        }}
+      >
+        {rowDeleteDraft && <p>{platformResourceTarget(rowDeleteDraft.target)}</p>}
+        <p>
+          {localeCode === 'zh_CN'
+            ? '独立 Pod 会直接消失；受控制器管理的 Pod 可能会自动创建替代实例。'
+            : 'Standalone pods are removed. A controller-managed pod may be replaced automatically.'}
+        </p>
+        {rowDeleteOpen && !rowDeleteAllowed && (
+          <Alert
+            showIcon
+            type="warning"
+            title={
+              podDeleteDisabledReason ||
+              (localeCode === 'zh_CN'
+                ? '资源或操作权限已变化，请关闭后重新选择。'
+                : 'Resource or permission changed. Close and select again.')
+            }
+          />
+        )}
+        {deletePodMutation.feedback}
+      </Modal>
     </div>
   )
 }

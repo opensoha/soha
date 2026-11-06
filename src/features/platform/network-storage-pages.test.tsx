@@ -38,6 +38,20 @@ vi.mock('@/services/api-client', () => ({
   },
 }))
 
+vi.mock('@/features/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/auth')>()),
+  usePermissionSnapshot: () => ({
+    data: {
+      data: {
+        permissionKeys: [
+          'platform.network.gateway-classes.view',
+          'platform.storage.persistent-volume-claims.view',
+        ],
+      },
+    },
+  }),
+}))
+
 vi.mock('@/components/resource-events-timeline', () => ({
   ResourceEventsTimeline: () => <div data-testid="events-timeline" />,
 }))
@@ -229,7 +243,9 @@ describe('network resource list pages', () => {
     ).toBe('2 个 Service')
     expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
     expect(
-      container.querySelector('input[placeholder="搜索 Service / namespace / type / port"]'),
+      container.querySelector(
+        'input[placeholder="搜索 Service / namespace / type / port / selector"]',
+      ),
     ).not.toBeNull()
     expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
     expect(container.textContent).toContain('53/UDP')
@@ -237,10 +253,16 @@ describe('network resource list pages', () => {
     const headerButtons = Array.from(
       container.querySelectorAll('[data-testid="header-extra"] button'),
     ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
-    expect(headerButtons).toEqual(['新增', '选择创建方式', '切换表格密度', '刷新'])
+    expect(headerButtons).toEqual([
+      '新增',
+      '选择创建方式',
+      '切换表格密度',
+      '自动刷新：自动刷新正常，每 15 秒 · 关闭自动刷新',
+      '刷新 Services',
+    ])
 
     const input = container.querySelector(
-      'input[placeholder="搜索 Service / namespace / type / port"]',
+      'input[placeholder="搜索 Service / namespace / type / port / selector"]',
     ) as HTMLInputElement | null
     if (!input) {
       throw new Error('service search input not found')
@@ -283,7 +305,7 @@ describe('network resource list pages', () => {
     ).toBe('1 个 GatewayClass')
     expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
     expect(
-      container.querySelector('input[placeholder="搜索 GatewayClass / controller"]'),
+      container.querySelector('input[placeholder="搜索名称 / 控制器 / 参数 / Accepted"]'),
     ).not.toBeNull()
     expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
     expect(container.textContent).not.toContain('集群级资源')
@@ -340,7 +362,13 @@ describe('network resource list pages', () => {
     const headerButtons = Array.from(
       container.querySelectorAll('[data-testid="header-extra"] button'),
     ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
-    expect(headerButtons).toEqual(['新增', '选择创建方式', '切换表格密度', '刷新'])
+    expect(headerButtons).toEqual([
+      '新增',
+      '选择创建方式',
+      '切换表格密度',
+      '自动刷新：自动刷新正常，每 15 秒 · 关闭自动刷新',
+      '刷新 PVC',
+    ])
 
     const input = container.querySelector(
       'input[placeholder="搜索 PVC / namespace / storageClass"]',

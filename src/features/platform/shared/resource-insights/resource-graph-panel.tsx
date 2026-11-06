@@ -3,6 +3,7 @@ import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { buildKubernetesResourcePath } from '@/features/platform/shared/resource-ref'
 import { useI18n } from '@/i18n'
+import { useAuthStore } from '@/stores/auth-store'
 import type { ScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { CloseOutlined } from '@ant-design/icons'
@@ -55,6 +56,10 @@ export function buildResourceGraphFlow(graph: KubernetesResourceGraph): {
     const root = node.id === graph.rootId
     return {
       id: node.id,
+      // Fixed node geometry must also be available to XYFlow before observation.
+      // Controlled selection updates can replace its measured dimensions.
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
       ariaRole: 'button',
       ariaLabel: `${node.resource.kind} ${namespace}${node.resource.name}${state ? ` ${state}` : ''}`,
       className: `soha-resource-graph-node${root ? ' is-root' : ''}`,
@@ -95,17 +100,42 @@ export function buildResourceGraphFlow(graph: KubernetesResourceGraph): {
   return { nodes, edges }
 }
 
-function ResourceGraphCanvas({ graph }: { graph: KubernetesResourceGraph }) {
+export function ResourceGraphCanvas({
+  graph,
+  flow: suppliedFlow,
+  getResourcePath,
+  fitViewKey,
+  selectedId: controlledSelection,
+  onSelect,
+  hideInspector = false,
+}: {
+  graph: KubernetesResourceGraph
+  selectedId?: string | null
+  onSelect?: (id: string | null) => void
+  hideInspector?: boolean
+  fitViewKey?: string | boolean
+  flow?: ReturnType<typeof buildResourceGraphFlow>
+  getResourcePath?: (
+    resource: KubernetesResourceGraph['nodes'][number]['resource'],
+  ) => string | null
+}) {
   const navigate = useNavigate()
   const { localeCode } = useI18n()
   const { fitView } = useReactFlow()
   const canvasWidth = useStore((state) => state.width)
   const canvasHeight = useStore((state) => state.height)
   const canvasRef = useRef<HTMLDivElement>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const flow = useMemo(() => buildResourceGraphFlow(graph), [graph])
+  const [localSelection, setLocalSelection] = useState<string | null>(null)
+  const selectedId = controlledSelection === undefined ? localSelection : controlledSelection
+  const setSelectedId = (id: string | null) => {
+    setLocalSelection(id)
+    onSelect?.(id)
+  }
+  const flow = useMemo(() => suppliedFlow ?? buildResourceGraphFlow(graph), [graph, suppliedFlow])
   const selectedNode = graph.nodes.find((node) => node.id === selectedId)
-  const selectedPath = selectedNode ? buildKubernetesResourcePath(selectedNode.resource) : null
+  const selectedPath = selectedNode
+    ? (getResourcePath ?? buildKubernetesResourcePath)(selectedNode.resource)
+    : null
   const relatedEdges = graph.edges.filter(
     (edge) => edge.sourceId === selectedId || edge.targetId === selectedId,
   )
@@ -114,7 +144,7 @@ function ResourceGraphCanvas({ graph }: { graph: KubernetesResourceGraph }) {
   useEffect(() => {
     const frame = requestAnimationFrame(() => fitView({ padding: 0.18, duration: 0 }))
     return () => cancelAnimationFrame(frame)
-  }, [fitView, canvasWidth, canvasHeight])
+  }, [fitView, canvasWidth, canvasHeight, fitViewKey])
 
   return (
     <div className="soha-resource-graph-workspace">
@@ -161,7 +191,7 @@ function ResourceGraphCanvas({ graph }: { graph: KubernetesResourceGraph }) {
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>
-      {selectedNode ? (
+      {selectedNode && !hideInspector ? (
         <aside
           className="soha-resource-graph-details"
           aria-label={zh ? '选中资源信息' : 'Selected resource information'}
@@ -281,7 +311,8 @@ export function ResourceGraphPanel({
   focusPod?: boolean
 }) {
   const { localeCode } = useI18n()
-  const graphQuery = useQuery(resourceInsightQueries.graph(scope, kind, name))
+  const sessionGeneration = useAuthStore((state) => state.sessionGeneration)
+  const graphQuery = useQuery(resourceInsightQueries.graph(scope, kind, name, sessionGeneration))
   const graph = readableQueryData(graphQuery)
   const [includeOtherResources, setIncludeOtherResources] = useState(false)
   const focusedGraph = useMemo(

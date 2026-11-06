@@ -13,3 +13,14 @@ export interface PodDisruptionBudgetResource extends ConfigurationDetailBase {
   readonly workload?: PodRelatedResource
   readonly conditions?: WorkloadCondition[]
 }
+
+export const PDB_TEMPLATE = `apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: example-budget
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: example-app
+`

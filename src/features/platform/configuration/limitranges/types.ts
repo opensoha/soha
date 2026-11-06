@@ -14,3 +14,24 @@ export interface LimitRangeResource extends ConfigurationDetailBase {
   readonly limits: number
   readonly rules?: LimitRangeRule[]
 }
+
+export const LIMIT_RANGE_TEMPLATE = `apiVersion: v1
+kind: LimitRange
+metadata:
+  name: example-limits
+spec:
+  limits:
+    - type: Container
+      min:
+        cpu: 50m
+        memory: 32Mi
+      max:
+        cpu: "1"
+        memory: 1Gi
+      defaultRequest:
+        cpu: 100m
+        memory: 64Mi
+      default:
+        cpu: 500m
+        memory: 256Mi
+`

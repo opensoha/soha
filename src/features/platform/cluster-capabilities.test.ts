@@ -45,7 +45,9 @@ describe('evaluateClusterCapability', () => {
 
     expect(decision.status).toBe('unsupported')
     expect(decision.disabled).toBe(true)
-    expect(decision.reason).toBe('Agent mode cannot apply YAML yet')
+    expect(decision.reason).toBe(
+      'Agent mode cannot apply YAML yet / YAML apply and delete are not supported for agent-connected clusters yet',
+    )
     expect(decision.requiredScopes).toEqual(['cluster', 'namespace'])
     expect(decision.riskLevel).toBe('mutate')
     expect(decision.requiresApproval).toBe(true)
@@ -66,7 +68,7 @@ describe('evaluateClusterCapability', () => {
     expect(decision.requiresApproval).toBe(true)
   })
 
-  it('localizes agent capability details in the Chinese interface', () => {
+  it('preserves known-key partial limits in the Chinese interface', () => {
     const decision = evaluateClusterCapability({
       connectionMode: 'agent',
       key: 'workload.mutations',
@@ -74,9 +76,90 @@ describe('evaluateClusterCapability', () => {
       matrix,
     })
 
-    expect(decision.reason).toContain('Pod 删除')
-    expect(decision.reason).not.toContain('deployment restart')
+    expect(decision.disabled).toBe(false)
+    expect(decision.reason).toBe(matrix[1].agent.notes?.[0])
+    expect(decision.reason).not.toContain('Pod 删除')
   })
+
+  it.each([
+    ['zh_CN', 'partial'],
+    ['zh_CN', 'unsupported'],
+    ['zh_CN', 'available'],
+    ['en_US', 'partial'],
+    ['en_US', 'unsupported'],
+    ['en_US', 'available'],
+  ] as const)(
+    'preserves %s %s Agent upgrade and action-policy diagnostics',
+    (localeCode, status) => {
+      const decision = evaluateClusterCapability({
+        connectionMode: 'agent',
+        key: 'workload.mutations',
+        localeCode,
+        matrix: matrix.map((entry) => ({
+          ...entry,
+          agent: {
+            status,
+            reason: '  Upgrade the connected Agent  ',
+            notes: [
+              ' Upgrade the connected Agent ',
+              '',
+              ' Action platform.pods.delete is denied by the Agent policy ',
+            ],
+          },
+        })),
+      })
+
+      expect(decision.status).toBe(status)
+      expect(decision.disabled).toBe(status === 'unsupported')
+      expect(decision.reason).toBe(
+        'Upgrade the connected Agent / Action platform.pods.delete is denied by the Agent policy',
+      )
+      expect(decision.reason).not.toContain('Pod 删除')
+      expect(decision.notes).toContain('Action platform.pods.delete is denied by the Agent policy')
+    },
+  )
+
+  it('localizes an available Agent capability only when backend diagnostics are absent', () => {
+    const decision = evaluateClusterCapability({
+      connectionMode: 'agent',
+      key: 'workload.mutations',
+      localeCode: 'zh_CN',
+      matrix: matrix.map((entry) => ({ ...entry, agent: { status: 'available' } })),
+    })
+
+    expect(decision.status).toBe('available')
+    expect(decision.disabled).toBe(false)
+    expect(decision.reason).toContain('Pod 删除')
+  })
+
+  it.each([
+    ['zh_CN', 'partial', '当前集群连接模式仅部分支持该能力。'],
+    [
+      'en_US',
+      'partial',
+      'The current cluster connection mode only partially supports this capability.',
+    ],
+    ['zh_CN', 'unsupported', '当前集群连接模式暂不支持该操作。'],
+    [
+      'en_US',
+      'unsupported',
+      'The current cluster connection mode does not support this operation.',
+    ],
+  ] as const)(
+    'uses a truthful %s %s fallback without backend diagnostics',
+    (localeCode, status, reason) => {
+      const decision = evaluateClusterCapability({
+        connectionMode: 'agent',
+        key: 'workload.mutations',
+        localeCode,
+        matrix: matrix.map((entry) => ({ ...entry, agent: { status, reason: ' ', notes: [' '] } })),
+      })
+
+      expect(decision.reason).toBe(reason)
+      expect(decision.disabled).toBe(status === 'unsupported')
+      expect(decision.notes).toEqual([])
+    },
+  )
 
   it.each([
     ['available', 'Direct backend supports this capability'],
@@ -129,6 +212,8 @@ describe('evaluateClusterCapability', () => {
     expect(decision.status).toBe('unknown')
     expect(decision.disabled).toBe(true)
     expect(decision.reason).toContain('Unable to confirm')
+    expect(decision.reason).not.toContain('deployment restart')
+    expect(decision.notes).toEqual([])
   })
 
   it('disables actions while capability data is loading', () => {

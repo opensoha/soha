@@ -84,6 +84,9 @@ describe('buildResourceGraphFlow', () => {
     const flow = buildResourceGraphFlow(graph)
 
     expect(flow.nodes).toHaveLength(2)
+    for (const node of flow.nodes) {
+      expect(node).toMatchObject({ width: 240, height: 112, style: { width: 240, height: 112 } })
+    }
     expect(flow.nodes[0]?.className).toContain('is-root')
     expect(flow.edges[0]).toMatchObject({
       source: 'deployment/default/api',

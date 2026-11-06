@@ -12,7 +12,7 @@ import { Alert, Button, Modal, Tooltip } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { podMutations } from './mutations'
-import type { PodDetail } from './types'
+import type { PodDetail, PodTarget } from './types'
 
 export function usePodDetailDelete(detail: PodDetail | undefined, scope: ScopeKey) {
   const { localeCode } = useI18n()
@@ -25,10 +25,10 @@ export function usePodDetailDelete(detail: PodDetail | undefined, scope: ScopeKe
   )
   const client = useQueryClient()
   const navigate = useNavigate()
-  const identity = JSON.stringify([scope.clusterId, scope.namespace, detail?.name])
+  const identity = JSON.stringify([scope.clusterId, scope.namespace, detail?.name, detail?.uid])
   const liveIdentity = useRef<string | null>(identity)
   liveIdentity.current = identity
-  const [confirmation, setConfirmation] = useState<string | null>(null)
+  const [confirmation, setConfirmation] = useState<(PodTarget & { identity: string }) | null>(null)
   useEffect(() => {
     liveIdentity.current = identity
     setConfirmation(null)
@@ -41,7 +41,7 @@ export function usePodDetailDelete(detail: PodDetail | undefined, scope: ScopeKe
     target: platformResourceTarget,
   })
   const allowed = Boolean(
-    detail &&
+    detail?.uid &&
     scope.clusterId &&
     scope.namespace &&
     hasPermission(permissions, 'platform.pods.delete') &&
@@ -52,7 +52,7 @@ export function usePodDetailDelete(detail: PodDetail | undefined, scope: ScopeKe
     capability.disabled ||
     (capability.mode === 'agent' && capability.status === 'partial')
   const blocked = capabilityBlocked || remove.blocked
-  const open = confirmation === identity
+  const open = confirmation?.identity === identity
   const ready = open && allowed && !blocked
   const label = zh ? '删除' : 'Delete'
   return {
@@ -64,9 +64,9 @@ export function usePodDetailDelete(detail: PodDetail | undefined, scope: ScopeKe
           disabled={blocked}
           loading={remove.isPending}
           onClick={() => {
-            if (!allowed || blocked) return
+            if (!detail?.uid || !allowed || blocked) return
             remove.reset()
-            setConfirmation(identity)
+            setConfirmation({ identity, name: detail.name, scope: { ...scope }, uid: detail.uid })
           }}
         >
           {label}
@@ -93,9 +93,8 @@ export function usePodDetailDelete(detail: PodDetail | undefined, scope: ScopeKe
           if (!remove.isPending) setConfirmation(null)
         }}
         onOk={async () => {
-          if (!ready || !detail) return
-          const target = { name: detail.name, scope: { ...scope } }
-          const submittedIdentity = identity
+          if (!ready || !confirmation) return
+          const { identity: submittedIdentity, ...target } = confirmation
           try {
             await remove.mutateAsync(target)
             if (liveIdentity.current === submittedIdentity) {

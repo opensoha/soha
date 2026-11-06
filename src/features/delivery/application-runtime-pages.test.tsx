@@ -2864,7 +2864,9 @@ describe('ApplicationDetailPage workbench', () => {
     })
     const runButton = findButton(document.body, '运行工作流')
 
-    expect(document.body.textContent).toContain('当前集群连接模式仅部分支持该能力')
+    expect(document.body.textContent).toContain(
+      'build actions remain available; deploy, build-deploy, verification, and rollback against agent-connected targets require delivery runner parity',
+    )
     expect(runButton.disabled).toBe(true)
 
     await act(async () => {

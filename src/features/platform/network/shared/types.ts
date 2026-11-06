@@ -41,6 +41,7 @@ export interface NetworkEvent {
 
 export interface UpdateNetworkYAMLVariables extends NetworkTarget {
   readonly content: string
+  readonly requireObservedIdentity?: boolean
 }
 
 export type NetworkYAML = ResourceYAMLView

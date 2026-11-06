@@ -27,34 +27,93 @@ function PortArrow() {
   return <ArrowRightOutlined aria-hidden className="soha-service-port-arrow" />
 }
 
+function protocolTone(protocol: string): MetadataTagTone {
+  return protocol === 'UDP' ? 'cyan' : protocol === 'SCTP' ? 'purple' : 'blue'
+}
+
+function PortTag({
+  value,
+  field,
+  tone = 'default',
+}: {
+  value: string
+  field: 'name' | 'nodePort' | 'port' | 'protocol' | 'targetPort'
+  tone?: MetadataTagTone
+}) {
+  return (
+    <MetadataTag
+      label={
+        <span className="soha-service-tag-text" data-port-field={field}>
+          {value}
+        </span>
+      }
+      title={`${field}: ${value}`}
+      tone={tone}
+      className="soha-service-port-tag"
+    />
+  )
+}
+
+function PortFields({ mapping }: { mapping: ServicePortMapping }) {
+  return (
+    <>
+      <PortTag field="protocol" value={mapping.protocol} tone={protocolTone(mapping.protocol)} />
+      <PortTag field="port" value={String(mapping.port)} />
+      <PortArrow />
+      <PortTag field="targetPort" value={mapping.targetPort} />
+      {mapping.nodePort ? (
+        <PortTag field="nodePort" value={`NodePort: ${mapping.nodePort}`} />
+      ) : null}
+    </>
+  )
+}
+
 export function ServicePortDisplay({
   portMappings,
   ports,
+  detailed = false,
 }: {
   portMappings?: ServicePortMapping[]
   ports?: string[]
+  detailed?: boolean
 }) {
-  if (!portMappings?.length) return ports?.join(', ') || '-'
+  if (!portMappings?.length)
+    return ports?.length ? (
+      <span className="soha-service-port-list">
+        {ports.map((port, index) => (
+          <MetadataTag
+            key={`${port}-${index}`}
+            label={<span className="soha-service-tag-text">{port}</span>}
+            className="soha-service-port-tag"
+          />
+        ))}
+      </span>
+    ) : (
+      '—'
+    )
 
   return (
-    <span className="soha-service-port-list">
+    <span className={`soha-service-port-list${detailed ? ' is-detailed' : ''}`}>
       {portMappings.map((mapping, index) => (
         <span
-          className="soha-service-port-chain"
+          className="soha-service-port-row"
           key={`${mapping.name ?? ''}-${mapping.port}-${mapping.protocol}-${index}`}
         >
-          {mapping.nodePort ? (
+          {detailed ? (
             <>
-              <MetadataTag label={`NodePort: ${mapping.nodePort}`} tone="gold" />
-              <PortArrow />
+              <span className="soha-service-port-name">
+                {mapping.name ? <PortTag field="name" value={mapping.name} /> : '—'}
+              </span>
+              <span className="soha-service-port-chain">
+                <PortFields mapping={mapping} />
+              </span>
             </>
-          ) : null}
-          <MetadataTag
-            label={`Port: ${mapping.name ? `${mapping.name} · ` : ''}${mapping.port}/${mapping.protocol}`}
-            tone="blue"
-          />
-          <PortArrow />
-          <MetadataTag label={`TargetPort: ${mapping.targetPort}`} tone="cyan" />
+          ) : (
+            <>
+              {mapping.name ? <PortTag field="name" value={mapping.name} /> : null}
+              <PortFields mapping={mapping} />
+            </>
+          )}
         </span>
       ))}
     </span>

@@ -108,4 +108,12 @@ describe('pod api', () => {
     ).rejects.toThrow('A namespace is required')
     expect(apiMocks.delete).not.toHaveBeenCalled()
   })
+
+  it('includes the expected UID in a guarded delete', async () => {
+    apiMocks.delete.mockResolvedValueOnce({ data: null })
+    await deletePod({ ...target, uid: 'pod/uid' })
+    expect(apiMocks.delete).toHaveBeenCalledWith(
+      '/clusters/cluster-a/workloads/pods/api%2Fpod-1?namespace=team%2Fa&expectedUid=pod%2Fuid',
+    )
+  })
 })

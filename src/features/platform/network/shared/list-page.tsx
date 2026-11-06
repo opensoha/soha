@@ -65,6 +65,7 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
   rowKey,
   searchPlaceholder,
   searchValues,
+  refreshControl,
 }: {
   buildAIPageContext: (items: T[], searchKeyword: string) => AIPageContext
   columns: TableColumnsType<T>
@@ -78,6 +79,7 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
   rowKey?: string | ((record: T) => string)
   searchPlaceholder: { en_US: string; zh_CN: string }
   searchValues: (record: T) => Array<string | undefined | null>
+  refreshControl?: import('react').ReactNode
 }) {
   const { localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
@@ -265,15 +267,17 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
                     setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
                   }
                 />
-                <ManagementRefreshButton
-                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                  disabled={!clusterId}
-                  loading={query.isFetching}
-                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                  onClick={() => {
-                    if (clusterId) void query.refetch()
-                  }}
-                />
+                {refreshControl ?? (
+                  <ManagementRefreshButton
+                    aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    disabled={!clusterId}
+                    loading={query.isFetching}
+                    tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    onClick={() => {
+                      if (clusterId) void query.refetch()
+                    }}
+                  />
+                )}
               </ManagementTableToolbar>
             }
             empty={

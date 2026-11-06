@@ -8,6 +8,7 @@ import {
   ResourceDetailTabs,
 } from '@/features/platform/shared/resource-detail-header'
 import type { QueryKey } from '@tanstack/react-query'
+import type { ScopeKey } from '@/types'
 import '../styles.css'
 
 export function StorageDetailShell({
@@ -16,12 +17,16 @@ export function StorageDetailShell({
   name,
   detail,
   queryKey,
+  header,
+  scope,
 }: {
   children: ReactNode
   kind: string
   name: string
   detail?: { namespace?: string; status?: string; createdAt?: string; ageSeconds?: number }
   queryKey?: QueryKey
+  header?: ReactNode
+  scope?: ScopeKey
 }) {
   const { clusterId, namespace } = usePlatformScopeStore()
   useAIPageContext({
@@ -29,20 +34,23 @@ export function StorageDetailShell({
     sourceTitle: kind,
     entityKind: kind,
     entityName: name,
-    clusterId: clusterId || undefined,
-    namespace: kind === 'PersistentVolumeClaim' ? namespace || undefined : undefined,
+    clusterId: scope?.clusterId || clusterId || undefined,
+    namespace:
+      detail?.namespace ?? (kind === 'PersistentVolumeClaim' ? namespace || undefined : undefined),
   })
   return (
     <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
-      <ResourceDetailHeader
-        kind={kind}
-        name={name}
-        namespace={detail?.namespace}
-        status={detail?.status}
-        createdAt={detail?.createdAt}
-        ageSeconds={detail?.ageSeconds}
-        queryKey={queryKey}
-      />
+      {header ?? (
+        <ResourceDetailHeader
+          kind={kind}
+          name={name}
+          namespace={detail?.namespace}
+          status={detail?.status}
+          createdAt={detail?.createdAt}
+          ageSeconds={detail?.ageSeconds}
+          queryKey={queryKey}
+        />
+      )}
       {children}
     </div>
   )

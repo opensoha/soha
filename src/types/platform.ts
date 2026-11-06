@@ -68,6 +68,7 @@ export interface ClusterMonitoringDetail {
     transport?: 'direct' | 'agent'
     baseUrl?: string
     clusterLabel?: string
+    clusterLabelValue?: string
     grafanaBaseUrl?: string
     hasBearerToken: boolean
   }
@@ -402,6 +403,7 @@ export interface PodExecResult {
 export interface PodDetail {
   name: string
   namespace: string
+  uid?: string
   phase: string
   podIp?: string
   hostIp?: string
@@ -422,7 +424,9 @@ export interface PodDetail {
 }
 
 export type Pod =
-  import('@opensoha/contracts/gen/ts/sohaapi').components['schemas']['KubernetesPod']
+  import('@opensoha/contracts/gen/ts/sohaapi').components['schemas']['KubernetesPod'] & {
+    uid?: string
+  }
 
 export interface Service {
   name: string
@@ -449,6 +453,7 @@ export interface Ingress {
 export interface DeploymentDetail {
   name: string
   namespace: string
+  uid?: string
   desiredReplicas: number
   readyReplicas: number
   updatedReplicas: number
@@ -467,6 +472,8 @@ export interface DeploymentDetail {
 }
 
 export interface RolloutHistory {
+  podRevisionHash?: string
+  matchesCurrentTemplate?: boolean
   name: string
   namespace: string
   revision: string

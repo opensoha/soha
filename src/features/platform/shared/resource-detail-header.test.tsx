@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import {
   ResourceDetailHeader,
   ResourceDetailTabs,
@@ -19,7 +20,7 @@ const reads = {
   yaml: vi.fn(async () => 'yaml'),
   other: vi.fn(async () => 'other'),
 }
-function Detail() {
+function Detail(props: Partial<React.ComponentProps<typeof ResourceDetailHeader>>) {
   const [active, change] = useResourceDetailTab()
   const location = useLocation()
   useQuery({ queryKey: ['resource', 'cluster-a', 'api'], queryFn: reads.detail })
@@ -36,6 +37,7 @@ function Detail() {
         name="api"
         namespace="team-a"
         queryKey={['resource', 'cluster-a', 'api']}
+        {...props}
       />
       <ResourceDetailTabs
         activeKey={active}
@@ -50,6 +52,7 @@ function Detail() {
   )
 }
 beforeEach(() => {
+  usePlatformScopeStore.setState({ clusterId: 'cluster-a', namespace: 'team-a' })
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   window.matchMedia = vi
     .fn()
@@ -64,6 +67,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
   client.clear()
   container.remove()
+  usePlatformScopeStore.setState({ clusterId: null, namespace: null })
   vi.unstubAllGlobals()
 })
 async function settle() {
@@ -71,16 +75,19 @@ async function settle() {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }
-async function render(tab = 'overview') {
+async function render(
+  tab = 'overview',
+  props: Partial<React.ComponentProps<typeof ResourceDetailHeader>> = {},
+) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
         <MemoryRouter
           initialEntries={[
-            `/configuration/configmaps/api?clusterId=cluster-a&namespace=team-a&tab=${tab}&range=60`,
+            `/configuration/configmaps/api?clusterId=cluster-a&namespace=team-a&tab=${tab}&range=60&container=init&edit=true&webhook=hook`,
           ]}
         >
-          <Detail />
+          <Detail {...props} />
         </MemoryRouter>
       </QueryClientProvider>,
     ),
@@ -118,4 +125,36 @@ it('shows the readable overview for an unavailable URL tab without reading YAML'
   expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('概览')
   expect(container.querySelector('[role="tabpanel"]')?.textContent).toBe('overview content')
   expect(reads.yaml).not.toHaveBeenCalled()
+})
+
+it.each([
+  { selected: null, expected: '/configuration/configmaps?clusterId=cluster-a' },
+  {
+    selected: 'selected-team',
+    expected: '/configuration/configmaps?clusterId=cluster-a&namespace=selected-team',
+  },
+])('returns to the selected list filter $selected', async ({ selected, expected }) => {
+  usePlatformScopeStore.setState({ namespace: selected })
+  await render()
+  expect(container.querySelector('a[aria-label="返回ConfigMap列表"]')?.getAttribute('href')).toBe(
+    expected,
+  )
+  expect(container.querySelector('.soha-k8s-detail-meta')?.textContent).toContain('team-a')
+})
+
+it('normalizes an explicit owner return query using the selected list filter', async () => {
+  usePlatformScopeStore.setState({ namespace: 'selected-team' })
+  await render('overview', {
+    backTo: '/configuration/secrets?clusterId=owner&namespace=other&edit=true&sort=name',
+  })
+  expect(container.querySelector('a[aria-label="返回ConfigMap列表"]')?.getAttribute('href')).toBe(
+    '/configuration/secrets?clusterId=owner&namespace=selected-team&sort=name',
+  )
+})
+
+it('omits stale namespace context for cluster resources', async () => {
+  await render('overview', { kind: 'Node', namespace: null, backTo: '/cluster-resources/nodes' })
+  expect(container.querySelector('a[aria-label="返回Node列表"]')?.getAttribute('href')).toBe(
+    '/cluster-resources/nodes?clusterId=cluster-a',
+  )
 })

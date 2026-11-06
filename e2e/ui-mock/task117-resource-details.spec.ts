@@ -1,6 +1,6 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 import { baselineResponse } from '../fixtures/baseline-data'
-import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
+import { installMocks, verifyBrowserEvidence, type MockResolver } from '../fixtures/mock-app'
 import { expectWorkloadDetailFrame } from '../fixtures/workload-detail-geometry'
 
 const root = '/api/v1/clusters/cluster-a'
@@ -24,6 +24,7 @@ async function setup(
   page: Page,
   permissions: string[],
   responses: Record<string, unknown>,
+  resolveDaemonSetDetail?: () => ReturnType<MockResolver>,
 ) {
   await context.addInitScript(() =>
     localStorage.setItem(
@@ -36,12 +37,17 @@ async function setup(
   const evidence = await installMocks(context, page, (url, method) => {
     if (method === 'GET') reads.push(url.pathname + url.search)
     if (method === 'DELETE') writes.push(url.pathname + url.search)
+    if (resolveDaemonSetDetail && url.pathname === `${root}/workloads/daemonsets/sample/detail`)
+      return method === 'GET' && url.search === '?namespace=monitoring'
+        ? resolveDaemonSetDetail()
+        : undefined
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
       if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
       body.data.permissionKeys!.push(...permissions)
       return { body }
     }
+    if (url.pathname === '/api/v1/application-environments') return { body: { data: [] } }
     if (url.pathname === '/api/v1/clusters/capabilities')
       return {
         body: {
@@ -54,6 +60,96 @@ async function setup(
           ),
         },
       }
+    if (url.pathname === `${root}/workloads/jobs/sample/yaml`)
+      return {
+        body: {
+          data: {
+            kind: 'Job',
+            name: 'sample',
+            namespace: 'monitoring',
+            content:
+              'apiVersion: batch/v1\nkind: Job\nmetadata: {name: sample, namespace: monitoring}\nspec: {template: {spec: {containers: [{name: sample, image: demo:v1}]}}}\n',
+          },
+        },
+      }
+    if (/\/workloads\/jobs\/sample-\d+\/detail$/.test(url.pathname))
+      return {
+        body: {
+          data: {
+            name: url.pathname.split('/').at(-2),
+            namespace: 'monitoring',
+            pods: [],
+            succeeded: 1,
+            active: 0,
+            failed: 0,
+          },
+        },
+      }
+    if (url.pathname === `${root}/workloads/cronjobs/sample/yaml`)
+      return {
+        body: {
+          data: {
+            kind: 'CronJob',
+            name: 'sample',
+            namespace: 'monitoring',
+            content:
+              'apiVersion: batch/v1\nkind: CronJob\nmetadata: {name: sample, namespace: monitoring}\nspec: {schedule: "*/5 * * * *", jobTemplate: {spec: {template: {spec: {containers: [{name: app, image: app:1}]}}}}}\n',
+          },
+        },
+      }
+    if (url.pathname === `${root}/workloads/replicasets/sample/yaml`)
+      return {
+        body: {
+          data: {
+            kind: 'ReplicaSet',
+            name: 'sample',
+            namespace: 'monitoring',
+            content:
+              'apiVersion: apps/v1\nkind: ReplicaSet\nmetadata: {name: sample, namespace: monitoring}\nspec: {template: {spec: {containers: [{name: app, image: app:1}]}}}\n',
+          },
+        },
+      }
+    if (url.pathname === `${root}/workloads/replicationcontrollers/sample/yaml`)
+      return {
+        body: {
+          data: {
+            kind: 'ReplicationController',
+            name: 'sample',
+            namespace: 'monitoring',
+            content:
+              'apiVersion: v1\nkind: ReplicationController\nmetadata: {name: sample, namespace: monitoring}\nspec: {template: {spec: {containers: [{name: app, image: app:1}]}}}\n',
+          },
+        },
+      }
+    if (url.pathname === `${root}/workloads/daemonsets/sample/rollouts`)
+      return { body: { items: [] } }
+    if (url.pathname === `${root}/workloads/daemonsets/sample/yaml`)
+      return {
+        body: {
+          data: {
+            kind: 'DaemonSet',
+            name: 'sample',
+            namespace: 'monitoring',
+            content:
+              'apiVersion: apps/v1\nkind: DaemonSet\nmetadata: {name: sample, namespace: monitoring, generation: 1}\nspec: {updateStrategy: {type: RollingUpdate}, template: {spec: {containers: []}}}\nstatus: {observedGeneration: 1, numberMisscheduled: 0, numberUnavailable: 0}\n',
+          },
+        },
+      }
+    if (url.pathname === `${root}/workloads/statefulsets/sample/yaml`) {
+      const detail = responses[`${root}/workloads/statefulsets/sample/detail`] as
+        | { desiredReplicas?: number }
+        | undefined
+      return {
+        body: {
+          data: {
+            kind: 'StatefulSet',
+            name: 'sample',
+            namespace: 'monitoring',
+            content: `apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n name: sample\n namespace: monitoring\nspec:\n template:\n  spec:\n   containers: []\nstatus:\n updatedReplicas: ${detail?.desiredReplicas ?? 0}\n`,
+          },
+        },
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(responses, url.pathname + url.search))
       return { body: { data: responses[url.pathname + url.search] } }
     if (Object.prototype.hasOwnProperty.call(responses, url.pathname))
@@ -62,7 +158,10 @@ async function setup(
   })
   return { reads, writes, evidence }
 }
-for (const [kind, label, permission] of controllers)
+// StatefulSet now has its dedicated nine-tab acceptance suite.
+for (const [kind, label, permission] of controllers.filter(
+  (entry): boolean => entry[0] !== 'statefulsets',
+))
   test(`${label} detail: shared identity, complete children, lazy event timeline and URL tabs`, async ({
     context,
     page,
@@ -77,7 +176,13 @@ for (const [kind, label, permission] of controllers)
       ageSeconds: 600,
       allowedActions: ['view'],
     }))
-    const jobs = pods.map((pod) => ({ ...pod, succeeded: 1, failed: 0, active: 0 }))
+    const jobs = pods.map((pod, index) => ({
+      ...pod,
+      startTime: new Date(Date.now() - (index + 1) * 1000).toISOString(),
+      succeeded: 1,
+      failed: 0,
+      active: 0,
+    }))
     const detail = {
       ...base,
       desiredReplicas: 3,
@@ -133,12 +238,31 @@ for (const [kind, label, permission] of controllers)
         [`${root}/workloads/${kind}/sample/yaml`]: {
           yaml: `apiVersion: v1\nkind: ${label}\nmetadata:\n  name: sample\n`,
         },
-        [`${root}/resources/graph?namespace=monitoring&kind=ReplicaSet&name=sample`]: {
+        [`${root}/resources/graph?namespace=monitoring&kind=${label}&name=sample`]: {
           rootId: 'sample',
           clusterId: 'cluster-a',
           generatedAt: '2026-10-31T00:00:00Z',
-          nodes: [],
-          edges: [],
+          nodes: [
+            ['sample', label, 'sample'],
+            ['config', 'ConfigMap', 'sample-config'],
+          ].map(([id, kind, name]) => ({
+            id,
+            resource: {
+              clusterId: 'cluster-a',
+              namespace: 'monitoring',
+              kind,
+              name,
+              apiVersion: ['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet'].includes(kind)
+                ? 'apps/v1'
+                : ['Job', 'CronJob'].includes(kind)
+                  ? 'batch/v1'
+                  : 'v1',
+              scopeMode: 'namespace',
+            },
+          })),
+          edges: [
+            { id: 'config-use', sourceId: 'sample', targetId: 'config', relation: 'uses-config' },
+          ],
           warnings: [],
           evidence: [],
         },
@@ -173,28 +297,34 @@ for (const [kind, label, permission] of controllers)
     )
     const header = page.locator('.soha-workload-detail-header')
     await expect(header.locator('.soha-status-tag')).toHaveText(
-      kind === 'cronjobs' ? '调度已启用' : kind === 'jobs' ? '执行中' : '副本未就绪',
+      kind === 'cronjobs'
+        ? '调度启用'
+        : kind === 'jobs'
+          ? '执行中'
+          : kind === 'daemonsets'
+            ? '未就绪'
+            : ['replicasets', 'replicationcontrollers'].includes(kind)
+              ? '副本未就绪或不可用'
+              : '副本未就绪',
     )
     await expect(header).toContainText('已创建')
     await expect(header).not.toContainText('读取于')
     await expect(header.getByRole('switch', { name: /自动刷新/ })).toBeChecked()
-    if (kind === 'statefulsets') {
-      await expect(header.locator(`[title="${detail.currentRevision}"]`)).toContainText('当前版本')
-      await expect(header.locator(`[title="${detail.updateRevision}"]`)).toContainText('目标版本')
-      await expect(header).toContainText('RollingUpdate')
-    } else if (kind === 'daemonsets') {
+    if (kind === 'daemonsets') {
       await expect(header).toContainText('已更新 3 / 4')
       await expect(header).toContainText('RollingUpdate')
     } else if (kind === 'cronjobs') {
-      await expect(header).toContainText('调度 */5 * * * *')
-      await expect(header).toContainText('活跃 Jobs 1')
+      await expect(header).toContainText('*/5 * * * *')
+      await expect(header).toContainText('活跃 1')
     } else if (kind === 'jobs') {
-      await expect(header).toContainText('完成 2 / 3')
-      await expect(header).toContainText('失败记录 0')
+      await expect(header).toContainText('成功 2 / 3')
+      await expect(header).toContainText('失败 Pod 0')
     }
     await expectWorkloadDetailFrame(page)
     const overview = page.locator('.soha-workload-overview')
-    await expect(overview.locator('aside')).toContainText('运行配置')
+    await expect(overview.locator('aside')).toContainText(
+      kind === 'cronjobs' ? '调度配置' : '运行配置',
+    )
     await expect(overview.locator('.soha-k8s-detail-metadata')).toHaveCount(1)
     const columns = await overview.evaluate((element) => {
       const main = element.children[0].getBoundingClientRect()
@@ -210,7 +340,10 @@ for (const [kind, label, permission] of controllers)
         (path) =>
           path.includes('/events') ||
           path.includes('/metrics') ||
-          path.includes('/yaml') ||
+          (!['daemonsets', 'jobs', 'cronjobs', 'replicasets', 'replicationcontrollers'].includes(
+            kind,
+          ) &&
+            path.includes('/yaml')) ||
           path.startsWith(`${root}/workloads/pods?`),
       ),
     ).toBe(false)
@@ -245,8 +378,9 @@ for (const [kind, label, permission] of controllers)
         detail.readyNumber = 4
         detail.updatedNumber = 4
         detail.availableNumber = 4
-      } else if (kind === 'replicasets' || kind === 'replicationcontrollers') {
+      } else if (['replicasets', 'replicationcontrollers'].includes(kind)) {
         detail.readyReplicas = 3
+        detail.currentReplicas = 3
         detail.availableReplicas = 3
       }
       await page.getByRole('button', { name: `刷新 ${label}`, exact: true }).click()
@@ -282,27 +416,34 @@ for (const [kind, label, permission] of controllers)
       'true',
     )
 
-    if (kind === 'statefulsets' || kind === 'daemonsets') {
+    if (kind === 'cronjobs') {
+      await page.getByRole('tab', { name: '指标', exact: true }).click()
+      await expect(page.locator('.soha-cronjob-metrics .ant-card')).toHaveCount(6)
+      expect(
+        reads.some((path) => path.startsWith(`${root}/workloads/cronjobs/sample/metrics`)),
+      ).toBe(false)
+    } else if (
+      ['statefulsets', 'daemonsets', 'jobs', 'replicasets', 'replicationcontrollers'].includes(kind)
+    ) {
       await page.getByRole('tab', { name: '指标', exact: true }).click()
       await expect(page.locator('.soha-pod-detail-metric-card')).toHaveCount(4)
       await expect(page.locator('.soha-pod-detail-metric-card').first()).toContainText('125 mCPU')
     } else {
       await expect(page.getByRole('tab', { name: '指标', exact: true })).toHaveCount(0)
     }
+    expect(reads.some((path) => path.includes('/resources/graph?'))).toBe(false)
     await page.getByRole('tab', { name: '关联资源', exact: true }).click()
-    if (kind === 'replicasets') {
-      await expect(page.getByRole('button', { name: '刷新资源关系', exact: true })).toBeVisible()
-      expect(
-        reads.some((path) =>
-          path.includes('/resources/graph?namespace=monitoring&kind=ReplicaSet&name=sample'),
-        ),
-      ).toBe(true)
-      await page
-        .getByRole('radiogroup', { name: '关联资源视图' })
-        .getByText('列表', { exact: true })
-        .click()
-      await expect(page.getByRole('radio', { name: '列表', exact: true })).toBeChecked()
-    }
+    await expect(
+      page.getByRole('tabpanel', { name: '关联资源' }).locator('.react-flow'),
+    ).toBeVisible()
+    expect(reads.filter((path) => path.includes('/resources/graph?'))).toEqual([
+      `${root}/resources/graph?namespace=monitoring&kind=${label}&name=sample`,
+    ])
+    await page
+      .getByRole('radiogroup', { name: '关联资源视图' })
+      .getByText('列表', { exact: true })
+      .click()
+    await expect(page.getByRole('radio', { name: '列表', exact: true })).toBeChecked()
     await expect(page.getByRole('tabpanel', { name: '关联资源' })).toContainText('sample-config')
     await expect(
       page.getByRole('tabpanel', { name: '关联资源' }).locator('.ant-pagination'),
@@ -343,7 +484,7 @@ for (const [kind, label, permission] of controllers)
     verifyBrowserEvidence(evidence)
   })
 
-test('detail summary auto refresh has truthful colors, pause, failure retry and no YAML polling', async ({
+test('detail summary auto refresh has truthful colors, pause, failure retry and preserves YAML drafts', async ({
   context,
   page,
 }) => {
@@ -355,29 +496,27 @@ test('detail summary auto refresh has truthful colors, pause, failure retry and 
     updatedNumber: 2,
     availableNumber: 2,
     updateStrategy: 'RollingUpdate',
+    allowedActions: ['view', 'update'],
     pods: [],
     relatedResources: [],
   }
-  const { reads, evidence } = await setup(context, page, ['platform.workloads.daemon-sets.view'], {
-    [`${root}/workloads/daemonsets/sample/detail`]: detail,
-    [`${root}/workloads/daemonsets/sample/yaml`]: {
-      yaml: 'apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: sample\n',
-    },
-  })
   let detailReads = 0
   let failing = false
   let held: Promise<void> | undefined
-  await context.route(
-    '**/api/v1/clusters/cluster-a/workloads/daemonsets/sample/detail**',
-    async (route) => {
+  const { reads, evidence } = await setup(
+    context,
+    page,
+    ['platform.workloads.daemon-sets.view', 'platform.workloads.daemon-sets.update'],
+    {},
+    async () => {
       detailReads++
       if (held) await held
-      await route.fulfill({
+      return {
         status: failing ? 500 : 200,
-        json: failing
+        body: failing
           ? { error: { code: 'test_refresh_failure', message: 'Synthetic refresh failure' } }
           : { data: detail },
-      })
+      }
     },
   )
   await page.goto('/workloads/daemonsets/sample?clusterId=cluster-a&namespace=monitoring')
@@ -400,22 +539,37 @@ test('detail summary auto refresh has truthful colors, pause, failure retry and 
   await expect.poll(() => detailReads).toBeGreaterThan(before)
   await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
   await page.getByRole('tab', { name: 'YAML', exact: true }).click()
-  await expect.poll(() => reads.filter((path) => path.includes('/sample/yaml')).length).toBe(1)
+  const editor = page.getByRole('textbox', { name: 'YAML 草稿编辑器', exact: true })
+  await expect(page.locator('.soha-k8s-yaml-editor .view-lines:visible').first()).toContainText(
+    'apiVersion',
+  )
+  await editor.press('ControlOrMeta+Home')
+  await editor.pressSequentially('# preserved-ds-draft')
+  await editor.press('Enter')
+  const yamlBefore = reads.filter((path) => path.includes('/sample/yaml')).length
   before = detailReads
   await page.clock.fastForward(15_100)
   await expect.poll(() => detailReads).toBeGreaterThan(before)
-  expect(reads.filter((path) => path.includes('/sample/yaml'))).toHaveLength(1)
+  await expect
+    .poll(() => reads.filter((path) => path.includes('/sample/yaml')).length)
+    .toBeGreaterThan(yamlBefore)
+  await expect(page.locator('.soha-k8s-yaml-editor .view-lines:visible').first()).toContainText(
+    'preserved-ds-draft',
+  )
   await page.getByRole('tab', { name: '概览', exact: true }).click()
   let release!: () => void
   held = new Promise<void>((resolve) => {
     release = resolve
   })
-  await manual.click()
-  await expect(toggle).toHaveAttribute('data-refresh-state', 'refreshing')
-  await expect(header.locator('.ant-badge-status-warning')).toHaveCount(1)
-  failing = true
-  release()
-  held = undefined
+  try {
+    await manual.click()
+    await expect(toggle).toHaveAttribute('data-refresh-state', 'refreshing')
+    await expect(header.locator('.ant-badge-status-warning')).toHaveCount(1)
+    failing = true
+  } finally {
+    release()
+    held = undefined
+  }
   await expect(toggle).toHaveAttribute('data-refresh-state', 'failed', { timeout: 10_000 })
   await expect(header.locator('.ant-badge-status-error')).toHaveCount(1)
   await expect(header.locator('.soha-status-tag')).toHaveText('健康')
@@ -496,6 +650,11 @@ const families = [
     route: '/network/services/sample',
     path: '/network/services/sample/detail',
     permission: 'platform.network.services.view',
+    configurationYaml: {
+      apiVersion: 'v1',
+      kind: 'Service',
+      configuration: 'spec: {type: ClusterIP, clusterIP: 10.0.0.1}',
+    },
     detail: {
       ...base,
       type: 'ClusterIP',
@@ -511,6 +670,11 @@ const families = [
     route: '/storage/persistentvolumeclaims/sample',
     path: '/storage/persistentvolumeclaims/sample/detail',
     permission: 'platform.storage.persistent-volume-claims.view',
+    configurationYaml: {
+      apiVersion: 'v1',
+      kind: 'PersistentVolumeClaim',
+      configuration: 'spec: {volumeMode: Filesystem}',
+    },
     detail: {
       ...base,
       status: 'Bound',
@@ -524,6 +688,11 @@ const families = [
     route: '/platform-access-control/roles/sample',
     path: '/access-control/roles/sample/detail',
     permission: 'platform.access-control.roles.view',
+    configurationYaml: {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      configuration: 'rules: [{apiGroups: [""], resources: [pods], verbs: [get]}]',
+    },
     detail: { ...base, rules: 1, ruleSummaries: ['get pods'] },
   },
 ] as const
@@ -558,8 +727,30 @@ for (const family of families)
     context,
     page,
   }) => {
+    const detailPath = `${root}${family.path}?namespace=monitoring`
+    const yamlPath = detailPath.replace('/detail?', '/yaml?')
+    const configuration = 'configurationYaml' in family ? family.configurationYaml : undefined
     const { reads, evidence } = await setup(context, page, [family.permission], {
-      [`${root}${family.path}`]: family.detail,
+      [detailPath]: family.detail,
+      ...(configuration
+        ? {
+            [yamlPath]: {
+              content: [
+                `apiVersion: ${configuration.apiVersion}`,
+                `kind: ${configuration.kind}`,
+                'metadata: {name: sample, namespace: monitoring}',
+                configuration.configuration,
+              ].join('\n'),
+            },
+          }
+        : {}),
+      ...(family.route.startsWith('/configuration/configmaps/')
+        ? {
+            [`${root}/configuration/configmaps`]: [
+              { ...base, dataEntries: 1, allowedActions: ['view'] },
+            ],
+          }
+        : {}),
     })
     await page.goto(`${family.route}?clusterId=cluster-a&namespace=monitoring`)
     await expect(page.locator('.soha-k8s-detail-header h1')).toHaveText('sample')
@@ -570,15 +761,18 @@ for (const family of families)
     )
     await metadata.getByRole('button', { name: /标签/ }).click()
     await expect(metadata).toContainText('app:')
-    const before = reads.filter((path) => path.startsWith(root + family.path)).length
+    if (configuration) await expect.poll(() => reads).toContain(yamlPath)
+    const before = reads.filter((path) => path === detailPath).length
     await page
       .locator('.soha-k8s-detail-header')
       .getByRole('button', { name: /^刷新 / })
       .click()
     await expect
-      .poll(() => reads.filter((path) => path.startsWith(root + family.path)).length)
+      .poll(() => reads.filter((path) => path === detailPath).length)
       .toBeGreaterThan(before)
-    expect(reads.some((path) => path.includes('/yaml'))).toBe(false)
+    expect([...new Set(reads.filter((path) => path.includes('/yaml')))]).toEqual(
+      configuration ? [yamlPath] : [],
+    )
     await page.setViewportSize({ width: 900, height: 850 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
     verifyBrowserEvidence(evidence)
@@ -631,6 +825,7 @@ test('Port Forward keeps a complete scoped collection and confirms the exact reg
   page,
 }) => {
   const sessions = Array.from({ length: 80 }, (_, index) => ({
+    clusterId: 'cluster-a',
     sessionId: `session-${String(index).padStart(3, '0')}`,
     namespace: 'monitoring',
     targetKind: 'Pod',
@@ -657,14 +852,18 @@ test('Port Forward keeps a complete scoped collection and confirms the exact reg
   await expect(page.locator('.ant-pagination')).toHaveCount(0)
   const trigger = page.getByRole('button', { name: '更多操作：session-000', exact: true })
   await trigger.press('ArrowDown')
-  await page.getByRole('menuitem', { name: '停止 Port Forward', exact: true }).click()
+  await page.getByRole('menuitem', { name: '停止会话', exact: true }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog).toContainText('这只会停止 Soha 中登记的转发会话记录。')
+  await expect(dialog).toContainText('将请求后端停止此会话并释放其监听')
+  await expect(dialog).toContainText('目标资源不被删除')
+  await expect(dialog).toContainText('monitoring · Pod/pod-0')
+  await expect(dialog).toContainText('Core 127.0.0.1:9000 → 80')
+  await expect(dialog).toContainText('session-000')
   expect(writes).toEqual([])
   await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
   await trigger.click()
-  await page.getByRole('menuitem', { name: '停止 Port Forward', exact: true }).click()
-  await dialog.getByRole('button', { name: '停止 Port Forward', exact: true }).click()
+  await page.getByRole('menuitem', { name: '停止会话', exact: true }).click()
+  await dialog.getByRole('button', { name: '停止会话', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   expect(writes).toEqual([`${root}/network/port-forwards/session-000`])
   verifyBrowserEvidence(evidence)
@@ -683,21 +882,29 @@ test('Helm Charts keeps server pagination while its actions use the shared menu'
     allowedActions: ['view', 'create'],
   }
   const catalog = (offset: number) => ({
+    repository: { id: 'example', name: 'example', url: 'https://charts.example.test' },
     charts: [chart],
     totalCount: 31,
     loadedCount: 1,
     chartCount: 1,
+    versionCount: 1,
+    refreshedAt: '2026-10-01T00:00:00Z',
     offset,
     limit: 15,
   })
-  const { reads, evidence } = await setup(context, page, ['platform.helm.view'], {
-    [`${root}/helm/charts?limit=15&offset=0`]: catalog(0),
-    [`${root}/helm/charts?limit=15&offset=15`]: catalog(15),
-    [`${root}/helm/charts/example/sample-chart?version=1.0.0`]: {
-      ...chart,
-      readme: '# Synthetic chart',
+  const { reads, evidence } = await setup(
+    context,
+    page,
+    ['platform.helm.view', 'platform.helm.releases.create'],
+    {
+      [`${root}/helm/charts?limit=15&offset=0`]: catalog(0),
+      [`${root}/helm/charts?limit=15&offset=15`]: catalog(15),
+      [`${root}/helm/charts/example/sample-chart?version=1.0.0`]: {
+        ...chart,
+        readme: '# Synthetic chart',
+      },
     },
-  })
+  )
   await page.goto('/helm/charts')
   await expect(page.getByRole('status').filter({ hasText: '31 个 Charts' })).toBeVisible()
   await page.locator('.ant-pagination-item-2').click()
@@ -786,7 +993,11 @@ test('Manifests keeps page-scoped totals and opens complete inventory from the s
   await page.getByRole('menuitem', { name: '查看 YAML', exact: true }).click()
   const drawer = page.getByRole('dialog')
   await drawer.getByRole('tab', { name: '实际资源 (25)', exact: true }).click()
-  await expect(drawer).toContainText('ConfigMap/config-24')
+  const inventory = drawer.getByRole('tabpanel', { name: '实际资源 (25)', exact: true })
+  const lastResource = inventory.getByRole('row').filter({ hasText: 'config-24' })
+  await expect(lastResource.getByText('config-24', { exact: true })).toBeVisible()
+  await expect(lastResource).toContainText('ConfigMap · v1')
+  await expect(lastResource).toContainText('monitoring')
   await expect(drawer.locator('.ant-pagination')).toHaveCount(0)
   verifyBrowserEvidence(evidence)
 })

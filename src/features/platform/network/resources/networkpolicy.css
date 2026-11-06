@@ -1,0 +1,57 @@
+.soha-networkpolicy-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-policy-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.soha-policy-terms {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-policy-term {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.soha-policy-raw {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 520px;
+  overflow: auto;
+}
+.soha-policy-rule + .soha-policy-rule {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-policy-rule-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 20px;
+}
+.soha-policy-rule-grid h4 {
+  margin: 12px 0;
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+}
+.soha-policy-peer {
+  padding-block: 8px;
+}
+.soha-policy-note {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+.soha-networkpolicy-detail .soha-workload-overview-config dt {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .soha-policy-rule-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}

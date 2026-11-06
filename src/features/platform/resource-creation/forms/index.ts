@@ -1,4 +1,5 @@
 export { getResourceFormDefinition, resourceFormDefinitions } from './definitions'
+export { ServiceEditorForm } from './service-editor-form'
 export type {
   KeyValueEntry,
   KubernetesManifest,
@@ -9,3 +10,5 @@ export type {
   ResourceFormRendererProps,
   ServiceFormValues,
 } from './types'
+
+export { KeyValueFields } from './field-sections'

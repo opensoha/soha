@@ -8,7 +8,11 @@ export function SecretDataTab({
   canEdit,
   detail,
   onApply,
+  active = true,
+  editRequest = 0,
 }: {
+  active?: boolean
+  editRequest?: number
   blocked?: boolean
   applying?: boolean
   canEdit: boolean
@@ -30,6 +34,9 @@ export function SecretDataTab({
   const hasBinary = Object.keys(binaryData).length > 0
   return (
     <ConfigurationDataWorkspace
+      active={active}
+      searchable
+      editRequest={editRequest}
       applying={applying}
       blocked={blocked}
       canEdit={canEdit && !hasBinary}

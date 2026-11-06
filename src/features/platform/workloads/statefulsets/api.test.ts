@@ -5,6 +5,7 @@ import {
   getStatefulSetMetrics,
   listStatefulSetEvents,
   listStatefulSets,
+  listStatefulSetRollouts,
   restartStatefulSet,
   scaleStatefulSet,
 } from './api'
@@ -82,6 +83,16 @@ describe('statefulset api', () => {
     )
     expect(apiMocks.delete).toHaveBeenCalledWith(
       '/clusters/cluster-a/workloads/statefulsets/db%2Fserver?namespace=team%2Fa',
+    )
+  })
+
+  it('reads retained revisions through the selected StatefulSet scope', async () => {
+    apiMocks.get.mockResolvedValueOnce({ data: [{ name: 'db-revision', revision: '4' }] })
+    await expect(listStatefulSetRollouts(target)).resolves.toEqual([
+      { name: 'db-revision', revision: '4' },
+    ])
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      '/clusters/cluster-a/workloads/statefulsets/db%2Fserver/rollouts?namespace=team%2Fa',
     )
   })
 

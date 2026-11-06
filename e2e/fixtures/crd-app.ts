@@ -1,7 +1,12 @@
 import { test as base, expect } from '@playwright/test'
 import type { CRDResourceInstance } from '../../src/features/platform/extensions/crds/types'
 import { baselineResponse } from './baseline-data'
-import { installMocks, verifyBrowserEvidence, type BrowserEvidence } from './mock-app'
+import {
+  installMocks,
+  verifyBrowserEvidence,
+  type BrowserEvidence,
+  type MockResolver,
+} from './mock-app'
 
 export const definitions = Array.from({ length: 18 }, (_, i) => ({
   uid: `synthetic-uid-${i}`,
@@ -21,8 +26,10 @@ export type CRDState = {
   allowDelete: boolean
   failCatalog: boolean
   extraPermissions: string[]
+  includeSecondCluster?: boolean
   userName?: string
   resource?: Partial<CRDResourceInstance>
+  resolveApply?: MockResolver
 }
 export const test = base.extend<{ catalog: CRDState; evidence: BrowserEvidence }>({
   catalog: async ({ browserName: _browserName }, provide) =>
@@ -46,7 +53,19 @@ export const test = base.extend<{ catalog: CRDState; evidence: BrowserEvidence }
           }),
         ),
       )
-      const evidence = await installMocks(context, page, (url, method) => {
+      const evidence = await installMocks(context, page, (url, method, request) => {
+        if (catalog.includeSecondCluster && url.pathname === '/api/v1/clusters') {
+          const result = baselineResponse(url.pathname)!
+          if (!Array.isArray(result.data)) throw new Error('Missing cluster list')
+          return {
+            body: {
+              data: [...result.data, { ...result.data[0], id: 'cluster-b', name: 'stage-cluster' }],
+            },
+          }
+        }
+        if (catalog.includeSecondCluster && url.pathname === '/api/v1/clusters/cluster-b/namespaces') {
+          return { body: { data: [{ name: 'staging', status: 'Active', labels: {} }] } }
+        }
         if (url.pathname === '/api/v1/auth/refresh' && catalog.userName) {
           const result = baselineResponse(url.pathname) as { data: { user: { userName: string } } }
           result.data.user.userName = catalog.userName
@@ -78,7 +97,13 @@ export const test = base.extend<{ catalog: CRDState; evidence: BrowserEvidence }
           result.data.visibleMenus.push({ id: 'extensions', path: '/extensions', labelZh: 'CRD' })
           return { body: result }
         }
-        const path = '/api/v1/clusters/cluster-a/extensions/crds'
+        const cluster =
+          catalog.includeSecondCluster && url.pathname.startsWith('/api/v1/clusters/cluster-b/')
+            ? 'cluster-b'
+            : 'cluster-a'
+        const path = `/api/v1/clusters/${cluster}/extensions/crds`
+        if (method === 'PUT' && url.pathname.startsWith(path + '/'))
+          return catalog.resolveApply?.(url, method, request)
         if (url.pathname === path && method === 'GET')
           return {
             status: catalog.failCatalog ? 503 : 200,
@@ -86,7 +111,11 @@ export const test = base.extend<{ catalog: CRDState; evidence: BrowserEvidence }
               ? { error: { code: 'unavailable', message: 'Synthetic catalog unavailable' } }
               : { data: catalog.data },
           }
-        if (url.pathname.startsWith(path + '/') && url.pathname.endsWith('/access'))
+        if (
+          method === 'GET' &&
+          url.pathname.startsWith(path + '/') &&
+          url.pathname.endsWith('/access')
+        )
           return { body: { data: { allowedActions: ['get', 'list'] } } }
         if (method === 'GET' && url.pathname.endsWith('/yaml')) {
           const definition = catalog.data.find((item) =>
@@ -101,7 +130,11 @@ export const test = base.extend<{ catalog: CRDState; evidence: BrowserEvidence }
               },
             }
         }
-        if (url.pathname.startsWith(path + '/') && url.pathname.endsWith('/resources')) {
+        if (
+          method === 'GET' &&
+          url.pathname.startsWith(path + '/') &&
+          url.pathname.endsWith('/resources')
+        ) {
           const definition = catalog.data.find(
             (item) => url.pathname === `${path}/${item.name}/resources`,
           )

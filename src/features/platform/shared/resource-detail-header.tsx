@@ -1,11 +1,13 @@
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
+import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useIsFetching, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { Button, Tabs, Typography, type TabsProps } from 'antd'
 import type { ReactNode } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { formatAgeSeconds, formatRelativeTime } from '@/utils/time'
+import { resourceCollectionPath } from './resource-collection-path'
 import './resource-detail.css'
 
 /** Resource identity and navigation only; owners supply facts, query keys and permitted actions. */
@@ -45,12 +47,13 @@ export function ResourceDetailHeader({
   const fetching = useIsFetching({
     queryKey: queryKey ?? ['platform', 'detail-header', 'inactive'],
   })
-  const params = new URLSearchParams(location.search)
-  params.delete('tab')
-  params.delete('range')
-  params.delete('container')
+  const { namespace: listNamespace } = usePlatformScopeStore()
   const collection = backTo ?? location.pathname.split('/').slice(0, -1).join('/')
-  const href = `${collection || '/overview'}${params.size ? `?${params}` : ''}`
+  const href = resourceCollectionPath(
+    collection,
+    location.search,
+    namespace && namespace !== '-' && namespace !== '—' ? listNamespace : null,
+  )
   return (
     <header className="soha-k8s-detail-header">
       <div className="soha-k8s-detail-title-row">

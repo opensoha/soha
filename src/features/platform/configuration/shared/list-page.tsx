@@ -13,7 +13,8 @@ import {
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { TableCellLink } from '@/components/table-cell-content'
-import { hasAllowedAction } from '@/features/auth'
+import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
 import {
@@ -68,13 +69,19 @@ export function ConfigurationNameLink({
   kind,
   name,
   namespace,
+  includeCluster = false,
 }: {
+  includeCluster?: boolean
   kind: ConfigurationKind
   name: string
   namespace?: string
 }) {
   const navigate = useNavigate()
-  const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''
+  const { clusterId } = usePlatformScopeStore()
+  const params = new URLSearchParams()
+  if (namespace) params.set('namespace', namespace)
+  if (includeCluster && clusterId) params.set('clusterId', clusterId)
+  const query = params.size ? `?${params}` : ''
   return (
     <TableCellLink
       label={name}
@@ -92,6 +99,8 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
   onEdit,
   scopeMode = 'namespace',
   singularLabel,
+  permissionKey,
+  autoRefresh = false,
 }: {
   columns: TableColumnsType<T>
   defaultTemplate?: string
@@ -101,6 +110,8 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
   onEdit?: (record: T) => void
   scopeMode?: ConfigurationScopeMode
   singularLabel?: string
+  permissionKey?: string
+  autoRefresh?: boolean
 }) {
   const { localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
@@ -109,14 +120,22 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
   const scope = toScopeKey(clusterId, scopeMode === 'namespace' ? namespace : null)
-  const query = useQuery(configurationQueries.list<T>(kind, scope))
+  const refresh = useWorkloadRefresh()
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const canRead = !permissionKey || hasPermission(permissions, `${permissionKey}.view`)
+  const options = configurationQueries.list<T>(kind, scope)
+  const query = useQuery({
+    ...options,
+    enabled: Boolean(options.enabled) && canRead,
+    refetchInterval: autoRefresh ? refresh.interval : false,
+  })
   const visibleQueryData = readableQueryData(query)
   const removeMutation = usePlatformMutation(configurationMutations.remove(kind, queryClient), {
     label: ['删除资源', 'Delete resource'],
     target: platformResourceTarget,
   })
   const platformWriteBlocked = removeMutation.blocked
-  const rawItems = visibleQueryData ?? []
+  const rawItems = canRead ? (visibleQueryData ?? []) : []
   const normalizedKeyword = normalizeKeyword(deferredSearchKeyword)
   const filteredItems = useMemo(
     () => rawItems.filter((item) => matchesKeyword(item, normalizedKeyword)),
@@ -126,11 +145,15 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
     ? localeCode === 'zh_CN'
       ? '请选择集群'
       : 'Select a cluster'
-    : normalizedKeyword && rawItems.length > 0
+    : !canRead
       ? localeCode === 'zh_CN'
-        ? `没有匹配的 ${label}`
-        : `No matching ${label}`
-      : emptyDescription[localeCode]
+        ? '没有权限查看配置资源'
+        : 'Permission required to view resources'
+      : normalizedKeyword && rawItems.length > 0
+        ? localeCode === 'zh_CN'
+          ? `没有匹配的 ${label}`
+          : `No matching ${label}`
+        : emptyDescription[localeCode]
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
   const canCreate = Boolean(defaultTemplate && singularLabel)
   const entityKind = singularLabel || CONFIGURATION_ENTITY_KINDS[kind]
@@ -148,6 +171,7 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
 
   const resourceActions = useKubernetesResourceActions<T>({
     resourceKey: `configuration:${kind}`,
+    scopeKey: JSON.stringify([clusterId, namespace, kind]),
     resourceLabel: entityKind,
     records: rawItems,
     getName: (record) => record.name,
@@ -155,7 +179,9 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
     actions: (record) => {
       const target = configurationTargetFromRecord(clusterId, record)
       return [
-        ...(onEdit && hasAllowedAction(record.allowedActions, 'update')
+        ...(onEdit &&
+        (!permissionKey || hasPermission(permissions, `${permissionKey}.update`)) &&
+        hasAllowedAction(record.allowedActions, 'update')
           ? [
               {
                 key: 'edit',
@@ -166,7 +192,8 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
               },
             ]
           : []),
-        ...(hasAllowedAction(record.allowedActions, 'delete')
+        ...((!permissionKey || hasPermission(permissions, `${permissionKey}.delete`)) &&
+        hasAllowedAction(record.allowedActions, 'delete')
           ? [
               {
                 key: 'delete',
@@ -260,15 +287,26 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
                     setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
                   }
                 />
-                <ManagementRefreshButton
-                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                  disabled={!clusterId}
-                  loading={query.isFetching}
-                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                  onClick={() => {
-                    if (clusterId) void query.refetch()
-                  }}
-                />
+                {autoRefresh ? (
+                  <WorkloadRefresh
+                    compact
+                    disabled={!clusterId || !canRead}
+                    settings={refresh}
+                    queries={[query]}
+                    resourceLabel={label}
+                    onRefresh={() => query.refetch()}
+                  />
+                ) : (
+                  <ManagementRefreshButton
+                    aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    disabled={!clusterId}
+                    loading={query.isFetching}
+                    tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    onClick={() => {
+                      if (clusterId) void query.refetch()
+                    }}
+                  />
+                )}
               </ManagementTableToolbar>
             }
             columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}

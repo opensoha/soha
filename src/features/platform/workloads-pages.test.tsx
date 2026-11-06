@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { PodLogViewer } from '@/components/pod-log-viewer'
+import { ApiError } from '@/services/api-error'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntdApp } from 'antd'
 import type { Key, ReactNode } from 'react'
@@ -254,6 +255,11 @@ async function flushAsyncWork() {
   })
 }
 
+async function flushQueryNotifications() {
+  await act(async () => vi.advanceTimersByTimeAsync(1))
+  await flushAsyncWork()
+}
+
 async function openPodActions(container: HTMLElement, name: string) {
   const trigger = container.querySelector(`button[aria-label="更多操作：${name}"]`)
   expect(trigger).toBeInstanceOf(HTMLButtonElement)
@@ -358,6 +364,7 @@ describe('workloads pods page refresh controls', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    apiDeleteMock.mockReset().mockResolvedValue({ data: null })
     testState.permissionKeys = [
       'platform.pods.delete',
       'platform.pods.exec',
@@ -388,6 +395,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
         {
           name: 'prometheus-0',
+          uid: 'prometheus-uid',
           namespace: 'monitoring',
           phase: 'Running',
           readyContainers: '1/1',
@@ -818,6 +826,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
         {
           name: 'prometheus-0',
+          uid: 'prometheus-uid',
           namespace: 'monitoring',
           phase: 'Running',
           readyContainers: '1/1',
@@ -869,6 +878,81 @@ describe('workloads pods page refresh controls', () => {
     ).toBe('menu')
   })
 
+  it.each(['cluster', 'namespace', 'permission', 'allowed action', 'uid'])(
+    'blocks a pending row delete confirmation after the %s changes',
+    async (changed) => {
+      const path = '/clusters/cluster-a/workloads/pods?namespace=monitoring'
+      const [record] = testState.responses[path] as Record<string, unknown>[]
+      const container = await renderWithProviders(<WorkloadsPodsPage />)
+      await flushQueryNotifications()
+      await selectPodAction(container, 'prometheus-0', '删除 Pod')
+      const dialog = document.body.querySelector('[role="dialog"]')!
+      const confirm = dialog.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+      expect(confirm.disabled).toBe(false)
+
+      if (changed === 'cluster' || changed === 'namespace') {
+        if (changed === 'cluster') testState.scope.clusterId = 'cluster-b'
+        else testState.scope.namespace = 'other'
+        await rerenderWithProviders(<WorkloadsPodsPage />)
+        await act(async () => vi.advanceTimersByTimeAsync(1000))
+        expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+      } else {
+        if (changed === 'permission') {
+          testState.permissionKeys = testState.permissionKeys.filter(
+            (key) => key !== 'platform.pods.delete',
+          )
+          await rerenderWithProviders(<WorkloadsPodsPage />)
+        } else {
+          testState.responses[path] = [
+            changed === 'uid'
+              ? { ...record, uid: 'replacement-uid' }
+              : { ...record, allowedActions: [] },
+          ]
+          await act(async () => {
+            await currentQueryClient?.invalidateQueries({ queryKey: ['platform', 'workloads'] })
+          })
+          await flushQueryNotifications()
+        }
+        expect(confirm.disabled).toBe(true)
+        expect(dialog.textContent).toContain('资源或操作权限已变化')
+      }
+      await act(async () => confirm.click())
+      expect(apiDeleteMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps the row delete confirmation fenced while a request is pending or uncertain', async () => {
+    let rejectDelete!: (error: Error) => void
+    apiDeleteMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDelete = reject
+        }),
+    )
+    const container = await renderWithProviders(<WorkloadsPodsPage />)
+    await flushQueryNotifications()
+    await selectPodAction(container, 'prometheus-0', '删除 Pod')
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    const confirm = dialog.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!
+    await act(async () => {
+      confirm.click()
+      confirm.click()
+    })
+    await flushQueryNotifications()
+    expect(apiDeleteMock).toHaveBeenCalledExactlyOnceWith(
+      '/clusters/cluster-a/workloads/pods/prometheus-0?namespace=monitoring&expectedUid=prometheus-uid',
+    )
+    expect(confirm.disabled).toBe(true)
+    await act(async () =>
+      rejectDelete(new ApiError(500, 'Synthetic uncertain delete', { method: 'DELETE' })),
+    )
+    await flushQueryNotifications()
+    expect(dialog.textContent).toContain('请求结果不明')
+    expect(confirm.disabled).toBe(true)
+    await act(async () => confirm.click())
+    expect(apiDeleteMock).toHaveBeenCalledTimes(1)
+  })
+
   it('disables pod delete when agent mode does not support it', async () => {
     const partialReason = 'pod deletion remains direct-only'
     setResponses({
@@ -892,6 +976,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
         {
           name: 'failed-pod',
+          uid: 'failed-pod-uid',
           namespace: 'monitoring',
           phase: 'Failed',
           readyContainers: '0/1',
@@ -918,9 +1003,7 @@ describe('workloads pods page refresh controls', () => {
       item.textContent?.includes('删除 Pod'),
     )
     expect(deleteItem?.getAttribute('aria-disabled')).toBe('true')
-    expect(deleteItem?.textContent).toContain(
-      '升级后的 Agent 支持工作负载快捷操作、Pod 删除以及 CronJob 暂停和恢复。',
-    )
+    expect(deleteItem?.textContent).toContain(partialReason)
     await act(async () => deleteItem?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(container.querySelector('input[aria-label="select-monitoring/failed-pod"]')).toBeNull()
     expect(container.textContent).not.toContain('批量删除')
@@ -979,7 +1062,7 @@ describe('workloads pods page refresh controls', () => {
     expect(container.querySelector('button[aria-haspopup="menu"]')).toBeNull()
   })
 
-  it('limits concurrent pod batch delete requests', async () => {
+  it('limits concurrent pod batch delete requests and preserves later selections', async () => {
     const podCount = 12
     const releaseDeleteRequests: Array<() => void> = []
     let activeDeletes = 0
@@ -1027,9 +1110,10 @@ describe('workloads pods page refresh controls', () => {
         },
       ],
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': Array.from(
-        { length: podCount },
+        { length: podCount + 1 },
         (_, index) => ({
           name: `failed-pod-${index}`,
+          uid: `uid-${index}`,
           namespace: 'monitoring',
           phase: 'Failed',
           readyContainers: '0/1',
@@ -1053,7 +1137,7 @@ describe('workloads pods page refresh controls', () => {
 
     for (let index = 0; index < podCount; index += 1) {
       const checkbox = container.querySelector(
-        `input[aria-label="select-monitoring/failed-pod-${index}"]`,
+        `input[aria-label="select-monitoring/failed-pod-${index}/uid-${index}"]`,
       )
       expect(checkbox).toBeInstanceOf(HTMLInputElement)
       await act(async () => {
@@ -1083,6 +1167,8 @@ describe('workloads pods page refresh controls', () => {
 
     expect(apiDeleteMock).toHaveBeenCalledTimes(8)
     expect(maxActiveDeletes).toBeLessThanOrEqual(8)
+    const laterSelection = `input[aria-label="select-monitoring/failed-pod-${podCount}/uid-${podCount}"]`
+    await act(async () => container.querySelector<HTMLInputElement>(laterSelection)?.click())
 
     while (releaseDeleteRequests.length > 0) {
       const release = releaseDeleteRequests.shift()
@@ -1093,8 +1179,14 @@ describe('workloads pods page refresh controls', () => {
       await flushAsyncWork()
     }
 
+    await flushQueryNotifications()
+
     expect(apiDeleteMock).toHaveBeenCalledTimes(podCount)
     expect(maxActiveDeletes).toBeLessThanOrEqual(8)
+    expect(container.querySelector<HTMLInputElement>(laterSelection)?.checked).toBe(true)
+    expect(
+      container.querySelectorAll('input[aria-label^="select-monitoring/"]:checked'),
+    ).toHaveLength(1)
   })
 
   it('keeps unavailable deployment actions disabled with reasons and prevents selection', async () => {
@@ -1127,6 +1219,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/deployments?namespace=monitoring': [
         {
           name: 'prometheus',
+          uid: 'deployment-uid',
           namespace: 'monitoring',
           desiredReplicas: 1,
           readyReplicas: 1,
@@ -1149,8 +1242,8 @@ describe('workloads pods page refresh controls', () => {
     await flushAsyncWork()
 
     expect(apiGetMock).toHaveBeenCalledWith('/clusters/capabilities')
-    expect(container.textContent).toContain('当前集群连接模式暂不支持该操作')
-    expect(container.textContent).not.toContain(unsupportedReason)
+    expect(container.textContent).toContain(unsupportedReason)
+    expect(container.textContent).not.toContain('当前集群连接模式暂不支持该操作')
     for (const label of ['重启', '扩缩', '删除', '回滚']) {
       expect(container.querySelector(`button[aria-label="${label}"]`)).toBeNull()
     }
@@ -1159,7 +1252,7 @@ describe('workloads pods page refresh controls', () => {
     const items = [...menu.querySelectorAll('[role="menuitem"]')]
     expect(items.length).toBe(4)
     expect(items.every((item) => item.getAttribute('aria-disabled') === 'true')).toBe(true)
-    expect(menu.textContent).toContain('当前集群连接模式暂不支持该操作')
+    expect(menu.textContent).toContain(unsupportedReason)
     expect(apiPostMock).not.toHaveBeenCalledWith(
       expect.stringMatching(/\/workloads\/deployments\//),
       expect.anything(),

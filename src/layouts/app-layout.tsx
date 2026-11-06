@@ -1005,6 +1005,11 @@ export function AppLayout() {
     (currentScopeMode === 'cluster' || currentScopeMode === 'namespace')
       ? currentScopeMode
       : 'hidden'
+  const routeOwnsClusterSearch =
+    currentMeta.id === 'extensions' ||
+    currentMeta.id === 'extensions-group-detail' ||
+    currentMeta.id === 'resource-monitoring' ||
+    currentMeta.parentId === 'resource-monitoring'
   const showResourceCreateAction =
     currentWorkbenchId === 'platform' && hasPermission(snapshot, 'platform.resource-creation.use')
   const showRealtimeSessionsAction =
@@ -1246,7 +1251,10 @@ export function AppLayout() {
                 <div className="soha-header-right">
                   {resourceHeaderScopeMode !== 'hidden' && !isAccountUtilityRoute ? (
                     <div className="soha-header-context">
-                      <PlatformScopeTrigger scopeMode={resourceHeaderScopeMode} />
+                      <PlatformScopeTrigger
+                        scopeMode={resourceHeaderScopeMode}
+                        syncClusterSearch={!routeOwnsClusterSearch}
+                      />
                     </div>
                   ) : null}
                   {showRealtimeSessionsAction ? <RealtimeSessionDockTrigger /> : null}

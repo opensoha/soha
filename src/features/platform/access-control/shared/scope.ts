@@ -57,7 +57,7 @@ export function resolveAccessControlNamespace(
   selectedNamespace: string | null | undefined,
   routeNamespace: string | null | undefined,
 ) {
-  return selectedNamespace?.trim() || routeNamespace?.trim() || ''
+  return routeNamespace?.trim() || selectedNamespace?.trim() || ''
 }
 
 export function accessControlTargetFromRecord(

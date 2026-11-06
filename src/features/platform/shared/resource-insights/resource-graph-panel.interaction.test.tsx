@@ -3,7 +3,11 @@ import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { KubernetesResourceGraph } from '@opensoha/contracts/gen/ts/sohaapi'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ResourceGraphPanel } from './resource-graph-panel'
+import {
+  ResourceGraphPanel,
+  ResourceGraphCanvas,
+  buildResourceGraphFlow,
+} from './resource-graph-panel'
 
 const state = vi.hoisted(() => ({
   graph: null as KubernetesResourceGraph | null,
@@ -182,5 +186,26 @@ describe('resource graph inspection', () => {
     state.graph = { ...state.graph!, clusterId: 'cluster-b' }
     await render()
     expect(container.querySelector('aside')).toBeNull()
+  })
+  it('retains supplied flow output and supports external selection without the legacy inspector', async () => {
+    const graph = state.graph!
+    const flow = buildResourceGraphFlow(graph)
+    flow.nodes[0].ariaLabel = 'custom supplied root'
+    const onSelect = vi.fn()
+    await act(async () =>
+      root.render(
+        <ResourceGraphCanvas
+          graph={graph}
+          flow={flow}
+          selectedId="pod"
+          onSelect={onSelect}
+          hideInspector
+        />,
+      ),
+    )
+    expect(container.textContent).toContain('custom supplied root')
+    expect(container.querySelector('aside')).toBeNull()
+    await click('[data-node="deployment"]')
+    expect(onSelect).toHaveBeenCalledWith('deployment')
   })
 })

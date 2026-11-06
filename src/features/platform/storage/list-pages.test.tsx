@@ -41,7 +41,12 @@ vi.mock('@/components/k8s-yaml-editor', () => {
   return { K8sYamlEditor: () => <div>editor</div> }
 })
 vi.mock('@/stores/platform-scope-store', () => ({
-  usePlatformScopeStore: () => testState.scope,
+  usePlatformScopeStore: () => ({
+    ...testState.scope,
+    setNamespace: (namespace: string) => {
+      testState.scope.namespace = namespace
+    },
+  }),
 }))
 vi.mock('@/i18n', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/i18n')>()),
@@ -50,9 +55,25 @@ vi.mock('@/i18n', async (importOriginal) => ({
     t: (_key: string, fallback?: string) => fallback ?? _key,
   }),
 }))
-vi.mock('@/features/auth', () => ({
-  hasAllowedAction: (actions: string[] | undefined, action: string) =>
-    actions?.includes(action) ?? false,
+vi.mock('@/features/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/auth')>()),
+  usePermissionSnapshot: () => ({
+    data: {
+      data: {
+        permissionKeys: [
+          'platform.storage.persistent-volume-claims.view',
+          'platform.storage.persistent-volume-claims.update',
+          'platform.storage.persistent-volume-claims.delete',
+          'platform.storage.persistent-volumes.view',
+          'platform.storage.storage-classes.view',
+        ],
+        visibleMenuIds: [],
+        visibleMenus: [],
+      },
+    },
+    error: null,
+    isPending: false,
+  }),
 }))
 vi.mock('@/components/status-tag', async (original) => ({
   ...(await original<typeof import('@/components/status-tag')>()),
@@ -143,6 +164,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   testState.editorModuleLoads = 0
   testState.scope.clusterId = 'cluster-a'
+  testState.scope.namespace = 'selected-ns'
 })
 afterEach(async () => {
   await act(async () => {

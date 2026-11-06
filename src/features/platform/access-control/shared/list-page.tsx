@@ -12,7 +12,8 @@ import {
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { hasAllowedAction } from '@/features/auth'
+import { WorkloadRefresh, useWorkloadRefresh } from '../../workloads/shared/workload-refresh'
+import { hasPermission, usePermissionSnapshot, hasAllowedAction } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
@@ -53,6 +54,9 @@ function matchesSearchValues(values: Array<string | null | undefined>, keyword: 
 
 export function AccessControlResourceListPage<T extends AccessControlResourceRecord>({
   columns,
+  permissionKey,
+  onEdit,
+  autoRefresh = false,
   defaultTemplate,
   emptyDescription,
   kind,
@@ -60,6 +64,9 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
   rowKey,
   searchValues,
 }: {
+  permissionKey?: string
+  onEdit?: (record: T) => void
+  autoRefresh?: boolean
   columns: TableColumnsType<T>
   defaultTemplate: string
   emptyDescription: { en_US: string; zh_CN: string }
@@ -76,14 +83,22 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
   const scope = accessControlScopeFromSelection(kind, clusterId, namespace)
-  const query = useQuery(accessControlQueries.list<T>(kind, scope))
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const canRead = !permissionKey || hasPermission(permissions, `${permissionKey}.view`)
+  const refresh = useWorkloadRefresh()
+  const options = accessControlQueries.list<T>(kind, scope)
+  const query = useQuery({
+    ...options,
+    enabled: canRead && options.enabled,
+    ...(autoRefresh ? { refetchInterval: refresh.interval } : {}),
+  })
   const visibleQueryData = readableQueryData(query)
   const removeMutation = usePlatformMutation(accessControlMutations.remove(kind, queryClient), {
     label: ['删除资源', 'Delete resource'],
     target: platformResourceTarget,
   })
   const platformWriteBlocked = removeMutation.blocked
-  const rawItems = visibleQueryData ?? []
+  const rawItems = canRead ? (visibleQueryData ?? []) : []
   const normalizedKeyword = normalizeKeyword(deferredSearchKeyword)
   const filteredItems = useMemo(
     () => rawItems.filter((item) => matchesSearchValues(searchValues(item), normalizedKeyword)),
@@ -99,15 +114,19 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
     visibleFilters: { keyword: searchKeyword || undefined },
     pinnedData: { itemCount: rawItems.length },
   })
-  const effectiveEmptyDescription = !clusterId
+  const effectiveEmptyDescription = !canRead
     ? localeCode === 'zh_CN'
-      ? '请选择集群查看 RBAC 资源。'
-      : 'Select a cluster to inspect RBAC resources.'
-    : normalizedKeyword && rawItems.length > 0
+      ? '没有查看权限'
+      : 'Permission required'
+    : !clusterId
       ? localeCode === 'zh_CN'
-        ? `没有匹配的 ${label}`
-        : `No matching ${label}`
-      : emptyDescription[localeCode]
+        ? '请选择集群查看 RBAC 资源。'
+        : 'Select a cluster to inspect RBAC resources.'
+      : normalizedKeyword && rawItems.length > 0
+        ? localeCode === 'zh_CN'
+          ? `没有匹配的 ${label}`
+          : `No matching ${label}`
+        : emptyDescription[localeCode]
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
   const resourceActions = useKubernetesResourceActions<T>({
     resourceKey: `rbac:${kind}`,
@@ -117,27 +136,47 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
     getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
     actions: (record) => {
       const target = accessControlTargetFromRecord(kind, clusterId, record)
-      return hasAllowedAction(record.allowedActions, 'delete')
-        ? [
-            {
-              key: 'delete',
-              label: localeCode === 'zh_CN' ? '删除' : 'Delete',
-              icon: <DeleteOutlined />,
-              danger: true,
-              disabled: platformWriteBlocked || yamlCapability.isLoading || yamlCapability.disabled,
-              reason: yamlCapability.reason,
-              loading:
-                removeMutation.isPending &&
-                removeMutation.variables?.scope.clusterId === clusterId &&
-                removeMutation.variables?.name === target.name &&
-                removeMutation.variables.scope.namespace === target.scope.namespace,
-              confirm: kubernetesDeleteConfirmation(record, localeCode),
-              prepare: () => removeMutation.reset(),
-              feedback: removeMutation.feedback,
-              run: () => removeMutation.mutateAsync(target),
-            },
-          ]
-        : []
+      const deleteActions =
+        canRead &&
+        (!permissionKey || hasPermission(permissions, `${permissionKey}.delete`)) &&
+        hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled:
+                  platformWriteBlocked || yamlCapability.isLoading || yamlCapability.disabled,
+                reason: yamlCapability.reason,
+                loading:
+                  removeMutation.isPending &&
+                  removeMutation.variables?.scope.clusterId === clusterId &&
+                  removeMutation.variables?.name === target.name &&
+                  removeMutation.variables.scope.namespace === target.scope.namespace,
+                confirm: kubernetesDeleteConfirmation(record, localeCode),
+                prepare: () => removeMutation.reset(),
+                feedback: removeMutation.feedback,
+                run: () => removeMutation.mutateAsync(target),
+              },
+            ]
+          : []
+      return [
+        ...(onEdit &&
+        canRead &&
+        (!permissionKey || hasPermission(permissions, `${permissionKey}.update`)) &&
+        hasAllowedAction(record.allowedActions, 'update')
+          ? [
+              {
+                key: 'edit',
+                label: localeCode === 'zh_CN' ? '编辑 YAML' : 'Edit YAML',
+                disabled: platformWriteBlocked,
+                run: () => onEdit(record),
+              },
+            ]
+          : []),
+        ...deleteActions,
+      ]
     },
   })
 
@@ -241,15 +280,26 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
                   title={densityLabel}
                   tooltip={densityLabel}
                 />
-                <ManagementRefreshButton
-                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                  disabled={!clusterId}
-                  loading={query.isFetching}
-                  onClick={() => {
-                    if (clusterId) void query.refetch()
-                  }}
-                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                />
+                {autoRefresh ? (
+                  <WorkloadRefresh
+                    compact
+                    settings={refresh}
+                    queries={[query]}
+                    disabled={!clusterId || !canRead}
+                    resourceLabel={label}
+                    onRefresh={() => query.refetch()}
+                  />
+                ) : (
+                  <ManagementRefreshButton
+                    aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                    disabled={!clusterId}
+                    loading={query.isFetching}
+                    onClick={() => {
+                      if (clusterId) void query.refetch()
+                    }}
+                    tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  />
+                )}
               </ManagementTableToolbar>
             }
             loading={query.isLoading}

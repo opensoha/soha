@@ -14,6 +14,7 @@ async function setup(context: BrowserContext, page: Page, kind: string, readonly
   const state = {
     reads: 0,
     readStatus: 200,
+    pendingRead: undefined as Promise<void> | undefined,
     fail: false,
     writes: [] as string[],
     rows: Array.from({ length: 120 }, (_, index) => ({
@@ -49,7 +50,7 @@ async function setup(context: BrowserContext, page: Page, kind: string, readonly
       JSON.stringify({ state: { clusterId: 'cluster-a', namespace: 'monitoring' }, version: 0 }),
     ),
   )
-  const evidence = await installMocks(context, page, (url, method, request) => {
+  const evidence = await installMocks(context, page, async (url, method, request) => {
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
       if (!('permissionKeys' in body.data)) throw new Error('Missing permissions')
@@ -73,8 +74,13 @@ async function setup(context: BrowserContext, page: Page, kind: string, readonly
       return { body: { data: { allowed: !readonly, scopeMode: 'namespace', reason: '' } } }
     if (url.pathname === '/api/v1/auth/stream-ticket')
       return { status: 403, body: { error: { code: 'denied', message: 'Synthetic polling' } } }
-    if (url.pathname === `/api/v1/clusters/cluster-a/workloads/${kind}` && method === 'GET') {
+    if (
+      url.pathname === `/api/v1/clusters/cluster-a/workloads/${kind}` &&
+      url.search === '?namespace=monitoring' &&
+      method === 'GET'
+    ) {
       state.reads++
+      if (state.pendingRead) await state.pendingRead
       if (state.readStatus !== 200)
         return {
           status: state.readStatus,
@@ -213,18 +219,6 @@ for (const [kind, label] of kinds)
     page,
   }) => {
     const { state, evidence } = await setup(context, page, kind)
-    let held: Promise<void> | undefined
-    await context.route(`**/api/v1/clusters/cluster-a/workloads/${kind}?*`, async (route) => {
-      state.reads++
-      if (held) await held
-      await route.fulfill({
-        status: state.readStatus,
-        json:
-          state.readStatus === 200
-            ? { data: state.rows }
-            : { error: { code: 'unavailable', message: 'Synthetic workload refresh failed' } },
-      })
-    })
     await page.goto(`/workloads/${kind}`)
     await expect(page.getByRole('status').filter({ hasText: `120 个 ${label}` })).toBeVisible()
     const toggle = page.getByRole('switch', { name: /自动刷新/ })
@@ -250,7 +244,7 @@ for (const [kind, label] of kinds)
     await expect(toggle).toHaveAttribute('data-refresh-state', 'live')
     await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBe(top)
     let release!: () => void
-    held = new Promise<void>((resolve) => {
+    state.pendingRead = new Promise<void>((resolve) => {
       release = resolve
     })
     await manual.click()
@@ -258,12 +252,12 @@ for (const [kind, label] of kinds)
     await expect(toggle.locator('.ant-badge-status-warning')).toHaveCount(1)
     state.readStatus = 503
     release()
-    held = undefined
+    state.pendingRead = undefined
     await expect(toggle).toHaveAttribute('data-refresh-state', 'failed')
     await expect(toggle.locator('.ant-badge-status-error')).toHaveCount(1)
     await expect(page.getByRole('status').filter({ hasText: `120 个 ${label}` })).toBeVisible()
     await expect(
-      page.getByText('Synthetic workload refresh failed', { exact: false }).first(),
+      page.getByText('Synthetic workload unavailable', { exact: false }).first(),
     ).toBeVisible()
     before = state.reads
     await page.clock.fastForward(60_100)

@@ -10,7 +10,11 @@ import { PodDetailStorage } from './pod-detail-storage'
 import { MemoryRouter } from 'react-router-dom'
 import type { PodDetail, ResourceMetrics } from '@/types'
 
-vi.mock('@visactor/react-vchart', () => ({ LineChart: () => <div data-testid="metric-chart" /> }))
+vi.mock('@visactor/react-vchart', () => ({
+  LineChart: ({ spec }: { spec: { background?: string } }) => (
+    <div data-testid="metric-chart" data-background={spec.background} />
+  ),
+}))
 vi.mock('@/i18n', () => ({
   localeText: (_locale: string, zh: string) => zh,
   useI18n: () => ({ localeCode: 'zh_CN', t: (_key: string, fallback: string) => fallback }),
@@ -132,6 +136,20 @@ describe('Pod detail real-data panels', () => {
     expect(container.textContent).toContain('尚未接入监控')
     expect(container.querySelector('[data-testid="metric-chart"]')).toBeNull()
     expect(container.textContent).not.toContain('0 mCPU')
+  })
+  it('preserves tiny CPU readings and lets the card theme show through the chart', async () => {
+    const container = await render(
+      <PodDetailMetrics
+        data={{ ...metrics, series: [{ ...metrics.series![0], latest: 0.0000005 }] }}
+        rangeMinutes={60}
+        onRangeChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    )
+    expect(container.textContent).toContain('0.0005 mCPU')
+    expect(
+      container.querySelector('[data-testid="metric-chart"]')?.getAttribute('data-background'),
+    ).toBe('transparent')
   })
   it('uses the shared overview and does not call a failed init container healthy', async () => {
     const pod = {

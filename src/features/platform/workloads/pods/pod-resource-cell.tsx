@@ -1,6 +1,7 @@
 import { parseCpuValue, parseMemoryValue } from '@/features/platform/workloads-model'
 import { Progress, Tooltip } from 'antd'
 import type { Pod } from './types'
+import './pod-resource-cell.css'
 
 export function podResourceColumnWidth(resource: 'cpu' | 'memory', pods: readonly Pod[]) {
   return Math.max(112, podResourceMinimumWidth(resource, pods))

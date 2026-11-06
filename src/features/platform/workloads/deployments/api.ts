@@ -117,5 +117,7 @@ export async function rollbackDeployment({
 }
 
 export async function deleteDeployment(target: DeploymentTarget): Promise<void> {
-  await api.delete<unknown>(buildWorkloadItemPath(deploymentKind, target.scope, target.name))
+  await api.delete<unknown>(
+    buildWorkloadItemPath(deploymentKind, target.scope, target.name, { expectedUid: target.uid }),
+  )
 }

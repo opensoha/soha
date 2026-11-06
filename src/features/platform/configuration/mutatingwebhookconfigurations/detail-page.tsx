@@ -1,27 +1,29 @@
-import { useParams } from 'react-router-dom'
-import { AdmissionWebhooks } from '../shared/detail-tables'
-import { ConfigurationQueryDetailPage } from '../shared/detail-shell'
-import type { MutatingWebhookConfigurationResource } from './types'
+import { ConfigurationYAMLDetailPage } from '../shared/yaml-detail'
+import { mutatingWebhookFromYAML } from './mutating-model'
+import { AdmissionWebhookOverview } from '../shared/admission-webhook-overview'
+import { AdmissionWebhookDetails } from '../shared/admission-webhook-details'
+import '../shared/admission-webhook.css'
 
 export function ConfigurationMutatingWebhookConfigurationDetailPage() {
-  const name = useParams().name as string
   return (
-    <ConfigurationQueryDetailPage<MutatingWebhookConfigurationResource>
+    <ConfigurationYAMLDetailPage
       kind="mutatingwebhookconfigurations"
       label="MutatingWebhookConfiguration"
-      name={name}
-      overviewExtra={(detail) => [
+      className="soha-mutating-detail soha-admission-webhook-detail"
+      fromYAML={mutatingWebhookFromYAML}
+      renderFacts={(detail) => <span>{detail.webhooks.length} Webhooks</span>}
+      renderOverview={(detail) => <AdmissionWebhookOverview detail={detail} />}
+      tabs={[
         {
-          key: 'Webhooks',
-          value: Array.isArray(detail.webhooks) ? detail.webhooks.length : detail.webhooks,
+          key: 'webhooks',
+          label: 'Webhooks',
+          render: (detail) => <AdmissionWebhookDetails detail={detail} />,
         },
       ]}
-      renderOverview={(detail) =>
-        Array.isArray(detail.webhooks) ? (
-          <AdmissionWebhooks key={detail.name} webhooks={detail.webhooks} />
-        ) : null
-      }
-      scopeMode="cluster"
+      deleteDescription={[
+        '删除后 API Server 不再调用此配置中的变更 Webhook，可能改变后续资源准入行为；不会删除回调 Service 或已有资源。',
+        'The API server will stop calling these mutating webhooks. This may change admission behavior for subsequent requests; callback Services and existing resources are not deleted.',
+      ]}
     />
   )
 }

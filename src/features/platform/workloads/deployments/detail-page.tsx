@@ -1,11 +1,12 @@
+import { resourceInsightQueries } from '@/features/platform/shared/resource-insights/queries'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
-import { resourceInsightQueries } from '@/features/platform/shared/resource-insights/queries'
 import { useI18n } from '@/i18n'
-import { readableQueryData } from '@/utils/query-feedback'
+import { useAuthStore } from '@/stores/auth-store'
+import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Spin } from 'antd'
 import { lazy, Suspense, useMemo, useState } from 'react'
@@ -18,7 +19,7 @@ import { WorkloadDetailEvents } from '../shared/detail-events'
 import { workloadKeys } from '../shared/keys'
 import { deploymentQueries } from './queries'
 import { usePodObservations } from '../shared/use-pod-observations'
-import { buildDeploymentRelationships } from './deployment-detail-model'
+import { buildDeploymentFacts } from './deployment-detail-model'
 import { DeploymentDetailOverview, deploymentDetailState } from './deployment-detail-overview'
 import { DeploymentDetailPods } from './deployment-detail-pods'
 import { DeploymentDetailHistory } from './deployment-detail-history'
@@ -108,12 +109,19 @@ export function DeploymentDetailPage() {
     enabled: Boolean(historyOptions.enabled && canRead),
   })
   const history = canRead ? readableQueryData(historyQuery) : undefined
-  const graphOptions = resourceInsightQueries.graph(scope, 'Deployment', deploymentName)
+  // The Pods table needs ownership evidence even when opened directly.
+  const sessionGeneration = useAuthStore((state) => state.sessionGeneration)
+  const graphOptions = resourceInsightQueries.graph(
+    scope,
+    'Deployment',
+    deploymentName,
+    sessionGeneration,
+  )
   const graphQuery = useQuery({
     ...graphOptions,
-    enabled: Boolean(
-      graphOptions.enabled && canRead && ['overview', 'pods', 'related-resources'].includes(active),
-    ),
+    enabled: Boolean(graphOptions.enabled && detail && canReadPods && active === 'pods'),
+    staleTime: 30_000,
+    retry: (failureCount, error) => !queryAccessDenied({ error }) && failureCount < 3,
   })
   const graph = canRead ? readableQueryData(graphQuery) : undefined
   const metricsOptions = deploymentQueries.metrics(scope, deploymentName, range)
@@ -134,7 +142,7 @@ export function DeploymentDetailPage() {
   const model = useMemo(
     () =>
       detail
-        ? buildDeploymentRelationships(detail, scope, history || [], status?.revision, graph)
+        ? buildDeploymentFacts(detail, scope, history || [], status?.revision, graph)
         : undefined,
     [detail, scope, history, status?.revision, graph],
   )
@@ -204,22 +212,22 @@ export function DeploymentDetailPage() {
     <div className="soha-deployment-detail">
       {actions.feedback}
       <ReadFeedback canRead query={statusQuery} label={zh ? '滚动发布状态' : 'Rollout status'} />
-      {['overview', 'pods'].includes(active) && (
-        <ReadFeedback
-          canRead={graphQuery.isEnabled}
-          query={graphQuery}
-          label={zh ? '资源关系' : 'Resource relationships'}
-        />
-      )}
       {active !== 'revisions' && (
         <ReadFeedback canRead query={historyQuery} label={zh ? '版本历史' : 'Revision history'} />
       )}
       {active === 'pods' && (
-        <ReadFeedback
-          canRead={canReadPods}
-          query={podListQuery}
-          label={zh ? 'Pod 用量' : 'Pod usage'}
-        />
+        <>
+          <ReadFeedback
+            canRead={canReadPods}
+            query={podListQuery}
+            label={zh ? 'Pod 用量' : 'Pod usage'}
+          />
+          <ReadFeedback
+            canRead={canReadPods}
+            query={graphQuery}
+            label={zh ? 'Pod 版本归属' : 'Pod revision ownership'}
+          />
+        </>
       )}
       <WorkloadDetailShell
         title="Deployment"
@@ -248,8 +256,7 @@ export function DeploymentDetailPage() {
                     detailQuery,
                     statusQuery,
                     historyQuery,
-                    graphQuery,
-                    ...(active === 'pods' ? [podListQuery] : []),
+                    ...(active === 'pods' ? [podListQuery, graphQuery] : []),
                     ...(active === 'metrics' ? [metricsQuery] : []),
                     ...(active === 'events' ? [eventsQuery] : []),
                   ]}
@@ -257,8 +264,8 @@ export function DeploymentDetailPage() {
                     void client.invalidateQueries({
                       queryKey: workloadKeys.detail('deployments', scope, deploymentName),
                     })
-                    if (graphQuery.isEnabled) void graphQuery.refetch()
                     if (podListQuery.isEnabled) void podListQuery.refetch()
+                    if (graphQuery.isEnabled) void graphQuery.refetch()
                     setRefreshToken((value) => value + 1)
                   }}
                 />

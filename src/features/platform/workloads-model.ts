@@ -306,20 +306,30 @@ export interface ReleaseRecord {
   createdAt: string
 }
 
-export function targetMatchesDeployment(
+export function targetMatchesWorkload(
   target: NonNullable<ApplicationEnvironment['targets']>[number] | undefined,
   clusterId: string,
   namespace: string,
-  deploymentName: string,
+  workloadName: string,
+  kind: string,
 ) {
   if (!target) return false
   return (
     target.clusterId === clusterId &&
     target.namespace === namespace &&
-    target.workloadName === deploymentName &&
-    target.workloadKind.toLowerCase() === 'deployment' &&
+    target.workloadName === workloadName &&
+    target.workloadKind.toLowerCase() === kind.toLowerCase() &&
     target.enabled !== false
   )
+}
+
+export function targetMatchesDeployment(
+  target: NonNullable<ApplicationEnvironment['targets']>[number] | undefined,
+  clusterId: string,
+  namespace: string,
+  name: string,
+) {
+  return targetMatchesWorkload(target, clusterId, namespace, name, 'Deployment')
 }
 
 export function selectorMatchesLabels(

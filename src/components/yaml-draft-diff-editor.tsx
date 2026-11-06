@@ -47,6 +47,7 @@ const LocalYamlDraftDiffEditor = lazy(async () => {
 
 interface YamlDraftDiffEditorProps {
   description?: string
+  baselineOnLeft?: boolean
   editable?: boolean
   applyDisabled?: boolean
   applying?: boolean
@@ -73,6 +74,7 @@ export function YamlDraftDiffEditor(props: YamlDraftDiffEditorProps) {
 
 function YamlDraftDiffEditorContent({
   description,
+  baselineOnLeft = false,
   editable = true,
   applyDisabled,
   applying,
@@ -101,6 +103,11 @@ function YamlDraftDiffEditorContent({
 
   const id = useId()
   const diffEditorRef = useRef<editor.IStandaloneDiffEditor | null>(null)
+  const draftListener = useRef<{ dispose: () => void } | null>(null)
+  const draft = useRef({ modified, editable, onChange })
+  useLayoutEffect(() => {
+    draft.current = { modified, editable, onChange }
+  }, [modified, editable, onChange])
   const editorPath = `file:///yaml-compare/${encodeURIComponent(id)}/draft.yaml`
   const diffPaths = useMemo(
     () => ({
@@ -113,11 +120,14 @@ function YamlDraftDiffEditorContent({
   // so the widget is detached before the child wrapper's passive cleanup runs.
   useLayoutEffect(
     () => () => {
+      draftListener.current?.dispose()
       if (diffEditorRef.current) releaseOwnedDiffModels(diffEditorRef.current)
     },
     [],
   )
   const changed = modified !== original
+  const leftEditable = editable && !baselineOnLeft
+  const rightEditable = editable && baselineOnLeft
 
   return (
     <Card
@@ -168,8 +178,8 @@ function YamlDraftDiffEditorContent({
           <div className="soha-yaml-pane-header">
             <Space className="soha-yaml-pane-title" size={6} wrap>
               <Text strong>{leftLabel || t('yamlDiffEditor.draftLabel', 'Values draft')}</Text>
-              <Tag color={editable ? 'processing' : 'default'}>
-                {editable
+              <Tag color={leftEditable ? 'processing' : 'default'}>
+                {leftEditable
                   ? t('yamlDiffEditor.editableLabel', 'Editable')
                   : t('yamlDiffEditor.readOnlyLabel', 'Read-only')}
               </Tag>
@@ -181,9 +191,9 @@ function YamlDraftDiffEditorContent({
               height="100%"
               language="yaml"
               path={editorPath}
-              value={modified}
+              value={baselineOnLeft ? original : modified}
               onChange={(nextValue) => {
-                if (!editable || !onChange) return
+                if (!leftEditable || !onChange) return
                 onChange(nextValue ?? '')
               }}
               options={{
@@ -193,7 +203,7 @@ function YamlDraftDiffEditorContent({
                 scrollBeyondLastLine: false,
                 tabSize: 2,
                 insertSpaces: true,
-                readOnly: !editable,
+                readOnly: !leftEditable,
               }}
             />
           </div>
@@ -205,6 +215,13 @@ function YamlDraftDiffEditorContent({
               <Text strong>
                 {rightLabel || t('yamlDiffEditor.runtimeLabel', 'Helm runtime values')}
               </Text>
+              {baselineOnLeft ? (
+                <Tag color={rightEditable ? 'processing' : 'default'}>
+                  {rightEditable
+                    ? t('yamlDiffEditor.editableLabel', 'Editable')
+                    : t('yamlDiffEditor.readOnlyLabel', 'Read-only')}
+                </Tag>
+              ) : null}
               <Tag color="default">{t('yamlDiffEditor.autoDiffLabel', 'Auto diff')}</Tag>
             </Space>
           </div>
@@ -212,19 +229,27 @@ function YamlDraftDiffEditorContent({
             <DiffEditor
               onMount={(instance) => {
                 diffEditorRef.current = instance
+                if (baselineOnLeft) {
+                  const modifiedEditor = instance.getModifiedEditor()
+                  draftListener.current = modifiedEditor.onDidChangeModelContent(() => {
+                    const value = modifiedEditor.getValue()
+                    if (draft.current.editable && value !== draft.current.modified)
+                      draft.current.onChange?.(value)
+                  })
+                }
               }}
               keepCurrentOriginalModel
               keepCurrentModifiedModel
               theme={editorTheme}
               height="100%"
               language="yaml"
-              original={modified}
-              modified={original}
+              original={baselineOnLeft ? original : modified}
+              modified={baselineOnLeft ? modified : original}
               originalModelPath={diffPaths.original}
               modifiedModelPath={diffPaths.modified}
               options={{
                 automaticLayout: true,
-                readOnly: true,
+                readOnly: !rightEditable,
                 originalEditable: false,
                 renderSideBySide: false,
                 minimap: { enabled: false },

@@ -40,6 +40,25 @@ vi.mock('@/stores/platform-scope-store', () => ({
 
 vi.mock('@/services/api-client', () => ({ api: apiMocks }))
 
+vi.mock('@/features/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/auth')>()),
+  usePermissionSnapshot: () => ({
+    data: {
+      data: {
+        permissionKeys: [
+          'platform.network.services.view',
+          'platform.network.ingresses.view',
+          'platform.network.ingresses.update',
+          'platform.network.services.update',
+          'platform.workloads.overview.view',
+          'platform.pods.view',
+          'platform.nodes.view',
+        ],
+      },
+    },
+  }),
+}))
+
 vi.mock('@/features/copilot', () => ({
   encodeAIContextForElement: () => 'ai-context',
   useAIPageContext: () => undefined,
@@ -263,6 +282,7 @@ describe('network core pages', () => {
           name: 'core-dns',
           namespace: 'team-a',
           resourceVersion: '12',
+          uid: 'test-service-uid',
         },
         spec: {
           clusterIP: '10.43.0.10',
@@ -305,17 +325,25 @@ describe('network core pages', () => {
       container.querySelector('[data-testid="admin-table"]')?.getAttribute('data-virtual'),
     ).toBe('true')
     expect(container.textContent).toContain('NodePort: 30001')
-    expect(container.textContent).toContain('Port: http · 80/TCP')
-    expect(container.textContent).toContain('TargetPort: 8080')
-    expect(container.querySelectorAll('.soha-service-port-arrow')).toHaveLength(2)
+    expect(container.querySelector('[data-port-field=name]')?.textContent).toBe('http')
+    expect(container.querySelector('[data-port-field=port]')?.textContent).toBe('80')
+    expect(container.querySelector('[data-port-field=protocol]')?.textContent).toBe('TCP')
+    expect(container.querySelector('[data-port-field=targetPort]')?.textContent).toBe('8080')
+    expect(
+      Array.from(container.querySelectorAll('[data-port-field]')).map((el) =>
+        el.getAttribute('data-port-field'),
+      ),
+    ).toEqual(['name', 'protocol', 'port', 'targetPort', 'nodePort'])
+    expect(container.textContent).toContain('8080')
+    expect(container.querySelectorAll('.soha-service-port-arrow')).toHaveLength(1)
     expect(
       container.querySelectorAll('.soha-metadata-tag:not(.soha-namespace-scope-tag)'),
-    ).toHaveLength(5)
+    ).toHaveLength(8)
     expect(container.querySelectorAll('.soha-namespace-scope-tag')).toHaveLength(2)
-    expect(container.querySelectorAll('.ant-tag-gold')).toHaveLength(2)
-    expect(container.querySelectorAll('.ant-tag-cyan')).toHaveLength(1)
+    expect(container.querySelectorAll('.ant-tag-gold')).toHaveLength(1)
+    expect(container.querySelectorAll('.soha-service-port-list .soha-metadata-tag')).toHaveLength(6)
     const input = container.querySelector(
-      'input[placeholder="搜索 Service / namespace / type / port"]',
+      'input[placeholder="搜索 Service / namespace / type / port / selector"]',
     ) as HTMLInputElement
     await act(async () => {
       setNativeInputValue(input, 'core')
@@ -352,16 +380,13 @@ describe('network core pages', () => {
     const nextButton = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
       (button) => button.textContent?.includes('下一步'),
     )
-    await act(async () => {
-      nextButton?.click()
-      await flush()
-    })
+    expect(nextButton).toBeUndefined()
     expect(dialog?.querySelector<HTMLInputElement>('input[aria-label="容器端口"]')?.value).toBe(
       'dns',
     )
 
     const saveButton = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
-      (button) => button.textContent?.includes('保存更改'),
+      (button) => button.textContent?.includes('预检更改'),
     )
     await act(async () => {
       saveButton?.click()
@@ -370,7 +395,7 @@ describe('network core pages', () => {
     await act(flush)
     expect(apiMocks.post).toHaveBeenCalledWith(
       planPath,
-      expect.objectContaining({ kind: 'Service', name: 'core-dns' }),
+      expect.objectContaining({ kind: 'Service', name: 'core-dns', requireObservedIdentity: true }),
     )
     const confirmButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
       (button) => button.textContent?.includes('确认更新'),
@@ -381,9 +406,17 @@ describe('network core pages', () => {
     })
     await act(flush)
     const [, request] = apiMocks.put.mock.calls[apiMocks.put.mock.calls.length - 1] ?? []
-    expect(apiMocks.put).toHaveBeenCalledWith(yamlPath, expect.any(Object))
+    expect(apiMocks.put).toHaveBeenCalledWith(
+      yamlPath,
+      expect.objectContaining({ requireObservedIdentity: true }),
+    )
     expect(parse(request?.content ?? '')).toMatchObject({
-      metadata: { name: 'core-dns', namespace: 'team-a', resourceVersion: '12' },
+      metadata: {
+        name: 'core-dns',
+        namespace: 'team-a',
+        resourceVersion: '12',
+        uid: 'test-service-uid',
+      },
       spec: {
         clusterIP: '10.43.0.10',
         clusterIPs: ['10.43.0.10'],
@@ -418,7 +451,7 @@ describe('network core pages', () => {
     expect(container.textContent).toContain('web')
   })
 
-  it('enables Service backend pods, metrics, events, and YAML only on their tabs', async () => {
+  it('keeps five Service tabs and loads only configuration, backends and YAML', async () => {
     const detailPath = '/clusters/cluster-a/network/services/api/detail?namespace=team-a'
     const metricsPath = '/clusters/cluster-a/network/services/api/metrics?namespace=team-a'
     const eventsPath = '/clusters/cluster-a/events?namespace=team-a&limit=100'
@@ -450,7 +483,7 @@ describe('network core pages', () => {
           ageSeconds: 30,
         },
       ],
-      endpoints: [],
+      endpoints: [{ address: '10.43.0.30', targetRef: 'Pod/unknown-namespace' }],
     }
     testState.responses[metricsPath] = { rangeMinutes: 60 }
     testState.responses[eventsPath] = []
@@ -467,18 +500,29 @@ describe('network core pages', () => {
     )
     const requested = () => apiMocks.get.mock.calls.map(([path]) => path as string)
 
-    expect(requested()).toEqual([detailPath])
+    expect(requested()).toEqual([detailPath, yamlPath])
     expect(container.textContent).toContain('api-1')
-    expect(container.textContent).toContain('Port: http · 80/TCP')
-    expect(container.textContent).toContain('TargetPort: 8080')
+    expect(container.querySelector('[data-port-field=port]')?.textContent).toBe('80')
+    expect(container.querySelector('[data-port-field=protocol]')?.textContent).toBe('TCP')
+    expect(container.textContent).toContain('8080')
+    expect(container.querySelectorAll('[role=tab]')).toHaveLength(5)
     expect(requested()).not.toContain(metricsPath)
     expect(requested()).not.toContain(eventsPath)
-    expect(requested()).not.toContain(yamlPath)
+    expect(requested().filter((path) => path === yamlPath)).toHaveLength(1)
 
-    await clickTab(container, '指标')
-    expect(requested()).toContain(metricsPath)
-    await clickTab(container, '事件')
-    expect(requested()).toContain(eventsPath)
+    expect(Array.from(container.querySelectorAll('[role=tab]')).map((t) => t.textContent)).toEqual([
+      'Overview',
+      '后端',
+      '诊断',
+      '关联资源',
+      'YAML',
+    ])
+    await clickTab(container, '后端')
+    expect(container.textContent).toContain('Pod/unknown-namespace')
+    expect(container.querySelector('a[href*="unknown-namespace"]')).toBeNull()
+    expect(container.querySelector('a[href*="/workloads/pods/api-1"]')).not.toBeNull()
+    expect(requested()).not.toContain(metricsPath)
+    expect(requested()).not.toContain(eventsPath)
     await clickTab(container, 'YAML')
     expect(requested()).toContain(yamlPath)
     await act(async () => {
@@ -487,7 +531,7 @@ describe('network core pages', () => {
     expect(container.querySelector('[data-testid="yaml-editor"]')).not.toBeNull()
   })
 
-  it('keeps Ingress YAML request behind the YAML tab', async () => {
+  it('reads Ingress configuration once for overview and keeps events and graph lazy', async () => {
     const detailPath = '/clusters/cluster-a/network/ingresses/web/detail?namespace=team-a'
     const yamlPath = '/clusters/cluster-a/network/ingresses/web/yaml?namespace=team-a'
     testState.responses[detailPath] = {
@@ -521,8 +565,98 @@ describe('network core pages', () => {
     )
     const requested = () => apiMocks.get.mock.calls.map(([path]) => path as string)
 
-    expect(requested()).toEqual([detailPath])
+    expect(requested()).toEqual([detailPath, yamlPath])
+    expect(
+      requested().some((path) => path.includes('/events') || path.includes('/resources/graph')),
+    ).toBe(false)
+    expect(container.querySelectorAll('[role=tab]')).toHaveLength(5)
     await clickTab(container, 'YAML')
     expect(requested()).toContain(yamlPath)
   })
+  it.each(['preflight', 'confirm'])(
+    'blocks stale Ingress source at %s on the URL cluster',
+    async (step) => {
+      const prefix = '/clusters/cluster-b/network/ingresses/web'
+      const yamlPath = prefix + '/yaml?namespace=team-b'
+      const planPath = '/clusters/cluster-b/resources/update-plan'
+      testState.responses[prefix + '/detail?namespace=team-b'] = {
+        name: 'web',
+        namespace: 'team-b',
+        className: 'nginx',
+        ageSeconds: 60,
+        allowedActions: ['view', 'update'],
+      }
+      const updateSource = (resourceVersion: string) => {
+        testState.responses[yamlPath] = {
+          kind: 'Ingress',
+          name: 'web',
+          namespace: 'team-b',
+          content: JSON.stringify({
+            apiVersion: 'networking.k8s.io/v1',
+            kind: 'Ingress',
+            metadata: {
+              name: 'web',
+              namespace: 'team-b',
+              resourceVersion,
+              uid: 'test-ingress-uid',
+            },
+            spec: { defaultBackend: { service: { name: 'web', port: { number: 80 } } } },
+          }),
+        }
+      }
+      updateSource('12')
+      testState.responses[planPath] = {
+        capability: 'k8s.resources.update',
+        target: 'cluster-b/team-b/Ingress/web',
+        ready: true,
+        riskLevel: 'mutate',
+        requiresApproval: false,
+        changes: [{ action: 'update', resource: 'Ingress/web', summary: 'dry-run passed' }],
+        warnings: [],
+      }
+      const container = await renderPage(
+        <IngressDetailPage />,
+        '/network/ingresses/web?clusterId=cluster-b&namespace=team-b',
+        '/network/ingresses/:name',
+      )
+      const edit = container.querySelector<HTMLButtonElement>('button[aria-label="编辑 Ingress"]')
+      expect(edit).not.toBeNull()
+      await act(async () => {
+        edit?.click()
+        await flush()
+      })
+      await act(flush)
+      const clickDialogButton = async (label: string) => {
+        const button = Array.from(
+          document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+        ).find((candidate) => candidate.textContent?.includes(label))
+        expect(button?.disabled).toBe(false)
+        await act(async () => {
+          button?.click()
+          await flush()
+        })
+        await act(flush)
+      }
+      if (step === 'preflight') updateSource('13')
+      await clickDialogButton('预检更改')
+      if (step === 'confirm') {
+        expect(apiMocks.post).toHaveBeenCalledWith(
+          planPath,
+          expect.objectContaining({
+            kind: 'Ingress',
+            name: 'web',
+            requireObservedIdentity: true,
+            content: expect.stringContaining('test-ingress-uid'),
+          }),
+        )
+        updateSource('13')
+        await clickDialogButton('确认更新')
+      } else {
+        expect(apiMocks.post).not.toHaveBeenCalled()
+      }
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(document.body.textContent).toContain('Ingress 配置已改变')
+      expect(apiMocks.get.mock.calls.every(([path]) => !path.includes('cluster-a'))).toBe(true)
+    },
+  )
 })

@@ -42,6 +42,7 @@ function makePods(count = 2000): Pod[] {
   return Array.from({ length: count }, (_, index) => ({
     name: `pod-${String(index).padStart(4, '0')}`,
     namespace: 'monitoring',
+    uid: `pod-uid-${index}`,
     phase:
       index > 0 && index < 4
         ? 'Pending'
@@ -231,7 +232,8 @@ async function setup(
       withSessions &&
       url.pathname === '/api/v1/clusters/cluster-a/workloads/pods/pod-0000' &&
       method === 'DELETE' &&
-      url.searchParams.get('namespace') === 'monitoring'
+      url.searchParams.get('namespace') === 'monitoring' &&
+      url.searchParams.get('expectedUid') === 'pod-uid-0'
     ) {
       state.deletes += 1
       return {
@@ -465,7 +467,10 @@ test('continuous virtual rows, full-result search/sort, selection and keyboard',
   await search(page).clear()
   await expect(page.getByRole('button', { name: '批量删除', exact: true })).toHaveCount(0)
   await page.getByRole('columnheader', { name: 'Pod', exact: true }).click()
-  await expect(rows(page).first()).toHaveAttribute('data-row-key', 'monitoring/pod-1999')
+  await expect(rows(page).first()).toHaveAttribute(
+    'data-row-key',
+    'monitoring/pod-1999/pod-uid-1999',
+  )
   await holder(page).focus()
   await holder(page).press('PageDown')
   await expect.poll(() => holder(page).evaluate((node) => node.scrollTop)).toBeGreaterThan(0)

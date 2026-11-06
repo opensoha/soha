@@ -1,12 +1,12 @@
 import { ManagementState } from '@/components/management-list'
 import { buildCompactChartSpec, type CompactChartLine } from '@/components/resource-metrics-panel'
-import { formatMetricValue } from '@/components/resource-metrics-format'
+import { formatWorkloadMetricValue } from './workload-metrics-format'
 import { useI18n } from '@/i18n'
 import { parseCpuValue, parseMemoryValue } from '@/features/platform/workloads-model'
 import type { MetricSeries, ResourceMetrics, ResourceQuantity } from '@/types'
 import { InfoCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { LineChart } from '@visactor/react-vchart'
-import { Button, Card, Segmented, Tooltip, Typography } from 'antd'
+import { Button, Card, Segmented, theme, Tooltip, Typography } from 'antd'
 
 import './detail-observability.css'
 
@@ -44,12 +44,13 @@ export function WorkloadDetailMetrics({
   scopeDescription?: string
 }) {
   const { localeCode } = useI18n()
+  const { token } = theme.useToken()
   const zh = localeCode === 'zh_CN'
   const map = new Map((data?.series ?? []).map((series) => [series.key, series]))
   const value = (key: string) => {
     const item = map.get(key)
     const latest = podMetricLatest(item)
-    return latest === undefined ? '—' : formatMetricValue(latest, item!.unit)
+    return latest === undefined ? '—' : formatWorkloadMetricValue(latest, item!.unit)
   }
   const configs = [
     {
@@ -177,6 +178,7 @@ export function WorkloadDetailMetrics({
               ? buildCompactChartSpec(lines, lines[0].unit, localeCode)
               : null
             if (chart) {
+              chart.background = 'transparent'
               chart.height = 166
               chart.legends = { visible: false }
               chart.padding = { top: 8, right: 8, bottom: 24, left: 0 }
@@ -185,6 +187,17 @@ export function WorkloadDetailMetrics({
               chart.axes[0].tickCount = 3
               chart.axes[1].min = 0
               chart.axes[1].expand = { min: 0, max: 0.06 }
+              chart.axes.forEach((axis: { label: { style: { fill: string } } }) => {
+                axis.label.style.fill = token.colorTextSecondary
+              })
+              if (lines[0].unit === 'cores') {
+                chart.axes[1].label.formatMethod = (sample: unknown) =>
+                  formatWorkloadMetricValue(Number(sample), 'cores')
+                chart.tooltip.dimension.content[0].value = (datum: {
+                  rawValue?: number
+                  value?: number
+                }) => formatWorkloadMetricValue(Number(datum.rawValue ?? datum.value), 'cores')
+              }
             }
             const help =
               config.key === 'restarts'

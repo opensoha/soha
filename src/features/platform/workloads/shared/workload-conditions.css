@@ -1,0 +1,23 @@
+.soha-workload-conditions > summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.soha-workload-conditions > summary > .soha-workload-conditions-summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  max-width: calc(100% - 20px);
+  vertical-align: middle;
+}
+.soha-workload-conditions-summary > span {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.soha-workload-conditions[open] > .soha-admin-table-shell {
+  margin-top: 12px;
+}

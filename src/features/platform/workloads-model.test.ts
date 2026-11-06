@@ -5,9 +5,33 @@ import {
   buildWorkloadDetailPath,
   buildWorkloadListPagePath,
   localizeRelatedResourceKind,
+  targetMatchesWorkload,
+  targetMatchesDeployment,
 } from './workloads-model'
 
 describe('workload relation paths', () => {
+  it.each(['StatefulSet', 'DaemonSet'])(
+    'matches %s delivery binding kind and exact cluster/namespace/name independently',
+    (kind) => {
+      const target = {
+        id: 'target',
+        clusterId: 'cluster-a',
+        namespace: 'monitoring',
+        workloadKind: kind,
+        workloadName: 'db',
+        enabled: true,
+      }
+      expect(targetMatchesWorkload(target, 'cluster-a', 'monitoring', 'db', kind)).toBe(true)
+      expect(targetMatchesWorkload(target, 'cluster-a', 'other', 'db', kind)).toBe(false)
+      expect(targetMatchesWorkload(target, 'cluster-a', 'monitoring', 'other', kind)).toBe(false)
+      expect(targetMatchesDeployment(target, 'cluster-a', 'monitoring', 'db')).toBe(false)
+      expect(targetMatchesWorkload(target, 'cluster-b', 'monitoring', 'db', kind)).toBe(false)
+      expect(
+        targetMatchesWorkload({ ...target, enabled: false }, 'cluster-a', 'monitoring', 'db', kind),
+      ).toBe(false)
+    },
+  )
+
   it('links network and controller relations to their detail pages', () => {
     expect(
       buildRelatedResourcePath(

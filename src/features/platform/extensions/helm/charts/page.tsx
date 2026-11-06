@@ -1,23 +1,30 @@
 import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import { AdminTable } from '@/components/admin-table'
+import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableCellLink, TableCellText } from '@/components/table-cell-content'
 import {
   ManagementDensityButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { hasAllowedAction } from '@/features/auth'
+import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import '@/features/platform/extensions/styles.css'
 import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
-import { CloudDownloadOutlined, LinkOutlined, RocketOutlined } from '@ant-design/icons'
+import {
+  CloudDownloadOutlined,
+  InfoCircleOutlined,
+  LinkOutlined,
+  RocketOutlined,
+} from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Space, Spin, Tag, Typography } from 'antd'
-import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Space, Spin, Tooltip, Typography } from 'antd'
+import { lazy, Suspense, useDeferredValue, useEffect, useState } from 'react'
 import { ResourceQueryPanel } from '../../shared/resource-query-panel'
 import { normalizeSearchKeyword } from '../../shared/search'
 import { helmQueries } from '../queries'
@@ -27,6 +34,7 @@ import { formatHelmChartCount, getHelmChartBadges, hasHelmChartSecuritySummary }
 const { Text } = Typography
 const MAX_PAGE_SIZE = 60
 const PAGE_SIZE_OPTIONS = [K8S_TABLE_PAGE_SIZE, 30, MAX_PAGE_SIZE]
+const OPTIONAL_COLUMN_KEYS = ['keywords', 'signals', 'stars', 'versionCount']
 
 const HelmChartDrawer = lazy(async () => {
   const module = await import('./chart-drawer')
@@ -36,24 +44,34 @@ const HelmChartDrawer = lazy(async () => {
 export function HelmChartsPage() {
   const { t, localeCode } = useI18n()
   const { clusterId } = usePlatformScopeStore()
+  const permissionSnapshot = readableQueryData(usePermissionSnapshot())?.data
+  const canView = hasPermission(permissionSnapshot, 'platform.helm.view')
+  const canCreate = hasPermission(permissionSnapshot, 'platform.helm.releases.create')
   const capability = useClusterCapability('helm.releases', localeCode)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(K8S_TABLE_PAGE_SIZE)
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
-  const [selectedChart, setSelectedChart] = useState<HelmChart | null>(null)
-  const [initialDrawerTab, setInitialDrawerTab] = useState<'overview' | 'install'>('overview')
+  const [selection, setSelection] = useState<{
+    chart: HelmChart
+    clusterId: string
+    initialTab: 'overview' | 'install'
+  } | null>(null)
   const normalizedKeyword = normalizeSearchKeyword(useDeferredValue(searchKeyword))
   const offset = (page - 1) * pageSize
   const catalogInput: HelmChartCatalogInput | null = clusterId
     ? { clusterId, keyword: normalizedKeyword, limit: pageSize, offset }
     : null
-  const chartsQuery = useQuery(helmQueries.chartCatalog(catalogInput))
+  const catalogOptions = helmQueries.chartCatalog(catalogInput)
+  const chartsQuery = useQuery({
+    ...catalogOptions,
+    enabled: Boolean(catalogOptions.enabled) && canView,
+  })
   const visibleChartsQueryData = readableQueryData(chartsQuery)
-  const catalog = visibleChartsQueryData
+  const catalog = canView ? visibleChartsQueryData : undefined
   const rawItems = catalog?.charts ?? []
-  const total = catalog?.totalCount ?? catalog?.chartCount ?? rawItems.length
-  const loaded = catalog?.loadedCount ?? catalog?.chartCount ?? rawItems.length
+  const total = catalog?.totalCount ?? catalog?.chartCount ?? 0
+  const loaded = catalog?.loadedCount ?? rawItems.length
   const currentOffset = catalog?.offset ?? offset
   const rangeStart = loaded > 0 ? currentOffset + 1 : 0
   const rangeEnd = loaded > 0 ? currentOffset + loaded : 0
@@ -63,162 +81,195 @@ export function HelmChartsPage() {
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
 
   useEffect(() => setPage(1), [clusterId, normalizedKeyword])
+  useEffect(() => setSelection(null), [clusterId])
 
   const openDrawer = (chart: HelmChart, tab: 'overview' | 'install' = 'overview') => {
-    setInitialDrawerTab(tab)
-    setSelectedChart(chart)
+    if (!clusterId || !canView) return
+    if (
+      tab === 'install' &&
+      (!canCreate || mutationsDisabled || !hasAllowedAction(chart.allowedActions, 'create'))
+    )
+      return
+    setSelection({ chart, clusterId, initialTab: tab })
   }
 
-  const columns: TableColumnsType<HelmChart> = useMemo(
-    () => [
-      {
-        title: 'Chart',
-        dataIndex: 'name',
-        width: 300,
-        render: (value: string, record: HelmChart) => (
-          <Space size={10} align="start">
-            {record.logoImageUrl ? (
-              <img
-                src={record.logoImageUrl}
-                alt=""
-                style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'contain' }}
-              />
+  const columns: TableColumnsType<HelmChart> = [
+    {
+      title: 'Chart',
+      key: 'name',
+      dataIndex: 'name',
+      width: 320,
+      render: (value: string, record) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          {record.logoImageUrl ? (
+            <img
+              src={record.logoImageUrl}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              style={{ width: 32, height: 32, objectFit: 'contain', flexShrink: 0 }}
+            />
+          ) : null}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <TableCellLink label={value} onClick={() => openDrawer(record)} />
+            {getHelmChartBadges(record).length ? (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                {getHelmChartBadges(record).map((badge) =>
+                  badge.label === 'Deprecated' ? (
+                    <StatusTag key={badge.label} value="warning" label={badge.label} />
+                  ) : badge.label === 'Verified' ? (
+                    <StatusTag key={badge.label} value="verified" label={badge.label} />
+                  ) : (
+                    <MetadataTag
+                      key={badge.label}
+                      label={badge.label}
+                      tone={
+                        badge.label === 'Signed'
+                          ? 'purple'
+                          : badge.label === 'CNCF'
+                            ? 'cyan'
+                            : 'blue'
+                      }
+                    />
+                  ),
+                )}
+              </div>
             ) : null}
-            <Space orientation="vertical" size={2}>
-              <Space size={6} wrap>
-                <Text strong>{value}</Text>
-                {getHelmChartBadges(record)
-                  .slice(0, 3)
-                  .map((badge) => (
-                    <Tag key={badge.label} color={badge.color}>
-                      {badge.label}
-                    </Tag>
-                  ))}
-              </Space>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {record.repositoryDisplay || record.repositoryName || '-'}
-              </Text>
-            </Space>
-          </Space>
-        ),
-      },
-      {
-        title: localeCode === 'zh_CN' ? '仓库' : 'Repository',
-        dataIndex: 'repositoryName',
-        width: 180,
-      },
-      {
-        title: localeCode === 'zh_CN' ? '最新版本' : 'Latest Version',
-        dataIndex: 'latestVersion',
-        width: 140,
-      },
-      { title: 'App Version', dataIndex: 'appVersion', width: 140 },
-      {
-        title: localeCode === 'zh_CN' ? '描述' : 'Description',
-        dataIndex: 'description',
-        width: 420,
-        render: (value?: string) => (value ? <Text type="secondary">{value}</Text> : '-'),
-      },
-      {
-        title: localeCode === 'zh_CN' ? '关键词' : 'Keywords',
-        dataIndex: 'keywords',
-        width: 240,
-        render: (values?: string[]) =>
-          values?.length ? (
-            <Space size={[4, 4]} wrap>
-              {values.slice(0, 4).map((value) => (
-                <Tag key={value}>{value}</Tag>
-              ))}
-            </Space>
-          ) : (
-            '-'
-          ),
-      },
-      {
-        title: localeCode === 'zh_CN' ? '状态' : 'Signals',
-        key: 'signals',
-        width: 180,
-        render: (_value, record) => (
-          <Space size={[4, 4]} wrap>
-            {typeof record.stars === 'number' ? <Tag>Stars {record.stars}</Tag> : null}
-            {record.hasValuesSchema ? <Tag color="processing">values.schema</Tag> : null}
-            {hasHelmChartSecuritySummary(record) ? (
-              <Tag
-                color={
-                  (record.securityCritical ?? 0) > 0 || (record.securityHigh ?? 0) > 0
-                    ? 'error'
-                    : 'default'
-                }
-              >
-                CVEs {(record.securityCritical ?? 0) + (record.securityHigh ?? 0)}
-              </Tag>
-            ) : null}
-          </Space>
-        ),
-      },
-      { title: localeCode === 'zh_CN' ? '版本数' : 'Versions', dataIndex: 'versionCount' },
-      {
-        title: '',
-        key: 'actions',
-        width: 64,
-        fixed: 'right',
-        align: 'center',
-        render: (_value, record) => (
-          <KubernetesResourceActionsMenu
-            resourceLabel="Helm Chart"
-            name={record.name}
-            localeCode={localeCode}
-            items={[
-              {
-                key: 'view',
-                label: localeCode === 'zh_CN' ? '查看详情' : 'View details',
-                icon: <RocketOutlined aria-hidden />,
-              },
-              ...(record.artifactHubUrl
-                ? [
-                    {
-                      key: 'hub',
-                      label: (
-                        <a href={record.artifactHubUrl} target="_blank" rel="noreferrer">
-                          Artifact Hub
-                        </a>
-                      ),
-                      icon: <LinkOutlined aria-hidden />,
-                    },
-                  ]
-                : []),
-              ...(hasAllowedAction(record.allowedActions, 'create')
-                ? [
-                    {
-                      key: 'install',
-                      label: mutationsDisabled ? (
-                        <span>
-                          {localeCode === 'zh_CN' ? '安装 Chart' : 'Install Chart'}
-                          <span className="soha-kubernetes-action-menu-reason">
-                            {capabilityReason}
-                          </span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: localeCode === 'zh_CN' ? '仓库' : 'Repository',
+      key: 'repositoryName',
+      dataIndex: 'repositoryName',
+      width: 180,
+      render: (value?: string, record?: HelmChart) => (
+        <TableCellText value={record?.repositoryDisplay || value} />
+      ),
+    },
+    {
+      title: localeCode === 'zh_CN' ? 'Chart 版本' : 'Chart version',
+      key: 'latestVersion',
+      dataIndex: 'latestVersion',
+      width: 140,
+      render: (value?: string) => <TableCellText value={value} />,
+    },
+    {
+      title: 'App Version',
+      key: 'appVersion',
+      dataIndex: 'appVersion',
+      width: 140,
+      render: (value?: string) => <TableCellText value={value} />,
+    },
+    {
+      title: localeCode === 'zh_CN' ? '描述' : 'Description',
+      key: 'description',
+      dataIndex: 'description',
+      width: 420,
+      render: (value?: string) => <TableCellText value={value} />,
+    },
+    {
+      title: localeCode === 'zh_CN' ? '关键词' : 'Keywords',
+      key: 'keywords',
+      dataIndex: 'keywords',
+      width: 240,
+      render: (values?: string[]) => <TableCellText value={values?.join(', ')} />,
+    },
+    {
+      title: localeCode === 'zh_CN' ? '状态' : 'Signals',
+      key: 'signals',
+      width: 180,
+      render: (_value, record) => (
+        <Space size={[4, 4]} wrap>
+          {getHelmChartBadges(record).map((badge) =>
+            badge.label === 'Deprecated' ? (
+              <StatusTag key={badge.label} value="warning" label={badge.label} />
+            ) : (
+              <MetadataTag key={badge.label} label={badge.label} />
+            ),
+          )}
+          {record.hasValuesSchema ? <MetadataTag label="values.schema" /> : null}
+          {hasHelmChartSecuritySummary(record) ? (
+            <StatusTag
+              value={
+                (record.securityCritical ?? 0) > 0 || (record.securityHigh ?? 0) > 0
+                  ? 'error'
+                  : 'default'
+              }
+              label={`CVEs ${(record.securityCritical ?? 0) + (record.securityHigh ?? 0)}`}
+            />
+          ) : null}
+        </Space>
+      ),
+    },
+    { title: 'Stars', key: 'stars', dataIndex: 'stars', width: 100 },
+    {
+      title: localeCode === 'zh_CN' ? '版本数' : 'Versions',
+      key: 'versionCount',
+      dataIndex: 'versionCount',
+      width: 100,
+    },
+    {
+      title: '',
+      key: 'actions',
+      width: 64,
+      fixed: 'right',
+      align: 'center',
+      render: (_value, record) => (
+        <KubernetesResourceActionsMenu
+          resourceLabel="Helm Chart"
+          name={record.name}
+          localeCode={localeCode}
+          items={[
+            {
+              key: 'view',
+              label: localeCode === 'zh_CN' ? '查看详情' : 'View details',
+              icon: <RocketOutlined aria-hidden />,
+            },
+            ...(record.artifactHubUrl
+              ? [
+                  {
+                    key: 'hub',
+                    label: (
+                      <a href={record.artifactHubUrl} target="_blank" rel="noreferrer">
+                        Artifact Hub
+                      </a>
+                    ),
+                    icon: <LinkOutlined aria-hidden />,
+                  },
+                ]
+              : []),
+            ...(canCreate && hasAllowedAction(record.allowedActions, 'create')
+              ? [
+                  {
+                    key: 'install',
+                    label: mutationsDisabled ? (
+                      <span>
+                        {localeCode === 'zh_CN' ? '安装 Chart' : 'Install Chart'}
+                        <span className="soha-kubernetes-action-menu-reason">
+                          {capabilityReason}
                         </span>
-                      ) : localeCode === 'zh_CN' ? (
-                        '安装 Chart'
-                      ) : (
-                        'Install Chart'
-                      ),
-                      disabled: mutationsDisabled,
-                      icon: <CloudDownloadOutlined aria-hidden />,
-                    },
-                  ]
-                : []),
-            ]}
-            onSelect={(key) => {
-              if (key === 'view') openDrawer(record)
-              else if (key === 'install') openDrawer(record, 'install')
-            }}
-          />
-        ),
-      },
-    ],
-    [capability, localeCode, mutationsDisabled],
-  )
+                      </span>
+                    ) : localeCode === 'zh_CN' ? (
+                      '安装 Chart'
+                    ) : (
+                      'Install Chart'
+                    ),
+                    disabled: mutationsDisabled,
+                    icon: <CloudDownloadOutlined aria-hidden />,
+                  },
+                ]
+              : []),
+          ]}
+          onSelect={(key) => {
+            if (key === 'view') openDrawer(record)
+            else if (key === 'install') openDrawer(record, 'install')
+          }}
+        />
+      ),
+    },
+  ]
 
   const emptyTitle = !clusterId
     ? t('platformScope.clusterPlaceholder', 'Select cluster')
@@ -229,6 +280,17 @@ export function HelmChartsPage() {
           ? '没有匹配的 Helm Chart'
           : 'No matching Helm charts'
         : t('page.extensions.helmCharts.emptyTitle', 'No Helm charts')
+
+  if (!canView) {
+    return (
+      <ManagementState
+        kind="no-permission"
+        title={
+          localeCode === 'zh_CN' ? '没有 Helm Chart 查看权限' : 'No permission to view Helm charts'
+        }
+      />
+    )
+  }
 
   return (
     <div className="soha-page">
@@ -279,6 +341,8 @@ export function HelmChartsPage() {
         className="soha-platform-table"
         columnSettingIconOnly
         columnSettingPlacement="header"
+        columnLayoutKey="helm-chart-catalog"
+        defaultHiddenColumnKeys={OPTIONAL_COLUMN_KEYS}
         shellClassName="soha-management-table-shell soha-helm-chart-table-shell"
         columns={columns}
         dataSource={clusterId && !chartsQuery.isError ? rawItems : []}
@@ -306,29 +370,32 @@ export function HelmChartsPage() {
               : `${rangeStart}-${rangeEnd} / ${formattedTotal} total`}
           </Text>
         }
-        toolbar={
-          catalog?.repository ? (
-            <Space className="soha-helm-chart-catalog-toolbar" size={8}>
-              <Tag color="processing">Artifact Hub</Tag>
-              <Tag>{localeCode === 'zh_CN' ? '仅 Helm packages' : 'Helm packages only'}</Tag>
-              <Text className="soha-helm-chart-catalog-url" type="secondary">
-                {catalog.repository.url}
-              </Text>
-              <Text className="soha-helm-chart-catalog-total" type="secondary">
-                {localeCode === 'zh_CN' ? `总计 ${formattedTotal} 个` : `${formattedTotal} total`}
-              </Text>
-            </Space>
-          ) : null
-        }
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
         viewportScroll
-        onRow={(record: HelmChart) => ({
-          onClick: () => openDrawer(record),
-          style: { cursor: 'pointer' },
-        })}
         headerExtra={
           <ManagementTableToolbar>
+            <Tooltip
+              trigger={['hover', 'focus', 'click']}
+              title={
+                <Space orientation="vertical" size={4}>
+                  <span>
+                    {localeCode === 'zh_CN'
+                      ? '来自 Artifact Hub 的 Helm packages，搜索与分页由服务端处理。'
+                      : 'Helm packages from Artifact Hub. Search and pagination are handled by the server.'}
+                  </span>
+                  {catalog?.repository.url ? <span>{catalog.repository.url}</span> : null}
+                </Space>
+              }
+            >
+              <Button
+                type="text"
+                icon={<InfoCircleOutlined />}
+                aria-label={
+                  localeCode === 'zh_CN' ? 'Chart 目录来源与范围' : 'Chart catalog source and scope'
+                }
+              />
+            </Tooltip>
             <ManagementDensityButton
               aria-label={densityLabel}
               title={densityLabel}
@@ -354,12 +421,19 @@ export function HelmChartsPage() {
           />
         }
       />
-      {selectedChart ? (
+      {selection && selection.clusterId === clusterId ? (
         <Suspense fallback={<Spin />}>
           <HelmChartDrawer
-            chart={selectedChart}
-            initialTab={initialDrawerTab}
-            onClose={() => setSelectedChart(null)}
+            key={JSON.stringify([
+              selection.clusterId,
+              selection.chart.packageId,
+              selection.chart.repositoryName,
+              selection.chart.name,
+              selection.initialTab,
+            ])}
+            chart={selection.chart}
+            initialTab={selection.initialTab}
+            onClose={() => setSelection(null)}
           />
         </Suspense>
       ) : null}

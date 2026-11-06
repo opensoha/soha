@@ -3,12 +3,14 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Link, MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { WorkloadDetailHeader } from './workload-detail-header'
 
 vi.mock('@/i18n', () => ({ useI18n: () => ({ localeCode: 'zh_CN' }) }))
 let root: ReturnType<typeof createRoot>
 let container: HTMLDivElement
 beforeEach(() => {
+  usePlatformScopeStore.setState({ clusterId: 'a', namespace: 'apps' })
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   container = document.createElement('div')
   document.body.append(container)
@@ -17,6 +19,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
+  usePlatformScopeStore.setState({ clusterId: null, namespace: null })
   vi.unstubAllGlobals()
 })
 async function render(props: Partial<React.ComponentProps<typeof WorkloadDetailHeader>> = {}) {
@@ -24,7 +27,7 @@ async function render(props: Partial<React.ComponentProps<typeof WorkloadDetailH
     root.render(
       <MemoryRouter
         initialEntries={[
-          '/workloads/statefulsets/database?clusterId=a&namespace=apps&tab=pods&range=60&container=init',
+          '/workloads/statefulsets/database?clusterId=a&namespace=apps&tab=pods&range=60&container=init&edit=true&webhook=hook',
         ]}
       >
         <WorkloadDetailHeader kind="StatefulSet" name="database" namespace="apps" {...props} />
@@ -68,4 +71,43 @@ it('does not invent a namespace or status when unavailable', async () => {
   await render({ namespace: '—' })
   expect(container.querySelector('.soha-workload-detail-namespace')).toBeNull()
   expect(container.querySelector('.soha-workload-detail-meta')?.textContent).toBe('')
+  expect(container.querySelector('a[aria-label="返回StatefulSet列表"]')?.getAttribute('href')).toBe(
+    '/workloads/statefulsets?clusterId=a',
+  )
+})
+
+it.each([
+  { selected: null, expected: '/workloads/statefulsets?clusterId=a' },
+  {
+    selected: 'selected-team',
+    expected: '/workloads/statefulsets?clusterId=a&namespace=selected-team',
+  },
+])('returns to the selected list filter $selected', async ({ selected, expected }) => {
+  usePlatformScopeStore.setState({ namespace: selected })
+  await render()
+  expect(container.querySelector('a[aria-label="返回StatefulSet列表"]')?.getAttribute('href')).toBe(
+    expected,
+  )
+  expect(container.querySelector('.soha-workload-detail-namespace')?.getAttribute('title')).toBe(
+    'apps',
+  )
+})
+
+it('normalizes owner return queries using the selected filter', async () => {
+  usePlatformScopeStore.setState({ namespace: 'selected-team' })
+  await render({
+    backTo:
+      '/workloads/jobs?clusterId=b&namespace=other&tab=pods&range=30&container=init&edit=true&webhook=hook&sort=name',
+  })
+  expect(container.querySelector('a[aria-label="返回StatefulSet列表"]')?.getAttribute('href')).toBe(
+    '/workloads/jobs?clusterId=b&namespace=selected-team&sort=name',
+  )
+})
+
+it('removes the owner return namespace when all namespaces are selected', async () => {
+  usePlatformScopeStore.setState({ namespace: null })
+  await render({ backTo: '/workloads/pods?clusterId=a&namespace=apps' })
+  expect(container.querySelector('a[aria-label="返回StatefulSet列表"]')?.getAttribute('href')).toBe(
+    '/workloads/pods?clusterId=a',
+  )
 })

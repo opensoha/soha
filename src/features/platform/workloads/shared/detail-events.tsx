@@ -1,7 +1,12 @@
 import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
-import { ReloadOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons'
+import {
+  InfoCircleOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+  WarningOutlined,
+} from '@ant-design/icons'
 import {
   Button,
   Card,
@@ -18,10 +23,14 @@ import { useMemo, useState } from 'react'
 import type { WorkloadEvent } from './types'
 import './detail-observability.css'
 
-export function workloadEventTimestamp(event: WorkloadEvent, observedAt: number) {
+export function workloadEventTimestamp(
+  event: WorkloadEvent,
+  observedAt: number,
+  allowEstimatedTime = true,
+) {
   const explicit = Date.parse(event.lastTimestamp || '')
   if (Number.isFinite(explicit)) return explicit
-  return Number.isFinite(event.ageSeconds) && event.ageSeconds >= 0
+  return allowEstimatedTime && Number.isFinite(event.ageSeconds) && event.ageSeconds >= 0
     ? observedAt - event.ageSeconds * 1000
     : null
 }
@@ -33,6 +42,8 @@ export function WorkloadDetailEvents({
   error,
   onRefresh,
   resourceLabel = 'Pod',
+  allowEstimatedTime = true,
+  scopeHint,
 }: {
   events: WorkloadEvent[]
   observedAt: number
@@ -40,6 +51,8 @@ export function WorkloadDetailEvents({
   error?: string
   onRefresh: () => void
   resourceLabel?: string
+  allowEstimatedTime?: boolean
+  scopeHint?: string
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
@@ -49,7 +62,10 @@ export function WorkloadDetailEvents({
   const rows = useMemo(
     () =>
       events
-        .map((event) => ({ event, timestamp: workloadEventTimestamp(event, observedAt) }))
+        .map((event) => ({
+          event,
+          timestamp: workloadEventTimestamp(event, observedAt, allowEstimatedTime),
+        }))
         .filter(
           ({ event }) =>
             (filter === 'all' || event.type.toLowerCase() === filter) &&
@@ -58,7 +74,7 @@ export function WorkloadDetailEvents({
               .includes(search.trim().toLowerCase()),
         )
         .sort((a, b) => ((a.timestamp ?? 0) - (b.timestamp ?? 0)) * (order === 'asc' ? 1 : -1)),
-    [events, observedAt, filter, search, order],
+    [events, observedAt, filter, search, order, allowEstimatedTime],
   )
   const day = (timestamp: number | null) =>
     timestamp === null
@@ -70,7 +86,25 @@ export function WorkloadDetailEvents({
   return (
     <Card
       className="soha-pod-detail-card soha-pod-detail-events"
-      title={zh ? '事件时间轴' : 'Event timeline'}
+      title={
+        scopeHint ? (
+          <Space size={4}>
+            {zh ? '事件时间轴' : 'Event timeline'}
+            <Tooltip title={scopeHint} trigger={['hover', 'focus']}>
+              <Button
+                type="text"
+                size="small"
+                icon={<InfoCircleOutlined />}
+                aria-label={zh ? '事件范围说明' : 'Event scope information'}
+              />
+            </Tooltip>
+          </Space>
+        ) : zh ? (
+          '事件时间轴'
+        ) : (
+          'Event timeline'
+        )
+      }
       loading={loading}
       extra={
         <Space wrap>

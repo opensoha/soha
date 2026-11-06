@@ -12,7 +12,7 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
     ranges: [] as string[],
     graphReads: 0,
     detailReads: 0,
-    allowedActions: ['get', 'logs', 'exec'],
+    allowedActions: ['get', 'logs', 'exec', 'update'],
     metricsConfigured: true,
     omitOwnerGraph: false,
     yamlReads: 0,
@@ -25,6 +25,7 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
     deletes: [] as string[],
     mutationUnavailable: false,
     connectionMode: 'direct_kubeconfig',
+    podUid: 'pod-uid',
   }
   await context.addInitScript(() =>
     localStorage.setItem(
@@ -41,6 +42,7 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
       if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
       body.data.permissionKeys!.push(
         'platform.pods.view',
+        'platform.pods.update',
         'platform.nodes.view',
         'platform.namespaces.view',
         ...(state.deletePermission ? ['platform.pods.delete'] : []),
@@ -79,7 +81,13 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
     if (url.pathname === '/api/v1/clusters/capabilities')
       return {
         body: {
-          data: ['pod.logs', 'pod.exec', 'workload.mutations'].map((key) => ({
+          data: [
+            'pod.logs',
+            'pod.exec',
+            'workload.mutations',
+            'resource.yaml.view',
+            'resource.yaml.apply',
+          ].map((key) => ({
             key,
             direct: {
               status:
@@ -115,6 +123,7 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
           data: {
             name: podName,
             namespace: 'monitoring',
+            uid: state.podUid,
             phase: 'Running',
             nodeName: 'worker-a',
             podIp: '10.0.0.2',
@@ -356,7 +365,13 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
         },
       }
     }
-    if (url.pathname === '/api/v1/clusters/cluster-a/resources/graph') {
+    if (
+      url.pathname === '/api/v1/clusters/cluster-a/resources/graph' &&
+      method === 'GET' &&
+      url.searchParams.get('namespace') === 'monitoring' &&
+      url.searchParams.get('kind') === 'Pod' &&
+      url.searchParams.get('name') === podName
+    ) {
       state.graphReads += 1
       return {
         body: {
@@ -374,6 +389,8 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
               ['pod-a', 'Pod', podName],
               ['config', 'ConfigMap', 'api-config'],
               ['secret', 'Secret', 'api-secret'],
+              ['node', 'Node', 'worker-a'],
+              ['account', 'ServiceAccount', 'runner'],
             ]
               .filter(
                 ([id]) =>
@@ -384,9 +401,15 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
                 id,
                 resource: {
                   clusterId: 'cluster-a',
-                  apiVersion: 'v1',
-                  scopeMode: 'namespace',
-                  namespace: 'monitoring',
+                  apiVersion: ['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet'].includes(
+                    kind,
+                  )
+                    ? 'apps/v1'
+                    : ['Job', 'CronJob'].includes(kind)
+                      ? 'batch/v1'
+                      : 'v1',
+                  scopeMode: kind === 'Node' ? 'cluster' : 'namespace',
+                  namespace: kind === 'Node' ? undefined : 'monitoring',
                   kind,
                   name,
                 },
@@ -397,6 +420,13 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
               { id: 'owns-pod', sourceId: 'replicaset', targetId: 'pod-a', relation: 'owns' },
               { id: 'uses-config', sourceId: 'pod-a', targetId: 'config', relation: 'uses-config' },
               { id: 'uses-secret', sourceId: 'pod-a', targetId: 'secret', relation: 'uses-secret' },
+              { id: 'scheduled', sourceId: 'pod-a', targetId: 'node', relation: 'scheduled-on' },
+              {
+                id: 'account-use',
+                sourceId: 'pod-a',
+                targetId: 'account',
+                relation: 'uses-service-account',
+              },
             ].filter((edge) => !state.omitOwnerGraph || edge.relation !== 'owns'),
           },
         },
@@ -538,43 +568,37 @@ test('Pod relationships follow the approved owner, scheduling and reference layo
 }, testInfo) => {
   const { state, evidence } = await setup(context, page)
   await page.goto(`${path}&tab=related-resources`)
-  const board = page.getByRole('group', { name: '当前 Pod 资源关系图', exact: true })
-  const root = board.getByRole('button', { name: `Pod ${podName}`, exact: true })
-  const deployment = board.getByRole('button', { name: 'Deployment api', exact: true })
-  const rs = board.getByRole('button', { name: 'ReplicaSet api-7d9', exact: true })
-  const node = board.getByRole('button', { name: 'Node worker-a', exact: true })
-  const account = board.getByRole('button', { name: 'ServiceAccount runner', exact: true })
-  await expect(rs).toBeVisible()
-  const rb = (await root.boundingBox())!
-  const nb = (await node.boundingBox())!
-  expect((await deployment.boundingBox())!.y).toBeLessThan(rb.y)
-  expect((await rs.boundingBox())!.y).toBeLessThan(rb.y)
-  expect(nb.x + nb.width).toBeLessThan(rb.x)
-  expect(Math.abs(nb.y + nb.height / 2 - rb.y - rb.height / 2)).toBeLessThan(3)
-  expect((await account.boundingBox())!.y).toBeGreaterThan(rb.y + rb.height)
-  await expect(board.getByRole('button', { name: 'ReplicaSet api-old', exact: true })).toHaveCount(
-    0,
-  )
-  await page.getByRole('switch', { name: '其他 ReplicaSets', exact: true }).click()
-  await expect(board.getByRole('button', { name: 'ReplicaSet api-old', exact: true })).toBeVisible()
-  await expect(
-    board.getByRole('button', { name: 'ReplicaSet unrelated', exact: true }),
-  ).toHaveCount(0)
+  const board = page.getByRole('tabpanel', { name: '关联资源', exact: true })
+  const root = board.locator('.react-flow__node[data-id="pod-a"]')
+  const node = board.locator('.react-flow__node[data-id="node"]')
+  const info = board.getByRole('complementary', { name: '选中资源信息' })
+  await expect(root).toBeVisible()
+  await expect(root).toHaveClass(/is-root/)
+  await expect(board.locator('.react-flow__node[data-id="deployment"]')).toBeVisible()
+  await expect(board.locator('.react-flow__node[data-id="replicaset"]')).toBeVisible()
+  await expect(board.locator('.react-flow__node[data-id="account"]')).toBeVisible()
+  await expect(board.locator('.react-flow__edge[data-id="scheduled"]')).toHaveCount(1)
+  await expect(board.locator('.react-flow__node[data-id="other-rs"]')).toHaveCount(0)
+  await page.getByRole('switch', { name: '包含其他 ReplicaSets', exact: true }).click()
+  await expect(board.locator('.react-flow__node[data-id="other-rs"]')).toBeVisible()
+  await expect(board.locator('.react-flow__node[data-id="unrelated-rs"]')).toBeVisible()
   await node.focus()
   await node.press('Enter')
-  await expect(page.locator('.soha-pod-relation-inspector')).toContainText('worker-a')
+  await expect(info).toContainText('worker-a')
+  await expect(info).toContainText('承载')
   await page.getByRole('button', { name: '关闭资源信息', exact: true }).click()
   await expect(node).toBeFocused()
-  await board.getByRole('button', { name: 'ConfigMap api-config', exact: true }).click()
-  await expect(page.locator('.soha-pod-relation-inspector')).toContainText('Mount /etc/config')
+  await board.locator('.react-flow__node[data-id="config"]').click()
+  await expect(info).toContainText('被引用为配置')
   await page
     .getByRole('radiogroup', { name: '关联资源视图' })
     .getByText('列表', { exact: true })
     .click()
   await page.getByRole('button', { name: '关闭资源信息', exact: true }).click()
-  await expect(page.getByRole('group', { name: '关联资源视图切换', exact: true })).toBeFocused()
-  await expect(page.locator('.soha-pod-relations-card')).toContainText('ServiceAccount')
-  await expect(page.locator('.soha-pod-relations-card .ant-pagination')).toHaveCount(0)
+  // The selected resource remains available in the new list view after the graph unmounts.
+  await expect(board.locator('button[data-resource-id="config"]')).toBeFocused()
+  await expect(board).toContainText('ServiceAccount')
+  await expect(board.locator('.ant-pagination')).toHaveCount(0)
   expect(state.graphReads).toBe(1)
   await page
     .getByRole('radiogroup', { name: '关联资源视图' })
@@ -743,20 +767,22 @@ test('Pod YAML draft survives detail refresh and returning from another tab', as
   verifyBrowserEvidence(evidence)
 })
 
-test('Pod relationships retain explicit Pod owners omitted by graph collection', async ({
+test('Pod relationships do not invent owner nodes or edges omitted by graph collection', async ({
   context,
   page,
 }) => {
   const { state, evidence } = await setup(context, page)
   state.omitOwnerGraph = true
   await page.goto(`${path}&tab=related-resources`)
-  const board = page.getByRole('group', { name: '当前 Pod 资源关系图', exact: true })
-  await expect(board.getByRole('button', { name: 'Deployment api', exact: true })).toBeVisible()
-  await expect(board.getByRole('button', { name: 'ReplicaSet api-7d9', exact: true })).toHaveCount(
-    0,
-  )
-  await board.getByRole('button', { name: 'Deployment api', exact: true }).click()
-  await expect(page.locator('.soha-pod-relation-inspector')).toContainText('Pod 关联信息')
+  const board = page.getByRole('tabpanel', { name: '关联资源', exact: true })
+  await expect(board.locator('.react-flow__node[data-id="pod-a"]')).toBeVisible()
+  await expect(board.locator('.react-flow__node[data-id="deployment"]')).toHaveCount(0)
+  await expect(board.locator('.react-flow__node[data-id="replicaset"]')).toHaveCount(0)
+  await expect(board.locator('.react-flow__edge[data-id="owns-pod"]')).toHaveCount(0)
+  await board.locator('.react-flow__node[data-id="pod-a"]').click()
+  const info = board.getByRole('complementary', { name: '选中资源信息' })
+  await expect(info).toContainText('引用配置')
+  await expect(info).not.toContainText('Deployment api')
   verifyBrowserEvidence(evidence)
 })
 
@@ -870,7 +896,9 @@ test('Pod header deletion confirms the scoped target, keeps errors and returns t
   for (const width of [1373, 900, 320]) {
     await page.setViewportSize({ width, height: 1000 })
     await expect(remove).toBeVisible()
-    expect(await header.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+    await expect
+      .poll(() => header.evaluate((el) => el.scrollWidth - el.clientWidth))
+      .toBeLessThanOrEqual(1)
   }
   await page.setViewportSize({ width: 1373, height: 1000 })
   await page.getByLabel('切换到深色模式').click()
@@ -892,7 +920,7 @@ test('Pod header deletion confirms the scoped target, keeps errors and returns t
   await expect(dialog).toContainText('Synthetic Pod delete rejected')
   await expect(dialog.getByRole('button', { name: '删除', exact: true })).toBeEnabled()
   expect(state.deletes).toEqual([
-    `/api/v1/clusters/cluster-a/workloads/pods/${podName}?namespace=monitoring`,
+    `/api/v1/clusters/cluster-a/workloads/pods/${podName}?namespace=monitoring&expectedUid=pod-uid`,
   ])
   state.deleteStatus = 200
   await dialog.getByRole('button', { name: '删除', exact: true }).dblclick()
@@ -937,6 +965,16 @@ test('Pod header deletion requires permission, allowed action and supported clus
   await expect.poll(() => state.detailReads).toBeGreaterThan(reads)
   await expect(dialog.getByRole('button', { name: '删除', exact: true })).toBeDisabled()
   await expect(dialog).toContainText('资源或操作权限已变化')
+  expect(state.deletes).toHaveLength(0)
+  await dialog.getByRole('button', { name: /^取\s*消$/, exact: true }).click()
+  state.allowedActions.push('delete')
+  await page.clock.runFor(15_100)
+  await expect(remove).toBeEnabled()
+  await remove.click()
+  await expect(dialog).toBeVisible()
+  state.podUid = 'replacement-pod-uid'
+  await page.clock.runFor(15_100)
+  await expect(dialog).not.toBeVisible()
   expect(state.deletes).toHaveLength(0)
   verifyBrowserEvidence(evidence)
 })

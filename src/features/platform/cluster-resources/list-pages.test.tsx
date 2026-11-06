@@ -176,7 +176,7 @@ async function renderPage(page: ReactNode) {
 describe('cluster resource list pages', () => {
   it('keeps both list queries disabled until a cluster is selected', async () => {
     const nodes = await renderPage(<ClusterNodesPage />)
-    expect(nodes.textContent).toContain('Please select a cluster')
+    expect(nodes.textContent).toContain('请选择集群')
     expect(apiMocks.get).not.toHaveBeenCalled()
 
     const namespaces = await renderPage(<ClusterNamespacesPage />)
@@ -225,11 +225,7 @@ describe('cluster resource list pages', () => {
     expect(nodes.textContent).toContain('未提供')
     expect(nodes.textContent).not.toContain('排水中')
     await act(async () => {
-      ;(
-        nodes.querySelector(
-          '[aria-label="查看污点 maintenance=task113:NoSchedule"]',
-        ) as HTMLButtonElement
-      ).click()
+      ;(nodes.querySelector('[aria-label="查看节点污点"]') as HTMLButtonElement).click()
     })
     expect(document.body.textContent).toContain('maintenance=task113:NoSchedule')
   })

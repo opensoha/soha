@@ -93,7 +93,7 @@ vi.mock('@/features/auth/permission-snapshot', () => ({
   usePermissionSnapshot: () => ({
     data: {
       data: {
-        permissionKeys: ['platform.pods.logs', 'platform.pods.exec'],
+        permissionKeys: ['platform.pods.view', 'platform.pods.logs', 'platform.pods.exec'],
         visibleMenuIds: [],
       },
     },
@@ -291,7 +291,9 @@ describe('pod detail page lazy boundaries', () => {
       '/clusters/url-cluster/workloads/pods/prometheus-0/detail?namespace=url-namespace',
     ])
     expect(testState.scope.setClusterId).toHaveBeenCalledWith('url-cluster')
-    expect(testState.scope.setNamespace).toHaveBeenCalledWith('url-namespace')
+    // The resource URL scopes reads without replacing the list's global selection.
+    expect(testState.scope.setNamespace).not.toHaveBeenCalled()
+    expect(testState.scope.namespace).toBe('monitoring')
     expect(requestedPaths().filter((path) => path.includes('/metrics?'))).toHaveLength(1)
     expect(requestedPaths().some((path) => path.includes('/events?'))).toBe(false)
     expect(requestedPaths().some((path) => path.includes('/yaml?'))).toBe(false)

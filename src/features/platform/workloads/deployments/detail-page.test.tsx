@@ -12,6 +12,7 @@ import { DeploymentDetailPage } from './detail-page'
 const testState = vi.hoisted(() => ({
   history: [] as RolloutHistory[],
   historyError: false,
+  yamlViewUnavailable: false,
   permissions: [
     'platform.deployment.view',
     'platform.deployment.scale',
@@ -39,6 +40,7 @@ const apiGetMock = vi.hoisted(() =>
         data: {
           name: 'prometheus',
           namespace: 'url-namespace',
+          uid: 'deployment-uid',
           createdAt: '2026-01-01T00:00:00Z',
           desiredReplicas: 1,
           readyReplicas: 1,
@@ -87,6 +89,25 @@ const apiGetMock = vi.hoisted(() =>
     if (path.includes('/rollouts?')) {
       if (testState.historyError) throw new Error('History unavailable')
       return { data: testState.history }
+    }
+    if (path.includes('/resources/graph?')) {
+      return {
+        data: {
+          rootId: 'deployment',
+          nodes: [
+            ['deployment', 'Deployment', 'prometheus'],
+            ['replica-set', 'ReplicaSet', 'prometheus-current-rs'],
+            ['pod', 'Pod', 'prometheus-0'],
+          ].map(([id, kind, name]) => ({
+            id,
+            resource: { kind, name, namespace: 'url-namespace', clusterId: 'url-cluster' },
+          })),
+          edges: [
+            { sourceId: 'deployment', targetId: 'replica-set', relation: 'owns' },
+            { sourceId: 'replica-set', targetId: 'pod', relation: 'owns' },
+          ],
+        },
+      }
     }
     if (path.includes('/metrics?')) return { data: { rangeMinutes: 60, series: [] } }
     if (path.includes('/yaml?')) {
@@ -137,6 +158,10 @@ vi.mock('@/features/copilot', () => ({ useAIPageContext: vi.fn() }))
 vi.mock('@/features/platform/cluster-capabilities', () => ({
   capabilityActionTooltip: (label: string) => label,
   useClusterCapability: () => ({ disabled: false, reason: '', status: 'available' }),
+  useClusterCapabilityForCluster: (capability: string) =>
+    capability === 'resource.yaml.view' && testState.yamlViewUnavailable
+      ? { disabled: true, reason: 'Synthetic YAML view unavailable', status: 'unsupported' }
+      : { disabled: false, reason: '', status: 'available' },
 }))
 
 vi.mock('@visactor/react-vchart', () => ({ LineChart: () => <div data-testid="chart" /> }))
@@ -150,7 +175,11 @@ vi.mock('@/components/resource-metrics-panel', () => ({
 }))
 
 vi.mock('@/components/k8s-yaml-editor', () => ({
-  K8sYamlEditor: () => <div data-testid="yaml-editor">yaml-editor</div>,
+  K8sYamlEditor: ({ readOnly }: { readOnly: boolean }) => (
+    <div data-testid="yaml-editor" data-read-only={readOnly}>
+      yaml-editor
+    </div>
+  ),
 }))
 
 vi.mock('@/components/status-tag', () => ({
@@ -206,6 +235,7 @@ beforeEach(() => {
   ]
   testState.history = []
   testState.historyError = false
+  testState.yamlViewUnavailable = false
   testState.scope.setClusterId.mockImplementation((value: string) => {
     testState.scope.clusterId = value
   })
@@ -295,6 +325,34 @@ describe('deployment detail page boundaries', () => {
     expect(actions.textContent).not.toContain('回滚')
   })
 
+  it('keeps current ReplicaSet rollout facts without requesting the graph from Overview', async () => {
+    testState.history = [
+      {
+        name: 'prometheus-current-rs',
+        namespace: 'url-namespace',
+        revision: '12',
+        replicas: 1,
+        readyReplicas: 1,
+      },
+    ]
+    const container = await renderDetail()
+    expect(container.textContent).toContain('当前 ReplicaSet')
+    expect(container.textContent).toContain('prometheus-current-rs')
+    expect(apiGetMock.mock.calls.some(([path]) => String(path).includes('/resources/graph'))).toBe(
+      false,
+    )
+    await act(async () => clickTab(container, 'Pods'))
+    await flushAsyncWork()
+    expect(apiGetMock.mock.calls.some(([path]) => String(path).includes('/resources/graph'))).toBe(
+      true,
+    )
+    const currentRevision = Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent === '当前版本')
+      ?.querySelector('input')
+    expect(currentRevision).toBeDefined()
+    expect(currentRevision?.disabled).toBe(false)
+  })
+
   it('loads tab data only when activated and preserves URL scope', async () => {
     const container = await renderDetail()
     const paths = () => apiGetMock.mock.calls.map(([path]) => String(path))
@@ -322,6 +380,19 @@ describe('deployment detail page boundaries', () => {
     await act(async () => clickTab(container, 'YAML'))
     await flushAsyncWork()
     expect(container.querySelector('[data-testid="yaml-editor"]')).not.toBeNull()
+    expect(
+      container.querySelector('[data-testid="yaml-editor"]')?.getAttribute('data-read-only'),
+    ).toBe('true')
+  })
+
+  it('does not read or render YAML without the selected cluster capability', async () => {
+    testState.yamlViewUnavailable = true
+    const container = await renderDetail(
+      '/workloads/deployments/prometheus?clusterId=url-cluster&namespace=url-namespace&tab=yaml',
+    )
+    expect(apiGetMock.mock.calls.some(([path]) => path.includes('/yaml?'))).toBe(false)
+    expect(container.querySelector('[data-testid="yaml-editor"]')).toBeNull()
+    expect(container.textContent).toContain('Synthetic YAML view unavailable')
   })
 
   it('shows every revision numerically and filters across the complete set', async () => {
@@ -337,7 +408,7 @@ describe('deployment detail page boundaries', () => {
     const container = await renderDetail()
     await act(async () => clickTab(container, '版本历史'))
     await flushAsyncWork()
-    const section = container.querySelector('.soha-deployment-history')!
+    const section = container.querySelector('.soha-workload-history')!
     expect(
       Array.from(section.querySelectorAll('.soha-rollout-history-revision')).map(
         (el) => el.textContent,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { KubernetesResourceGraph } from '@opensoha/contracts/gen/ts/sohaapi'
 import type { DeploymentDetail, RolloutHistory } from '@/types'
-import { buildDeploymentRelationships } from './deployment-detail-model'
+import { buildDeploymentFacts } from './deployment-detail-model'
 
 const detail: DeploymentDetail = {
   name: 'api',
@@ -39,7 +39,7 @@ const graph = {
       clusterId: 'a',
       namespace: 'ns',
       scopeMode: 'namespace',
-      apiVersion: 'v1',
+      apiVersion: ['Deployment', 'ReplicaSet'].includes(kind) ? 'apps/v1' : 'v1',
       kind,
       name,
     },
@@ -61,7 +61,7 @@ const graph = {
 
 describe('Deployment relationship evidence', () => {
   it('keeps active old revisions visible and assigns Pods only through owns edges', () => {
-    const model = buildDeploymentRelationships(detail, scope, history, '12', graph)
+    const model = buildDeploymentFacts(detail, scope, history, '12', graph)
     expect(model.sets.filter((set) => !set.historical).map((set) => set.record?.revision)).toEqual([
       '12',
       '11',
@@ -69,13 +69,13 @@ describe('Deployment relationship evidence', () => {
     expect(model.podOwners.get('ns/api-new-1')?.record?.revision).toBe('12')
     expect(model.podOwners.get('ns/api-old-1')?.record?.revision).toBe('11')
     expect(model.sets.some((set) => set.node.resource.name === 'other')).toBe(false)
-    expect(model.references.map((node) => node.resource.name)).toEqual(['api-config'])
+    expect('references' in model).toBe(false)
   })
   it('does not infer Pod ownership from name prefixes or a different root scope', () => {
-    const model = buildDeploymentRelationships(detail, scope, history, '12')
+    const model = buildDeploymentFacts(detail, scope, history, '12')
     expect(model.podOwners.size).toBe(0)
     expect(model.sets.every((set) => set.pods.length === 0)).toBe(true)
-    const foreign = buildDeploymentRelationships(
+    const foreign = buildDeploymentFacts(
       detail,
       { clusterId: 'b', namespace: 'ns' },
       history,
@@ -83,6 +83,6 @@ describe('Deployment relationship evidence', () => {
       graph,
     )
     expect(foreign.podOwners.size).toBe(0)
-    expect(foreign.references).toHaveLength(0)
+    expect('references' in foreign).toBe(false)
   })
 })

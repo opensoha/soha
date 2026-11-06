@@ -27,14 +27,22 @@ describe('service API', () => {
     const metrics = { resourceKind: 'Service', resourceName: 'api', rangeMinutes: 60 }
     apiMocks.get.mockResolvedValueOnce({ data: metrics }).mockResolvedValueOnce({
       data: [
-        { name: 'a', involvedKind: 'Service', involvedName: 'api' },
-        { name: 'b', involvedKind: 'Ingress', involvedName: 'api' },
+        { name: 'a', namespace: 'team-a', involvedKind: 'Service', involvedName: 'api' },
+        { name: 'b', namespace: 'team-a', involvedKind: 'Ingress', involvedName: 'api' },
+        {
+          name: 'wrong-namespace',
+          namespace: 'team-b',
+          involvedKind: 'Service',
+          involvedName: 'api',
+        },
+        { name: 'missing-namespace', involvedKind: 'Service', involvedName: 'api' },
+        { name: 'missing-kind', namespace: 'team-a', involvedName: 'api' },
       ],
     })
 
     await expect(getServiceMetrics(scope, 'api')).resolves.toBe(metrics)
     await expect(listServiceEvents(scope, 'api')).resolves.toEqual([
-      { name: 'a', involvedKind: 'Service', involvedName: 'api' },
+      { name: 'a', namespace: 'team-a', involvedKind: 'Service', involvedName: 'api' },
     ])
     expect(apiMocks.get).toHaveBeenNthCalledWith(
       1,

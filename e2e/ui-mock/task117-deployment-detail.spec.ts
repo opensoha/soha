@@ -68,6 +68,7 @@ async function setup(
               'platform.deployment.restart',
               'platform.deployment.rollback',
               'platform.deployment.delete',
+              'platform.deployment.update',
               'platform.pods.logs',
               'platform.pods.exec',
               'delivery.applications.view',
@@ -93,9 +94,17 @@ async function setup(
     if (endpoint === '/clusters/capabilities')
       return {
         body: {
-          data: ['workload.mutations', 'resource.yaml.apply', 'pod.logs', 'pod.exec'].map(
-            (key) => ({ key, direct: { status: 'available' }, agent: { status: 'unsupported' } }),
-          ),
+          data: [
+            'workload.mutations',
+            'resource.yaml.view',
+            'resource.yaml.apply',
+            'pod.logs',
+            'pod.exec',
+          ].map((key) => ({
+            key,
+            direct: { status: 'available' },
+            agent: { status: 'unsupported' },
+          })),
         },
       }
     if (endpoint === '/clusters/cluster-a/workloads/deployments/api/detail')
@@ -104,6 +113,7 @@ async function setup(
           data: {
             name: 'api',
             namespace: 'monitoring',
+            uid: 'deployment-uid',
             desiredReplicas: count,
             updatedReplicas: count === 3 ? 2 : count,
             readyReplicas: count,
@@ -119,7 +129,7 @@ async function setup(
             pods,
             allowedActions: options.readonly
               ? ['view']
-              : ['view', 'scale', 'restart', 'rollback', 'delete'],
+              : ['view', 'scale', 'restart', 'rollback', 'delete', 'update'],
           },
         },
       }
@@ -195,7 +205,13 @@ spec:
         },
       }
     }
-    if (endpoint === '/clusters/cluster-a/resources/graph')
+    if (
+      endpoint === '/clusters/cluster-a/resources/graph' &&
+      method === 'GET' &&
+      url.searchParams.get('namespace') === 'monitoring' &&
+      url.searchParams.get('kind') === 'Deployment' &&
+      url.searchParams.get('name') === 'api'
+    )
       return {
         body: {
           data: {
@@ -208,6 +224,11 @@ spec:
               ['deployment', 'Deployment', 'api'],
               ['new', 'ReplicaSet', 'api-new'],
               ['old', 'ReplicaSet', 'api-old'],
+              ...Array.from({ length: 6 }, (_, index) => [
+                `history-${index + 2}`,
+                'ReplicaSet',
+                `api-history-${index + 2}`,
+              ]),
               ['config', 'ConfigMap', 'api-config'],
               ...pods.map((pod) => [pod.name, 'Pod', pod.name]),
             ].map(([id, kind, name]) => ({
@@ -217,13 +238,22 @@ spec:
                 namespace: 'monitoring',
                 kind,
                 name,
-                apiVersion: 'v1',
+                apiVersion: ['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet'].includes(kind)
+                  ? 'apps/v1'
+                  : ['Job', 'CronJob'].includes(kind)
+                    ? 'batch/v1'
+                    : 'v1',
                 scopeMode: 'namespace',
               },
             })),
             edges: [
               ['deployment', 'new', 'owns'],
               ['deployment', 'old', 'owns'],
+              ...Array.from({ length: 6 }, (_, index) => [
+                'deployment',
+                `history-${index + 2}`,
+                'owns',
+              ]),
               ['deployment', 'config', 'uses-config'],
               ...pods.map((pod) => [pod.name.includes('-old-') ? 'old' : 'new', pod.name, 'owns']),
             ].map(([sourceId, targetId, relation], index) => ({
@@ -408,28 +438,37 @@ test('Deployment detail connects eight tabs, four header actions, continuous his
     ),
   ).toBe(false)
   await page.getByRole('tab', { name: '版本历史', exact: true }).click()
-  await expect(page.locator('.soha-deployment-history-row')).toHaveCount(8)
-  await expect(page.locator('.soha-deployment-history .ant-pagination')).toHaveCount(0)
+  await expect(page.locator('.soha-workload-history-row')).toHaveCount(8)
+  await expect(page.locator('.soha-workload-history .ant-pagination')).toHaveCount(0)
   await page.getByRole('textbox', { name: '搜索版本' }).fill('v5')
-  await expect(page.locator('.soha-deployment-history-row')).toHaveCount(1)
-  await expect(page.locator('.soha-deployment-history-row')).toContainText('版本 5')
+  await expect(page.locator('.soha-workload-history-row')).toHaveCount(1)
+  await expect(page.locator('.soha-workload-history-row')).toContainText('版本 5')
   await page.getByRole('textbox', { name: '搜索版本' }).fill('')
   await page.getByRole('button', { name: '回滚到此版本', exact: true }).nth(1).click()
   await expect(page.getByRole('dialog')).toContainText('目标版本 11')
   await page.getByRole('button', { name: '取消', exact: true }).click()
   expect(state.writes).toHaveLength(0)
   await page.getByRole('tab', { name: '关联资源', exact: true }).click()
-  const branches = page.locator('.soha-deployment-relation-branches > section')
-  await expect(branches).toHaveCount(2)
-  await expect(branches.nth(0)).toContainText('api-new-000')
-  await expect(branches.nth(0)).not.toContainText('api-old-002')
-  await expect(branches.nth(1)).toContainText('api-old-002')
+  const graph = page.getByRole('tabpanel', { name: '关联资源', exact: true })
+  await expect(graph.locator('.react-flow__node[data-id="deployment"]')).toHaveClass(/is-root/)
+  await expect(graph.locator('.react-flow__node[data-id="new"]')).toBeVisible()
+  await expect(graph.locator('.react-flow__node[data-id="old"]')).toBeVisible()
+  await expect(graph.locator('.react-flow__node[data-id="api-new-000"]')).toBeVisible()
+  await expect(graph.locator('.react-flow__node[data-id="api-old-002"]')).toBeVisible()
+  await expect(graph.locator('.react-flow__node[data-id^="history-"]')).toHaveCount(0)
+  await expect(graph.locator('.react-flow__edge[data-id="0"]')).toHaveCount(1)
   await page.getByRole('switch', { name: '历史 ReplicaSets' }).click()
-  await expect(branches).toHaveCount(8)
-  const config = page.getByRole('button', { name: /ConfigMap api-config/ })
+  await expect(graph.locator('.react-flow__node[data-id^="history-"]')).toHaveCount(6)
+  await page
+    .getByRole('radiogroup', { name: '关联资源视图' })
+    .getByText('列表', { exact: true })
+    .click()
+  const config = graph.getByRole('button', { name: 'api-config', exact: true })
   await config.focus()
   await config.press('Enter')
-  await expect(page.locator('.soha-deployment-selected')).toContainText('api-config')
+  await expect(graph.getByRole('complementary', { name: '选中资源信息' })).toContainText(
+    'api-config',
+  )
   await page.getByRole('button', { name: '关闭资源信息' }).click()
   await expect(config).toBeFocused()
   verifyBrowserEvidence(evidence)
@@ -529,6 +568,22 @@ test('Deployment mutations keep target confirmations, failure feedback and exact
   verifyBrowserEvidence(evidence)
 })
 
+test('Deployment current revision filters Pods from a cold detail link', async ({
+  context,
+  page,
+}) => {
+  const { evidence } = await setup(context, page)
+  await page.goto(`${path}&tab=pods`)
+  const panel = page.getByRole('tabpanel', { name: 'Pods', exact: true })
+  await expect(panel.getByRole('link', { name: 'api-old-002', exact: true })).toBeVisible()
+  const currentRevision = panel.getByRole('radio', { name: '当前版本', exact: true })
+  await expect(currentRevision).toBeEnabled()
+  await panel.getByText('当前版本', { exact: true }).click()
+  await expect(panel.getByRole('link', { name: 'api-new-000', exact: true })).toBeVisible()
+  await expect(panel.getByRole('link', { name: 'api-old-002', exact: true })).toHaveCount(0)
+  verifyBrowserEvidence(evidence)
+})
+
 test('Deployment complete Pod table virtualizes, filters and stays bounded on narrow screens', async ({
   context,
   page,
@@ -614,7 +669,7 @@ test('Deployment revision templates load on demand, compare real retained templa
   page.on('pageerror', (error) => console.log('REVISION_RUNTIME_ERROR', error.message, error.stack))
   const { state, evidence } = await setup(context, page)
   await page.goto(`${path}&tab=revisions`)
-  await expect(page.locator('.soha-deployment-history-row')).toHaveCount(8)
+  await expect(page.locator('.soha-workload-history-row')).toHaveCount(8)
   expect(state.reads.some((item) => item.includes('/replicasets/') && item.endsWith('/yaml'))).toBe(
     false,
   )
@@ -732,7 +787,7 @@ test('Deployment history aligns its current-template tag and keeps the refresh i
   await expect(actions.locator('button').first()).toHaveAttribute('role', 'switch')
   const toggle = actions.getByRole('switch', { name: /自动刷新/ })
   const scale = actions.getByRole('button', { name: '扩缩容', exact: true })
-  const row = page.locator('.soha-deployment-history-row').first()
+  const row = page.locator('.soha-workload-history-row').first()
   const tag = row.locator('.soha-metadata-tag')
   const time = row.locator('.ant-typography-secondary').first()
   for (const dark of [false, true]) {

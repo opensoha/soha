@@ -94,6 +94,26 @@ export function useKubernetesResourceActions<T>({
     liveAction ??
     (target ? actions(target.record).find((item) => item.key === target.actionKey) : undefined)
   const ready = Boolean(target?.scope === scope && liveAction && !liveAction.disabled && !pending)
+  const selectAction = (record: T, key: string) => {
+    const current = records.find((item) => getKey(item) === getKey(record))
+    const action =
+      current === undefined ? undefined : actions(current).find((item) => item.key === key)
+    if (!action || action.disabled) return
+    if (action.confirm) {
+      action.prepare?.()
+      setError(null)
+      setTarget({
+        scope,
+        record: current as T,
+        key: getKey(current as T),
+        actionKey: key,
+        token: ++sequence.current,
+      })
+    } else {
+      // The request owner keeps its existing durable feedback and write fence.
+      void Promise.resolve(action.run()).catch(() => undefined)
+    }
+  }
   const column: TableColumnsType<T>[number] = {
     key: 'actions',
     title: '',
@@ -139,24 +159,7 @@ export function useKubernetesResourceActions<T>({
           localeCode={localeCode}
           items={items}
           onSelect={(key) => {
-            const current = records.find((item) => getKey(item) === getKey(record))
-            const action =
-              current === undefined ? undefined : actions(current).find((item) => item.key === key)
-            if (!action || action.disabled) return
-            if (action.confirm) {
-              action.prepare?.()
-              setError(null)
-              setTarget({
-                scope,
-                record: current as T,
-                key: getKey(current as T),
-                actionKey: key,
-                token: ++sequence.current,
-              })
-            } else {
-              // The request owner keeps its existing durable feedback and write fence.
-              void Promise.resolve(action.run()).catch(() => undefined)
-            }
+            selectAction(record, key)
           }}
         />
       )
@@ -225,6 +228,7 @@ export function useKubernetesResourceActions<T>({
   )
   return {
     column,
+    selectAction,
     confirmation,
     isConfirming: Boolean(target && target.scope === scope),
     hasActions: records.some((record) => actions(record).length > 0),

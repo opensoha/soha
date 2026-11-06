@@ -1,0 +1,23 @@
+.soha-gatewayclass-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-gatewayclass-query {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.soha-gatewayclass-more-addresses {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.soha-gatewayclass-more-addresses > summary {
+  color: var(--soha-primary);
+  cursor: pointer;
+}
+.soha-gatewayclass-coverage {
+  margin-top: 12px;
+  margin-bottom: 0;
+}

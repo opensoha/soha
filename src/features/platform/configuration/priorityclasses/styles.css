@@ -1,0 +1,43 @@
+.soha-priority-detail {
+  min-width: 0;
+}
+.soha-priority-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-priority-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-priority-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-priority-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.soha-priority-card-title .ant-btn,
+.soha-priority-muted {
+  color: var(--soha-text-secondary);
+}
+.soha-priority-muted {
+  margin-inline-start: 6px;
+}
+.soha-priority-value {
+  color: var(--soha-text-primary);
+  font-size: 28px;
+  line-height: 1.3;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.soha-priority-description {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.soha-priority-policy-description {
+  margin: 16px 0 0;
+  color: var(--soha-text-secondary);
+  overflow-wrap: anywhere;
+}

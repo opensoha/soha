@@ -55,6 +55,7 @@ vi.mock('antd', () => ({
   Typography: { Text: ({ children }: { children: ReactNode }) => <span>{children}</span> },
   Progress: () => null,
   Spin: () => null,
+  Collapse: () => null,
 }))
 it('removes disabled cached events from the timeline and AI context after permission loss', () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)

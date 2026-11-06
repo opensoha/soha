@@ -80,33 +80,15 @@ function capabilityReason(
   support: ClusterCapabilityModeSupport,
   notes: string[],
 ) {
-  const sourceReason = support.reason?.trim() || notes.join(' / ')
-  if (localeCode === 'en_US') {
-    return (
-      sourceReason ||
-      (support.status === 'unsupported' ? fallbackUnsupportedReason(localeCode) : '')
-    )
+  const sourceReason = [...new Set([support.reason?.trim(), ...notes].filter(Boolean))].join(' / ')
+  if (sourceReason) return sourceReason
+  if (support.status === 'unsupported') return fallbackUnsupportedReason(localeCode)
+  if (support.status === 'partial') {
+    return localeCode === 'zh_CN'
+      ? '当前集群连接模式仅部分支持该能力。'
+      : 'The current cluster connection mode only partially supports this capability.'
   }
-  if (mode === 'direct') {
-    return (
-      sourceReason ||
-      (support.status === 'unsupported' ? fallbackUnsupportedReason(localeCode) : '')
-    )
-  }
-  return (
-    (mode === 'agent' && support.status !== 'unsupported'
-      ? AGENT_CAPABILITY_REASONS_ZH[key]
-      : undefined) ||
-    (sourceReason
-      ? support.status === 'partial'
-        ? '当前集群连接模式仅部分支持该能力。'
-        : support.status === 'available'
-          ? sourceReason
-          : fallbackUnsupportedReason(localeCode)
-      : support.status === 'unsupported'
-        ? fallbackUnsupportedReason(localeCode)
-        : '')
-  )
+  return localeCode === 'zh_CN' && mode === 'agent' ? AGENT_CAPABILITY_REASONS_ZH[key] || '' : ''
 }
 
 export function evaluateClusterCapability({

@@ -1,3 +1,4 @@
+import type { JobExecution } from '../shared/job-execution'
 import type { ScopeKey, WorkloadRelation } from '@/types'
 
 export interface CronJob {
@@ -30,7 +31,7 @@ export interface SuspendCronJobVariables extends CronJobTarget {
   readonly suspend: boolean
 }
 
-export interface CronJobChildJob {
+export interface CronJobChildJob extends JobExecution {
   name: string
   namespace: string
   succeeded: number

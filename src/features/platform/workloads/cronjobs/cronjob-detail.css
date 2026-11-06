@@ -1,0 +1,44 @@
+.soha-cronjob-schedule {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.soha-cronjob-schedule code {
+  font-size: 18px;
+}
+.soha-cronjob-template {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+.soha-cronjob-template:last-child {
+  margin-bottom: 0;
+}
+.soha-cronjob-template pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.soha-cronjob-template .ant-typography {
+  overflow-wrap: anywhere;
+}
+.soha-cronjob-metric-value {
+  display: block;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 16px;
+}
+.soha-cronjob-metric-empty {
+  min-height: 166px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+.soha-cronjob-jobs > .ant-card-body > .ant-typography:last-child {
+  margin-top: 16px;
+  margin-bottom: 0;
+}

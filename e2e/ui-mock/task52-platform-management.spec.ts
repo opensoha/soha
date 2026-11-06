@@ -107,12 +107,17 @@ const lists = [
         status: 'Ready',
         roles: ['worker'],
         version: 'v1.31.0',
-        internalIP: '10.0.0.11',
+        internalIp: '10.0.0.11',
         labels: {},
         taints: [],
         allowedActions,
-        capacity: { cpu: '8', memory: '16Gi', pods: '110' },
-        allocatable: { cpu: '8', memory: '16Gi', pods: '110' },
+        podCount: 11,
+        resources: {
+          allocatable: { cpu: '8', memory: '16Gi', ephemeralStorage: '40Gi', pods: '110' },
+          requests: { cpu: '2', memory: '4Gi', ephemeralStorage: '10Gi' },
+          requestPercentages: { cpu: 25, memory: 25, ephemeralStorage: 25 },
+          usagePercentages: { pods: 10 },
+        },
         conditions: [],
       },
     ],
@@ -182,6 +187,7 @@ async function platformMocks(context: BrowserContext, page: Page) {
     'platform.namespaces.view',
     'platform.deployment.view',
     'platform.deployment.update',
+    'platform.configuration.config-maps.delete',
     'platform.pods.view',
     'platform.configuration.config-maps.view',
     'platform.configuration.config-maps.update',
@@ -454,7 +460,14 @@ for (const item of lists)
     const { state, evidence } = await platformMocks(context, page)
     await page.goto(item.route)
     await expect(page.getByText(item.name, { exact: true })).toBeVisible()
-    const refresh = page.getByRole('button', { name: '刷新', exact: true })
+    const refreshLabels: Record<string, string> = {
+      '/configuration/configmaps': '刷新 ConfigMaps',
+      '/cluster-resources/nodes': '刷新节点',
+    }
+    const refresh = page.getByRole('button', {
+      name: refreshLabels[item.route] ?? '刷新',
+      exact: true,
+    })
     await expect(refresh).toHaveCount(1)
     state.failedPath = root + item.path
     state.readStatus = 503
@@ -656,7 +669,19 @@ for (const entry of lists) {
     if (entry.route === '/cluster-resources/nodes') {
       const before = await rows.nth(1).evaluate((row) => row.getBoundingClientRect().top)
       await table.locator('.ant-table-row-expand-icon').first().click()
-      await expect(page.locator('.soha-node-expand-grid')).toBeVisible()
+      const preview = page.locator('.soha-node-expand-grid')
+      await expect(preview).toBeVisible()
+      for (const [label, value] of [
+        ['cpu', '25'],
+        ['memory', '25'],
+        ['disk', '25'],
+        ['pod', '10'],
+      ]) {
+        await expect(
+          preview.getByRole('progressbar', { name: `${label} allocation for worker-prod-01-0000` }),
+        ).toHaveAttribute('aria-valuenow', value)
+      }
+      await expect(preview).toContainText('11 / 110')
       await expect
         .poll(() => rows.nth(1).evaluate((row) => row.getBoundingClientRect().top))
         .toBeGreaterThan(before + 50)
@@ -679,7 +704,7 @@ for (const entry of lists) {
       await expect.poll(async () => (await anchor())?.scroll ?? 0).toBeGreaterThan(100)
       const saved = (await anchor())!
       state.collectionCopies += 1
-      await page.getByRole('button', { name: '刷新', exact: true }).click()
+      await page.getByRole('button', { name: '刷新节点', exact: true }).click()
       await expect(page.getByRole('status').filter({ hasText: '81 个' })).toBeVisible()
       await expect.poll(async () => (await anchor())?.key).toBe(saved.key)
       expect(Math.abs((await anchor())!.offset - saved.offset)).toBeLessThan(3)

@@ -2,14 +2,16 @@ import { useKubernetesResourceActions } from '@/features/platform/shared/use-kub
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
-  ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import '@/features/platform/extensions/styles.css'
+import {
+  WorkloadRefresh,
+  useWorkloadRefresh,
+} from '@/features/platform/workloads/shared/workload-refresh'
 import { useI18n } from '@/i18n'
-import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
@@ -24,12 +26,11 @@ import { buildCRDApiGroupDetailPath } from './paths'
 import { crdQueries } from './queries'
 import type { CRDApiGroupSummary } from './types'
 import { groupCRDsByApi } from './utils'
-
+import { useCRDClusterScope } from './use-cluster-scope'
 const { Text } = Typography
 
 export function CRDPage() {
   const { t, localeCode } = useI18n()
-  const { clusterId } = usePlatformScopeStore()
   const navigate = useNavigate()
   const permissionSnapshot = usePermissionSnapshot().data?.data
   const canDelete = hasPermission(permissionSnapshot, 'platform.extensions.crds.delete')
@@ -37,6 +38,7 @@ export function CRDPage() {
     null,
   )
   const [params, setParams] = useSearchParams()
+  const { clusterId, scopeReady } = useCRDClusterScope(params, setParams)
   const searchKeyword = params.get('q') ?? ''
   const setSearchKeyword = (keyword: string) =>
     setParams(
@@ -52,7 +54,17 @@ export function CRDPage() {
     )
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const normalizedKeyword = normalizeSearchKeyword(useDeferredValue(searchKeyword))
-  const catalogQuery = useQuery(crdQueries.catalog(clusterId))
+  const catalogRefresh = useWorkloadRefresh()
+  const catalogQuery = useQuery({
+    ...crdQueries.catalog(clusterId),
+    enabled: Boolean(clusterId) && scopeReady,
+    refetchInterval: (query) => {
+      const interval = catalogRefresh.interval(query)
+      if (interval === false) return false
+      return query.state.data?.some((item) => item.deletingAt) ? 3000 : interval
+    },
+    refetchIntervalInBackground: false,
+  })
   const visibleCatalogQueryData = readableQueryData(catalogQuery)
   const apiGroups = useMemo(
     () => groupCRDsByApi(visibleCatalogQueryData ?? []),
@@ -69,7 +81,9 @@ export function CRDPage() {
     [apiGroups, normalizedKeyword],
   )
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
-  const openGroup = (group: string) => navigate(buildCRDApiGroupDetailPath(group))
+  const groupPath = (group: string) =>
+    `${buildCRDApiGroupDetailPath(group)}?${new URLSearchParams({ ...(clusterId ? { clusterId } : {}), ...(searchKeyword ? { q: searchKeyword } : {}) })}`
+  const openGroup = (group: string) => navigate(groupPath(group))
 
   const resourceActions = useKubernetesResourceActions<CRDApiGroupSummary>({
     resourceKey: 'crds',
@@ -228,12 +242,14 @@ export function CRDPage() {
               tooltip={densityLabel}
               onClick={() => setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))}
             />
-            <ManagementRefreshButton
-              aria-label={t('common.refresh', 'Refresh')}
+            <WorkloadRefresh
+              compact
+              settings={catalogRefresh}
+              queries={[catalogQuery]}
+              resourceLabel="CRD"
               disabled={!clusterId}
-              loading={catalogQuery.isFetching}
-              tooltip={t('common.refresh', 'Refresh')}
-              onClick={() => clusterId && void catalogQuery.refetch()}
+              label={t('common.refresh', 'Refresh')}
+              onRefresh={() => clusterId && void catalogQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

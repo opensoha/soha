@@ -34,6 +34,8 @@ export function WorkloadPodsTable({
   currentRevision,
   compact = false,
   onShowAll,
+  factColumns = [],
+  revisionWidth = 90,
 }: {
   pods: Pod[]
   scope: ScopeKey
@@ -41,6 +43,8 @@ export function WorkloadPodsTable({
   currentRevision?: string
   compact?: boolean
   onShowAll?: () => void
+  factColumns?: TableColumnsType<Pod>
+  revisionWidth?: number
 }) {
   const { localeCode } = useI18n()
   const zh = localeCode === 'zh_CN'
@@ -102,6 +106,7 @@ export function WorkloadPodsTable({
           <span title={name}>{name}</span>
         ),
     },
+    ...(!compact ? factColumns : []),
     {
       title: zh ? '状态' : 'Status',
       key: 'phase',
@@ -127,8 +132,13 @@ export function WorkloadPodsTable({
                 {
                   title: zh ? '版本' : 'Revision',
                   key: 'revision',
-                  width: 90,
-                  render: (_: unknown, pod: Pod) => owner(pod)?.record?.revision || '—',
+                  width: revisionWidth,
+                  ellipsis: true,
+                  render: (_: unknown, pod: Pod) => (
+                    <span title={owner(pod)?.record?.revision}>
+                      {owner(pod)?.record?.revision || '—'}
+                    </span>
+                  ),
                 },
               ]
             : []),

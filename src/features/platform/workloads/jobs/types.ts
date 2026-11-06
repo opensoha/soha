@@ -1,4 +1,4 @@
-import type { Pod, ScopeKey, WorkloadRelation } from '@/types'
+import type { Pod, ScopeKey, WorkloadRelation, WorkloadCondition } from '@/types'
 
 export interface Job {
   name: string
@@ -7,6 +7,11 @@ export interface Job {
   succeeded: number
   failed: number
   active: number
+  completionTarget?: number
+  suspend?: boolean
+  conditions?: WorkloadCondition[]
+  startTime?: string
+  completionTime?: string
   completionMode?: string
   ageSeconds: number
   allowedActions?: string[]
@@ -15,8 +20,9 @@ export interface Job {
 export interface JobDetail extends Job {
   parallelism?: number
   createdAt?: string
-  startTime?: string
-  completionTime?: string
+  backoffLimit?: number
+  activeDeadlineSeconds?: number
+  ttlSecondsAfterFinished?: number
   labels?: Record<string, string>
   annotations?: Record<string, string>
   pods?: Pod[]

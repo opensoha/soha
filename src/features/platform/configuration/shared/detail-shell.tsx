@@ -24,7 +24,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
 import { App, Card, Spin } from 'antd'
 import type { ReactNode } from 'react'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import '../styles.css'
 import { configurationMutations } from './mutations'
 import { configurationQueries } from './queries'
@@ -124,30 +124,74 @@ function ConfigurationReferencesTab({
   )
 }
 
-function ConfigurationYAMLTab({
-  kind,
-  scopeMode,
-  target,
-}: {
+interface ConfigurationYAMLWrite {
+  blocked: boolean
+  isPending: boolean
+  apply: (content: string, onSuccess: (content: string) => void) => void
+}
+
+interface ConfigurationYAMLTabProps {
+  active?: boolean
+  canUpdate?: boolean
   kind: ConfigurationKind
   scopeMode: ConfigurationScopeMode
   target: ConfigurationTarget
-}) {
-  const { localeCode } = useI18n()
-  const { message } = App.useApp()
+}
+
+function DefaultConfigurationYAMLTab(props: ConfigurationYAMLTabProps) {
   const queryClient = useQueryClient()
-  const yamlQuery = useQuery(configurationQueries.yaml(kind, target.scope, target.name, scopeMode))
-  const visibleYamlQueryData = readableQueryData(yamlQuery)
-  const updateMutation = usePlatformMutation(configurationMutations.updateYAML(kind, queryClient), {
+  const mutation = usePlatformMutation(configurationMutations.updateYAML(props.kind, queryClient), {
     label: ['更新资源', 'Update resource'],
     target: platformResourceTarget,
   })
-  const platformWriteBlocked = updateMutation.blocked
+  return (
+    <ConfigurationYAMLTab
+      {...props}
+      feedback={mutation.feedback}
+      write={{
+        blocked: mutation.blocked,
+        isPending: mutation.isPending,
+        apply: (content, onSuccess) =>
+          mutation.mutate({ ...props.target, content }, { onSuccess: (yaml) => onSuccess(yaml.content) }),
+      }}
+    />
+  )
+}
+
+function ConfigurationYAMLTab({
+  active = true,
+  canUpdate = true,
+  feedback,
+  kind,
+  scopeMode,
+  target,
+  write,
+}: ConfigurationYAMLTabProps & { feedback?: ReactNode; write: ConfigurationYAMLWrite }) {
+  const { localeCode } = useI18n()
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const options = configurationQueries.yaml(kind, target.scope, target.name, scopeMode)
+  const yamlQuery = useQuery({
+    ...options,
+    ...(kind === 'secrets' ? { gcTime: 0 } : {}),
+    enabled: Boolean(options.enabled) && active,
+  })
+  const visibleYamlQueryData = readableQueryData(yamlQuery)
   const yamlState = useYamlDraft(
     JSON.stringify([kind, target.scope.clusterId, target.scope.namespace, target.name]),
     visibleYamlQueryData?.content,
   )
   const { value: draft, setValue: setDraft } = yamlState
+  const applyDisabled =
+    !canUpdate ||
+    !active ||
+    write.blocked ||
+    !draft.trim() ||
+    yamlQuery.isFetching ||
+    Boolean(yamlQuery.error) ||
+    !visibleYamlQueryData ||
+    yamlState.original !== visibleYamlQueryData.content ||
+    Boolean(queryClient.getQueryState(options.queryKey)?.isInvalidated)
 
   return (
     <Suspense
@@ -159,7 +203,7 @@ function ConfigurationYAMLTab({
     >
       <ReadFeedback canRead={yamlQuery.isEnabled} query={yamlQuery} label="YAML" />
 
-      {updateMutation.feedback}
+      {feedback}
 
       {yamlQuery.isError && visibleYamlQueryData === undefined ? null : (
         <K8sYamlEditor
@@ -177,19 +221,21 @@ function ConfigurationYAMLTab({
               localeCode === 'zh_CN' ? '暂不支持本地草稿' : 'Local draft save disabled here',
             )
           }
-          onApply={() =>
-            updateMutation.mutate(
-              { ...target, content: draft },
-              {
-                onSuccess: (yaml) => {
-                  yamlState.applied(yaml.content)
-                },
-              },
-            )
-          }
+          onApply={() => {
+            const current = queryClient.getQueryState(options.queryKey)
+            if (
+              !applyDisabled &&
+              current?.fetchStatus === 'idle' &&
+              !current.error &&
+              !current.isInvalidated &&
+              current.data === visibleYamlQueryData
+            ) {
+              write.apply(draft, yamlState.applied)
+            }
+          }}
           saveDisabled
-          applyDisabled={platformWriteBlocked || !draft.trim() || updateMutation.isPending}
-          applying={updateMutation.isPending}
+          applyDisabled={applyDisabled}
+          applying={write.isPending}
         />
       )}
     </Suspense>
@@ -206,7 +252,27 @@ export function ConfigurationDetailShell<TDetail extends ConfigurationDetailBase
   scopeMode = 'namespace',
   showReferences = true,
   target,
+  header,
+  overview,
+  relatedResources,
+  additionalTabs,
+  activeTabKey: controlledTab,
+  onTabChange,
+  canUpdateYAML = true,
+  preserveYaml = false,
+  canReadYAML = true,
+  yamlWrite,
 }: {
+  canReadYAML?: boolean
+  yamlWrite?: ConfigurationYAMLWrite
+  header?: ReactNode
+  overview?: ReactNode
+  relatedResources?: ReactNode
+  additionalTabs?: NonNullable<TabsProps['items']>
+  activeTabKey?: string
+  onTabChange?: (key: string) => void
+  canUpdateYAML?: boolean
+  preserveYaml?: boolean
   dataTab?: ReactNode
   detail: TDetail
   kind: ConfigurationKind
@@ -218,7 +284,17 @@ export function ConfigurationDetailShell<TDetail extends ConfigurationDetailBase
   target: ConfigurationTarget
 }) {
   const { t, localeCode } = useI18n()
-  const [activeTabKey, setActiveTabKey] = useResourceDetailTab()
+  const [urlTab, setUrlTab] = useResourceDetailTab()
+  const activeTabKey = controlledTab ?? urlTab
+  const [visitedYaml, setVisitedYaml] = useState(activeTabKey === 'yaml')
+  useEffect(() => {
+    if (activeTabKey === 'yaml') setVisitedYaml(true)
+  }, [activeTabKey])
+  const changeTab = (key: string) => {
+    if (key === 'yaml') setVisitedYaml(true)
+    if (onTabChange) onTabChange(key)
+    else setUrlTab(key)
+  }
   useAIPageContext({
     sourceWorkbench: 'platform',
     sourceTitle: label,
@@ -227,11 +303,12 @@ export function ConfigurationDetailShell<TDetail extends ConfigurationDetailBase
     clusterId: target.scope.clusterId || undefined,
     namespace: detail.namespace || undefined,
   })
+  const yamlProps = { active: activeTabKey === 'yaml', canUpdate: canUpdateYAML, kind, scopeMode, target }
   const items: NonNullable<TabsProps['items']> = [
     {
       key: 'overview',
       label: t('common.overview', 'Overview'),
-      children: (
+      children: overview ?? (
         <div className="soha-detail-stack">
           <ConfigurationResourceOverview detail={detail} extra={overviewExtra} />
           <ResourceGitOpsStatus
@@ -244,6 +321,7 @@ export function ConfigurationDetailShell<TDetail extends ConfigurationDetailBase
         </div>
       ),
     },
+    ...(additionalTabs ?? []),
     ...(dataTab === undefined
       ? []
       : [
@@ -259,38 +337,54 @@ export function ConfigurationDetailShell<TDetail extends ConfigurationDetailBase
             key: 'relationships',
             label: localeCode === 'zh_CN' ? '关联资源' : 'Related resources',
             children:
-              activeTabKey === 'relationships' ? (
-                <ConfigurationReferencesTab kind={kind} target={target} />
-              ) : null,
+              activeTabKey === 'relationships'
+                ? (relatedResources ?? <ConfigurationReferencesTab kind={kind} target={target} />)
+                : null,
           },
         ]
       : []),
     {
       key: 'yaml',
       label: t('common.yaml', 'YAML'),
-      children:
-        activeTabKey === 'yaml' ? (
-          <ConfigurationYAMLTab kind={kind} scopeMode={scopeMode} target={target} />
-        ) : null,
+      children: !canReadYAML ? (
+        <ManagementState
+          kind="no-permission"
+          description={
+            localeCode === 'zh_CN'
+              ? '查看 Secret YAML 需要敏感数据查看权限。'
+              : 'Secret data permission is required to read YAML.'
+          }
+        />
+      ) : activeTabKey === 'yaml' || (preserveYaml && visitedYaml) ? (
+        yamlWrite ? (
+          <ConfigurationYAMLTab {...yamlProps} write={yamlWrite} />
+        ) : (
+          <DefaultConfigurationYAMLTab {...yamlProps} />
+        )
+      ) : null,
     },
   ]
 
   return (
     <div className="soha-page soha-workload-detail-page soha-k8s-detail-page">
-      <ResourceDetailHeader
-        kind={label}
-        name={detail.name}
-        namespace={detail.namespace}
-        createdAt={detail.createdAt}
-        ageSeconds={detail.ageSeconds}
-        queryKey={configurationQueries.detail(kind, target.scope, target.name, scopeMode).queryKey}
-      />
+      {header ?? (
+        <ResourceDetailHeader
+          kind={label}
+          name={detail.name}
+          namespace={detail.namespace}
+          createdAt={detail.createdAt}
+          ageSeconds={detail.ageSeconds}
+          queryKey={
+            configurationQueries.detail(kind, target.scope, target.name, scopeMode).queryKey
+          }
+        />
+      )}
       <ResourceDetailTabs
         activeKey={activeTabKey}
         className="soha-resource-tabs soha-workload-detail-tabs"
         indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
         items={items}
-        onChange={setActiveTabKey}
+        onChange={changeTab}
         size="small"
         tabBarGutter={32}
       />

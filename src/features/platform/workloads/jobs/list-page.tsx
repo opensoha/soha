@@ -4,7 +4,7 @@ import {
   kubernetesDeleteConfirmation,
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
-import { ManagementTableToolbar } from '@/components/management-list'
+import { ManagementQueryField, ManagementTableToolbar } from '@/components/management-list'
 import { hasAllowedAction } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import {
@@ -34,7 +34,15 @@ import { tableColumnPresets } from '@/utils/table-columns'
 import { formatAgeSeconds } from '@/utils/time'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { TableColumnsType } from 'antd'
+import { Select, type TableColumnsType } from 'antd'
+import { StatusTag } from '@/components/status-tag'
+import {
+  formatJobDuration,
+  jobCompletionTarget,
+  jobDuration,
+  jobState,
+  jobStateLabel,
+} from './job-detail-model'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
@@ -60,19 +68,27 @@ export function WorkloadsJobsPage() {
   })
   const platformWriteBlocked = removeMutation.blocked
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [stateFilter, setStateFilter] = useState('all')
   const { densityButton, tableSize } = useWorkloadTableDensity(localeCode)
   const workloadMutationCapability = useClusterCapability('workload.mutations', localeCode)
 
   const jobs = visibleJobsQueryData ?? []
   const filteredJobs = useMemo(
     () =>
-      jobs.filter((item) =>
-        includesSearch(
-          [item.name, item.namespace, item.completionMode],
-          normalizeSearchKeyword(searchKeyword),
-        ),
+      jobs.filter(
+        (item) =>
+          includesSearch(
+            [
+              item.name,
+              item.namespace,
+              item.completionMode,
+              jobStateLabel(jobState(item), localeCode === 'zh_CN'),
+            ],
+            normalizeSearchKeyword(searchKeyword),
+          ) &&
+          (stateFilter === 'all' || jobState(item) === stateFilter),
       ),
-    [jobs, searchKeyword],
+    [jobs, searchKeyword, stateFilter, localeCode],
   )
 
   useWorkloadListAIContext({
@@ -131,17 +147,34 @@ export function WorkloadsJobsPage() {
     },
     { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', width: 160 },
     {
-      title: localeCode === 'zh_CN' ? '完成数' : 'Completions',
-      dataIndex: 'completions',
-      width: 120,
+      title: localeCode === 'zh_CN' ? '状态' : 'Status',
+      key: 'status',
+      width: 130,
+      sorter: (a, b) => jobState(a).localeCompare(jobState(b)),
+      render: (_, job) => {
+        const state = jobState(job)
+        return (
+          <StatusTag
+            value={
+              state === 'running'
+                ? 'progressing'
+                : state === 'failures-recorded'
+                  ? 'warning'
+                  : state
+            }
+            label={jobStateLabel(state, localeCode === 'zh_CN')}
+          />
+        )
+      },
     },
     {
-      title: localeCode === 'zh_CN' ? '成功' : 'Succeeded',
-      dataIndex: 'succeeded',
-      width: 104,
+      title: localeCode === 'zh_CN' ? '成功 / 目标' : 'Succeeded / target',
+      dataIndex: 'completions',
+      width: 120,
+      render: (_, job) => `${job.succeeded} / ${jobCompletionTarget(job) ?? '—'}`,
     },
     { title: localeCode === 'zh_CN' ? '活跃' : 'Active', dataIndex: 'active', width: 88 },
-    { title: localeCode === 'zh_CN' ? '失败' : 'Failed', dataIndex: 'failed', width: 88 },
+    { title: localeCode === 'zh_CN' ? '失败 Pod' : 'Failed Pods', dataIndex: 'failed', width: 88 },
     {
       title: localeCode === 'zh_CN' ? '模式' : 'Mode',
       dataIndex: 'completionMode',
@@ -149,8 +182,18 @@ export function WorkloadsJobsPage() {
       render: (value: string) => value || '-',
     },
     {
+      title: localeCode === 'zh_CN' ? '执行耗时' : 'Elapsed',
+      key: 'duration',
+      width: 112,
+      sorter: (a, b) => (jobDuration(a) ?? -1) - (jobDuration(b) ?? -1),
+      render: (_, job) => {
+        const seconds = jobDuration(job)
+        return seconds === undefined ? '—' : formatJobDuration(seconds)
+      },
+    },
+    {
       ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '时长' : 'Age',
+      title: localeCode === 'zh_CN' ? '创建时长' : 'Age',
       dataIndex: 'ageSeconds',
       width: 104,
       render: (value: number) => formatAgeSeconds(value),
@@ -164,9 +207,12 @@ export function WorkloadsJobsPage() {
 
       {resourceActions.confirmation}
       <WorkloadQueryPanel
-        hasActiveFilters={Boolean(searchKeyword.trim())}
+        hasActiveFilters={Boolean(searchKeyword.trim() || stateFilter !== 'all')}
         localeCode={localeCode}
-        onReset={() => setSearchKeyword('')}
+        onReset={() => {
+          setSearchKeyword('')
+          setStateFilter('all')
+        }}
       >
         <WorkloadSearchInput
           label={localeCode === 'zh_CN' ? '关键词' : 'Keyword'}
@@ -176,12 +222,35 @@ export function WorkloadsJobsPage() {
             localeCode === 'zh_CN' ? '搜索 Job / Namespace / Mode' : 'Search job / namespace / mode'
           }
         />
+        <ManagementQueryField label={localeCode === 'zh_CN' ? '状态' : 'Status'}>
+          <Select
+            aria-label={localeCode === 'zh_CN' ? 'Job 状态' : 'Job status'}
+            value={stateFilter}
+            onChange={setStateFilter}
+            options={[
+              { value: 'all', label: localeCode === 'zh_CN' ? '全部状态' : 'All states' },
+              ...(
+                [
+                  'running',
+                  'completed',
+                  'failed',
+                  'suspended',
+                  'failures-recorded',
+                  'pending',
+                ] as const
+              ).map((state) => ({
+                value: state,
+                label: jobStateLabel(state, localeCode === 'zh_CN'),
+              })),
+            ]}
+          />
+        </ManagementQueryField>
       </WorkloadQueryPanel>
       <KubernetesResourceTable
         resourceKey={'jobs'}
         resourceLabel={'Jobs'}
         allRows={jobs}
-        filterKey={searchKeyword}
+        filterKey={`${searchKeyword}/${stateFilter}`}
         error={jobsQuery.isEnabled === false ? null : jobsQuery.error}
         hasReadData={jobsQuery.data !== undefined}
         onRetry={jobsQuery.isEnabled === false ? undefined : () => jobsQuery.refetch()}

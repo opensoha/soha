@@ -4,11 +4,14 @@ import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
   ManagementKeywordField,
+  ManagementQueryField,
   ManagementQueryActions,
-  ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
+import { ReadFeedback } from '@/components/request-feedback'
+import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { TableCellText } from '@/components/table-cell-content'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import {
   capabilityActionTooltip,
@@ -18,399 +21,385 @@ import {
   platformResourceTarget,
   usePlatformMutation,
 } from '@/features/platform/shared/use-platform-mutation'
+import {
+  WorkloadRefresh,
+  useWorkloadRefresh,
+} from '@/features/platform/workloads/shared/workload-refresh'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { PauseCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { TableColumnsType } from 'antd'
-import {
-  Alert,
-  Button,
-  Input,
-  InputNumber,
-  Modal,
-  Select,
-  Space,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd'
-import type { ReactNode } from 'react'
+import { Alert, Button, Select, Tooltip, Typography, type TableColumnsType } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import '../styles.css'
+import './styles.css'
+import { networkResourcePath } from '../shared/resource-links'
+import { CreateForwardForm } from './create-form'
+import { sessionCanStop } from './model'
 import { portForwardMutations } from './mutations'
 import { portForwardQueries } from './queries'
-import type { PortForwardDraft, PortForwardSession } from './types'
-
-const { Text } = Typography
-
-function normalizeSearchKeyword(value: string) {
-  return value.trim().toLowerCase()
-}
-
-function includesSearch(values: Array<string | undefined | null>, keyword: string) {
-  if (!keyword) return true
-  return values.some((value) => (value ?? '').toLowerCase().includes(keyword))
-}
-
-function createPortForwardDraft(namespace: string | null) {
-  return {
-    targetKind: 'Pod',
-    targetName: '',
-    namespace: namespace || 'default',
-    localPort: 8080,
-    remotePort: 80,
-  }
-}
-
-function PlatformTableState({
-  description,
-  kind,
-}: {
-  description: ReactNode
-  kind?: 'empty' | 'error' | 'select-scope'
-}) {
-  return (
-    <ManagementState bordered={false} compact description={description} kind={kind ?? 'empty'} />
-  )
-}
+import type { PortForwardSession } from './types'
 
 export function NetworkPortForwardPage() {
-  const { localeCode } = useI18n()
-  const queryClient = useQueryClient()
-  const { clusterId, namespace } = usePlatformScopeStore()
-  const scope = toScopeKey(clusterId, null)
-  const portForwardCapability = useClusterCapability('port.forward', localeCode)
-  const permissionSnapshot = usePermissionSnapshot().data?.data
-  const canCreate = hasPermission(permissionSnapshot, 'platform.network.port-forwards.create')
-  const canDelete = hasPermission(permissionSnapshot, 'platform.network.port-forwards.delete')
-  const [modalVisible, setModalVisible] = useState(false)
-  const [searchKeyword, setSearchKeyword] = useState('')
-  const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
-  const [form, setForm] = useState<Omit<PortForwardDraft, 'scope'>>(() =>
-    createPortForwardDraft(namespace),
-  )
-
-  const query = useQuery(portForwardQueries.list(scope))
-  const visibleQueryData = readableQueryData(query)
-  const registerMutation = usePlatformMutation(portForwardMutations.register(queryClient), {
-    label: ['建立端口转发', 'Create port forward'],
-    target: platformResourceTarget,
+  const { localeCode } = useI18n(),
+    zh = localeCode === 'zh_CN'
+  const client = useQueryClient(),
+    { clusterId, namespace } = usePlatformScopeStore()
+  const scope = toScopeKey(clusterId, null),
+    capability = useClusterCapability('port.forward', localeCode)
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const permitted = (a: string) => hasPermission(permissions, `platform.network.port-forwards.${a}`)
+  const canRead = permitted('view'),
+    canCreate = permitted('create'),
+    canStop = permitted('delete')
+  const [modal, setModal] = useState<{ clusterId: string; namespace: string | null }>()
+  const [keyword, setKeyword] = useState(''),
+    [status, setStatus] = useState<string>(),
+    [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
+  const search = useDeferredValue(keyword).trim().toLowerCase(),
+    refresh = useWorkloadRefresh()
+  const options = portForwardQueries.list(scope)
+  const query = useQuery({
+    ...options,
+    enabled: Boolean(options.enabled) && canRead,
+    refetchInterval: refresh.interval,
   })
-  const stopMutation = usePlatformMutation(portForwardMutations.stop(queryClient), {
-    label: ['停止端口转发', 'Stop port forward'],
-    target: platformResourceTarget,
-  })
-  const platformWriteBlocked = registerMutation.blocked || stopMutation.blocked
-
-  const deferredSearchKeyword = useDeferredValue(searchKeyword)
-  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
-  const rawItems = visibleQueryData ?? []
-  const scopedItems = useMemo(
-    () => (namespace ? rawItems.filter((item) => item.namespace === namespace) : rawItems),
-    [rawItems, namespace],
+  const raw = canRead ? readableQueryData(query) || [] : []
+  const scoped = useMemo(
+    () => raw.filter((r) => r.clusterId === clusterId && (!namespace || r.namespace === namespace)),
+    [raw, clusterId, namespace],
   )
-  const filteredItems = useMemo(
+  const filtered = useMemo(
     () =>
-      scopedItems.filter((item) =>
-        includesSearch(
-          [
-            item.sessionId,
-            item.namespace,
-            item.targetKind,
-            item.targetName,
-            item.status,
-            String(item.localPort),
-            String(item.remotePort),
-          ],
-          normalizedKeyword,
-        ),
+      scoped.filter(
+        (r) =>
+          (!status || r.status === status) &&
+          (!search ||
+            [
+              r.sessionId,
+              r.namespace,
+              r.targetKind,
+              r.targetName,
+              r.status,
+              r.createdBy,
+              String(r.localPort),
+              String(r.remotePort),
+            ].some((v) => v?.toLowerCase().includes(search))),
       ),
-    [normalizedKeyword, scopedItems],
+    [scoped, search, status],
   )
-  const effectiveEmpty = !clusterId
-    ? localeCode === 'zh_CN'
-      ? '请选择集群'
-      : 'Select a cluster'
-    : normalizedKeyword && rawItems.length > 0
-      ? localeCode === 'zh_CN'
-        ? '没有匹配的 Port Forward'
-        : 'No matching port forward sessions'
-      : localeCode === 'zh_CN'
-        ? '当前集群没有登记的 Port Forward'
-        : 'No port forward sessions registered'
-  const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
-  const portForwardUnsupported = portForwardCapability.status === 'unsupported'
-  const canShowActions = canDelete && !portForwardUnsupported && rawItems.length > 0
-  const portForwardCapabilityReason = portForwardCapability.reason
-  const createPortForwardLabel = localeCode === 'zh_CN' ? '新建 Port Forward' : 'New Port Forward'
-  const stopPortForwardLabel = localeCode === 'zh_CN' ? '停止 Port Forward' : 'Stop port forward'
-
-  const resourceActions = useKubernetesResourceActions({
+  const register = usePlatformMutation(portForwardMutations.register(client), {
+    label: ['创建转发会话', 'Create forward session'],
+    target: platformResourceTarget,
+  })
+  const stop = usePlatformMutation(portForwardMutations.stop(client), {
+    label: ['停止转发会话', 'Stop forward session'],
+    target: platformResourceTarget,
+  })
+  const blocked = register.blocked || stop.blocked
+  const actions = useKubernetesResourceActions<PortForwardSession>({
     resourceKey: 'port-forwards',
     resourceLabel: 'Port Forward',
-    records: rawItems,
-    getName: (item) => item.sessionId,
-    getKey: (item) => item.sessionId,
-    actions: (item) =>
-      canDelete && !portForwardUnsupported
+    records: scoped,
+    getName: (r) => r.sessionId,
+    getKey: (r) => r.sessionId,
+    scopeKey: JSON.stringify([clusterId, namespace]),
+    actions: (r) =>
+      canStop && sessionCanStop(r.status)
         ? [
             {
               key: 'stop',
-              label: stopPortForwardLabel,
-              icon: <DeleteOutlined />,
+              label: zh ? '停止会话' : 'Stop session',
+              icon: <PauseCircleOutlined />,
               danger: true,
-              disabled: platformWriteBlocked,
-              loading:
-                stopMutation.isPending && stopMutation.variables?.sessionId === item.sessionId,
-              prepare: () => stopMutation.reset(),
-              feedback: stopMutation.feedback,
+              disabled: blocked,
+              loading: stop.isPending && stop.variables?.sessionId === r.sessionId,
+              prepare: () => stop.reset(),
+              feedback: stop.feedback,
               confirm: {
-                title:
-                  localeCode === 'zh_CN' ? '确认停止该 Port Forward？' : 'Stop this port forward?',
-                description:
-                  localeCode === 'zh_CN'
-                    ? '这只会停止 Soha 中登记的转发会话记录。'
-                    : 'This stops the registered forward session record in Soha.',
+                title: zh ? '停止此端口转发会话？' : 'Stop this port forward session?',
+                description: (
+                  <div className="soha-forward-wrap">
+                    <p>
+                      {r.namespace} · {r.targetKind}/{r.targetName}
+                    </p>
+                    <p>
+                      Core 127.0.0.1:{r.localPort} → {r.remotePort}
+                    </p>
+                    <p>{r.sessionId}</p>
+                    <span>
+                      {zh
+                        ? '将请求后端停止此会话并释放其监听；经此会话的连接会中断，目标资源不被删除。'
+                        : 'Requests backend session shutdown and listener release. Connections through this session will close; the target resource is retained.'}
+                    </span>
+                  </div>
+                ),
               },
-              run: () => stopMutation.mutateAsync({ scope, sessionId: item.sessionId }),
+              run: () => {
+                if (r.clusterId !== clusterId) throw new Error('Port forward scope changed')
+                return stop.mutateAsync({ scope, sessionId: r.sessionId })
+              },
             },
           ]
         : [],
   })
-
+  const target = (r: PortForwardSession) => {
+    const path = ['Pod', 'Service'].includes(r.targetKind)
+      ? networkResourcePath(permissions, {
+          clusterId: r.clusterId,
+          namespace: r.namespace,
+          kind: r.targetKind,
+          name: r.targetName,
+        })
+      : null
+    return (
+      <div className="soha-forward-target">
+        <MetadataTag label={r.targetKind} />
+        {path ? (
+          <Link className="soha-forward-wrap" to={path}>
+            {r.targetName}
+          </Link>
+        ) : (
+          <TableCellText value={r.targetName} />
+        )}
+      </div>
+    )
+  }
   const columns: TableColumnsType<PortForwardSession> = [
     {
-      title: localeCode === 'zh_CN' ? '会话' : 'Session',
+      title: zh ? '会话 ID' : 'Session ID',
       dataIndex: 'sessionId',
-      render: (value: string) => <Text code>{value.slice(0, 8)}</Text>,
-    },
-    { title: 'Namespace', dataIndex: 'namespace' },
-    {
-      title: localeCode === 'zh_CN' ? '目标' : 'Target',
-      dataIndex: 'targetName',
-      render: (_: unknown, record: PortForwardSession) =>
-        `${record.targetKind}/${record.targetName}`,
-    },
-    { title: localeCode === 'zh_CN' ? '本地端口' : 'Local', dataIndex: 'localPort' },
-    { title: localeCode === 'zh_CN' ? '远端端口' : 'Remote', dataIndex: 'remotePort' },
-    {
-      title: localeCode === 'zh_CN' ? '状态' : 'Status',
-      dataIndex: 'status',
-      render: (value: string) => (
-        <Tag color={value === 'active' ? 'green' : 'default'}>{value}</Tag>
+      width: 320,
+      minWidth: 260,
+      render: (v: string) => (
+        <Typography.Text className="soha-forward-wrap" copyable={{ text: v }}>
+          {v}
+        </Typography.Text>
       ),
     },
+    { title: zh ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 176 },
     {
-      title: localeCode === 'zh_CN' ? '创建时间' : 'Created',
-      dataIndex: 'createdAt',
-      render: (value: string) => formatDateTime(value),
+      title: zh ? '目标' : 'Target',
+      dataIndex: 'targetName',
+      width: 280,
+      minWidth: 200,
+      render: (_: unknown, r: PortForwardSession) => target(r),
     },
-    resourceActions.column,
+    {
+      title: zh ? 'Core 监听端口' : 'Core listener',
+      dataIndex: 'localPort',
+      width: 185,
+      minWidth: 160,
+      render: (v: number) => (
+        <Typography.Text copyable={{ text: `127.0.0.1:${v}` }}>127.0.0.1:{v}</Typography.Text>
+      ),
+    },
+    { title: zh ? '目标端口' : 'Target port', dataIndex: 'remotePort', width: 110 },
+    {
+      title: zh ? '会话状态' : 'Session status',
+      dataIndex: 'status',
+      width: 130,
+      render: (v: string) => <StatusTag value={v} label={v} />,
+    },
+    {
+      title: zh ? '创建者' : 'Created by',
+      dataIndex: 'createdBy',
+      width: 180,
+      minWidth: 140,
+      render: (v?: string) => <TableCellText value={v} />,
+    },
+    {
+      title: zh ? '创建时间' : 'Created',
+      dataIndex: 'createdAt',
+      width: 180,
+      render: (v: string) => formatDateTime(v),
+    },
+    ...(actions.hasActions ? [actions.column] : []),
   ]
-
   return (
-    <ManagementDataPage
-      query={{
-        onFinish: () => undefined,
-        actions: (
-          <ManagementQueryActions
-            disabledReset={!searchKeyword.trim()}
-            resetLabel={localeCode === 'zh_CN' ? '重置' : 'Reset'}
-            submitLabel={localeCode === 'zh_CN' ? '查询' : 'Search'}
-            onReset={() => setSearchKeyword('')}
-          />
-        ),
-        children: (
-          <ManagementKeywordField
-            label={localeCode === 'zh_CN' ? '关键词' : 'Keyword'}
-            value={searchKeyword}
-            onChange={setSearchKeyword}
-            placeholder={
-              localeCode === 'zh_CN'
-                ? '搜索会话 / Namespace / 目标 / 状态 / 端口'
-                : 'Search session / namespace / target / status / port'
-            }
-            inputProps={{
-              className: 'soha-platform-compact-field soha-workload-search-input',
-              size: 'small',
-            }}
-          />
-        ),
-      }}
-      tableNode={
-        <KubernetesResourceTable
-          resourceKey="port-forwards"
-          resourceLabel="Port Forwards"
-          allRows={scopedItems}
-          filterKey={normalizedKeyword}
-          {...{
-            error: query.isEnabled === false ? null : query.error,
-            hasReadData: query.data !== undefined,
-            onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-            className: 'soha-platform-table',
-            columnSettingIconOnly: true,
-            columnSettingPlacement: 'header',
-            headerExtra: (
-              <ManagementTableToolbar>
-                {canCreate ? (
-                  <Tooltip
-                    title={
-                      !clusterId
-                        ? localeCode === 'zh_CN'
-                          ? '请先选择集群'
-                          : 'Select a cluster first'
-                        : capabilityActionTooltip(createPortForwardLabel, portForwardCapability)
-                    }
-                  >
-                    <span>
-                      <Button
-                        autoInsertSpace={false}
-                        size="small"
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        disabled={!clusterId || portForwardUnsupported}
-                        onClick={() => {
-                          setForm(createPortForwardDraft(namespace))
-                          setModalVisible(true)
-                        }}
-                      >
-                        {createPortForwardLabel}
-                      </Button>
-                    </span>
-                  </Tooltip>
-                ) : null}
-                <ManagementDensityButton
-                  aria-label={densityLabel}
-                  title={densityLabel}
-                  tooltip={densityLabel}
-                  onClick={() =>
-                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
-                  }
-                />
-                <ManagementRefreshButton
-                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                  disabled={!clusterId}
-                  loading={query.isFetching}
-                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                  onClick={() => {
-                    if (clusterId) {
-                      void query.refetch()
-                    }
-                  }}
-                />
-              </ManagementTableToolbar>
-            ),
-            columns: canShowActions
-              ? columns
-              : columns.filter((column) => column.key !== 'actions'),
-            dataSource: clusterId ? filteredItems : [],
-            rowKey: 'sessionId',
-            loading: query.isLoading,
-            localSorting: true,
-            tableSize,
-            scroll: { x: 'max-content' },
-            empty: (
-              <PlatformTableState
-                description={effectiveEmpty}
-                kind={!clusterId ? 'select-scope' : 'empty'}
+    <>
+      <ReadFeedback canRead={canRead} query={query} label="Port Forwards" />
+      {actions.confirmation}
+      {!actions.isConfirming && stop.feedback}
+      {!modal && register.feedback}
+      {canRead && (
+        <ManagementDataPage
+          query={{
+            onFinish: () => undefined,
+            actions: (
+              <ManagementQueryActions
+                disabledReset={!keyword && !status}
+                onReset={() => {
+                  setKeyword('')
+                  setStatus(undefined)
+                }}
+                resetLabel={zh ? '重置' : 'Reset'}
+                submitLabel={zh ? '查询' : 'Search'}
               />
             ),
+            children: (
+              <>
+                <ManagementKeywordField
+                  label={zh ? '关键词' : 'Keyword'}
+                  value={keyword}
+                  onChange={setKeyword}
+                  placeholder={
+                    zh
+                      ? '搜索会话 / 目标 / 创建者 / 端口'
+                      : 'Search session / target / creator / port'
+                  }
+                  inputProps={{
+                    className: 'soha-platform-compact-field soha-workload-search-input',
+                    size: 'small',
+                  }}
+                />
+                <ManagementQueryField label={zh ? '状态' : 'Status'} width={240} minWidth={220}>
+                  <Select
+                    aria-label={zh ? '会话状态筛选' : 'Session status filter'}
+                    size="small"
+                    allowClear
+                    placeholder={zh ? '全部状态' : 'All states'}
+                    value={status}
+                    onChange={setStatus}
+                    options={[...new Set(scoped.map((r) => r.status))].map((s) => ({
+                      value: s,
+                      label: s,
+                    }))}
+                  />
+                </ManagementQueryField>
+              </>
+            ),
+          }}
+          tableNode={
+            <KubernetesResourceTable
+              resourceKey="port-forwards"
+              resourceLabel="Port Forwards"
+              scopeMode="namespace"
+              allRows={scoped}
+              dataSource={clusterId ? filtered : []}
+              filterKey={JSON.stringify([search, status])}
+              rowKey="sessionId"
+              columns={columns}
+              localSorting
+              loading={query.isLoading}
+              tableSize={tableSize}
+              error={query.isEnabled ? query.error : null}
+              hasReadData={query.data !== undefined}
+              onRetry={query.isEnabled ? () => query.refetch() : undefined}
+              className="soha-platform-table"
+              columnSettingIconOnly
+              columnSettingPlacement="header"
+              headerExtra={
+                <ManagementTableToolbar>
+                  {canCreate && (
+                    <Tooltip
+                      title={capabilityActionTooltip(
+                        zh ? '创建会话' : 'Create session',
+                        capability,
+                      )}
+                    >
+                      <span>
+                        <Button
+                          autoInsertSpace={false}
+                          size="small"
+                          type="primary"
+                          icon={<PlusOutlined />}
+                          disabled={!clusterId || capability.disabled || blocked}
+                          onClick={() => {
+                            if (clusterId) {
+                              register.reset()
+                              setModal({ clusterId, namespace })
+                            }
+                          }}
+                        >
+                          {zh ? '新建转发' : 'New forward'}
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  )}
+                  <ManagementDensityButton
+                    aria-label={zh ? '切换表格密度' : 'Toggle density'}
+                    tooltip={zh ? '切换表格密度' : 'Toggle density'}
+                    onClick={() => setTableSize((v) => (v === 'small' ? 'middle' : 'small'))}
+                  />
+                  <WorkloadRefresh
+                    compact
+                    disabled={!clusterId}
+                    settings={refresh}
+                    queries={[query]}
+                    resourceLabel="Port Forwards"
+                    onRefresh={() => query.refetch()}
+                  />
+                </ManagementTableToolbar>
+              }
+              empty={
+                <ManagementState
+                  compact
+                  bordered={false}
+                  kind={!clusterId ? 'select-scope' : 'empty'}
+                  description={
+                    !clusterId
+                      ? zh
+                        ? '请选择集群'
+                        : 'Select a cluster'
+                      : search || status
+                        ? zh
+                          ? '没有匹配的会话'
+                          : 'No matching sessions'
+                        : zh
+                          ? '本次读取范围没有转发会话'
+                          : 'No forward sessions returned in this scope'
+                  }
+                />
+              }
+            />
+          }
+        >
+          <Alert
+            showIcon
+            type="info"
+            title={zh ? 'Core 主机端口转发' : 'Core-host port forwarding'}
+            description={
+              zh
+                ? '监听位于 Core 进程的 127.0.0.1；部署到 K8s 后位于 Core Pod 内，不会自动改为 Pod IP。此地址不是浏览器电脑的本地端口。刷新只重读，不自动重连。'
+                : 'Listeners bind to the Core process’s 127.0.0.1, inside the Core Pod on Kubernetes, not its Pod IP or the browser computer. Refresh only rereads sessions; it does not reconnect.'
+            }
+          />
+          {capability.status !== 'available' && capability.reason && (
+            <Alert
+              showIcon
+              type={capability.status === 'unsupported' ? 'warning' : 'info'}
+              title={zh ? '当前模式能力' : 'Connection-mode capability'}
+              description={capability.reason}
+            />
+          )}
+        </ManagementDataPage>
+      )}
+      {modal && (
+        <CreateForwardForm
+          key={modal.clusterId}
+          clusterId={modal.clusterId}
+          currentClusterId={clusterId}
+          namespace={modal.namespace}
+          items={raw.filter((r) => r.clusterId === modal.clusterId)}
+          blocked={blocked}
+          submitDisabled={!canCreate || capability.disabled}
+          pending={register.isPending}
+          feedback={register.feedback}
+          onClose={() => setModal(undefined)}
+          onSubmit={(values) => {
+            if (canCreate && !capability.disabled && clusterId === modal.clusterId)
+              register.mutate(
+                { scope: toScopeKey(modal.clusterId, null), ...values },
+                { onSuccess: () => setModal(undefined) },
+              )
           }}
         />
-      }
-    >
-      {registerMutation.feedback}
-      {resourceActions.isConfirming ? null : stopMutation.feedback}
-      {resourceActions.confirmation}
-
-      {portForwardCapabilityReason ? (
-        <Alert
-          showIcon
-          type={portForwardUnsupported ? 'warning' : 'info'}
-          style={{ marginBottom: 12 }}
-          title={
-            localeCode === 'zh_CN' ? 'Port Forward 连接模式说明' : 'Port forward connection mode'
-          }
-          description={portForwardCapabilityReason}
-        />
-      ) : null}
-      <Modal
-        okButtonProps={{ disabled: platformWriteBlocked }}
-        title={localeCode === 'zh_CN' ? '新建 Port Forward' : 'New Port Forward'}
-        open={modalVisible}
-        onOk={() =>
-          registerMutation.mutate(
-            { scope, ...form },
-            {
-              onSuccess: () => {
-                setModalVisible(false)
-              },
-            },
-          )
-        }
-        onCancel={() => {
-          if (!platformWriteBlocked) (() => setModalVisible(false))?.()
-        }}
-        confirmLoading={registerMutation.isPending}
-      >
-        {registerMutation.feedback}
-        {stopMutation.feedback}
-
-        <Space orientation="vertical" align="start" style={{ width: '100%' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <Text style={{ width: 96 }}>{localeCode === 'zh_CN' ? '目标类型' : 'Target kind'}</Text>
-            <Select
-              value={form.targetKind}
-              onChange={(value) => setForm((prev) => ({ ...prev, targetKind: String(value) }))}
-              style={{ flex: 1 }}
-              options={[
-                { value: 'Pod', label: 'Pod' },
-                { value: 'Service', label: 'Service' },
-              ]}
-            />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <Text style={{ width: 96 }}>Namespace</Text>
-            <Input
-              value={form.namespace}
-              onChange={(event) => setForm((prev) => ({ ...prev, namespace: event.target.value }))}
-              style={{ flex: 1 }}
-            />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <Text style={{ width: 96 }}>{localeCode === 'zh_CN' ? '目标名称' : 'Target name'}</Text>
-            <Input
-              value={form.targetName}
-              onChange={(event) => setForm((prev) => ({ ...prev, targetName: event.target.value }))}
-              style={{ flex: 1 }}
-            />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <Text style={{ width: 96 }}>{localeCode === 'zh_CN' ? '本地端口' : 'Local port'}</Text>
-            <InputNumber
-              value={form.localPort}
-              min={1}
-              max={65535}
-              onChange={(v) => setForm((prev) => ({ ...prev, localPort: Number(v) || 0 }))}
-              style={{ flex: 1 }}
-            />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <Text style={{ width: 96 }}>{localeCode === 'zh_CN' ? '远端端口' : 'Remote port'}</Text>
-            <InputNumber
-              value={form.remotePort}
-              min={1}
-              max={65535}
-              onChange={(v) => setForm((prev) => ({ ...prev, remotePort: Number(v) || 0 }))}
-              style={{ flex: 1 }}
-            />
-          </div>
-        </Space>
-      </Modal>
-    </ManagementDataPage>
+      )}
+    </>
   )
 }

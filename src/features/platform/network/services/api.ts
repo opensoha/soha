@@ -13,7 +13,9 @@ export function listServices(scope: ScopeKey) {
 }
 
 export async function getService(scope: ScopeKey, name: string) {
-  const response = await api.get<ApiResponse<Service>>(buildNetworkDetailPath('services', scope, name))
+  const response = await api.get<ApiResponse<Service>>(
+    buildNetworkDetailPath('services', scope, name),
+  )
   return response.data
 }
 
@@ -32,6 +34,7 @@ export async function listServiceEvents(
   return (response.data ?? []).filter(
     (event) =>
       event.involvedName === normalizedName &&
-      (!event.involvedKind || event.involvedKind.toLowerCase() === 'service'),
+      event.namespace === scope.namespace &&
+      event.involvedKind?.toLowerCase() === 'service',
   )
 }

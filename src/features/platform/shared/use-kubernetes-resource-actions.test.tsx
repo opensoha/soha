@@ -46,6 +46,9 @@ function Harness() {
             <div key={row.uid}>{result.column.render?.(undefined, row, index) as ReactNode}</div>
           ))
         : null}
+      {allowed && (
+        <button onClick={() => result.selectAction(records[0], 'delete')}>Explicit delete</button>
+      )}
       {result.confirmation}
     </>
   )
@@ -215,4 +218,17 @@ it('keeps enabled action labels concise even when capability documentation is av
   const item = document.querySelector('[role="menuitem"]')!
   expect(item.textContent).toBe('删除')
   expect(item.textContent).not.toContain('能力说明')
+})
+
+it('explicit action buttons use the same confirmation and current permission checks', async () => {
+  await render()
+  await click(
+    Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Explicit delete'),
+  )
+  expect(run).not.toHaveBeenCalled()
+  allowed = false
+  await render()
+  expect(ok()?.disabled).toBe(true)
+  await click(ok())
+  expect(run).not.toHaveBeenCalled()
 })

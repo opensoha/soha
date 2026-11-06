@@ -1,5 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
+import { StatusTag } from '@/components/status-tag'
+import { replicaControllerHealth } from '../shared/replica-controller-model'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
@@ -39,19 +41,57 @@ export function WorkloadsReplicationControllersPage() {
       width: 160,
     },
     {
+      title: localeCode === 'zh_CN' ? '状态' : 'Status',
+      ...tableColumnPresets.status,
+      key: 'health',
+      sorter: (a, b) =>
+        replicaControllerHealth(a, undefined, true).localeCompare(
+          replicaControllerHealth(b, undefined, true),
+        ),
+      width: 150,
+      render: (_: unknown, record) => {
+        const health = replicaControllerHealth(record, undefined, true)
+        return (
+          <StatusTag
+            value={health}
+            label={
+              health === 'healthy'
+                ? localeCode === 'zh_CN'
+                  ? '健康'
+                  : 'Healthy'
+                : health === 'inactive'
+                  ? localeCode === 'zh_CN'
+                    ? '期望为 0'
+                    : 'Zero desired'
+                  : health === 'unknown'
+                    ? localeCode === 'zh_CN'
+                      ? '状态未知'
+                      : 'Unknown'
+                    : localeCode === 'zh_CN'
+                      ? '副本不足'
+                      : 'Replicas unavailable'
+            }
+          />
+        )
+      },
+    },
+    {
       title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',
       dataIndex: 'readyReplicas',
       width: 112,
-      render: (_: number, record) => `${record.readyReplicas}/${record.desiredReplicas}`,
+      render: (_: number, record) =>
+        `${record.readyReplicas ?? '—'}/${record.desiredReplicas ?? '—'}`,
     },
     {
       title: localeCode === 'zh_CN' ? '当前' : 'Current',
       dataIndex: 'currentReplicas',
+      render: (v?: number) => v ?? '—',
       width: 96,
     },
     {
       title: localeCode === 'zh_CN' ? '可用' : 'Available',
       dataIndex: 'availableReplicas',
+      render: (v?: number) => v ?? '—',
       width: 110,
     },
     {

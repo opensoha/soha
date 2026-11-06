@@ -144,7 +144,13 @@ export function PodDetailPage() {
     refetchIntervalInBackground: false,
   })
   const visiblePodDetailQueryData = readableQueryData(podDetailQuery)
-  const podDelete = usePodDetailDelete(visiblePodDetailQueryData, detailScope)
+  const podDelete = usePodDetailDelete(
+    visiblePodDetailQueryData?.name === podName &&
+      visiblePodDetailQueryData.namespace === detailNamespace
+      ? visiblePodDetailQueryData
+      : undefined,
+    detailScope,
+  )
   const readsContainerConfiguration =
     activeTabKey === 'overview' &&
     expanded.length > 0 &&

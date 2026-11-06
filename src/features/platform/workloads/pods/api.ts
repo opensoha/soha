@@ -56,6 +56,8 @@ export async function listPodEvents(target: PodTarget): Promise<WorkloadEvent[]>
 export async function deletePod(target: PodTarget): Promise<void> {
   requireWorkloadNamespace(target.scope)
   await api.delete<unknown>(
-    buildWorkloadItemPath(podKind, target.scope, normalizePodName(target.name)),
+    buildWorkloadItemPath(podKind, target.scope, normalizePodName(target.name), {
+      expectedUid: target.uid,
+    }),
   )
 }

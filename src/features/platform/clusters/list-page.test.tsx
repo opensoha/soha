@@ -21,6 +21,7 @@ const authMocks = vi.hoisted(() => ({ permissions: new Set<string>() }))
 const formLifecycleMocks = vi.hoisted(() => ({
   destroyOnHidden: undefined as boolean | undefined,
   preserve: undefined as boolean | undefined,
+  disabled: undefined as boolean | undefined,
   submit: undefined as ((values: Record<string, unknown>) => void) | undefined,
   realForm: false,
 }))
@@ -144,6 +145,23 @@ vi.mock('@/components/admin-table', () => ({
     </div>
   ),
 }))
+vi.mock('../shared/kubernetes-resource-actions-menu', () => ({
+  KubernetesResourceActionsMenu: ({
+    items,
+    onSelect,
+  }: {
+    items: Array<{ key: string; label: ReactNode }>
+    onSelect: (key: string) => void
+  }) => (
+    <>
+      {items.map((item) => (
+        <button key={item.key} aria-label={String(item.label)} onClick={() => onSelect(item.key)}>
+          {item.label}
+        </button>
+      ))}
+    </>
+  ),
+}))
 vi.mock('antd', async (importOriginal) => {
   const actual = await importOriginal<typeof import('antd')>()
   const FormMock = ({
@@ -152,6 +170,8 @@ vi.mock('antd', async (importOriginal) => {
     ...props
   }: Omit<import('antd').FormProps, 'children'> & { children?: ReactNode }) => {
     formLifecycleMocks.submit = onFinish
+    formLifecycleMocks.preserve = props.preserve
+    formLifecycleMocks.disabled = props.disabled
     if (formLifecycleMocks.realForm) {
       return (
         <actual.Form {...props} onFinish={onFinish}>
@@ -161,6 +181,7 @@ vi.mock('antd', async (importOriginal) => {
     }
     return <div>{children}</div>
   }
+  FormMock.useForm = actual.Form.useForm
   FormMock.List = (props: ComponentProps<typeof actual.Form.List>) =>
     formLifecycleMocks.realForm ? (
       <actual.Form.List {...props} />
@@ -206,11 +227,15 @@ vi.mock('antd', async (importOriginal) => {
       destroyOnHidden,
       open,
       title,
+      onOk,
+      footer,
     }: {
       children?: ReactNode
       destroyOnHidden?: boolean
       open?: boolean
       title?: ReactNode
+      onOk?: () => void
+      footer?: ReactNode
     }) => {
       formLifecycleMocks.destroyOnHidden = destroyOnHidden
       const formChild = Children.toArray(children).find(
@@ -220,9 +245,15 @@ vi.mock('antd', async (importOriginal) => {
       if (isValidElement<{ preserve?: boolean }>(formChild))
         formLifecycleMocks.preserve = formChild.props.preserve
       return open ? (
-        <div>
+        <div role="dialog" aria-label={typeof title === 'string' ? title : undefined}>
           {title}
+          {onOk && (
+            <button aria-label="确认删除集群" onClick={onOk}>
+              确认删除
+            </button>
+          )}
           {children}
+          {footer}
         </div>
       ) : null
     },
@@ -285,6 +316,7 @@ beforeEach(() => {
   ])
   formLifecycleMocks.destroyOnHidden = undefined
   formLifecycleMocks.preserve = undefined
+  formLifecycleMocks.disabled = undefined
   formLifecycleMocks.submit = undefined
   formLifecycleMocks.realForm = false
   selectMocks.setAgentMode = undefined
@@ -350,7 +382,11 @@ describe('clusters list page boundaries', () => {
   })
 
   it('discards create form state when the modal closes', async () => {
-    await renderPage()
+    const container = await renderPage()
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.soha-clusters-create-button')?.click(),
+    )
+    await flushAsyncWork()
 
     expect(formLifecycleMocks.destroyOnHidden).toBe(true)
     expect(formLifecycleMocks.preserve).toBe(false)
@@ -386,7 +422,7 @@ describe('clusters list page boundaries', () => {
     const command = 'kubectl apply -f https://soha.test/agent.yaml'
     const refreshedCommand = 'kubectl apply -f https://soha.test/refreshed-agent.yaml'
     apiPostMock.mockImplementation(async (path: string) => {
-      if (path === '/clusters') return { data: { id: 'cluster-created' } }
+      if (path === '/clusters') return { data: { id: 'cluster-created', connectionMode: 'agent' } }
       if (path === '/clusters/cluster-created/agent-installation') {
         return {
           data: {
@@ -461,6 +497,11 @@ describe('clusters list page boundaries', () => {
     const deleteButton = container.querySelector('button[aria-label="删除集群"]')
     await act(async () => deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushAsyncWork()
+    expect(apiDeleteMock).not.toHaveBeenCalled()
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="确认删除集群"]')?.click(),
+    )
+    await flushAsyncWork()
     expect(apiDeleteMock).toHaveBeenCalledWith('/clusters/cluster-a')
   })
 
@@ -471,5 +512,50 @@ describe('clusters list page boundaries', () => {
     expect(container.querySelector('.soha-clusters-create-button')).toBeNull()
     expect(container.querySelector('button[aria-label="编辑集群"]')).toBeNull()
     expect(container.querySelector('button[aria-label="删除集群"]')).toBeNull()
+  })
+
+  it('locks the editor and rejects another submit while its create request is pending', async () => {
+    let finishCreate!: (value: { data: unknown }) => void
+    const pendingCreate = new Promise<{ data: unknown }>((resolve) => {
+      finishCreate = resolve
+    })
+    apiPostMock.mockImplementationOnce(() => pendingCreate)
+    const container = await renderPage()
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('.soha-clusters-create-button')?.click(),
+    )
+    await flushAsyncWork()
+    const values = {
+      name: 'pending-cluster',
+      provider: 'standard_kubernetes',
+      connectionMode: 'direct_kubeconfig',
+      kubeconfig: 'new-cluster-credentials',
+    }
+    await act(async () => {
+      formLifecycleMocks.submit?.(values)
+    })
+    await vi.waitFor(() => expect(apiPostMock).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(formLifecycleMocks.disabled).toBe(true))
+    const editor = container.querySelector('[role="dialog"][aria-label="添加集群"]')
+    expect(editor).not.toBeNull()
+    const saveButton = editor!.querySelector<HTMLButtonElement>('button[type="submit"][form]')
+    const cancelButton = Array.from(editor!.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.replace(/\s/g, '') === '取消',
+    )
+    expect(saveButton).not.toBeNull()
+    expect(cancelButton).toBeDefined()
+    expect(saveButton?.disabled).toBe(true)
+    expect(cancelButton?.disabled).toBe(true)
+    await act(async () => {
+      saveButton?.click()
+      formLifecycleMocks.submit?.(values)
+      cancelButton?.click()
+    })
+    expect(apiPostMock).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('添加集群')
+    await act(async () =>
+      finishCreate({ data: { id: 'pending-cluster', connectionMode: 'direct_kubeconfig' } }),
+    )
+    await vi.waitFor(() => expect(container.textContent).not.toContain('添加集群'))
   })
 })

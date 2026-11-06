@@ -5,10 +5,12 @@ import {
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
-  ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
+import { TableCellLink } from '@/components/table-cell-content'
+import { NamespaceScopeTag } from '@/features/platform/shared/namespace-scope-tag'
+import { WorkloadRefresh, useWorkloadRefresh } from '../../../workloads/shared/workload-refresh'
 import { StatusTag } from '@/components/status-tag'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
@@ -25,7 +27,7 @@ import { formatAgeSeconds } from '@/utils/time'
 import { DeleteOutlined, EditOutlined, EyeOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Button } from 'antd'
+import { Alert } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ResourceQueryPanel } from '../../shared/resource-query-panel'
@@ -40,20 +42,29 @@ export function HelmReleasesPage() {
   const { clusterId, namespace } = usePlatformScopeStore()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const permissionSnapshot = usePermissionSnapshot().data?.data
+  const permissionSnapshot = readableQueryData(usePermissionSnapshot())?.data
+  const canView = hasPermission(permissionSnapshot, 'platform.helm.view')
+  const canUpdate = hasPermission(permissionSnapshot, 'platform.helm.releases.update')
+  const canDelete = hasPermission(permissionSnapshot, 'platform.helm.releases.delete')
   const canViewValues = hasPermission(permissionSnapshot, 'platform.helm.values.view')
   const capability = useClusterCapability('helm.releases', localeCode)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
   const normalizedKeyword = normalizeSearchKeyword(useDeferredValue(searchKeyword))
-  const releasesQuery = useQuery(helmQueries.releases(clusterId, namespace))
+  const refresh = useWorkloadRefresh()
+  const releaseOptions = helmQueries.releases(clusterId, namespace)
+  const releasesQuery = useQuery({
+    ...releaseOptions,
+    enabled: Boolean(releaseOptions.enabled) && canView,
+    refetchInterval: refresh.interval,
+  })
   const visibleReleasesQueryData = readableQueryData(releasesQuery)
   const deleteMutation = usePlatformMutation(helmMutations.removeRelease(queryClient), {
-    label: ['删除资源', 'Delete resource'],
+    label: ['卸载 Helm Release', 'Uninstall Helm release'],
     target: platformResourceTarget,
   })
   const platformWriteBlocked = deleteMutation.blocked
-  const rawItems = visibleReleasesQueryData ?? []
+  const rawItems = canView ? (visibleReleasesQueryData ?? []) : []
   const filteredItems = useMemo(
     () =>
       rawItems.filter((item) =>
@@ -91,6 +102,7 @@ export function HelmReleasesPage() {
               run: () =>
                 navigate(
                   buildHelmReleaseRoutePath(record.name, record.namespace, {
+                    clusterId,
                     tab: 'values',
                     mode: 'diff',
                   }),
@@ -98,7 +110,7 @@ export function HelmReleasesPage() {
             },
           ]
         : []),
-      ...(hasAllowedAction(record.allowedActions, 'update')
+      ...(canViewValues && canUpdate && hasAllowedAction(record.allowedActions, 'update')
         ? [
             {
               key: 'edit',
@@ -110,6 +122,7 @@ export function HelmReleasesPage() {
               run: () =>
                 navigate(
                   buildHelmReleaseRoutePath(record.name, record.namespace, {
+                    clusterId,
                     tab: 'values',
                     mode: 'edit',
                   }),
@@ -117,11 +130,11 @@ export function HelmReleasesPage() {
             },
           ]
         : []),
-      ...(hasAllowedAction(record.allowedActions, 'delete')
+      ...(canDelete && hasAllowedAction(record.allowedActions, 'delete')
         ? [
             {
               key: 'delete',
-              label: localeCode === 'zh_CN' ? '删除 Helm Release' : 'Delete Helm release',
+              label: localeCode === 'zh_CN' ? '卸载 Helm Release' : 'Uninstall Helm release',
               icon: <DeleteOutlined />,
               danger: true,
               disabled: mutationsDisabled || platformWriteBlocked || !clusterId,
@@ -132,8 +145,18 @@ export function HelmReleasesPage() {
                 deleteMutation.variables?.name === record.name &&
                 deleteMutation.variables.namespace === record.namespace,
               confirm: {
-                ...kubernetesDeleteConfirmation(record, localeCode),
-                okText: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                ...kubernetesDeleteConfirmation(
+                  record,
+                  localeCode,
+                  localeCode === 'zh_CN'
+                    ? '将卸载此 Helm Release 及其管理的 Kubernetes 资源，可能中断相关服务。带有保留策略的资源、CRD 和部分持久化数据可能保留，请先确认影响。'
+                    : 'Uninstalls this Helm release and its managed Kubernetes resources, which may interrupt services. Resources with retention policies, CRDs, and some persistent data may remain. Confirm the impact before continuing.',
+                ),
+                title:
+                  localeCode === 'zh_CN'
+                    ? `确认卸载 ${record.name}？`
+                    : `Uninstall ${record.name}?`,
+                okText: localeCode === 'zh_CN' ? '卸载' : 'Uninstall',
               },
               prepare: () => deleteMutation.reset(),
               feedback: deleteMutation.feedback,
@@ -151,35 +174,67 @@ export function HelmReleasesPage() {
 
   const columns: TableColumnsType<HelmRelease> = [
     {
-      title: '名称',
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
       dataIndex: 'name',
+      sorter: (a, b) => a.name.localeCompare(b.name),
       render: (value: string, record) => (
-        <Button
-          type="link"
-          style={{ paddingInline: 0 }}
-          onClick={() => navigate(buildHelmReleaseRoutePath(value, record.namespace))}
-        >
-          {value}
-        </Button>
+        <TableCellLink
+          label={value}
+          onClick={() =>
+            navigate(buildHelmReleaseRoutePath(value, record.namespace, { clusterId }))
+          }
+        />
       ),
     },
-    { title: '命名空间', dataIndex: 'namespace' },
-    { title: 'Chart', dataIndex: 'chart' },
-    { title: 'Revision', dataIndex: 'revision' },
+    {
+      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+      dataIndex: 'namespace',
+      sorter: (a, b) => a.namespace.localeCompare(b.namespace),
+      render: (value: string) => <NamespaceScopeTag namespace={value} />,
+    },
+    {
+      title: 'Chart',
+      dataIndex: 'chart',
+      sorter: (a, b) => (a.chart ?? '').localeCompare(b.chart ?? ''),
+    },
+    {
+      title: 'Revision',
+      dataIndex: 'revision',
+      sorter: (a, b) => Number(a.revision ?? 0) - Number(b.revision ?? 0),
+    },
     {
       ...tableColumnPresets.status,
-      title: '状态',
+      title: localeCode === 'zh_CN' ? '状态' : 'Status',
       dataIndex: 'status',
+      sorter: (a, b) => (a.status ?? '').localeCompare(b.status ?? ''),
       render: (value?: string) => (value ? <StatusTag value={value} /> : '-'),
     },
-    { title: 'App Version', dataIndex: 'appVersion' },
+    {
+      title: 'App Version',
+      dataIndex: 'appVersion',
+      sorter: (a, b) => (a.appVersion ?? '').localeCompare(b.appVersion ?? ''),
+    },
     {
       ...tableColumnPresets.datetime,
       title: 'Age',
       dataIndex: 'ageSeconds',
+      sorter: (a, b) => (a.ageSeconds ?? 0) - (b.ageSeconds ?? 0),
       render: formatAgeSeconds,
     },
   ]
+
+  if (!canView) {
+    return (
+      <ManagementState
+        kind="no-permission"
+        title={
+          localeCode === 'zh_CN'
+            ? '没有 Helm Release 查看权限'
+            : 'No permission to view Helm releases'
+        }
+      />
+    )
+  }
 
   return (
     <div className="soha-page">
@@ -223,10 +278,6 @@ export function HelmReleasesPage() {
         localSorting
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        onRow={(record: HelmRelease) => ({
-          onClick: () => navigate(buildHelmReleaseRoutePath(record.name, record.namespace)),
-          style: { cursor: 'pointer' },
-        })}
         headerExtra={
           <ManagementTableToolbar>
             <ManagementDensityButton
@@ -235,12 +286,14 @@ export function HelmReleasesPage() {
               tooltip={densityLabel}
               onClick={() => setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))}
             />
-            <ManagementRefreshButton
-              aria-label={t('common.refresh', 'Refresh')}
-              disabled={!clusterId}
-              loading={releasesQuery.isFetching}
-              tooltip={t('common.refresh', 'Refresh')}
-              onClick={() => clusterId && void releasesQuery.refetch()}
+            <WorkloadRefresh
+              settings={refresh}
+              queries={[releasesQuery]}
+              resourceLabel="Helm Releases"
+              label={t('common.refresh', 'Refresh')}
+              compact
+              disabled={!clusterId || !canView}
+              onRefresh={() => releasesQuery.refetch()}
             />
           </ManagementTableToolbar>
         }

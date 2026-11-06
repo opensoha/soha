@@ -2,15 +2,12 @@ import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-r
 import {
   ManagementBatchBar,
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementQueryField,
   ManagementQueryPanel,
-  ManagementRefreshButton,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
@@ -26,32 +23,11 @@ import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
-import {
-  CloudUploadOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-  DownloadOutlined,
-  EditOutlined,
-  EyeOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons'
+import { CopyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { AgentInstallation } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import {
-  App,
-  Button,
-  Card,
-  Form,
-  Input,
-  Modal,
-  Popconfirm,
-  Select,
-  Space,
-  Spin,
-  Typography,
-} from 'antd'
+import { App, Button, Input, Modal, Popconfirm, Select, Space, Typography } from 'antd'
 import type { Key } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -66,7 +42,10 @@ import {
 } from './presentation'
 import { clusterQueries } from './queries'
 import './styles.css'
-import type { Cluster, ClusterFormValues, ConnectionMode } from './types'
+import type { Cluster } from './types'
+import { ClusterEditor } from './cluster-editor'
+import { KubernetesResourceActionsMenu } from '../shared/kubernetes-resource-actions-menu'
+import { WorkloadRefresh, useWorkloadRefresh } from '../workloads/shared/workload-refresh'
 
 const { Text } = Typography
 
@@ -79,7 +58,8 @@ export function ClustersPage() {
   const [agentInstallation, setAgentInstallation] = useState<AgentInstallation | null>(null)
   const [upgradingCluster, setUpgradingCluster] = useState<Cluster | null>(null)
   const [editingCluster, setEditingCluster] = useState<Cluster | null>(null)
-  const [connectionMode, setConnectionMode] = useState<ConnectionMode>('direct_kubeconfig')
+  const [deletingCluster, setDeletingCluster] = useState<Cluster | null>(null)
+  const refresh = useWorkloadRefresh()
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>()
   const [typeFilter, setTypeFilter] = useState<string>()
@@ -95,23 +75,18 @@ export function ClustersPage() {
   const canCreate = hasPermission(permissionSnapshot, 'platform.clusters.create')
   const canUpdate = hasPermission(permissionSnapshot, 'platform.clusters.update')
   const canDelete = hasPermission(permissionSnapshot, 'platform.clusters.delete')
+  const canReadNodes = hasPermission(permissionSnapshot, 'platform.nodes.view')
+  const nameCollator = useMemo(
+    () => new Intl.Collator(localeCode === 'zh_CN' ? 'zh-CN' : 'en-US', { numeric: true }),
+    [localeCode],
+  )
 
-  const clustersQuery = useQuery(clusterQueries.list())
+  const canRead = hasPermission(permissionSnapshot, 'platform.clusters.view')
+  const clustersQuery = useQuery({
+    ...clusterQueries.list(canRead),
+    refetchInterval: refresh.interval,
+  })
   const visibleClustersQueryData = readableQueryData(clustersQuery)
-  const editingScope = toScopeKey(editingCluster?.id, null)
-  const editDetailOptions = clusterQueries.detail(editingScope)
-  const clusterDetailQuery = useQuery({
-    ...editDetailOptions,
-    enabled: Boolean(editDetailOptions.enabled) && modalVisible && Boolean(editingCluster),
-  })
-  const visibleClusterDetailQueryData =
-    Boolean(editDetailOptions.enabled) && modalVisible && Boolean(editingCluster)
-      ? readableQueryData(clusterDetailQuery)
-      : undefined
-  const createMutation = usePlatformMutation(clusterMutations.create(queryClient), {
-    label: ['创建集群', 'Create cluster'],
-    target: (v) => String(v.name || 'Cluster'),
-  })
   const agentInstallationMutation = usePlatformMutation(
     clusterMutations.createAgentInstallation(),
     {
@@ -119,10 +94,6 @@ export function ClustersPage() {
       target: platformResourceTarget,
     },
   )
-  const updateMutation = usePlatformMutation(clusterMutations.update(queryClient), {
-    label: ['更新资源', 'Update resource'],
-    target: platformResourceTarget,
-  })
   const deleteMutation = usePlatformMutation(clusterMutations.remove(queryClient), {
     label: ['删除资源', 'Delete resource'],
     target: platformResourceTarget,
@@ -139,11 +110,7 @@ export function ClustersPage() {
       ),
   })
   const platformWriteBlocked =
-    createMutation.blocked ||
-    agentInstallationMutation.blocked ||
-    updateMutation.blocked ||
-    deleteMutation.blocked ||
-    batchDeleteMutation.blocked
+    agentInstallationMutation.blocked || deleteMutation.blocked || batchDeleteMutation.blocked
 
   const clusters = visibleClustersQueryData ?? []
   const targetFor = (id: string) => ({ scope: toScopeKey(id, null) })
@@ -165,8 +132,8 @@ export function ClustersPage() {
     const values = Array.from(
       new Set(clusters.map((cluster) => cluster.health?.status || 'unknown')),
     )
-    return values.sort().map((value) => ({ value, label: value }))
-  }, [clusters])
+    return values.sort().map((value) => ({ value, label: formatClusterHealth(value, localeCode) }))
+  }, [clusters, localeCode])
 
   const typeOptions = useMemo(() => {
     const values = new Set(clusterTypeOptions.map((option) => option.value))
@@ -234,14 +201,19 @@ export function ClustersPage() {
 
   const columns: TableColumnsType<Cluster> = [
     {
-      title: '名称',
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
       dataIndex: 'name',
-      width: 180,
+      width: 280,
+      fixed: 'left',
+      ellipsis: true,
+      sorter: (a, b) => nameCollator.compare(a.name, b.name),
+      defaultSortOrder: 'ascend',
       render: (_: unknown, record: Cluster) => (
         <div className="soha-cluster-name-cell">
           <Button
             className="soha-cluster-name-link"
             type="link"
+            title={record.name}
             onClick={() => navigate(`/clusters/${record.id}`)}
           >
             {record.name}
@@ -251,9 +223,14 @@ export function ClustersPage() {
     },
     {
       ...tableColumnPresets.status,
-      title: '状态',
+      title: localeCode === 'zh_CN' ? '状态' : 'Status',
       dataIndex: 'health',
       width: 104,
+      sorter: (a, b) =>
+        nameCollator.compare(
+          formatClusterHealth(a.health?.status || 'unknown', localeCode),
+          formatClusterHealth(b.health?.status || 'unknown', localeCode),
+        ),
       render: (health: Cluster['health']) => {
         const status = health?.status ?? 'unknown'
         return <StatusTag label={formatClusterHealth(status, localeCode)} value={status} />
@@ -263,19 +240,37 @@ export function ClustersPage() {
       title: localeCode === 'zh_CN' ? '类型' : 'Type',
       dataIndex: 'region',
       width: 120,
+      ellipsis: true,
+      sorter: (a, b) =>
+        nameCollator.compare(
+          formatClusterType(clusterTypeOf(a), localeCode),
+          formatClusterType(clusterTypeOf(b), localeCode),
+        ),
       render: (_: string, record: Cluster) => formatClusterType(clusterTypeOf(record), localeCode),
     },
     {
       title: localeCode === 'zh_CN' ? '版本' : 'Version',
       dataIndex: 'version',
       width: 124,
+      ellipsis: true,
       render: (value: string) => value || '-',
     },
-    { title: 'Env', dataIndex: 'environment', width: 132, render: (value: string) => value || '-' },
+    {
+      title: localeCode === 'zh_CN' ? '环境' : 'Environment',
+      dataIndex: 'environment',
+      width: 132,
+      ellipsis: true,
+      render: (value: string) => value || '-',
+    },
     {
       title: localeCode === 'zh_CN' ? '连接方式' : 'Mode',
       dataIndex: 'connectionMode',
       width: 104,
+      sorter: (a, b) =>
+        nameCollator.compare(
+          formatConnectionMode(a.connectionMode, localeCode),
+          formatConnectionMode(b.connectionMode, localeCode),
+        ),
       render: (value: string) => <MetadataTag label={formatConnectionMode(value, localeCode)} />,
     },
     {
@@ -286,179 +281,70 @@ export function ClustersPage() {
         record.health?.lastChecked ? formatDateTime(record.health.lastChecked) : '-',
     },
     {
-      ...tableColumnPresets.action,
-      title: '操作',
-      dataIndex: 'id',
-      width: 144,
+      key: 'actions',
+      title: '',
+      width: 64,
+      fixed: 'right',
+      className: 'soha-table-actions-column',
       render: (_: unknown, record: Cluster) => (
-        <Space size={2} className="soha-cluster-action-links">
-          <ManagementIconButton
-            aria-label={localeCode === 'zh_CN' ? '查看集群详情' : 'View cluster detail'}
-            icon={<EyeOutlined />}
-            size="small"
-            tooltip={localeCode === 'zh_CN' ? '详情' : 'Detail'}
-            onClick={() => navigate(`/clusters/${record.id}`)}
-          />
-          {canUpdate ? (
-            record.connectionMode === 'agent' ? (
-              <ManagementIconButton
-                aria-label={
-                  localeCode === 'zh_CN' ? '生成 Agent 安装命令' : 'Generate Agent install command'
-                }
-                icon={<DownloadOutlined />}
-                loading={
-                  agentInstallationMutation.isPending &&
-                  agentInstallationMutation.variables?.scope.clusterId === record.id
-                }
-                size="small"
-                tooltip={localeCode === 'zh_CN' ? '安装 Agent' : 'Install Agent'}
-                onClick={() => showAgentInstallation(record.id)}
-              />
-            ) : null
-          ) : null}
-          {canUpdate ? (
-            <ManagementIconButton
-              disabled={platformWriteBlocked}
-              aria-label={localeCode === 'zh_CN' ? '编辑集群' : 'Edit cluster'}
-              icon={<EditOutlined />}
-              size="small"
-              tooltip={localeCode === 'zh_CN' ? '编辑' : 'Edit'}
-              onClick={() => {
-                setEditingCluster(record)
-                setModalVisible(true)
-              }}
-            />
-          ) : null}
-          {canUpdate && record.connectionMode === 'agent' ? (
-            <ManagementIconButton
-              aria-label={localeCode === 'zh_CN' ? '更新 Agent' : 'Update Agent'}
-              icon={<CloudUploadOutlined />}
-              size="small"
-              tooltip={localeCode === 'zh_CN' ? '更新 Agent' : 'Update Agent'}
-              onClick={() => setUpgradingCluster(record)}
-            />
-          ) : null}
-          {canDelete ? (
-            <Popconfirm
-              title={
-                localeCode === 'zh_CN'
-                  ? `确认删除集群 ${record.name}？`
-                  : `Delete cluster ${record.name}?`
-              }
-              description={
-                localeCode === 'zh_CN'
-                  ? '删除后会移除该集群在 Soha 中的注册信息。'
-                  : 'This removes the cluster registration from Soha.'
-              }
-              okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
-              cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-              okButtonProps={{
-                disabled: platformWriteBlocked,
-                danger: true,
-                loading:
-                  deleteMutation.isPending &&
-                  deleteMutation.variables?.scope.clusterId === record.id,
-              }}
-              placement="topRight"
-              onConfirm={() => deleteMutation.mutate(targetFor(record.id), {})}
-            >
-              <ManagementIconButton
-                disabled={platformWriteBlocked}
-                aria-label={localeCode === 'zh_CN' ? '删除集群' : 'Delete cluster'}
-                danger
-                icon={<DeleteOutlined />}
-                loading={
-                  deleteMutation.isPending &&
-                  deleteMutation.variables?.scope.clusterId === record.id
-                }
-                size="small"
-                tooltip={localeCode === 'zh_CN' ? '删除' : 'Delete'}
-              />
-            </Popconfirm>
-          ) : null}
-        </Space>
+        <KubernetesResourceActionsMenu
+          name={record.name}
+          resourceLabel="Cluster"
+          localeCode={localeCode}
+          items={[
+            { key: 'view', label: localeCode === 'zh_CN' ? '查看详情' : 'View details' },
+            ...(canUpdate
+              ? [
+                  {
+                    key: 'edit',
+                    label: localeCode === 'zh_CN' ? '编辑集群' : 'Edit cluster',
+                    disabled: platformWriteBlocked,
+                  },
+                  ...(record.connectionMode === 'agent'
+                    ? [
+                        {
+                          key: 'install',
+                          label:
+                            localeCode === 'zh_CN'
+                              ? '生成 Agent 安装命令'
+                              : 'Generate Agent install command',
+                          disabled: platformWriteBlocked,
+                        },
+                        {
+                          key: 'upgrade',
+                          label: localeCode === 'zh_CN' ? '更新 Agent' : 'Update Agent',
+                          disabled: platformWriteBlocked,
+                        },
+                      ]
+                    : []),
+                ]
+              : []),
+            ...(canDelete
+              ? [
+                  {
+                    key: 'delete',
+                    label: localeCode === 'zh_CN' ? '删除集群' : 'Delete cluster',
+                    danger: true,
+                    disabled: platformWriteBlocked,
+                  },
+                ]
+              : []),
+          ]}
+          onSelect={(key) => {
+            if (key === 'view') navigate(`/clusters/${record.id}`)
+            if (key === 'edit' && canUpdate && !platformWriteBlocked) {
+              setEditingCluster(record)
+              setModalVisible(true)
+            }
+            if (key === 'install' && canUpdate && !platformWriteBlocked)
+              showAgentInstallation(record.id)
+            if (key === 'upgrade' && canUpdate && !platformWriteBlocked) setUpgradingCluster(record)
+            if (key === 'delete' && canDelete && !platformWriteBlocked) setDeletingCluster(record)
+          }}
+        />
       ),
     },
   ]
-
-  useEffect(() => {
-    if (!modalVisible) return
-    if (editingCluster) {
-      setConnectionMode(
-        (visibleClusterDetailQueryData?.connection.mode as ConnectionMode) ||
-          (editingCluster.connectionMode as ConnectionMode) ||
-          'direct_kubeconfig',
-      )
-      return
-    }
-    setConnectionMode('direct_kubeconfig')
-  }, [modalVisible, editingCluster, visibleClusterDetailQueryData])
-
-  const initialValues = useMemo<ClusterFormValues>(() => {
-    if (!editingCluster) {
-      return {
-        connectionMode: 'direct_kubeconfig',
-        prometheusTransport: 'direct',
-        agentCustomResourceRules: [],
-        agentActionProfile: 'workbench',
-        provider: 'standard_kubernetes',
-      }
-    }
-    const detail = visibleClusterDetailQueryData
-    return {
-      name: editingCluster.name,
-      provider: clusterTypeOf(editingCluster) || undefined,
-      environment: editingCluster.environment,
-      connectionMode:
-        ((detail?.connection.mode || editingCluster.connectionMode) as ConnectionMode) ||
-        'direct_kubeconfig',
-      prometheusTransport: detail?.monitoring.prometheus.transport || 'direct',
-      agentCustomResourceRules: detail?.connection.customResourceRules || [],
-      agentActionProfile: detail?.connection.actionProfile || 'legacy',
-      prometheusBaseUrl: detail?.monitoring.prometheus.baseUrl || '',
-    }
-  }, [editingCluster, visibleClusterDetailQueryData])
-
-  const formKey = editingCluster
-    ? `cluster-edit:${editingCluster.id}:${visibleClusterDetailQueryData ? 'ready' : 'loading'}`
-    : 'cluster-create'
-
-  const handleSubmit = (values: Record<string, unknown>) => {
-    const provider = typeof values.provider === 'string' ? values.provider.trim() : ''
-    const labels = { ...(editingCluster?.labels ?? {}) }
-    if (provider) {
-      labels.provider = provider
-    } else {
-      delete labels.provider
-    }
-    const payload = {
-      ...values,
-      prometheusTransport:
-        values.connectionMode === 'agent' ? values.prometheusTransport : 'direct',
-      labels,
-    }
-    delete (payload as Record<string, unknown>).provider
-    if (editingCluster) {
-      updateMutation.mutate(
-        { scope: toScopeKey(editingCluster.id, null), values: payload },
-        {
-          onSuccess: () => {
-            setModalVisible(false)
-            setEditingCluster(null)
-          },
-        },
-      )
-    } else {
-      createMutation.mutate(payload, {
-        onSuccess: (cluster) => {
-          setModalVisible(false)
-          if (values.connectionMode === 'agent') {
-            showAgentInstallation(cluster.id)
-          }
-        },
-      })
-    }
-  }
 
   const openCreateModal = () => {
     setEditingCluster(null)
@@ -494,7 +380,7 @@ export function ClustersPage() {
   }
 
   const handleBatchDelete = async () => {
-    if (selectedRowKeys.length === 0) return
+    if (!canDelete || platformWriteBlocked || selectedRowKeys.length === 0) return
     try {
       const scopes = selectedRowKeys.map((id) => toScopeKey(id, null))
       const results = await batchDeleteMutation.mutateAsync({
@@ -513,7 +399,7 @@ export function ClustersPage() {
   }
 
   const openSelectedNodes = () => {
-    if (selectedRowKeys.length !== 1) return
+    if (!canReadNodes || selectedRowKeys.length !== 1) return
     setClusterId(selectedRowKeys[0])
     navigate('/cluster-resources/nodes')
   }
@@ -531,8 +417,10 @@ export function ClustersPage() {
       }
     >
       <ManagementKeywordField
-        label={localeCode === 'zh_CN' ? '集群名称' : 'Cluster Name'}
-        placeholder={localeCode === 'zh_CN' ? '请输入' : 'Search'}
+        label={localeCode === 'zh_CN' ? '关键词' : 'Keyword'}
+        placeholder={
+          localeCode === 'zh_CN' ? '搜索名称 / 环境 / 版本' : 'Search name / environment / version'
+        }
         value={searchText}
         onChange={setSearchText}
         inputProps={{
@@ -579,14 +467,16 @@ export function ClustersPage() {
             : `${selectedRowKeys.length} selected`
         }
       >
-        <Button
-          autoInsertSpace={false}
-          size="small"
-          onClick={openSelectedNodes}
-          disabled={selectedRowKeys.length !== 1}
-        >
-          {localeCode === 'zh_CN' ? '查看节点' : 'Open Nodes'}
-        </Button>
+        {canReadNodes ? (
+          <Button
+            autoInsertSpace={false}
+            size="small"
+            onClick={openSelectedNodes}
+            disabled={selectedRowKeys.length !== 1}
+          >
+            {localeCode === 'zh_CN' ? '查看节点' : 'Open Nodes'}
+          </Button>
+        ) : null}
         {canDelete ? (
           <Popconfirm
             title={
@@ -641,28 +531,21 @@ export function ClustersPage() {
         tooltip={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
         onClick={() => setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))}
       />
-      <ManagementRefreshButton
-        aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-        loading={clustersQuery.isFetching}
-        title={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-        tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-        onClick={() => void clustersQuery.refetch()}
+      <WorkloadRefresh
+        settings={refresh}
+        queries={[clustersQuery]}
+        resourceLabel={localeCode === 'zh_CN' ? '集群' : 'Clusters'}
+        compact
+        label={localeCode === 'zh_CN' ? '刷新集群' : 'Refresh clusters'}
+        onRefresh={() => clustersQuery.refetch()}
       />
     </ManagementTableToolbar>
   )
 
   return (
     <div className="soha-page soha-clusters-page">
-      <ReadFeedback
-        canRead={clusterDetailQuery.isEnabled}
-        query={clusterDetailQuery}
-        label="集群详情"
-      />
-
-      {createMutation.feedback}
       {agentInstallationMutation.feedback}
-      {updateMutation.feedback}
-      {deleteMutation.feedback}
+      {!deletingCluster && deleteMutation.feedback}
       {batchDeleteMutation.feedback}
 
       {queryPanel}
@@ -705,7 +588,7 @@ export function ClustersPage() {
         loading={clustersQuery.isLoading}
         localSorting
         tableSize={tableSize}
-        scroll={{ x: 'max-content' }}
+        scroll={{ x: 1200 }}
         rowSelection={{
           selectedRowKeys,
           onChange: (nextSelectedRowKeys: Key[]) => {
@@ -726,9 +609,7 @@ export function ClustersPage() {
         }}
         footer={null}
       >
-        {createMutation.feedback}
         {agentInstallationMutation.feedback}
-        {updateMutation.feedback}
         {deleteMutation.feedback}
         {batchDeleteMutation.feedback}
 
@@ -775,244 +656,52 @@ export function ClustersPage() {
       </Modal>
 
       <Modal
-        okButtonProps={{ disabled: platformWriteBlocked }}
+        title={
+          localeCode === 'zh_CN'
+            ? `确认删除集群 ${deletingCluster?.name ?? ''}？`
+            : `Delete cluster ${deletingCluster?.name ?? ''}?`
+        }
+        open={Boolean(deletingCluster)}
         destroyOnHidden
-        title={editingCluster ? '编辑集群' : '添加集群'}
-        open={modalVisible}
-        width={760}
-        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
-        onCancel={() => {
-          if (!platformWriteBlocked)
-            (() => {
-              setModalVisible(false)
-              setEditingCluster(null)
-            })?.()
+        okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+        cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+        okButtonProps={{
+          danger: true,
+          disabled: platformWriteBlocked || !canDelete,
+          loading: deleteMutation.isPending,
         }}
-        footer={null}
+        onCancel={() => {
+          if (!deleteMutation.isPending && !platformWriteBlocked) setDeletingCluster(null)
+        }}
+        onOk={async () => {
+          if (!deletingCluster || !canDelete || platformWriteBlocked) return
+          try {
+            await deleteMutation.mutateAsync(targetFor(deletingCluster.id))
+            setDeletingCluster(null)
+          } catch {
+            /* Scoped feedback and the uncertain-write fence remain visible. */
+          }
+        }}
       >
-        {createMutation.feedback}
-        {agentInstallationMutation.feedback}
-        {updateMutation.feedback}
+        <p>
+          {localeCode === 'zh_CN'
+            ? '仅移除 Soha 中的集群注册，不会删除 Kubernetes 集群。'
+            : 'Only removes the Soha registration; the Kubernetes cluster is retained.'}
+        </p>
         {deleteMutation.feedback}
-        {batchDeleteMutation.feedback}
-
-        {editingCluster && clusterDetailQuery.isLoading && !visibleClusterDetailQueryData ? (
-          <div className="flex items-center justify-center h-64">
-            <Spin size="large" />
-          </div>
-        ) : (
-          <Form
-            key={formKey}
-            layout="vertical"
-            onFinish={handleSubmit}
-            initialValues={initialValues}
-            preserve={false}
-          >
-            <Form.Item
-              name="name"
-              label="集群名称"
-              rules={[{ required: true, message: '请输入集群名称' }]}
-            >
-              <Input />
-            </Form.Item>
-            <Form.Item
-              name="provider"
-              label={localeCode === 'zh_CN' ? '集群类型' : 'Cluster Type'}
-              rules={[
-                {
-                  required: true,
-                  message: localeCode === 'zh_CN' ? '请选择集群类型' : 'Select a cluster type',
-                },
-              ]}
-            >
-              <Select
-                options={clusterTypeOptions.map((item) => ({
-                  value: item.value,
-                  label: localeCode === 'zh_CN' ? item.labelZh : item.labelEn,
-                }))}
-              />
-            </Form.Item>
-            <Form.Item name="environment" label="Environment">
-              <Input />
-            </Form.Item>
-            <Form.Item name="connectionMode" label="连接方式">
-              <Select
-                options={[
-                  { value: 'direct_kubeconfig', label: '直接 Kubeconfig' },
-                  { value: 'agent', label: 'Agent' },
-                ]}
-                onChange={(value) => setConnectionMode(value as ConnectionMode)}
-              />
-            </Form.Item>
-
-            {connectionMode === 'direct_kubeconfig' ? (
-              <Form.Item
-                name="kubeconfig"
-                label="Kubeconfig"
-                rules={
-                  editingCluster ? undefined : [{ required: true, message: '请输入 Kubeconfig' }]
-                }
-              >
-                <Input.TextArea
-                  placeholder={
-                    editingCluster ? '留空则沿用现有 kubeconfig' : '请输入 kubeconfig 内容'
-                  }
-                  rows={8}
-                />
-              </Form.Item>
-            ) : null}
-
-            {connectionMode === 'agent' ? (
-              <Form.Item
-                name="agentActionProfile"
-                label={localeCode === 'zh_CN' ? 'Agent 动作预设' : 'Agent action preset'}
-                extra={
-                  localeCode === 'zh_CN'
-                    ? '工作台预设启用资源 CRUD、维护/排水、终端、转发与 Helm；只读预设关闭写入和执行。保存不会改变运行中的 Agent，需重新生成并核对安装清单后应用。CRD 定义删除仍需单独启用。'
-                    : 'Workbench enables resource CRUD, maintenance/drain, terminal, forwarding and Helm; read-only disables writes and execution. Saving does not change a running Agent. Regenerate and review its installation manifest before applying. CRD definition deletion remains a separate opt-in.'
-                }
-              >
-                <Select
-                  options={[
-                    { value: 'workbench', label: localeCode === 'zh_CN' ? '工作台' : 'Workbench' },
-                    { value: 'read-only', label: localeCode === 'zh_CN' ? '只读' : 'Read-only' },
-                    {
-                      value: 'legacy',
-                      label:
-                        localeCode === 'zh_CN'
-                          ? '保留原安装权限'
-                          : 'Preserve legacy installation permissions',
-                    },
-                  ]}
-                />
-              </Form.Item>
-            ) : null}
-
-            <Card className="soha-detail-card">
-              <div className="soha-detail-meta">
-                <Text strong>Prometheus</Text>
-              </div>
-              <Form.Item
-                name="prometheusTransport"
-                label="访问方式"
-                extra={
-                  connectionMode === 'agent'
-                    ? '选择 Agent 时，保存后请重新应用 Agent 安装清单，以同步 Prometheus 地址和凭据。'
-                    : undefined
-                }
-              >
-                <Select
-                  options={[
-                    { value: 'direct', label: 'Core 直连' },
-                    ...(connectionMode === 'agent'
-                      ? [{ value: 'agent', label: 'Agent 代理' }]
-                      : []),
-                  ]}
-                />
-              </Form.Item>
-              <Form.Item name="prometheusBaseUrl" label="Prometheus URL">
-                <Input placeholder="http://prometheus:9090" />
-              </Form.Item>
-              <Form.Item name="prometheusBearerToken" label="Prometheus Token">
-                <Input.Password placeholder={editingCluster ? '留空则沿用现有 token' : ''} />
-              </Form.Item>
-            </Card>
-
-            {connectionMode === 'agent' ? (
-              <Card className="soha-detail-card" title="自定义资源授权">
-                <Text type="secondary">
-                  按 API Group 和资源名称授权。保存后重新应用 Agent
-                  安装清单；移除命名空间授权时，还需删除旧的 Role 和 RoleBinding。
-                </Text>
-                <Form.List name="agentCustomResourceRules">
-                  {(fields, { add, remove }) => (
-                    <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-                      {fields.map(({ key, name, ...rest }) => (
-                        <div key={key}>
-                          <Form.Item
-                            {...rest}
-                            preserve
-                            name={[name, 'apiGroup']}
-                            label="API Group"
-                            rules={[{ required: true }]}
-                          >
-                            <Input placeholder="example.io" />
-                          </Form.Item>
-                          <Form.Item
-                            {...rest}
-                            preserve
-                            name={[name, 'resources']}
-                            label="资源名称（复数）"
-                            rules={[{ required: true }]}
-                          >
-                            <Select mode="tags" placeholder="widgets" />
-                          </Form.Item>
-                          <Form.Item
-                            {...rest}
-                            preserve
-                            name={[name, 'verbs']}
-                            label="权限"
-                            rules={[{ required: true }]}
-                          >
-                            <Select
-                              mode="multiple"
-                              options={[
-                                'get',
-                                'list',
-                                'watch',
-                                'create',
-                                'update',
-                                'patch',
-                                'delete',
-                              ].map((value) => ({ value, label: value }))}
-                            />
-                          </Form.Item>
-                          <Form.Item
-                            {...rest}
-                            preserve
-                            name={[name, 'namespaces']}
-                            label="命名空间"
-                            extra="留空表示整个集群，包括集群级资源；填写后只授权指定命名空间。"
-                          >
-                            <Select mode="tags" placeholder="apps" />
-                          </Form.Item>
-                          <Button onClick={() => remove(name)} danger>
-                            移除授权
-                          </Button>
-                        </div>
-                      ))}
-                      <Button
-                        icon={<PlusOutlined />}
-                        onClick={() =>
-                          add({
-                            apiGroup: '',
-                            resources: [],
-                            verbs: ['get', 'list', 'watch'],
-                            namespaces: [],
-                          })
-                        }
-                      >
-                        添加授权
-                      </Button>
-                    </Space>
-                  )}
-                </Form.List>
-              </Card>
-            ) : null}
-
-            <div className="soha-form-actions">
-              <Button onClick={() => setModalVisible(false)}>取消</Button>
-              <Button
-                htmlType="submit"
-                type="primary"
-                loading={createMutation.isPending || updateMutation.isPending}
-              >
-                {editingCluster ? '更新' : '创建'}
-              </Button>
-            </div>
-          </Form>
-        )}
       </Modal>
+      {modalVisible && (
+        <ClusterEditor
+          key={editingCluster?.id || 'create'}
+          cluster={editingCluster}
+          writeBlocked={platformWriteBlocked}
+          onClose={(created) => {
+            setModalVisible(false)
+            setEditingCluster(null)
+            if (created?.connectionMode === 'agent') showAgentInstallation(created.id)
+          }}
+        />
+      )}
     </div>
   )
 }

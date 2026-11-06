@@ -1,3 +1,5 @@
+import { StatusTag } from '@/components/status-tag'
+import { replicaSetHealth } from './replicaset-detail-model'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
 import { useI18n } from '@/i18n'
@@ -29,6 +31,35 @@ export function WorkloadsReplicaSetsPage() {
       title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
       dataIndex: 'namespace',
       width: 160,
+    },
+    {
+      ...tableColumnPresets.status,
+      title: localeCode === 'zh_CN' ? '状态' : 'Status',
+      key: 'health',
+      width: 150,
+      sorter: (a, b) => replicaSetHealth(a).localeCompare(replicaSetHealth(b)),
+      render: (_, record) => (
+        <StatusTag
+          value={replicaSetHealth(record)}
+          label={
+            replicaSetHealth(record) === 'healthy'
+              ? localeCode === 'zh_CN'
+                ? '健康'
+                : 'Healthy'
+              : replicaSetHealth(record) === 'inactive'
+                ? localeCode === 'zh_CN'
+                  ? '期望为 0'
+                  : 'Zero desired'
+                : replicaSetHealth(record) === 'unknown'
+                  ? localeCode === 'zh_CN'
+                    ? '状态未知'
+                    : 'Unknown'
+                  : localeCode === 'zh_CN'
+                    ? '未就绪或不可用'
+                    : 'Not ready or available'
+          }
+        />
+      ),
     },
     {
       title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',

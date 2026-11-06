@@ -569,7 +569,7 @@ test('topology preserves zero weights, rule evidence, filtering and keyboard tab
   await expect(page.getByText('agent_action_denied', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await content.getByRole('textbox', { name: '搜索已加载节点' }).fill('no-such-resource')
-  await expect(content).toContainText('当前筛选范围没有已加载节点')
+  await expect(content).toContainText('没有匹配的已加载资源')
   verifyBrowserEvidence(evidence)
 })
 
@@ -596,7 +596,7 @@ test('topology preserves focus when a background snapshot is incomplete', async 
   await expect(page).toHaveURL(/focus=service/)
   incomplete = true
   await page.getByRole('button', { name: 'Refresh network topology', exact: true }).click()
-  await expect(content).toContainText('The result reached its budget')
+  await expect(content).toContainText('Data budget reached')
   await expect(page).toHaveURL(/focus=service/)
   await expect(content).toContainText('The selected node is no longer in this snapshot')
   verifyBrowserEvidence(evidence)
@@ -1000,18 +1000,18 @@ test('node list distinguishes Ready, cordon, pressure, taints and unavailable fi
   await expect(row).toContainText('禁止调度')
   await expect(row).toContainText('磁盘压力')
   await expect(row).not.toContainText('排水中')
-  const tags = row.locator('.soha-node-taints .ant-tag')
-  await expect(tags).toHaveCount(3)
-  const colors = await tags.evaluateAll((items) =>
-    items.map((tag) => getComputedStyle(tag).backgroundColor),
-  )
-  expect(new Set(colors).size).toBe(3)
-  await row
-    .getByRole('button', { name: '查看污点 maintenance=task113:NoSchedule', exact: true })
-    .press('Enter')
-  await expect(
-    page.locator('.ant-popover').getByText('maintenance=task113:NoSchedule', { exact: true }),
-  ).toBeVisible()
+  const taints = row.getByRole('button', { name: '查看节点污点', exact: true })
+  const tags = taints.locator('.ant-tag')
+  await expect(tags).toHaveText(['maintenance=task113', '+2'])
+  await expect(tags.first()).toHaveClass(/\bant-tag-purple\b/)
+  await taints.press('Enter')
+  const details = page.locator('.soha-node-taint-details')
+  await expect(details).toBeVisible()
+  await expect(details.locator('code')).toHaveText([
+    'maintenance=task113:NoSchedule',
+    'prefer=batch:PreferNoSchedule',
+    'node.kubernetes.io/unreachable:NoExecute',
+  ])
   await expect(
     page
       .locator('.ant-table-row[data-row-key]')
@@ -1369,7 +1369,12 @@ for (const width of [320, 1238, 1275]) {
     const evidence = await setup(context, page, { nodeStates: true, dark: width === 320 })
     await page.goto('/cluster-resources/nodes')
     const content = page.locator('.soha-cluster-nodes-page')
-    await expect(content.getByRole('link', { name: 'cordoned-worker', exact: true })).toBeVisible()
+    const cordonedNode = content.getByRole('link', { name: 'cordoned-worker', exact: true })
+    await expect(cordonedNode).toBeVisible()
+    await expect(cordonedNode).toHaveAttribute(
+      'href',
+      '/cluster-resources/nodes/cordoned-worker?clusterId=cluster-a&tab=overview',
+    )
     expect(
       (await content.getByRole('columnheader', { name: '时长', exact: true }).boundingBox())!.width,
     ).toBeLessThan(90)

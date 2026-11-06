@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import type { KubernetesResourceGraph } from '@opensoha/contracts/gen/ts/sohaapi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntdApp } from 'antd'
 import type { ReactNode } from 'react'
@@ -7,6 +8,10 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { api } from '@/services/api-client'
+import { PlatformAccessControlClusterRoleBindingDetailPage } from './clusterrolebindings/detail-page'
+import { PlatformAccessControlClusterRoleDetailPage } from './clusterroles/detail-page'
+import { PlatformAccessControlRoleBindingDetailPage } from './rolebindings/detail-page'
 import { PlatformAccessControlClusterRolesPage } from './clusterroles/list-page'
 import { PlatformAccessControlRoleBindingsPage } from './rolebindings/list-page'
 import { PlatformAccessControlRoleDetailPage } from './roles/detail-page'
@@ -34,9 +39,41 @@ vi.mock('@/services/api-client', () => ({
   api: {
     delete: vi.fn(async () => ({ data: null })),
     get: apiGetMock,
-    post: vi.fn(async () => ({ data: { content: '' } })),
+    post: vi.fn(async () => ({
+      data: {
+        allowed: !testState.capability.disabled,
+        capability: {
+          status: testState.capability.disabled ? 'unsupported' : 'available',
+          reason: testState.capability.reason,
+        },
+      },
+    })),
     put: vi.fn(async () => ({ data: { content: '' } })),
   },
+}))
+
+vi.mock('@/features/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/auth')>()),
+  usePermissionSnapshot: () => ({
+    data: {
+      data: {
+        permissionKeys: [
+          'roles',
+          'cluster-roles',
+          'role-bindings',
+          'cluster-role-bindings',
+          'service-accounts',
+        ].flatMap((resource) =>
+          ['view', 'create', 'update', 'delete'].map(
+            (action) => `platform.access-control.${resource}.${action}`,
+          ),
+        ),
+        visibleMenuIds: [],
+      },
+    },
+    error: null,
+    isPending: false,
+  }),
 }))
 
 vi.mock('@/stores/platform-scope-store', () => ({
@@ -69,7 +106,42 @@ vi.mock('@/components/status-tag', async (original) => ({
 }))
 
 vi.mock('@/components/k8s-yaml-editor', () => ({
-  K8sYamlEditor: () => <div data-testid="yaml-editor">yaml-editor</div>,
+  K8sYamlEditor: ({
+    readOnly,
+    applyDisabled,
+    value,
+    onApply,
+  }: {
+    readOnly: boolean
+    applyDisabled: boolean
+    value: string
+    onApply: () => void
+  }) => (
+    <div data-testid="yaml-editor" data-read-only={String(readOnly)}>
+      <pre>{value}</pre>
+      <button disabled={readOnly || applyDisabled} onClick={onApply}>
+        应用 YAML
+      </button>
+    </div>
+  ),
+}))
+
+vi.mock('@/features/platform/shared/resource-insights/workload-relationship-canvas', () => ({
+  default: ({
+    graph,
+    onSelect,
+  }: {
+    graph: KubernetesResourceGraph
+    onSelect: (id: string) => void
+  }) => (
+    <div>
+      {graph.nodes.map(({ id, resource }) => (
+        <button key={id} data-id={id} onClick={() => onSelect(id)}>
+          {resource.name}
+        </button>
+      ))}
+    </div>
+  ),
 }))
 
 vi.mock('@/components/admin-table', () => ({
@@ -197,6 +269,137 @@ async function clickTab(container: HTMLElement, label: string) {
 }
 
 describe('platform access-control leaf pages', () => {
+  it.each([
+    ['Role', 'roles', true, PlatformAccessControlRoleDetailPage],
+    ['ClusterRole', 'clusterroles', false, PlatformAccessControlClusterRoleDetailPage],
+    ['RoleBinding', 'rolebindings', true, PlatformAccessControlRoleBindingDetailPage],
+    [
+      'ClusterRoleBinding',
+      'clusterrolebindings',
+      false,
+      PlatformAccessControlClusterRoleBindingDetailPage,
+    ],
+    ['ServiceAccount', 'serviceaccounts', true, PlatformAccessControlServiceAccountDetailPage],
+  ] as const)(
+    'mounts %s graph only on the relationships tab with exact scope',
+    async (kind, routeSegment, namespaced, DetailPage) => {
+      const clusterId = 'cluster-a'
+      const name = 'reader'
+      const namespace = namespaced ? 'team-b' : undefined
+      const namespaceQuery = namespace ? `namespace=${namespace}` : ''
+      const querySuffix = namespaceQuery ? `?${namespaceQuery}` : ''
+      const apiPath = `/clusters/${clusterId}/access-control/${routeSegment}/${name}`
+      testState.responses[`${apiPath}/detail${querySuffix}`] = {
+        name,
+        namespace,
+        ageSeconds: 60,
+        rules: 0,
+        roleRef: 'Role/target-role',
+        secrets: 0,
+        imagePullSecrets: 0,
+      }
+      const apiVersion = kind === 'ServiceAccount' ? 'v1' : 'rbac.authorization.k8s.io/v1'
+      testState.responses[`${apiPath}/yaml${querySuffix}`] = {
+        content: [
+          `apiVersion: ${apiVersion}`,
+          `kind: ${kind}`,
+          'metadata:',
+          `  name: ${name}`,
+          ...(namespace ? [`  namespace: ${namespace}`] : []),
+        ].join('\n'),
+      }
+      const graphQuery = new URLSearchParams(namespaceQuery)
+      graphQuery.set('kind', kind)
+      graphQuery.set('name', name)
+      const graphPath = `/clusters/${clusterId}/resources/graph?${graphQuery}`
+      const graph: KubernetesResourceGraph = {
+        clusterId,
+        rootId: 'root',
+        generatedAt: '',
+        warnings: [],
+        evidence: [],
+        nodes: [
+          {
+            id: 'root',
+            resource: {
+              clusterId,
+              namespace,
+              kind,
+              name,
+              apiVersion,
+              scopeMode: namespaced ? 'namespace' : 'cluster',
+            },
+          },
+        ],
+        edges: [],
+      }
+      if (kind === 'RoleBinding') {
+        graph.nodes.push({
+          id: 'target',
+          resource: {
+            clusterId,
+            namespace,
+            kind: 'Role',
+            name: 'target-role',
+            apiVersion,
+            scopeMode: 'namespace',
+          },
+        })
+        graph.edges.push({
+          id: 'role-ref',
+          sourceId: 'root',
+          targetId: 'target',
+          relation: 'binds-role',
+          fieldPath: 'roleRef',
+        })
+      }
+      testState.responses[graphPath] = graph
+
+      const baseRoute = `/platform-access-control/${routeSegment}`
+      const container = await renderPage(
+        <DetailPage />,
+        `${baseRoute}/${name}?clusterId=${clusterId}&namespace=team-b`,
+        `${baseRoute}/:name`,
+      )
+      expect(apiGetMock.mock.calls.map(([path]) => path)).not.toContain(graphPath)
+      await clickTab(container, '关系')
+      await act(async () => {
+        await import('@/features/platform/shared/resource-insights/workload-relationships')
+        await import('@/features/platform/shared/resource-insights/workload-relationship-canvas')
+      })
+      await vi.waitFor(async () => {
+        await flushAsyncWork()
+        expect(apiGetMock).toHaveBeenCalledWith(graphPath)
+        expect(container.querySelector('[data-id="root"]')).not.toBeNull()
+      })
+      if (kind === 'RoleBinding') {
+        const target = container.querySelector<HTMLButtonElement>('[data-id="target"]')
+        expect(target).not.toBeNull()
+        await act(async () => target?.click())
+        const inspector = container.querySelector('aside[aria-label="选中资源信息"]')
+        expect(inspector?.textContent).toContain('被声明为绑定角色')
+        expect(inspector?.textContent).toContain('roleRef')
+        expect(
+          [...(inspector?.querySelectorAll('button') ?? [])].find(
+            (button) => button.textContent === '查看详情',
+          )?.disabled,
+        ).toBe(false)
+      }
+      await clickTab(container, '概览')
+      expect(container.querySelector('.soha-workload-relationships')).toBeNull()
+    },
+  )
+
+  it('does not request a Role graph for a detail URL without a namespace', async () => {
+    const container = await renderPage(
+      <PlatformAccessControlRoleDetailPage />,
+      '/platform-access-control/roles/reader?clusterId=cluster-a&namespace=&tab=relationships',
+      '/platform-access-control/roles/:name',
+    )
+    expect(container.textContent).toContain('请选择集群和命名空间')
+    expect(apiGetMock.mock.calls.some(([path]) => path.includes('/resources/graph'))).toBe(false)
+  })
+
   it('keeps namespaced list controls and canonical wire paths', async () => {
     testState.responses['/clusters/cluster-a/access-control/serviceaccounts?namespace=team-a'] = [
       {
@@ -259,7 +462,8 @@ describe('platform access-control leaf pages', () => {
     expect(container.textContent).not.toContain('Subjects')
   })
 
-  it('loads detail, reverse relationships, and YAML only from their active tabs', async () => {
+  it('loads overview configuration but mounts bindings and YAML editor only on their tabs', async () => {
+    testState.scope.namespace = 'list-team'
     testState.responses['/clusters/cluster-a/access-control/roles/reader/detail?namespace=team-a'] =
       {
         name: 'reader',
@@ -276,32 +480,54 @@ describe('platform access-control leaf pages', () => {
         subjects: ['User:alice'],
         ageSeconds: 60,
       },
+      { name: 'other-role', namespace: 'team-a', roleRef: 'Role/other', ageSeconds: 60 },
+      { name: 'cluster-ref', namespace: 'team-a', roleRef: 'ClusterRole/reader', ageSeconds: 60 },
+      { name: 'other-namespace', namespace: 'team-b', roleRef: 'Role/reader', ageSeconds: 60 },
     ]
     testState.responses['/clusters/cluster-a/access-control/clusterrolebindings'] = []
     testState.responses['/clusters/cluster-a/access-control/roles/reader/yaml?namespace=team-a'] = {
-      content: 'kind: Role',
+      content: `apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reader
+  namespace: team-a
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get]
+`,
     }
 
     const container = await renderPage(
       <PlatformAccessControlRoleDetailPage />,
-      '/platform-access-control/roles/reader?namespace=url-team',
+      '/platform-access-control/roles/reader?clusterId=cluster-a&namespace=team-a',
       '/platform-access-control/roles/:name',
     )
     const requestedPaths = () => apiGetMock.mock.calls.map(([path]) => String(path))
 
-    expect(container.textContent).toContain('get pods')
+    expect(container.textContent).toContain('pods')
+    expect(container.textContent).toContain('get')
     expect(requestedPaths()).toEqual([
       '/clusters/cluster-a/access-control/roles/reader/detail?namespace=team-a',
+      '/clusters/cluster-a/access-control/roles/reader/yaml?namespace=team-a',
     ])
-    await clickTab(container, '关联资源')
-    expect(container.textContent).toContain('RoleBinding team-a/reader-binding')
+    expect(container.querySelector('[data-testid="yaml-editor"]')).toBeNull()
+    await clickTab(container, '绑定')
+    expect(container.textContent).toContain('reader-binding')
+    expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
+    expect(container.textContent).not.toContain('other-role')
+    expect(container.textContent).not.toContain('cluster-ref')
+    expect(container.textContent).not.toContain('other-namespace')
+    expect(
+      container.querySelector(
+        'a[href="/platform-access-control/rolebindings/reader-binding?clusterId=cluster-a&namespace=team-a"]',
+      ),
+    ).not.toBeNull()
     expect(requestedPaths()).toContain(
       '/clusters/cluster-a/access-control/rolebindings?namespace=team-a',
     )
-    expect(requestedPaths()).toContain('/clusters/cluster-a/access-control/clusterrolebindings')
-    expect(requestedPaths()).not.toContain(
-      '/clusters/cluster-a/access-control/roles/reader/yaml?namespace=team-a',
-    )
+    expect(requestedPaths()).not.toContain('/clusters/cluster-a/access-control/clusterrolebindings')
+    expect(container.querySelector('[data-testid="yaml-editor"]')).toBeNull()
     await clickTab(container, 'YAML')
     expect(requestedPaths()).toContain(
       '/clusters/cluster-a/access-control/roles/reader/yaml?namespace=team-a',
@@ -318,6 +544,17 @@ describe('platform access-control leaf pages', () => {
       ageSeconds: 60,
     }
     testState.responses[
+      '/clusters/cluster-a/access-control/serviceaccounts/builder/yaml?namespace=team-a'
+    ] = {
+      content: `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: builder
+  namespace: team-a
+automountServiceAccountToken: false
+`,
+    }
+    testState.responses[
       '/clusters/cluster-a/access-control/rolebindings?namespace=team-a&subjectKind=ServiceAccount&subjectName=builder&subjectNamespace=team-a'
     ] = [{ name: 'builder-role', namespace: 'team-a', roleRef: 'Role/editor', ageSeconds: 60 }]
     testState.responses[
@@ -329,10 +566,24 @@ describe('platform access-control leaf pages', () => {
       '/platform-access-control/serviceaccounts/builder',
       '/platform-access-control/serviceaccounts/:name',
     )
-    await clickTab(container, '关联资源')
+    expect(container.querySelector('[data-testid="yaml-editor"]')).toBeNull()
+    expect(apiGetMock).not.toHaveBeenCalledWith(
+      '/clusters/cluster-a/access-control/rolebindings?namespace=team-a&subjectKind=ServiceAccount&subjectName=builder&subjectNamespace=team-a',
+    )
+    await clickTab(container, '绑定')
 
-    expect(container.textContent).toContain('RoleBinding team-a/builder-role')
-    expect(container.textContent).toContain('ClusterRoleBinding builder-cluster-role')
+    expect(container.textContent).toContain('builder-role')
+    expect(container.textContent).toContain('builder-cluster-role')
+    expect(
+      container.querySelector(
+        'a[href="/platform-access-control/rolebindings/builder-role?clusterId=cluster-a&namespace=team-a"]',
+      ),
+    ).not.toBeNull()
+    expect(
+      container.querySelector(
+        'a[href="/platform-access-control/clusterrolebindings/builder-cluster-role?clusterId=cluster-a"]',
+      ),
+    ).not.toBeNull()
     expect(apiGetMock).toHaveBeenCalledWith(
       '/clusters/cluster-a/access-control/rolebindings?namespace=team-a&subjectKind=ServiceAccount&subjectName=builder&subjectNamespace=team-a',
     )
@@ -341,7 +592,7 @@ describe('platform access-control leaf pages', () => {
     )
   })
 
-  it('blocks list mutations and YAML fetch when the capability is unsupported', async () => {
+  it('blocks list mutations and YAML apply while retaining YAML read when unsupported', async () => {
     testState.capability.disabled = true
     testState.capability.reason = 'Agent mode cannot apply RBAC YAML'
     testState.responses['/clusters/cluster-a/access-control/serviceaccounts?namespace=team-a'] = [
@@ -364,7 +615,16 @@ describe('platform access-control leaf pages', () => {
     )
     expect(list.textContent).toContain('Agent mode cannot apply RBAC YAML')
     expect(createButton?.disabled).toBe(true)
-    expect(list.querySelector('button[aria-label="删除"]')).toBeNull()
+    const actions = list.querySelector<HTMLButtonElement>('button[aria-label="更多操作：builder"]')
+    expect(actions).not.toBeNull()
+    await act(async () => actions?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushAsyncWork()
+    const deleteItem = Array.from(document.querySelectorAll('[role="menuitem"]')).find((item) =>
+      item.textContent?.includes('删除'),
+    )
+    expect(deleteItem?.getAttribute('aria-disabled')).toBe('true')
+    await act(async () => deleteItem?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(api.delete).not.toHaveBeenCalled()
 
     testState.responses['/clusters/cluster-a/access-control/roles/reader/detail?namespace=team-a'] =
       {
@@ -372,7 +632,17 @@ describe('platform access-control leaf pages', () => {
         namespace: 'team-a',
         rules: 1,
         ageSeconds: 60,
+        allowedActions: ['update'],
       }
+    testState.responses['/clusters/cluster-a/access-control/roles/reader/yaml?namespace=team-a'] = {
+      content: `apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reader
+  namespace: team-a
+rules: []
+`,
+    }
     const detail = await renderPage(
       <PlatformAccessControlRoleDetailPage />,
       '/platform-access-control/roles/reader',
@@ -380,8 +650,17 @@ describe('platform access-control leaf pages', () => {
     )
     await clickTab(detail, 'YAML')
 
-    expect(detail.textContent).toContain('Agent mode cannot apply RBAC YAML')
-    expect(apiGetMock.mock.calls.map(([path]) => path)).not.toContain(
+    expect(detail.querySelector('[data-testid="yaml-editor"]')).not.toBeNull()
+    expect(
+      detail.querySelector('[data-testid="yaml-editor"]')?.getAttribute('data-read-only'),
+    ).toBe('false')
+    const applyButton = Array.from(detail.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === '应用 YAML',
+    )
+    expect(applyButton?.disabled).toBe(true)
+    await act(async () => applyButton?.click())
+    expect(api.put).not.toHaveBeenCalled()
+    expect(apiGetMock.mock.calls.map(([path]) => path)).toContain(
       '/clusters/cluster-a/access-control/roles/reader/yaml?namespace=team-a',
     )
   })

@@ -79,6 +79,7 @@ export interface UpdateConfigurationDataVariables<TPayload> {
 
 export interface UpdateConfigurationYAMLVariables extends ConfigurationTarget {
   readonly content: string
+  readonly requireObservedIdentity?: boolean
 }
 
 export type ConfigurationYAML = ResourceYAMLView

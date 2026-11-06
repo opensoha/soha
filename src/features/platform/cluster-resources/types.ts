@@ -29,6 +29,7 @@ export interface NodeResourceSummary {
 }
 
 export interface ClusterNode {
+  labels?: Record<string, string>
   name: string
   status: string
   unschedulable: boolean

@@ -5,7 +5,7 @@ import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { CronJobDetailPage } from './detail-page'
+import { CronJobJobsTable } from './cronjob-jobs-table'
 
 const testDetail = vi.hoisted(() => ({
   name: 'nightly-report',
@@ -82,7 +82,10 @@ describe('CronJobDetailPage', () => {
           client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
         >
           <MemoryRouter>
-            <CronJobDetailPage />
+            <CronJobJobsTable
+              jobs={testDetail.jobs}
+              scope={{ clusterId: 'cluster-a', namespace: 'operations' }}
+            />
           </MemoryRouter>
         </QueryClientProvider>,
       )

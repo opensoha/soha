@@ -1,8 +1,9 @@
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useYamlDraft } from '@/components/use-yaml-draft'
+import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
-import { useClusterCapability } from '@/features/platform/cluster-capabilities'
+import { useClusterCapabilityForCluster } from '@/features/platform/cluster-capabilities'
 import { ResourceGitOpsStatus } from '@/features/platform/shared/resource-gitops-status'
 import {
   ResourceDetailTabs,
@@ -65,6 +66,17 @@ const WORKLOAD_ENTITY_KINDS: Record<WorkloadKind, string> = {
   cronjobs: 'CronJob',
 }
 
+const WORKLOAD_PERMISSIONS: Record<WorkloadKind, string> = {
+  deployments: 'platform.deployment',
+  pods: 'platform.pods',
+  replicasets: 'platform.workloads.replica-sets',
+  replicationcontrollers: 'platform.workloads.replication-controllers',
+  statefulsets: 'platform.workloads.stateful-sets',
+  daemonsets: 'platform.workloads.daemon-sets',
+  jobs: 'platform.workloads.jobs',
+  cronjobs: 'platform.workloads.cron-jobs',
+}
+
 /* ─── generic workload detail ─── */
 
 export interface WorkloadMeta {
@@ -73,6 +85,7 @@ export interface WorkloadMeta {
   labels?: Record<string, string>
   annotations?: Record<string, string>
   createdAt: string
+  allowedActions?: string[]
   yaml?: string
   [key: string]: unknown
 }
@@ -96,6 +109,7 @@ export function WorkloadDetailShell({
   hideMetadataOverview = false,
   hideRelationshipsTab = false,
   detailRefetchOnMount = true,
+  ownerManagedTabs = false,
 }: {
   title: string
   resource: WorkloadKind
@@ -109,6 +123,7 @@ export function WorkloadDetailShell({
   hideMetadataOverview?: boolean
   hideRelationshipsTab?: boolean
   detailRefetchOnMount?: boolean
+  ownerManagedTabs?: boolean
 }) {
   const { t, localeCode } = useI18n()
   const [relationshipView, setRelationshipView] = useState('graph')
@@ -121,7 +136,7 @@ export function WorkloadDetailShell({
   const queryClient = useQueryClient()
 
   const detailRefresh = useWorkloadRefresh()
-  const enhanced = resource !== 'pods' && resource !== 'deployments'
+  const enhanced = !ownerManagedTabs && resource !== 'pods' && resource !== 'deployments'
   const detailScope = { clusterId, namespace: detailNamespace }
   const podListKey = workloadQueries.list('pods', detailScope).queryKey
   const podsFetching = useIsFetching({ queryKey: podListKey })
@@ -132,15 +147,34 @@ export function WorkloadDetailShell({
     refetchIntervalInBackground: false,
   })
   const visibleDetailQueryData = readableQueryData(detailQuery)
+  const permissions = readableQueryData(usePermissionSnapshot())?.data
+  const permission = WORKLOAD_PERMISSIONS[resource]
+  const yamlViewCapability = useClusterCapabilityForCluster(
+    'resource.yaml.view',
+    localeCode,
+    clusterId,
+  )
+  const yamlApplyCapability = useClusterCapabilityForCluster(
+    'resource.yaml.apply',
+    localeCode,
+    clusterId,
+  )
+  const canReadYaml =
+    hasPermission(permissions, `${permission}.view`) &&
+    !yamlViewCapability.disabled &&
+    !yamlViewCapability.isLoading
+  const canUpdateYaml =
+    canReadYaml &&
+    hasPermission(permissions, `${permission}.update`) &&
+    hasAllowedAction(visibleDetailQueryData?.allowedActions, 'update') &&
+    !yamlApplyCapability.disabled &&
+    !yamlApplyCapability.isLoading
   const yamlQueryOptions = workloadQueries.yaml(resource, detailScope, name)
   const yamlQuery = useQuery({
     ...yamlQueryOptions,
-    enabled: Boolean(yamlQueryOptions.enabled) && resolvedActiveTabKey === 'yaml',
+    enabled: Boolean(yamlQueryOptions.enabled && canReadYaml && resolvedActiveTabKey === 'yaml'),
   })
-  const visibleYamlQueryData =
-    Boolean(yamlQueryOptions.enabled) && resolvedActiveTabKey === 'yaml'
-      ? readableQueryData(yamlQuery)
-      : undefined
+  const visibleYamlQueryData = canReadYaml ? readableQueryData(yamlQuery) : undefined
   const yamlDraftStorageKey = useMemo(
     () =>
       clusterId
@@ -154,10 +188,6 @@ export function WorkloadDetailShell({
     yamlDraftStorageKey,
   )
   const { value: yamlDraft, setValue: setYamlDraft } = yamlState
-  const yamlApplyCapability = useClusterCapability('resource.yaml.apply', localeCode)
-  const yamlApplyDisabledReason = yamlApplyCapability.disabled
-    ? yamlApplyCapability.reason
-    : undefined
   useAIPageContext({
     sourceWorkbench: 'platform',
     sourceTitle: title,
@@ -187,6 +217,12 @@ export function WorkloadDetailShell({
     },
   )
   const platformWriteBlocked = applyYamlMutation.blocked
+  const canApplyYaml =
+    canUpdateYaml &&
+    !platformWriteBlocked &&
+    !yamlQuery.isError &&
+    yamlQuery.isEnabled &&
+    Boolean(visibleYamlQueryData && yamlDraft.trim())
 
   const detail = visibleDetailQueryData
 
@@ -408,7 +444,20 @@ export function WorkloadDetailShell({
           {
             key: 'yaml',
             label: t('common.yaml', 'YAML'),
-            children: (
+            children: !canReadYaml ? (
+              yamlViewCapability.isLoading ? (
+                <Spin />
+              ) : (
+                <ManagementState
+                  compact
+                  kind="no-permission"
+                  title={
+                    yamlViewCapability.reason ||
+                    (localeCode === 'zh_CN' ? '无法查看 YAML' : 'YAML view unavailable')
+                  }
+                />
+              )
+            ) : (
               <Suspense
                 fallback={
                   <Card className="soha-detail-card">
@@ -419,31 +468,33 @@ export function WorkloadDetailShell({
                 {yamlQuery.isError && visibleYamlQueryData === undefined ? null : (
                   <K8sYamlEditor
                     key={yamlState.resourceKey}
-                    value={yamlDraft}
-                    original={yamlState.original}
-                    serverChanged={yamlState.serverChanged}
+                    readOnly={!canUpdateYaml}
+                    value={canUpdateYaml ? yamlDraft : (visibleYamlQueryData?.content ?? '')}
+                    original={canUpdateYaml ? yamlState.original : visibleYamlQueryData?.content}
+                    serverChanged={canUpdateYaml && yamlState.serverChanged}
                     onCompareLatest={yamlState.compareLatest}
                     loading={yamlQuery.isPending}
                     error={yamlQuery.error}
-                    onChange={setYamlDraft}
+                    onChange={(value) => {
+                      if (canUpdateYaml) setYamlDraft(value)
+                    }}
                     onReset={() => {
                       yamlState.reset()
                       void message.success(t('yamlEditor.resetSuccess', 'YAML draft reset'))
                     }}
                     onSave={() => {
-                      if (!yamlDraftStorageKey) return
+                      if (!canUpdateYaml || !yamlDraftStorageKey) return
                       window.localStorage.setItem(yamlDraftStorageKey, yamlDraft)
                       void message.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
                     }}
-                    onApply={() => applyYamlMutation.mutate()}
-                    saveDisabled={!yamlDraftStorageKey}
-                    applyDisabled={
-                      platformWriteBlocked ||
-                      !yamlQueryOptions.enabled ||
-                      !yamlDraft.trim() ||
-                      yamlApplyCapability.disabled
+                    onApply={() => {
+                      if (canApplyYaml) applyYamlMutation.mutate()
+                    }}
+                    saveDisabled={!canUpdateYaml || !yamlDraftStorageKey}
+                    applyDisabled={!canApplyYaml}
+                    applyDisabledReason={
+                      yamlApplyCapability.disabled ? yamlApplyCapability.reason : undefined
                     }
-                    applyDisabledReason={yamlApplyDisabledReason}
                     applying={applyYamlMutation.isPending}
                   />
                 )}

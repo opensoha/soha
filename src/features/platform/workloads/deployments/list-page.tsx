@@ -20,7 +20,7 @@ import {
   platformResourceTarget,
   usePlatformMutation,
 } from '@/features/platform/shared/use-platform-mutation'
-import type { BatchRollbackDraft, Deployment } from '@/features/platform/workloads-model'
+import type { BatchRollbackDraft } from '@/features/platform/workloads-model'
 import {
   buildWorkloadDetailPath,
   getDeploymentHealth,
@@ -43,7 +43,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MenuProps, TableColumnsType } from 'antd'
-import { App, Button, InputNumber, Modal, Select, Spin, Typography } from 'antd'
+import { Button, InputNumber, Modal, Select, Spin, Typography } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
@@ -64,7 +64,7 @@ import {
 } from './api'
 import { deploymentMutations } from './mutations'
 import { deploymentQueries } from './queries'
-import type { DeploymentTarget } from './types'
+import type { Deployment, DeploymentTarget } from './types'
 
 const { Text } = Typography
 const WORKLOAD_ACTIONS_COLUMN_CLASS_NAME = `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-workload-actions-column`
@@ -73,6 +73,17 @@ type DeploymentBatch<T = Deployment> = {
   items: T[]
   clusterId: string | null
   selectionScope: string
+}
+
+type RollbackItem = BatchRollbackDraft & { uid?: string }
+
+type RollbackDraft = {
+  requestId: symbol
+  clusterId: string
+  selectionScope: string
+  scopeIdentity: { key: string }
+  items?: RollbackItem[]
+  error?: string
 }
 
 function batchTarget(
@@ -187,7 +198,11 @@ function buildWorkloadActionColumn({
           capability,
           run: onDelete,
         },
-      ].filter((entry) => hasAllowedAction(record.allowedActions, entry.key))
+      ].filter(
+        (entry) =>
+          hasAllowedAction(record.allowedActions, entry.key) &&
+          (entry.key !== 'delete' || record.uid),
+      )
       const items: MenuProps['items'] = entries.flatMap((entry, index) => [
         ...(entry.key === 'delete' && index > 0
           ? [{ key: 'delete-divider', type: 'divider' as const }]
@@ -220,7 +235,6 @@ function buildWorkloadActionColumn({
 
 export function WorkloadsDeploymentsPage() {
   const { t, localeCode } = useI18n()
-  const { message } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { clusterId, namespace } = usePlatformScopeStore()
@@ -249,6 +263,9 @@ export function WorkloadsDeploymentsPage() {
   const selectionScope = JSON.stringify([clusterId, namespace])
   const activeScopeRef = useRef(selectionScope)
   activeScopeRef.current = selectionScope
+  const rollbackScope = useMemo(() => ({ key: selectionScope }), [selectionScope])
+  const activeRollbackScope = useRef(rollbackScope)
+  activeRollbackScope.current = rollbackScope
   const [selection, setSelection] = useState({ scope: selectionScope, keys: [] as string[] })
   const setSelectedDeploymentKeys = (keys: string[]) =>
     setSelection({ scope: selectionScope, keys })
@@ -261,9 +278,12 @@ export function WorkloadsDeploymentsPage() {
     items: Deployment[]
     replicas: number
   } | null>(null)
-  const [batchRollbackVisible, setBatchRollbackVisible] = useState(false)
-  const [batchRollbackLoading, setBatchRollbackLoading] = useState(false)
-  const [batchRollbackDrafts, setBatchRollbackDrafts] = useState<BatchRollbackDraft[]>([])
+  const [batchRollbackDraft, setBatchRollbackDraft] = useState<RollbackDraft | null>(null)
+  const currentRollback =
+    batchRollbackDraft?.scopeIdentity === rollbackScope ? batchRollbackDraft : null
+  const batchRollbackLoading = Boolean(
+    currentRollback && !currentRollback.items && !currentRollback.error,
+  )
   const { densityButton, tableSize } = useWorkloadTableDensity(localeCode)
   const workloadMutationCapability = useClusterCapability('workload.mutations', localeCode)
   const yamlApplyCapability = useClusterCapability('resource.yaml.apply', localeCode)
@@ -272,7 +292,7 @@ export function WorkloadsDeploymentsPage() {
   useEffect(() => {
     setDeleteTarget(null)
     setBatchScaleDraft(null)
-    setBatchRollbackVisible(false)
+    setBatchRollbackDraft(null)
     setScaleTarget(null)
     setEditTarget(null)
   }, [selectionScope])
@@ -280,10 +300,12 @@ export function WorkloadsDeploymentsPage() {
   const deployments = visibleDeploymentsQueryData ?? []
   const canConfirmDelete = Boolean(
     deleteTarget?.selectionScope === selectionScope &&
+    deleteTarget.uid &&
     deployments.some(
       (item) =>
         item.name === deleteTarget?.name &&
         item.namespace === deleteTarget?.scope.namespace &&
+        item.uid === deleteTarget.uid &&
         hasAllowedAction(item.allowedActions, 'delete'),
     ),
   )
@@ -395,7 +417,7 @@ export function WorkloadsDeploymentsPage() {
 
   const batchRollbackMutation = usePlatformMutation(
     {
-      mutationFn: async (batch: DeploymentBatch<BatchRollbackDraft>) => {
+      mutationFn: async (batch: RollbackDraft & { items: RollbackItem[] }) => {
         if (!batch.items.length || batch.items.some((item) => !item.revision))
           throw new Error(
             localeCode === 'zh_CN'
@@ -409,14 +431,25 @@ export function WorkloadsDeploymentsPage() {
         )
       },
       onSuccess: (results, batch) => {
-        if (batch.selectionScope === activeScopeRef.current) {
-          if (results.every((item) => item.status === 'fulfilled')) setBatchRollbackVisible(false)
-          setSelection({
-            scope: batch.selectionScope,
-            keys: batch.items
-              .filter((_item, index) => results[index].status === 'rejected')
-              .map((item) => `${item.namespace}/${item.name}`),
-          })
+        if (batch.scopeIdentity === activeRollbackScope.current) {
+          const failed = batch.items.filter((_item, index) => results[index].status === 'rejected')
+          const succeededKeys = new Set(
+            batch.items
+              .filter((_item, index) => results[index].status === 'fulfilled')
+              .map((item) => item.key),
+          )
+          setBatchRollbackDraft((current) =>
+            current?.requestId === batch.requestId
+              ? failed.length
+                ? { ...current, items: failed }
+                : null
+              : current,
+          )
+          setSelection((current) =>
+            current.scope === batch.selectionScope
+              ? { ...current, keys: current.keys.filter((key) => !succeededKeys.has(key)) }
+              : current,
+          )
         }
         void queryClient.invalidateQueries({ queryKey: workloadKeys.resource('deployments') })
       },
@@ -482,6 +515,22 @@ export function WorkloadsDeploymentsPage() {
     selectedDeployments.length > 0 &&
     !workloadMutationDisabled &&
     selectedDeployments.every((item) => hasAllowedAction(item.allowedActions, 'rollback'))
+  const canConfirmBatchRollback = Boolean(
+    !workloadMutationDisabled &&
+    !platformWriteBlocked &&
+    currentRollback?.items?.length &&
+    currentRollback.items.every(
+      (target) =>
+        target.revision &&
+        selectedDeployments.some(
+          (item) =>
+            item.namespace === target.namespace &&
+            item.name === target.name &&
+            item.uid === target.uid &&
+            hasAllowedAction(item.allowedActions, 'rollback'),
+        ),
+    ),
+  )
   const batchMutationDisabledReason = workloadMutationDisabled
     ? workloadMutationCapability.reason
     : localeCode === 'zh_CN'
@@ -489,9 +538,9 @@ export function WorkloadsDeploymentsPage() {
       : 'Some selected resources do not allow this action.'
 
   const openBatchRollbackModal = async () => {
-    if (!clusterId || selectedDeployments.length === 0 || platformWriteBlocked) return
-    setBatchRollbackLoading(true)
-    setBatchRollbackVisible(true)
+    if (!clusterId || !canBatchRollback || platformWriteBlocked || batchRollbackLoading) return
+    const requestId = Symbol()
+    setBatchRollbackDraft({ requestId, clusterId, selectionScope, scopeIdentity: rollbackScope })
     try {
       const drafts = await Promise.all(
         selectedDeployments.map(async (item) => {
@@ -506,17 +555,20 @@ export function WorkloadsDeploymentsPage() {
             key: `${item.namespace}/${item.name}`,
             name: item.name,
             namespace: item.namespace,
+            uid: item.uid,
             options,
             revision: options[1]?.value ?? options[0]?.value ?? '',
-          } satisfies BatchRollbackDraft
+          } satisfies RollbackItem
         }),
       )
-      setBatchRollbackDrafts(drafts)
+      setBatchRollbackDraft((current) =>
+        current?.requestId === requestId ? { ...current, items: drafts } : current,
+      )
     } catch (err) {
-      void message.error(err instanceof Error ? err.message : String(err))
-      setBatchRollbackVisible(false)
-    } finally {
-      setBatchRollbackLoading(false)
+      const error = err instanceof Error ? err.message : String(err)
+      setBatchRollbackDraft((current) =>
+        current?.requestId === requestId ? { ...current, error } : current,
+      )
     }
   }
 
@@ -590,7 +642,11 @@ export function WorkloadsDeploymentsPage() {
       onRollback: (record) => rollbackMutation.mutate(targetFor(record.name, record.namespace), {}),
       onDelete: (record) => {
         deleteMutation.reset()
-        setDeleteTarget({ ...targetFor(record.name, record.namespace), selectionScope })
+        setDeleteTarget({
+          ...targetFor(record.name, record.namespace),
+          uid: record.uid,
+          selectionScope,
+        })
       },
       onScale: (record) =>
         setScaleTarget({
@@ -904,20 +960,15 @@ export function WorkloadsDeploymentsPage() {
         />
       ) : null}
       <Modal
-        okButtonProps={{
-          disabled:
-            platformWriteBlocked ||
-            batchRollbackDrafts.length === 0 ||
-            batchRollbackDrafts.some((item) => !item.revision),
-        }}
+        okButtonProps={{ disabled: !canConfirmBatchRollback }}
         title={localeCode === 'zh_CN' ? '批量回滚' : 'Batch rollback deployments'}
-        open={batchRollbackVisible}
+        open={Boolean(currentRollback)}
         onOk={() => {
-          if (!platformWriteBlocked)
-            batchRollbackMutation.mutate({ items: batchRollbackDrafts, clusterId, selectionScope })
+          if (canConfirmBatchRollback && currentRollback?.items)
+            batchRollbackMutation.mutate({ ...currentRollback, items: currentRollback.items })
         }}
         onCancel={() => {
-          if (!platformWriteBlocked) (() => setBatchRollbackVisible(false))?.()
+          if (!platformWriteBlocked) setBatchRollbackDraft(null)
         }}
         confirmLoading={batchRollbackMutation.isPending}
         width={900}
@@ -934,6 +985,8 @@ export function WorkloadsDeploymentsPage() {
           <div className="flex items-center justify-center h-48">
             <Spin size="large" />
           </div>
+        ) : currentRollback?.error ? (
+          <Text type="danger">{currentRollback.error}</Text>
         ) : (
           <AdminTable
             shellClassName="soha-management-table-shell"
@@ -943,26 +996,32 @@ export function WorkloadsDeploymentsPage() {
               {
                 title: localeCode === 'zh_CN' ? '目标 Revision' : 'Target Revision',
                 dataIndex: 'revision',
-                render: (_: string, record: BatchRollbackDraft) => (
+                render: (_: string, record: RollbackItem) => (
                   <Select
                     value={record.revision || undefined}
+                    disabled={platformWriteBlocked}
                     options={record.options}
                     style={{ width: 260 }}
                     placeholder={localeCode === 'zh_CN' ? '选择回滚版本' : 'Select revision'}
                     onChange={(value) =>
-                      setBatchRollbackDrafts((current) =>
-                        current.map((item) =>
-                          item.key === record.key
-                            ? { ...item, revision: String(value || '') }
-                            : item,
-                        ),
+                      setBatchRollbackDraft((current) =>
+                        current && current.requestId === currentRollback?.requestId
+                          ? {
+                              ...current,
+                              items: current.items?.map((item) =>
+                                item.key === record.key
+                                  ? { ...item, revision: String(value || '') }
+                                  : item,
+                              ),
+                            }
+                          : current,
                       )
                     }
                   />
                 ),
               },
             ]}
-            dataSource={batchRollbackDrafts}
+            dataSource={currentRollback?.items ?? []}
             rowKey="key"
             pageSize={10}
             enableColumnSelection={false}

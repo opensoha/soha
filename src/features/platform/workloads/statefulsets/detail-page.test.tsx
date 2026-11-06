@@ -9,6 +9,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { StatefulSetDetailPage } from './detail-page'
 
 const testState = vi.hoisted(() => ({
+  capability: vi.fn(),
   scope: {
     clusterId: 'cluster-a',
     namespace: 'selected-ns',
@@ -22,14 +23,14 @@ const apiGetMock = vi.hoisted(() =>
       return {
         data: {
           name: 'database',
-          namespace: 'selected-ns',
+          namespace: 'url-namespace',
           createdAt: '2026-01-01T00:00:00Z',
           selector: { app: 'database' },
           serviceName: 'database',
           pods: [
             {
               name: 'database-0',
-              namespace: 'selected-ns',
+              namespace: 'url-namespace',
               phase: 'Running',
               readyContainers: '1/1',
               restarts: 0,
@@ -41,7 +42,7 @@ const apiGetMock = vi.hoisted(() =>
             {
               kind: 'Service',
               name: 'database',
-              namespace: 'selected-ns',
+              namespace: 'url-namespace',
               relation: 'selected-by-service',
             },
           ],
@@ -53,12 +54,32 @@ const apiGetMock = vi.hoisted(() =>
       return { data: [{ involvedKind: 'StatefulSet', involvedName: 'database' }] }
     }
     if (path.includes('/yaml?')) {
-      return { data: { kind: 'StatefulSet', name: 'database', content: 'kind: StatefulSet' } }
+      return {
+        data: {
+          kind: 'StatefulSet',
+          name: 'database',
+          content:
+            'apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n name: database\n namespace: url-namespace\nspec:\n template:\n  spec:\n   containers: [{name: db, image: db:v1}]\n',
+        },
+      }
     }
     return { data: [] }
   }),
 )
 
+vi.mock('@/features/auth', async (original) => ({
+  ...(await original<typeof import('@/features/auth')>()),
+  usePermissionSnapshot: () => ({
+    data: {
+      data: { permissionKeys: ['platform.workloads.stateful-sets.view', 'platform.pods.view'] },
+    },
+    isLoading: false,
+  }),
+}))
+vi.mock('@/features/platform/shared/resource-gitops-status', () => ({
+  ResourceGitOpsStatus: () => null,
+}))
+vi.mock('@/features/copilot', () => ({ useAIPageContext: vi.fn() }))
 vi.mock('@/services/api-client', () => ({
   api: {
     delete: vi.fn(),
@@ -79,6 +100,10 @@ vi.mock('@/i18n', async (importOriginal) => ({
 }))
 vi.mock('@/features/platform/cluster-capabilities', () => ({
   useClusterCapability: () => ({ disabled: false, reason: '', status: 'available' }),
+  useClusterCapabilityForCluster: (...args: unknown[]) => {
+    testState.capability(...args)
+    return { disabled: false, reason: '', status: 'available' }
+  },
 }))
 vi.mock('../shared/detail-events', () => ({
   WorkloadDetailEvents: () => <div data-testid="events-panel">events-panel</div>,
@@ -126,12 +151,13 @@ afterEach(async () => {
 
 async function flushAsyncWork() {
   await act(async () => {
+    await vi.dynamicImportSettled()
     await Promise.resolve()
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }
 
-async function renderDetail() {
+async function renderDetail(entry = '/workloads/statefulsets/database?namespace=url-namespace') {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -142,9 +168,7 @@ async function renderDetail() {
     root.render(
       <QueryClientProvider client={queryClient}>
         <AntdApp>
-          <MemoryRouter
-            initialEntries={['/workloads/statefulsets/database?namespace=url-namespace']}
-          >
+          <MemoryRouter initialEntries={[entry]}>
             <Routes>
               <Route
                 path="/workloads/statefulsets/:statefulSetName"
@@ -170,17 +194,30 @@ function clickTab(container: HTMLElement, label: string) {
 }
 
 describe('statefulset detail boundaries', () => {
-  it('loads metrics, events, and YAML only after their tabs are activated', async () => {
+  it('checks mutation capability against the explicit detail cluster', async () => {
+    await renderDetail(
+      '/workloads/statefulsets/database?clusterId=cluster-b&namespace=url-namespace',
+    )
+    expect(testState.capability).toHaveBeenCalledWith('workload.mutations', 'zh_CN', 'cluster-b')
+    expect(testState.scope.clusterId).toBe('cluster-a')
+  })
+  it('reads server configuration but keeps metrics, events and the YAML editor lazy', async () => {
     const container = await renderDetail()
     const requestedPaths = () => apiGetMock.mock.calls.map(([path]) => String(path))
 
     expect(requestedPaths()).toContain(
       '/clusters/cluster-a/workloads/statefulsets/database/detail?namespace=url-namespace',
     )
-    expect(testState.scope.setNamespace).toHaveBeenCalledWith('url-namespace')
+    // The resource URL scopes reads without replacing the list's global selection.
+    expect(testState.scope.setNamespace).not.toHaveBeenCalled()
+    expect(testState.scope.namespace).toBe('selected-ns')
     expect(requestedPaths().some((path) => path.includes('/metrics?'))).toBe(false)
     expect(requestedPaths().some((path) => path.includes('/events?'))).toBe(false)
-    expect(requestedPaths().some((path) => path.includes('/yaml?'))).toBe(false)
+    expect(requestedPaths().some((path) => path.includes('/yaml?namespace=url-namespace'))).toBe(
+      true,
+    )
+    expect(container.querySelector('[data-testid="yaml-editor"]')).toBeNull()
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(9)
     expect(requestedPaths().some((path) => path.includes('/workloads/pods?'))).toBe(false)
     expect(container.textContent).toContain('database-0')
     expect(container.textContent).toContain('database')

@@ -5,7 +5,7 @@ import {
 } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementTableToolbar } from '@/components/management-list'
-import { BooleanTag } from '@/components/status-tag'
+import { StatusTag } from '@/components/status-tag'
 import { hasAllowedAction } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import {
@@ -205,16 +205,21 @@ export function WorkloadsCronJobsPage() {
     },
     {
       ...tableColumnPresets.status,
-      title: localeCode === 'zh_CN' ? '暂停' : 'Suspend',
+      title: localeCode === 'zh_CN' ? '调度状态' : 'Scheduling',
       dataIndex: 'suspend',
       width: 128,
       render: (suspend: boolean) => (
-        <BooleanTag
-          value={suspend}
-          trueLabel={localeCode === 'zh_CN' ? '是' : 'Yes'}
-          falseLabel={localeCode === 'zh_CN' ? '否' : 'No'}
-          trueColor="orange"
-          falseColor="green"
+        <StatusTag
+          value={suspend ? 'suspended' : 'enabled'}
+          label={
+            suspend
+              ? localeCode === 'zh_CN'
+                ? '已暂停'
+                : 'Suspended'
+              : localeCode === 'zh_CN'
+                ? '调度启用'
+                : 'Scheduling enabled'
+          }
         />
       ),
     },
