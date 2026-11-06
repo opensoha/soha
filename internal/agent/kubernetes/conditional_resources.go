@@ -30,13 +30,29 @@ func (c *Client) GetResourceIdentity(ctx context.Context, namespace, kind, name 
 }
 
 func (c *Client) ApplyResourceYAMLConditional(ctx context.Context, namespace, kind, name, content string, expected contractresource.ResourceMutationPreconditions) (domainresource.ResourceYAMLView, error) {
-	view, _, err := c.applyResourceYAML(ctx, namespace, kind, name, content, false, expected)
+	if err := validateConditionalResourceYAML(content, expected); err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	view, _, err := c.applyResourceYAML(ctx, namespace, kind, name, content, false, false, &expected)
 	return view, err
 }
 
 func (c *Client) DryRunResourceYAMLConditional(ctx context.Context, namespace, kind, name, content string, expected contractresource.ResourceMutationPreconditions) (domainresource.ResourceUpdateAnalysis, error) {
-	_, analysis, err := c.applyResourceYAML(ctx, namespace, kind, name, content, true, expected)
+	if err := validateConditionalResourceYAML(content, expected); err != nil {
+		return domainresource.ResourceUpdateAnalysis{}, err
+	}
+	_, analysis, err := c.applyResourceYAML(ctx, namespace, kind, name, content, true, false, &expected)
 	return analysis, err
+}
+
+func validateConditionalResourceYAML(content string, expected contractresource.ResourceMutationPreconditions) error {
+	if err := expected.Validate(); err != nil {
+		return apierrors.NewBadRequest(err.Error())
+	}
+	if len(content) > 4<<20 {
+		return apierrors.NewBadRequest("resource YAML exceeds the conditional edit limit")
+	}
+	return nil
 }
 
 func (c *Client) DeleteResourceConditional(ctx context.Context, namespace, kind, name string, expected contractresource.ResourceMutationPreconditions) error {

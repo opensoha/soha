@@ -52,10 +52,6 @@ security:
     - platform.port_forwards.create
     - platform.port_forwards.tunnel
     - platform.port_forwards.delete
-    - platform.helm_releases.install
-    - platform.helm_releases.values_update
-    - platform.helm_releases.delete
-    - platform.helm_releases.rollback
     - runtime.execution_tasks.cancel
     - docker.runtime.terminal
     # Explicit opt-in for versioned full-container-ID reads and native terminal.

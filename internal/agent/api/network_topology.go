@@ -30,7 +30,7 @@ func registerTopologySnapshotRoute(platform *gin.RouterGroup, client *k8sagent.C
 			definition, _ := resource.LookupNetworkTopologySource(query.SourceID)
 			if definition.RequiresCustomResourceAccess() && !actions.allows(actionPlatformCustomResourcesList) {
 				actions.audit(c, actionPlatformCustomResourcesList, false, "topology custom source is not allowlisted")
-				denied = append(denied, resource.NetworkTopologySourceResult{Coverage: resource.NetworkTopologyCoverage{Provider: definition.Provider, SourceID: query.SourceID, Namespace: query.Namespace, State: "denied", ReasonCode: "action_not_allowed"}, Objects: []resource.NetworkTopologySourceObject{}})
+				denied = append(denied, resource.NetworkTopologySourceResult{Coverage: resource.NetworkTopologyCoverage{Provider: definition.Provider, SourceID: query.SourceID, Name: query.Name, Namespace: query.Namespace, State: "denied", ReasonCode: "action_not_allowed"}, Objects: []resource.NetworkTopologySourceObject{}})
 			} else {
 				allowed.Queries = append(allowed.Queries, query)
 			}
@@ -43,6 +43,7 @@ func registerTopologySnapshotRoute(platform *gin.RouterGroup, client *k8sagent.C
 				return
 			}
 			output.Sources = append(output.Sources, read.Sources...)
+			output.Version = read.Version
 		}
 		apiresponse.Item(c, http.StatusOK, output)
 	})

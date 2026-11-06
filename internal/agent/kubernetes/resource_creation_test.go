@@ -233,3 +233,176 @@ func configMapCreateDocument(index int, namespace, name string) domainresource.K
 		Content: content,
 	}
 }
+
+func generatedConfigMapDocument(index int, prefix string) domainresource.KubernetesResourceAgentCreateDocument {
+	document := configMapCreateDocument(index, "platform", prefix)
+	document.Content = strings.Replace(document.Content, "  name: ", "  generateName: ", 1)
+	document.Document.ContentHash = contentHash(document.Content)
+	return document
+}
+
+func TestResourceCreateGenerateNameBindsPrefixAndReturnsPersistentName(t *testing.T) {
+	client, _ := newResourceCreationTestClient(t)
+	var dryRuns []bool
+	client.dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("create", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
+		create := action.(ktesting.CreateActionImpl)
+		dryRun := len(create.GetCreateOptions().DryRun) > 0
+		dryRuns = append(dryRuns, dryRun)
+		object := create.GetObject().(*unstructured.Unstructured).DeepCopy()
+		if object.GetName() != "" || object.GetGenerateName() != "app-" {
+			t.Fatalf("request identity=%+v", object.Object)
+		}
+		suffix := "persisted"
+		if dryRun {
+			suffix = "dryrun"
+		}
+		object.SetName(object.GetGenerateName() + suffix)
+		object.SetUID(types.UID(suffix))
+		return true, object, nil
+	})
+	result := client.CreateResources(context.Background(), resourceCreateRequest(generatedConfigMapDocument(0, "app-")))
+	if result.Status != domainresource.KubernetesResourceCreateBatchStatusSucceeded || result.Items[0].ResourceRef == nil {
+		t.Fatalf("result=%+v", result)
+	}
+	ref := result.Items[0].ResourceRef
+	if ref.Name != "app-persisted" || ref.UID != "persisted" || result.Items[0].Document.Name != "app-" {
+		t.Fatalf("wrong resource evidence: %+v", result.Items[0])
+	}
+	if len(dryRuns) != 2 || !dryRuns[0] || dryRuns[1] {
+		t.Fatalf("dryruns=%v", dryRuns)
+	}
+}
+
+func TestResourceCreateGenerateNameRejectsIdentityExpansion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*domainresource.KubernetesResourceAgentCreateDocument)
+	}{
+		{name: "ref prefix", mutate: func(d *domainresource.KubernetesResourceAgentCreateDocument) { d.ResourceRef.Name = "other-" }},
+		{name: "document prefix", mutate: func(d *domainresource.KubernetesResourceAgentCreateDocument) { d.Document.Name = "other-" }},
+		{name: "content prefix", mutate: func(d *domainresource.KubernetesResourceAgentCreateDocument) {
+			d.Content = strings.Replace(d.Content, "app-", "other-", 1)
+			d.Document.ContentHash = contentHash(d.Content)
+		}},
+		{name: "explicit name with prefix envelope", mutate: func(d *domainresource.KubernetesResourceAgentCreateDocument) {
+			d.Content += "  name: victim\n"
+			d.Document.ContentHash = contentHash(d.Content)
+		}},
+		{name: "missing both names", mutate: func(d *domainresource.KubernetesResourceAgentCreateDocument) {
+			d.Content = strings.Replace(d.Content, "  generateName: app-\n", "", 1)
+			d.Document.ContentHash = contentHash(d.Content)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, actions := newResourceCreationTestClient(t)
+			document := generatedConfigMapDocument(0, "app-")
+			tc.mutate(&document)
+			result := client.PreflightResourceCreate(context.Background(), resourceCreateRequest(document))
+			if result.Ready || len(result.Items[0].Errors) != 1 || result.Items[0].Errors[0].Code != domainresource.KubernetesResourceCreateErrorCodeResourceKindMismatch || len(*actions) != 0 {
+				t.Fatalf("result=%+v actions=%v", result, *actions)
+			}
+		})
+	}
+}
+
+func TestResourceCreateExplicitNameTakesPrecedenceOverGenerateName(t *testing.T) {
+	client, _ := newResourceCreationTestClient(t)
+	document := configMapCreateDocument(0, "platform", "fixed")
+	document.Content += "  generateName: ignored-\n"
+	document.Document.ContentHash = contentHash(document.Content)
+	result := client.CreateResources(context.Background(), resourceCreateRequest(document))
+	if result.Status != domainresource.KubernetesResourceCreateBatchStatusSucceeded || result.Items[0].ResourceRef == nil || result.Items[0].ResourceRef.Name != "fixed" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestResourceCreateGeneratedPartialBatchRetainsActualFirstName(t *testing.T) {
+	client, _ := newResourceCreationTestClient(t)
+	persistent := 0
+	client.dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("create", "configmaps", func(action ktesting.Action) (bool, runtime.Object, error) {
+		create := action.(ktesting.CreateActionImpl)
+		object := create.GetObject().(*unstructured.Unstructured).DeepCopy()
+		if len(create.GetCreateOptions().DryRun) == 0 {
+			persistent++
+			if object.GetGenerateName() == "second-" {
+				return true, nil, errors.New("create failed")
+			}
+		}
+		object.SetName(object.GetGenerateName() + "generated")
+		return true, object, nil
+	})
+	result := client.CreateResources(context.Background(), resourceCreateRequest(generatedConfigMapDocument(0, "first-"), generatedConfigMapDocument(1, "second-"), generatedConfigMapDocument(2, "third-")))
+	if result.Status != domainresource.KubernetesResourceCreateBatchStatusPartial || persistent != 2 || result.Items[0].ResourceRef == nil || result.Items[0].ResourceRef.Name != "first-generated" || result.Items[1].ResourceRef != nil || result.Items[1].Status != domainresource.KubernetesResourceCreateResultStatusFailed || result.Items[2].Status != domainresource.KubernetesResourceCreateResultStatusNotStarted {
+		t.Fatalf("result=%+v persistent=%d", result, persistent)
+	}
+}
+
+func TestResourceCreateDiscoveryValidatesRequestedServedVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name, apiVersion, kind string
+		ready                  bool
+	}{
+		{name: "served older builtin", apiVersion: "autoscaling/v1", kind: "HorizontalPodAutoscaler", ready: true},
+		{name: "unserved builtin", apiVersion: "autoscaling/v9", kind: "HorizontalPodAutoscaler"},
+		{name: "served CRD", apiVersion: "example.io/v1beta1", kind: "Widget", ready: true},
+		{name: "wrong group", apiVersion: "other.io/v1beta1", kind: "Widget"},
+		{name: "unserved CRD", apiVersion: "example.io/v2", kind: "Widget"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, actions := newResourceCreationTestClient(t)
+			discovery := client.discovery.(*fakediscovery.FakeDiscovery)
+			discovery.Resources = append(discovery.Resources,
+				&metav1.APIResourceList{GroupVersion: "autoscaling/v1", APIResources: []metav1.APIResource{{Name: "horizontalpodautoscalers", Kind: "HorizontalPodAutoscaler", Namespaced: true}}},
+				&metav1.APIResourceList{GroupVersion: "example.io/v1beta1", APIResources: []metav1.APIResource{{Name: "widgets", Kind: "Widget", Namespaced: true}}})
+			document := configMapCreateDocument(0, "platform", "app")
+			document.Content = strings.Replace(document.Content, "apiVersion: v1", "apiVersion: "+tc.apiVersion, 1)
+			document.Content = strings.Replace(document.Content, "kind: ConfigMap", "kind: "+tc.kind, 1)
+			document.Document.APIVersion = tc.apiVersion
+			document.ResourceRef.APIVersion = tc.apiVersion
+			document.Document.Kind = tc.kind
+			document.ResourceRef.Kind = tc.kind
+			document.Document.ContentHash = contentHash(document.Content)
+			result := client.PreflightResourceCreate(context.Background(), resourceCreateRequest(document))
+			if result.Ready != tc.ready {
+				t.Fatalf("result=%+v wantReady=%v", result, tc.ready)
+			}
+			if !tc.ready && (len(*actions) != 0 || len(result.Items[0].Errors) != 1 || result.Items[0].Errors[0].Code != domainresource.KubernetesResourceCreateErrorCodeResourceCapabilityUnsupported) {
+				t.Fatalf("invalid version reached create: %+v actions=%v", result, *actions)
+			}
+		})
+	}
+}
+
+func TestResourceCreateKnownKindDiscoveryCannotChangePermissionTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name, group, resource string
+		namespaced            bool
+		ready                 bool
+	}{
+		{name: "known kind different plural", group: "autoscaling", resource: "otherautoscalers", namespaced: true},
+		{name: "known kind different scope", group: "autoscaling", resource: "horizontalpodautoscalers", namespaced: false},
+		{name: "same spelling in custom group", group: "example.io", resource: "widgets", namespaced: true, ready: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, actions := newResourceCreationTestClient(t)
+			apiVersion := tc.group + "/v1"
+			discovery := client.discovery.(*fakediscovery.FakeDiscovery)
+			discovery.Resources = append(discovery.Resources, &metav1.APIResourceList{GroupVersion: apiVersion, APIResources: []metav1.APIResource{{Name: tc.resource, Kind: "HorizontalPodAutoscaler", Namespaced: tc.namespaced}}})
+			document := configMapCreateDocument(0, "platform", "app")
+			document.Content = strings.Replace(document.Content, "apiVersion: v1", "apiVersion: "+apiVersion, 1)
+			document.Content = strings.Replace(document.Content, "kind: ConfigMap", "kind: HorizontalPodAutoscaler", 1)
+			document.Document.APIVersion = apiVersion
+			document.ResourceRef.APIVersion = apiVersion
+			document.Document.Kind = "HorizontalPodAutoscaler"
+			document.ResourceRef.Kind = "HorizontalPodAutoscaler"
+			document.Document.ContentHash = contentHash(document.Content)
+			result := client.PreflightResourceCreate(context.Background(), resourceCreateRequest(document))
+			if result.Ready != tc.ready {
+				t.Fatalf("result=%+v", result)
+			}
+			if !tc.ready && (len(*actions) != 0 || len(result.Items[0].Errors) != 1 || result.Items[0].Errors[0].Code != domainresource.KubernetesResourceCreateErrorCodeResourceKindMismatch) {
+				t.Fatalf("changed mapping reached create: %+v actions=%v", result, *actions)
+			}
+		})
+	}
+}

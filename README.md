@@ -30,7 +30,7 @@ SOHA_AGENT_CONFIG_FILE=configs/agent.config.yaml go run ./cmd/agent
 
 ## Production hardening
 
-The Kubernetes starter and development example use the explicit **workbench** action set: resource CRUD, node drain, workload actions, Pod exec, port forwarding and Helm mutations. Existing installations must review the action/RBAC diff before applying the updated starter. The development example additionally opts into Docker terminal access; this is not part of the Kubernetes preset. CRD definition deletion remains a separate opt-in.
+The Kubernetes starter and development example use the explicit **workbench** action set: resource CRUD, node drain, workload actions, Pod exec and port forwarding. Helm mutations require individual `platform.helm_releases` actions in the allowlist and cluster-wide Helm authorization in Core. Existing installations must review the action/RBAC diff before applying the updated starter. The development example additionally opts into Docker terminal access; this is not part of the Kubernetes preset. CRD definition deletion remains a separate opt-in.
 
 Soha-generated installations provide **legacy**, **workbench** and **read-only** presets. Existing cluster registrations retain legacy permissions until a preset is explicitly selected and the installation manifest is regenerated and applied. Read-only excludes writes and execution, while retaining authorization review creation for diagnostics. These are installation presets; the running Agent continues to enforce its explicit `security.allowed_actions` and Kubernetes permissions.
 
@@ -225,6 +225,6 @@ helm install soha-hermes-agent opensoha/soha-hermes-agent \
 This repository is licensed under the Apache License 2.0. See
 [LICENSE](./LICENSE) for the full license text.
 
-### Task115 source dependency
+### Combined Task115 and Task117 development
 
-The integration candidate pins reviewed contracts source commit `d1eaebb02c5bb222badf52dc43d569ccedc34c02` through a canonical Go pseudo-version. Standard Go and Docker builds use `GOWORK=off` and need no sibling SDK checkout. The source commit must stay reachable before clean remote builds; no SDK package release is implied. Formal tagged release workflows retain their stable contracts-version assertion.
+The local integration uses the workspace's combined Contracts checkout. The declared Contracts version `v0.1.29` supplies the published Task117 SDK. Task115 Docker runtime and terminal packages are available in the combined workspace source. Standalone Go and Docker builds require a published Contracts version that includes both sets of APIs.

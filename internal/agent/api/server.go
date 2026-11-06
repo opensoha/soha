@@ -108,9 +108,11 @@ func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sag
 	}
 	platform := router.Group(fmt.Sprintf("%s/platform", cfg.HTTP.BasePath))
 	platform.Use(authMiddleware(cfg.Auth.BearerToken))
+	registerResourceGraphCapabilityRoute(platform)
 	registerResourceYAMLRoutes(platform, client, actions)
 	registerResourceCreationRoutes(platform, client, actions)
 	registerCustomResourceRoutes(platform, client, actions)
+	registerCustomResourceGraphRoutes(platform, client, actions, cfg.Auth.BearerToken)
 	registerPrometheusRoutes(platform, cfg.Prometheus)
 	origins := newWebSocketOriginPolicy(cfg.HTTP.AllowedOrigins, cfg.Auth.BearerToken)
 	registerPortForwardRoutes(
@@ -149,6 +151,8 @@ func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sag
 		registerPlatformWorkloadMutationRoutes(owned, client, actions)
 	}
 	registerManifestRolloutRoutes(platform.Group("/ownership-v2"), client, cfg.Kubernetes.ID, actions)
+	registerObservedWorkloadDeleteRoute(platform.Group("/ownership-v2"), client, actions)
+	registerObservedResourceYAMLRoutes(platform.Group("/ownership-v2"), client, actions)
 	return nativeTerminals
 }
 

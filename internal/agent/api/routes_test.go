@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
 	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 )
 
 func TestNewRegistersRouteFamilies(t *testing.T) {
@@ -25,51 +27,10 @@ func TestNewRegistersRouteFamilies(t *testing.T) {
 	if !ok {
 		t.Fatalf("handler type = %T, want *gin.Engine", server.httpServer.Handler)
 	}
-	registered := make(map[string]struct{}, len(router.Routes()))
-	signatures := make([]string, 0, len(router.Routes()))
-	for _, route := range router.Routes() {
-		signature := route.Method + " " + route.Path
-		registered[signature] = struct{}{}
-		if signature != http.MethodGet+" /api/v1/diagnostics/actions" && signature != http.MethodPost+" /api/v1/platform/network/topology/snapshot" && signature != http.MethodGet+" /api/v1/platform/infrastructure/resource-monitoring" {
-			signatures = append(signatures, signature)
-		}
-	}
-	sort.Strings(signatures)
-	routeDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(signatures, "\n"))))
-	if len(signatures) != 285 {
-		t.Fatalf("route count = %d, want 285", len(signatures))
-	}
-	// Only these eleven reviewed protocol routes are new. Preserve the complete
-	// previous route digest after removing exactly this addition.
-	newRoutes := map[string]bool{
-		"GET /api/v1/docker/runtime/v1/terminal/capabilities":          true,
-		"GET /api/v1/docker/runtime/v1/terminal/stream":                true,
-		"GET /api/v1/platform/resource-presence-v1/resources":          true,
-		"POST /api/v1/docker/runtime/v1/files/list":                    true,
-		"POST /api/v1/docker/runtime/v1/files/read":                    true,
-		"POST /api/v1/docker/runtime/v1/logs":                          true,
-		"POST /api/v1/docker/runtime/v1/volumes":                       true,
-		"GET /api/v1/platform/pod-execution-v1/pods/:podName/terminal": true,
-		"GET /api/v1/platform/pod-execution-v1/capabilities":           true,
-		"GET /api/v1/platform/pod-execution-v1/pods/:podName/target":   true,
-		"POST /api/v1/platform/pod-execution-v1/pods/:podName/argv":    true,
-	}
-	previous := make([]string, 0, 274)
-	for _, signature := range signatures {
-		if !newRoutes[signature] {
-			previous = append(previous, signature)
-		}
-	}
-	if len(previous) != 274 {
-		t.Fatalf("previous route count changed: %d", len(previous))
-	}
-	previousDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(previous, "\n"))))
-	const expectedRouteDigest = "33de9d7b7f814ffb6133f1076daa398a16a5f32d25b471ac7b3e18835f4da205"
-	if previousDigest != expectedRouteDigest {
-		t.Fatalf("previous route digest = %s, want %s (new surface %s)", previousDigest, expectedRouteDigest, routeDigest)
-	}
-
-	expected := []string{
+	const graphPage = http.MethodPost + " /api/v1/platform/extensions/custom-resources/graph-page"
+	const graphObject = http.MethodPost + " /api/v1/platform" + contractresource.CustomResourceGraphObjectPath
+	const graphProbe = http.MethodHead + " /api/v1/platform/resources/graph"
+	task115RuntimeRoutes := []string{
 		"GET /api/v1/docker/runtime/v1/terminal/capabilities",
 		"GET /api/v1/docker/runtime/v1/terminal/stream",
 		"GET /api/v1/platform/resource-presence-v1/resources",
@@ -81,11 +42,99 @@ func TestNewRegistersRouteFamilies(t *testing.T) {
 		"GET /api/v1/platform/pod-execution-v1/capabilities",
 		"GET /api/v1/platform/pod-execution-v1/pods/:podName/target",
 		"POST /api/v1/platform/pod-execution-v1/pods/:podName/argv",
+	}
+	task115GuardedRoutes := []string{
 		http.MethodPost + " /api/v1/platform/preconditions-v1/resources/:kind/:name/actions/:action",
 		http.MethodGet + " /api/v1/platform/preconditions-v1/resources/identity",
 		http.MethodPost + " /api/v1/platform/preconditions-v1/resources/yaml/preflight",
 		http.MethodPut + " /api/v1/platform/preconditions-v1/resources/yaml",
 		http.MethodDelete + " /api/v1/platform/preconditions-v1/resources",
+	}
+	task117Routes := []string{
+		graphProbe,
+		graphPage,
+		graphObject,
+		http.MethodGet + " /api/v1/platform/ownership-v2/configuration/secrets/:name/certificate",
+		http.MethodGet + " /api/v1/platform/workloads/daemonsets/:name/rollouts",
+		http.MethodGet + " /api/v1/platform/workloads/daemonsets/:name/rollouts/:revisionName/yaml",
+		http.MethodGet + " /api/v1/platform/ownership-v1/workloads/daemonsets/:name/rollouts",
+		http.MethodGet + " /api/v1/platform/ownership-v1/workloads/daemonsets/:name/rollouts/:revisionName/yaml",
+		http.MethodGet + " /api/v1/platform/ownership-v2/workloads/daemonsets/:name/rollouts",
+		http.MethodGet + " /api/v1/platform/ownership-v2/workloads/daemonsets/:name/rollouts/:revisionName/yaml",
+		http.MethodGet + " /api/v1/platform/workloads/statefulsets/:name/rollouts",
+		http.MethodGet + " /api/v1/platform/workloads/statefulsets/:name/rollouts/:revisionName/yaml",
+		http.MethodGet + " /api/v1/platform/ownership-v1/workloads/statefulsets/:name/rollouts",
+		http.MethodGet + " /api/v1/platform/ownership-v1/workloads/statefulsets/:name/rollouts/:revisionName/yaml",
+		http.MethodGet + " /api/v1/platform/ownership-v2/workloads/statefulsets/:name/rollouts",
+		http.MethodGet + " /api/v1/platform/ownership-v2/workloads/statefulsets/:name/rollouts/:revisionName/yaml",
+	}
+	registered := make(map[string]struct{}, len(router.Routes()))
+	signatures := make([]string, 0, len(router.Routes()))
+	task115Baseline := make([]string, 0, len(router.Routes()))
+	observedMutations := map[string]struct{}{
+		"DELETE /api/v1/platform/ownership-v2/resources/observed":              {},
+		"POST /api/v1/platform/ownership-v2/resources/yaml/observed/preflight": {},
+		"PUT /api/v1/platform/ownership-v2/resources/yaml/observed":            {},
+		"PUT /api/v1/platform/helm/releases/:name/values/conditional":          {},
+	}
+	for _, route := range router.Routes() {
+		signature := route.Method + " " + route.Path
+		registered[signature] = struct{}{}
+		if _, observed := observedMutations[signature]; observed {
+			delete(observedMutations, signature)
+			continue
+		}
+		if signature == http.MethodGet+" /api/v1/diagnostics/actions" || signature == http.MethodPost+" /api/v1/platform/network/topology/snapshot" || signature == http.MethodGet+" /api/v1/platform/infrastructure/resource-monitoring" {
+			continue
+		}
+		if !slices.Contains(task115RuntimeRoutes, signature) && !slices.Contains(task115GuardedRoutes, signature) {
+			signatures = append(signatures, signature)
+		}
+		if !slices.Contains(task115RuntimeRoutes, signature) && !slices.Contains(task117Routes, signature) {
+			task115Baseline = append(task115Baseline, signature)
+		}
+	}
+	if len(observedMutations) != 0 {
+		t.Fatalf("missing guarded mutation routes: %v", observedMutations)
+	}
+	sort.Strings(task115Baseline)
+	const task115BaselineDigest = "33de9d7b7f814ffb6133f1076daa398a16a5f32d25b471ac7b3e18835f4da205"
+	if digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(task115Baseline, "\n")))); len(task115Baseline) != 274 || digest != task115BaselineDigest {
+		t.Fatalf("Task115 guarded baseline has %d routes and digest %s, want 274 and %s", len(task115Baseline), digest, task115BaselineDigest)
+	}
+	sort.Strings(signatures)
+	beforeGraphPage := make([]string, 0, len(signatures))
+	beforeGraphObject := make([]string, 0, len(signatures))
+	baseline := make([]string, 0, len(signatures))
+	for _, signature := range signatures {
+		if signature == graphObject {
+			continue
+		}
+		beforeGraphObject = append(beforeGraphObject, signature)
+		if signature == graphPage {
+			continue
+		}
+		beforeGraphPage = append(beforeGraphPage, signature)
+		if signature != graphProbe {
+			baseline = append(baseline, signature)
+		}
+	}
+	if len(baseline) != 282 || fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(baseline, "\n")))) != "762dc83cf6723af593906534d7fbf648e3bbb57fe9e89dc46a716d8bff403cef" {
+		t.Fatal("routes beyond the storage graph capability changed")
+	}
+	if len(beforeGraphPage) != 283 || fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(beforeGraphPage, "\n")))) != "2a6a069a13120f708f1b496841a4dafd08fb6305f183799e5e56a61ab4f424b3" {
+		t.Fatal("routes beyond the custom resource graph page changed")
+	}
+	routeDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(beforeGraphObject, "\n"))))
+	if len(signatures) != 285 {
+		t.Fatalf("route count = %d, want 285", len(signatures))
+	}
+	const expectedRouteDigest = "082f34bdfe52bc997817a9ce9c50eafe9729bc63567968818307a030c290155f"
+	if routeDigest != expectedRouteDigest {
+		t.Fatalf("route digest = %s, want %s", routeDigest, expectedRouteDigest)
+	}
+
+	expected := slices.Concat(task115RuntimeRoutes, task115GuardedRoutes, task117Routes, []string{
 		http.MethodGet + " /api/v1/platform/infrastructure/resource-monitoring",
 		http.MethodPost + " /api/v1/platform/network/topology/snapshot",
 		http.MethodGet + " /api/v1/diagnostics/actions",
@@ -129,7 +178,7 @@ func TestNewRegistersRouteFamilies(t *testing.T) {
 		http.MethodGet + " /api/v1/platform/helm/releases",
 		http.MethodGet + " /api/v1/runtime/execution-tasks",
 		http.MethodPost + " /api/v1/docker/runtime/logs",
-	}
+	})
 	for _, route := range expected {
 		if _, ok := registered[route]; !ok {
 			t.Errorf("route %q is not registered", route)

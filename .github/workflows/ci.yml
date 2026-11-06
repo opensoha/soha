@@ -14,11 +14,19 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: soha-agent
+      - name: Resolve pinned contracts version
+        id: contracts
+        working-directory: soha-agent
+        run: |
+          set -euo pipefail
+          contracts_ref="$(awk '$1 == "github.com/opensoha/soha-contracts" {print $2}' go.mod)"
+          [[ "${contracts_ref}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "ref=${contracts_ref}" >> "$GITHUB_OUTPUT"
       - name: Checkout contracts
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-contracts
-          ref: d1eaebb02c5bb222badf52dc43d569ccedc34c02
+          ref: refs/tags/${{ steps.contracts.outputs.ref }}
           path: soha-contracts
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - uses: actions/setup-go@v6

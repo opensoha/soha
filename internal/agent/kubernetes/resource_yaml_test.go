@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	contractresource "github.com/opensoha/soha-contracts/resource"
 	"strings"
 	"testing"
 
+	contractresource "github.com/opensoha/soha-contracts/resource"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,6 +58,38 @@ data:
 	value, _, _ := unstructured.NestedString(updated.Object, "data", "key")
 	if value != "new" {
 		t.Fatalf("data.key = %q, want new", value)
+	}
+}
+
+func TestResourceYAMLNamespaceFallbackIsLegacyOnly(t *testing.T) {
+	gvr := schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}
+	const content = `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: platform
+  uid: app-uid
+  resourceVersion: "1"
+`
+	existing := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]any{
+			"name": "app-config", "namespace": "platform", "uid": "app-uid", "resourceVersion": "1",
+		},
+	}}
+	dynamic := newSSAFakeDynamicClient(t, gvr, existing)
+	client := &Client{dynamic: dynamic}
+	if _, _, err := client.EditObservedResourceYAML(t.Context(), "", "ConfigMap", "app-config", content, false); !apierrors.IsBadRequest(err) {
+		t.Fatalf("observed edit with omitted namespace: %v", err)
+	}
+	if len(dynamic.Actions()) != 0 {
+		t.Fatal("observed edit with omitted namespace reached Kubernetes")
+	}
+	view, err := client.ApplyResourceYAML(t.Context(), "", "ConfigMap", "app-config", content)
+	if err != nil || view.Namespace != "platform" {
+		t.Fatalf("legacy edit with YAML namespace: view=%#v, error=%v", view, err)
 	}
 }
 
