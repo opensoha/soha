@@ -3270,7 +3270,10 @@ describe('ApplicationDetailPage workbench', () => {
 
   it('shows scoped build definitions without workflow or execution permissions', async () => {
     testState.permissionSnapshot.permissionKeys = ['delivery.applications.view']
-    const container = await renderWithProviders(<WorkflowCatalog />)
+    const container = await renderWithProviders(
+      <WorkflowCatalog />,
+      '/applications/app-1?view=definitions',
+    )
     const catalog = container.querySelector('.soha-workflow-catalog')!
 
     expect(catalog.textContent).toContain('API Dockerfile')
@@ -3288,7 +3291,10 @@ describe('ApplicationDetailPage workbench', () => {
   })
 
   it('unifies workflow and build entries and opens the shared build form without executing', async () => {
-    const container = await renderWithProviders(<WorkflowCatalog />)
+    const container = await renderWithProviders(
+      <WorkflowCatalog />,
+      '/applications/app-1?view=definitions',
+    )
     const catalog = container.querySelector('.soha-workflow-catalog')!
     const buildCard = Array.from(catalog.querySelectorAll('[role="listitem"]')).find((item) =>
       item.textContent?.includes('API Dockerfile'),
@@ -3312,10 +3318,17 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
       'buildSourceId=source-api&launch=build',
     )
+    const historyCatalog = await renderWithProviders(
+      <WorkflowCatalog />,
+      '/applications/app-1?view=definitions',
+    )
+    const historyBuild = Array.from(historyCatalog.querySelectorAll('[role="listitem"]')).find(
+      (item) => item.textContent?.includes('API Dockerfile'),
+    )!
     await act(async () => {
-      buildCard.querySelector<HTMLButtonElement>('[aria-label="查看记录"]')!.click()
+      historyBuild.querySelector<HTMLButtonElement>('[aria-label="查看记录"]')!.click()
     })
-    expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
+    expect(historyCatalog.querySelector('[data-testid="location"]')?.textContent).toBe(
       '/execution-history?applicationId=app-1&buildSourceId=source-api',
     )
     expect(api.post).not.toHaveBeenCalled()

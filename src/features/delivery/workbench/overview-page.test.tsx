@@ -14,6 +14,8 @@ beforeEach(() => {
   permissionState.keys = [
     'delivery.applications.view',
     'delivery.application-environments.view',
+    'delivery.application-services.view',
+    'delivery.workflows.view',
     'delivery.release-board.view',
     'delivery.release-bundles.view',
     'delivery.execution-tasks.view',
@@ -96,138 +98,110 @@ async function renderOverview() {
   return container
 }
 
+const workflow = (id: string, status: string, name: string) => ({
+  id,
+  kind: 'application',
+  createdAt: '2026-09-22T12:00:00Z',
+  application: { id, applicationId: 'app-1', workflowName: name, status, steps: [] },
+})
+
 describe('DeliveryOverviewPage', () => {
-  it('keeps successful summaries visible when one query fails', async () => {
-    apiGetMock.mockImplementation((path: string) =>
-      path === '/delivery/release-board'
-        ? Promise.reject(new Error('request failed'))
-        : Promise.resolve({ data: [] }),
-    )
+  it('keeps successful summaries visible and retries the failed source', async () => {
+    let failed = true
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === '/delivery/release-board' && failed)
+        return Promise.reject(new Error('request failed'))
+      if (path.startsWith('/delivery/execution-history?'))
+        return Promise.resolve({ data: { items: [] } })
+      return Promise.resolve({ data: [] })
+    })
     const container = await renderOverview()
 
-    expect(container.textContent).toContain('部分交付数据加载失败')
-    expect(container.textContent).toContain('应用 / 环境绑定')
-    expect(container.textContent).toContain('版本包')
-    expect(container.textContent).toContain('执行任务')
-    expect(container.textContent).toContain('发布态势加载失败')
+    expect(container.textContent).toContain('待处理记录加载失败')
+    expect(container.textContent).toContain('发布目标涉及集群—')
+    expect(container.textContent).toContain('应用0')
+    expect(container.textContent).toContain('暂无正在运行的记录')
+
+    failed = false
+    const retry = [...container.querySelectorAll('button')].find(
+      (el) => el.textContent?.replace(/\s/g, '') === '重试',
+    )!
+    await act(async () => {
+      retry.click()
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('发布目标涉及集群0')
+    expect(container.textContent).not.toContain('待处理记录加载失败')
   })
-  it('prioritizes blocked releases and links recent records in time order', async () => {
-    const targets = [{ id: 'target' }]
-    const rows: Record<string, unknown[]> = {
-      '/applications': [{ id: 'app-1', name: 'Payments' }],
-      '/delivery/release-board': [
-        {
-          applicationEnvironmentId: 'ready',
-          applicationId: 'app-1',
-          applicationName: 'Ready App',
-          environmentId: 'dev',
-          targets,
-          latestRelease: { status: 'succeeded' },
-        },
-        {
-          applicationEnvironmentId: 'approval',
-          applicationId: 'app-1',
-          applicationName: 'Approval App',
-          environmentId: 'stage',
-          targets,
-          requiresApproval: true,
-          latestWorkflow: { status: 'awaiting_approval' },
-        },
-        {
-          applicationEnvironmentId: 'blocked',
-          applicationId: 'app-1',
-          applicationName: 'Blocked App',
-          environmentName: '生产',
-          targets,
-          latestExecutionTask: { status: 'failed' },
-        },
-      ],
-      '/delivery/execution-tasks': [
-        {
-          id: 'old',
-          applicationId: 'app-1',
-          taskKind: 'build',
-          status: 'succeeded',
-          createdAt: '2026-09-01',
-        },
-        {
-          id: 'new',
-          applicationId: 'app-1',
-          taskKind: 'verify',
-          status: 'failed',
-          createdAt: '2026-09-22',
-        },
-      ],
-      '/delivery/release-bundles': [
-        {
-          id: 'bundle-1',
-          applicationId: 'app-1',
-          version: 'v1.0',
-          status: 'ready',
-          createdAt: '2026-09-21',
-        },
-      ],
-    }
-    apiGetMock.mockImplementation((path: string) => Promise.resolve({ data: rows[path] ?? [] }))
+
+  it('keeps active, waiting and recent distinct and links exact records', async () => {
+    const running = workflow('run-live', 'running', '正在构建的工作流')
+    const waiting = workflow('run-review', 'waiting_approval', '待审核工作流')
+    const finished = workflow('run-done', 'succeeded', '已完成工作流')
+    apiGetMock.mockImplementation((path: string) => {
+      if (path.startsWith('/delivery/execution-history?')) {
+        const status = new URLSearchParams(path.split('?')[1]).get('status')
+        return Promise.resolve({
+          data: {
+            items:
+              status === 'running'
+                ? [running]
+                : status === 'approval'
+                  ? [waiting]
+                  : [running, waiting, finished],
+          },
+        })
+      }
+      const data: Record<string, unknown[]> = {
+        '/applications': [
+          { id: 'app-1', name: 'Payments' },
+          { id: 'app-2', name: 'Storefront' },
+        ],
+        '/applications/app-1/services': [{ id: 'api' }, { id: 'worker' }],
+        '/applications/app-2/services': [{ id: 'web' }],
+        '/delivery/release-board': [
+          {
+            applicationEnvironmentId: 'blocked',
+            applicationId: 'app-1',
+            applicationName: 'Payments',
+            environmentName: '生产',
+            targets: [
+              { id: 'target-1', clusterId: 'shared' },
+              { id: 'target-2', clusterId: 'shared' },
+              { id: 'target-3', clusterId: 'west' },
+            ],
+            latestExecutionTask: { status: 'failed' },
+          },
+        ],
+      }
+      const values = data[path] ?? []
+      return Promise.resolve({ data: values })
+    })
     const container = await renderOverview()
-    const attention = [
-      ...container.querySelectorAll(
-        '.soha-delivery-release-states + div + .soha-delivery-overview-records .soha-delivery-overview-record',
-      ),
-    ]
-    expect(attention.map((item) => item.textContent)).toEqual([
-      'Blocked App生产阻塞',
-      'Approval Appstage待审批',
-    ])
-    expect(container.textContent).not.toContain('Ready App')
-    const tasks = container.querySelector('[aria-label="最近执行"]')!
-    expect(
-      [...tasks.querySelectorAll('.soha-delivery-overview-record')].map((item) =>
-        item.getAttribute('href'),
-      ),
-    ).toEqual(['/delivery/execution-tasks/new', '/delivery/execution-tasks/old'])
-    expect(tasks.textContent).toContain('Payments')
-    expect(
-      container.querySelector('a[href="/delivery/release-bundles/bundle-1"]')?.textContent,
-    ).toContain('v1.0')
+    const path = (href: string) => container.querySelectorAll(`a[href="${href}"]`)
+    expect(path('/workflows/run-live')).toHaveLength(1)
+    expect(path('/workflows/run-review')).toHaveLength(1)
+    expect(path('/workflows/run-done')).toHaveLength(1)
+    expect(path('/delivery/analysis?applicationEnvironmentId=blocked')).toHaveLength(1)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    expect(container.querySelector('.soha-delivery-overview-metrics')?.textContent).toBe(
+      '应用2服务3发布目标涉及集群2',
+    )
+    expect(container.querySelector('[role="combobox"]')).toBeNull()
   })
 
   it('keeps restricted collections out of requests and navigation', async () => {
     permissionState.keys = ['delivery.release-bundles.view']
     apiGetMock.mockResolvedValue({ data: [] })
     const container = await renderOverview()
-    expect(apiGetMock.mock.calls.map(([path]) => path)).toEqual(['/delivery/release-bundles'])
-    expect(container.textContent).toContain('暂无版本包')
-    expect(container.querySelector('[aria-label="最近执行"]')).toBeNull()
-    expect(container.querySelector('a[href="/applications"]')).toBeNull()
-    expect(container.querySelector('a[href="/release-board"]')).toBeNull()
-  })
 
-  it('retries a failed task section while retaining the latest version', async () => {
-    let failed = true
-    apiGetMock.mockImplementation((path: string) => {
-      if (path === '/delivery/execution-tasks' && failed)
-        return Promise.reject(new Error('offline'))
-      return Promise.resolve({
-        data:
-          path === '/delivery/release-bundles'
-            ? [{ id: 'kept', applicationId: 'app-1', version: 'v2.0', status: 'ready' }]
-            : [],
-      })
-    })
-    const container = await renderOverview()
-    expect(container.textContent).toContain('v2.0')
-    const tasks = container.querySelector('[aria-label="最近执行"]')!
-    expect(tasks.textContent).toContain('执行任务加载失败')
-    failed = false
-    await act(async () => {
-      ;(tasks.querySelector('button') as HTMLButtonElement).click()
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    })
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    })
-    expect(tasks.textContent).toContain('暂无执行任务')
-    expect(container.textContent).toContain('v2.0')
+    expect(apiGetMock.mock.calls.map(([path]) => path)).toEqual(['/delivery/release-bundles'])
+    expect(container.textContent).toContain('版本包0')
+    expect(container.textContent).not.toContain('最近执行')
+    expect(container.querySelector('a[href="/applications"]')).toBeNull()
   })
 })

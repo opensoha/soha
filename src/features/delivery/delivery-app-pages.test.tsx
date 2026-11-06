@@ -25,6 +25,7 @@ import { ApplicationEnvironmentsPage } from './environments/list-page'
 import { EnvironmentCatalogPage } from './environments/catalog-page'
 import { ExecutionHistoryPage } from './release-board/page'
 import { WorkflowCatalog } from './release-board/workflow-catalog'
+import { WorkflowCenterRuns } from './release-board/center-runs'
 import { WorkflowTemplatesPage } from './workflow-templates/page'
 import { workflowTemplateDocument } from './documents/model'
 import { parse, stringify } from 'yaml'
@@ -157,6 +158,7 @@ const testState = vi.hoisted(() => ({
   extraBuildTemplate: false,
   workflowRecipe: undefined as Record<string, unknown> | undefined,
   applicationsListError: false,
+  catalogServiceFixtures: false,
   releaseBoardError: false,
   workflowsEmpty: false,
   workflowsError: false,
@@ -237,7 +239,13 @@ const testState = vi.hoisted(() => ({
         steps: [],
         nodeRuns: [
           { nodeId: 'build', name: '构建镜像', type: 'build_image', status: 'completed' },
-          { nodeId: 'release', name: '发布应用', type: 'deploy', status: 'completed' },
+          {
+            nodeId: 'release',
+            name: '发布应用',
+            type: 'deploy',
+            status: 'completed',
+            releaseBundleId: 'bundle-mall',
+          },
         ],
         metadata: { applicationName: 'Mall API', bindingId: 'binding-2' },
         createdAt: '2026-05-08T10:00:00Z',
@@ -254,7 +262,13 @@ const testState = vi.hoisted(() => ({
         steps: [],
         nodeRuns: [
           { nodeId: 'build', name: '构建镜像', type: 'build_image', status: 'completed' },
-          { nodeId: 'release', name: '发布应用', type: 'deploy', status: 'failed' },
+          {
+            nodeId: 'release',
+            name: '发布应用',
+            type: 'deploy',
+            status: 'failed',
+            executionTaskId: 'task-failed',
+          },
         ],
         metadata: { applicationName: 'Billing Worker', bindingId: 'binding-3' },
         createdAt: '2026-05-08T09:00:00Z',
@@ -386,6 +400,21 @@ const testState = vi.hoisted(() => ({
         },
       }
     }
+    if (testState.catalogServiceFixtures && path === '/applications/app-1/services')
+      return {
+        data: [
+          {
+            id: 'catalog-service-1',
+            applicationId: 'app-1',
+            name: 'ERP web',
+            key: 'erp-web',
+            serviceKind: 'helm_release',
+            enabled: true,
+          },
+        ],
+      }
+    if (testState.catalogServiceFixtures && path === '/applications/app-2/services')
+      return { data: [] }
     if (path.startsWith('/delivery/workflow-catalog?'))
       return { data: { items: [], total: 0, applications: [], environments: [] } }
     if (path === '/applications') {
@@ -950,13 +979,21 @@ const testState = vi.hoisted(() => ({
       ]
       return {
         data: {
-          items: entries.filter(
-            (entry) =>
-              (!query.get('search') ||
-                JSON.stringify(entry).toLowerCase().includes(query.get('search')!.toLowerCase())) &&
-              (query.get('status') !== 'failed' ||
-                ('application' in entry && entry.application?.status === 'failed')),
-          ),
+          items: entries.filter((entry) => {
+            const keyword = query.get('search')?.toLowerCase()
+            if (keyword && !JSON.stringify(entry).toLowerCase().includes(keyword)) return false
+            const status = 'application' in entry ? entry.application?.status : entry.build?.status
+            switch (query.get('status')) {
+              case 'running':
+                return status === 'running' || status === 'queued'
+              case 'approval':
+                return status === 'waiting_approval'
+              case 'failed':
+                return status === 'failed'
+              default:
+                return true
+            }
+          }),
           nextCursor: query.has('cursor') ? undefined : 'next-page',
         },
       }
@@ -1222,6 +1259,16 @@ async function waitForText(container: ParentNode, text: string) {
 }
 
 describe('ApplicationsPage workspace layout', () => {
+  function catalogOption(container: ParentNode, label: string) {
+    return Array.from(container.querySelectorAll('label'))
+      .find((item) => item.textContent === label)!
+      .querySelector<HTMLInputElement>('input[type="radio"]')!
+  }
+
+  async function selectCatalogOption(container: ParentNode, label: string) {
+    await act(async () => catalogOption(container, label).click())
+  }
+
   beforeEach(() => {
     useAuthStore.setState({ user: null })
     usePreferencesStore.setState({ applicationShortcuts: {}, applicationListFilters: {} })
@@ -1280,6 +1327,7 @@ describe('ApplicationsPage workspace layout', () => {
     for (const container of containers) container.remove()
     containers = []
     document.body.innerHTML = ''
+    testState.catalogServiceFixtures = false
     vi.clearAllMocks()
   })
 
@@ -1294,17 +1342,20 @@ describe('ApplicationsPage workspace layout', () => {
     expect(container.textContent).toContain('erp-front')
     expect(container.textContent).toContain('企业订单与库存管理门户')
     expect(container.textContent).toContain('暂无备注')
-    expect(container.textContent).not.toContain('已停用')
+    expect(container.textContent).toContain('已停用')
     expect(container.querySelector('[title="erp-front / frontend"]')).not.toBeNull()
     expect(container.textContent).toContain('mall')
     expect(container.textContent).not.toContain('执行中')
     expect(container.textContent).not.toContain('失败待处理')
     expect(container.textContent).not.toContain('环境范围')
     expect(container.querySelector('.soha-management-query-card')).toBeNull()
-    expect(container.querySelector('input[placeholder="搜索应用"]')).not.toBeNull()
+    expect(container.querySelector('input[placeholder="搜索应用或服务类型"]')).not.toBeNull()
     expect(container.querySelector('.soha-application-center-toolbar')).not.toBeNull()
     const panel = container.querySelector('.soha-application-center-panel')!
     expect(panel.querySelector('.soha-application-center-toolbar')).not.toBeNull()
+    expect(
+      panel.querySelector('.soha-application-center-toolbar [aria-label="应用列表范围"]'),
+    ).not.toBeNull()
     expect(panel.querySelector('.soha-application-card-grid')).not.toBeNull()
     expect(container.querySelector('.soha-application-card-grid')).not.toBeNull()
     expect(container.querySelectorAll('.soha-application-card')).toHaveLength(2)
@@ -1344,12 +1395,12 @@ describe('ApplicationsPage workspace layout', () => {
       '[aria-label="收藏 ERP Front Main"]',
     )!
     await clickButton(favorite)
-    await clickButton(findButton(container, '我的收藏'))
+    await selectCatalogOption(container, '我的收藏')
     expect(container.querySelectorAll('.soha-application-card')).toHaveLength(1)
     expect(container.textContent).toContain('ERP Front Main')
     expect(container.textContent).not.toContain('Mall API')
     await act(async () => useAuthStore.setState({ user: { ...user, userId: 'tester' } }))
-    await clickButton(findButton(container, '我的收藏'))
+    await selectCatalogOption(container, '我的收藏')
     expect(container.querySelectorAll('.soha-application-card')).toHaveLength(0)
     expect(container.textContent).toContain('还没有收藏的应用')
     expect(
@@ -1375,17 +1426,17 @@ describe('ApplicationsPage workspace layout', () => {
     await clickButton(
       container.querySelector<HTMLButtonElement>('[aria-label="收藏 ERP Front Main"]')!,
     )
-    await clickButton(findButton(container, '我的收藏'))
+    await selectCatalogOption(container, '我的收藏')
     await setInputValue(
-      container.querySelector<HTMLInputElement>('input[placeholder="搜索应用"]')!,
+      container.querySelector<HTMLInputElement>('input[placeholder="搜索应用或服务类型"]')!,
       'ERP',
     )
     await act(async () => roots.pop()!.unmount())
     const restored = await renderWithProviders(<ApplicationsPage />)
-    expect(restored.querySelector<HTMLInputElement>('input[placeholder="搜索应用"]')?.value).toBe(
-      'ERP',
-    )
-    expect(findButton(restored, '我的收藏').getAttribute('aria-pressed')).toBe('true')
+    expect(
+      restored.querySelector<HTMLInputElement>('input[placeholder="搜索应用或服务类型"]')?.value,
+    ).toBe('ERP')
+    expect(catalogOption(restored, '我的收藏').checked).toBe(true)
     expect(restored.querySelectorAll('.soha-application-card')).toHaveLength(1)
     expect(restored.textContent).toContain('ERP Front Main')
   })
@@ -1550,7 +1601,7 @@ describe('ApplicationsPage workspace layout', () => {
   it('finds applications by their description', async () => {
     const container = await renderWithProviders(<ApplicationsPage />)
     await setInputValue(
-      container.querySelector<HTMLInputElement>('input[placeholder="搜索应用"]')!,
+      container.querySelector<HTMLInputElement>('input[placeholder="搜索应用或服务类型"]')!,
       '库存管理',
     )
     expect(container.querySelectorAll('.soha-application-card')).toHaveLength(1)
@@ -1558,11 +1609,41 @@ describe('ApplicationsPage workspace layout', () => {
     expect(container.textContent).not.toContain('Mall API')
   })
 
+  it('searches readable service types and switches to a compact list', async () => {
+    testState.catalogServiceFixtures = true
+    testState.permissionSnapshot.permissionKeys.push('delivery.application-services.view')
+    const container = await renderWithProviders(<ApplicationsPage />)
+    expect(container.textContent).toContain('1 个服务')
+    expect(container.textContent).toContain('0 个服务')
+    expect(container.textContent).toContain('Helm Release')
+    expect(testState.apiGet).not.toHaveBeenCalledWith('/applications/app-1/runtime')
+
+    await selectCatalogOption(container, '列表')
+    expect(container.querySelector('.soha-application-card-list')).not.toBeNull()
+    expect(container.querySelector('.soha-application-card-grid')).toBeNull()
+    await setInputValue(
+      container.querySelector<HTMLInputElement>('[aria-label="搜索应用或服务类型"]')!,
+      'helm',
+    )
+    expect(container.querySelectorAll('.soha-application-card')).toHaveLength(1)
+    expect(
+      container.querySelector('[aria-label="查看应用 ERP Front Main"]')?.getAttribute('href'),
+    ).toBe('/applications/app-1')
+    expect(container.textContent).not.toContain('Mall API')
+  })
+
+  it('retains ordinary application search without service read permission', async () => {
+    const container = await renderWithProviders(<ApplicationsPage />)
+    expect(testState.apiGet).not.toHaveBeenCalledWith('/applications/app-1/services')
+    expect(container.textContent).not.toContain('0 个服务')
+    expect(container.textContent).not.toContain('Helm Release')
+  })
+
   it('distinguishes filtered-empty results from request failures', async () => {
     const container = await renderWithProviders(<ApplicationsPage />)
 
     await setInputValue(
-      container.querySelector('input[placeholder="搜索应用"]') as HTMLInputElement,
+      container.querySelector('input[placeholder="搜索应用或服务类型"]') as HTMLInputElement,
       'missing-app',
     )
     expect(container.textContent).toContain('没有匹配的应用')
@@ -2130,23 +2211,117 @@ describe('ApplicationsPage workspace layout', () => {
   })
 
   it.each([
-    '/release-board',
+    '/release-board?view=definitions',
     '/release-board?tab=workflows',
     '/release-board?tab=builds&kind=build',
-  ])('keeps one workflow catalog and separate execution records at %s', async (path) => {
+  ])('keeps workflow definitions and separate execution records at %s', async (path) => {
     const container = await renderWithProviders(<WorkflowCatalog />, path)
     expect(testState.apiGet).toHaveBeenCalledWith('/delivery/workflow-catalog?offset=0&limit=12')
-    expect(container.querySelector('section[aria-label="全部工作流"]')).not.toBeNull()
+    expect(container.querySelector('section[aria-label="工作流中心"]')).not.toBeNull()
     expect(container.querySelector('.soha-workflow-catalog.ant-card')).toBeNull()
     expect(container.querySelector('.soha-management-query-card')).toBeNull()
     expect(container.querySelector('[role="tablist"]')).toBeNull()
-    expect(container.querySelector('[aria-label="筛选环境"]')?.hasAttribute('disabled')).toBe(false)
+    expect(container.querySelector('[aria-label="筛选环境"]')).toBeNull()
     expect(container.querySelector('.soha-release-board__runs')).toBeNull()
     expect(container.querySelector('a[href="/execution-history"]')).toBeNull()
     expect(testState.apiGet).not.toHaveBeenCalledWith('/workflows?limit=200')
     expect(testState.apiGet).not.toHaveBeenCalledWith('/delivery-batches?limit=200')
     expect(testState.apiGet).not.toHaveBeenCalledWith('/builds?limit=200')
   })
+
+  it('shows genuine running and pending approval runs and opens the selected stage', async () => {
+    const container = await renderWithProviders(<WorkflowCatalog />, '/release-board')
+    expect(testState.apiGet).toHaveBeenCalledWith(
+      '/delivery/execution-history?status=running&limit=12',
+    )
+    expect(testState.apiGet).toHaveBeenCalledWith(
+      '/delivery/execution-history?status=approval&limit=12',
+    )
+    expect(container.textContent).toContain('build-release-main')
+    expect(container.textContent).toContain('deploy-prod')
+    expect(container.textContent).not.toContain('mall-api-release')
+    expect(
+      container.querySelector('a[href="/workflows/workflow-running?stage=build"]'),
+    ).not.toBeNull()
+    await clickButton(findButton(container, 'deploy-prod'))
+    expect(container.textContent).toContain('Waiting for production approver')
+    expect(container.querySelector('a[href="/workflows/workflow-1?stage=approve"]')).not.toBeNull()
+    await act(async () => {
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent === '最近执行')
+        ?.click()
+    })
+    await waitForText(container, 'mall-api-release')
+    expect(container.textContent).toContain('mall-api-release')
+    expect(container.textContent).not.toContain('deploy-prod')
+    expect(container.querySelector('a[href="/execution-history"]')).not.toBeNull()
+    expect(
+      container.querySelector('a[href="/delivery/testing?releaseBundleId=bundle-mall"]'),
+    ).not.toBeNull()
+    await clickButton(findButton(container, 'billing-worker-release'))
+    expect(
+      container.querySelector('a[href="/delivery/analysis?executionTaskId=task-failed"]'),
+    ).not.toBeNull()
+  })
+
+  it.each([false, true])(
+    'gates workflow center stage evidence by its view permissions (%s)',
+    async (allowed) => {
+      testState.permissionSnapshot.permissionKeys = [
+        'delivery.workflows.view',
+        ...(allowed
+          ? [
+              'delivery.applications.view',
+              'delivery.execution-tasks.view',
+              'docker.operations.view',
+              'delivery.release-bundles.view',
+            ]
+          : []),
+      ]
+      const detail = '/delivery/batches/batch-test'
+      const container = await renderWithProviders(
+        <WorkflowCenterRuns
+          active
+          selectedKey={null}
+          onSelect={() => undefined}
+          rows={[
+            {
+              id: 'batch-test',
+              key: 'batch/batch-test',
+              name: 'Batch test',
+              status: 'running',
+              createdAt: '2026-11-06T12:00:00Z',
+              href: detail,
+              targets: [
+                {
+                  id: 'target-1',
+                  applicationId: 'app-1',
+                  application: 'Catalog',
+                  stages: [
+                    {
+                      key: 'deploy-1',
+                      name: '部署',
+                      status: 'running',
+                      href: detail + '?targetId=target-1',
+                      evidence: [
+                        { kind: 'plan', href: detail + '?planId=plan-private' },
+                        { kind: 'task', href: detail + '?evidenceId=task-private' },
+                        { kind: 'docker', href: '/compute/tasks/operations?taskId=docker-private' },
+                        { kind: 'build', href: detail + '?evidenceId=build-private' },
+                        { kind: 'bundle', href: detail + '?evidenceId=bundle-private' },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />,
+      )
+      expect(container.querySelectorAll('a[href*="-private"]')).toHaveLength(allowed ? 5 : 0)
+      expect(container.querySelector(`a[href="${detail}?targetId=target-1"]`)).not.toBeNull()
+    },
+  )
 
   it.each([401, 403, 503])(
     'keeps history evidence only for transient read failures (HTTP %s)',
@@ -2539,56 +2714,81 @@ describe('ApplicationsPage workspace layout', () => {
     ).toBe('/applications/app-1?tab=services&applicationEnvironmentId=binding-1')
   })
 
-  it('renders testing verification with candidate evidence and AI assist boundary', async () => {
-    const container = await renderWithProviders(<DeliveryTestingPage />, '/delivery/testing')
+  it('renders testing verification with global candidates and opens the existing AI assist', async () => {
+    const container = await renderWithProviders(
+      <>
+        <DeliveryTestingPage />
+        <LocationProbe />
+      </>,
+      '/delivery/testing?releaseBundleId=bundle-2',
+    )
 
     expect(testState.apiGet).toHaveBeenCalledWith('/delivery/release-bundles')
     expect(testState.apiGet).toHaveBeenCalledWith('/delivery/execution-tasks')
     expect(testState.apiGet).toHaveBeenCalledWith('/delivery/release-board')
-    expect(container.querySelector('.soha-delivery-workbench-header')).toBeNull()
-    expect(container.textContent).toContain('候选版本')
-    expect(container.textContent).toContain('验证任务')
-    expect(container.textContent).toContain('AI Gateway 验证辅助')
-    expect(container.textContent).not.toContain('可以汇总版本、任务日志、diff 和验证证据')
-    expect(
-      container.querySelector('[aria-label="AI Gateway 验证辅助说明"]')?.getAttribute('tabindex'),
-    ).toBe('0')
+    expect(container.querySelector('[aria-label="按验证判断筛选"]')).not.toBeNull()
+    const judgment = container.querySelector('[aria-label="晋级判断"]')
+    expect(judgment?.textContent).toContain('2.0.0-rc1')
+    expect(judgment?.textContent).toContain('禁止晋级')
+    expect(container.textContent).toContain('1.2.3')
+    expect(container.querySelectorAll('.soha-overview-metric-card')).toHaveLength(0)
+    expect(testState.apiGet).not.toHaveBeenCalledWith(
+      '/ai-gateway/capabilities?source=delivery-workbench&skillId=delivery-tester',
+    )
+
+    await clickButton(findButton(container, '验证辅助'))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
     expect(testState.apiGet).toHaveBeenCalledWith(
       '/ai-gateway/capabilities?source=delivery-workbench&skillId=delivery-tester',
     )
-    expect(container.textContent).toContain('需要审批')
-    expect(container.textContent).not.toContain('常规模式保持完整可用')
-    expect(container.textContent).toContain('1.2.3')
-    expect(container.textContent).toContain('禁止晋级')
-    expect(container.querySelectorAll('.soha-delivery-workbench-action-card')).toHaveLength(0)
-    expect(container.querySelectorAll('.soha-overview-metric-card')).toHaveLength(4)
-    expect(container.querySelector('.soha-application-signal-card')).toBeNull()
+    expect(
+      document.body
+        .querySelector('[aria-label="AI Gateway 验证辅助说明"]')
+        ?.getAttribute('tabindex'),
+    ).toBe('0')
+    expect(document.body.textContent).toContain('需要审批')
+    expect(document.body.textContent).not.toContain('可以汇总版本、任务日志、diff 和验证证据')
   })
 
-  it('renders issue analysis with failed task evidence and normal workflow links', async () => {
-    const container = await renderWithProviders(<DeliveryAnalysisPage />, '/delivery/analysis')
+  it('filters the problem queue and links selected failed task evidence to the original record', async () => {
+    const container = await renderWithProviders(
+      <DeliveryAnalysisPage />,
+      '/delivery/analysis?status=investigate&executionTaskId=task-failed',
+    )
 
     expect(testState.apiGet).toHaveBeenCalledWith('/delivery/execution-tasks')
     expect(testState.apiGet).toHaveBeenCalledWith('/delivery/release-board')
     expect(testState.apiGet).toHaveBeenCalledWith('/delivery/release-bundles')
-    expect(container.querySelector('.soha-delivery-workbench-header')).toBeNull()
-    expect(container.textContent).toContain('失败任务')
-    expect(container.textContent).toContain('AI Gateway 故障分析')
-    expect(container.textContent).not.toContain('可在常规证据基础上汇总失败原因')
+    expect(container.querySelector('[aria-label="按问题状态筛选"]')).not.toBeNull()
+    const queue = container.querySelector('[aria-label="待处理线索"]')
+    const evidence = container.querySelector('[aria-label="问题证据"]')
+    expect(queue?.querySelectorAll('button[aria-pressed]')).toHaveLength(1)
+    expect(queue?.querySelector('button[aria-pressed="true"]')?.textContent).toContain('待排查')
+    expect(evidence?.textContent).toContain('task-failed')
+    expect(evidence?.textContent).toContain('已观察到的事实')
+    expect(evidence?.textContent).toContain('查看影响面')
     expect(
-      container.querySelector('[aria-label="AI Gateway 故障分析说明"]')?.getAttribute('tabindex'),
-    ).toBe('0')
-    expect(testState.apiGet).toHaveBeenCalledWith(
-      '/ai-gateway/capabilities?source=delivery-workbench&skillId=delivery-tester',
+      evidence?.querySelector('a[href="/delivery/execution-tasks/task-failed"]')?.textContent,
+    ).toContain('查看任务日志')
+    expect(container.querySelectorAll('.soha-overview-metric-card')).toHaveLength(0)
+  })
+
+  it('keeps unavailable validation evidence distinct from a clear candidate result', async () => {
+    testState.permissionSnapshot.permissionKeys = ['delivery.release-bundles.view']
+    const container = await renderWithProviders(
+      <DeliveryTestingPage />,
+      '/delivery/testing?judgment=passed',
     )
-    expect(container.textContent).toContain('AI Gateway 可直接辅助')
-    expect(container.textContent).toContain('任务日志')
-    expect(container.textContent).toContain('task-failed')
-    expect(container.textContent).toContain('需处理')
-    expect(container.textContent).toContain('查看影响面')
-    expect(container.querySelectorAll('.soha-delivery-workbench-action-card')).toHaveLength(0)
-    expect(container.querySelectorAll('.soha-overview-metric-card')).toHaveLength(4)
-    expect(container.querySelector('.soha-application-signal-card')).toBeNull()
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/delivery/release-bundles')
+    expect(testState.apiGet).not.toHaveBeenCalledWith('/delivery/execution-tasks')
+    expect(testState.apiGet).not.toHaveBeenCalledWith('/delivery/release-board')
+    expect(container.textContent).toContain('没有符合当前判断的候选版本')
+    await clickButton(findButton(container, '清除筛选'))
+    expect(container.textContent).toContain('证据待核对')
+    expect(container.textContent).toContain('无查看权限')
   })
 
   it('redirects legacy onboarding links to simple application creation', async () => {

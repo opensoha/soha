@@ -66,6 +66,7 @@ export function DeliveryBatchEditor({
   workflow,
   initialDefinition,
   quick = false,
+  selectTargets = false,
   retryOfBatchId,
   onSaved,
   onClose,
@@ -73,6 +74,7 @@ export function DeliveryBatchEditor({
   workflow?: DeliveryWorkflow
   initialDefinition?: DeliveryWorkflowDefinition
   quick?: boolean
+  selectTargets?: boolean
   retryOfBatchId?: string
   onSaved?: (workflow: DeliveryWorkflow) => void
   onClose: () => void
@@ -240,11 +242,19 @@ export function DeliveryBatchEditor({
     <Drawer
       open
       title={
-        quick ? '快速部署' : retryOfBatchId ? '重新检查并交付' : saved ? '编辑工作流' : '新建工作流'
+        quick
+          ? '快速部署'
+          : retryOfBatchId
+            ? '重新检查并交付'
+            : saved
+              ? '编辑工作流'
+              : selectTargets
+                ? '选择服务执行'
+                : '新建工作流'
       }
       size={1180}
       onClose={close}
-      maskClosable={!busy}
+      mask={{ closable: !busy }}
       closable={!busy}
       footer={
         <Space>
@@ -286,6 +296,11 @@ export function DeliveryBatchEditor({
         </Space>
       }
     >
+      {selectTargets ? (
+        <Typography.Paragraph type="secondary">
+          可为多个应用添加服务和环境目标。开始交付后，批次会按目标开展预检并生成部署计划，需要审批的目标会等待审批。
+        </Typography.Paragraph>
+      ) : null}
       <ReadFeedback query={source} label="工作流来源" />
       <ReadFeedback query={templates} label="流程模板" />
       <ReadFeedback query={versions} label="模板版本" />
@@ -673,6 +688,7 @@ export function DeliveryBatchEditor({
           key={editing.id}
           target={editing}
           fixed={quick}
+          blockObserveOnly={selectTargets}
           onClose={() => setEditing(undefined)}
           onSave={(item) => {
             updateTarget(item)

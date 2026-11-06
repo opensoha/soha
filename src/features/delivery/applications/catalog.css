@@ -1,0 +1,233 @@
+.soha-application-center-results {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.soha-application-center-heading,
+.soha-application-center-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.soha-application-center-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.soha-application-center-toolbar,
+.soha-application-center-controls,
+.soha-application-center-filters,
+.soha-application-center-toolbar__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.soha-application-center-toolbar {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-application-center-controls {
+  gap: 12px;
+}
+
+.soha-application-center-filters > .ant-input-affix-wrapper {
+  width: 208px;
+  max-width: 100%;
+}
+
+.soha-application-center-filters > .ant-select {
+  width: 106px;
+}
+
+.soha-application-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.soha-application-card-list {
+  display: grid;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+}
+
+.soha-application-card.ant-card {
+  min-width: 0;
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  box-shadow: none;
+}
+
+.soha-application-card.ant-card:hover,
+.soha-application-card.ant-card:focus-within {
+  border-color: var(--soha-border-color-strong);
+}
+
+.soha-application-card.ant-card .ant-card-body {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.soha-application-card__header,
+.soha-application-card__link,
+.soha-application-card__status,
+.soha-application-card__metadata,
+.soha-application-card__footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.soha-application-card__header {
+  gap: 4px;
+}
+
+.soha-application-card__link {
+  flex: 1;
+  gap: 10px;
+  color: inherit;
+}
+
+.soha-application-card__link:focus-visible,
+.soha-application-card__footer a:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 3px;
+}
+
+.soha-application-card__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border-radius: var(--soha-radius-control);
+  color: var(--soha-primary);
+  background: var(--soha-primary-light-default);
+  font-size: 18px;
+}
+
+.soha-application-card__identity {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.soha-application-card__identity > .ant-typography-secondary {
+  font-size: 12px;
+}
+
+.soha-application-card__favorite.ant-btn[aria-pressed='true'] {
+  color: var(--soha-primary);
+}
+
+.soha-application-card__status,
+.soha-application-card__metadata {
+  flex-wrap: wrap;
+}
+
+.soha-application-card__status {
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.soha-application-card__metadata {
+  gap: 4px 8px;
+  font-size: 12px;
+}
+
+.soha-application-card__metadata .soha-metadata-tag {
+  margin-inline-end: 0;
+}
+
+.soha-application-card__metadata .ant-typography {
+  max-width: 100%;
+}
+
+.soha-application-card__footer {
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--soha-border-color);
+  white-space: nowrap;
+}
+
+.soha-application-card-list .soha-application-card.ant-card {
+  border: 0;
+  border-radius: 0;
+}
+
+.soha-application-card-list .soha-application-card + .soha-application-card {
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-application-card-list .soha-application-card:first-child {
+  border-start-start-radius: var(--soha-radius-panel);
+  border-start-end-radius: var(--soha-radius-panel);
+}
+
+.soha-application-card-list .soha-application-card:last-child {
+  border-end-start-radius: var(--soha-radius-panel);
+  border-end-end-radius: var(--soha-radius-panel);
+}
+
+.soha-application-card-list .soha-application-card.ant-card .ant-card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(104px, 1fr) minmax(0, 1.25fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.soha-application-card-list .soha-application-card__status {
+  justify-content: flex-start;
+}
+
+.soha-application-card-list .soha-application-card__footer {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+@container (max-width: 850px) {
+  .soha-application-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 620px) {
+  .soha-application-card-list .soha-application-card.ant-card .ant-card-body {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+}
+
+@container (max-width: 510px) {
+  .soha-application-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-application-card__link,
+  .soha-application-card__header > .ant-btn {
+    min-height: 44px;
+  }
+}
+
+@container (max-width: 390px) {
+  .soha-application-card-list .soha-application-card.ant-card .ant-card-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
