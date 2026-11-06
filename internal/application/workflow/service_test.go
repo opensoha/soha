@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -928,7 +929,7 @@ func TestTriggerDeliveryDAGExternalVerifyCreatesExecutionTask(t *testing.T) {
 	if _, ok := outputs["callbackToken"]; ok {
 		t.Fatalf("node outputs leaked callback token: %#v", outputs)
 	}
-	repo.setItems([]domainworkflow.Run{waitingRun})
+	repo.setItems([]domainworkflow.Run{reloadWorkflowRun(t, waitingRun)})
 	task.Status = "completed"
 	task.Result = map[string]any{"summary": "external verification passed"}
 	now := time.Now().UTC()
@@ -949,6 +950,28 @@ func TestTriggerDeliveryDAGExternalVerifyCreatesExecutionTask(t *testing.T) {
 	if _, ok := finalOutputs["callbackToken"]; ok {
 		t.Fatalf("final node outputs leaked callback token: %#v", finalOutputs)
 	}
+
+	repo.setItems([]domainworkflow.Run{reloadWorkflowRun(t, finalRun)})
+	if err := service.RecordExecutionTaskResult(context.Background(), task); err != nil {
+		t.Fatalf("replay terminal callback: %v", err)
+	}
+	if got := len(taskStore.tasksSnapshot()); got != 1 {
+		t.Fatalf("task count after duplicate callback = %d, want 1", got)
+	}
+}
+
+// Round-trip metadata as the PostgreSQL repository does before resuming a run.
+func reloadWorkflowRun(t *testing.T, run domainworkflow.Run) domainworkflow.Run {
+	t.Helper()
+	data, err := json.Marshal(run.Metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Metadata = nil
+	if err := json.Unmarshal(data, &run.Metadata); err != nil {
+		t.Fatal(err)
+	}
+	return run
 }
 
 func newExternalVerifyWorkflowTest(t *testing.T) (*Service, *stubWorkflowRepository, *recordingWorkflowArtifactStore) {
@@ -1058,7 +1081,7 @@ func TestExternalExecutionFailureResumeHonorsStopFailurePolicy(t *testing.T) {
 	if len(tasks) != 1 {
 		t.Fatalf("tasks len = %d, want 1", len(tasks))
 	}
-	repo.setItems([]domainworkflow.Run{waitingRun})
+	repo.setItems([]domainworkflow.Run{reloadWorkflowRun(t, waitingRun)})
 	task := tasks[0]
 	task.Status = "failed"
 	task.Result = map[string]any{"error": "external verification failed"}

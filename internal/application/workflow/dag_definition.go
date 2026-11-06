@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -121,12 +122,23 @@ func definitionFromRunMetadata(run domainworkflow.Run) (dagWorkflowDefinition, b
 		}
 		return definition, true
 	}
-	return parseDAGWorkflowDefinition(map[string]any{
-		"mode":          workflowMetadataMode(run.Metadata),
-		"schemaVersion": run.Metadata["schemaVersion"],
-		"nodes":         run.Metadata["nodes"],
-		"edges":         run.Metadata["edges"],
+	// Persisted runs contain normalized structs encoded as JSON, with Go field
+	// names in older snapshots. Decode them as structs instead of templates.
+	data, err := json.Marshal(map[string]any{
+		"nodes": run.Metadata["nodes"],
+		"edges": run.Metadata["edges"],
 	})
+	if err != nil {
+		return dagWorkflowDefinition{}, false
+	}
+	definition := dagWorkflowDefinition{
+		SchemaVersion: toInt(run.Metadata["schemaVersion"], 2),
+		Mode:          workflowMetadataMode(run.Metadata),
+	}
+	if err := json.Unmarshal(data, &definition); err != nil || len(definition.Nodes) == 0 {
+		return dagWorkflowDefinition{}, false
+	}
+	return definition, true
 }
 
 func toMapSlice(value any) ([]map[string]any, bool) {
