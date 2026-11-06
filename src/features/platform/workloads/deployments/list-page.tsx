@@ -610,6 +610,7 @@ export function WorkloadsDeploymentsPage() {
       dataIndex: 'health',
       key: 'health',
       width: 120,
+      sorter: (left, right) => getDeploymentHealth(left).localeCompare(getDeploymentHealth(right)),
       render: (_: unknown, record: Deployment) => <StatusTag value={getDeploymentHealth(record)} />,
     },
     {

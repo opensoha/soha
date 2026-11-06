@@ -49,6 +49,7 @@ export function ClusterEditor({
     cluster?.connectionMode === 'agent' ? 'agent' : 'direct_kubeconfig',
   )
   const [form] = Form.useForm<ClusterFormValues>()
+  const hasPrometheusLabel = Boolean(Form.useWatch('prometheusClusterLabel', form)?.trim())
   const clusterDetailQuery = useQuery({
     ...clusterQueries.detail(toScopeKey(cluster?.id, null)),
     enabled: Boolean(cluster?.id && canUpdate),
@@ -83,7 +84,6 @@ export function ClusterEditor({
             prometheusTransport: 'direct',
             agentActionProfile: 'workbench',
             agentCustomResourceRules: [],
-            prometheusClusterLabel: 'cluster',
           },
     [cluster, detail],
   )
@@ -108,10 +108,15 @@ export function ClusterEditor({
     const labels = { ...(editingCluster?.labels ?? {}) }
     if (values.provider?.trim()) labels.provider = values.provider.trim()
     else delete labels.provider
+    const prometheusClusterLabel = values.prometheusClusterLabel?.trim() || ''
     const payload: Record<string, unknown> = {
       ...values,
       region: editingCluster?.region || '',
       labels,
+      prometheusClusterLabel,
+      prometheusClusterLabelValue: prometheusClusterLabel
+        ? values.prometheusClusterLabelValue?.trim() || ''
+        : '',
       prometheusTransport:
         values.connectionMode === 'agent' ? values.prometheusTransport : 'direct',
     }
@@ -409,7 +414,7 @@ export function ClusterEditor({
               <div className="soha-cluster-editor__grid">
                 <Form.Item
                   name="prometheusClusterLabel"
-                  label={zh ? '集群标签名' : 'Cluster label name'}
+                  label={zh ? '集群标签名（选填）' : 'Cluster label name (optional)'}
                   rules={[
                     {
                       pattern: /^[a-zA-Z_][a-zA-Z0-9_]*$/,
@@ -419,34 +424,34 @@ export function ClusterEditor({
                     },
                   ]}
                 >
-                  <Input placeholder="cluster" maxLength={128} />
+                  <Input
+                    placeholder="cluster"
+                    maxLength={128}
+                    onChange={(event) => {
+                      if (!event.target.value.trim())
+                        form.setFieldValue('prometheusClusterLabelValue', '')
+                    }}
+                  />
                 </Form.Item>
                 <Form.Item
                   name="prometheusClusterLabelValue"
                   label={zh ? '集群标签值' : 'Cluster label value'}
-                  dependencies={['prometheusClusterLabel']}
-                  rules={[
-                    { max: 1024 },
-                    ({ getFieldValue }) => ({
-                      validator: (_rule, value) =>
-                        value && !getFieldValue('prometheusClusterLabel')
-                          ? Promise.reject(
-                              new Error(
-                                zh ? '请同时填写集群标签名' : 'A cluster label name is required',
-                              ),
-                            )
-                          : Promise.resolve(),
-                    }),
-                  ]}
+                  rules={[{ max: 1024 }]}
                 >
-                  <Input placeholder={editingCluster?.id || 'middleware-prod'} maxLength={1024} />
+                  <Input
+                    disabled={!hasPrometheusLabel}
+                    placeholder={
+                      hasPrometheusLabel ? editingCluster?.id || 'middleware-prod' : undefined
+                    }
+                    maxLength={1024}
+                  />
                 </Form.Item>
               </div>
               <div className="soha-cluster-editor__hint">
                 <Text type="secondary">
                   {zh
-                    ? '标签名和值须与指标一致；标签值留空时使用 Soha 集群 ID。'
-                    : 'Match the label name and value in metrics. An empty value uses the Soha cluster ID.'}
+                    ? '独立 Prometheus 可将标签留空。多个集群共用时，请填写指标里的同一个标签名，并为每个集群填写不同的值。填写标签名后，值留空会使用 Soha 集群 ID。'
+                    : 'Leave the label blank for a dedicated Prometheus source. For a shared source, use the same metric label name with a distinct value for each cluster. If only the name is set, the value defaults to the Soha cluster ID.'}
                 </Text>
               </div>
               <div className="soha-cluster-editor__section-heading">

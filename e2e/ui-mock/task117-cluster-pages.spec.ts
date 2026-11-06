@@ -7,7 +7,7 @@ const detail = '/clusters/cluster-a'
 async function setup(
   context: BrowserContext,
   page: Page,
-  { readonly = false, noMetrics = false, count = 80 } = {},
+  { readonly = false, noMetrics = false, count = 80, dedicated = false } = {},
 ) {
   const state = {
     reads: [] as string[],
@@ -147,7 +147,9 @@ async function setup(
           status: 503,
           body: { error: { code: 'unavailable', message: 'Monitoring read failed' } },
         }
-      const valid = state.label === 'cluster' && state.alias === 'middleware-prod'
+      const valid = dedicated
+        ? state.label === '' && state.alias === ''
+        : state.label === 'cluster' && state.alias === 'middleware-prod'
       const ref = {
         clusterId: 'cluster-a',
         kind: 'Node',
@@ -225,7 +227,7 @@ async function edit(page: Page) {
   await expect(page.getByRole('dialog', { name: '编辑集群', exact: true })).toBeVisible()
 }
 async function fillIdentity(page: Page, value = 'middleware-prod') {
-  await page.getByRole('textbox', { name: '集群标签名', exact: true }).fill('cluster')
+  await page.getByRole('textbox', { name: '集群标签名（选填）', exact: true }).fill('cluster')
   await page.getByRole('textbox', { name: '集群标签值', exact: true }).fill(value)
 }
 async function clickDone(page: Page) {
@@ -308,6 +310,33 @@ test('Imported clusters without a type can save monitoring without changing thei
   await expect(page.getByRole('dialog')).toContainText('主机指标已接通')
   expect(state.writes.filter((w) => w.method === 'PUT')).toHaveLength(1)
   expect(state.writes[0].body.labels).toEqual({})
+  await clickDone(page)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Cluster editor clears a saved label to check a dedicated Prometheus source', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await setup(context, page, { dedicated: true })
+  state.label = 'cluster'
+  state.alias = 'middleware-prod'
+  await page.goto(detail + '?tab=monitoring')
+  await edit(page)
+  const label = page.getByRole('textbox', { name: '集群标签名（选填）', exact: true })
+  const value = page.getByRole('textbox', { name: '集群标签值', exact: true })
+  await expect(value).toHaveValue('middleware-prod')
+  await label.clear()
+  await expect(value).toBeDisabled()
+  await expect(value).toHaveValue('')
+  await page.getByRole('button', { name: '保存并校验', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('主机指标已接通')
+  expect(state.writes).toHaveLength(1)
+  expect(state.writes[0].body).toMatchObject({
+    prometheusBaseUrl: 'http://metrics.example',
+    prometheusClusterLabel: '',
+    prometheusClusterLabelValue: '',
+  })
   await clickDone(page)
   verifyBrowserEvidence(evidence)
 })

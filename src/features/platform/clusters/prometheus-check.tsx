@@ -125,8 +125,8 @@ export function PrometheusCheckResult({
   const reason =
     result.reason === 'metric_not_collected'
       ? zh
-        ? '未匹配到部分主机指标，请核对集群标签名和值，以及 node-exporter 采集。'
-        : 'Some host metrics did not match. Check the cluster label name/value and node-exporter collection.'
+        ? '未匹配到部分主机指标，请检查 node-exporter 采集情况。如果配置了集群标签，也请核对标签名和值。'
+        : 'Some host metrics did not match. Check node-exporter collection and verify the cluster label name and value if configured.'
       : t(
           `resourceMonitoring.reason.${result.reason}`,
           reasonLabels[result.reason] || result.reason,
