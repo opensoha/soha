@@ -23,8 +23,14 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 	if request.Kind == "" || request.Name == "" || strings.TrimSpace(request.Content) == "" {
 		return domainoperation.Plan{}, fmt.Errorf("%w: kind, name, and content are required", apperrors.ErrInvalidArgument)
 	}
+	if err := validateResourceYAMLNamespace(request.Kind, request.Namespace); err != nil {
+		return domainoperation.Plan{}, err
+	}
 	connection, _, err := g.authorize(ctx, principal, clusterID, request.Namespace, request.Kind, domainaccess.ActionUpdate)
 	if err != nil {
+		return domainoperation.Plan{}, err
+	}
+	if err := g.authorizeResourceYAMLData(ctx, principal, request.Kind); err != nil {
 		return domainoperation.Plan{}, err
 	}
 	var analysis domainresource.ResourceUpdateAnalysis
@@ -33,9 +39,26 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 		if err != nil {
 			return domainoperation.Plan{}, err
 		}
-		analysis, err = client.DryRunResourceYAML(ctx, request.Namespace, request.Kind, request.Name, request.Content)
+		if request.RequireObservedIdentity {
+			guarded, ok := client.(observedYAMLAgent)
+			if !ok {
+				return domainoperation.Plan{}, apperrors.ErrUnsupportedOperation
+			}
+			analysis, err = guarded.DryRunObservedResourceYAML(ctx, request.Namespace, request.Kind, request.Name, request.Content)
+		} else {
+			analysis, err = client.DryRunResourceYAML(ctx, request.Namespace, request.Kind, request.Name, request.Content)
+		}
+		if err != nil {
+			return domainoperation.Plan{}, wrapAgentResourceError(err)
+		}
 	} else if g.direct == nil {
 		return domainoperation.Plan{}, fmt.Errorf("%w: direct generic resource adapter is not configured", apperrors.ErrClusterUnready)
+	} else if request.RequireObservedIdentity {
+		guarded, ok := g.direct.(observedYAMLDirect)
+		if !ok {
+			return domainoperation.Plan{}, apperrors.ErrUnsupportedOperation
+		}
+		analysis, err = guarded.DryRunObservedResourceYAML(ctx, clusterID, request.Namespace, request.Kind, request.Name, request.Content)
 	} else {
 		analysis, err = g.direct.DryRunResourceYAML(ctx, clusterID, request.Namespace, request.Kind, request.Name, request.Content)
 	}

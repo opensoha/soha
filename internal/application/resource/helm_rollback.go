@@ -40,7 +40,7 @@ func (h *Helm) PlanHelmReleaseRollback(ctx context.Context, principal domainiden
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
-	connection, _, err := h.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionRollback)
+	connection, _, err := h.authorizeHelmMutation(ctx, principal, clusterID, namespace, domainaccess.ActionRollback)
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
@@ -79,7 +79,7 @@ func (h *Helm) RollbackHelmRelease(ctx context.Context, principal domainidentity
 	if err != nil {
 		return domainresource.HelmReleaseDetailView{}, err
 	}
-	connection, _, err := h.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionRollback)
+	connection, _, err := h.authorizeHelmMutation(ctx, principal, clusterID, namespace, domainaccess.ActionRollback)
 	if err != nil {
 		return domainresource.HelmReleaseDetailView{}, err
 	}

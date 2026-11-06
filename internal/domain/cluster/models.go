@@ -141,11 +141,12 @@ type MonitoringDetail struct {
 }
 
 type PrometheusDetail struct {
-	Transport      string `json:"transport,omitempty"`
-	BaseURL        string `json:"baseUrl,omitempty"`
-	ClusterLabel   string `json:"clusterLabel,omitempty"`
-	GrafanaBaseURL string `json:"grafanaBaseUrl,omitempty"`
-	HasBearerToken bool   `json:"hasBearerToken"`
+	Transport         string `json:"transport,omitempty"`
+	BaseURL           string `json:"baseUrl,omitempty"`
+	ClusterLabel      string `json:"clusterLabel,omitempty"`
+	ClusterLabelValue string `json:"clusterLabelValue,omitempty"`
+	GrafanaBaseURL    string `json:"grafanaBaseUrl,omitempty"`
+	HasBearerToken    bool   `json:"hasBearerToken"`
 }
 
 type Connection struct {
@@ -164,42 +165,44 @@ type AgentInstallation struct {
 }
 
 type RegisterInput struct {
-	AgentActionProfile       string                    `json:"agentActionProfile,omitempty"`
-	PrometheusTransport      string                    `json:"prometheusTransport,omitempty"`
-	AgentCustomResourceRules []AgentCustomResourceRule `json:"agentCustomResourceRules,omitempty"`
-	ID                       string                    `json:"id"`
-	Name                     string                    `json:"name"`
-	Region                   string                    `json:"region"`
-	Environment              string                    `json:"environment"`
-	Labels                   map[string]string         `json:"labels,omitempty"`
-	ConnectionMode           ConnectionMode            `json:"connectionMode"`
-	Kubeconfig               string                    `json:"kubeconfig,omitempty"`
-	Context                  string                    `json:"context,omitempty"`
-	AgentEndpoint            string                    `json:"agentEndpoint,omitempty"`
-	AgentToken               string                    `json:"agentToken,omitempty"`
-	PrometheusBaseURL        string                    `json:"prometheusBaseUrl,omitempty"`
-	PrometheusBearerToken    string                    `json:"prometheusBearerToken,omitempty"`
-	PrometheusClusterLabel   string                    `json:"prometheusClusterLabel,omitempty"`
-	GrafanaBaseURL           string                    `json:"grafanaBaseUrl,omitempty"`
+	AgentActionProfile          string                    `json:"agentActionProfile,omitempty"`
+	PrometheusTransport         string                    `json:"prometheusTransport,omitempty"`
+	AgentCustomResourceRules    []AgentCustomResourceRule `json:"agentCustomResourceRules,omitempty"`
+	ID                          string                    `json:"id"`
+	Name                        string                    `json:"name"`
+	Region                      string                    `json:"region"`
+	Environment                 string                    `json:"environment"`
+	Labels                      map[string]string         `json:"labels,omitempty"`
+	ConnectionMode              ConnectionMode            `json:"connectionMode"`
+	Kubeconfig                  string                    `json:"kubeconfig,omitempty"`
+	Context                     string                    `json:"context,omitempty"`
+	AgentEndpoint               string                    `json:"agentEndpoint,omitempty"`
+	AgentToken                  string                    `json:"agentToken,omitempty"`
+	PrometheusBaseURL           string                    `json:"prometheusBaseUrl,omitempty"`
+	PrometheusBearerToken       string                    `json:"prometheusBearerToken,omitempty"`
+	PrometheusClusterLabel      string                    `json:"prometheusClusterLabel,omitempty"`
+	PrometheusClusterLabelValue string                    `json:"prometheusClusterLabelValue,omitempty"`
+	GrafanaBaseURL              string                    `json:"grafanaBaseUrl,omitempty"`
 }
 
 type UpdateInput struct {
-	AgentActionProfile       string                    `json:"agentActionProfile,omitempty"`
-	PrometheusTransport      string                    `json:"prometheusTransport,omitempty"`
-	AgentCustomResourceRules []AgentCustomResourceRule `json:"agentCustomResourceRules,omitempty"`
-	Name                     string                    `json:"name"`
-	Region                   string                    `json:"region"`
-	Environment              string                    `json:"environment"`
-	Labels                   map[string]string         `json:"labels,omitempty"`
-	ConnectionMode           ConnectionMode            `json:"connectionMode"`
-	Kubeconfig               string                    `json:"kubeconfig,omitempty"`
-	Context                  string                    `json:"context,omitempty"`
-	AgentEndpoint            string                    `json:"agentEndpoint,omitempty"`
-	AgentToken               string                    `json:"agentToken,omitempty"`
-	PrometheusBaseURL        string                    `json:"prometheusBaseUrl,omitempty"`
-	PrometheusBearerToken    string                    `json:"prometheusBearerToken,omitempty"`
-	PrometheusClusterLabel   string                    `json:"prometheusClusterLabel,omitempty"`
-	GrafanaBaseURL           string                    `json:"grafanaBaseUrl,omitempty"`
+	AgentActionProfile          string                    `json:"agentActionProfile,omitempty"`
+	PrometheusTransport         string                    `json:"prometheusTransport,omitempty"`
+	AgentCustomResourceRules    []AgentCustomResourceRule `json:"agentCustomResourceRules,omitempty"`
+	Name                        string                    `json:"name"`
+	Region                      string                    `json:"region"`
+	Environment                 string                    `json:"environment"`
+	Labels                      map[string]string         `json:"labels,omitempty"`
+	ConnectionMode              ConnectionMode            `json:"connectionMode"`
+	Kubeconfig                  string                    `json:"kubeconfig,omitempty"`
+	Context                     string                    `json:"context,omitempty"`
+	AgentEndpoint               string                    `json:"agentEndpoint,omitempty"`
+	AgentToken                  string                    `json:"agentToken,omitempty"`
+	PrometheusBaseURL           *string                   `json:"prometheusBaseUrl,omitempty"`
+	PrometheusBearerToken       string                    `json:"prometheusBearerToken,omitempty"`
+	PrometheusClusterLabel      string                    `json:"prometheusClusterLabel,omitempty"`
+	PrometheusClusterLabelValue *string                   `json:"prometheusClusterLabelValue,omitempty"`
+	GrafanaBaseURL              string                    `json:"grafanaBaseUrl,omitempty"`
 }
 
 type Manager interface {

@@ -117,7 +117,7 @@ func (i *Inventory) GetResourceMonitoring(ctx context.Context, principal domaini
 		return view, apperrors.ErrNotFound
 	}
 	settings := i.resolveClusterPrometheusSettings(ctx, clusterID)
-	definitions := monitoringDefinitions(input.View, clusterID, settings.ClusterLabel)
+	definitions := monitoringDefinitions(input.View, prometheusClusterValue(settings, clusterID), settings.ClusterLabel)
 	state, reason := monitoringPrerequisites(settings.Enabled, settings.BaseURL, settings.ClusterLabel, len(view.Nodes), view.SnapshotQuality)
 	if state != "" {
 		for _, definition := range definitions {

@@ -149,6 +149,9 @@ func (s *Service) authorizeMissingPermission(ctx context.Context, request domain
 		if err != nil {
 			return domainaccess.Decision{}, err
 		}
+		if legacyDecision.ReasonCode == domainaccess.ReasonNamespaceLabelsRequired {
+			return legacyDecision, nil
+		}
 		if legacyDecision.Allowed {
 			legacyDecision.ReasonCode = "legacy_capability_allowed"
 			return legacyDecision, nil
@@ -167,7 +170,9 @@ func (s *Service) authorizePermissionScope(ctx context.Context, request domainac
 		return domainaccess.Decision{}, err
 	}
 	if !decision.Allowed && decision.Reason != "" {
-		decision.ReasonCode = "abac_denied"
+		if decision.ReasonCode != domainaccess.ReasonNamespaceLabelsRequired {
+			decision.ReasonCode = "abac_denied"
+		}
 		return decision, nil
 	}
 	if decision.Reason == "" && isClusterlessDeliveryRequest(request) {
@@ -291,6 +296,9 @@ func (s *Service) applyScopeGrantConstraint(ctx context.Context, request domaina
 	subjectGrants, hasScopedGrant := matchedSubjectScopeGrants(grants, request)
 	if !hasScopedGrant {
 		return decision, nil
+	}
+	if request.RequireUnscopedPlatform {
+		return denyScopeGrantDecision(decision, "this operation requires unscoped platform access"), nil
 	}
 	envKeyMap, err := s.loadEnvironmentKeyMap(ctx)
 	if err != nil {

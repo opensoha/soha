@@ -25,7 +25,7 @@ type monitoringResult struct {
 
 func (i *Inventory) queryMonitoringDefinitions(ctx context.Context, clusterID string, settings domainsettings.PrometheusSettings, definitions []monitoringDefinition, window monitoringWindow) map[string]monitoringResult {
 	results := map[string]monitoringResult{}
-	definitions = append(append([]monitoringDefinition(nil), definitions...), monitoringDefinition{key: "node.identity", query: "node_uname_info{" + settings.ClusterLabel + "=" + strconv.Quote(clusterID) + "}"})
+	definitions = append(append([]monitoringDefinition(nil), definitions...), monitoringDefinition{key: "node.identity", query: "node_uname_info{" + settings.ClusterLabel + "=" + strconv.Quote(prometheusClusterValue(settings, clusterID)) + "}"})
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)
@@ -115,7 +115,7 @@ func (i *Inventory) queryMonitoringRange(ctx context.Context, settings domainset
 	}
 	expectedCluster, _ := ctx.Value(prometheusClusterKey{}).(string)
 	for _, series := range payload.Data.Result {
-		if series.Metric[settings.ClusterLabel] != expectedCluster {
+		if series.Metric[settings.ClusterLabel] != prometheusClusterValue(settings, expectedCluster) {
 			result.quality = "partial"
 			result.reason = "cluster_identity_mismatch"
 			continue

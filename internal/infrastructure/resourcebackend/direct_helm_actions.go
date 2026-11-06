@@ -180,7 +180,7 @@ func (d *Direct) rollbackHelmRelease(ctx context.Context, clusterID, namespace, 
 	return d.GetHelmReleaseDetail(ctx, clusterID, namespace, name)
 }
 
-func (d *Direct) UpdateHelmReleaseValues(ctx context.Context, clusterID, namespace, name, content string) (domainresource.HelmValuesView, error) {
+func (d *Direct) UpdateHelmReleaseValues(ctx context.Context, clusterID, namespace, name, content string, expectedRevision int) (domainresource.HelmValuesView, error) {
 	values, err := parseHelmValues(content)
 	if err != nil {
 		return domainresource.HelmValuesView{}, err
@@ -209,6 +209,9 @@ func (d *Direct) UpdateHelmReleaseValues(ctx context.Context, clusterID, namespa
 	upgrader.WaitStrategy = kube.LegacyStrategy
 	upgrader.WaitForJobs = true
 	upgrader.Timeout = directHelmTimeoutSeconds * time.Second
+	if err := helmruntime.GuardValuesUpgradeRevision(actionConfig, upgrader, currentV1, expectedRevision); err != nil {
+		return domainresource.HelmValuesView{}, helmDeliveryError(err)
+	}
 	release, err := upgrader.RunWithContext(ctx, name, currentV1.Chart, values)
 	if err != nil {
 		return domainresource.HelmValuesView{}, mapHelmReleaseSDKError(name, "update helm release values", err)
@@ -376,6 +379,9 @@ func isHelmReleaseNameInUseError(err error) bool {
 }
 
 func mapHelmReleaseSDKError(name, operation string, err error) error {
+	if errors.Is(err, helmruntime.ErrConflict) {
+		return helmDeliveryError(err)
+	}
 	if isHelmReleaseNotFoundError(err) {
 		return fmt.Errorf("%w: helm release %s not found", apperrors.ErrNotFound, name)
 	}

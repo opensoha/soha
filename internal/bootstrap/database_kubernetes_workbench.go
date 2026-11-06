@@ -60,7 +60,10 @@ func upgradeKubernetesWorkbenchExtensions(ctx context.Context, db *gorm.DB) erro
 	if err := upgradeKubernetesCRUDPermissions(ctx, db); err != nil {
 		return err
 	}
-	return upgradeFlatKubernetesNetworkMenus(ctx, db)
+	if err := upgradeFlatKubernetesNetworkMenus(ctx, db); err != nil {
+		return err
+	}
+	return upgradeNetworkClassMenuOrder(ctx, db)
 }
 
 // Keep legacy rows and role bindings for old links and customized menus.
@@ -85,4 +88,16 @@ func upgradeResourceMonitoringDashboardSeeds(ctx context.Context, db *gorm.DB) e
 		}
 	}
 	return writeSeedVersion(ctx, db, key, "2026-10-19-task113-single-page")
+}
+
+func upgradeNetworkClassMenuOrder(ctx context.Context, db *gorm.DB) error {
+	const key = "bootstrap.kubernetes_ingressclass_menu_order_version"
+	version, err := readSeedVersion(ctx, db, key)
+	if err != nil || version != "" {
+		return err
+	}
+	if err := syncNetworkClassMenuSeedUpgrades(ctx, db, time.Now().UTC()); err != nil {
+		return err
+	}
+	return writeSeedVersion(ctx, db, key, "2026-11-05-task117-ingressclass-order")
 }

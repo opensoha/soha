@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/yamux"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha-contracts/helmrelease"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -39,6 +40,43 @@ func TestHelmMutationPreservesAgentConflict(t *testing.T) {
 	_, err = client.ExecuteHelmDelivery(context.Background(), sohaapi.HelmExecutionTaskPayload{Action: sohaapi.Observe})
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("observe conflict = %v", err)
+	}
+}
+
+func TestHelmValuesConditionalAgentNeverFallsBack(t *testing.T) {
+	const legacyPath = "/api/v1/platform/helm/releases/app/values"
+	for _, tc := range []struct {
+		name   string
+		status int
+		want   error
+	}{
+		{name: "old Agent", status: http.StatusNotFound, want: apperrors.ErrUnsupportedOperation},
+		{name: "legacy redirect", status: http.StatusTemporaryRedirect, want: apperrors.ErrUnsupportedOperation},
+		{name: "stale revision", status: http.StatusConflict, want: apperrors.ErrConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPut || r.URL.Path != legacyPath+"/conditional" || r.URL.Query().Get("namespace") != "test" {
+					t.Errorf("unexpected request %s %s", r.Method, r.URL)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				var body helmrelease.ValuesUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ExpectedRevision != 3 || body.Content != "replicaCount: 2\n" {
+					t.Errorf("guarded payload = %+v, error = %v", body, err)
+				}
+				if tc.status == http.StatusTemporaryRedirect {
+					w.Header().Set("Location", legacyPath)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			defer server.Close()
+			client := &Client{baseURL: server.URL, httpClient: server.Client()}
+			_, err := client.UpdateHelmReleaseValues(context.Background(), "test", "app", "replicaCount: 2\n", 3)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -243,7 +281,7 @@ func TestClientQueriesAndStreamsAggregatePodLogs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewRegistry(10 * time.Millisecond).ClientFor(domaincluster.Connection{
+	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
 		Summary: domaincluster.Summary{ID: "cluster-a"}, Metadata: map[string]any{"endpoint": server.URL},
 	})
 	if err != nil {
@@ -254,6 +292,8 @@ func TestClientQueriesAndStreamsAggregatePodLogs(t *testing.T) {
 	if err != nil || len(page.Entries) != 1 || page.Entries[0].Message != "snapshot" {
 		t.Fatalf("QueryPodLogs() page=%#v error=%v", page, err)
 	}
+	// Only the stream must outlive the ordinary HTTP request timeout.
+	client.httpClient.Timeout = 10 * time.Millisecond
 	var events []domainresource.LogStreamEvent
 	if err := client.StreamPodLogEvents(context.Background(), query, func(event domainresource.LogStreamEvent) error {
 		events = append(events, event)
@@ -433,7 +473,7 @@ func helmMutationTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"name": "edge", "namespace": "platform", "revision": "1", "status": "deployed"}})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/helm/releases/edge/values":
-			var req helmReleaseValuesRequest
+			var req helmrelease.ValuesUpdateRequest
 			if r.URL.Query().Get("namespace") != "platform" || json.NewDecoder(r.Body).Decode(&req) != nil || req.Content != "replicaCount: 2\n" {
 				t.Fatalf("unexpected values request: query=%s body=%#v", r.URL.RawQuery, req)
 			}
@@ -713,7 +753,7 @@ func TestClientHelmMutationMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	if installed.Name != "edge" || installed.Revision != "1" {
 		t.Fatalf("installed = %#v, want edge revision 1", installed)
 	}
-	values, err := client.UpdateHelmReleaseValues(context.Background(), "platform", "edge", "replicaCount: 2\n")
+	values, err := client.UpdateHelmReleaseValues(context.Background(), "platform", "edge", "replicaCount: 2\n", 0)
 	if err != nil {
 		t.Fatalf("UpdateHelmReleaseValues() error = %v", err)
 	}

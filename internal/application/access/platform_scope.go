@@ -44,6 +44,11 @@ func evaluatePlatformScopeGrants(
 
 	accumulator := newPlatformScopeAccumulator()
 	for _, projection := range projections {
+		if request.RequireNamespaceLabels && request.Namespace.Namespace != "" && request.Namespace.Labels == nil && len(projection.selectors) > 0 {
+			denied := denyScopeGrantDecision(decision, "namespace labels are required to evaluate a scope grant")
+			denied.ReasonCode = domainaccess.ReasonNamespaceLabelsRequired
+			return denied
+		}
 		if reason := accumulator.consume(projection, request, roleMatrix); reason != "" {
 			return denyScopeGrantDecision(decision, reason)
 		}
@@ -51,6 +56,14 @@ func evaluatePlatformScopeGrants(
 
 	if len(accumulator.matchedActions) == 0 {
 		return denyScopeGrantDecision(decision, "scope grant does not allow this namespace or action")
+	}
+	if request.RequireClusterWideNamespace {
+		if !accumulator.allowUnrestricted {
+			return denyScopeGrantDecision(decision, "scope grant does not allow this action across all namespaces")
+		}
+		// Narrower positive grants cannot constrain a grant for the same action
+		// across every namespace. Deny selectors and policy scope still apply.
+		accumulator.allowedSelectors = nil
 	}
 	if accumulator.selectorOnlyListCannotBeEnforced(request) {
 		return denyScopeGrantDecision(decision, "namespace selector scope requires an explicit namespace for this resource list")
@@ -105,6 +118,9 @@ func (a *platformScopeAccumulator) consume(projection platformGrantProjection, r
 	if normalizedEffect(projection.grant.Effect) == "deny" {
 		return a.consumeDeny(projection, request, matchesNamespace)
 	}
+	if request.RequireClusterWideNamespace && !slices.Contains(roleMatrix[projection.grant.Role], request.Action) {
+		return ""
+	}
 	if request.Namespace.Namespace != "" && !matchesNamespace {
 		return ""
 	}
@@ -130,7 +146,8 @@ func grantAllowsNamespaceActions(grant domainscopegrant.Record) bool {
 
 func (a *platformScopeAccumulator) consumeDeny(projection platformGrantProjection, request domainaccess.Request, matchesNamespace bool) string {
 	if request.Namespace.Namespace != "" {
-		selectorCannotBeEvaluated := len(projection.selectors) > 0 && len(request.Namespace.Labels) == 0
+		selectorCannotBeEvaluated := len(projection.selectors) > 0 && len(request.Namespace.Labels) == 0 &&
+			(!request.RequireNamespaceLabels || request.Namespace.Labels == nil)
 		if matchesNamespace || selectorCannotBeEvaluated {
 			return "scope grant explicitly denies this namespace or resource"
 		}

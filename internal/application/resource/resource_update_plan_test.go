@@ -22,6 +22,7 @@ func TestPlanResourceYAMLUpdateDryRunsAndRedactsSecrets(t *testing.T) {
 			authorizer: exactPermissionAuthorizer{
 				resourcePermissionKey("configuration", "Secret", domainaccess.ActionUpdate): true,
 			},
+			permissions: allowRuntimePermission{},
 		},
 		direct: direct,
 	}

@@ -15,6 +15,9 @@ func NewEngine() *Engine {
 }
 
 func (e *Engine) Evaluate(_ context.Context, request domainaccess.Request, policies []domainaccess.Policy) (domainaccess.Decision, error) {
+	if request.RequireClusterWideNamespace && hasScopedPolicyDeny(request, policies) {
+		return domainaccess.Decision{Reason: "policy denies the action in part of the cluster"}, nil
+	}
 	ordered := append([]domainaccess.Policy(nil), policies...)
 	sort.Slice(ordered, func(i, j int) bool {
 		return ordered[i].Priority > ordered[j].Priority
@@ -23,6 +26,10 @@ func (e *Engine) Evaluate(_ context.Context, request domainaccess.Request, polic
 	for _, policy := range ordered {
 		if !matchesAction(policy.Actions, request.Action) {
 			continue
+		}
+		policy = applyScopedDeny(policy, request)
+		if policyNeedsNamespaceLabels(policy, request) {
+			return domainaccess.Decision{Reason: "namespace labels are required to evaluate policy", ReasonCode: domainaccess.ReasonNamespaceLabelsRequired}, nil
 		}
 		if !matchesPolicy(policy, request) {
 			continue
@@ -43,6 +50,50 @@ func (e *Engine) Evaluate(_ context.Context, request domainaccess.Request, polic
 	}
 
 	return domainaccess.Decision{}, nil
+}
+
+func applyScopedDeny(policy domainaccess.Policy, request domainaccess.Request) domainaccess.Policy {
+	if policy.Effect != domainaccess.EffectDeny {
+		return policy
+	}
+	if request.RequireWholeResourceCollection && len(policy.Resources.Names)+len(policy.Resources.Labels) != 0 {
+		policy.Resources.Names = nil
+		policy.Resources.Labels = nil
+		if request.Namespace.Namespace != "" && request.Namespace.OwnerTeam == "" {
+			policy.Namespaces.OwnerTeams = nil
+		}
+	}
+	if request.FailClosedOnUnknownResourceLabels && request.Resource.Labels == nil {
+		policy.Resources.Labels = nil
+	}
+	return policy
+}
+
+func policyNeedsNamespaceLabels(policy domainaccess.Policy, request domainaccess.Request) bool {
+	if !request.RequireNamespaceLabels || request.Namespace.Namespace == "" || request.Namespace.Labels != nil || len(policy.Namespaces.Labels) == 0 {
+		return false
+	}
+	policy.Namespaces.Labels = nil
+	return matchesPolicy(policy, request)
+}
+
+func hasScopedPolicyDeny(request domainaccess.Request, policies []domainaccess.Policy) bool {
+	for _, policy := range policies {
+		if policy.Effect != domainaccess.EffectDeny || !matchesAction(policy.Actions, request.Action) {
+			continue
+		}
+		namespaces := policy.Namespaces
+		if len(namespaces.Names)+len(namespaces.OwnerTeams)+len(namespaces.Labels)+len(policy.Resources.Names)+len(policy.Resources.Labels) == 0 {
+			continue
+		}
+		policy.Namespaces = domainaccess.NamespaceMatcher{}
+		policy.Resources.Names = nil
+		policy.Resources.Labels = nil
+		if matchesPolicy(policy, request) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildDecision(policy domainaccess.Policy, request domainaccess.Request) domainaccess.Decision {

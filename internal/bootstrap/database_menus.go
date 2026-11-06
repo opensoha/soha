@@ -73,14 +73,14 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "network-topology", ParentID: "network", Path: "/network/topology", LabelZH: "网络拓扑", LabelEN: "Network Topology", IconKey: "network", SortOrder: 10, Enabled: true},
 	{ID: "network-services", ParentID: "network", Path: "/network/services", LabelZH: "Services", LabelEN: "Services", IconKey: "network", SortOrder: 41, Enabled: true},
 	{ID: "network-ingresses", ParentID: "network", Path: "/network/ingresses", LabelZH: "Ingresses", LabelEN: "Ingresses", IconKey: "network", SortOrder: 42, Enabled: true},
-	{ID: "network-gateway-api-gatewayclasses", ParentID: "network", Path: "/network/gateway-api/gatewayclasses", LabelZH: "GatewayClasses", LabelEN: "GatewayClasses", IconKey: "network", SortOrder: 43, Enabled: true},
-	{ID: "network-gateway-api-gateways", ParentID: "network", Path: "/network/gateway-api/gateways", LabelZH: "Gateways", LabelEN: "Gateways", IconKey: "network", SortOrder: 44, Enabled: true},
-	{ID: "network-gateway-api-httproutes", ParentID: "network", Path: "/network/gateway-api/httproutes", LabelZH: "HTTPRoutes", LabelEN: "HTTPRoutes", IconKey: "network", SortOrder: 45, Enabled: true},
-	{ID: "network-gateway-api-backendtlspolicies", ParentID: "network", Path: "/network/gateway-api/backendtlspolicies", LabelZH: "BackendTLSPolicies", LabelEN: "BackendTLSPolicies", IconKey: "network", SortOrder: 46, Enabled: true},
-	{ID: "network-gateway-api-grpcroutes", ParentID: "network", Path: "/network/gateway-api/grpcroutes", LabelZH: "GRPCRoutes", LabelEN: "GRPCRoutes", IconKey: "network", SortOrder: 47, Enabled: true},
-	{ID: "network-gateway-api-referencegrants", ParentID: "network", Path: "/network/gateway-api/referencegrants", LabelZH: "ReferenceGrants", LabelEN: "ReferenceGrants", IconKey: "network", SortOrder: 48, Enabled: true},
+	{ID: "network-ingressclasses", ParentID: "network", Path: "/network/ingressclasses", LabelZH: "IngressClasses", LabelEN: "IngressClasses", IconKey: "network", SortOrder: 43, Enabled: true},
+	{ID: "network-gateway-api-gatewayclasses", ParentID: "network", Path: "/network/gateway-api/gatewayclasses", LabelZH: "GatewayClasses", LabelEN: "GatewayClasses", IconKey: "network", SortOrder: 44, Enabled: true},
+	{ID: "network-gateway-api-gateways", ParentID: "network", Path: "/network/gateway-api/gateways", LabelZH: "Gateways", LabelEN: "Gateways", IconKey: "network", SortOrder: 45, Enabled: true},
+	{ID: "network-gateway-api-httproutes", ParentID: "network", Path: "/network/gateway-api/httproutes", LabelZH: "HTTPRoutes", LabelEN: "HTTPRoutes", IconKey: "network", SortOrder: 46, Enabled: true},
+	{ID: "network-gateway-api-backendtlspolicies", ParentID: "network", Path: "/network/gateway-api/backendtlspolicies", LabelZH: "BackendTLSPolicies", LabelEN: "BackendTLSPolicies", IconKey: "network", SortOrder: 47, Enabled: true},
+	{ID: "network-gateway-api-grpcroutes", ParentID: "network", Path: "/network/gateway-api/grpcroutes", LabelZH: "GRPCRoutes", LabelEN: "GRPCRoutes", IconKey: "network", SortOrder: 48, Enabled: true},
+	{ID: "network-gateway-api-referencegrants", ParentID: "network", Path: "/network/gateway-api/referencegrants", LabelZH: "ReferenceGrants", LabelEN: "ReferenceGrants", IconKey: "network", SortOrder: 49, Enabled: true},
 	{ID: "network-endpointslices", ParentID: "network", Path: "/network/endpointslices", LabelZH: "EndpointSlices", LabelEN: "EndpointSlices", IconKey: "network", SortOrder: 53, Enabled: true},
-	{ID: "network-ingressclasses", ParentID: "network", Path: "/network/ingressclasses", LabelZH: "IngressClasses", LabelEN: "IngressClasses", IconKey: "network", SortOrder: 54, Enabled: true},
 	{ID: "network-networkpolicies", ParentID: "network", Path: "/network/networkpolicies", LabelZH: "NetworkPolicies", LabelEN: "NetworkPolicies", IconKey: "network", SortOrder: 55, Enabled: true},
 	{ID: "network-port-forward", ParentID: "network", Path: "/network/port-forward", LabelZH: "端口转发", LabelEN: "Port Forward", IconKey: "network", SortOrder: 56, Enabled: true},
 	{ID: "storage", Path: "/storage", LabelZH: "存储", LabelEN: "Storage", IconKey: "waves", SortOrder: 60, Enabled: true},
@@ -516,6 +516,33 @@ func syncNetworkAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now tim
 		}
 	}
 	return nil
+}
+
+// Only update the original built-in ordering; preserve administrator customizations.
+func syncNetworkClassMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {
+	oldSorts := map[string]int{
+		"network-ingressclasses":                 54,
+		"network-gateway-api-gatewayclasses":     43,
+		"network-gateway-api-gateways":           44,
+		"network-gateway-api-httproutes":         45,
+		"network-gateway-api-backendtlspolicies": 46,
+		"network-gateway-api-grpcroutes":         47,
+		"network-gateway-api-referencegrants":    48,
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, item := range defaultMenuSeeds() {
+			oldSort, ok := oldSorts[item.ID]
+			if !ok {
+				continue
+			}
+			if err := tx.Exec(`UPDATE menus SET sort_order = ?, updated_at = ?
+    WHERE id = ? AND parent_id = ? AND path = ? AND sort_order = ?`,
+				item.SortOrder, now, item.ID, item.ParentID, item.Path, oldSort).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func syncPlatformMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {
