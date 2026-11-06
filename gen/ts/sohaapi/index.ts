@@ -23109,8 +23109,9 @@ export interface components {
             agentToken?: string;
             prometheusBaseUrl?: string;
             prometheusBearerToken?: string;
+            /** @description Omit on update to keep the saved label. An empty string disables label matching for a dedicated Prometheus source. Clusters sharing a source require the same label name and distinct values. */
             prometheusClusterLabel?: string;
-            /** @description Exact value of prometheusClusterLabel for this cluster. Omitted updates preserve the saved value; an explicit empty string restores the legacy Soha cluster ID default. A non-empty value requires a valid label name. */
+            /** @description Exact metric label value. Omit on update to keep the saved value unless the label name is cleared. With a label name configured, an empty value uses the Soha cluster ID. A non-empty value requires a valid label name. */
             prometheusClusterLabelValue?: string;
             grafanaBaseUrl?: string;
             prometheusTransport?: components["schemas"]["KubernetesPrometheusTransport"];
@@ -23143,8 +23144,9 @@ export interface components {
         };
         KubernetesPrometheusDetail: {
             baseUrl?: string;
+            /** @description Omitted or empty for a dedicated Prometheus source queried without a cluster label matcher. */
             clusterLabel?: string;
-            /** @description Configured metric cluster label value. Omitted or empty uses the Soha cluster ID for legacy compatibility. */
+            /** @description Configured metric cluster label value. When clusterLabel is configured, an omitted or empty value uses the Soha cluster ID. */
             clusterLabelValue?: string;
             grafanaBaseUrl?: string;
             hasBearerToken: boolean;

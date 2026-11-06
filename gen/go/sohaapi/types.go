@@ -23592,10 +23592,12 @@ type KubernetesPriorityClassListEnvelope struct {
 
 // KubernetesPrometheusDetail defines model for KubernetesPrometheusDetail.
 type KubernetesPrometheusDetail struct {
-	BaseURL      string `json:"baseUrl,omitempty"`
+	BaseURL string `json:"baseUrl,omitempty"`
+
+	// ClusterLabel Omitted or empty for a dedicated Prometheus source queried without a cluster label matcher.
 	ClusterLabel string `json:"clusterLabel,omitempty"`
 
-	// ClusterLabelValue Configured metric cluster label value. Omitted or empty uses the Soha cluster ID for legacy compatibility.
+	// ClusterLabelValue Configured metric cluster label value. When clusterLabel is configured, an omitted or empty value uses the Soha cluster ID.
 	ClusterLabelValue string                        `json:"clusterLabelValue,omitempty"`
 	GrafanaBaseURL    string                        `json:"grafanaBaseUrl,omitempty"`
 	HasBearerToken    bool                          `json:"hasBearerToken"`

@@ -40621,11 +40621,13 @@ components:
         agentToken: { type: string, writeOnly: true }
         prometheusBaseUrl: { type: string }
         prometheusBearerToken: { type: string, writeOnly: true }
-        prometheusClusterLabel: { type: string }
+        prometheusClusterLabel:
+          type: string
+          description: Omit on update to keep the saved label. An empty string disables label matching for a dedicated Prometheus source. Clusters sharing a source require the same label name and distinct values.
         prometheusClusterLabelValue:
           type: string
           maxLength: 1024
-          description: Exact value of prometheusClusterLabel for this cluster. Omitted updates preserve the saved value; an explicit empty string restores the legacy Soha cluster ID default. A non-empty value requires a valid label name.
+          description: Exact metric label value. Omit on update to keep the saved value unless the label name is cleared. With a label name configured, an empty value uses the Soha cluster ID. A non-empty value requires a valid label name.
         grafanaBaseUrl: { type: string }
         prometheusTransport: { $ref: "#/components/schemas/KubernetesPrometheusTransport" }
         agentActionProfile: { $ref: "#/components/schemas/KubernetesAgentActionProfile" }
@@ -40690,10 +40692,11 @@ components:
           type: string
         clusterLabel:
           type: string
+          description: Omitted or empty for a dedicated Prometheus source queried without a cluster label matcher.
         clusterLabelValue:
           type: string
           maxLength: 1024
-          description: Configured metric cluster label value. Omitted or empty uses the Soha cluster ID for legacy compatibility.
+          description: Configured metric cluster label value. When clusterLabel is configured, an omitted or empty value uses the Soha cluster ID.
         grafanaBaseUrl:
           type: string
         hasBearerToken:
