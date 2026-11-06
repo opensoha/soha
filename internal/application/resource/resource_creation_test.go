@@ -599,13 +599,22 @@ func (s *resourceCreationBatchStub) Complete(_ context.Context, _ string, status
 }
 
 type agentCreationStub struct {
+	discover        bool
+	discoverCalls   int
 	manifests       []domainresource.ResolvedCreateManifest
 	dryRunErr       error
 	dryRunClusterID string
 	createClusterID string
 }
 
-func (s *agentCreationStub) ResolveCreateManifests(context.Context, string, int) ([]domainresource.ResolvedCreateManifest, error) {
+func (s *agentCreationStub) ResolveCreateManifests(ctx context.Context, _ string, _ int, authorize AuthorizeCustomCreateDiscovery) ([]domainresource.ResolvedCreateManifest, error) {
+	if s.discover {
+		ref := s.manifests[0].Ref
+		if err := authorize(ctx, ref.APIVersion, ref.Kind, ref.Namespace); err != nil {
+			return nil, err
+		}
+		s.discoverCalls++
+	}
 	return append([]domainresource.ResolvedCreateManifest(nil), s.manifests...), nil
 }
 
@@ -637,4 +646,52 @@ func TestAgentResourceCreationUsesAgentClusterID(t *testing.T) {
 	if stub.dryRunClusterID != "agent-native-id" || stub.createClusterID != "agent-native-id" {
 		t.Fatalf("agent cluster IDs dry-run=%q create=%q, want agent-native-id", stub.dryRunClusterID, stub.createClusterID)
 	}
+}
+
+func TestAgentCustomCreateAuthorizesDiscoveryAndFinalTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name, target, kind string
+		allowed, wide      bool
+	}{
+		{"allowed", "team", "Widget", true, false},
+		{"wrong-namespace", "other", "Widget", false, false},
+		{"named-deny-with-broad-allow", "other", "Widget", false, true},
+		{"wrong-kind", "team", "Gadget", false, false},
+		{"custom-kind-cannot-borrow-Role-permission", "team", "Role", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest := testCreateManifest(tc.kind, tc.target, true)
+			manifest.Group, manifest.Ref.APIVersion = "example.io", "example.io/v1"
+			backend := &agentCreationStub{discover: true, manifests: []domainresource.ResolvedCreateManifest{manifest}}
+			var checks []domainaccess.Request
+			authorizer := creationAuthorizeFunc(func(_ context.Context, req domainaccess.Request) (domainaccess.Decision, error) {
+				checks = append(checks, req)
+				if req.Namespace.Namespace == "" && tc.wide {
+					return domainaccess.Decision{Allowed: true}, nil
+				}
+				return domainaccess.Decision{
+					Allowed: req.Cluster.ClusterID == "cluster-a" && req.Namespace.Namespace == "team" &&
+						req.Resource.Group == "extensions" && req.Resource.Kind == "Widget" &&
+						req.PermissionKey == customResourceCreatePermission && req.Action == domainaccess.ActionCreate,
+				}, nil
+			})
+			service := testResourceCreation(&creationDirectStub{}, authorizer, nil, domaincluster.ConnectionModeAgent)
+			service.agent = func(domaincluster.Connection) (AgentResourceCreator, error) { return backend, nil }
+			request := domainresource.ResourceCreateRequest{Source: domainresource.ResourceCreateSourceForm, ResourceGroup: "extensions", DefaultNamespace: tc.target, ExpectedKind: tc.kind, Content: "fixture"}
+			result, err := service.PreflightCreate(t.Context(), domainidentity.Principal{}, "cluster-a", request)
+			if tc.allowed {
+				if err != nil || !result.Ready || backend.discoverCalls != 1 || len(checks) != 2 || backend.dryRunClusterID != "cluster-a" {
+					t.Fatalf("allowed create: result=%+v err=%v discovery=%d checks=%+v dry-run=%q", result, err, backend.discoverCalls, checks, backend.dryRunClusterID)
+				}
+			} else if !errors.Is(err, apperrors.ErrAccessDenied) || backend.discoverCalls != 0 || backend.dryRunClusterID != "" || len(checks) != 1 {
+				t.Fatalf("denied create reached Agent: err=%v discovery=%d dry-run=%q", err, backend.discoverCalls, backend.dryRunClusterID)
+			}
+		})
+	}
+}
+
+type creationAuthorizeFunc func(context.Context, domainaccess.Request) (domainaccess.Decision, error)
+
+func (f creationAuthorizeFunc) Authorize(ctx context.Context, req domainaccess.Request) (domainaccess.Decision, error) {
+	return f(ctx, req)
 }

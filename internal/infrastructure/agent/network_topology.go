@@ -16,6 +16,16 @@ func (c *Client) NetworkTopologySnapshot(ctx context.Context, input resource.Net
 	if !slices.Contains(summary.Capabilities, resource.NetworkTopologySnapshotFeature) {
 		return resource.NetworkTopologySnapshot{}, fmt.Errorf("%w", resource.ErrNetworkTopologySnapshotUnsupported)
 	}
+	named := false
+	for _, query := range input.Queries {
+		if query.Name != "" {
+			named = true
+			break
+		}
+	}
+	if named && !slices.Contains(summary.Capabilities, resource.NetworkTopologyNamedRootFeature) {
+		return resource.NetworkTopologySnapshot{}, resource.ErrNetworkTopologySnapshotUnsupported
+	}
 	unsupported := []resource.NetworkTopologySourceResult{}
 	if !slices.Contains(summary.Capabilities, resource.NetworkTopologyGatewayL4Feature) {
 		filtered := resource.NetworkTopologySnapshotRequest{}
@@ -34,6 +44,9 @@ func (c *Client) NetworkTopologySnapshot(ctx context.Context, input resource.Net
 	payload.Data.Version = resource.NetworkTopologySnapshotFeature
 	if len(input.Queries) > 0 {
 		err = c.request(ctx, http.MethodPost, "/api/v1/platform/network/topology/snapshot", input, &payload)
+	}
+	if err == nil && named && payload.Data.Version != resource.NetworkTopologyNamedRootFeature {
+		return resource.NetworkTopologySnapshot{}, resource.ErrNetworkTopologySnapshotUnsupported
 	}
 	payload.Data.Sources = append(payload.Data.Sources, unsupported...)
 	return payload.Data, err

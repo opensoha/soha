@@ -12,6 +12,7 @@ import (
 	"github.com/opensoha/soha-contracts/streamlimit"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -81,17 +82,29 @@ func (d *Direct) GetPodDetail(ctx context.Context, clusterID, namespace, name st
 }
 
 func (d *Direct) DeletePod(ctx context.Context, clusterID, namespace, name string) error {
+	return d.deletePod(ctx, clusterID, namespace, name, "")
+}
+
+func (d *Direct) DeletePodWithExpectedUID(ctx context.Context, clusterID, namespace, name, expectedUID string) error {
+	return observedWorkloadDeleteError(d.deletePod(ctx, clusterID, namespace, name, expectedUID))
+}
+
+func (d *Direct) deletePod(ctx context.Context, clusterID, namespace, name, expectedUID string) error {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return err
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	item, err := bundle.Typed.CoreV1().Pods(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	pods := bundle.Typed.CoreV1().Pods(namespace)
+	item, err := pods.Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
-	return bundle.Typed.CoreV1().Pods(namespace).Delete(queryCtx, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &item.UID, ResourceVersion: &item.ResourceVersion}})
+	if expectedUID != "" && (string(item.UID) != expectedUID || item.ResourceVersion == "") {
+		return fmt.Errorf("%w: pod identity changed; refresh before deleting", apperrors.ErrConflict)
+	}
+	return pods.Delete(queryCtx, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &item.UID, ResourceVersion: &item.ResourceVersion}})
 }
 
 func (d *Direct) GetPodLogs(ctx context.Context, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
@@ -238,6 +251,7 @@ func (d *Direct) getPod(ctx context.Context, clusterID, namespace, name string) 
 }
 
 func mapPodView(pod corev1.Pod) domainresource.PodView {
+	containerStatuses, ready := buildPodListContainerStatuses(pod)
 	requests, limits := podResourceTotals(pod)
 	claims := make([]string, 0)
 	for _, volume := range pod.Spec.Volumes {
@@ -246,10 +260,11 @@ func mapPodView(pod corev1.Pod) domainresource.PodView {
 		}
 	}
 	return domainresource.PodView{
-		Name: pod.Name, Namespace: pod.Namespace, Phase: string(pod.Status.Phase), NodeName: pod.Spec.NodeName,
+		Name: pod.Name, Namespace: pod.Namespace, UID: string(pod.UID), Phase: string(pod.Status.Phase), NodeName: pod.Spec.NodeName,
 		PodIP: pod.Status.PodIP, CreatedAt: pod.CreationTimestamp.Format(time.RFC3339),
 		Requests: formatTotals(requests), Limits: formatTotals(limits), Labels: cloneMap(pod.Labels),
-		PersistentVolumeClaims: claims, ReadyContainers: readyContainers(pod), Restarts: podRestartCount(pod),
+		PersistentVolumeClaims: claims, ReadyContainers: fmt.Sprintf("%d/%d", ready, len(pod.Spec.Containers)), Restarts: podRestartCount(pod),
+		QOSClass: string(pod.Status.QOSClass), ContainerStatuses: containerStatuses,
 		AgeSeconds: secondsSince(pod.CreationTimestamp.Time),
 	}
 }
@@ -269,7 +284,7 @@ func (d *Direct) buildPodDetail(ctx context.Context, clusterID string, pod corev
 	}
 	refs := buildPodSourceRefs(pod)
 	return domainresource.PodDetailView{
-		Name: pod.Name, Namespace: pod.Namespace, Phase: string(pod.Status.Phase), PodIP: pod.Status.PodIP,
+		Name: pod.Name, Namespace: pod.Namespace, UID: string(pod.UID), Phase: string(pod.Status.Phase), PodIP: pod.Status.PodIP,
 		HostIP: pod.Status.HostIP, NodeName: pod.Spec.NodeName, ServiceAccountName: pod.Spec.ServiceAccountName,
 		QOSClass: string(pod.Status.QOSClass), CreatedAt: pod.CreationTimestamp.Format(time.RFC3339), StartTime: startTime,
 		Requests: formatTotals(requests), Limits: formatTotals(limits), Labels: cloneMap(pod.Labels), Annotations: cloneMap(pod.Annotations),

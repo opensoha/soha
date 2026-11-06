@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	crewjam "github.com/crewjam/saml"
+	crewjam "github.com/openctemio/saml"
 	appidentityprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	dsig "github.com/russellhaering/goxmldsig"

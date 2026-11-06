@@ -3,7 +3,6 @@ package resource
 import (
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 type monitoringDefinition struct {
@@ -12,13 +11,34 @@ type monitoringDefinition struct {
 	window                                       int
 }
 
-func monitoringDefinitions(view, clusterID, clusterLabel string) []monitoringDefinition {
-	matcher := clusterLabel + "=" + strconv.Quote(clusterID)
-	selector := func(name, extra string) string {
-		if extra != "" {
-			extra = "," + extra
+func monitoringClusterMatcher(label, value string) string {
+	if label == "" {
+		return ""
+	}
+	return label + "=" + strconv.Quote(value)
+}
+
+func monitoringSelector(name, matcher, extra string) string {
+	if matcher == "" {
+		if extra == "" {
+			return name
 		}
-		return name + "{" + matcher + extra + "}"
+		return name + "{" + extra + "}"
+	}
+	if extra != "" {
+		matcher += "," + extra
+	}
+	return name + "{" + matcher + "}"
+}
+
+func monitoringDefinitions(view, clusterValue, clusterLabel string) []monitoringDefinition {
+	matcher := monitoringClusterMatcher(clusterLabel, clusterValue)
+	clusterDimension := ""
+	if clusterLabel != "" {
+		clusterDimension = "," + clusterLabel
+	}
+	selector := func(name, extra string) string {
+		return monitoringSelector(name, matcher, extra)
 	}
 	hostCPU := selector("node_cpu_seconds_total", `mode="idle"`)
 	podCPU := selector("container_cpu_usage_seconds_total", `container!="",container!="POD",image!=""`)
@@ -42,12 +62,12 @@ func monitoringDefinitions(view, clusterID, clusterLabel string) []monitoringDef
 		metric := selector("node_nf_conntrack_stat_"+key, "")
 		conntrack = append(conntrack, monitoringDefinition{key: "conntrack." + key + ".rate", label: key + " 速率", unit: "events/s", query: "rate(" + metric + "[5m])", ageQuery: "(count_over_time(" + metric + "[5m]) >= 5) and ((time()-timestamp(" + metric + ")) < 120)", dimension: "counter", window: 300}, monitoringDefinition{key: "conntrack." + key + ".increase", label: key + " 窗口增量（估算）", unit: "events", query: "increase(" + metric + "[5m])", ageQuery: "(count_over_time(" + metric + "[5m]) >= 5) and ((time()-timestamp(" + metric + ")) < 120)", dimension: "counter", window: 300, estimated: true})
 	}
-	pods := []monitoringDefinition{{key: "pods.bound", label: "已绑定非终态 Pod", unit: "count", query: fmt.Sprintf(`sum by (node,%s) (max by (namespace,pod,uid,node,%s) (%s) * on(namespace,pod,uid,%s) group_left() max by(namespace,pod,uid,%s) (%s == 1))`, clusterLabel, clusterLabel, selector("kube_pod_info", `uid!="",node!=""`), clusterLabel, clusterLabel, selector("kube_pod_status_phase", `uid!="",phase!~"Succeeded|Failed"`))}}
+	pods := []monitoringDefinition{{key: "pods.bound", label: "已绑定非终态 Pod", unit: "count", query: fmt.Sprintf(`sum by (node%s) (max by (namespace,pod,uid,node%s) (%s) * on(namespace,pod,uid%s) group_left() max by(namespace,pod,uid%s) (%s == 1))`, clusterDimension, clusterDimension, selector("kube_pod_info", `uid!="",node!=""`), clusterDimension, clusterDimension, selector("kube_pod_status_phase", `uid!="",phase!~"Succeeded|Failed"`))}}
 	switch view {
 	case "cpu":
-		return append(cpu, monitoringAllocationDefinitions("cpu", matcher)...)
+		return append(cpu, monitoringAllocationDefinitions("cpu", matcher, clusterDimension)...)
 	case "memory":
-		return append(memory, monitoringAllocationDefinitions("memory", matcher)...)
+		return append(memory, monitoringAllocationDefinitions("memory", matcher, clusterDimension)...)
 	case "conntrack":
 		return conntrack
 	case "pods":
@@ -57,7 +77,7 @@ func monitoringDefinitions(view, clusterID, clusterLabel string) []monitoringDef
 	}
 }
 
-func monitoringAllocationDefinitions(resource, matcher string) []monitoringDefinition {
+func monitoringAllocationDefinitions(resource, matcher, clusterDimension string) []monitoringDefinition {
 	unit := "cores"
 	if resource == "memory" {
 		unit = "bytes"
@@ -65,9 +85,11 @@ func monitoringAllocationDefinitions(resource, matcher string) []monitoringDefin
 	result := []monitoringDefinition{}
 	// KSM resource gauges are historical evidence; the current API snapshot is never backfilled into these curves.
 	for _, kind := range []string{"requests", "limits"} {
-		query := fmt.Sprintf(`sum by (node,%s) (max by (node,namespace,pod,uid,container,%s) (kube_pod_container_resource_%s{%s,resource=%q,uid!="",node!=""}))`, strings.SplitN(matcher, "=", 2)[0], strings.SplitN(matcher, "=", 2)[0], kind, matcher, resource)
+		metric := monitoringSelector("kube_pod_container_resource_"+kind, matcher, fmt.Sprintf(`resource=%q,uid!="",node!=""`, resource))
+		query := fmt.Sprintf(`sum by (node%s) (max by (node,namespace,pod,uid,container%s) (%s))`, clusterDimension, clusterDimension, metric)
 		result = append(result, monitoringDefinition{key: "pod." + resource + "." + kind, label: "已采集容器 " + kind + "（不含 Pod 级/初始化/overhead）", unit: unit, query: query, dimension: "allocation"})
 	}
-	query := fmt.Sprintf(`max by(node,%s) (kube_node_status_allocatable{%s,resource=%q})`, strings.SplitN(matcher, "=", 2)[0], matcher, resource)
+	metric := monitoringSelector("kube_node_status_allocatable", matcher, fmt.Sprintf(`resource=%q`, resource))
+	query := fmt.Sprintf(`max by(node%s) (%s)`, clusterDimension, metric)
 	return append(result, monitoringDefinition{key: "node." + resource + ".allocatable", label: "节点 allocatable 历史", unit: unit, query: query})
 }

@@ -24,10 +24,6 @@ func normalizeTerminalShell(shell string) string {
 	}
 }
 
-func shouldPopulatePodUsageSummaries(namespace string) bool {
-	return strings.TrimSpace(namespace) != ""
-}
-
 func buildWorkloadOverview(clusterID, namespace, source string, items []domainresource.PodView) domainresource.WorkloadOverviewView {
 	view := domainresource.WorkloadOverviewView{
 		ClusterID:   clusterID,
@@ -214,9 +210,11 @@ func (s *Workloads) listPodViews(ctx context.Context, clusterID, namespace strin
 	if err != nil {
 		return nil, "", route.RuntimeError(err)
 	}
-	if route.SupportsUsageMetrics() && includeUsage && shouldPopulatePodUsageSummaries(namespace) {
+	// Scope metrics reads to the same authorized identities returned to the caller.
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.PodView) string { return item.Namespace })
+	if includeUsage && s.metricsSupport != nil {
 		metricsCtx, metricsCancel := context.WithTimeout(ctx, 1200*time.Millisecond)
-		if metrics := s.listPodUsageSummaries(metricsCtx, clusterID, namespace, items); len(metrics) > 0 {
+		if metrics := s.listPodUsageSummaries(metricsCtx, clusterID, items); len(metrics) > 0 {
 			for index := range items {
 				if usage, ok := metrics[podMetricsKey(items[index].Namespace, items[index].Name)]; ok {
 					items[index].CPU = usage.CPU
@@ -226,7 +224,6 @@ func (s *Workloads) listPodViews(ctx context.Context, clusterID, namespace strin
 		}
 		metricsCancel()
 	}
-	items = filterScopedNamespaceItems(items, decision, func(item domainresource.PodView) string { return item.Namespace })
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Name != items[j].Name {
 			return items[i].Name < items[j].Name

@@ -19,7 +19,7 @@ func mapDeployment(item appsv1.Deployment) domainresource.DeploymentView {
 		desired = *item.Spec.Replicas
 	}
 	return domainresource.DeploymentView{
-		Name: item.Name, Namespace: item.Namespace, Labels: item.Labels,
+		Name: item.Name, Namespace: item.Namespace, UID: string(item.UID), Labels: item.Labels,
 		DesiredReplicas: desired, ReadyReplicas: item.Status.ReadyReplicas,
 		UpdatedReplicas: item.Status.UpdatedReplicas, Available: item.Status.AvailableReplicas,
 		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
@@ -47,7 +47,7 @@ func mapDeploymentDetail(item appsv1.Deployment) domainresource.DeploymentDetail
 		selector = item.Spec.Selector.MatchLabels
 	}
 	return domainresource.DeploymentDetailView{
-		Name: item.Name, Namespace: item.Namespace, DesiredReplicas: desired,
+		Name: item.Name, Namespace: item.Namespace, UID: string(item.UID), DesiredReplicas: desired,
 		ReadyReplicas: item.Status.ReadyReplicas, UpdatedReplicas: item.Status.UpdatedReplicas,
 		AvailableReplicas: item.Status.AvailableReplicas, ObservedGeneration: item.Status.ObservedGeneration,
 		Strategy: string(item.Spec.Strategy.Type), CreatedAt: item.CreationTimestamp.Format(time.RFC3339),
@@ -142,18 +142,13 @@ func mapDaemonSetDetail(item appsv1.DaemonSet) domainresource.DaemonSetDetailVie
 }
 
 func mapJob(item batchv1.Job) domainresource.JobView {
-	completions := int32(0)
-	if item.Spec.Completions != nil {
-		completions = *item.Spec.Completions
-	}
-	completionMode := ""
-	if item.Spec.CompletionMode != nil {
-		completionMode = string(*item.Spec.CompletionMode)
-	}
+	detail := mapJobDetail(item)
 	return domainresource.JobView{
-		Name: item.Name, Namespace: item.Namespace, Completions: completions,
-		Succeeded: item.Status.Succeeded, Failed: item.Status.Failed, Active: item.Status.Active,
-		CompletionMode: completionMode, AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+		Name: detail.Name, Namespace: detail.Namespace, Completions: detail.Completions,
+		Succeeded: detail.Succeeded, Failed: detail.Failed, Active: detail.Active,
+		CompletionMode: detail.CompletionMode, AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+		CompletionTarget: detail.CompletionTarget, Suspend: detail.Suspend, Conditions: detail.Conditions,
+		StartTime: detail.StartTime, CompletionTime: detail.CompletionTime,
 	}
 }
 
@@ -178,10 +173,25 @@ func mapJobDetail(item batchv1.Job) domainresource.JobDetailView {
 	}
 	return domainresource.JobDetailView{
 		Name: item.Name, Namespace: item.Namespace, Completions: completions, Parallelism: parallelism,
-		Succeeded: item.Status.Succeeded, Failed: item.Status.Failed, Active: item.Status.Active,
+		CompletionTarget: item.Spec.Completions, Suspend: item.Spec.Suspend, BackoffLimit: item.Spec.BackoffLimit,
+		ActiveDeadlineSeconds: item.Spec.ActiveDeadlineSeconds, TTLSecondsAfterFinished: item.Spec.TTLSecondsAfterFinished,
+		Conditions: mapJobConditions(item.Status.Conditions),
+		Succeeded:  item.Status.Succeeded, Failed: item.Status.Failed, Active: item.Status.Active,
 		CompletionMode: completionMode, CreatedAt: item.CreationTimestamp.Format(time.RFC3339),
 		StartTime: startTime, CompletionTime: completionTime, Labels: item.Labels, Annotations: item.Annotations,
 	}
+}
+
+func mapJobConditions(conditions []batchv1.JobCondition) []domainresource.WorkloadConditionView {
+	result := make([]domainresource.WorkloadConditionView, 0, len(conditions))
+	for _, condition := range conditions {
+		observed := domainresource.WorkloadConditionView{Type: string(condition.Type), Status: string(condition.Status), Reason: condition.Reason, Message: condition.Message}
+		if !condition.LastTransitionTime.IsZero() {
+			observed.LastTransitionTime = condition.LastTransitionTime.Format(time.RFC3339)
+		}
+		result = append(result, observed)
+	}
+	return result
 }
 
 func mapCronJob(item batchv1.CronJob) domainresource.CronJobView {

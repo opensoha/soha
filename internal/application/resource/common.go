@@ -32,6 +32,13 @@ type namespaceLabelResolver interface {
 	Resolve(context.Context, domaincluster.Connection, string) (map[string]string, error)
 }
 
+type graphNamespacePolicyKey struct{}
+type graphResourceNameKey struct{}
+
+func graphResourceName(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, graphResourceNameKey{}, name)
+}
+
 func resolveAgentClient[T any](factory AgentClientFactory[T], connection domaincluster.Connection) (T, error) {
 	var zero T
 	if factory == nil {
@@ -179,6 +186,10 @@ func (s *resourceAccess) authorizeResourceGroup(ctx context.Context, principal d
 }
 
 func (s *resourceAccess) decide(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, resourceGroup, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
+	return s.decideWithPermission(ctx, principal, clusterID, namespace, resourceGroup, kind, action, "")
+}
+
+func (s *resourceAccess) decideWithPermission(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, resourceGroup, kind string, action domainaccess.Action, permissionOverride string) (domaincluster.Connection, domainaccess.Decision, error) {
 	connection, err := s.loadConnection(ctx, clusterID)
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
@@ -187,12 +198,25 @@ func (s *resourceAccess) decide(ctx context.Context, principal domainidentity.Pr
 	if strings.TrimSpace(resourceGroup) != "" {
 		request.Resource.Group = strings.TrimSpace(resourceGroup)
 	}
+	if permissionOverride != "" {
+		request.PermissionKey = permissionOverride
+	}
+	request.RequireNamespaceLabels = namespace != "" && ctx.Value(graphNamespacePolicyKey{}) != nil
+	request.Resource.Name, _ = ctx.Value(graphResourceNameKey{}).(string)
+	request.FailClosedOnUnknownResourceLabels = request.Resource.Name != ""
 	decision, err := s.authorizer.Authorize(ctx, request)
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
 	}
-	if shouldResolveNamespaceLabels(decision, namespace, s.namespaceLabels) {
+	resolveLabels := shouldResolveNamespaceLabels(decision, namespace, s.namespaceLabels)
+	if request.RequireNamespaceLabels {
+		resolveLabels = s.namespaceLabels != nil && decision.ReasonCode == domainaccess.ReasonNamespaceLabelsRequired
+	}
+	if resolveLabels {
 		if labels, resolveErr := s.namespaceLabels.Resolve(ctx, connection, namespace); resolveErr == nil {
+			if request.RequireNamespaceLabels && labels == nil {
+				labels = map[string]string{}
+			}
 			request.Namespace.Labels = labels
 			decision, err = s.authorizer.Authorize(ctx, request)
 			if err != nil {
@@ -220,9 +244,10 @@ func shouldResolveNamespaceLabels(decision domainaccess.Decision, namespace stri
 }
 func (s *resourceAccess) resourceAccessRequest(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, resourceGroup, kind string, action domainaccess.Action) domainaccess.Request {
 	return domainaccess.Request{
-		Principal:     principal,
-		Action:        action,
-		PermissionKey: resourcePermissionKey(resourceGroup, kind, action),
+		RequireWholeResourceCollection: ctx.Value(topologyCollectionPolicyKey{}) != nil,
+		Principal:                      principal,
+		Action:                         action,
+		PermissionKey:                  resourcePermissionKey(resourceGroup, kind, action),
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,

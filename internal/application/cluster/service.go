@@ -31,7 +31,7 @@ type Repository interface {
 	Get(context.Context, string) (domaincluster.Summary, error)
 	ListConnections(context.Context) ([]domaincluster.Connection, error)
 	GetConnection(context.Context, string) (domaincluster.Connection, error)
-	UpsertRegistration(context.Context, domaincluster.Connection) error
+	CreateRegistration(context.Context, domaincluster.Connection) error
 	UpdateRegistration(context.Context, domaincluster.Connection) error
 	UpsertSnapshot(context.Context, domaincluster.Summary) error
 	Delete(context.Context, string) error
@@ -270,11 +270,12 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 		},
 		Monitoring: domaincluster.MonitoringDetail{
 			Prometheus: domaincluster.PrometheusDetail{
-				Transport:      prometheusTransport(connection.Metadata),
-				BaseURL:        strings.TrimSpace(metadataString(connection.Metadata, "prometheus_url")),
-				ClusterLabel:   strings.TrimSpace(metadataString(connection.Metadata, "prometheus_cluster_label")),
-				GrafanaBaseURL: strings.TrimSpace(metadataString(connection.Metadata, "grafana_base_url")),
-				HasBearerToken: strings.TrimSpace(metadataString(connection.Metadata, "prometheus_bearer_token")) != "",
+				Transport:         prometheusTransport(connection.Metadata),
+				BaseURL:           strings.TrimSpace(metadataString(connection.Metadata, "prometheus_url")),
+				ClusterLabel:      strings.TrimSpace(metadataString(connection.Metadata, "prometheus_cluster_label")),
+				ClusterLabelValue: strings.TrimSpace(metadataString(connection.Metadata, "prometheus_cluster_label_value")),
+				GrafanaBaseURL:    strings.TrimSpace(metadataString(connection.Metadata, "grafana_base_url")),
+				HasBearerToken:    strings.TrimSpace(metadataString(connection.Metadata, "prometheus_bearer_token")) != "",
 			},
 		},
 		Diagnostics: domaincluster.Diagnostics{
@@ -352,12 +353,15 @@ func (s *Service) Register(ctx context.Context, principal domainidentity.Princip
 	if err := s.authorize(ctx, principal, connection.Summary, domainaccess.ActionUpdate); err != nil {
 		return domaincluster.Summary{}, err
 	}
+	if err := s.authorizeMetricSourceChange(ctx, principal, domaincluster.Connection{}, connection); err != nil {
+		return domaincluster.Summary{}, err
+	}
 	if cfg != nil {
 		if err := s.registry.ValidateCluster(*cfg); err != nil {
 			return domaincluster.Summary{}, fmt.Errorf("%w: invalid kubeconfig: %v", apperrors.ErrInvalidArgument, err)
 		}
 	}
-	if err := s.repo.UpsertRegistration(ctx, connection); err != nil {
+	if err := s.repo.CreateRegistration(ctx, connection); err != nil {
 		return domaincluster.Summary{}, fmt.Errorf("persist cluster registration: %w", err)
 	}
 	if cfg != nil {
@@ -388,29 +392,43 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if err := s.authorize(ctx, principal, existing.Summary, domainaccess.ActionUpdate); err != nil {
 		return domaincluster.Summary{}, err
 	}
+	metricURL := metadataString(existing.Metadata, "prometheus_url")
+	if input.PrometheusBaseURL != nil {
+		metricURL = *input.PrometheusBaseURL
+	}
+	metricClusterLabel, metricClusterValue := updatedClusterMetricIdentity(existing.Metadata, input)
 	registerInput := domaincluster.RegisterInput{
-		ID:                       clusterID,
-		Name:                     input.Name,
-		Region:                   input.Region,
-		Environment:              input.Environment,
-		Labels:                   input.Labels,
-		ConnectionMode:           input.ConnectionMode,
-		Kubeconfig:               input.Kubeconfig,
-		Context:                  input.Context,
-		AgentEndpoint:            input.AgentEndpoint,
-		AgentToken:               input.AgentToken,
-		PrometheusTransport:      input.PrometheusTransport,
-		AgentCustomResourceRules: input.AgentCustomResourceRules,
-		AgentActionProfile:       input.AgentActionProfile,
-		PrometheusBaseURL:        input.PrometheusBaseURL,
-		PrometheusBearerToken:    input.PrometheusBearerToken,
-		PrometheusClusterLabel:   input.PrometheusClusterLabel,
-		GrafanaBaseURL:           input.GrafanaBaseURL,
+		ID:                          clusterID,
+		Name:                        input.Name,
+		Region:                      input.Region,
+		Environment:                 input.Environment,
+		Labels:                      input.Labels,
+		ConnectionMode:              input.ConnectionMode,
+		Kubeconfig:                  input.Kubeconfig,
+		Context:                     input.Context,
+		AgentEndpoint:               input.AgentEndpoint,
+		AgentToken:                  input.AgentToken,
+		PrometheusTransport:         input.PrometheusTransport,
+		AgentCustomResourceRules:    input.AgentCustomResourceRules,
+		AgentActionProfile:          input.AgentActionProfile,
+		PrometheusBaseURL:           metricURL,
+		PrometheusBearerToken:       input.PrometheusBearerToken,
+		PrometheusClusterLabel:      metricClusterLabel,
+		PrometheusClusterLabelValue: metricClusterValue,
+		GrafanaBaseURL:              input.GrafanaBaseURL,
 	}
 	registerInput = mergeClusterUpdateInput(existing, registerInput)
 	connection, cfg, err := s.buildConnection(registerInput)
 	if err != nil {
 		return domaincluster.Summary{}, err
+	}
+	if err := s.authorizeMetricSourceChange(ctx, principal, existing, connection); err != nil {
+		return domaincluster.Summary{}, err
+	}
+	if cfg != nil && strings.TrimSpace(input.Kubeconfig) == "" && existing.Summary.ConnectionMode == domaincluster.ConnectionModeDirectKubeconfig {
+		if err := preserveDirectUpdateCredential(existing, &connection, cfg); err != nil {
+			return domaincluster.Summary{}, err
+		}
 	}
 	if cfg != nil {
 		if err := s.registry.ValidateCluster(*cfg); err != nil {
@@ -715,18 +733,19 @@ func RuntimeClusterConfig(connection domaincluster.Connection) (*appconfig.Clust
 	}
 
 	return &appconfig.Cluster{
-		ID:                     connection.Summary.ID,
-		Name:                   connection.Summary.Name,
-		Kubeconfig:             strings.TrimSpace(kubeconfigPath),
-		KubeconfigData:         strings.TrimSpace(kubeconfigData),
-		Context:                strings.TrimSpace(contextName),
-		Region:                 connection.Summary.Region,
-		Environment:            connection.Summary.Environment,
-		Labels:                 connection.Summary.Labels,
-		PrometheusURL:          strings.TrimSpace(metadataString(connection.Metadata, "prometheus_url")),
-		PrometheusBearerToken:  strings.TrimSpace(metadataString(connection.Metadata, "prometheus_bearer_token")),
-		PrometheusClusterLabel: strings.TrimSpace(metadataString(connection.Metadata, "prometheus_cluster_label")),
-		GrafanaBaseURL:         strings.TrimSpace(metadataString(connection.Metadata, "grafana_base_url")),
+		ID:                          connection.Summary.ID,
+		Name:                        connection.Summary.Name,
+		Kubeconfig:                  strings.TrimSpace(kubeconfigPath),
+		KubeconfigData:              strings.TrimSpace(kubeconfigData),
+		Context:                     strings.TrimSpace(contextName),
+		Region:                      connection.Summary.Region,
+		Environment:                 connection.Summary.Environment,
+		Labels:                      connection.Summary.Labels,
+		PrometheusURL:               strings.TrimSpace(metadataString(connection.Metadata, "prometheus_url")),
+		PrometheusBearerToken:       strings.TrimSpace(metadataString(connection.Metadata, "prometheus_bearer_token")),
+		PrometheusClusterLabel:      strings.TrimSpace(metadataString(connection.Metadata, "prometheus_cluster_label")),
+		PrometheusClusterLabelValue: strings.TrimSpace(metadataString(connection.Metadata, "prometheus_cluster_label_value")),
+		GrafanaBaseURL:              strings.TrimSpace(metadataString(connection.Metadata, "grafana_base_url")),
 	}, nil
 }
 
@@ -736,6 +755,9 @@ func (s *Service) buildConnection(input domaincluster.RegisterInput) (domainclus
 	}
 	if strings.TrimSpace(input.ID) == "" {
 		input.ID = uuid.NewString()
+	}
+	if err := normalizeClusterMetricIdentity(&input); err != nil {
+		return domaincluster.Connection{}, nil, err
 	}
 	mode := input.ConnectionMode
 	if mode == "" {
@@ -768,28 +790,30 @@ func (s *Service) buildConnection(input domaincluster.RegisterInput) (domainclus
 		connection.SourceType = "api"
 		connection.SourceRef = "cluster.register"
 		connection.Metadata = map[string]any{
-			"kubeconfig":                  input.Kubeconfig,
-			"context":                     input.Context,
-			"prometheus_transport":        input.PrometheusTransport,
-			"agent_custom_resource_rules": input.AgentCustomResourceRules,
-			"agent_action_profile":        input.AgentActionProfile,
-			"prometheus_url":              strings.TrimSpace(input.PrometheusBaseURL),
-			"prometheus_bearer_token":     strings.TrimSpace(input.PrometheusBearerToken),
-			"prometheus_cluster_label":    strings.TrimSpace(input.PrometheusClusterLabel),
-			"grafana_base_url":            strings.TrimSpace(input.GrafanaBaseURL),
+			"kubeconfig":                     input.Kubeconfig,
+			"context":                        input.Context,
+			"prometheus_transport":           input.PrometheusTransport,
+			"agent_custom_resource_rules":    input.AgentCustomResourceRules,
+			"agent_action_profile":           input.AgentActionProfile,
+			"prometheus_url":                 strings.TrimSpace(input.PrometheusBaseURL),
+			"prometheus_bearer_token":        strings.TrimSpace(input.PrometheusBearerToken),
+			"prometheus_cluster_label":       strings.TrimSpace(input.PrometheusClusterLabel),
+			"prometheus_cluster_label_value": input.PrometheusClusterLabelValue,
+			"grafana_base_url":               strings.TrimSpace(input.GrafanaBaseURL),
 		}
 		cfg := &appconfig.Cluster{
-			ID:                     connection.Summary.ID,
-			Name:                   connection.Summary.Name,
-			KubeconfigData:         input.Kubeconfig,
-			Context:                input.Context,
-			Region:                 connection.Summary.Region,
-			Environment:            connection.Summary.Environment,
-			Labels:                 connection.Summary.Labels,
-			PrometheusURL:          strings.TrimSpace(input.PrometheusBaseURL),
-			PrometheusBearerToken:  strings.TrimSpace(input.PrometheusBearerToken),
-			PrometheusClusterLabel: strings.TrimSpace(input.PrometheusClusterLabel),
-			GrafanaBaseURL:         strings.TrimSpace(input.GrafanaBaseURL),
+			ID:                          connection.Summary.ID,
+			Name:                        connection.Summary.Name,
+			KubeconfigData:              input.Kubeconfig,
+			Context:                     input.Context,
+			Region:                      connection.Summary.Region,
+			Environment:                 connection.Summary.Environment,
+			Labels:                      connection.Summary.Labels,
+			PrometheusURL:               strings.TrimSpace(input.PrometheusBaseURL),
+			PrometheusBearerToken:       strings.TrimSpace(input.PrometheusBearerToken),
+			PrometheusClusterLabel:      strings.TrimSpace(input.PrometheusClusterLabel),
+			PrometheusClusterLabelValue: input.PrometheusClusterLabelValue,
+			GrafanaBaseURL:              strings.TrimSpace(input.GrafanaBaseURL),
 		}
 		return connection, cfg, nil
 	case domaincluster.ConnectionModeAgent:
@@ -812,16 +836,17 @@ func (s *Service) buildConnection(input domaincluster.RegisterInput) (domainclus
 		connection.SourceType = "agent"
 		connection.SourceRef = sourceRef
 		connection.Metadata = map[string]any{
-			"transport":                   transport,
-			"endpoint":                    endpoint,
-			"token":                       token,
-			"prometheus_transport":        input.PrometheusTransport,
-			"agent_custom_resource_rules": input.AgentCustomResourceRules,
-			"agent_action_profile":        input.AgentActionProfile,
-			"prometheus_url":              strings.TrimSpace(input.PrometheusBaseURL),
-			"prometheus_bearer_token":     strings.TrimSpace(input.PrometheusBearerToken),
-			"prometheus_cluster_label":    strings.TrimSpace(input.PrometheusClusterLabel),
-			"grafana_base_url":            strings.TrimSpace(input.GrafanaBaseURL),
+			"transport":                      transport,
+			"endpoint":                       endpoint,
+			"token":                          token,
+			"prometheus_transport":           input.PrometheusTransport,
+			"agent_custom_resource_rules":    input.AgentCustomResourceRules,
+			"agent_action_profile":           input.AgentActionProfile,
+			"prometheus_url":                 strings.TrimSpace(input.PrometheusBaseURL),
+			"prometheus_bearer_token":        strings.TrimSpace(input.PrometheusBearerToken),
+			"prometheus_cluster_label":       strings.TrimSpace(input.PrometheusClusterLabel),
+			"prometheus_cluster_label_value": input.PrometheusClusterLabelValue,
+			"grafana_base_url":               strings.TrimSpace(input.GrafanaBaseURL),
 		}
 		return connection, nil, nil
 	default:
@@ -853,7 +878,10 @@ func mergeDirectClusterUpdate(next *domaincluster.RegisterInput, existing domain
 		return
 	}
 	if strings.TrimSpace(next.Kubeconfig) == "" {
-		next.Kubeconfig = preservedMetadataString(existing.Metadata, "kubeconfig")
+		next.Kubeconfig = preservedMetadataString(existing.Metadata, "kubeconfig_data")
+		if next.Kubeconfig == "" {
+			next.Kubeconfig = preservedMetadataString(existing.Metadata, "kubeconfig")
+		}
 	}
 	if strings.TrimSpace(next.Context) == "" {
 		next.Context = preservedMetadataString(existing.Metadata, "context")
@@ -885,9 +913,6 @@ func mergeClusterObservabilityUpdate(next *domaincluster.RegisterInput, metadata
 	if strings.TrimSpace(next.PrometheusBearerToken) == "" {
 		next.PrometheusBearerToken = preservedMetadataString(metadata, "prometheus_bearer_token")
 	}
-	if strings.TrimSpace(next.PrometheusClusterLabel) == "" {
-		next.PrometheusClusterLabel = preservedMetadataString(metadata, "prometheus_cluster_label")
-	}
 	if strings.TrimSpace(next.GrafanaBaseURL) == "" {
 		next.GrafanaBaseURL = preservedMetadataString(metadata, "grafana_base_url")
 	}
@@ -914,10 +939,15 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	if action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch {
 		permissionKey = appaccess.PermPlatformClustersView
 	}
+	return s.authorizeClusterRequest(ctx, principal, summary, action, permissionKey, false)
+}
+
+func (s *Service) authorizeClusterRequest(ctx context.Context, principal domainidentity.Principal, summary domaincluster.Summary, action domainaccess.Action, permissionKey string, requireUnscoped bool) error {
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal:     principal,
-		Action:        action,
-		PermissionKey: permissionKey,
+		RequireUnscopedPlatform: requireUnscoped,
+		Principal:               principal,
+		Action:                  action,
+		PermissionKey:           permissionKey,
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,
@@ -940,7 +970,7 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	if err != nil {
 		return err
 	}
-	if !decision.Allowed {
+	if !decision.Allowed || (requireUnscoped && hasClusterRequestScope(decision.ResourceScope)) {
 		return fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
 	}
 	return nil

@@ -78,6 +78,21 @@ type ContextAttributes struct {
 }
 
 type Request struct {
+	// RequireUnscopedPlatform rejects permissions constrained to a subject's scope grants.
+	RequireUnscopedPlatform bool
+
+	// RequireClusterWideNamespace requests permission across every namespace.
+	RequireClusterWideNamespace bool
+
+	// RequireWholeResourceCollection rejects a collection if a deny covers some of its objects.
+	RequireWholeResourceCollection bool
+
+	// FailClosedOnUnknownResourceLabels treats an otherwise applicable label deny as a match when resource labels are unknown.
+	FailClosedOnUnknownResourceLabels bool
+
+	// RequireNamespaceLabels defers a label-dependent decision for a named namespace until labels are known.
+	RequireNamespaceLabels bool
+
 	Principal     identity.Principal
 	PermissionKey string
 	Action        Action
@@ -96,6 +111,8 @@ const (
 	DecisionDeny             DecisionStatus = "deny"
 	DecisionApprovalRequired DecisionStatus = "approval_required"
 )
+
+const ReasonNamespaceLabelsRequired = "namespace_labels_required"
 
 type ResourceScope struct {
 	Clusters                   []string `json:"clusters,omitempty"`

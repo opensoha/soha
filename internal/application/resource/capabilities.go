@@ -100,6 +100,9 @@ type CustomResources struct {
 }
 
 type GenericResources struct {
+	topologyAgent   AgentClientFactory[TopologySourceAgent]
+	topologyDirect  DirectTopologySources
+	customResources *CustomResources
 	*resourceAccess
 	agent          AgentClientFactory[GenericResourceAgent]
 	direct         DirectGenericResource
@@ -230,6 +233,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 	}
 	genericResources := &GenericResources{
+		topologyAgent: deps.Agents.TopologySources, topologyDirect: deps.DirectTopologySources,
 		resourceAccess: access, agent: deps.Agents.Generic, direct: deps.DirectGeneric, resourceEvents: deps.DirectResourceEvents,
 		resourceGraph: deps.DirectResourceGraph, security: deps.DirectSecurity,
 	}
@@ -280,6 +284,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		creation:         creation,
 	}
 	network.customResources = service.customResources
+	genericResources.customResources = service.customResources
 	service.runtime = &Runtime{
 		customResources: service.customResources,
 		Workloads:       workloads, Configuration: service.configuration, Network: network, Storage: service.storage,

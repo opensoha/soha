@@ -15,6 +15,7 @@ type (
 	NamespaceUpsertInput      = contractsresource.NamespaceUpsertInput
 
 	PodView                       = contractsresource.PodView
+	PodContainerStatusView        = contractsresource.PodContainerStatusView
 	PodDetailView                 = contractsresource.PodDetailView
 	PodLogsView                   = contractsresource.PodLogsView
 	PodExecView                   = contractsresource.PodExecView
@@ -142,6 +143,7 @@ type (
 	ConfigMapDetailView                     = contractsresource.ConfigMapDetailView
 	SecretView                              = contractsresource.SecretView
 	SecretDetailView                        = contractsresource.SecretDetailView
+	SecretCertificateView                   = contractsresource.SecretCertificateView
 	ServiceAccountView                      = contractsresource.ServiceAccountView
 	ServiceAccountDetailView                = contractsresource.ServiceAccountDetailView
 	RoleView                                = contractsresource.RoleView

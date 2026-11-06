@@ -46,12 +46,12 @@ func (d *Direct) GetResourceIdentity(ctx context.Context, clusterID, namespace, 
 }
 
 func (d *Direct) ApplyResourceYAMLConditional(ctx context.Context, clusterID, namespace, kind, name, content string, expected contractresource.ResourceMutationPreconditions) (domainresource.ResourceYAMLView, error) {
-	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false, expected)
+	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false, false, expected)
 	return view, conditionalResourceError(err)
 }
 
 func (d *Direct) DryRunResourceYAMLConditional(ctx context.Context, clusterID, namespace, kind, name, content string, expected contractresource.ResourceMutationPreconditions) (domainresource.ResourceUpdateAnalysis, error) {
-	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true, expected)
+	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true, false, expected)
 	return analysis, conditionalResourceError(err)
 }
 

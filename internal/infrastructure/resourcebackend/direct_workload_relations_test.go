@@ -71,8 +71,9 @@ func TestBuildWorkloadAssociationsUsesSelectorAndOwner(t *testing.T) {
 func TestBuildCronJobAssociationsUsesOwnerUID(t *testing.T) {
 	t.Parallel()
 	cronUID := types.UID("cron-uid")
+	observed := metav1.Now()
 	client := fake.NewSimpleClientset(
-		&batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "backup-100", Namespace: "team-a", OwnerReferences: []metav1.OwnerReference{{Kind: "CronJob", UID: cronUID}}}},
+		&batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "backup-100", Namespace: "team-a", OwnerReferences: []metav1.OwnerReference{{Kind: "CronJob", UID: cronUID}}}, Status: batchv1.JobStatus{StartTime: &observed, Conditions: []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue, LastTransitionTime: observed}}}},
 		&batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "backup-200", Namespace: "team-a", OwnerReferences: []metav1.OwnerReference{{Kind: "CronJob", UID: "other"}}}},
 		&batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "unrelated", Namespace: "team-a", OwnerReferences: []metav1.OwnerReference{{Kind: "CronJob", UID: cronUID}}}},
 	)
@@ -82,6 +83,9 @@ func TestBuildCronJobAssociationsUsesOwnerUID(t *testing.T) {
 	}
 	if len(jobs) != 2 || jobs[0].Name != "unrelated" || jobs[1].Name != "backup-100" {
 		t.Fatalf("jobs = %#v, want exact owner UID matches", jobs)
+	}
+	if jobs[1].StartTime == "" || len(jobs[1].Conditions) != 1 || jobs[1].Conditions[0].Type != "Complete" {
+		t.Fatalf("native execution data missing: %#v", jobs[1])
 	}
 }
 
@@ -96,5 +100,20 @@ func TestReplicaSetAndReplicationControllerDetailMappings(t *testing.T) {
 	rc := mapReplicationControllerDetail(corev1.ReplicationController{ObjectMeta: metav1.ObjectMeta{Name: "api-rc", Namespace: "team-a"}, Spec: corev1.ReplicationControllerSpec{Replicas: &replicas, Selector: map[string]string{"app": "api"}}})
 	if rs.DesiredReplicas != replicas || rs.Selector["app"] != "api" || rc.DesiredReplicas != replicas || rc.Selector["app"] != "api" {
 		t.Fatalf("detail mappings = rs %#v rc %#v", rs, rc)
+	}
+}
+
+func TestReplicationControllerAssociationsRequireCurrentUIDAndKind(t *testing.T) {
+	controller := true
+	owner := func(uid types.UID, kind string) []metav1.OwnerReference {
+		return []metav1.OwnerReference{{Kind: kind, Name: "legacy", UID: uid, Controller: &controller}}
+	}
+	pod := func(name string, refs []metav1.OwnerReference) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "team-a", Labels: map[string]string{"app": "legacy"}, OwnerReferences: refs}}
+	}
+	client := fake.NewSimpleClientset(pod("owned", owner("current-uid", "ReplicationController")), pod("same-name-old-uid", owner("old-uid", "ReplicationController")), pod("same-label-unowned", nil), pod("wrong-kind", owner("current-uid", "ReplicaSet")))
+	pods, _, err := buildWorkloadAssociations(t.Context(), &k8sinfra.Bundle{Typed: client}, "team-a", labels.Set{"app": "legacy"}.AsSelector(), "current-uid", "ReplicationController", corev1.PodTemplateSpec{}, nil)
+	if err != nil || len(pods) != 1 || pods[0].Name != "owned" {
+		t.Fatalf("RC membership escaped UID/kind: %#v %v", pods, err)
 	}
 }

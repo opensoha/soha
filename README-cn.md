@@ -275,6 +275,10 @@ make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 ```
 
+Compose 默认使用仓库中的 `configs/config.example.yaml`。如需沿用私有的
+`configs/config.yaml`，请在 shell 或 Compose 环境文件中设置
+`SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`。相对路径以 `deploy/` 为基准。
+
 网络运行时在 Compose 中通过 profile 显式开启，因为 mTLS 私钥不能提交到仓库。
 分别准备包含 `tls.crt`、`tls.key` 和 `ca.crt` 的服务端与客户端身份目录，将私钥权限设为 `0440` 或 `0600`，然后启动：
 
