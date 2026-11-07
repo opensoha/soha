@@ -2,6 +2,76 @@ import { test, expect } from '@playwright/test'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { task114Response } from '../fixtures/task114-delivery'
 
+for (const height of [1206, 800]) {
+  test(`Task114 service rail stays independent across tabs at ${height}px height`, async ({
+    context,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1112, height })
+    const evidence = await installMocks(context, page, (url, method) => {
+      if (/\/workloads\/pods\/order-api-pod-\d+\/metrics$/.test(url.pathname)) {
+        const metricURL = new URL(url)
+        metricURL.pathname = metricURL.pathname.replace(/order-api-pod-\d+/, 'order-api-pod-0')
+        return task114Response(metricURL, method)
+      }
+      const response = task114Response(url, method)
+      if (url.pathname.endsWith('/workloads/order-api/runtime') && response) {
+        const body = response.body as { data: { pods: Array<{ name: string }> } }
+        const pod = body.data.pods[0]
+        body.data.pods = Array.from({ length: 24 }, (_, index) => ({
+          ...pod,
+          name: `order-api-pod-${index}`,
+        }))
+      }
+      return response
+    })
+    await page.goto(
+      '/applications/retail?applicationEnvironmentId=retail-test&serviceId=order-api&serviceTab=runtime',
+    )
+    const rail = page.locator('.soha-service-selector')
+    await expect(page.getByRole('heading', { name: '订单 API', exact: true })).toBeVisible()
+    await expect(page.locator('.soha-service-runtime-overview')).toBeVisible()
+    const initial = (await rail.boundingBox())!
+    for (const name of [
+      /^Pods/,
+      /^指标$/,
+      /^发布与工作流$/,
+      /^配置与模板$/,
+      /^状态与事件$/,
+      /^运行资源$/,
+    ]) {
+      await page.getByRole('tab', { name }).click()
+      await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true')
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      )
+      await expect
+        .poll(async () => (await rail.boundingBox())!.height)
+        .toBeCloseTo(initial.height, 0)
+      expect((await rail.boundingBox())!.y).toBeCloseTo(initial.y, 0)
+    }
+    await page.getByRole('tab', { name: /^Pods/ }).click()
+    const services = rail.locator('.soha-service-selector__list')
+    await services.hover()
+    await page.mouse.wheel(0, 200)
+    if (height === 800)
+      await expect.poll(() => services.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+    const leftScroll = await services.evaluate((el) => el.scrollTop)
+    const pods = page.locator('.soha-pod-list-scroll')
+    await pods.hover()
+    await page.mouse.wheel(0, 400)
+    await expect.poll(() => pods.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+    expect(await services.evaluate((el) => el.scrollTop)).toBe(leftScroll)
+    await expect(rail.getByRole('button', { name: /添加服务$/ })).toBeInViewport()
+    await expect(page.getByRole('heading', { name: '订单 API', exact: true })).toBeInViewport()
+    await page.getByRole('tab', { name: /^运行资源$/ }).click()
+    expect(await services.evaluate((el) => el.scrollTop)).toBe(leftScroll)
+    await rail.getByRole('button', { name: '服务总览', exact: true }).click()
+    await expect.poll(async () => (await rail.boundingBox())!.height).toBeCloseTo(initial.height, 0)
+    verifyBrowserEvidence(evidence)
+  })
+}
+
 for (const width of [1440, 390]) {
   test(`Task114 application context and metrics stay isolated at ${width}px`, async ({
     context,

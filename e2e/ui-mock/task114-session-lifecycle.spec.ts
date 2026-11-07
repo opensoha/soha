@@ -1,6 +1,7 @@
 import { test, expect, type WebSocketRoute } from '@playwright/test'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { task114Response } from '../fixtures/task114-delivery'
+import { expectSessionToolbarSpacing } from '../fixtures/session-dock-geometry'
 
 const target =
   '/applications/retail?tab=services&applicationEnvironmentId=retail-test&serviceId=order-api&serviceTab=pods'
@@ -107,6 +108,7 @@ for (const kind of ['logs', 'terminal'] as const) {
     const pod = page.locator('.soha-pod-card-list > li').filter({ hasText: 'order-api-pod-0' })
     await pod.getByRole('button', { name: kind === 'logs' ? '日志' : '终端', exact: true }).click()
     await expect.poll(() => opened.length).toBe(1)
+    await expectSessionToolbarSpacing(page.getByRole('region', { name: '实时会话', exact: true }))
     expect(new URL(opened[0].url).searchParams.get('expectedUid')).toBe('uid-order-api-pod-0')
     expect(tickets.every((path) => path.includes('expectedUid=uid-order-api-pod-0'))).toBe(true)
     await page.getByRole('button', { name: '收起实时会话', exact: true }).click()

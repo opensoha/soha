@@ -3,6 +3,7 @@ import { stringify } from 'yaml'
 import { baselineResponse } from '../fixtures/baseline-data'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { expectWorkloadDetailFrame } from '../fixtures/workload-detail-geometry'
+import { expectSessionToolbarSpacing } from '../fixtures/session-dock-geometry'
 
 const podName = 'api-7d9-with-a-long-pod-name'
 const path = `/workloads/pods/${podName}?clusterId=cluster-a&namespace=monitoring`
@@ -529,6 +530,7 @@ test('Pod terminal starts explicitly in the dock and survives a detail tab switc
   const dock = page.getByRole('region', { name: '实时会话', exact: true })
   const terminal = dock.locator('.soha-terminal-shell')
   await expect(terminal).toBeVisible()
+  await expectSessionToolbarSpacing(dock)
   await dock.getByRole('button', { name: '最大化实时会话', exact: true }).click()
   const terminalHeight = await terminal.evaluate((el) => el.getBoundingClientRect().height)
   expect(terminalHeight).toBeGreaterThan(300)
@@ -571,6 +573,7 @@ test('Pod logs start explicitly and remain bounded in the dock during window res
   const dock = page.getByRole('region', { name: '实时会话', exact: true })
   const shell = dock.locator('.soha-log-shell')
   await expect(shell).toBeVisible()
+  await expectSessionToolbarSpacing(dock)
   await dock.getByRole('button', { name: '最大化实时会话', exact: true }).click()
   await expect.poll(() => state.logReads).toBeGreaterThan(0)
   await expect(page.locator('.soha-pod-detail .soha-log-shell')).toHaveCount(0)

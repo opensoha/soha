@@ -925,9 +925,13 @@ export function ServicePodWorkspace({
         ) : null
       ) : (
         <>
-          <div className="soha-pod-list-filter">
+          <div
+            className="soha-pod-list-filter"
+            role="group"
+            aria-label={text('Pod 筛选', 'Pod filters')}
+          >
             <div className="soha-pod-list-filter__summary">
-              <Text strong>{deploymentPodsOnly ? 'Pods · Deployment' : 'Pods'}</Text>
+              {deploymentPodsOnly ? <Text type="secondary">Deployment</Text> : null}
               {podCount !== undefined || rows.length > 0 ? (
                 <Text type="secondary">
                   {podCount === undefined ? text('已读取 ', 'Loaded ') : ''}
@@ -1084,8 +1088,31 @@ export function ServicePodWorkspace({
         <Drawer
           open={Boolean(requestedPod)}
           destroyOnHidden
-          size="min(880px, 100vw)"
-          title={(labels[tool] || labels.details) + ' · ' + (requestedPod || '')}
+          size="min(1040px, 100vw)"
+          rootClassName="soha-pod-drawer"
+          closable={{ placement: 'end' }}
+          classNames={{
+            header: 'soha-pod-drawer-header',
+            body: 'soha-pod-drawer-body',
+            title: 'soha-pod-drawer-title-slot',
+          }}
+          title={
+            <div className="soha-pod-drawer-title">
+              <strong>
+                {tool === 'yaml'
+                  ? 'Pod YAML'
+                  : tool === 'events'
+                    ? text('Pod事件', 'Pod events')
+                    : text('Pod详情', 'Pod details')}
+              </strong>
+              <span className="soha-pod-drawer-identity">
+                {requestedPod}
+                {selectedRow?.pod.namespace || searchParams.get('podNamespace') ? (
+                  <span> · {selectedRow?.pod.namespace || searchParams.get('podNamespace')}</span>
+                ) : null}
+              </span>
+            </div>
+          }
           onClose={closeTool}
         >
           {requestedPod ? (

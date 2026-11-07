@@ -14,7 +14,6 @@ import {
   App,
   Button,
   Card,
-  Collapse,
   Descriptions,
   Drawer,
   Dropdown,
@@ -126,6 +125,9 @@ const ServicePodWorkspace = lazy(async () => {
   const module = await import('../runtime/service-pod-workspace')
   return { default: module.ServicePodWorkspace }
 })
+const ServiceRuntimeIndicators = lazy(async () => ({
+  default: (await import('./service-runtime-indicators')).ServiceRuntimeIndicators,
+}))
 
 const { Text } = Typography
 
@@ -500,6 +502,55 @@ export function ApplicationDetailPage() {
     : ''
   const activeTab = requestedTab === 'delivery' ? 'delivery' : 'services'
   const [serviceModalVisible, setServiceModalVisible] = useState(false)
+  const [serviceSettingsTab, setServiceSettingsTab] = useState('services')
+  const serviceEditorReturnToSettings = useRef(false)
+  const settingsContentRef = useRef<HTMLElement>(null)
+  const settingsScrollTop = useRef(0)
+  useEffect(() => {
+    if (!serviceModalVisible && settingsContentRef.current)
+      settingsContentRef.current.scrollTop = settingsScrollTop.current
+  }, [serviceModalVisible])
+  const serviceEditorCloseGuard = useRef<((proceed: () => void) => void) | null>(null)
+  const restoringEditorHistory = useRef(false)
+  const editorHistoryReady = useRef(false)
+  useEffect(() => {
+    if (!serviceModalVisible) {
+      restoringEditorHistory.current = false
+      editorHistoryReady.current = false
+      return
+    }
+    if (settingsKey !== 'application' || !searchParams.has('serviceEditor')) {
+      if (!editorHistoryReady.current) return
+      restoringEditorHistory.current = true
+      navigate(1)
+      return
+    }
+    editorHistoryReady.current = true
+    if (restoringEditorHistory.current) {
+      restoringEditorHistory.current = false
+      serviceEditorCloseGuard.current?.(() => {
+        setServiceModalVisible(false)
+        setEditingService(null)
+        navigate(-1)
+      })
+    }
+  }, [serviceModalVisible, settingsKey, searchParams, navigate])
+
+  const requestSettingsChange = (proceed: () => void) => {
+    if (serviceModalVisible && serviceEditorCloseGuard.current)
+      serviceEditorCloseGuard.current(proceed)
+    else proceed()
+  }
+  const leaveServiceEditor = () => {
+    setServiceModalVisible(false)
+    setEditingService(null)
+    if (!serviceEditorReturnToSettings.current) setActiveTab('services')
+    else {
+      const next = new URLSearchParams(searchParams)
+      next.delete('serviceEditor')
+      setSearchParams(next, { replace: true })
+    }
+  }
   const [serviceSearch, setServiceSearch] = useState('')
   const [serviceKindFilter, setServiceKindFilter] = useState('all')
   const [editingService, setEditingService] = useState<ApplicationServiceComponent | null>(null)
@@ -532,6 +583,7 @@ export function ApplicationDetailPage() {
     next.set('tab', tab)
     if (environmentId) next.set('applicationEnvironmentId', environmentId)
     next.delete('settings')
+    next.delete('serviceEditor')
     next.delete('launch')
     next.delete('buildSourceId')
     if (tab !== 'delivery') {
@@ -553,6 +605,7 @@ export function ApplicationDetailPage() {
     next.delete('tool')
     next.delete('container')
     next.delete('workload')
+    next.delete('serviceEditor')
     next.delete('metricPod')
     next.delete('metricCluster')
     next.delete('metricNamespace')
@@ -908,12 +961,15 @@ export function ApplicationDetailPage() {
   })
 
   const openServiceModal = (service?: ApplicationServiceComponent) => {
+    serviceEditorReturnToSettings.current = settingsKey === 'application'
+    settingsScrollTop.current = settingsContentRef.current?.scrollTop ?? 0
     const nextService = service ?? null
     setEditingService(nextService)
     setServiceModalVisible(true)
     const next = new URLSearchParams(searchParams)
     next.set('tab', 'services')
     next.set('settings', 'application')
+    next.set('serviceEditor', 'open')
     setSearchParams(next)
   }
 
@@ -1311,7 +1367,10 @@ export function ApplicationDetailPage() {
         ),
     )
   const selectedManifestDeployments = serviceManifestDeployments(focusedService?.id)
-  const serviceStatus = (items: ApplicationRuntimeWorkload[], serviceId?: string) => {
+  const serviceStatus = (
+    items: ApplicationRuntimeWorkload[],
+    serviceId?: string,
+  ): { tone: string; label: string; description?: string } => {
     if (runtimePending || runtimeUnavailable || invalidEnvironment)
       return { tone: 'default', label: runtimePending ? '读取状态' : '状态读取失败' }
     if (!activeEnvironment) return { tone: 'default', label: '未关联环境' }
@@ -1319,9 +1378,17 @@ export function ApplicationDetailPage() {
       ['forbidden', '无资源查看权限'],
       ['replaced', '资源身份已变化'],
       ['missing', '未发现关联资源'],
-      ['unavailable', '资源观察不可用'],
+      ['unavailable', '运行状态读取失败'],
     ]) {
-      if (items.some((item) => item.sourceStatus === state)) return { tone: 'default', label }
+      if (items.some((item) => item.sourceStatus === state))
+        return {
+          tone: 'default',
+          label,
+          description:
+            state === 'unavailable'
+              ? '暂时无法从集群读取运行状态，当前无法判断服务是否正常。请检查集群连接后刷新重试。'
+              : undefined,
+        }
     }
     return environmentRuntimeStatus({
       ...activeEnvironment!,
@@ -1565,7 +1632,15 @@ export function ApplicationDetailPage() {
               {serviceName ? <Text copyable={{ text: serviceName }} /> : null}
             </div>
             <div className="soha-service-location">
-              <StatusTag value={selectedStatus.tone} label={selectedStatus.label} />
+              {selectedStatus.description ? (
+                <Tooltip title={selectedStatus.description} trigger={['hover', 'focus']}>
+                  <span tabIndex={0} aria-label={selectedStatus.description}>
+                    <StatusTag value={selectedStatus.tone} label={selectedStatus.label} />
+                  </span>
+                </Tooltip>
+              ) : (
+                <StatusTag value={selectedStatus.tone} label={selectedStatus.label} />
+              )}
               {serviceNamespaces.length === 1 ? (
                 <MetadataTag label={serviceNamespaces[0]} tone="blue" />
               ) : serviceNamespaces.length > 1 ? (
@@ -1678,6 +1753,26 @@ export function ApplicationDetailPage() {
           ]}
         />
       </header>
+      {runtimeTab && runtimeReadable ? (
+        <Suspense fallback={null}>
+          <ServiceRuntimeIndicators
+            key={JSON.stringify([
+              podScope,
+              selectedWorkloads.map((workload) => [
+                workload.targetId,
+                workload.source?.resource.uid,
+                workload.sourceStatus,
+              ]),
+            ])}
+            applicationId={application.id}
+            workloads={selectedWorkloads}
+            podWorkloads={selectedPodWorkloads}
+            enabled={runtimeReadable}
+            onOpenPods={() => openServiceTab('pods')}
+            onOpenMetrics={() => openServiceTab('metrics')}
+          />
+        </Suspense>
+      ) : null}
       {runtimeTab &&
       canTriggerRelease &&
       (activeRuntimeBinding?.targets ?? []).some(
@@ -2019,7 +2114,7 @@ export function ApplicationDetailPage() {
                           )
                         ? '此 Helm Release 没有可展示的原生工作负载'
                         : selectedWorkloads.some((item) => item.sourceStatus)
-                          ? '资源观察不可用'
+                          ? '运行状态读取失败'
                           : selectedWorkloads.length
                             ? '此服务的其他工作负载见上方 K8s 工作台入口'
                             : selectedManifestDeployments.length
@@ -2694,282 +2789,292 @@ export function ApplicationDetailPage() {
               key: 'settings',
               label: '配置',
               children: (
-                <div className="soha-application-runtime-settings-grid">
-                  <section className="soha-application-settings-summary soha-application-service-config-section">
-                    <OverviewSectionBar
-                      title="服务配置"
-                      description="服务 → Git 仓库 → 构建定义 → 产物镜像"
-                      extra={
-                        <Space>
-                          {canCreateService ? (
-                            <Button
-                              type="primary"
-                              icon={<PlusOutlined />}
-                              onClick={() => openServiceModal()}
-                            >
-                              新建服务
-                            </Button>
-                          ) : null}
-                        </Space>
-                      }
-                    />
-                    {services.length > 0 ? (
-                      <Collapse
-                        accordion
-                        defaultActiveKey={focusedService?.id || services[0]?.id}
-                        items={services.map((service) => {
-                          const repository = repositories.find(
-                            (item) => item.id === service.repositoryId,
-                          )
-                          const buildSource = application.buildSources?.find(
-                            (item) => item.id === service.buildSourceId,
-                          )
-                          return {
-                            key: service.id,
-                            label: (
-                              <Space size={6} wrap>
-                                <Text strong>{service.name}</Text>
-                                <MetadataTag label={serviceKindLabel(service.serviceKind)} />
-                                <StatusTag value={service.enabled ? 'enabled' : 'disabled'} />
-                              </Space>
-                            ),
-                            extra: (
-                              <Space size={2} onClick={(event) => event.stopPropagation()}>
-                                {canUpdateService ? (
-                                  <ManagementIconButton
-                                    aria-label={`编辑服务 ${service.name}`}
-                                    icon={<EditOutlined />}
-                                    size="small"
-                                    tooltip="编辑服务"
-                                    onClick={() => openServiceModal(service)}
-                                  />
-                                ) : null}
-                                <ManagementIconButton
-                                  aria-label={`查看服务 ${service.name}`}
-                                  icon={<ArrowRightOutlined />}
-                                  size="small"
-                                  tooltip="查看服务"
-                                  onClick={() => setFocusedService(service.id)}
-                                />
-                              </Space>
-                            ),
-                            children: (
-                              <Descriptions
-                                size="small"
-                                column={{ xs: 1, sm: 2, lg: 4 }}
-                                items={[
-                                  {
-                                    key: 'repository',
-                                    label: 'Git 仓库',
-                                    children:
-                                      repository?.name || service.repositoryPath || '未配置',
-                                  },
-                                  {
-                                    key: 'build-source',
-                                    label: '构建来源',
-                                    children: buildSource?.name || '未配置',
-                                  },
-                                  {
-                                    key: 'artifact',
-                                    label: '产物镜像',
-                                    children:
-                                      service.containers?.[0]?.imageRepository ||
-                                      buildSource?.buildImage ||
-                                      '未配置',
-                                  },
-                                  {
-                                    key: 'branch',
-                                    label: '默认分支',
-                                    children:
-                                      service.defaultBranch || repository?.defaultBranch || '-',
-                                  },
-                                ]}
+                <Tabs
+                  className="soha-application-service-settings-tabs"
+                  activeKey={serviceSettingsTab}
+                  onChange={setServiceSettingsTab}
+                  items={[
+                    {
+                      key: 'services',
+                      label: '服务组件',
+                      children: (
+                        <section className="soha-application-settings-summary soha-application-service-config-section">
+                          <div className="soha-service-settings-toolbar">
+                            {canCreateService ? (
+                              <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => openServiceModal()}
+                              >
+                                新建服务
+                              </Button>
+                            ) : null}
+                          </div>
+                          {services.length > 0 ? (
+                            <ul className="soha-service-settings-list" aria-label="服务配置列表">
+                              {services.map((service) => {
+                                const repository = repositories.find(
+                                  (item) => item.id === service.repositoryId,
+                                )
+                                const buildSource = application.buildSources?.find(
+                                  (item) => item.id === service.buildSourceId,
+                                )
+                                const targets = bindings
+                                  .flatMap((binding) => binding.targets ?? [])
+                                  .filter((target) => target.metadata?.serviceId === service.id)
+                                const helm = targets.find((target) => target.helm)
+                                const source = targets.find(
+                                  (target) => target.metadata?.importSource === 'kubernetes',
+                                )
+                                const summary = helm
+                                  ? `Helm · ${helm.helm?.source.chart || helm.workloadName}`
+                                  : source
+                                    ? `${source.workloadKind} / ${source.workloadName} · ${source.namespace || '集群范围'}`
+                                    : [
+                                        repository?.name || service.repositoryPath,
+                                        buildSource?.name,
+                                        service.containers?.[0]?.imageRepository,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' · ') || '尚未配置来源'
+                                return (
+                                  <li key={service.id}>
+                                    <div className="soha-service-settings-list__identity">
+                                      <div>
+                                        <Text strong>{service.name}</Text>
+                                        <MetadataTag
+                                          label={serviceKindLabel(service.serviceKind)}
+                                        />
+                                        <StatusTag
+                                          value={service.enabled ? 'enabled' : 'disabled'}
+                                        />
+                                      </div>
+                                      <Text type="secondary" title={summary}>
+                                        {summary}
+                                      </Text>
+                                    </div>
+                                    <Space size={2}>
+                                      {canUpdateService ? (
+                                        <ManagementIconButton
+                                          aria-label={`编辑服务 ${service.name}`}
+                                          icon={<EditOutlined />}
+                                          size="small"
+                                          tooltip="编辑服务"
+                                          onClick={() => openServiceModal(service)}
+                                        />
+                                      ) : null}
+                                      <ManagementIconButton
+                                        aria-label={`查看服务 ${service.name}`}
+                                        icon={<ArrowRightOutlined />}
+                                        size="small"
+                                        tooltip="查看服务"
+                                        onClick={() => setFocusedService(service.id)}
+                                      />
+                                    </Space>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          ) : (
+                            serviceRecordsState || (
+                              <ManagementState
+                                bordered={false}
+                                compact
+                                kind="not-configured"
+                                description="尚未配置服务。"
                               />
-                            ),
+                            )
+                          )}
+                        </section>
+                      ),
+                    },
+                    {
+                      key: 'repositories',
+                      label: '代码仓库',
+                      children: (
+                        <DeliveryTable
+                          title="共享代码仓库"
+                          actions={
+                            canManageRepositories ? (
+                              <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => openRepositoryModal()}
+                              >
+                                添加仓库
+                              </Button>
+                            ) : null
                           }
-                        })}
-                      />
-                    ) : (
-                      serviceRecordsState || (
-                        <ManagementState
-                          bordered={false}
-                          compact
-                          kind="not-configured"
-                          description="尚未配置服务。"
+                          rowKey="id"
+                          pagination={false}
+                          dataSource={repositories}
+                          loading={repositoriesQuery.isLoading}
+                          columns={[
+                            { title: '名称', dataIndex: 'name' },
+                            {
+                              title: '提供方',
+                              dataIndex: 'provider',
+                              render: (value: string) => <MetadataTag label={value} />,
+                            },
+                            { title: '路径', dataIndex: 'path' },
+                            { title: '默认分支', dataIndex: 'defaultBranch' },
+                            { title: '协议', dataIndex: 'protocol' },
+                            ...(canManageRepositories
+                              ? [
+                                  {
+                                    title: '操作',
+                                    dataIndex: 'id',
+                                    width: 96,
+                                    render: (id: string) => (
+                                      <Space size={2}>
+                                        <ManagementIconButton
+                                          aria-label="编辑代码仓库"
+                                          icon={<EditOutlined />}
+                                          tooltip="编辑"
+                                          onClick={() => openRepositoryModal(id)}
+                                        />
+                                        <Popconfirm
+                                          title="确认删除该代码仓库？"
+                                          onConfirm={() => deleteRepositoryMutation.mutate(id)}
+                                        >
+                                          <ManagementIconButton
+                                            aria-label="删除代码仓库"
+                                            danger
+                                            icon={<DeleteOutlined />}
+                                            tooltip="删除"
+                                          />
+                                        </Popconfirm>
+                                      </Space>
+                                    ),
+                                  },
+                                ]
+                              : []),
+                          ]}
                         />
-                      )
-                    )}
-                  </section>
-                  <DeliveryTable
-                    title="共享代码仓库"
-                    actions={
-                      canManageRepositories ? (
-                        <Button
-                          type="primary"
-                          icon={<PlusOutlined />}
-                          onClick={() => openRepositoryModal()}
-                        >
-                          添加仓库
-                        </Button>
-                      ) : null
-                    }
-                    rowKey="id"
-                    pagination={false}
-                    dataSource={repositories}
-                    loading={repositoriesQuery.isLoading}
-                    columns={[
-                      { title: '名称', dataIndex: 'name' },
-                      {
-                        title: '提供方',
-                        dataIndex: 'provider',
-                        render: (value: string) => <MetadataTag label={value} />,
-                      },
-                      { title: '路径', dataIndex: 'path' },
-                      { title: '默认分支', dataIndex: 'defaultBranch' },
-                      { title: '协议', dataIndex: 'protocol' },
-                      ...(canManageRepositories
-                        ? [
+                      ),
+                    },
+                    {
+                      key: 'builds',
+                      label: '构建定义',
+                      children: (
+                        <DeliveryTable
+                          title="共享构建定义"
+                          actions={
+                            managementState.canUpdateApplication ? (
+                              <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => openBuildSourceModal()}
+                              >
+                                添加构建
+                              </Button>
+                            ) : null
+                          }
+                          rowKey="id"
+                          pagination={false}
+                          dataSource={application.buildSources ?? []}
+                          columns={[
+                            { title: '名称', dataIndex: 'name' },
                             {
-                              title: '操作',
-                              dataIndex: 'id',
-                              width: 96,
-                              render: (id: string) => (
-                                <Space size={2}>
-                                  <ManagementIconButton
-                                    aria-label="编辑代码仓库"
-                                    icon={<EditOutlined />}
-                                    tooltip="编辑"
-                                    onClick={() => openRepositoryModal(id)}
-                                  />
-                                  <Popconfirm
-                                    title="确认删除该代码仓库？"
-                                    onConfirm={() => deleteRepositoryMutation.mutate(id)}
-                                  >
-                                    <ManagementIconButton
-                                      aria-label="删除代码仓库"
-                                      danger
-                                      icon={<DeleteOutlined />}
-                                      tooltip="删除"
-                                    />
-                                  </Popconfirm>
-                                </Space>
+                              title: '类型',
+                              dataIndex: 'type',
+                              render: (_: unknown, record: BuildSource) => (
+                                <MetadataTag label={summarizeBuildSource(record)} />
                               ),
                             },
-                          ]
-                        : []),
-                    ]}
-                  />
-                  <DeliveryTable
-                    title="共享构建定义"
-                    actions={
-                      managementState.canUpdateApplication ? (
-                        <Button
-                          type="primary"
-                          icon={<PlusOutlined />}
-                          onClick={() => openBuildSourceModal()}
-                        >
-                          添加构建
-                        </Button>
-                      ) : null
-                    }
-                    rowKey="id"
-                    pagination={false}
-                    dataSource={application.buildSources ?? []}
-                    columns={[
-                      { title: '名称', dataIndex: 'name' },
-                      {
-                        title: '类型',
-                        dataIndex: 'type',
-                        render: (_: unknown, record: BuildSource) => (
-                          <MetadataTag label={summarizeBuildSource(record)} />
-                        ),
-                      },
-                      {
-                        title: '镜像',
-                        dataIndex: 'buildImage',
-                        render: (value: string) => value || '-',
-                      },
-                      {
-                        title: '默认 Tag',
-                        dataIndex: 'defaultTag',
-                        render: (value: string) => value || '-',
-                      },
-                      {
-                        title: '默认',
-                        dataIndex: 'isDefault',
-                        render: (value: boolean) => (
-                          <StatusTag value={value ? 'enabled' : 'disabled'} />
-                        ),
-                      },
-                      {
-                        title: '启用',
-                        dataIndex: 'enabled',
-                        render: (value: boolean) => (
-                          <StatusTag value={value ? 'enabled' : 'disabled'} />
-                        ),
-                      },
-                      ...(managementState.canUpdateApplication
-                        ? [
                             {
-                              title: '操作',
-                              dataIndex: 'id',
-                              width: 96,
-                              render: (id: string, record: BuildSource) => (
-                                <Space size={2}>
-                                  {record.type === 'platform_build_template' &&
-                                  typeof record.config?.buildTemplateId === 'string' ? (
-                                    <TemplateUpdateEntry
-                                      kind="build"
-                                      templateId={record.config.buildTemplateId}
-                                      applicationId={application.id}
-                                      iconOnly
-                                      label="采用构建模板版本"
-                                    />
-                                  ) : null}
-                                  <ManagementIconButton
-                                    aria-label="编辑构建源"
-                                    icon={<EditOutlined />}
-                                    tooltip="编辑"
-                                    onClick={() => openBuildSourceModal(record)}
-                                  />
-                                  <Popconfirm
-                                    title="确认删除该构建源？"
-                                    disabled={
-                                      managementState.updateAppMutation.isPending ||
-                                      writeOutcomeUnknown(managementState.updateAppMutation.error)
-                                    }
-                                    onConfirm={() => {
-                                      if (
-                                        managementState.updateAppMutation.isPending ||
-                                        writeOutcomeUnknown(managementState.updateAppMutation.error)
-                                      )
-                                        return
-                                      managementState.updateAppMutation.mutate({
-                                        id: application.id,
-                                        payload: {
-                                          ...application,
-                                          buildSources: (application.buildSources ?? []).filter(
-                                            (item) => item.id !== id,
-                                          ),
-                                        },
-                                      })
-                                    }}
-                                  >
-                                    <ManagementIconButton
-                                      aria-label="删除构建源"
-                                      danger
-                                      icon={<DeleteOutlined />}
-                                      tooltip="删除"
-                                    />
-                                  </Popconfirm>
-                                </Space>
+                              title: '镜像',
+                              dataIndex: 'buildImage',
+                              render: (value: string) => value || '-',
+                            },
+                            {
+                              title: '默认 Tag',
+                              dataIndex: 'defaultTag',
+                              render: (value: string) => value || '-',
+                            },
+                            {
+                              title: '默认',
+                              dataIndex: 'isDefault',
+                              render: (value: boolean) => (
+                                <StatusTag value={value ? 'enabled' : 'disabled'} />
                               ),
                             },
-                          ]
-                        : []),
-                    ]}
-                  />
-                </div>
+                            {
+                              title: '启用',
+                              dataIndex: 'enabled',
+                              render: (value: boolean) => (
+                                <StatusTag value={value ? 'enabled' : 'disabled'} />
+                              ),
+                            },
+                            ...(managementState.canUpdateApplication
+                              ? [
+                                  {
+                                    title: '操作',
+                                    dataIndex: 'id',
+                                    width: 96,
+                                    render: (id: string, record: BuildSource) => (
+                                      <Space size={2}>
+                                        {record.type === 'platform_build_template' &&
+                                        typeof record.config?.buildTemplateId === 'string' ? (
+                                          <TemplateUpdateEntry
+                                            kind="build"
+                                            templateId={record.config.buildTemplateId}
+                                            applicationId={application.id}
+                                            iconOnly
+                                            label="采用构建模板版本"
+                                          />
+                                        ) : null}
+                                        <ManagementIconButton
+                                          aria-label="编辑构建源"
+                                          icon={<EditOutlined />}
+                                          tooltip="编辑"
+                                          onClick={() => openBuildSourceModal(record)}
+                                        />
+                                        <Popconfirm
+                                          title="确认删除该构建源？"
+                                          disabled={
+                                            managementState.updateAppMutation.isPending ||
+                                            writeOutcomeUnknown(
+                                              managementState.updateAppMutation.error,
+                                            )
+                                          }
+                                          onConfirm={() => {
+                                            if (
+                                              managementState.updateAppMutation.isPending ||
+                                              writeOutcomeUnknown(
+                                                managementState.updateAppMutation.error,
+                                              )
+                                            )
+                                              return
+                                            managementState.updateAppMutation.mutate({
+                                              id: application.id,
+                                              payload: {
+                                                ...application,
+                                                buildSources: (
+                                                  application.buildSources ?? []
+                                                ).filter((item) => item.id !== id),
+                                              },
+                                            })
+                                          }}
+                                        >
+                                          <ManagementIconButton
+                                            aria-label="删除构建源"
+                                            danger
+                                            icon={<DeleteOutlined />}
+                                            tooltip="删除"
+                                          />
+                                        </Popconfirm>
+                                      </Space>
+                                    ),
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
+                      ),
+                    },
+                  ]}
+                />
               ),
             },
             {
@@ -3252,11 +3357,7 @@ export function ApplicationDetailPage() {
               key: 'services',
               label: '服务',
               children: (
-                <section
-                  aria-label="服务工作台"
-                  className="soha-service-console"
-                  data-scroll-view={serviceOverview || serviceTab === 'pods' ? true : undefined}
-                >
+                <section aria-label="服务工作台" className="soha-service-console" data-scroll-view>
                   <aside className="soha-service-selector">
                     <div className="soha-service-selector__heading">
                       <strong>
@@ -3363,9 +3464,8 @@ export function ApplicationDetailPage() {
                   <div className="soha-service-console__body">
                     {serviceRecordsState}
                     {serviceOverview && visibleServiceCards.length ? (
-                      <>
-                        <div className="soha-service-overview-grid__toolbar">
-                          <h2>服务总览</h2>
+                      <ServiceCards
+                        refreshAction={
                           <ManagementRefreshButton
                             aria-label="刷新当前环境"
                             tooltip="刷新当前环境"
@@ -3377,21 +3477,19 @@ export function ApplicationDetailPage() {
                               void servicesQuery.refetch()
                             }}
                           />
-                        </div>
-                        <ServiceCards
-                          cards={filteredServiceCards}
-                          statusFor={serviceStatus}
-                          runtimeReady={
-                            !runtimePending &&
-                            !runtimeUnavailable &&
-                            !invalidEnvironment &&
-                            activeEnvironment?.status !== 'unavailable'
-                          }
-                          canConfigure={canViewWorkflows || canViewBuilds}
-                          onSelect={selectService}
-                          onConfigure={openServiceWorkflow}
-                        />
-                      </>
+                        }
+                        cards={filteredServiceCards}
+                        statusFor={serviceStatus}
+                        runtimeReady={
+                          !runtimePending &&
+                          !runtimeUnavailable &&
+                          !invalidEnvironment &&
+                          activeEnvironment?.status !== 'unavailable'
+                        }
+                        canConfigure={canViewWorkflows || canViewBuilds}
+                        onSelect={selectService}
+                        onConfigure={openServiceWorkflow}
+                      />
                     ) : serviceCards.length || focusedServiceId ? (
                       serviceDetails
                     ) : (
@@ -3889,32 +3987,83 @@ export function ApplicationDetailPage() {
               {tab('delivery').children}
               {!invalidEnvironment ? tab('services').children : null}
               <Drawer
+                classNames={{
+                  header:
+                    activeTab === 'delivery' && !serviceModalVisible
+                      ? undefined
+                      : 'soha-settings-drawer-header',
+                }}
                 className={
-                  activeTab === 'delivery' ? undefined : 'soha-application-settings-drawer'
+                  activeTab === 'delivery' && !serviceModalVisible
+                    ? undefined
+                    : 'soha-application-settings-drawer'
                 }
                 title={
-                  activeTab === 'delivery' ? '构建与更新' : `${settingsLabel} · ${application.name}`
+                  activeTab === 'delivery' && !serviceModalVisible ? (
+                    '构建与更新'
+                  ) : (
+                    <div className="soha-settings-drawer-title">
+                      {serviceModalVisible ? (
+                        <Button
+                          type="text"
+                          icon={<ArrowLeftOutlined />}
+                          aria-label="返回服务与构建"
+                          onClick={() =>
+                            requestSettingsChange(() => {
+                              setServiceModalVisible(false)
+                              setEditingService(null)
+                              const next = new URLSearchParams(searchParams)
+                              next.delete('serviceEditor')
+                              setSearchParams(next, { replace: true })
+                            })
+                          }
+                        />
+                      ) : null}
+                      <strong>
+                        {serviceModalVisible
+                          ? editingService
+                            ? '编辑服务'
+                            : '添加服务'
+                          : settingsLabel}
+                      </strong>
+                      <Text type="secondary" ellipsis title={application.name}>
+                        {application.name}
+                      </Text>
+                    </div>
+                  )
                 }
+                closable={{ placement: 'end' }}
                 open={
                   (activeTab === 'delivery' &&
+                    !serviceModalVisible &&
                     !deliveryActionModalVisible &&
                     !deliveryPlanModalVisible) ||
-                  Boolean(settingsKey)
+                  Boolean(settingsKey) ||
+                  serviceModalVisible
                 }
-                size="min(1080px, 100vw)"
+                size="min(1040px, 100vw)"
                 destroyOnHidden
-                onClose={() => {
-                  setServiceModalVisible(false)
-                  setEditingService(null)
-                  setActiveTab('services')
-                }}
+                onClose={() =>
+                  requestSettingsChange(() => {
+                    setServiceModalVisible(false)
+                    setEditingService(null)
+                    setActiveTab('services')
+                  })
+                }
               >
-                {activeTab === 'delivery' ? (
+                {activeTab === 'delivery' && !serviceModalVisible ? (
                   sections.find((item) => item.key === 'delivery')?.children
                 ) : (
-                  <div className="soha-application-settings">
+                  <div
+                    className={
+                      serviceModalVisible
+                        ? 'soha-application-settings is-editing-service'
+                        : 'soha-application-settings'
+                    }
+                  >
                     <nav
                       className="soha-application-settings__navigation"
+                      hidden={serviceModalVisible}
                       aria-label={localeText(localeCode, '设置分区', 'Settings sections')}
                     >
                       {APPLICATION_SETTINGS_NAV_ITEMS.map((item) => (
@@ -3924,57 +4073,45 @@ export function ApplicationDetailPage() {
                           type="button"
                           aria-current={settingsKey === item.key ? 'page' : undefined}
                           aria-controls="application-settings-content"
-                          className={item.key === 'resources' ? 'is-extension' : undefined}
-                          onClick={() => {
-                            setServiceModalVisible(false)
-                            setEditingService(null)
-                            const next = new URLSearchParams(searchParams)
-                            next.set('settings', item.key)
-                            setSearchParams(next, { replace: true })
-                          }}
+                          onClick={() =>
+                            requestSettingsChange(() => {
+                              setServiceModalVisible(false)
+                              setEditingService(null)
+                              const next = new URLSearchParams(searchParams)
+                              next.set('settings', item.key)
+                              setSearchParams(next, { replace: true })
+                            })
+                          }
                         >
                           {localeText(localeCode, item.label, item.labelEn)}
                         </button>
                       ))}
                     </nav>
                     <section
-                      key={settingsKey}
+                      ref={settingsContentRef}
+                      key={serviceModalVisible ? 'application' : settingsKey}
                       id="application-settings-content"
                       className="soha-application-settings__content"
-                      aria-labelledby={`application-settings-${settingsKey}`}
+                      aria-label={
+                        serviceModalVisible ? (editingService ? '编辑服务' : '添加服务') : undefined
+                      }
+                      aria-labelledby={
+                        serviceModalVisible ? undefined : `application-settings-${settingsKey}`
+                      }
                     >
-                      {serviceModalVisible && settingsKey === 'application' ? (
+                      {serviceModalVisible ? (
                         <ServiceEditor
                           application={application}
                           service={editingService}
                           services={services}
                           repositories={repositories}
                           canManageBuild={canManageRepositories}
-                          onCancel={() => {
-                            setServiceModalVisible(false)
-                            setEditingService(null)
-                          }}
+                          closeGuardRef={serviceEditorCloseGuard}
+                          onCancel={leaveServiceEditor}
                           onSaved={(id) => {
                             setServiceModalVisible(false)
                             setEditingService(null)
-                            const hasEnvironment =
-                              environments.some((environment) =>
-                                environment.workloads?.some(
-                                  (workload) => workload.serviceId === id,
-                                ),
-                              ) ||
-                              bindings.some((binding) =>
-                                binding.targets?.some(
-                                  (target) => target.metadata?.serviceId === id,
-                                ),
-                              )
-                            setFocusedService(
-                              id,
-                              'pods',
-                              !hasEnvironment && canUpdateApplicationEnvironment
-                                ? 'environment-bindings'
-                                : undefined,
-                            )
+                            setFocusedService(id, 'runtime')
                           }}
                         />
                       ) : (
@@ -4034,7 +4171,27 @@ export function ApplicationDetailPage() {
       <Modal
         title={editingBuildSourceId ? '编辑构建' : '添加构建'}
         open={buildSourceModalVisible}
-        footer={null}
+        footer={
+          <Space size={8}>
+            <Button onClick={() => setBuildSourceModalVisible(false)}>取消</Button>
+            <Button
+              onClick={() => buildSourceForm.submit()}
+              type="primary"
+              disabled={writeOutcomeUnknown(managementState.updateAppMutation.error)}
+              loading={managementState.updateAppMutation.isPending}
+            >
+              保存
+            </Button>
+          </Space>
+        }
+        centered
+        className="soha-build-config-modal"
+        classNames={{
+          container: 'soha-build-config-modal__container',
+          body: 'soha-build-config-modal__body',
+          header: 'soha-build-config-modal__header',
+          footer: 'soha-build-config-modal__footer',
+        }}
         destroyOnHidden
         width={920}
         onCancel={() => {
@@ -4134,17 +4291,6 @@ export function ApplicationDetailPage() {
             repositoriesLoading={repositoriesQuery.isFetching}
             onConnectRepository={(index) => openRepositoryModal('', index)}
           />
-          <div className="soha-form-actions">
-            <Button onClick={() => setBuildSourceModalVisible(false)}>取消</Button>
-            <Button
-              htmlType="submit"
-              type="primary"
-              disabled={writeOutcomeUnknown(managementState.updateAppMutation.error)}
-              loading={managementState.updateAppMutation.isPending}
-            >
-              保存
-            </Button>
-          </div>
         </Form>
       </Modal>
       <ApplicationCenterModals state={managementState} />

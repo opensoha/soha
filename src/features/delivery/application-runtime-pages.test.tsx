@@ -2401,17 +2401,20 @@ describe('ApplicationDetailPage workbench', () => {
     expect(
       document.querySelector('[aria-label="设置分区"] [aria-current="page"]')?.textContent,
     ).toContain('服务与构建')
-    expect(document.body.textContent).toContain('服务 → Git 仓库 → 构建定义 → 产物镜像')
-    expect(document.querySelector('.ant-collapse-item-active')?.textContent).toContain(
+    expect(document.querySelector('[aria-label="服务配置列表"]')).not.toBeNull()
+    expect(document.querySelector('[aria-label="服务配置列表"]')?.textContent).toContain(
       'Checkout API',
     )
     expect(document.querySelector('.soha-application-settings__content details')).toBeNull()
     expect(document.querySelector('.soha-application-settings__content')?.textContent).toContain(
-      '共享代码仓库',
+      '代码仓库',
     )
     expect(document.querySelector('.soha-application-settings__content')?.textContent).toContain(
-      '共享构建定义',
+      '构建定义',
     )
+    expect(
+      document.querySelector('.soha-application-settings__content')?.textContent,
+    ).not.toContain('暂无数据')
 
     await act(async () => {
       findButton(container, '新建服务').dispatchEvent(
@@ -2423,7 +2426,8 @@ describe('ApplicationDetailPage workbench', () => {
       '.soha-application-settings__content',
     ) as HTMLElement
     expect(document.querySelectorAll('.ant-drawer-open')).toHaveLength(1)
-    expect(serviceEditor.textContent).toContain('新建服务组件')
+    expect(document.querySelector('.soha-settings-drawer-title')?.textContent).toContain('添加服务')
+    expect(document.querySelector('[aria-label="设置分区"]')?.hasAttribute('hidden')).toBe(true)
     expect(serviceEditor.textContent).toContain('服务来源')
     expect(serviceEditor.textContent).toContain('已有镜像')
     expect(serviceEditor.textContent).toContain('产物与部署')
@@ -2435,6 +2439,11 @@ describe('ApplicationDetailPage workbench', () => {
     await act(async () => {
       findButton(serviceEditor, '取消').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '构建定义')!
+        .click()
     })
     await act(async () => {
       findButton(container, '添加构建').dispatchEvent(
@@ -2478,10 +2487,6 @@ describe('ApplicationDetailPage workbench', () => {
       findButton(editor, '下一步').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    await act(async () => {
-      findButton(editor, '下一步').click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
     await setInput('containers_0_imageRepository', 'registry.example.com/api')
     await setInput('containers_0_defaultTagTemplate', 'stable')
     await setInput('containers_0_runtimePortsText', '8080, 9090')
@@ -2490,8 +2495,8 @@ describe('ApplicationDetailPage workbench', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     await act(async () => {
-      findButton(editor, '保存服务').click()
-      findButton(editor, '保存服务').click()
+      findButton(editor, '创建服务').click()
+      findButton(editor, '创建服务').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -2517,7 +2522,7 @@ describe('ApplicationDetailPage workbench', () => {
     const location = container.querySelector('[data-testid="location"]')?.textContent || ''
     expect(location).toContain('serviceId=service-created')
     expect(location).toContain('applicationEnvironmentId=binding-test')
-    expect(location).toContain('settings=environment-bindings')
+    expect(location).toContain('serviceTab=runtime')
   })
 
   it.each([
@@ -2620,7 +2625,7 @@ describe('ApplicationDetailPage workbench', () => {
           .mockRejectedValueOnce(new ApiError(400, '服务保存被拒绝'))
       }
       await click(findButton(editor, '下一步'))
-      await click(findButton(editor, '保存服务'))
+      await click(findButton(editor, '创建服务'))
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
@@ -2767,7 +2772,6 @@ describe('ApplicationDetailPage workbench', () => {
     await click(editor.querySelector<HTMLInputElement>('input[value="configuration"]')!)
     await click(findButton(editor, '下一步'))
     await click(findButton(editor, '下一步'))
-    await click(findButton(editor, '下一步'))
     await click(findButton(editor, '保存服务'))
     expect(api.put).toHaveBeenCalledTimes(1)
     expect(api.put).toHaveBeenCalledWith(
@@ -2791,7 +2795,7 @@ describe('ApplicationDetailPage workbench', () => {
     })
     const editor = document.querySelector('.soha-application-settings__content') as HTMLElement
     expect(editor.textContent).toContain('沿用现有来源')
-    for (const label of ['下一步', '下一步', '下一步', '保存服务']) {
+    for (const label of ['下一步', '下一步', '保存服务']) {
       await act(async () => {
         findButton(editor, label).click()
         await new Promise((resolve) => setTimeout(resolve, 0))
@@ -2817,6 +2821,11 @@ describe('ApplicationDetailPage workbench', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
     }
+    await click(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find(
+        (tab) => tab.textContent === '构建定义',
+      )!,
+    )
     await click(document.querySelector<HTMLButtonElement>('[aria-label="编辑构建源"]')!)
     const modal = findModal('编辑构建')
     for (const [id, value] of [
@@ -2913,6 +2922,11 @@ describe('ApplicationDetailPage workbench', () => {
     )
 
     await act(async () => {
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '构建定义')!
+        .click()
+    })
+    await act(async () => {
       findButton(container, '添加构建').dispatchEvent(
         new MouseEvent('click', { bubbles: true, cancelable: true }),
       )
@@ -2983,6 +2997,11 @@ describe('ApplicationDetailPage workbench', () => {
       '/applications/app-1?tab=application',
     )
 
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '构建定义')!
+        .click()
+    })
     await act(async () => {
       findButton(container, '添加构建').click()
       await new Promise((resolve) => setTimeout(resolve, 0))

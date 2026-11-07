@@ -16,6 +16,11 @@
 .soha-service-catalog__toolbar .ant-typography {
   margin-inline-start: 6px;
 }
+.soha-service-catalog__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .soha-service-catalog__scroll {
   min-height: 0;
   padding: 12px;

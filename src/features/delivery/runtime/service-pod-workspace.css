@@ -247,3 +247,32 @@
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+
+.soha-pod-drawer .soha-pod-drawer-header {
+  min-height: 56px;
+  padding: 8px 16px;
+}
+.soha-pod-drawer-title-slot {
+  min-width: 0;
+}
+.soha-pod-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.soha-pod-drawer-title > strong {
+  flex: none;
+}
+.soha-pod-drawer-identity {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 400;
+}
+.soha-pod-drawer .soha-pod-drawer-body {
+  padding: 16px;
+  overflow: auto;
+}

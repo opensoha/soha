@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Button, Card, Segmented, Typography } from 'antd'
 import './service-cards.css'
 import { DeploymentUnitOutlined } from '@ant-design/icons'
@@ -86,7 +86,9 @@ export function ServiceCards({
   canConfigure,
   onSelect,
   onConfigure,
+  refreshAction,
 }: {
+  refreshAction?: ReactNode
   cards: ServiceCard[]
   statusFor: (
     items: ApplicationRuntimeWorkload[],
@@ -147,15 +149,18 @@ export function ServiceCards({
         <strong id="service-catalog-heading">
           服务清单 <Typography.Text type="secondary">{cards.length} 个服务</Typography.Text>
         </strong>
-        <Segmented
-          aria-label="服务显示方式"
-          value={layout}
-          onChange={setLayout}
-          options={[
-            { label: '卡片', value: 'cards' },
-            { label: '列表', value: 'list' },
-          ]}
-        />
+        <div className="soha-service-catalog__actions">
+          <Segmented
+            aria-label="服务显示方式"
+            value={layout}
+            onChange={setLayout}
+            options={[
+              { label: '卡片', value: 'cards' },
+              { label: '列表', value: 'list' },
+            ]}
+          />
+          {refreshAction}
+        </div>
       </div>
       <div
         className="soha-service-catalog__scroll"

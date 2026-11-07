@@ -1,9 +1,11 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { MutableRefObject } from 'react'
 import {
   Alert,
   App,
   Button,
   Card,
+  Collapse,
   Form,
   Input,
   Radio,
@@ -12,7 +14,7 @@ import {
   Switch,
   Typography,
 } from 'antd'
-import { ArrowLeftOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ManagementIconButton } from '@/components/management-list'
 import { StepForm } from '@/components/step-form'
@@ -20,6 +22,7 @@ import { isApiError } from '@/services/api-error'
 import { deliveryMutations } from '../mutations'
 import { deliveryApi } from '../api'
 import { deliveryQueries } from '../queries'
+import { useUnsavedDocument } from '../documents/use-unsaved-document'
 import { serviceCreationPreset } from './service-presets'
 import type {
   ApplicationServiceComponent,
@@ -39,6 +42,8 @@ import {
   useServiceDeployment,
 } from './deployment-template-fields'
 import type { DeploymentFormValues } from './deployment-template-fields'
+
+import './service-editor-layout.css'
 
 const { Text } = Typography
 export const SERVICE_KIND_OPTIONS = [
@@ -121,6 +126,7 @@ export function ServiceEditor({
   services,
   repositories,
   canManageBuild,
+  closeGuardRef,
   onCancel,
   onSaved,
 }: {
@@ -129,6 +135,7 @@ export function ServiceEditor({
   services: ApplicationServiceComponent[]
   repositories: DeliveryRepository[]
   canManageBuild: boolean
+  closeGuardRef?: MutableRefObject<((proceed: () => void) => void) | null>
   onCancel: () => void
   onSaved: (serviceId: string) => void
 }) {
@@ -142,6 +149,7 @@ export function ServiceEditor({
   const savedService = useRef({ id: service?.id, version: service?.version })
   const originalBuildSource = useRef<BuildSource | undefined>(undefined)
   const saveInFlight = useRef(false)
+  const [draftChanged, setDraftChanged] = useState(false)
   const [initialValues] = useState(() => ({
     ...serviceInitialValues(service),
     deployment: initialDeploymentValues(service),
@@ -200,6 +208,7 @@ export function ServiceEditor({
   const [applyingPreset, setApplyingPreset] = useState(false)
   const presets = useQuery(deliveryQueries.blueprints.list(presetsOpen && !service))
   const applyPreset = async (value: string) => {
+    setDraftChanged(true)
     setApplyingPreset(true)
     try {
       const [blueprintId, key] = JSON.parse(value) as [string, string]
@@ -241,6 +250,14 @@ export function ServiceEditor({
       onSaved(id)
     },
   })
+  useUnsavedDocument(
+    draftChanged ||
+      preparing ||
+      applyingPreset ||
+      saveMutation.isPending ||
+      Boolean(submitted) ||
+      repositoryDrafts.length > 0,
+  )
   const submitDraft = (draft: ServiceSetupDraft) => {
     if (saveInFlight.current) return
     saveInFlight.current = true
@@ -255,6 +272,7 @@ export function ServiceEditor({
   }
   const editBuild = (copy: boolean) => {
     if (!selectedSource) return
+    setDraftChanged(true)
     originalBuildSource.current = copy ? undefined : structuredClone(selectedSource)
     const config = selectedSource.config ?? {}
     form.setFieldsValue({
@@ -277,6 +295,7 @@ export function ServiceEditor({
   }
   const addRepositoryDraft = async () => {
     await form.validateFields([['repositoryDraft']], { recursive: true })
+    setDraftChanged(true)
     const input = form.getFieldValue('repositoryDraft') as RepositoryDraft['input']
     const draftId = `draft:${crypto.randomUUID()}`
     setRepositoryDrafts((items) => [...items, { draftId, input: { ...input } }])
@@ -376,20 +395,46 @@ export function ServiceEditor({
       }}
     />
   )
+  const requestClose = (proceed: () => void) => {
+    if (saveInFlight.current || saveMutation.isPending || preparing || applyingPreset) {
+      message.warning('正在处理服务配置，请稍候再关闭')
+      return
+    }
+    if (submitted) {
+      modal.confirm({
+        title: '关闭服务配置？',
+        content: '已保存的仓库、构建定义和服务配置将保留，尚未完成的配置不会继续保存。',
+        okText: '关闭，保留已保存资源',
+        cancelText: '继续配置',
+        onOk: proceed,
+      })
+      return
+    }
+    if (draftChanged || repositoryDrafts.length) {
+      modal.confirm({
+        title: '放弃未保存的服务配置？',
+        content: '离开后，本次尚未保存的修改将丢失。',
+        okText: '放弃修改',
+        cancelText: '继续编辑',
+        onOk: proceed,
+      })
+      return
+    }
+    proceed()
+  }
+  useEffect(() => {
+    if (!closeGuardRef) return
+    closeGuardRef.current = requestClose
+    return () => {
+      closeGuardRef.current = null
+    }
+  })
+  // Keep validation and recovery checkpoints on their original step indices.
+  const visibleStepIndices = sourceMode === 'build' ? [0, 1, 2, 3] : [0, 2, 3]
   return (
     <div className="soha-application-service-editor">
-      <Button
-        type="text"
-        icon={<ArrowLeftOutlined />}
-        style={{ justifySelf: 'start' }}
-        onClick={onCancel}
-        disabled={saveMutation.isPending || preparing}
-      >
-        返回服务与构建
-      </Button>
-      <Text strong>{service ? '编辑服务组件' : '新建服务组件'}</Text>
       {submitted ? (
-        <Space orientation="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" className="soha-application-service-editor__receipt">
           <Alert
             type={saveMutation.isError ? 'error' : 'info'}
             showIcon
@@ -463,17 +508,21 @@ export function ServiceEditor({
               >
                 返回编辑
               </Button>
-              <Button onClick={onCancel}>关闭，保留已保存资源</Button>
+              <Button onClick={() => requestClose(onCancel)}>关闭，保留已保存资源</Button>
             </Space>
           ) : null}
         </Space>
       ) : null}
-      <div hidden={Boolean(submitted)}>
+      <div className="soha-application-service-editor__form" hidden={Boolean(submitted)}>
         <StepForm
           form={form}
           initialValues={initialValues}
-          current={current}
-          onCurrentChange={(next) => {
+          current={Math.max(0, visibleStepIndices.indexOf(current))}
+          onValuesChange={() => {
+            setDraftChanged(true)
+          }}
+          onCurrentChange={(visibleIndex) => {
+            const next = visibleStepIndices[visibleIndex]
             if (next === 2 && sourceMode === 'build') {
               const source =
                 buildMode === 'existing'
@@ -490,10 +539,11 @@ export function ServiceEditor({
             }
             setCurrent(next)
           }}
-          onCancel={onCancel}
+          onCancel={() => requestClose(onCancel)}
           onFinish={() => void save()}
           contentMaxWidth="100%"
-          submitText={preparing ? '校验部署配置…' : '保存服务'}
+          submitText={service ? '保存服务' : '创建服务'}
+          loading={preparing || saveMutation.isPending}
           onFinishFailed={({ errorFields }) => {
             const name = errorFields[0]?.name
             setCurrent(
@@ -554,6 +604,18 @@ export function ServiceEditor({
                       />
                     </Form.Item>
                   ) : null}
+                  <Form.Item name="sourceMode" label="服务来源">
+                    <Radio.Group
+                      options={[
+                        ...(initialValues.sourceMode === 'existing'
+                          ? [{ value: 'existing', label: '沿用现有来源' }]
+                          : []),
+                        { value: 'build', label: '从源码构建' },
+                        { value: 'image', label: '已有镜像' },
+                        { value: 'configuration', label: '仅配置服务' },
+                      ]}
+                    />
+                  </Form.Item>
                   <section className="soha-application-service-editor-section">
                     <div className="soha-application-service-editor-section__head">
                       <Text strong>基础信息</Text>
@@ -577,29 +639,35 @@ export function ServiceEditor({
                       <Form.Item name="serviceKind" label="服务类型">
                         <Select options={SERVICE_KIND_OPTIONS} />
                       </Form.Item>
-                      <Form.Item name="ownerTeam" label="负责人团队">
-                        <Input />
-                      </Form.Item>
-                      <Form.Item name="enabled" label="启用" valuePropName="checked">
-                        <Switch />
-                      </Form.Item>
                     </div>
-                    <Form.Item name="description" label="描述">
-                      <Input.TextArea rows={2} />
-                    </Form.Item>
-                  </section>
-                  <Form.Item name="sourceMode" label="服务来源">
-                    <Radio.Group
-                      options={[
-                        ...(initialValues.sourceMode === 'existing'
-                          ? [{ value: 'existing', label: '沿用现有来源' }]
-                          : []),
-                        { value: 'build', label: '从源码构建' },
-                        { value: 'image', label: '已有镜像' },
-                        { value: 'configuration', label: '仅配置服务' },
+                    <Collapse
+                      ghost
+                      size="small"
+                      className="soha-application-service-editor__advanced"
+                      items={[
+                        {
+                          key: 'metadata',
+                          label: '更多设置（可选）',
+                          forceRender: true,
+                          children: (
+                            <>
+                              <div className="soha-application-service-form-grid">
+                                <Form.Item name="ownerTeam" label="负责人团队">
+                                  <Input />
+                                </Form.Item>
+                                <Form.Item name="enabled" label="启用" valuePropName="checked">
+                                  <Switch />
+                                </Form.Item>
+                              </div>
+                              <Form.Item name="description" label="描述">
+                                <Input.TextArea rows={2} />
+                              </Form.Item>
+                            </>
+                          ),
+                        },
                       ]}
                     />
-                  </Form.Item>
+                  </section>
                   {sourceMode === 'build' ? (
                     <>
                       <Form.Item name="buildMode" label="构建定义">
@@ -673,7 +741,12 @@ export function ServiceEditor({
                           ) : null}
                           {buildFields('repositories')}
                           {repositoryTarget !== null ? (
-                            <Card size="small" title="接入仓库草稿">
+                            <Card
+                              size="small"
+                              title="接入仓库草稿"
+                              className="soha-service-repository-draft"
+                              classNames={{ body: 'soha-service-repository-draft__body' }}
+                            >
                               <RepositoryFields form={form} prefix={['repositoryDraft']} />
                               <Space>
                                 <Button
@@ -898,7 +971,7 @@ export function ServiceEditor({
               ],
               children: <DeploymentEnvironmentFields state={deployment} />,
             },
-          ]}
+          ].filter((_, index) => visibleStepIndices.includes(index))}
         />
       </div>
     </div>
