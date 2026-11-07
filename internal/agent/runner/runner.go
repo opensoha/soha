@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -115,6 +114,7 @@ type Runner struct {
 	helmAllowedActions  []string
 	manifestExecutor    ManifestExecutor
 	manifestClusterID   string
+	manifestClaimToken  string
 	sshClusterID        string
 	chatToolGrants      sync.Map
 	buildpacksBlocked   atomic.Bool
@@ -231,11 +231,6 @@ func New(cfg cfgpkg.ControlPlaneConfig, logger *zap.Logger) *Runner {
 	}
 	runner.providerConformance = runnerProviderProbe{runner: runner}
 	return runner
-}
-
-func (r *Runner) SetManifestExecutor(executor ManifestExecutor, clusterID string) {
-	r.manifestExecutor = executor
-	r.manifestClusterID = strings.TrimSpace(clusterID)
 }
 
 func (r *Runner) SetSSHExecutor(clusterID string, enabled bool) {
@@ -444,10 +439,10 @@ func (s runnerMetricSet) snapshot() RunnerMetricSnapshot {
 }
 
 func (r *Runner) Start(ctx context.Context) {
-	if !r.cfg.Enabled || strings.TrimSpace(r.cfg.BaseURL) == "" || strings.TrimSpace(r.cfg.BearerToken) == "" {
+	if !r.controlPlaneEnabled() {
 		return
 	}
-	if len(r.cfg.ProviderKinds) > 0 || r.cfg.Buildpacks.Enabled || r.sshClusterID != "" {
+	if r.executionClaimEnabled() {
 		go r.loop(ctx)
 	}
 	if r.cfg.Docker.Enabled {
@@ -540,41 +535,6 @@ func (r *Runner) agentRuntimeLoop(ctx context.Context) {
 			}(run)
 		}
 	}
-}
-
-func (r *Runner) claim(ctx context.Context) (ExecutionTask, bool) {
-	if r.cfg.Buildpacks.Enabled && r.buildpacksBlocked.Load() {
-		return ExecutionTask{}, false
-	}
-	if task, ok := r.claimHelmTask(ctx); ok {
-		return task, true
-	}
-	providerKinds := append([]string(nil), r.cfg.ProviderKinds...)
-	if r.cfg.Buildpacks.Enabled {
-		providerKinds = []string{"buildpacks_runner." + r.cfg.AgentID}
-	}
-	if r.sshClusterID != "" {
-		providerKinds = append(providerKinds, "vm_ssh."+r.sshClusterID)
-	}
-	if r.manifestExecutor != nil && r.manifestClusterID != "" {
-		providerKinds = append(providerKinds, "manifest_agent."+r.manifestClusterID, resourceruntime.ManifestAgentProviderPrefix+r.manifestClusterID, resourceruntime.RootCRAgentProviderPrefix+r.manifestClusterID)
-	}
-	task, err := claimExecutionWithManifestAdmission(ctx, r.apiClient(), claimRequest{
-		AgentID:         firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
-		ProviderKinds:   providerKinds,
-		RuntimeEndpoint: strings.TrimSpace(r.cfg.RuntimeEndpoint),
-	})
-	if err != nil {
-		r.rejectUnadmittedManifestClaim(ctx, task, err)
-		r.metrics.markClaim(metricScopeExecution, false)
-		return ExecutionTask{}, false
-	}
-	if strings.TrimSpace(task.ID) == "" {
-		r.metrics.markClaim(metricScopeExecution, false)
-		return ExecutionTask{}, false
-	}
-	r.metrics.markClaim(metricScopeExecution, true)
-	return task, true
 }
 
 func (r *Runner) claimAgentRun(ctx context.Context) (AgentRun, bool) {

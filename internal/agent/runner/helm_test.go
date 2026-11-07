@@ -123,7 +123,7 @@ func TestHelmClaimUsesOnlyItsClusterAndCredential(t *testing.T) {
 func TestInitializationManifestClaimUsesClusterCredential(t *testing.T) {
 	r := New(cfgpkg.ControlPlaneConfig{BaseURL: "http://core", AgentID: "agent", BearerToken: "general"}, zap.NewNop())
 	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token", nil)
-	r.SetManifestExecutor(&blockingManifestExecutor{}, "one")
+	r.SetManifestExecutor(&blockingManifestExecutor{}, "one", "cluster-token")
 	r.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		var claim claimRequest
 		if err := json.NewDecoder(req.Body).Decode(&claim); err != nil {

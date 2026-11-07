@@ -11,33 +11,31 @@ import (
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha-contracts/helmrelease"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 )
+
+const helmAgentProviderPrefix = "helm_agent."
 
 type HelmExecutor interface {
 	ExecuteHelmDelivery(context.Context, sohaapi.HelmExecutionTaskPayload) (sohaapi.HelmExecutionTaskResult, error)
 }
 
 func (r *Runner) SetHelmExecutor(executor HelmExecutor, clusterID, token string, allowedActions []string) {
+	if nilExecutionPort(executor) {
+		executor = nil
+	}
 	r.helmExecutor, r.helmClusterID, r.helmClaimToken = executor, strings.TrimSpace(clusterID), strings.TrimSpace(token)
 	r.helmAllowedActions = slices.Clone(allowedActions)
 }
 
-func (r *Runner) claimHelmTask(ctx context.Context) (ExecutionTask, bool) {
+func (r *Runner) helmExecutionClaim() clusterExecutionClaim {
 	if r.helmExecutor == nil || r.helmClusterID == "" || r.helmClaimToken == "" {
-		return ExecutionTask{}, false
+		return clusterExecutionClaim{}
 	}
-	client := sohaapi.NewClient(r.cfg.BaseURL, sohaapi.WithBearerToken(r.helmClaimToken), sohaapi.WithHTTPClient(r.httpClient))
-	providers := []string{"helm_agent." + r.helmClusterID, helmrelease.InitializationProviderPrefix + r.helmClusterID}
-	if r.manifestExecutor != nil && r.manifestClusterID == r.helmClusterID {
-		providers = append(providers, resourceruntime.ManifestInitializationProviderPrefix+r.manifestClusterID)
-		providers = append(providers, protectedManifestProviders(r.manifestClusterID)...)
+	return clusterExecutionClaim{
+		clusterID: r.helmClusterID,
+		token:     r.helmClaimToken,
+		providers: []string{helmAgentProviderPrefix + r.helmClusterID, helmrelease.InitializationProviderPrefix + r.helmClusterID},
 	}
-	task, err := claimExecutionWithManifestAdmission(ctx, client, claimRequest{AgentID: r.cfg.AgentID, ProviderKinds: providers, RuntimeEndpoint: r.cfg.RuntimeEndpoint})
-	r.rejectUnadmittedManifestClaim(ctx, task, err)
-	ok := err == nil && task.ID != ""
-	r.metrics.markClaim(metricScopeExecution, ok)
-	return task, ok
 }
 
 func (r *Runner) executeHelmTask(ctx context.Context, task ExecutionTask) {
@@ -54,7 +52,7 @@ func (r *Runner) executeHelmTask(ctx context.Context, task ExecutionTask) {
 	if err == nil {
 		err = helmrelease.ValidateTaskIdentity(payload)
 	}
-	expectedProvider := "helm_agent." + r.helmClusterID
+	expectedProvider := helmAgentProviderPrefix + r.helmClusterID
 	if helmrelease.IsInitialization(payload.Snapshot) {
 		expectedProvider = helmrelease.InitializationProviderPrefix + r.helmClusterID
 	}

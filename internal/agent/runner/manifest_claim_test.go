@@ -3,14 +3,15 @@ package runner
 import (
 	"encoding/json"
 	"errors"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
-	"go.uber.org/zap"
 	"net/http"
 	"slices"
 	"sync"
 	"testing"
+
+	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	"go.uber.org/zap"
 )
 
 func TestManifestClaimRequiresThisResponseConfirmation(t *testing.T) {
@@ -101,8 +102,7 @@ func TestManifestAdmissionDoesNotLeakBetweenConcurrentClaims(t *testing.T) {
 
 func TestProtectedManifestClaimUsesClusterTokenAndFailsWithoutAdmission(t *testing.T) {
 	r := New(cfgpkg.ControlPlaneConfig{BaseURL: "http://core", BearerToken: "general-token", CallbackRetry: cfgpkg.CallbackRetryConfig{MaxAttempts: 1}}, zap.NewNop())
-	r.SetManifestExecutor(blockingManifestExecutor{}, "one")
-	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token", nil)
+	r.SetManifestExecutor(blockingManifestExecutor{}, "one", "cluster-token")
 	statuses := []string{}
 	claims := 0
 	r.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -110,6 +110,14 @@ func TestProtectedManifestClaimUsesClusterTokenAndFailsWithoutAdmission(t *testi
 			var input claimRequest
 			if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 				return nil, err
+			}
+			if req.Header.Get("Authorization") == "Bearer general-token" {
+				for _, provider := range protectedManifestProviders("one") {
+					if slices.Contains(input.ProviderKinds, provider) {
+						t.Fatalf("general claim retried protected provider: %s", provider)
+					}
+				}
+				return jsonResponse(t, http.StatusNoContent, nil), nil
 			}
 			claims++
 			for _, provider := range protectedManifestProviders("one") {
@@ -126,10 +134,13 @@ func TestProtectedManifestClaimUsesClusterTokenAndFailsWithoutAdmission(t *testi
 		if err := json.NewDecoder(req.Body).Decode(&callback); err != nil {
 			return nil, err
 		}
+		if callback.CallbackToken != "callback" {
+			t.Fatal("failed claim callback lost its attempt token")
+		}
 		statuses = append(statuses, callback.Status)
 		return jsonResponse(t, http.StatusOK, map[string]any{"data": ExecutionTask{ID: "task", Status: callback.Status}}), nil
 	})}
-	if _, ok := r.claimHelmTask(t.Context()); ok {
+	if _, ok := r.claim(t.Context()); ok {
 		t.Fatal("old Core admission was accepted")
 	}
 	if claims != 1 || !slices.Equal(statuses, []string{"failed"}) {

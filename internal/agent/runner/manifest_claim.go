@@ -3,16 +3,22 @@ package runner
 import (
 	"context"
 	"errors"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	"net/http"
 	"strings"
+
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 )
 
 // These wire values are owned by Contracts' claimExecutionTask specification.
 // The SDK's HTTP transport hook lets the runner inspect the claim response.
-const manifestAdmissionProviderPrefix = "manifest_delivery_v1."
-const manifestAdmissionHeader = "X-Soha-Manifest-Admission-Version"
+const legacyManifestAgentProviderPrefix = "manifest_agent."
+
+const (
+	manifestAdmissionCapability     = "manifest.delivery-admission.v1"
+	manifestAdmissionProviderPrefix = "manifest_delivery_v1."
+	manifestAdmissionHeader         = "X-Soha-Manifest-Admission-Version"
+)
 
 var errManifestAdmission = errors.New("manifest claim admission was not confirmed")
 
@@ -70,6 +76,37 @@ func legacyManifestPlanTask(task ExecutionTask) bool {
 	manager, _ := task.Payload["fieldManager"].(string)
 	initialization, _ := task.Payload["initializationPlanId"].(string)
 	return strings.HasPrefix(manager, "opensoha-manifest/") || initialization != ""
+}
+
+func (r *Runner) SetManifestExecutor(executor ManifestExecutor, clusterID, token string) {
+	if nilExecutionPort(executor) {
+		executor = nil
+	}
+	r.manifestExecutor = executor
+	r.manifestClusterID = strings.TrimSpace(clusterID)
+	r.manifestClaimToken = strings.TrimSpace(token)
+}
+
+func (r *Runner) manifestExecutionClaim() clusterExecutionClaim {
+	if r.manifestExecutor == nil || r.manifestClusterID == "" || r.manifestClaimToken == "" {
+		return clusterExecutionClaim{}
+	}
+	return clusterExecutionClaim{
+		clusterID: r.manifestClusterID,
+		token:     r.manifestClaimToken,
+		providers: append([]string{resourceruntime.ManifestInitializationProviderPrefix + r.manifestClusterID}, protectedManifestProviders(r.manifestClusterID)...),
+	}
+}
+
+func (r *Runner) standaloneManifestProviders() []string {
+	if r.manifestExecutor == nil || r.manifestClusterID == "" {
+		return nil
+	}
+	return []string{
+		legacyManifestAgentProviderPrefix + r.manifestClusterID,
+		resourceruntime.ManifestAgentProviderPrefix + r.manifestClusterID,
+		resourceruntime.RootCRAgentProviderPrefix + r.manifestClusterID,
+	}
 }
 
 func protectedManifestProviders(clusterID string) []string {

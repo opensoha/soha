@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,13 +48,14 @@ import (
 )
 
 type Client struct {
-	cfg            cfgpkg.KubernetesConfig
-	typed          kubernetes.Interface
-	dynamic        dynamic.Interface
-	discovery      discovery.DiscoveryInterface
-	metadata       metadata.Interface
-	restConfig     *rest.Config
-	resourceEvents *resourceEventStream
+	cfg                        cfgpkg.KubernetesConfig
+	typed                      kubernetes.Interface
+	dynamic                    dynamic.Interface
+	discovery                  discovery.DiscoveryInterface
+	metadata                   metadata.Interface
+	restConfig                 *rest.Config
+	resourceEvents             *resourceEventStream
+	executionClaimCapabilities []string
 }
 
 func New(cfg cfgpkg.KubernetesConfig) (*Client, error) {
@@ -80,6 +82,11 @@ func New(cfg cfgpkg.KubernetesConfig) (*Client, error) {
 	client := &Client{cfg: cfg, typed: typedClient, dynamic: dynamicClient, discovery: discoveryClient, metadata: metadataClient, restConfig: restConfig}
 	client.resourceEvents = newResourceEventStream(cfg.ID, typedClient)
 	return client, nil
+}
+
+// SetExecutionClaimCapabilities records the runner's enabled task capabilities before serving requests.
+func (c *Client) SetExecutionClaimCapabilities(capabilities []string) {
+	c.executionClaimCapabilities = slices.Clone(capabilities)
 }
 
 func (c *Client) Summary(_ context.Context) domaincluster.Summary {
@@ -116,9 +123,9 @@ func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 
 	capabilities := append(summary.Capabilities,
 		"manifest.preflight", "manifest.ssa", "manifest.observe", contractruntime.ManifestAgentCapability,
-		"manifest.delivery-admission.v1", contractruntime.RootCRAgentCapability, contractruntime.ManifestInitializationCapability, helmrelease.InitializationCapability,
 		"logs.runtime.snapshot", "logs.runtime.stream", "logs.runtime.aggregate",
 	)
+	capabilities = append(capabilities, c.executionClaimCapabilities...)
 	for _, group := range groups.Groups {
 		if strings.TrimSpace(group.Name) == "" {
 			continue
