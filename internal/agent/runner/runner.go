@@ -676,6 +676,7 @@ func (r *Runner) execute(ctx context.Context, task ExecutionTask) {
 			return
 		}
 	}
+	workspaceArtifacts = collectWorkspaceArtifacts(workspacePath, parseWorkspaceSpec(task).ArtifactFiles)
 
 	payload := map[string]any{
 		"agentId":       agentID,
@@ -1889,7 +1890,7 @@ func (r *Runner) ensureCheckout(ctx context.Context, workspacePath string, spec 
 func parseWorkspaceSpec(task ExecutionTask) workspaceSpec {
 	spec := workspaceSpec{
 		Path: firstNonEmpty(
-			strings.TrimSpace(fmt.Sprint(task.Payload["repositoryPath"])),
+			stringMapValue(task.Payload, "repositoryPath"),
 			strings.TrimSpace(task.ApplicationID),
 			strings.TrimSpace(task.ID),
 		),
@@ -1899,33 +1900,33 @@ func parseWorkspaceSpec(task ExecutionTask) workspaceSpec {
 		return spec
 	}
 	spec.Path = firstNonEmpty(
-		strings.TrimSpace(fmt.Sprint(raw["path"])),
-		strings.TrimSpace(fmt.Sprint(raw["relativePath"])),
+		stringMapValue(raw, "path"),
+		stringMapValue(raw, "relativePath"),
 		spec.Path,
 	)
 	spec.CommandDir = firstNonEmpty(
-		strings.TrimSpace(fmt.Sprint(raw["commandDir"])),
-		strings.TrimSpace(fmt.Sprint(raw["workingDir"])),
+		stringMapValue(raw, "commandDir"),
+		stringMapValue(raw, "workingDir"),
 	)
 	spec.ArtifactFiles = firstNonEmptyStringSlice(valueAsStringSlice(raw["artifactFiles"]), valueAsStringSlice(task.Payload["artifactFiles"]))
 	if checkoutRaw, ok := raw["checkout"].(map[string]any); ok {
 		spec.Checkout = checkoutSpec{
 			Enabled:        boolValue(checkoutRaw["enabled"], false),
-			RepositoryURL:  firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryURL"])), strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryUrl"]))),
-			RepositoryPath: strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryPath"])),
-			RefType:        firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkoutRaw["refType"])), strings.TrimSpace(fmt.Sprint(task.Payload["refType"]))),
-			RefName:        firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkoutRaw["refName"])), strings.TrimSpace(fmt.Sprint(task.Payload["refName"]))),
-			DefaultBranch:  strings.TrimSpace(fmt.Sprint(checkoutRaw["defaultBranch"])),
+			RepositoryURL:  firstNonEmpty(stringMapValue(checkoutRaw, "repositoryURL"), stringMapValue(checkoutRaw, "repositoryUrl")),
+			RepositoryPath: stringMapValue(checkoutRaw, "repositoryPath"),
+			RefType:        firstNonEmpty(stringMapValue(checkoutRaw, "refType"), stringMapValue(task.Payload, "refType")),
+			RefName:        firstNonEmpty(stringMapValue(checkoutRaw, "refName"), stringMapValue(task.Payload, "refName")),
+			DefaultBranch:  stringMapValue(checkoutRaw, "defaultBranch"),
 		}
 	}
 	if spec.Checkout.RefType == "" {
-		spec.Checkout.RefType = strings.TrimSpace(fmt.Sprint(task.Payload["refType"]))
+		spec.Checkout.RefType = stringMapValue(task.Payload, "refType")
 	}
 	if spec.Checkout.RefName == "" {
-		spec.Checkout.RefName = strings.TrimSpace(fmt.Sprint(task.Payload["refName"]))
+		spec.Checkout.RefName = stringMapValue(task.Payload, "refName")
 	}
 	if spec.Checkout.DefaultBranch == "" {
-		spec.Checkout.DefaultBranch = strings.TrimSpace(fmt.Sprint(task.Payload["defaultBranch"]))
+		spec.Checkout.DefaultBranch = stringMapValue(task.Payload, "defaultBranch")
 	}
 	return spec
 }
@@ -2099,7 +2100,7 @@ func commandFingerprint(command string) string {
 }
 
 func resolveImageFromCommands(payload map[string]any, commands []string) string {
-	if value := strings.TrimSpace(fmt.Sprint(payload["image"])); value != "" {
+	if value := stringMapValue(payload, "image"); value != "" {
 		return value
 	}
 	for _, command := range commands {
@@ -2119,7 +2120,7 @@ func buildImageArtifact(payload map[string]any, image string) map[string]any {
 		"ref":    image,
 		"status": "completed",
 	}
-	if digest := strings.TrimSpace(fmt.Sprint(payload["imageDigest"])); digest != "" && digest != "pending" {
+	if digest := stringMapValue(payload, "imageDigest"); digest != "" && digest != "pending" {
 		artifact["digest"] = digest
 	}
 	return artifact
@@ -2140,7 +2141,7 @@ func buildArtifactList(payload map[string]any, image string) []map[string]any {
 		if !updated && strings.TrimSpace(fmt.Sprint(copyItem["kind"])) == "image" {
 			copyItem["ref"] = image
 			copyItem["status"] = "completed"
-			if digest := strings.TrimSpace(fmt.Sprint(payload["imageDigest"])); digest != "" && digest != "pending" {
+			if digest := stringMapValue(payload, "imageDigest"); digest != "" && digest != "pending" {
 				copyItem["digest"] = digest
 			}
 			updated = true
