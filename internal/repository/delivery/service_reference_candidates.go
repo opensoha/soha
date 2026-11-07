@@ -13,6 +13,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	"gorm.io/gorm"
 )
 
@@ -71,7 +72,7 @@ func (r *Repository) SaveServiceReferenceCandidate(ctx context.Context, input do
 	if revalidate == nil || input.ExpectedRevision < 0 || input.Candidate.ContextRevision == "" {
 		return saved, fmt.Errorf("%w: candidate context and reauthorization are required", apperrors.ErrInvalidArgument)
 	}
-	err := dbtx.Within(ctx, r.db, func(txctx context.Context) error {
+	err := r.WithServiceReferenceScope(ctx, input.Candidate.Preview.ApplicationID, func(txctx context.Context) error {
 		if err := r.lockReferenceCandidateConfiguration(txctx, input.Candidate.Preview); err != nil {
 			return err
 		}
@@ -110,12 +111,13 @@ func (r *Repository) lockReferenceCandidateConfiguration(ctx context.Context, pr
 	slices.Sort(bindings)
 	environments := make([]string, 0, 2)
 	for _, id := range bindings {
-		if err := lockImportBinding(tx, id); err != nil {
-			return err
-		}
 		var environmentID string
-		if err := tx.Raw(`SELECT environment_id FROM application_environments WHERE id = ?`, id).Row().Scan(&environmentID); err != nil {
-			return fmt.Errorf("read candidate environment: %w", err)
+		err := tx.Raw(`SELECT environment_id FROM application_environments WHERE id = ? AND application_id = ? FOR UPDATE`, id, preview.ApplicationID).Row().Scan(&environmentID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: candidate environment changed", apperrors.ErrConflict)
+		}
+		if err != nil {
+			return fmt.Errorf("lock candidate environment: %w", err)
 		}
 		environments = append(environments, environmentID)
 	}
@@ -191,6 +193,9 @@ func (r *Repository) DeleteServiceReferenceCandidate(ctx context.Context, consum
 	}
 	return dbtx.Within(ctx, r.db, func(txctx context.Context) error {
 		tx := dbtx.DB(txctx, r.db)
+		if err := servicereferencelock.Binding(tx, consumerID); err != nil {
+			return err
+		}
 		if err := lockImportBinding(tx, consumerID); err != nil {
 			return err
 		}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	"strings"
 	"time"
 
@@ -251,6 +252,9 @@ func (r *Repository) CreateService(ctx context.Context, applicationID string, in
 	now := time.Now().UTC()
 	item := normalizeServiceInput(strings.TrimSpace(applicationID), input, now)
 	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, item.ApplicationID); err != nil {
+			return err
+		}
 		if err := insertServiceTx(tx, item); err != nil {
 			return err
 		}
@@ -266,6 +270,9 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 	item := normalizeServiceInput(strings.TrimSpace(applicationID), input, now)
 	item.ID = strings.TrimSpace(serviceID)
 	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, item.ApplicationID); err != nil {
+			return err
+		}
 		if err := lockServiceUpdate(tx, &item, input); err != nil {
 			return err
 		}
@@ -299,16 +306,23 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 }
 
 func (r *Repository) DeleteService(ctx context.Context, applicationID, serviceID string) error {
-	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM application_services WHERE application_id = ? AND id = ?`, strings.TrimSpace(applicationID), strings.TrimSpace(serviceID))
-	if result.Error != nil {
+	applicationID, serviceID = strings.TrimSpace(applicationID), strings.TrimSpace(serviceID)
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, applicationID); err != nil {
+			return err
+		}
+		result := tx.Exec(`DELETE FROM application_services WHERE application_id = ? AND id = ?`, applicationID, serviceID)
+		if result.Error == nil && result.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return result.Error
+	})
+	if err != nil {
 		var dependency *pgconn.PgError
-		if errors.As(result.Error, &dependency) && (dependency.Code == "23001" || dependency.Code == "23503") && dependency.ConstraintName == "environment_service_references_service_id_fkey" {
+		if errors.As(err, &dependency) && (dependency.Code == "23001" || dependency.Code == "23503") && dependency.ConstraintName == "environment_service_references_service_id_fkey" {
 			return fmt.Errorf("%w: detach active environment references before deleting this service", apperrors.ErrConflict)
 		}
-		return fmt.Errorf("delete application service: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
+		return fmt.Errorf("delete application service: %w", err)
 	}
 	return nil
 }

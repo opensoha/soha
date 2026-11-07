@@ -27,7 +27,7 @@ func TestServiceReferenceImpactsPostgres(t *testing.T) {
 		f := newReferenceCandidatePGFixture(t, ctx, store)
 		id := "impact-plan-" + uuid.NewString()
 		input := dd.DeliveryPlanInput{ID: id, ApplicationID: f.source.Application.ID, ApplicationEnvironmentID: f.source.ApplicationEnvironmentID, Action: dd.ApplicationDeliveryActionDeploy}
-		snapshot := dd.ServiceReferencePlanImpact{Version: 1, PlanID: id, ApplicationID: input.ApplicationID, SourceBindingID: input.ApplicationEnvironmentID, DatabaseRevision: strings.Repeat("a", 64), Revision: strings.Repeat("b", 64), Consumers: []dd.ServiceReferenceRecord{}, SourceRevisions: map[string]string{}}
+		snapshot := dd.ServiceReferencePlanImpact{Version: dd.ServiceReferencePlanImpactVersion, PlanID: id, ApplicationID: input.ApplicationID, SourceBindingID: input.ApplicationEnvironmentID, DatabaseRevision: strings.Repeat("a", 64), Revision: strings.Repeat("b", 64), Consumers: []dd.ServiceReferenceRecord{}, SourceRevisions: map[string]string{}}
 		t.Cleanup(func() {
 			if err := store.DB().Exec(`DELETE FROM delivery_plans WHERE id=?`, id).Error; err != nil {
 				t.Error(err)
@@ -61,7 +61,7 @@ func TestServiceReferenceImpactsPostgres(t *testing.T) {
 	})
 	t.Run("atomic_plan_snapshot_rollback", func(t *testing.T) {
 		f, input, snapshot := setup(t)
-		snapshot.Version = 0
+		snapshot.Consumers = nil
 		if _, err := f.repo.CreateDeliveryPlanWithServiceReferenceImpact(ctx, input, "actor", snapshot); err == nil {
 			t.Fatal("invalid snapshot accepted")
 		}

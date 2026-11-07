@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"os"
 	"strings"
@@ -46,9 +47,12 @@ func TestListAppliesAuthorizedApplicationsAndPagination(t *testing.T) {
 func TestUpdateSourceReturnsConflictForStaleGeneration(t *testing.T) {
 	repository, mock := newManifestRepository(t)
 	now := time.Now().UTC()
+	mock.ExpectBegin()
+	expectManifestPackageFence(mock, "manifest-1", "app-1", nil)
 	mock.ExpectExec(`UPDATE manifest_sources`).
 		WithArgs(domainmanifest.SourceModeSohaManaged, "", "", "", "", `[]`, `[]`, domainmanifest.SyncPolicyManual, 0, false, false, "manifest-1", int64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 	mock.ExpectQuery(`FROM manifest_sources source`).WithArgs("manifest-1").
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "package_id", "mode", "repository_id", "ref_type", "ref_value", "source_path",
@@ -71,7 +75,10 @@ func TestUpdateSourceReturnsConflictForStaleGeneration(t *testing.T) {
 
 func TestUpdateSourceMapsUnknownRepositoryToInvalidArgument(t *testing.T) {
 	repository, mock := newManifestRepository(t)
+	mock.ExpectBegin()
+	expectManifestPackageFence(mock, "manifest-1", "app-1", nil)
 	mock.ExpectExec(`UPDATE manifest_sources`).WillReturnError(&pgconn.PgError{Code: "23503"})
+	mock.ExpectRollback()
 
 	_, err := repository.UpdateSource(context.Background(), "manifest-1", domainmanifest.SourceInput{
 		Mode: domainmanifest.SourceModeGitSynced, RepositoryID: "missing", RefType: domainmanifest.SourceRefBranch,
@@ -89,6 +96,9 @@ func TestUpdateSourceMapsUnknownRepositoryToInvalidArgument(t *testing.T) {
 func TestUpdateSyncTaskIgnoresStaleSourceGeneration(t *testing.T) {
 	repository, mock := newManifestRepository(t)
 	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT package_id FROM manifest_sync_runs`).WithArgs("task-1").
+		WillReturnRows(sqlmock.NewRows([]string{"package_id"}).AddRow("manifest-1"))
+	expectManifestPackageFence(mock, "manifest-1", "app-1", nil)
 	mock.ExpectQuery(`SELECT run.source_id, run.package_id, run.source_generation, source.generation`).
 		WithArgs("task-1").
 		WillReturnRows(sqlmock.NewRows([]string{"source_id", "package_id", "run_generation", "source_generation", "actor", "auto_publish", "canonical_digest"}).
@@ -116,6 +126,7 @@ func TestDecideDeliveryIntentRejectsAcceptedProposalForGitSynchronizedSource(t *
 		DecidedBy: "admin", DecidedAt: &now, UpdatedAt: now,
 	}
 	mock.ExpectBegin()
+	expectManifestPackageFence(mock, item.PackageID, "app-1", nil)
 	mock.ExpectQuery(`SELECT status FROM manifest_delivery_intents WHERE id=\$1 FOR UPDATE`).
 		WithArgs(item.ID).
 		WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow(domainmanifest.IntentStatusDraft))
@@ -147,6 +158,9 @@ func TestCreateBindingMaintainsLegacyProjection(t *testing.T) {
 		Enabled: true, Version: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	mock.ExpectBegin()
+	expectManifestPackageFence(mock, item.PackageID, "app-1", item.ApplicationEnvironmentID)
+	mock.ExpectExec(`SELECT id FROM manifest_packages WHERE id = .* FOR NO KEY UPDATE`).
+		WithArgs(item.PackageID).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`INSERT INTO manifest_bindings`).
 		WithArgs(item.ID, item.PackageID, item.ApplicationEnvironmentID, item.EnvironmentKey, item.ClusterID,
 			item.Namespace, `{"image":"v2"}`, "", "", item.DriftPolicy, item.DeletionPolicy,
@@ -193,6 +207,7 @@ func TestCreatePackageMaintainsRelationalBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	mock.ExpectBegin()
+	expectManifestPackageFence(mock, item.ID, item.ApplicationID, item.Bindings[0].ApplicationEnvironmentID)
 	mock.ExpectExec(`INSERT INTO manifest_packages .*service_id.*NULLIF\(\$5, ''\)`).
 		WithArgs(item.ID, item.Name, item.Description, item.ApplicationID, item.ServiceID, item.BusinessLineID, item.Renderer,
 			item.Status, item.CurrentRevision, files, bindings, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).
@@ -293,6 +308,7 @@ func TestManifestReconciliationMigrationIncludesDurableState(t *testing.T) {
 func TestDeleteArchivesPublishedPackage(t *testing.T) {
 	repository, mock := newManifestRepository(t)
 	mock.ExpectBegin()
+	expectManifestPackageFence(mock, "manifest-1", "app-1", nil)
 	mock.ExpectExec(`DELETE FROM manifest_packages WHERE id = \$1 AND archived_at IS NULL AND current_revision = 0`).
 		WithArgs("manifest-1").
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -321,4 +337,19 @@ func newManifestRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {
 		t.Fatalf("open gorm postgres mock: %v", err)
 	}
 	return New(db), mock
+}
+
+func expectManifestPackageFence(mock sqlmock.Sqlmock, packageID, appID string, environmentID driver.Value) {
+	read := func() {
+		query := mock.ExpectQuery(`SELECT application_id FROM manifest_packages WHERE id =`)
+		if environmentID == nil {
+			query.WithArgs(packageID, packageID)
+		} else {
+			query.WithArgs(packageID, environmentID, packageID)
+		}
+		query.WillReturnRows(sqlmock.NewRows([]string{"application_id"}).AddRow(appID))
+	}
+	read()
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WithArgs("service-references:" + appID).WillReturnResult(sqlmock.NewResult(0, 1))
+	read()
 }

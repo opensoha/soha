@@ -2,9 +2,7 @@ package delivery
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +14,9 @@ import (
 
 func (r *Repository) CreateDeliveryPlanWithServiceReferenceImpact(ctx context.Context, input dd.DeliveryPlanInput, actor string, snapshot dd.ServiceReferencePlanImpact) (dd.DeliveryPlan, error) {
 	var plan dd.DeliveryPlan
+	if snapshot.Version != dd.ServiceReferencePlanImpactVersion {
+		return plan, apperrors.ErrConflict
+	}
 	err := dbtx.Within(ctx, r.db, func(txctx context.Context) error {
 		var err error
 		plan, err = r.CreateDeliveryPlan(txctx, input, actor)
@@ -36,7 +37,7 @@ func (r *Repository) CreateDeliveryPlanWithServiceReferenceImpact(ctx context.Co
 		if err != nil {
 			return err
 		}
-		if saved.Revision != snapshot.Revision || saved.DatabaseRevision != snapshot.DatabaseRevision {
+		if saved.Version != snapshot.Version || saved.Revision != snapshot.Revision || saved.DatabaseRevision != snapshot.DatabaseRevision {
 			return apperrors.ErrConflict
 		}
 		return nil
@@ -54,7 +55,7 @@ func (r *Repository) GetDeliveryPlanServiceReferenceSnapshot(ctx context.Context
 	if err := json.Unmarshal(raw, &snapshot); err != nil {
 		return snapshot, fmt.Errorf("decode Plan reference impact: %w", err)
 	}
-	if snapshot.Version != 1 || snapshot.PlanID != planID || snapshot.Consumers == nil || snapshot.SourceRevisions == nil {
+	if (snapshot.Version != 1 && snapshot.Version != dd.ServiceReferencePlanImpactVersion) || snapshot.PlanID != planID || snapshot.Consumers == nil || snapshot.SourceRevisions == nil {
 		return snapshot, apperrors.ErrConflict
 	}
 	return snapshot, nil
@@ -65,23 +66,4 @@ func normalizeServiceReferenceImpactError(err error) error {
 		return apperrors.ErrNotFound
 	}
 	return err
-}
-
-// SourceServiceReferenceConfigurationRevision hashes authoritative Manifest configuration,
-// never reconciliation/status tables. Raw source/package contents stay inside persistence.
-func (r *Repository) SourceServiceReferenceConfigurationRevision(ctx context.Context, sourceID string) (string, error) {
-	var raw []byte
-	err := dbtx.DB(ctx, r.db).Raw(`SELECT COALESCE(jsonb_agg(jsonb_build_object(
-  'binding',to_jsonb(b)-'created_at'-'updated_at',
-  'package',to_jsonb(p)-'created_at'-'updated_at'-'created_by'-'updated_by',
-  'source',to_jsonb(s)-'created_at'-'updated_at'
- ) ORDER BY b.id),'[]'::jsonb) FROM manifest_bindings b
- JOIN manifest_packages p ON p.id=b.package_id
- LEFT JOIN manifest_sources s ON s.package_id=p.id
- WHERE b.application_environment_id=?`, sourceID).Row().Scan(&raw)
-	if err != nil {
-		return "", fmt.Errorf("read source reference configuration: %w", err)
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
 }

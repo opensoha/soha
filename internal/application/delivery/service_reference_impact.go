@@ -21,7 +21,16 @@ import (
 type serviceReferenceImpactRepository interface {
 	CreateDeliveryPlanWithServiceReferenceImpact(context.Context, dd.DeliveryPlanInput, string, dd.ServiceReferencePlanImpact) (dd.DeliveryPlan, error)
 	GetDeliveryPlanServiceReferenceSnapshot(context.Context, string) (dd.ServiceReferencePlanImpact, error)
-	SourceServiceReferenceConfigurationRevision(context.Context, string) (string, error)
+}
+
+type ServiceReferenceManifestConfigurationReader interface {
+	ServiceReferenceManifestConfigurationRevision(context.Context, string, []string) (string, error)
+}
+
+var errReferenceImpactTargetMissing = errors.New("current release target is missing")
+
+func (s *Service) SetServiceReferenceManifestConfigurationReader(reader ServiceReferenceManifestConfigurationReader) {
+	s.referenceManifests = reader
 }
 
 func referenceImpactDigest(value any) (string, error) {
@@ -33,8 +42,9 @@ func referenceImpactDigest(value any) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func (s *Service) referenceImpactDatabase(ctx context.Context, p di.Principal, applicationID, sourceID string) (dd.ServiceReferencePlanImpact, error) {
-	snapshot := dd.ServiceReferencePlanImpact{Version: 1, ApplicationID: applicationID, SourceBindingID: sourceID, Consumers: []dd.ServiceReferenceRecord{}, SourceRevisions: map[string]string{}}
+func (s *Service) referenceImpactDatabase(ctx context.Context, p di.Principal, plan dd.DeliveryPlan) (dd.ServiceReferencePlanImpact, error) {
+	applicationID, sourceID := plan.ApplicationID, plan.ApplicationEnvironmentID
+	snapshot := dd.ServiceReferencePlanImpact{Version: dd.ServiceReferencePlanImpactVersion, ApplicationID: applicationID, SourceBindingID: sourceID, Consumers: []dd.ServiceReferenceRecord{}, SourceRevisions: map[string]string{}}
 	repo, ok := s.repository.(ServiceReferenceScopeRepository)
 	if !ok {
 		return snapshot, apperrors.ErrUnsupportedOperation
@@ -76,55 +86,110 @@ func (s *Service) referenceImpactDatabase(ctx context.Context, p di.Principal, a
 	}
 	// Status and observation timestamps are deliberately absent from configuration evidence.
 	binding.CreatedAt, binding.UpdatedAt = time.Time{}, time.Time{}
-	targets := make([]dc.ReleaseTargetInput, 0, len(binding.Targets))
-	for _, target := range binding.Targets {
-		input, err := target.Input().WithCanonicalServiceID()
-		if err != nil {
-			return snapshot, apperrors.ErrConflict
-		}
-		targets = append(targets, input)
+	binding.Alias, binding.WorkflowTemplate = "", nil
+	environment.Name, environment.SortOrder = "", 0
+	environment.CreatedAt, environment.UpdatedAt = time.Time{}, time.Time{}
+	targets, selectionErr := referenceImpactTargets(binding.Targets, plan, records)
+	if selectionErr != nil && !errors.Is(selectionErr, errReferenceImpactTargetMissing) {
+		return snapshot, selectionErr
 	}
-	slices.SortFunc(targets, func(a, b dc.ReleaseTargetInput) int { return strings.Compare(a.ID, b.ID) })
 	binding.Targets = nil
-	services, err := s.applications.ListServices(ctx, p, applicationID)
+	sourceConfiguration, err := s.referenceManifestConfiguration(ctx, sourceID, targets)
 	if err != nil {
 		return snapshot, err
 	}
-	type serviceRevision struct {
-		ID      string
-		Version int64
-		Enabled bool
-	}
-	serviceVersions := make([]serviceRevision, 0, len(services))
-	for _, service := range services {
-		serviceVersions = append(serviceVersions, serviceRevision{service.ID, service.Version, service.Enabled})
-	}
-	slices.SortFunc(serviceVersions, func(a, b serviceRevision) int { return strings.Compare(a.ID, b.ID) })
-	impactRepo, ok := s.repository.(serviceReferenceImpactRepository)
-	if !ok {
-		return snapshot, apperrors.ErrUnsupportedOperation
-	}
-	sourceConfiguration, err := impactRepo.SourceServiceReferenceConfigurationRevision(ctx, sourceID)
+	serviceVersions, err := s.referenceImpactServices(ctx, p, applicationID)
 	if err != nil {
 		return snapshot, err
 	}
 	snapshot.DatabaseRevision, err = referenceImpactDigest(struct {
+		Version             int
 		Binding             dc.ApplicationEnvironment
 		Environment         dc.Environment
 		Targets             []dc.ReleaseTargetInput
 		Consumers           []consumerRevision
-		Services            []serviceRevision
+		Services            []referenceImpactServiceRevision
 		SourceConfiguration string
-	}{binding, environment, targets, consumers, serviceVersions, sourceConfiguration})
-	return snapshot, err
+	}{snapshot.Version, binding, environment, targets, consumers, serviceVersions, sourceConfiguration})
+	if err != nil {
+		return snapshot, err
+	}
+	return snapshot, selectionErr
+}
+
+func referenceImpactTargets(targets []dc.ReleaseTarget, plan dd.DeliveryPlan, records []dd.ServiceReferenceRecord) ([]dc.ReleaseTargetInput, error) {
+	requested := make(map[string]bool)
+	for _, id := range plan.TargetIDs {
+		requested[id] = true
+	}
+	if plan.TargetID != "" {
+		requested[plan.TargetID] = true
+	}
+	for _, record := range records {
+		for _, id := range record.SourceTargetIDs {
+			requested[id] = true
+		}
+	}
+	projected := make([]dc.ReleaseTargetInput, 0, len(requested))
+	for _, target := range targets {
+		if !requested[target.ID] {
+			continue
+		}
+		input, err := target.Input().WithCanonicalServiceID()
+		if err != nil {
+			return nil, apperrors.ErrConflict
+		}
+		projected = append(projected, input)
+	}
+	slices.SortFunc(projected, func(a, b dc.ReleaseTargetInput) int { return strings.Compare(a.ID, b.ID) })
+	if len(projected) != len(requested) {
+		return projected, fmt.Errorf("%w: %w", staleServiceReferencePlan(), errReferenceImpactTargetMissing)
+	}
+	return projected, nil
+}
+
+func (s *Service) referenceManifestConfiguration(ctx context.Context, sourceID string, targets []dc.ReleaseTargetInput) (string, error) {
+	ids := make([]string, 0)
+	for _, target := range targets {
+		if target.ExecutorKind == "manifest_ssa" && target.ConfigRef != "" {
+			ids = append(ids, target.ConfigRef)
+		}
+	}
+	if len(ids) == 0 {
+		return "", nil // Empty execution dependency set, with active consumers still hashed separately.
+	}
+	if s.referenceManifests == nil {
+		return "", apperrors.ErrUnsupportedOperation
+	}
+	slices.Sort(ids)
+	return s.referenceManifests.ServiceReferenceManifestConfigurationRevision(ctx, sourceID, slices.Compact(ids))
+}
+
+type referenceImpactServiceRevision struct {
+	ID      string
+	Version int64
+	Enabled bool
+}
+
+func (s *Service) referenceImpactServices(ctx context.Context, p di.Principal, applicationID string) ([]referenceImpactServiceRevision, error) {
+	services, err := s.applications.ListServices(ctx, p, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	serviceVersions := make([]referenceImpactServiceRevision, 0, len(services))
+	for _, service := range services {
+		serviceVersions = append(serviceVersions, referenceImpactServiceRevision{service.ID, service.Version, service.Enabled})
+	}
+	slices.SortFunc(serviceVersions, func(a, b referenceImpactServiceRevision) int { return strings.Compare(a.ID, b.ID) })
+	return serviceVersions, nil
 }
 
 func (s *Service) captureServiceReferenceImpact(ctx context.Context, p di.Principal, plan dd.DeliveryPlan) (dd.ServiceReferencePlanImpact, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	snapshot, err := s.referenceImpactDatabase(ctx, p, plan.ApplicationID, plan.ApplicationEnvironmentID)
-	if err != nil {
-		return snapshot, err
+	snapshot, selectionErr := s.referenceImpactDatabase(ctx, p, plan)
+	if selectionErr != nil && !errors.Is(selectionErr, errReferenceImpactTargetMissing) {
+		return snapshot, selectionErr
 	}
 	snapshot.PlanID = plan.ID
 	for _, record := range snapshot.Consumers {
@@ -158,11 +223,15 @@ func (s *Service) captureServiceReferenceImpact(ctx context.Context, p di.Princi
 		}
 		snapshot.SourceRevisions[record.ServiceID] = observedRevision
 	}
-	snapshot.Revision, err = referenceImpactDigest(struct {
+	revision, err := referenceImpactDigest(struct {
 		Database string
 		Sources  map[string]string
 	}{snapshot.DatabaseRevision, snapshot.SourceRevisions})
-	return snapshot, err
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Revision = revision
+	return snapshot, selectionErr
 }
 
 func (s *Service) createPlanWithServiceReferenceImpact(ctx context.Context, p di.Principal, input dd.DeliveryPlanInput) (dd.DeliveryPlan, error) {
@@ -188,7 +257,8 @@ func (s *Service) createPlanWithServiceReferenceImpact(ctx context.Context, p di
 	if !ok {
 		return dd.DeliveryPlan{}, apperrors.ErrUnsupportedOperation
 	}
-	snapshot, err := s.captureServiceReferenceImpact(ctx, p, dd.DeliveryPlan{ID: input.ID, ApplicationID: input.ApplicationID, ApplicationEnvironmentID: input.ApplicationEnvironmentID})
+	selection := dd.DeliveryPlan{ID: input.ID, ApplicationID: input.ApplicationID, ApplicationEnvironmentID: input.ApplicationEnvironmentID, TargetID: input.TargetID, TargetIDs: input.TargetIDs}
+	snapshot, err := s.captureServiceReferenceImpact(ctx, p, selection)
 	if err != nil {
 		return dd.DeliveryPlan{}, err
 	}
@@ -199,7 +269,7 @@ func (s *Service) createPlanWithServiceReferenceImpact(ctx context.Context, p di
 	input.Impact["hasServiceReferenceConsumers"] = len(snapshot.Consumers) > 0
 	var plan dd.DeliveryPlan
 	err = scope.WithServiceReferenceScope(ctx, input.ApplicationID, func(lockctx context.Context) error {
-		current, err := s.referenceImpactDatabase(lockctx, p, input.ApplicationID, input.ApplicationEnvironmentID)
+		current, err := s.referenceImpactDatabase(lockctx, p, selection)
 		if err != nil {
 			return err
 		}
@@ -216,7 +286,7 @@ func (s *Service) createPlanWithServiceReferenceImpact(ctx context.Context, p di
 }
 
 func staleServiceReferencePlan() error {
-	return fmt.Errorf("%w: service reference impact changed or is missing; create a new Plan preflight", apperrors.ErrConflict)
+	return fmt.Errorf("%w: service reference impact changed, is missing, or was captured by an older version; create a new Plan preflight and obtain any required approval again", apperrors.ErrConflict)
 }
 
 func (s *Service) withValidatedServiceReferenceImpact(ctx context.Context, p di.Principal, plan dd.DeliveryPlan, apply func(context.Context) error) error {
@@ -244,7 +314,7 @@ func (s *Service) withValidatedServiceReferenceImpact(ctx context.Context, p di.
 	if err != nil {
 		return err
 	}
-	if frozen.Version != 1 || frozen.Consumers == nil || frozen.SourceRevisions == nil || frozen.ApplicationID != plan.ApplicationID || frozen.SourceBindingID != plan.ApplicationEnvironmentID {
+	if frozen.Version != dd.ServiceReferencePlanImpactVersion || frozen.Consumers == nil || frozen.SourceRevisions == nil || frozen.ApplicationID != plan.ApplicationID || frozen.SourceBindingID != plan.ApplicationEnvironmentID {
 		return staleServiceReferencePlan()
 	}
 	current, err := s.captureServiceReferenceImpact(ctx, p, plan)
@@ -259,7 +329,7 @@ func (s *Service) withValidatedServiceReferenceImpact(ctx context.Context, p di.
 		return apperrors.ErrUnsupportedOperation
 	}
 	return scope.WithServiceReferenceScope(ctx, plan.ApplicationID, func(lockctx context.Context) error {
-		latest, err := s.referenceImpactDatabase(lockctx, p, plan.ApplicationID, plan.ApplicationEnvironmentID)
+		latest, err := s.referenceImpactDatabase(lockctx, p, plan)
 		if err != nil {
 			return err
 		}

@@ -11,6 +11,7 @@ import (
 
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -60,7 +61,10 @@ func (r *Repository) GetDeliveryIntent(ctx context.Context, id string) (domainma
 }
 
 func (r *Repository) DecideDeliveryIntent(ctx context.Context, item domainmanifest.DeliveryIntent, input domainmanifest.DeliveryIntentDecisionInput) (domainmanifest.DeliveryIntent, error) {
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, item.PackageID, ""); err != nil {
+			return err
+		}
 		var status string
 		if err := tx.Raw(`SELECT status FROM manifest_delivery_intents WHERE id=? FOR UPDATE`, item.ID).Row().Scan(&status); err != nil {
 			return err

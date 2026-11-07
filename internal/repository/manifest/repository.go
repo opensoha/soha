@@ -117,6 +117,9 @@ func (r *Repository) Create(ctx context.Context, item domainmanifest.Package) (d
 		return domainmanifest.Package{}, err
 	}
 	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, item.ID, item.ApplicationID, legacyBindingEnvironments(item.Bindings)...); err != nil {
+			return err
+		}
 		if err := tx.Exec(`INSERT INTO manifest_packages (id, name, description, application_id, service_id, business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`, item.ID, item.Name, item.Description, item.ApplicationID, item.ServiceID, item.BusinessLineID, item.Renderer, item.Status, item.CurrentRevision, files, bindings, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return err
 		}
@@ -134,6 +137,9 @@ func (r *Repository) Update(ctx context.Context, id string, item domainmanifest.
 		return domainmanifest.Package{}, err
 	}
 	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, id, item.ApplicationID, legacyBindingEnvironments(item.Bindings)...); err != nil {
+			return err
+		}
 		statement := `UPDATE manifest_packages SET name=?, description=?, application_id=?, service_id=NULLIF(?, ''), business_line_id=?, renderer=?, status=?, files=?::jsonb, bindings=?::jsonb, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL`
 		args := []any{item.Name, item.Description, item.ApplicationID, item.ServiceID, item.BusinessLineID, item.Renderer, item.Status, files, bindings, item.UpdatedBy, item.UpdatedAt, id}
 		if item.ExpectedUpdatedAt != nil {
@@ -160,6 +166,9 @@ func (r *Repository) Update(ctx context.Context, id string, item domainmanifest.
 
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, id, ""); err != nil {
+			return err
+		}
 		result := tx.Exec(`DELETE FROM manifest_packages WHERE id = ? AND archived_at IS NULL AND current_revision = 0`, id)
 		if result.Error != nil {
 			return result.Error
@@ -185,6 +194,9 @@ func (r *Repository) Publish(ctx context.Context, item domainmanifest.Package, r
 		return domainmanifest.Package{}, err
 	}
 	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, item.ID, ""); err != nil {
+			return err
+		}
 		result := tx.Exec(`UPDATE manifest_packages SET status=?, current_revision=?, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL AND current_revision=? AND updated_at=?`, item.Status, item.CurrentRevision, item.UpdatedBy, item.UpdatedAt, item.ID, revision.Version-1, item.ExpectedUpdatedAt)
 		if result.Error != nil {
 			return result.Error

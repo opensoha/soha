@@ -83,6 +83,7 @@ func TestManifestDeliveryPlanRetainsApprovalAndRejectsStaleSnapshot(t *testing.T
 				deliveryActionPermissions(appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryReleasesTrigger, appaccess.PermDeliveryApplicationEnvApprove))
 			runtime := &manifestDeliveryStub{}
 			service.SetManifestDelivery(runtime)
+			service.SetServiceReferenceManifestConfigurationReader(stubRepository{})
 			plan, err := service.CreateDeliveryPlan(ctx, deliveryActionPrincipal(), domaindelivery.DeliveryPlanInput{ApplicationID: "app-1", ApplicationEnvironmentID: "binding-1", Action: domaindelivery.ApplicationDeliveryActionDeploy, TargetID: "target", ManifestRevision: 2})
 			if err != nil {
 				t.Fatal(err)

@@ -161,6 +161,7 @@ type Service struct {
 	logTickets          LogStreamTicketIssuer
 	manifestPackages    ManifestPackageWriter
 	manifestDelivery    ManifestDelivery
+	referenceManifests  ServiceReferenceManifestConfigurationReader
 	docker              DockerDelivery
 	helm                HelmDeliveryDependencies
 }
@@ -1209,6 +1210,9 @@ func (s *Service) confirmRuntimeDeliveryPlan(ctx context.Context, principal doma
 	}
 	if err := s.authorizeApplicationDeliveryAction(ctx, principal, plan.ApplicationEnvironmentID, plan.Action); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
+	}
+	if result, recovered, err := s.recoverLegacyHelmPlanConfirmation(ctx, principal, plan); recovered || err != nil {
+		return result, err
 	}
 	if result, recovered, err := s.recoverHelmPlanConfirmation(ctx, plan); recovered || err != nil {
 		return result, err

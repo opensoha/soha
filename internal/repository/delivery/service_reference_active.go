@@ -16,6 +16,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 )
 
 const activeReferenceSelect = `SELECT id,application_id,consumer_binding_id,service_id,source_binding_id,revision,preview,source_identity_revision,control_revision,consumer_configuration_revision,created_at,updated_at FROM environment_service_references `
@@ -118,7 +119,7 @@ func (r *Repository) WithServiceReferenceScope(ctx context.Context, applicationI
 		return fmt.Errorf("%w: explicit application scope is required", apperrors.ErrInvalidArgument)
 	}
 	err := dbtx.Within(ctx, r.db, func(txctx context.Context) error {
-		if err := dbtx.DB(txctx, r.db).Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?,0))`, "service-references:"+applicationID).Error; err != nil {
+		if err := servicereferencelock.Applications(dbtx.DB(txctx, r.db), applicationID); err != nil {
 			return err
 		}
 		return apply(txctx)

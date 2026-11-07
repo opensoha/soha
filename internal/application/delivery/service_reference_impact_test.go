@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	dm "github.com/opensoha/soha/internal/domain/manifest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	dc "github.com/opensoha/soha/internal/domain/catalog"
 	dd "github.com/opensoha/soha/internal/domain/delivery"
+	dm "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -233,7 +235,40 @@ func TestServiceReferenceImpactProjectionFiltersBeforePagination(t *testing.T) {
 	}
 }
 
-func (r *impactTestRepository) SourceServiceReferenceConfigurationRevision(context.Context, string) (string, error) {
+func TestServiceReferencePlanImpactManifestBindingSelection(t *testing.T) {
+	targets := []dc.ReleaseTarget{
+		{ID: "z", ExecutorKind: "manifest_ssa", ConfigRef: "source"},
+		{ID: "ignored", ExecutorKind: "manifest_ssa", ConfigRef: "draft"},
+		{ID: "helm", ExecutorKind: "helm_sdk", ConfigRef: "not-manifest"},
+		{ID: "a", ExecutorKind: "manifest_ssa", ConfigRef: "selected"},
+		{ID: "b", ExecutorKind: "manifest_ssa", ConfigRef: "source"},
+	}
+	plan := dd.DeliveryPlan{TargetID: "helm", TargetIDs: []string{"a", "helm", "a"}}
+	records := []dd.ServiceReferenceRecord{{SourceTargetIDs: []string{"z", "b"}}}
+	reader := &impactManifestReader{}
+	s := &Service{referenceManifests: reader}
+	for range 2 {
+		projection, err := referenceImpactTargets(targets, plan, records)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.referenceManifestConfiguration(t.Context(), "environment", projection)
+		if err != nil || reader.environment != "environment" || !slices.Equal(reader.ids, []string{"selected", "source"}) {
+			t.Fatalf("unexpected Manifest dependency set %q %q: %v", reader.environment, reader.ids, err)
+		}
+		slices.Reverse(targets)
+		slices.Reverse(plan.TargetIDs)
+		slices.Reverse(records[0].SourceTargetIDs)
+	}
+}
+
+type impactManifestReader struct {
+	environment string
+	ids         []string
+}
+
+func (r *impactManifestReader) ServiceReferenceManifestConfigurationRevision(_ context.Context, environmentID string, ids []string) (string, error) {
+	r.environment, r.ids = environmentID, slices.Clone(ids)
 	return "source-config", nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -49,7 +50,7 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 			analysis, err = client.DryRunResourceYAML(ctx, request.Namespace, request.Kind, request.Name, request.Content)
 		}
 		if err != nil {
-			return domainoperation.Plan{}, wrapAgentResourceError(err)
+			return domainoperation.Plan{}, wrapAgentPreflightError(err)
 		}
 	} else if g.direct == nil {
 		return domainoperation.Plan{}, fmt.Errorf("%w: direct generic resource adapter is not configured", apperrors.ErrClusterUnready)
@@ -90,6 +91,14 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 		}},
 		Warnings: warnings, KubernetesResourceUpdate: &analysis,
 	}, nil
+}
+
+func wrapAgentPreflightError(err error) error {
+	classified := wrapAgentResourceError(err)
+	if errors.Is(classified, apperrors.ErrClusterUnready) && !errors.Is(err, apperrors.ErrClusterUnready) {
+		return fmt.Errorf("%w: %w", apperrors.ErrClusterUnready, err)
+	}
+	return classified
 }
 
 func resourceUpdateRisk(kind string) (string, bool) {

@@ -24,6 +24,7 @@ import (
 	repocatalog "github.com/opensoha/soha/internal/repository/catalog"
 	repodelivery "github.com/opensoha/soha/internal/repository/delivery"
 	repomanifest "github.com/opensoha/soha/internal/repository/manifest"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -56,6 +57,90 @@ func TestTemplateAdoptionWithPostgres(t *testing.T) {
 			defer func() { requireOK(t, tx.Rollback().Error) }()
 			check(t, ctx, tx)
 		})
+	}
+	t.Run("application-lock-precedes-candidate-and-workflow", func(t *testing.T) {
+		verifyAdoptionBeforeWorkflowLock(t, ctx, store.DB())
+	})
+}
+
+func verifyAdoptionBeforeWorkflowLock(t *testing.T, ctx context.Context, db *gorm.DB) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	f := newAdoptionFixture(t, ctx, db)
+	binding := f.bindings[0]
+	appID := f.candidate.Candidate.Target.ApplicationID
+	t.Cleanup(func() {
+		for _, row := range []struct{ table, id string }{
+			{"delivery_plans", f.plan.ID}, {"template_update_previews", f.candidate.PreviewID},
+			{"delivery_batches", f.run.DeliveryBatchID}, {"workflow_runs", f.run.ID},
+			{"manifest_packages", binding.PackageID}, {"applications", appID}, {"clusters", binding.ClusterID},
+		} {
+			if err := db.Exec("DELETE FROM "+row.table+" WHERE id=?", row.id).Error; err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	plan := f.plan
+	plan.Status = domaindelivery.DeliveryPlanStatusWaitingApproval
+	plan.Impact["approval"] = []any{map[string]any{"status": "requested"}}
+	waiting, err := f.delivery.UpdateDeliveryPlan(domainworkflow.WithNodeExecution(ctx, f.run, f.run.NodeRuns[0]), plan)
+	requireOK(t, err)
+	holder := db.WithContext(ctx).Begin()
+	requireOK(t, holder.Error)
+	defer func() { _ = holder.Rollback().Error }()
+	requireOK(t, servicereferencelock.Applications(holder, appID))
+	var pid int
+	requireOK(t, holder.Raw(`SELECT pg_backend_pid()`).Row().Scan(&pid))
+	done := make(chan error, 1)
+	go func() {
+		worker := domainworkflow.WithNodeExecution(ctx, f.run, f.run.NodeRuns[1])
+		done <- f.repo.ApplyCandidate(worker, f.candidate.Candidate.ID, f.plan.ID, func(txctx context.Context, _ domainupdate.FrozenCandidate) error {
+			return f.manifest.SetTemplateSelection(txctx, binding.ID, binding.Version, domainmanifest.TemplateSelection{TemplateID: "ordered", Version: 2})
+		})
+	}()
+	waitForAdoptionLock(t, ctx, db, pid, done)
+	// The waiting adoption must still leave both rows available to this transaction.
+	requireOK(t, holder.Exec(`SELECT id FROM template_update_candidates WHERE id=? FOR UPDATE NOWAIT`, f.candidate.Candidate.ID).Error)
+	requireOK(t, holder.Exec(`SELECT id FROM workflow_runs WHERE id=? FOR UPDATE NOWAIT`, f.run.ID).Error)
+	waiting.Status = domaindelivery.DeliveryPlanStatusDraft
+	history, ok := waiting.Impact["approval"].([]any)
+	if !ok {
+		t.Fatal("waiting Plan approval history is not an array")
+	}
+	waiting.Impact["approval"] = append(history, map[string]any{"status": "approved"})
+	_, err = repodelivery.New(holder).UpdateDeliveryPlan(ctx, waiting)
+	requireOK(t, err)
+	requireOK(t, holder.Commit().Error)
+	select {
+	case err := <-done:
+		requireOK(t, err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	stored, err := f.manifest.GetBinding(ctx, binding.ID)
+	requireOK(t, err)
+	if stored.TemplateSelection == nil || stored.TemplateSelection.TemplateID != "ordered" {
+		t.Fatal("adoption did not complete after concurrent Plan approval")
+	}
+}
+
+func waitForAdoptionLock(t *testing.T, ctx context.Context, db *gorm.DB, pid int, done <-chan error) {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var waiting bool
+		requireOK(t, db.WithContext(ctx).Raw(`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ?=ANY(pg_blocking_pids(pid)))`, pid).Row().Scan(&waiting))
+		if waiting {
+			return
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("adoption completed before reaching the held lock: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-ticker.C:
+		}
 	}
 }
 

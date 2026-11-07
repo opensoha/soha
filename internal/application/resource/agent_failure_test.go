@@ -3,11 +3,14 @@ package resource
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
+	apierrors "github.com/opensoha/soha/internal/api/errors"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func TestAgentOperationFailuresAreReturned(t *testing.T) {
@@ -46,6 +49,12 @@ func TestAgentOperationFailuresAreReturned(t *testing.T) {
 			})
 			if plan.Ready {
 				t.Error("failed agent dry-run produced a ready plan")
+			}
+			if !errors.Is(err, apperrors.ErrClusterUnready) {
+				t.Errorf("failed agent dry-run lost cluster unavailable classification: %v", err)
+			}
+			if status, code := apierrors.StatusCode(err), apierrors.Code(err); status != http.StatusBadGateway || code != "cluster_unavailable" {
+				t.Errorf("failed agent dry-run maps to HTTP %d (%s), want 502 (cluster_unavailable)", status, code)
 			}
 			return err
 		}},

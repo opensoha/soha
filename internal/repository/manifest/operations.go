@@ -360,19 +360,29 @@ func (r *Repository) ApplyAdoptedFiles(ctx context.Context, deploymentID string,
 	if err != nil {
 		return err
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		var packageID string
+		if err := tx.Raw(`SELECT package_id FROM manifest_deployments WHERE id = ?`, deploymentID).Row().Scan(&packageID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return apperrors.ErrConflict
+			}
+			return err
+		}
+		if err := lockPackageConfiguration(tx, packageID, ""); err != nil {
+			return err
+		}
+		result := tx.Exec(`
 		UPDATE manifest_packages package
 		SET files = ?::jsonb, status = 'draft', updated_by = ?, updated_at = CURRENT_TIMESTAMP
 		FROM manifest_deployments deployment
 		WHERE deployment.package_id = package.id AND deployment.id = ? AND deployment.generation = ?
-	`, string(encoded), firstNonEmpty(actor, "system:manifest-adopt"), deploymentID, generation)
-	if result.Error != nil {
+		  AND package.id = ?
+	`, string(encoded), firstNonEmpty(actor, "system:manifest-adopt"), deploymentID, generation, packageID)
+		if result.Error == nil && result.RowsAffected == 0 {
+			return apperrors.ErrConflict
+		}
 		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return apperrors.ErrConflict
-	}
-	return nil
+	})
 }
 
 func firstNonEmpty(values ...string) string {

@@ -1,5 +1,7 @@
 package delivery
 
+const ServiceReferencePlanImpactVersion = 2
+
 // ServiceReferencePlanImpact is private durable evidence. Never place it in a public Plan.
 type ServiceReferencePlanImpact struct {
 	Version          int                      `json:"version"`

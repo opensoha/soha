@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	catalogrepo "github.com/opensoha/soha/internal/repository/catalog"
 	deliveryrepo "github.com/opensoha/soha/internal/repository/delivery"
 	manifestrepo "github.com/opensoha/soha/internal/repository/manifest"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 )
 
 type activeReferencePGFixture struct {
@@ -103,6 +105,8 @@ func TestServiceReferencesPostgres(t *testing.T) {
 		{"ConcurrentActivation", activePGConcurrentActivation},
 		{"RebindVsDetachCAS", activePGRebindVsDetachCAS},
 		{"ActivationVsSourceMutation", activePGActivationVsSourceMutation},
+		{"CatalogFenceCancellation", activePGCatalogFenceCancellation},
+		{"CatalogFenceReassignment", activePGCatalogFenceReassignment},
 		{"ConsumerCleanup", activePGConsumerCleanup},
 		{"Pagination", activePGPagination},
 		{"TransactionRollback", activePGTransactionRollback},
@@ -744,7 +748,7 @@ func activePGSourceMutationCommitsBeforeActivation(t *testing.T, parent context.
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		firstDone <- f.repo.WithServiceReferenceScope(ctx, f.source.Application.ID, func(txctx context.Context) error {
+		firstDone <- dbtx.Within(ctx, store.DB(), func(txctx context.Context) error {
 			pid, err := activePGIdentifySession(txctx, store, firstLabel)
 			if err != nil {
 				return err
@@ -795,4 +799,120 @@ func activePGSourceMutationCommitsBeforeActivation(t *testing.T, parent context.
 		t.Fatalf("stale activation left a reference: %v", err)
 	}
 	f.assertIndex(t, 0)
+}
+
+func activePGCatalogFenceCancellation(t *testing.T, parent context.Context, store *dbstore.Store) {
+	f := newActiveReferencePGFixture(t, parent, store)
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	defer cancel()
+	mutation := activePGSourceMutationInput(t, f)
+	err := f.repo.WithServiceReferenceScope(ctx, f.source.Application.ID, func(txctx context.Context) error {
+		blocker, err := activePGIdentifySession(txctx, store, "reference-fence-holder")
+		if err != nil {
+			return err
+		}
+		waitCtx, cancelWait := context.WithCancel(ctx)
+		defer cancelWait()
+		label := "reference-fence-waiter-" + uuid.NewString()
+		pids, done := make(chan int, 1), make(chan error, 1)
+		go func() {
+			done <- dbtx.Within(waitCtx, store.DB(), func(waitCtx context.Context) error {
+				pid, err := activePGIdentifySession(waitCtx, store, label)
+				if err != nil {
+					return err
+				}
+				pids <- pid
+				_, err = catalogrepo.New(store.DB()).UpdateApplicationEnvironment(waitCtx, f.source.ApplicationEnvironmentID, mutation)
+				return err
+			})
+		}()
+		waiter := activePGWaitForPID(t, ctx, pids, done)
+		activePGWaitForBlocking(t, ctx, store, waiter, blocker, label, done)
+		// The old path waits in its row trigger and already holds this row.
+		// An activation must still be able to lock it while Catalog waits.
+		var id string
+		if err := dbtx.DB(txctx, store.DB()).Raw(`SELECT id FROM application_environments WHERE id = ? FOR UPDATE NOWAIT`, f.source.ApplicationEnvironmentID).Row().Scan(&id); err != nil {
+			return fmt.Errorf("waiting Catalog edit acquired the binding row before its application fence: %w", err)
+		}
+		cancelWait()
+		if err := activePGWaitForResult(t, ctx, done); err == nil {
+			return errors.New("canceled Catalog edit unexpectedly committed")
+		}
+		_, err = f.repo.SaveServiceReference(txctx, f.write, f.configuration)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retrying the canceled mutation sees the newly activated protection.
+	if _, err := catalogrepo.New(store.DB()).UpdateApplicationEnvironment(ctx, f.source.ApplicationEnvironmentID, mutation); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("Catalog retry did not re-read the activated reference: %v", err)
+	}
+	f.assertIndex(t, 1)
+}
+
+func activePGCatalogFenceReassignment(t *testing.T, parent context.Context, store *dbstore.Store) {
+	left := newReferenceCandidatePGFixture(t, parent, store)
+	right := newReferenceCandidatePGFixture(t, parent, store)
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	defer cancel()
+	bindings := []string{left.source.ApplicationEnvironmentID, right.source.ApplicationEnvironmentID}
+	t.Cleanup(func() {
+		if err := store.DB().Exec(`DELETE FROM application_environments WHERE id IN ?`, bindings).Error; err != nil {
+			t.Error(err)
+		}
+	})
+	apps := []string{left.source.Application.ID, right.source.Application.ID}
+	ordered := slices.Clone(apps)
+	slices.Sort(ordered)
+	var workers sync.WaitGroup
+	defer func() { cancel(); workers.Wait() }()
+	results := make([]chan error, len(apps))
+	err := left.repo.WithServiceReferenceScope(ctx, ordered[0], func(txctx context.Context) error {
+		blocker, err := activePGIdentifySession(txctx, store, "reference-reassignment-holder")
+		if err != nil {
+			return err
+		}
+		envs := []string{left.source.Environment.ID, right.source.Environment.ID}
+		for i := range apps {
+			label := "reference-reassignment-" + uuid.NewString()
+			pids, done := make(chan int, 1), make(chan error, 1)
+			results[i] = done
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				done <- dbtx.Within(ctx, store.DB(), func(editCtx context.Context) error {
+					pid, err := activePGIdentifySession(editCtx, store, label)
+					if err != nil {
+						return err
+					}
+					pids <- pid
+					_, err = catalogrepo.New(store.DB()).UpdateApplicationEnvironment(editCtx, bindings[i], dc.ApplicationEnvironmentInput{
+						ApplicationID: apps[1-i], EnvironmentID: envs[i],
+					})
+					return err
+				})
+			}()
+			waiter := activePGWaitForPID(t, ctx, pids, done)
+			activePGWaitForBlocking(t, ctx, store, waiter, blocker, label, done)
+		}
+		// Opposite old/new input order must leave the second key available.
+		probeCtx, stop := context.WithTimeout(ctx, time.Second)
+		defer stop()
+		return dbtx.Within(probeCtx, store.DB(), func(probeCtx context.Context) error {
+			return servicereferencelock.Applications(dbtx.DB(probeCtx, store.DB()), ordered[1])
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, done := range results {
+		if err := activePGWaitForResult(t, ctx, done); err != nil {
+			t.Fatalf("reassignment %d: %v", i, err)
+		}
+		binding, err := catalogrepo.New(store.DB()).GetApplicationEnvironment(ctx, bindings[i])
+		if err != nil || binding.ApplicationID != apps[1-i] {
+			t.Fatalf("reassignment %d did not commit expected application: %v", i, err)
+		}
+	}
 }

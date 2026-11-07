@@ -46,7 +46,12 @@ func (r *Repository) UpdateSource(ctx context.Context, packageID string, input d
 	if err != nil {
 		return domainmanifest.Source{}, fmt.Errorf("encode manifest source exclude patterns: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	var result *gorm.DB
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, strings.TrimSpace(packageID), ""); err != nil {
+			return err
+		}
+		result = tx.Exec(`
 		UPDATE manifest_sources
 		SET mode = ?, repository_id = NULLIF(?, ''), ref_type = NULLIF(?, ''), ref_value = ?,
 			source_path = ?, include_patterns = ?::jsonb, exclude_patterns = ?::jsonb,
@@ -54,13 +59,15 @@ func (r *Repository) UpdateSource(ctx context.Context, packageID string, input d
 			generation = generation + 1, updated_at = CURRENT_TIMESTAMP
 		WHERE package_id = ? AND generation = ?
 	`, input.Mode, input.RepositoryID, input.RefType, input.RefValue, input.Path,
-		string(includePatterns), string(excludePatterns), input.SyncPolicy, input.PollIntervalSeconds,
-		input.AutoPublish, input.AutoDeploy, strings.TrimSpace(packageID), input.ExpectedGeneration)
-	if result.Error != nil {
-		if hasSQLState(result.Error, "23503") {
+			string(includePatterns), string(excludePatterns), input.SyncPolicy, input.PollIntervalSeconds,
+			input.AutoPublish, input.AutoDeploy, strings.TrimSpace(packageID), input.ExpectedGeneration)
+		return result.Error
+	})
+	if err != nil {
+		if hasSQLState(err, "23503") {
 			return domainmanifest.Source{}, fmt.Errorf("%w: manifest source repository does not exist", apperrors.ErrInvalidArgument)
 		}
-		return domainmanifest.Source{}, fmt.Errorf("update manifest source: %w", referenceLifecycleError(result.Error))
+		return domainmanifest.Source{}, fmt.Errorf("update manifest source: %w", referenceLifecycleError(err))
 	}
 	if result.RowsAffected == 0 {
 		if _, err := r.GetSource(ctx, packageID); err != nil {
@@ -139,7 +146,13 @@ func (r *Repository) CreateBinding(ctx context.Context, item domainmanifest.Envi
 	if err != nil {
 		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode template parameters: %w", err)
 	}
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, item.PackageID, "", item.ApplicationEnvironmentID); err != nil {
+			return err
+		}
+		if err := lockBindingProjectionPackage(tx, item.PackageID); err != nil {
+			return err
+		}
 		if err := tx.Exec(`
 			INSERT INTO manifest_bindings (
 				id, package_id, application_environment_id, environment_key, cluster_id, namespace,
@@ -172,7 +185,14 @@ func (r *Repository) UpdateBinding(ctx context.Context, item domainmanifest.Envi
 	if err != nil {
 		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode template parameters: %w", err)
 	}
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		packageID, err := lockBindingConfiguration(tx, item.ID, item.ApplicationEnvironmentID, true)
+		if err != nil {
+			return err
+		}
+		if packageID != item.PackageID {
+			return apperrors.ErrConflict
+		}
 		result := tx.Exec(`
 			UPDATE manifest_bindings
 			SET application_environment_id = ?, environment_key = ?, cluster_id = ?, namespace = ?,
@@ -203,19 +223,20 @@ func (r *Repository) UpdateBinding(ctx context.Context, item domainmanifest.Envi
 }
 
 func (r *Repository) DeleteBinding(ctx context.Context, bindingID string) error {
-	existing, err := r.GetBinding(ctx, bindingID)
-	if err != nil {
-		return err
-	}
-	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
-		result := tx.Exec(`DELETE FROM manifest_bindings WHERE id = ?`, existing.ID)
+	bindingID = strings.TrimSpace(bindingID)
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		packageID, err := lockBindingConfiguration(tx, bindingID, "", true)
+		if err != nil {
+			return err
+		}
+		result := tx.Exec(`DELETE FROM manifest_bindings WHERE id = ?`, bindingID)
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
 			return apperrors.ErrNotFound
 		}
-		return syncBindingProjection(tx, existing.PackageID)
+		return syncBindingProjection(tx, packageID)
 	})
 	return referenceLifecycleError(err)
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	"strings"
 	"time"
 
@@ -125,6 +126,9 @@ func (r *Repository) GetApplicationEnvironment(ctx context.Context, id string) (
 func (r *Repository) CreateApplicationEnvironment(ctx context.Context, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
 	item := normalizeApplicationEnvironmentInput(input)
 	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, item.ApplicationID); err != nil {
+			return err
+		}
 		if err := resolveWorkflowBindingVersion(tx, &item, true); err != nil {
 			return err
 		}
@@ -157,6 +161,12 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 	item := normalizeApplicationEnvironmentInput(input)
 	item.ID = strings.TrimSpace(id)
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Binding(tx, item.ID, item.ApplicationID); err != nil {
+			if errors.Is(err, apperrors.ErrNotFound) && input.ExpectedUpdatedAt != nil {
+				return fmt.Errorf("%w: application environment changed; reload before saving", apperrors.ErrConflict)
+			}
+			return err
+		}
 		if err := resolveWorkflowBindingVersion(tx, &item, false); err != nil {
 			return err
 		}
@@ -204,14 +214,18 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 }
 
 func (r *Repository) DeleteApplicationEnvironment(ctx context.Context, id string) error {
-	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM application_environments WHERE id = ?`, strings.TrimSpace(id))
-	if result.Error != nil {
-		return referenceLifecycleError(result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	id = strings.TrimSpace(id)
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Binding(tx, id); err != nil {
+			return err
+		}
+		result := tx.Exec(`DELETE FROM application_environments WHERE id = ?`, id)
+		if result.Error == nil && result.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return result.Error
+	})
+	return referenceLifecycleError(err)
 }
 
 func (r *Repository) ListBuildTemplates(ctx context.Context) ([]domaincatalog.BuildTemplate, error) {
@@ -308,6 +322,9 @@ func (r *Repository) SaveApplicationWorkflow(ctx context.Context, applicationID,
 	input.Publish = nil
 	var item domaincatalog.WorkflowTemplate
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, applicationID); err != nil {
+			return err
+		}
 		var currentID sql.NullString
 		var currentVersion int64
 		if err := tx.Raw(`SELECT workflow_template_id, workflow_template_version FROM application_environments WHERE id = ? AND application_id = ? FOR UPDATE`, bindingID, applicationID).Row().Scan(&currentID, &currentVersion); err != nil {

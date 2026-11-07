@@ -17,7 +17,7 @@ func (stubRepository) WithServiceReferenceScope(ctx context.Context, _ string, a
 	return apply(ctx)
 }
 
-func (stubRepository) SourceServiceReferenceConfigurationRevision(context.Context, string) (string, error) {
+func (stubRepository) ServiceReferenceManifestConfigurationRevision(context.Context, string, []string) (string, error) {
 	return "fixture-source-configuration", nil
 }
 

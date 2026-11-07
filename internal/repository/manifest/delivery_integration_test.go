@@ -43,6 +43,9 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	requireManifestRepositoryNoError(t, store.MigrateFromFile(ctx, filepath.Join("..", "..", "..", "migrations", "postgres")))
+	t.Run("binding-edit-and-operation-package-lock-order", func(t *testing.T) {
+		verifyManifestBindingOperationOrder(t, ctx, store.DB())
+	})
 
 	// The fixture lives in a transaction, so repeated runs leave no business data.
 	tx := store.DB().WithContext(ctx).Begin()
@@ -121,6 +124,89 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	verifyGitOpsResourceOwnership(t, ctx, tx, repository, next, binding, item)
 
 	verifyManifestChangedInputConflict(t, ctx, tx, repository, next, binding, item)
+}
+
+func verifyManifestBindingOperationOrder(t *testing.T, ctx context.Context, db *gorm.DB) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	appID, envID, clusterID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	pkgID, bindingID := uuid.NewString(), uuid.NewString()
+	for _, statement := range []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO applications(id,name,app_key,app_group,language) VALUES (?,'Lock order',?,'test','configuration')`, []any{appID, appID}},
+		{`INSERT INTO application_environments(id,application_id,environment_id) VALUES (?,?,'test')`, []any{envID, appID}},
+		{`INSERT INTO clusters(id,name) VALUES (?,'Lock order')`, []any{clusterID}},
+		{`INSERT INTO manifest_packages(id,name,application_id) VALUES (?,'Lock order',?)`, []any{pkgID, appID}},
+		{`INSERT INTO manifest_bindings(id,package_id,application_environment_id,environment_key,cluster_id,namespace) VALUES (?,?,?,'test',?,'test')`, []any{bindingID, pkgID, envID, clusterID}},
+	} {
+		requireManifestRepositoryNoError(t, db.WithContext(ctx).Exec(statement.query, statement.args...).Error)
+	}
+	t.Cleanup(func() {
+		for _, row := range []struct{ table, id string }{
+			{"manifest_packages", pkgID}, {"applications", appID}, {"clusters", clusterID},
+		} {
+			if err := db.Exec("DELETE FROM "+row.table+" WHERE id=?", row.id).Error; err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	repo := manifestrepo.New(db)
+	binding, err := repo.GetBinding(ctx, bindingID)
+	requireManifestRepositoryNoError(t, err)
+	holder := db.WithContext(ctx).Begin()
+	requireManifestRepositoryNoError(t, holder.Error)
+	defer func() { _ = holder.Rollback().Error }()
+	requireManifestRepositoryNoError(t, holder.Exec(`SELECT id FROM manifest_packages WHERE id=? FOR SHARE`, pkgID).Error)
+	var pid int
+	requireManifestRepositoryNoError(t, holder.Raw(`SELECT pg_backend_pid()`).Row().Scan(&pid))
+	done := make(chan error, 1)
+	go func() {
+		binding.Overlay = map[string]string{"image": "changed"}
+		_, err := repo.UpdateBinding(ctx, binding, binding.Version)
+		done <- err
+	}()
+	waitForManifestPackageLock(t, ctx, db, pid, done)
+	requireManifestRepositoryNoError(t, holder.Exec(`SELECT id FROM manifest_bindings WHERE id=? FOR SHARE NOWAIT`, bindingID).Error)
+	now := time.Now().UTC()
+	_, err = manifestrepo.New(holder).SetDesiredRevision(ctx, domainmanifest.Deployment{
+		ID: uuid.NewString(), PackageID: pkgID, BindingID: bindingID, CreatedAt: now, UpdatedAt: now,
+		Spec: domainmanifest.DeploymentSpec{DesiredRevision: 1, ReconcilePolicy: "continuous", DriftPolicy: "report", DeletionPolicy: "orphan"},
+	}, 0)
+	requireManifestRepositoryNoError(t, err)
+	requireManifestRepositoryNoError(t, holder.Commit().Error)
+	select {
+	case err := <-done:
+		requireManifestRepositoryNoError(t, err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	stored, err := repo.GetBinding(ctx, bindingID)
+	requireManifestRepositoryNoError(t, err)
+	if stored.Overlay["image"] != "changed" {
+		t.Fatal("binding edit did not complete after ordinary operation")
+	}
+}
+
+func waitForManifestPackageLock(t *testing.T, ctx context.Context, db *gorm.DB, pid int, done <-chan error) {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var waiting bool
+		requireManifestRepositoryNoError(t, db.WithContext(ctx).Raw(`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ?=ANY(pg_blocking_pids(pid)))`, pid).Row().Scan(&waiting))
+		if waiting {
+			return
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("binding edit completed before reaching the held lock: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func verifyPendingPlanInventory(t *testing.T, ctx context.Context, tx *gorm.DB, repository *manifestrepo.Repository, deployment domainmanifest.Deployment) {

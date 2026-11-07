@@ -108,7 +108,8 @@ func (s *Service) GetDeliveryPlanServiceReferenceImpact(ctx context.Context, p d
 		return empty, err
 	}
 	current, err := s.captureServiceReferenceImpact(ctx, p, plan)
-	if err != nil {
+	targetMissing := errors.Is(err, errReferenceImpactTargetMissing)
+	if err != nil && !targetMissing {
 		return empty, err
 	}
 	page, err := s.projectServiceReferenceConsumers(ctx, p, current.Consumers, cursor, limit)
@@ -121,7 +122,7 @@ func (s *Service) GetDeliveryPlanServiceReferenceImpact(ctx context.Context, p d
 	if err := s.authorizeImpactPlanSource(ctx, p, plan); err != nil {
 		return empty, err
 	}
-	return dd.DeliveryPlanServiceReferenceImpact{PlanID: plan.ID, SourceApplicationEnvironmentID: plan.ApplicationEnvironmentID, Revision: frozen.Revision, CurrentRevision: current.Revision, IsCurrent: frozen.Revision == current.Revision, Items: page.Items, NextCursor: page.NextCursor, HasRestrictedConsumers: page.HasRestrictedConsumers}, nil
+	return dd.DeliveryPlanServiceReferenceImpact{PlanID: plan.ID, SourceApplicationEnvironmentID: plan.ApplicationEnvironmentID, Revision: frozen.Revision, CurrentRevision: current.Revision, IsCurrent: !targetMissing && frozen.Version == dd.ServiceReferencePlanImpactVersion && frozen.Revision == current.Revision, Items: page.Items, NextCursor: page.NextCursor, HasRestrictedConsumers: page.HasRestrictedConsumers}, nil
 }
 
 func (s *Service) authorizeImpactPlanSource(ctx context.Context, p di.Principal, plan dd.DeliveryPlan) error {

@@ -25,7 +25,7 @@ func lockManifestTarget(ctx context.Context, tx *gorm.DB, bindingID string) (str
 		return "", err
 	}
 	var clusterID string
-	if err := tx.Raw(`SELECT cluster_id FROM manifest_bindings WHERE id = ? FOR SHARE`, bindingID).Row().Scan(&clusterID); err != nil {
+	if err := tx.Raw(`SELECT cluster_id FROM manifest_bindings WHERE id = ? AND package_id = ? FOR SHARE`, bindingID, packageID).Row().Scan(&clusterID); err != nil {
 		return "", err
 	}
 	// ponytail: serialize only the short admission transaction per cluster; use

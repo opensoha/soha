@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"log/slog"
 	"net/http"
 	"os"

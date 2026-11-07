@@ -79,7 +79,13 @@ func (s *Service) queueHelmTask(ctx context.Context, principal domainidentity.Pr
 
 func standaloneHelmDeployPlan(plan domaindelivery.DeliveryPlan) bool {
 	return plan.Source != domainworkflow.ScopeDeliveryBatch && plan.Action == domaindelivery.ApplicationDeliveryActionDeploy &&
-		len(plan.HelmSnapshots) > 0 && len(plan.HelmSnapshots) == len(plan.TargetIDs) && len(plan.ManifestSnapshots) == 0
+		len(plan.HelmSnapshots) > 0 && len(plan.HelmSnapshots) == len(plan.TargetIDs) && len(plan.ManifestSnapshots) == 0 && len(plan.DockerSnapshots) == 0
+}
+
+func matchesHelmApplyTask(task domaindelivery.ExecutionTask, plan domaindelivery.DeliveryPlan, snapshot sohaapi.HelmDeliverySnapshot) bool {
+	payload, err := decodeHelmPayload(task.Payload)
+	return err == nil && task.TaskKind == "helm_apply" && task.ApplicationID == plan.ApplicationID &&
+		task.ApplicationEnvironmentID == plan.ApplicationEnvironmentID && payload.Action == sohaapi.Apply && reflect.DeepEqual(payload.Snapshot, snapshot)
 }
 
 // A persisted apply task means confirmation already dispatched the frozen intent.
@@ -98,8 +104,7 @@ func (s *Service) recoverHelmPlanConfirmation(ctx context.Context, plan domainde
 		if err != nil {
 			return result, true, err
 		}
-		payload, err := decodeHelmPayload(task.Payload)
-		if err != nil || task.TaskKind != "helm_apply" || task.ApplicationID != plan.ApplicationID || task.ApplicationEnvironmentID != plan.ApplicationEnvironmentID || payload.Action != sohaapi.Apply || !reflect.DeepEqual(payload.Snapshot, snapshot) {
+		if !matchesHelmApplyTask(task, plan, snapshot) {
 			return result, true, apperrors.ErrConflict
 		}
 		result.Result.RelatedIDs.ExecutionTaskIDs = append(result.Result.RelatedIDs.ExecutionTaskIDs, task.ID)

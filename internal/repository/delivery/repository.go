@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	"strings"
 	"time"
 
@@ -68,6 +69,9 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 		if err != nil {
 			return err
 		}
+		if err := servicereferencelock.Applications(tx, application.ID); err != nil {
+			return err
+		}
 		environment, err := importEnvironment(tx, input.EnvironmentKey, input.EnvironmentName)
 		if err != nil {
 			return err
@@ -123,6 +127,9 @@ func (r *Repository) ImportHelmReleases(ctx context.Context, input domaindeliver
 		}
 		application, err := importApplication(tx, input.ApplicationKey, input.ApplicationName, "helm", input.OwnershipMode)
 		if err != nil {
+			return err
+		}
+		if err := servicereferencelock.Applications(tx, application.ID); err != nil {
 			return err
 		}
 		environment, err := importEnvironment(tx, input.EnvironmentKey, input.EnvironmentName)

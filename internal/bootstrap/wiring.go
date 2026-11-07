@@ -864,9 +864,6 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		cfg.Runtime.ExecutionJobTTLSeconds, cfg.Runtime.ExecutionRunnerToken, permissions,
 	)
 	executionService.SetSecretLeaseService(secretService)
-	if cfg.Modules.Delivery.Enabled {
-		executionService.Start(infra.lifecycleCtx)
-	}
 	releases := apprelease.New(
 		repos.releaseRepository, repos.applicationRepository, repos.catalogRepository, repos.clusterRepository, executionService, access, permissions,
 		repos.eventRepository, audit, operations, releasebackendinfra.NewDirectRuntime(infra.clusterManager),
@@ -1199,6 +1196,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)
 	deliveryService.SetRecorders(core.auditService, core.operationService)
+	deliveryService.SetServiceReferenceManifestConfigurationReader(repos.manifestRepository)
 	deliveryService.SetExecutionPrincipalReader(core.identityService)
 	deliveryService.SetDockerDelivery(dockerService)
 	deliveryService.SetLogRuntime(core.resourceService.Logs(), core.identityService)
@@ -1460,6 +1458,43 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices, platform *apiHandlers.PlatformHandler) (apiRoutes.Dependencies, error) {
 	directorySyncHandler := directorysynchandler.New(repos.directorySyncRepository, core.directorySyncService, core.directorySyncConnectors)
 	directorySyncHandler.SetRecorders(core.auditService, core.operationService)
+	deliveryRoutes, err := newDeliveryRouteServices(cfg, infra, repos, core, delivery)
+	if err != nil {
+		return apiRoutes.Dependencies{}, err
+	}
+	if err := deliveryRoutes.startWorkers(cfg.Modules.Delivery.Enabled, infra.lifecycleCtx); err != nil {
+		return apiRoutes.Dependencies{}, err
+	}
+	dependencies := apiRoutes.Dependencies{
+		TemplateUpdates:     apiHandlers.NewTemplateUpdateHandler(deliveryRoutes.templateUpdates),
+		DeliveryDocuments:   apiHandlers.NewDeliveryDocumentHandler(deliveryRoutes.deliveryDocuments),
+		TemplateSources:     apiHandlers.NewTemplateSourceHandler(deliveryRoutes.templateSources),
+		DeliveryTriggers:    apiHandlers.NewDeliveryTriggerHandler(deliveryRoutes.deliveryTriggers),
+		Manifests:           apiHandlers.NewManifestHandler(deliveryRoutes.manifestService),
+		ManifestSources:     apiHandlers.NewManifestSourceHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestBindings:    apiHandlers.NewManifestBindingHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestDeployments: apiHandlers.NewManifestDeploymentHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestIntents:     apiHandlers.NewManifestIntentHandler(deliveryRoutes.manifestDeclarativeService),
+		DirectorySync:       directorySyncHandler,
+	}
+	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
+	wirePlatformRouteHandlers(&dependencies, cfg, infra, core, delivery, platform)
+	return dependencies, nil
+}
+
+// deliveryRouteServices holds the bound delivery owners before any of their
+// workers start.
+type deliveryRouteServices struct {
+	manifestService            *appmanifest.Service
+	manifestDeclarativeService *appmanifest.DeclarativeService
+	deliveryDocuments          *appcatalog.DocumentService
+	templateSources            *appcatalog.TemplateSourceService
+	deliveryTriggers           *appdeliverytrigger.Service
+	templateUpdates            *apptemplateupdate.Service
+	workers                    deliveryWorkers
+}
+
+func newDeliveryRouteServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices) (deliveryRouteServices, error) {
 	manifestService := appmanifest.New(
 		repos.manifestRepository,
 		core.applicationService,
@@ -1503,40 +1538,33 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	core.executionService.AddExecutionTaskSink(delivery.virtualizationService)
 	delivery.workflowService.SetDeliveryRuntime(delivery.deliveryService, core.identityService)
 	core.executionService.AddExecutionTaskSink(manifestDeclarativeService)
-	if cfg.Modules.Delivery.Enabled {
-		manifestDeclarativeService.Start(infra.lifecycleCtx)
-		delivery.deliveryService.StartHelmDelivery(infra.lifecycleCtx)
-		delivery.workflowService.Start(infra.lifecycleCtx)
-	}
 	deliveryDocuments := appcatalog.NewDocuments(core.catalogService, delivery.workflowService, core.applicationService, repos.catalogRepository)
 	templateSources := appcatalog.NewTemplateSources(deliveryDocuments, repos.catalogRepository, repos.catalogRepository, deliveryGit)
 	deliveryTriggers := appdeliverytrigger.New(deliverytriggerrepo.New(infra.databaseStore.DB(), cfg.Security.CredentialEncryptionKeys), core.identityService, templateSources, delivery.workflowService, core.applicationService, deliveryGit, core.permissionResolver, core.auditService, core.operationService)
-	if cfg.Modules.Delivery.Enabled {
-		deliveryTriggers.Start(infra.lifecycleCtx)
-	}
 	templateUpdates, err := apptemplateupdate.New(apptemplateupdate.Dependencies{Repository: templateupdaterepo.New(infra.databaseStore.DB()), Applications: core.applicationService, Environments: core.catalogService, Deployment: core.catalogService, Build: core.catalogService, Workflow: core.catalogService, Manifests: manifestDeclarativeService, Batches: delivery.workflowService, Baselines: delivery.deliveryService, Principals: core.identityService})
 	if err != nil {
-		return apiRoutes.Dependencies{}, err
+		return deliveryRouteServices{}, err
 	}
 	delivery.deliveryService.SetTemplateUpdates(templateUpdates)
-	if cfg.Modules.Delivery.Enabled {
-		templateUpdates.Start(infra.lifecycleCtx)
+	return deliveryRouteServices{
+		manifestService: manifestService, manifestDeclarativeService: manifestDeclarativeService,
+		deliveryDocuments: deliveryDocuments, templateSources: templateSources,
+		deliveryTriggers: deliveryTriggers, templateUpdates: templateUpdates,
+		workers: deliveryWorkers{
+			execution: core.executionService,
+			manifests: manifestDeclarativeService, helms: delivery.deliveryService,
+			workflows: delivery.workflowService, triggers: deliveryTriggers, updates: templateUpdates,
+		},
+	}, nil
+}
+
+func (services deliveryRouteServices) startWorkers(enabled bool, ctx context.Context) error {
+	if enabled {
+		if err := services.workers.start(ctx); err != nil {
+			return fmt.Errorf("start delivery workers: %w", err)
+		}
 	}
-	dependencies := apiRoutes.Dependencies{
-		TemplateUpdates:     apiHandlers.NewTemplateUpdateHandler(templateUpdates),
-		DeliveryDocuments:   apiHandlers.NewDeliveryDocumentHandler(deliveryDocuments),
-		TemplateSources:     apiHandlers.NewTemplateSourceHandler(templateSources),
-		DeliveryTriggers:    apiHandlers.NewDeliveryTriggerHandler(deliveryTriggers),
-		Manifests:           apiHandlers.NewManifestHandler(manifestService),
-		ManifestSources:     apiHandlers.NewManifestSourceHandler(manifestDeclarativeService),
-		ManifestBindings:    apiHandlers.NewManifestBindingHandler(manifestDeclarativeService),
-		ManifestDeployments: apiHandlers.NewManifestDeploymentHandler(manifestDeclarativeService),
-		ManifestIntents:     apiHandlers.NewManifestIntentHandler(manifestDeclarativeService),
-		DirectorySync:       directorySyncHandler,
-	}
-	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
-	wirePlatformRouteHandlers(&dependencies, cfg, infra, core, delivery, platform)
-	return dependencies, nil
+	return nil
 }
 
 func wireAIRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.Config, core *coreServices, delivery *deliveryServices, gateway *gatewayServices) {

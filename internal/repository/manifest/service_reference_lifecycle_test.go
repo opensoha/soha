@@ -15,6 +15,7 @@ func TestManifestSourceLifecycleMapsReferenceGuardConflicts(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			repository, mock := newManifestRepository(t)
 			mock.ExpectBegin()
+			expectManifestPackageFence(mock, "package", "app", nil)
 			mock.ExpectExec(`DELETE FROM manifest_packages`).WithArgs("package").WillReturnError(&pgconn.PgError{Code: state})
 			mock.ExpectRollback()
 			if err := repository.Delete(context.Background(), "package"); !errors.Is(err, apperrors.ErrConflict) {
@@ -35,7 +36,10 @@ func TestManifestSourceUpdateMapsReferenceConflicts(t *testing.T) {
 	for _, state := range []string{"23514", "40001", "40P01"} {
 		t.Run(state, func(t *testing.T) {
 			repository, mock := newManifestRepository(t)
+			mock.ExpectBegin()
+			expectManifestPackageFence(mock, "package", "app", nil)
 			mock.ExpectExec(`UPDATE manifest_sources`).WillReturnError(&pgconn.PgError{Code: state})
+			mock.ExpectRollback()
 			_, err := repository.UpdateSource(context.Background(), "package", domainmanifest.SourceInput{})
 			if !errors.Is(err, apperrors.ErrConflict) {
 				t.Fatalf("guard became non-conflict: %v", err)
@@ -52,6 +56,7 @@ func TestManifestPackageUpdateMapsReferenceConflicts(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			repository, mock := newManifestRepository(t)
 			mock.ExpectBegin()
+			expectManifestPackageFence(mock, "package", "app", nil)
 			mock.ExpectExec(`UPDATE manifest_packages`).WillReturnError(&pgconn.PgError{Code: state})
 			mock.ExpectRollback()
 			_, err := repository.Update(context.Background(), "package", domainmanifest.Package{})

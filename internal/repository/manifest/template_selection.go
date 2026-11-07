@@ -3,10 +3,12 @@ package manifest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"gorm.io/gorm"
 )
 
 // Adoption changes this environment only. It never publishes a shared package
@@ -16,12 +18,17 @@ func (r *Repository) SetTemplateSelection(ctx context.Context, bindingID string,
 	if err != nil {
 		return err
 	}
-	result := dbtx.DB(ctx, r.db).Exec(`UPDATE manifest_bindings SET template_selection=?::jsonb, version=version+1, updated_at=clock_timestamp() WHERE id=? AND version=?`, string(data), bindingID, expected)
-	if result.Error != nil {
+	return dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if _, err := lockBindingConfiguration(tx, bindingID, "", false); err != nil {
+			if errors.Is(err, apperrors.ErrNotFound) {
+				return apperrors.ErrConflict
+			}
+			return err
+		}
+		result := tx.Exec(`UPDATE manifest_bindings SET template_selection=?::jsonb, version=version+1, updated_at=clock_timestamp() WHERE id=? AND version=?`, string(data), bindingID, expected)
+		if result.Error == nil && result.RowsAffected != 1 {
+			return apperrors.ErrConflict
+		}
 		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return apperrors.ErrConflict
-	}
-	return nil
+	})
 }

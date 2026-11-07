@@ -1,6 +1,7 @@
 package templateupdate
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	domainupdate "github.com/opensoha/soha/internal/domain/templateupdate"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
 )
@@ -73,10 +75,18 @@ func (r *Repository) GetCandidate(ctx context.Context, id string) (domainupdate.
 
 func (r *Repository) ApplyCandidate(ctx context.Context, id, planID string, apply func(context.Context, domainupdate.FrozenCandidate) error) error {
 	return dbtx.Within(ctx, r.db, func(ctx context.Context) error {
+		tx := dbtx.DB(ctx, r.db)
+		discovered, err := lockCandidateApplications(tx, id)
+		if err != nil {
+			return err
+		}
 		var body []byte
 		var appliedPlanID string
-		if err := dbtx.DB(ctx, r.db).Raw(`SELECT frozen,applied_plan_id FROM template_update_candidates WHERE id=? FOR UPDATE`, id).Row().Scan(&body, &appliedPlanID); err != nil {
+		if err := tx.Raw(`SELECT frozen,applied_plan_id FROM template_update_candidates WHERE id=? FOR UPDATE`, id).Row().Scan(&body, &appliedPlanID); err != nil {
 			return err
+		}
+		if !bytes.Equal(discovered, body) {
+			return fmt.Errorf("%w: template adoption candidate changed", apperrors.ErrConflict)
 		}
 		if appliedPlanID != "" {
 			if appliedPlanID == planID {
@@ -88,14 +98,41 @@ func (r *Repository) ApplyCandidate(ctx context.Context, id, planID string, appl
 		if err := json.Unmarshal(body, &frozen); err != nil {
 			return err
 		}
-		if err := repoworkflow.LockDeliveryNode(ctx, dbtx.DB(ctx, r.db), frozen.Candidate.Target.ApplicationID, frozen.Candidate.Target.ApplicationEnvironmentID); err != nil {
+		if err := repoworkflow.LockDeliveryNode(ctx, tx, frozen.Candidate.Target.ApplicationID, frozen.Candidate.Target.ApplicationEnvironmentID); err != nil {
 			return err
 		}
 		if err := apply(ctx, frozen); err != nil {
 			return err
 		}
-		return dbtx.DB(ctx, r.db).Exec(`UPDATE template_update_candidates SET applied_plan_id=? WHERE id=? AND applied_plan_id=''`, planID, id).Error
+		return tx.Exec(`UPDATE template_update_candidates SET applied_plan_id=? WHERE id=? AND applied_plan_id=''`, planID, id).Error
 	})
+}
+
+func lockCandidateApplications(tx *gorm.DB, id string) ([]byte, error) {
+	var discovered []byte
+	err := servicereferencelock.Resolve(tx, func() ([]string, error) {
+		var raw []byte
+		var frozen domainupdate.FrozenCandidate
+		if err := tx.Raw(`SELECT frozen FROM template_update_candidates WHERE id=?`, id).Row().Scan(&raw); err != nil {
+			return nil, err
+		}
+		if discovered != nil && !bytes.Equal(discovered, raw) {
+			return nil, fmt.Errorf("%w: template adoption candidate changed", apperrors.ErrConflict)
+		}
+		discovered = raw
+		if err := json.Unmarshal(raw, &frozen); err != nil {
+			return nil, err
+		}
+		var applications []string
+		err := tx.Raw(`
+			SELECT application_id FROM application_environments WHERE id = ?
+			UNION
+			SELECT e.application_id FROM application_environments e
+			JOIN manifest_bindings b ON b.application_environment_id = e.id WHERE b.id = ?`,
+			frozen.Candidate.Target.ApplicationEnvironmentID, frozen.Binding.ManifestBinding.ID).Scan(&applications).Error
+		return append(applications, frozen.Candidate.Target.ApplicationID), err
+	})
+	return discovered, err
 }
 
 type scanner interface{ Scan(...any) error }

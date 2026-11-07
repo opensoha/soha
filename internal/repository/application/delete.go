@@ -10,12 +10,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	"gorm.io/gorm"
 )
 
 func (r *Repository) Delete(ctx context.Context, applicationID string) error {
 	applicationID = strings.TrimSpace(applicationID)
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, applicationID); err != nil {
+			return err
+		}
 		var id string
 		if err := tx.Raw(`SELECT id FROM applications WHERE id = ? FOR UPDATE`, applicationID).Row().Scan(&id); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {

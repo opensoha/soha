@@ -386,6 +386,10 @@ func (s *DeclarativeService) taskProvider(ctx context.Context, clusterID string)
 		if !slices.Contains(connection.Summary.Capabilities, resourceruntime.ManifestAgentCapability) {
 			return "", fmt.Errorf("%w: upgrade the Agent to support controller-aware manifest execution", apperrors.ErrUnsupportedOperation)
 		}
+		// Runner-based advertisements use RootCRAgentCapability for the standalone claim set, including manifest_agent_v3.
+		if !slices.Contains(connection.Summary.Capabilities, resourceruntime.RootCRAgentCapability) {
+			return "", fmt.Errorf("%w: the Agent manifest task runner is unavailable", apperrors.ErrUnsupportedOperation)
+		}
 		return resourceruntime.ManifestAgentProviderPrefix + strings.TrimSpace(clusterID), nil
 	}
 	return domainmanifest.TaskProviderDirect, nil
