@@ -62,11 +62,11 @@ control plane, and calls back with task, Docker, or Agent Runtime results.
 - Run `python3 deploy/hermes-tools/test_plugin.py` for the Hermes controlled-tool adapter; CI also runs this standard-library check.
 - Run `go test ./internal/agent/environment` for environment lease, process/container runtime, snapshot, cleanup, and recovery changes.
 - Run `go test ./internal/agent/kubernetes` for Kubernetes proxy behavior, YAML, logs, terminal, Helm, port-forward, and CRD changes.
-- Run `go vet ./...` and `go test -race ./...` for concurrency or runner changes.
+- Run `go vet ./...` and `go test -race ./...` for concurrency or runner changes. For provider claim or executor composition changes, consult [runner composition standards](references/go-engineering-standards.md#runner-contracts).
 
 ## CI Gate
 
-Use Go `1.27.2` and run the full gate for dependency, packaging, Dockerfile, workflow, or release changes:
+Use the toolchain and tool versions declared by [go.mod](../../../go.mod), [CI](../../../.github/workflows/ci.yml), and the [release workflow](../../../.github/workflows/release.yml). Run the full gate for dependency, packaging, Dockerfile, workflow, or release changes; local execution uses the workspace verification wrapper and its temporary output paths:
 
 ```bash
 GOWORK=off go mod tidy

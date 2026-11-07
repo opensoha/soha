@@ -40,6 +40,10 @@ Apply this reference to production Go changes in `soha-agent`. Repository contra
 
 ## Runner Contracts
 
+- Keep runner assembly independent of optional executor enablement: each executor contributes its own supported providers and claim identity. A shared claim may combine providers for one cluster identity, but a protected Manifest task must retain the admission receipt required by its contract from that specific claim response. Do not require that receipt for unrelated providers or empty claims. Preserve the action allowlist, attempt/callback, and cancellation isolation. A provider capability declaration must match the configuration that can actually claim and execute it; do not make every optional executor mandatory at startup.
+- Validate required ports and typed-nil dependencies before startup. Two-phase assembly is acceptable when all components are built, bound, and validated before any are started. Keep interfaces consumer-owned, provider-specific technology isolated, and durable state/resource ownership explicit.
+- For claim/executor composition changes, cover Manifest only, Helm only, both enabled, both disabled or missing identity, mismatched cluster identity, rejection without side effects, callback retry, and late callback. Select only the affected checks for a given change.
+
 - Treat execution, Docker, Identity Outpost, environment runtime, and Agent Runtime flows as durable state machines with explicit ownership.
 - Make terminal states idempotent and reject stale callbacks after cancel, timeout, or retry. Rotate attempt credentials where the control-plane contract requires it.
 - Enforce `max_concurrency`, default timeouts, retry limits, allowed operation kinds, and workspace roots. Never allow payload paths or commands to escape configured boundaries.
@@ -59,6 +63,8 @@ Use the [skill's Testing section](../SKILL.md#testing) to select checks by impac
 
 Before completing architecture, module/dependency, public-contract, security, concurrency/runner, image/packaging, or release changes, run the applicable full gate below and the affected artifact checks. CI requirements remain unchanged. Reuse successful results while the relevant code and environment are unchanged; expand or repeat checks only for new changes, failures, or a concrete unresolved risk.
 
+Tool versions and exact CI commands are owned by [CI](../../../../.github/workflows/ci.yml) and [release](../../../../.github/workflows/release.yml). For local incremental lint, set `SOHA_AGENT_LINT_BASE_REF` to the verified PR target or configured integration upstream, then use the workspace verification wrapper for the selected checks.
+
 ```bash
 GOWORK=off go mod tidy
 git diff -- go.mod go.sum
@@ -67,7 +73,8 @@ GOWORK=off go test ./...
 GOWORK=off go test -race ./...
 GOWORK=off go vet ./...
 GOWORK=off go run github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0 -over 20 internal/agent | awk '!/_test[.]go/'
-BASE_REV="$(git merge-base HEAD origin/main)"
+: "${SOHA_AGENT_LINT_BASE_REF:?set the verified PR base or upstream ref}"
+BASE_REV="$(git merge-base HEAD "$SOHA_AGENT_LINT_BASE_REF")"
 golangci-lint run --new-from-rev="$BASE_REV" ./...
 GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 GOWORK=off CGO_ENABLED=0 go build -trimpath -o /tmp/soha-agent ./cmd/agent
@@ -75,7 +82,7 @@ git diff --check
 ```
 
 - Review module diffs before retaining them; do not use tidy to normalize unrelated user changes. CI must run tidy on a clean checkout and fail if it produces a diff.
-- Require zero new lint issues relative to the actual PR merge base. Do not hide a new finding behind the repository's historical baseline.
+- Use the actual PR base revision for new-issue linting. Require zero new lint issues relative to that base. Do not hide a new finding behind the repository's historical baseline.
 - Treat the gocyclo command as an incremental report until the repository-wide baseline reaches zero: changed production functions must not appear above 20, and no new hotspot may be introduced.
 - Use named table-driven subtests for validation matrices. Test public behavior and boundary rejection rather than private implementation shape.
 - Run the relevant real Docker build when Dockerfiles, contracts, release packaging, Helm, or runtime dependencies change.
