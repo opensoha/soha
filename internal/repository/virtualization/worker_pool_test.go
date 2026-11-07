@@ -7,11 +7,57 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/virtualization"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
+
+func TestSaveWorkerPoolValidatesBeforeStartingTransaction(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := sohaapi.VirtualizationWorkerPoolSpec{
+		Name: "workers", ConnectionID: "pve", ClusterID: "target", Owner: "soha-kubeadm", ImageID: "image",
+		ProviderNode: "pve-a", Storage: "disk", Bridge: "vmbr0", SnippetStorage: "local",
+		OsProfile: "ubuntu-24.04-amd64-containerd", KubernetesVersion: "v1.35.2", CPU: 4, MemoryMiB: 8192, DiskGiB: 80, MaxNodes: 2,
+		RequiredDaemonSets: []sohaapi.VirtualizationWorkerDaemonSet{{Namespace: "kube-system", Name: "network"}},
+	}
+	for _, tt := range []struct {
+		name     string
+		labels   map[string]string
+		validate func(sohaapi.VirtualizationWorkerPoolSpec) error
+		want     error
+	}{
+		{"Kubernetes syntax", map[string]string{"team": "invalid value"}, k8sinfra.ValidateWorkerPoolKubernetesSpec, apperrors.ErrInvalidArgument},
+		{"reserved ownership", map[string]string{"soha.io/owner": "other"}, k8sinfra.ValidateWorkerPoolKubernetesSpec, apperrors.ErrInvalidArgument},
+		{"missing validator", nil, nil, apperrors.ErrUnsupportedOperation},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := valid
+			spec.Labels = tt.labels
+			repo := New(db, WithWorkerPoolValidation(tt.validate))
+			pool := domain.WorkerPool{VirtualizationWorkerPool: sohaapi.VirtualizationWorkerPool{ID: uuid.New(), Spec: spec}}
+			// No Begin or query is expected. An attempted DB call fails with a SQL mock error.
+			if _, err := repo.SaveWorkerPool(context.Background(), pool, 0); !errors.Is(err, tt.want) {
+				t.Fatalf("SaveWorkerPool() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func testWorkerPoolAdmission(t *testing.T, repo *Repository, ctx context.Context) {
 	t.Helper()

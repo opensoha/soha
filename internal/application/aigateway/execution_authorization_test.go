@@ -36,7 +36,9 @@ func TestQueuedGatewayAuthorizationRechecksWithoutRateConsumption(t *testing.T) 
 		t.Run(scenario, func(t *testing.T) {
 			service, repo, scopeProvider, call := capabilityScopesFixture()
 			provider := &executionAuthorizationProvider{scopeProviderFixture: scopeProvider}
-			service.SetCapabilityProviders(provider)
+			if err := service.SetCapabilityProviders(provider); err != nil {
+				t.Fatal(err)
+			}
 			policy := scopePolicy("original", "allow")
 			policy.Conditions = map[string]any{"rateLimit": map[string]any{"maxCallsPerMinute": 1}}
 			repo.accessPolicies = []domain.AccessPolicy{policy}
@@ -60,6 +62,9 @@ func TestQueuedGatewayAuthorizationRechecksWithoutRateConsumption(t *testing.T) 
 				provider.scopes[1]["applicationId"] = "other"
 			case "version":
 				provider.tools[0].Version = "2"
+				if err := service.SetCapabilityProviders(provider); err != nil {
+					t.Fatal(err)
+				}
 			case "actor":
 				actor.UserID = "other"
 			case "token":
@@ -91,7 +96,9 @@ func TestQueuedGatewayAuthorizationRequiresOriginalValidApproval(t *testing.T) {
 			service, repo, scoped, call := capabilityScopesFixture()
 			scoped.tools[0].RequiresApproval = true
 			provider := &executionAuthorizationProvider{scopeProviderFixture: scoped}
-			service.SetCapabilityProviders(provider)
+			if err := service.SetCapabilityProviders(provider); err != nil {
+				t.Fatal(err)
+			}
 			actor := testPrincipal("developer")
 			if _, err := service.InvokeTool(context.Background(), actor, call); err != nil {
 				t.Fatal(err)

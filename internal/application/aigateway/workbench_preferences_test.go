@@ -41,7 +41,7 @@ func TestWorkbenchReasoningPreferencesReachUpstream(t *testing.T) {
 			defer upstream.Close()
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", "test-key")
 			repo.routes[0].Metadata = map[string]any{"reasoningEfforts": []string{"low", "medium", "high"}}
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			options, err := service.ListWorkbenchModels(context.Background(), relayWorkbenchTestPrincipal(), endpoint)
 			if err != nil || len(options) != 1 || len(options[0].ReasoningEfforts) != 3 {
 				t.Fatalf("catalog: %v %v", options, err)

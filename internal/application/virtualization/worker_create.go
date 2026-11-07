@@ -50,8 +50,14 @@ func (s *Service) CreateWorker(ctx context.Context, principal domainidentity.Pri
 		if !idempotency.Matches(existing.Payload, hash) {
 			return domain.Task{}, apperrors.ErrConflict
 		}
+		if _, err := s.workerPoolFromTask(existing); err != nil {
+			return domain.Task{}, err
+		}
 		return domain.WithOperationState(existing, time.Now().UTC()), nil
 	} else if !errors.Is(err, apperrors.ErrNotFound) {
+		return domain.Task{}, err
+	}
+	if err := s.validateWorkerPoolSpec(pool.Spec); err != nil {
 		return domain.Task{}, err
 	}
 	if input.PoolRevision != pool.Revision || !pool.Spec.Enabled || !s.workerRuntimeConfigured() {
@@ -82,6 +88,9 @@ func (s *Service) saveWorkerCreation(ctx context.Context, principal domainidenti
 			if !idempotency.Matches(existing.Payload, worker.inputHash) {
 				return apperrors.ErrConflict
 			}
+			if _, err := s.workerPoolFromTask(existing); err != nil {
+				return err
+			}
 			saved = existing
 			return nil
 		} else if !errors.Is(err, apperrors.ErrNotFound) {
@@ -96,17 +105,25 @@ func (s *Service) saveWorkerCreation(ctx context.Context, principal domainidenti
 
 func (s *Service) workerRuntimeConfigured() bool {
 	r := s.workerRuntime
-	return r != nil && r.PrepareBootstrap != nil && r.ClaimNode != nil && r.Observe != nil && r.RevokeBootstrap != nil && s.workerPools != nil
+	return r != nil && r.ValidatePoolSpec != nil && r.PrepareBootstrap != nil && r.ClaimNode != nil && r.Observe != nil && r.RevokeBootstrap != nil && s.workerPools != nil
 }
 
-func workerPoolFromTask(task domain.Task) (domain.WorkerPool, error) {
+func (s *Service) workerPoolFromTask(task domain.Task) (domain.WorkerPool, error) {
+	pool, err := workerPoolSnapshot(task)
+	if err != nil {
+		return pool, err
+	}
+	return pool, s.validateWorkerPoolSpec(pool.Spec)
+}
+
+func workerPoolSnapshot(task domain.Task) (domain.WorkerPool, error) {
 	var pool domain.WorkerPool
 	decodePayloadValue(task.Payload["workerPool"], &pool.VirtualizationWorkerPool)
 	decodePayloadValue(task.Payload["workerPoolIdentity"], &pool.Identity)
 	if pool.ID.String() != payloadString(task.Payload, "workerPoolId") || pool.Revision != payloadInt(task.Payload, "workerPoolRevision") || pool.Spec.ConnectionID != task.ConnectionID || pool.Identity.ClusterUID == "" || pool.Identity.ConnectionIdentity == "" {
 		return pool, fmt.Errorf("%w: worker pool snapshot is missing or invalid", apperrors.ErrConflict)
 	}
-	return pool, domain.ValidateWorkerPoolSpec(pool.Spec)
+	return pool, nil
 }
 
 func (s *Service) checkWorkerPoolImage(ctx context.Context, pool domain.WorkerPool) error {

@@ -14,7 +14,7 @@ import (
 )
 
 type admissionPreviewHandlerFixture struct {
-	NetworkAccessService
+	NetworkPolicyEvaluationService
 	called bool
 	actor  identity.Principal
 	input  appnetworkaccess.AdmissionPreviewInput
@@ -39,7 +39,7 @@ func TestAdmissionPreviewRejectsSubjectOverridesAndUnboundedJSON(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := &admissionPreviewHandlerFixture{}
-			handler := NewNetworkAccessHandler(fixture, nil, nil, nil)
+			handler := NewNetworkAccessHandler(NetworkAccessServices{PolicyEvaluation: fixture}, nil, nil, nil)
 			out := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(out)
 			c.Request = httptest.NewRequest(http.MethodPost, "/network-access/admission/preview", strings.NewReader(tc.body))

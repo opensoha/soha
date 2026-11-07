@@ -8,10 +8,6 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
-type chatApprovalReader interface {
-	ListApprovalRequests(context.Context, domainidentity.Principal, domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error)
-}
-
 func (s *Service) sessionActivities(ctx context.Context, principal domainidentity.Principal, sessions []domaincopilot.Session) []domaincopilot.Session {
 	activity := map[string]string{}
 	if s.agentRuns != nil {
@@ -27,7 +23,7 @@ func (s *Service) sessionActivities(ctx context.Context, principal domainidentit
 			}
 		}
 	}
-	if reader, ok := s.workbenchInvoker.(chatApprovalReader); ok {
+	if reader := s.runtime.Approvals; reader != nil {
 		requests, err := reader.ListApprovalRequests(ctx, principal, domainaigateway.ApprovalRequestFilter{ActorType: "user", ActorID: principal.UserID, Status: "pending", Limit: 100})
 		if err == nil {
 			for _, request := range requests {

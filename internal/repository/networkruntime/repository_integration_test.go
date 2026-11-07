@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,7 +27,8 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestRepositoryWithPostgres(t *testing.T) {
+func newRuntimeRepositoryScenario(t *testing.T) *runtimeRepositoryScenario {
+	t.Helper()
 	portText := os.Getenv("SOHA_NETWORK_RUNTIME_TEST_POSTGRES_PORT")
 	if portText == "" {
 		t.Skip("set SOHA_NETWORK_RUNTIME_TEST_POSTGRES_PORT to run the PostgreSQL integration test")
@@ -35,8 +37,12 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid PostgreSQL test port: %v", err)
 	}
+	database := os.Getenv("SOHA_NETWORK_RUNTIME_TEST_POSTGRES_DATABASE")
+	if database == "" {
+		database = "soha"
+	}
 	store, err := dbstore.New(config.DatabaseConfig{
-		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable",
+		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: database, User: "pgsql", Password: "test-only", SSLMode: "disable",
 		MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
 	}, zap.NewNop())
 	if err != nil {
@@ -45,7 +51,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
+	t.Cleanup(cancel)
 	migrationSource := filepath.Join("..", "..", "..", "migrations", "postgres")
 	migrationDir := filepath.Join(os.TempDir(), fmt.Sprintf("opensoha-network-runtime-migrations-%d", port))
 	if err := os.MkdirAll(migrationDir, 0o700); err != nil {
@@ -65,7 +71,11 @@ func TestRepositoryWithPostgres(t *testing.T) {
 		t.Fatalf("migrate PostgreSQL: %v", err)
 	}
 
-	scenario := &runtimeRepositoryScenario{ctx: ctx, store: store}
+	return &runtimeRepositoryScenario{ctx: ctx, store: store}
+}
+
+func TestRepositoryWithPostgres(t *testing.T) {
+	scenario := newRuntimeRepositoryScenario(t)
 	scenario.seedPolicy(t)
 	scenario.enrollFirstEndpoint(t)
 	scenario.rotateInitialEndpoint(t)
@@ -161,7 +171,7 @@ type runtimeRepositoryScenario struct {
 
 func (s *runtimeRepositoryScenario) seedPolicy(t *testing.T) {
 	t.Helper()
-	repository := networkruntimerepo.New(s.store.DB())
+	repository := networkruntimerepo.New(s.store.DB(), appnetworkaccess.VPNGovernancePolicy{})
 	s.repository = repository
 	suffix := uuid.NewString()
 	s.suffix = suffix

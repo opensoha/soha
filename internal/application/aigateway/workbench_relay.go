@@ -105,7 +105,11 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 		UserAgent:    "opensoha-ai-workbench",
 	}
 	writer := &workbenchRelayResponseWriter{header: http.Header{}}
-	if err := s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, selections, publicModel, false, writer); err != nil {
+	receipt, err := s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, selections, publicModel, false, writer)
+	if err != nil {
+		return WorkbenchRelayResponse{}, err
+	}
+	if err := receipt.requireSuccess(ctx); err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
 	status := writer.status
@@ -120,7 +124,7 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 		return WorkbenchRelayResponse{}, err
 	}
 	usage, estimated := workbenchAccountedUsage(req, writer.body.Bytes(), workbenchReportedUsage(writer.body.Bytes()))
-	resolved := workbenchResolvedSelection(writer.Header(), selections)
+	resolved := receipt.Selection
 	return WorkbenchRelayResponse{
 		ContextWindowTokens: workbenchContextWindow(resolved.route.Metadata),
 		ToolCalls:           calls,
@@ -174,16 +178,16 @@ func (s *Service) InvokeWorkbenchModelStream(ctx context.Context, principal doma
 		RequestID:    workbenchRelayRequestID(accessCtx.Metadata),
 		UserAgent:    "opensoha-ai-workbench",
 	}
-	writer := newWorkbenchRelayStreamWriter(endpoint, onDelta)
-	if err := s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, selections, publicModel, true, writer); err != nil {
+	writer := newWorkbenchRelayStreamWriter(onDelta)
+	receipt, err := s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, selections, publicModel, true, writer)
+	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
 	if writer.stopped {
 		return WorkbenchRelayResponse{}, ErrWorkbenchRelayStreamStopped
 	}
-	writer.finish()
-	if writer.stopped {
-		return WorkbenchRelayResponse{}, ErrWorkbenchRelayStreamStopped
+	if err := receipt.requireSuccess(ctx); err != nil {
+		return WorkbenchRelayResponse{}, err
 	}
 	status := writer.status
 	if status == 0 {
@@ -192,22 +196,14 @@ func (s *Service) InvokeWorkbenchModelStream(ctx context.Context, principal doma
 	if status >= http.StatusBadRequest {
 		return WorkbenchRelayResponse{}, fmt.Errorf("%w: workbench relay returned status %d", apperrors.ErrClusterUnready, status)
 	}
-	content := strings.TrimSpace(writer.content.String())
-	calls, usage, err := workbenchRelayStreamOutput(endpoint, writer.body.Bytes())
-	if err != nil {
-		return WorkbenchRelayResponse{}, err
-	}
-	if content == "" && len(calls) == 0 {
-		return WorkbenchRelayResponse{}, fmt.Errorf("%w: workbench relay stream content is empty", apperrors.ErrClusterUnready)
-	}
-	usage, estimated := workbenchAccountedUsage(req, writer.body.Bytes(), usage)
-	resolved := workbenchResolvedSelection(writer.Header(), selections)
+	usage, estimated := workbenchAccountedUsage(req, writer.body.Bytes(), writer.usage)
+	resolved := receipt.Selection
 	return WorkbenchRelayResponse{
 		ContextWindowTokens: workbenchContextWindow(resolved.route.Metadata),
-		ToolCalls:           calls,
+		ToolCalls:           writer.calls,
 		Usage:               usage,
 		UsageEstimated:      estimated,
-		Content:             content,
+		Content:             strings.TrimSpace(writer.content.String()),
 		PublicModel:         publicModel,
 		RouteID:             resolved.route.ID,
 		UpstreamID:          resolved.upstream.ID,
@@ -522,11 +518,13 @@ type workbenchRelayStreamWriter struct {
 	body    bytes.Buffer
 	rest    string
 	content strings.Builder
+	calls   []WorkbenchToolCall
+	usage   map[string]float64
 	stopped bool
 	onDelta func(WorkbenchRelayStreamDelta) bool
 }
 
-func newWorkbenchRelayStreamWriter(endpoint string, onDelta func(WorkbenchRelayStreamDelta) bool) *workbenchRelayStreamWriter {
+func newWorkbenchRelayStreamWriter(onDelta func(WorkbenchRelayStreamDelta) bool) *workbenchRelayStreamWriter {
 	return &workbenchRelayStreamWriter{header: http.Header{}, onDelta: onDelta}
 }
 
@@ -557,13 +555,19 @@ func (w *workbenchRelayStreamWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (w *workbenchRelayStreamWriter) finish() {
-	if w.stopped {
-		return
+func (w *workbenchRelayStreamWriter) complete(ctx context.Context, endpoint string) error {
+	if strings.TrimSpace(w.rest) != "" && !w.consume("\n\n") {
+		return ErrWorkbenchRelayStreamStopped
 	}
-	if strings.TrimSpace(w.rest) != "" {
-		w.consume("\n\n")
+	calls, usage, err := workbenchRelayStreamOutput(endpoint, w.body.Bytes())
+	if err != nil {
+		return err
 	}
+	if strings.TrimSpace(w.content.String()) == "" && len(calls) == 0 {
+		return fmt.Errorf("%w: workbench relay stream content is empty", apperrors.ErrClusterUnready)
+	}
+	w.calls, w.usage = calls, usage
+	return ctx.Err()
 }
 
 func (w *workbenchRelayStreamWriter) consume(chunk string) bool {

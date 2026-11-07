@@ -315,9 +315,17 @@ func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentit
 	if err := s.reserveNativeCapabilityToolCall(ctx); err != nil {
 		return nil, nil, err
 	}
-	if output, relatedIDs, handled, err := s.gatewayRegistry().InvokeTool(ctx, principal, tool, input); handled {
-		return output, relatedIDs, err
+	switch owner := s.gatewayRegistry().toolOwner(tool.Name).(type) {
+	case ToolCapabilityInvoker:
+		return owner.InvokeTool(ctx, principal, tool, input)
+	case BuiltinCapabilityProvider:
+		return s.invokeBuiltinTool(ctx, principal, tool, input, sessionID)
+	default:
+		return nil, nil, fmt.Errorf("%w: unknown AI Gateway tool %s", apperrors.ErrInvalidArgument, tool.Name)
 	}
+}
+
+func (s *Service) invokeBuiltinTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any, sessionID string) (any, map[string]any, error) {
 	switch {
 	case strings.HasPrefix(tool.Name, "network_access."):
 		return s.invokeNetworkAccessTool(ctx, principal, sessionID, tool.Name, input)
@@ -363,27 +371,6 @@ func (s *Service) invokeVirtualizationTool(ctx context.Context, principal domain
 		return nil, nil, fmt.Errorf("%w: virtualization gateway service is not configured", apperrors.ErrInvalidArgument)
 	}
 	switch toolName {
-	case "virtualization.vms.create.plan":
-		var req appvirtualization.CreateVMInput
-		if err := mapInput(input, &req); err != nil {
-			return nil, nil, err
-		}
-		plan, err := s.virtualization.PlanVMCreate(ctx, principal, req)
-		return plan, map[string]any{"target": plan.Target, "inputHash": plan.InputHash}, err
-	case "virtualization.vms.create.trigger":
-		var req struct {
-			appvirtualization.CreateVMInput
-			IdempotencyKey string `json:"idempotencyKey"`
-		}
-		if err := mapInput(input, &req); err != nil {
-			return nil, nil, err
-		}
-		if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
-			return nil, nil, err
-		}
-		req.CreateVMInput.IdempotencyKey = req.IdempotencyKey
-		item, err := s.virtualization.CreateVM(ctx, principal, req.CreateVMInput)
-		return item, map[string]any{"taskId": item.ID, "connectionId": item.ConnectionID}, err
 	case "virtualization.vms.action.trigger":
 		var req struct {
 			appvirtualization.VMActionInput
@@ -550,9 +537,7 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		return nil, nil, fmt.Errorf("%w: delivery gateway services are not configured", apperrors.ErrInvalidArgument)
 	}
 	switch tool.Name {
-	case "delivery.drafts.create",
-		"delivery.drafts.confirm",
-		"delivery.plans.create",
+	case "delivery.plans.create",
 		"delivery.plans.confirm":
 		return s.invokeDeliveryWorkflowTool(ctx, principal, tool.Name, input)
 	case "delivery.repositories.analyze", "delivery.applications.list",
@@ -579,20 +564,6 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 
 func (s *Service) invokeDeliveryWorkflowTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
 	switch toolName {
-	case "delivery.drafts.create":
-		var req domaindelivery.DeliveryDraftInput
-		if err := mapInput(input, &req); err != nil {
-			return nil, nil, err
-		}
-		item, err := s.delivery.CreateDeliveryDraft(ctx, principal, req)
-		return item, map[string]any{"draftId": item.ID, "applicationId": item.ApplicationDraft.ID}, err
-	case "delivery.drafts.confirm":
-		draftID := stringInput(input, "draftId")
-		if draftID == "" {
-			return nil, nil, fmt.Errorf("%w: draftId is required", apperrors.ErrInvalidArgument)
-		}
-		item, err := s.delivery.ConfirmDeliveryDraft(ctx, principal, draftID)
-		return item, map[string]any{"draftId": draftID, "applicationId": item.Application.ID, "serviceCount": len(item.Services)}, err
 	case "delivery.plans.create":
 		var req domaindelivery.DeliveryPlanInput
 		if err := mapInput(input, &req); err != nil {
@@ -887,9 +858,6 @@ type kubernetesToolRequest struct {
 }
 
 func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
-	if tool.Name == "k8s.resources.create.preflight" || tool.Name == "k8s.resources.create.trigger" {
-		return s.invokeKubernetesResourceCreationTool(ctx, principal, tool.Name, input)
-	}
 	if tool.Name == "k8s.workloads.snapshot.generate" {
 		return s.invokeKubernetesWorkloadSnapshotTool(ctx, principal, input)
 	}
@@ -956,34 +924,6 @@ func (s *Service) invokeKubernetesWorkbenchReadTool(ctx context.Context, princip
 	default:
 		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
 	}
-}
-
-func (s *Service) invokeKubernetesResourceCreationTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
-	if s.resourceCreation == nil {
-		return nil, nil, fmt.Errorf("%w: Kubernetes resource creation service is not configured", apperrors.ErrInvalidArgument)
-	}
-	var req struct {
-		ClusterID      string `json:"clusterId"`
-		IdempotencyKey string `json:"idempotencyKey"`
-		domainresource.ResourceCreateRequest
-	}
-	if err := mapInput(input, &req); err != nil {
-		return nil, nil, err
-	}
-	req.ClusterID = strings.TrimSpace(req.ClusterID)
-	if req.ClusterID == "" {
-		return nil, nil, fmt.Errorf("%w: clusterId is required", apperrors.ErrInvalidArgument)
-	}
-	if toolName == "k8s.resources.create.preflight" {
-		item, err := s.resourceCreation.PreflightCreate(ctx, principal, req.ClusterID, req.ResourceCreateRequest)
-		return item, map[string]any{"clusterId": req.ClusterID, "contentHash": item.ContentHash}, err
-	}
-	if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
-		return nil, nil, err
-	}
-	req.ResourceCreateRequest.RequestID = req.IdempotencyKey
-	item, err := s.resourceCreation.ExecuteCreate(ctx, principal, req.ClusterID, req.ResourceCreateRequest)
-	return item, map[string]any{"clusterId": req.ClusterID, "operationId": item.OperationID, "contentHash": item.ContentHash}, err
 }
 
 func (s *Service) invokeKubernetesWorkloadSnapshotTool(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {

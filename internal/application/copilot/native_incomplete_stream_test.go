@@ -18,7 +18,7 @@ func (g *nativeIncompleteStreamGateway) InvokeWorkbenchModelStream(_ context.Con
 
 func TestNativeIncompleteStreamDoesNotCompleteOrResetUsage(t *testing.T) {
 	service, store, gateway, _ := nativeLoopFixture(t)
-	service.workbenchInvoker = &nativeIncompleteStreamGateway{gateway}
+	service.runtime.Stream = &nativeIncompleteStreamGateway{gateway}
 	if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Run.Status != "failed" || len(store.final) != 1 {
 		t.Fatalf("incomplete stream did not fail: status=%s final=%v err=%v", store.lease.Run.Status, store.final, err)
 	}

@@ -40,7 +40,7 @@ func TestNativeDomainTaskWithoutPersonalLeaseCanFinish(t *testing.T) {
 		t.Run(fmt.Sprint(missing), func(t *testing.T) {
 			service, loop, _, _ := nativeLoopFixture(t)
 			capture := &nativeQueueCapture{nativeLoopStore: loop, inspectionAuthzTestRepository: &inspectionAuthzTestRepository{}}
-			service.agentRuns = &personalCleanupParentStore{nativeTaskStoreFixture: &nativeTaskStoreFixture{nativeQueueCapture: capture}}
+			service.nativeTaskParents = &personalCleanupParentStore{nativeTaskStoreFixture: &nativeTaskStoreFixture{nativeQueueCapture: capture}}
 			cause := apperrors.ErrNotFound
 			if !missing {
 				cause = apperrors.ErrAccessDenied
@@ -114,7 +114,7 @@ func TestNativePersonalCleanupKeepsOriginalTaskLeaseAndIndependentBudget(t *test
 				t.Fatal(err)
 			}
 			capture := &nativeQueueCapture{nativeLoopStore: loop, inspectionAuthzTestRepository: &inspectionAuthzTestRepository{}}
-			service.agentRuns = &personalCleanupParentStore{nativeTaskStoreFixture: &nativeTaskStoreFixture{nativeQueueCapture: capture}}
+			service.nativeTaskParents = &personalCleanupParentStore{nativeTaskStoreFixture: &nativeTaskStoreFixture{nativeQueueCapture: capture}}
 			cp := initialNativeCheckpoint(loop.lease.Run)
 			cp.Usage.ToolCalls = 1 // Acquiring the owned task lease consumed a work call.
 			loop.lease.ToolUsage.WorkCalls = 1

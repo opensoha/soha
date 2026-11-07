@@ -20,7 +20,7 @@ func TestChatKubernetesToolsAreExecutableAndPinResourceScope(t *testing.T) {
 	for _, binding := range bindings {
 		t.Run(binding.ToolName, func(t *testing.T) {
 			gateway := &chatGatewayToolStub{}
-			service := &Service{workbenchInvoker: gateway}
+			service := &Service{runtime: RuntimeDependencies{Tools: gateway}}
 			run := domaincopilot.AgentRun{Scope: domaincopilot.SessionScope{ClusterID: "cluster", Namespace: "team", Pod: "pod", Node: "node", Workload: "api", Service: "service", TimeRangeMinutes: 10}, Input: map[string]any{"_sohaPrincipal": map[string]any{"userId": "reader", "roles": []string{"reader"}, "permissionKeys": []string{binding.PermissionKey}}}}
 			input := map[string]any{"crdName": "widgets.example.com", "limit": 20, "tailLines": 30, "previous": true, "stepSeconds": 60, "untrustedOption": "must-not-forward"}
 			if _, err := service.executeChatAgentTool(context.Background(), run, binding, input); err != nil {

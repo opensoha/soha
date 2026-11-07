@@ -9,7 +9,7 @@ import (
 )
 
 func (h *NetworkAccessHandler) GetSessionCommand(c *gin.Context) {
-	item, err := h.service.GetSessionCommandForSession(c.Request.Context(), principal(c), c.Param("sessionID"), c.Param("commandID"))
+	item, err := h.session.GetSessionCommandForSession(c.Request.Context(), principal(c), c.Param("sessionID"), c.Param("commandID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -23,7 +23,7 @@ func (h *NetworkAccessHandler) GetOriginalSessionCommand(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	item, err := h.service.GetOriginalSessionCommand(c.Request.Context(), principal(c), c.Param("sessionID"), params.PlanHash)
+	item, err := h.session.GetOriginalSessionCommand(c.Request.Context(), principal(c), c.Param("sessionID"), params.PlanHash)
 	if err != nil {
 		writeError(c, err)
 		return

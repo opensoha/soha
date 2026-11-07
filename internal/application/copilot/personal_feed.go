@@ -24,11 +24,6 @@ type FeedStore interface {
 	FinishFeedRefresh(context.Context, domain.FeedRecord, []domain.FeedItem, string, time.Time) error
 }
 
-type feedToolInvoker interface {
-	WorkbenchCapabilities(context.Context, identity.Principal, gateway.ManifestRequest) (gateway.Manifest, error)
-	InvokeTool(context.Context, identity.Principal, gateway.ToolInvocationRequest) (gateway.ToolInvocationResult, error)
-}
-
 func feedQueryField(tool gateway.ToolCapability) string {
 	name := strings.ToLower(tool.Name + " " + tool.Action)
 	if !strings.Contains(name, "search") || strings.HasPrefix(tool.Name, "knowledge.") || strings.HasPrefix(tool.Name, "memory.") || tool.RiskLevel != gateway.RiskLevelRead || tool.RequiresApproval || len(tool.Effects) > 0 || tool.Execution != nil && tool.Execution.Mode != "sync" {
@@ -57,14 +52,14 @@ func feedQueryField(tool gateway.ToolCapability) string {
 }
 
 func (s *Service) feedTools(ctx context.Context, principal identity.Principal) ([]gateway.ToolCapability, error) {
-	invoker, ok := s.workbenchInvoker.(feedToolInvoker)
-	if !ok {
+	catalog := s.runtime.CapabilityCatalog
+	if catalog == nil || s.runtime.Tools == nil {
 		return []gateway.ToolCapability{}, nil
 	}
 	tools := []gateway.ToolCapability{}
 	cursor := ""
 	for page := 0; page < 10; page++ {
-		manifest, err := invoker.WorkbenchCapabilities(ctx, principal, gateway.ManifestRequest{Query: "search", Limit: 100, Cursor: cursor})
+		manifest, err := catalog.WorkbenchCapabilities(ctx, principal, gateway.ManifestRequest{Query: "search", Limit: 100, Cursor: cursor})
 		if err != nil {
 			return nil, err
 		}
@@ -207,7 +202,7 @@ func (s *Service) runFeedWorker(ctx context.Context) {
 }
 
 func (s *Service) runFeedJob(ctx context.Context) {
-	if !s.nativeReady.Load() {
+	if s.runtime.Model == nil || s.runtime.CapabilityCatalog == nil || s.runtime.Tools == nil {
 		return
 	}
 	record, ok, err := s.feed.ClaimFeedRefresh(ctx, time.Now().UTC())

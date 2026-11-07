@@ -41,7 +41,7 @@ func TestDirectoryManagementPermissionsRespectCredentialCeilingAndFailClosed(t *
 				if scenario == "key-ceiling" {
 					principal.PermissionKeys = []string{appaccess.PermAccessDirectoryView}
 				}
-				handler := New(nil, nil, nil)
+				handler := New(nil, nil, nil, nil)
 				if scenario != "resolver-missing" {
 					handler.SetPermissionResolver(appaccess.NewPermissionResolver(directoryPermissionRoles{keys}))
 				}

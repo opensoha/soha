@@ -593,36 +593,6 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema(nil, gatewayDeliveryApplicationBootstrapProperties()),
 	},
 	{
-		Name:             "delivery.drafts.create",
-		Title:            "Create Delivery Draft",
-		Description:      "Persist a DeliveryDraft-compatible application and service specification for explicit confirmation.",
-		Domain:           "delivery",
-		Action:           "create",
-		RiskLevel:        domainaigateway.RiskLevelMutate,
-		PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsUpdate},
-		RequiredScopes:   []string{"businessLine", "application"},
-		MCPAdapterID:     "delivery.v1",
-		MCPToolName:      "delivery.drafts.create",
-		RequiresApproval: false,
-		InputSchema:      gatewayObjectSchema([]string{"applicationDraft"}, gatewayDeliveryDraftCreateProperties()),
-	},
-	{
-		Name:             "delivery.drafts.confirm",
-		Title:            "Confirm Delivery Draft",
-		Description:      "Confirm a DeliveryDraft and apply its application, services, build sources, and environment bindings.",
-		Domain:           "delivery",
-		Action:           "confirm",
-		RiskLevel:        domainaigateway.RiskLevelMutate,
-		PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsUpdate},
-		RequiredScopes:   []string{"businessLine", "application"},
-		MCPAdapterID:     "delivery.v1",
-		MCPToolName:      "delivery.drafts.confirm",
-		RequiresApproval: true,
-		InputSchema: gatewayObjectSchema([]string{"draftId"}, map[string]any{
-			"draftId": gatewayStringSchema("Delivery draft id to confirm."),
-		}),
-	},
-	{
 		Name:           "delivery.release.plan",
 		Title:          "Plan Delivery Release",
 		Description:    "Build a DeliveryPlan-compatible release plan from user intent and delivery context without triggering execution.",
@@ -1314,32 +1284,6 @@ var operationsToolCatalog = []domainaigateway.ToolCapability{
 		),
 	},
 	{
-		Name: "k8s.resources.create.preflight", Title: "Preflight Kubernetes Resources", Description: "Validate, authorize, and dry-run Kubernetes manifests without creating resources.",
-		Domain: "k8s", Action: "preflight", RiskLevel: domainaigateway.RiskLevelAnalyze,
-		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreationUse}, RequiredScopes: []string{"cluster", "namespace"},
-		MCPAdapterID: "k8s.v1", MCPToolName: "k8s.resources.create.preflight", InputSchema: gatewayObjectSchema([]string{"clusterId", "source", "content"}, gatewayKubernetesResourceCreateProperties()),
-	},
-	{
-		Name: "k8s.resources.create.trigger", Title: "Create Kubernetes Resources", Description: "Create validated Kubernetes manifests through the durable resource creation batch.",
-		Domain: "k8s", Action: "execute", RiskLevel: domainaigateway.RiskLevelHigh, RequiresApproval: true,
-		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreationUse}, RequiredScopes: []string{"cluster", "namespace"},
-		MCPAdapterID: "k8s.v1", MCPToolName: "k8s.resources.create.trigger", InputSchema: gatewayObjectSchema([]string{"clusterId", "source", "content", "idempotencyKey"}, gatewayKubernetesResourceCreateProperties()),
-	},
-	{
-		Name: "virtualization.vms.create.plan", Title: "Plan Virtual Machine Create", Description: "Validate and summarize a virtual machine create request without side effects.",
-		Domain: "virtualization", Action: "plan", RiskLevel: domainaigateway.RiskLevelAnalyze,
-		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermVirtualizationVMsView, appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationImagesView},
-		RequiredScopes: []string{"virtualizationConnection", "vm"}, MCPAdapterID: "virtualization.v1", MCPToolName: "virtualization.vms.create.plan",
-		InputSchema: gatewayObjectSchema([]string{"connectionId", "name"}, gatewayVMCreateProperties()),
-	},
-	{
-		Name: "virtualization.vms.create.trigger", Title: "Trigger Virtual Machine Create", Description: "Create a virtual machine through the durable virtualization task queue.",
-		Domain: "virtualization", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
-		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermVirtualizationVMsCreate}, RequiredScopes: []string{"virtualizationConnection", "vm"},
-		MCPAdapterID: "virtualization.v1", MCPToolName: "virtualization.vms.create.trigger",
-		InputSchema: gatewayObjectSchema([]string{"connectionId", "name", "idempotencyKey"}, gatewayVMCreateProperties()),
-	},
-	{
 		Name: "virtualization.vms.action.trigger", Title: "Trigger Virtual Machine Action", Description: "Run a typed action on a virtual machine through the durable task queue.",
 		Domain: "virtualization", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke}, RequiredScopes: []string{"virtualizationConnection", "vm"},
@@ -1536,15 +1480,6 @@ func gatewayKubernetesPromptArgumentProperties() map[string]any {
 	return out
 }
 
-func gatewayKubernetesResourceCreateProperties() map[string]any {
-	return map[string]any{
-		"clusterId": gatewayStringSchema("Cluster id."), "source": gatewayStringSchema("Creation source: list, form, or global_yaml."),
-		"content": gatewayStringSchema("Bounded YAML or JSON manifest content."), "defaultNamespace": gatewayStringSchema("Default namespace."),
-		"resourceGroup": gatewayStringSchema("Optional resource authorization group."), "expectedApiVersion": gatewayStringSchema("Optional expected API version."),
-		"expectedKind": gatewayStringSchema("Optional expected resource kind."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
-	}
-}
-
 func gatewayKubernetesWorkloadSnapshotProperties() map[string]any {
 	return map[string]any{
 		"clusterId": gatewayStringSchema("Cluster id."), "namespace": gatewayStringSchema("Source and target namespace."),
@@ -1573,16 +1508,6 @@ func gatewayObjectSchema(required []string, properties map[string]any) map[strin
 		out["required"] = items
 	}
 	return out
-}
-
-func gatewayVMCreateProperties() map[string]any {
-	return map[string]any{
-		"requireCapacity": map[string]any{"type": "boolean", "description": "Require provider inventory and atomic CPU, memory and storage reservation."},
-		"connectionId":    gatewayStringSchema("Virtualization connection id."), "name": gatewayStringSchema("Virtual machine name."),
-		"architecture": gatewayStringSchema("CPU architecture."), "imageId": gatewayStringSchema("Image id."), "flavorId": gatewayStringSchema("Flavor id."),
-		"cpu": gatewayIntegerSchema("CPU count."), "memoryMiB": gatewayIntegerSchema("Memory in MiB."), "diskGiB": gatewayIntegerSchema("Disk size in GiB."),
-		"network": gatewayStringSchema("Provider network."), "cloudInit": gatewayStringSchema("Sensitive cloud-init content."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
-	}
 }
 
 func gatewayDockerQuickCreateProperties() map[string]any {
@@ -1920,17 +1845,6 @@ func gatewayDeliveryApplicationBootstrapProperties() map[string]any {
 	return props
 }
 
-func gatewayDeliveryDraftCreateProperties() map[string]any {
-	props := gatewayDeliverySpecRenderProperties()
-	props["id"] = gatewayStringSchema("Optional caller-provided delivery draft id.")
-	props["source"] = map[string]any{
-		"type":        "string",
-		"description": "Delivery draft source.",
-		"enum":        []any{"manual", "ai", "blueprint"},
-	}
-	return props
-}
-
 func gatewayDeliveryReleasePlanProperties() map[string]any {
 	return map[string]any{
 		"source":                   gatewayStringSchema("Plan source, normally manual or ai."),
@@ -2038,7 +1952,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "K8s Resource Provisioner",
 			Category:       "platform",
 			Description:    "Kubernetes workload snapshot generation plus approval-bound manifest preflight and creation for scoped environments.",
-			CapabilityRefs: []string{"k8s.workloads.snapshot.generate", "k8s.resources.create.preflight", "k8s.resources.create.trigger"},
+			CapabilityRefs: []string{"k8s.workloads.snapshot.generate", "k8s.resources.create.preflight", "k8s.resources.create.trigger", "k8s.resources.create.get", "k8s.resources.create.assess"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreationUse},
 			RequiredScopes: []string{"cluster", "namespace"},
 		},

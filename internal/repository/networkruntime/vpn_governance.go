@@ -2,31 +2,28 @@ package networkruntime
 
 import (
 	"errors"
-	"slices"
-	"strings"
 	"time"
 
 	app "github.com/opensoha/soha/internal/application/networkaccess"
-	domain "github.com/opensoha/soha/internal/domain/networkaccess"
 	domainnetworkruntime "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	networkrepo "github.com/opensoha/soha/internal/repository/networkaccess"
 	"gorm.io/gorm"
 )
 
-type vpnGovernanceScope struct {
-	RuntimeID                                           string
-	SubjectID, DeviceID, SiteID, SpaceID, Mode, Profile string
-	ResourceIDs                                         []string
+// The WireGuard lock is acquired first by each caller. Hold publication
+// stable from the initial version/read check through the transaction commit.
+func lockVPNGovernancePolicy(tx *gorm.DB) error {
+	return tx.Exec(`SELECT pg_advisory_xact_lock_shared(hashtext('network-access-policy-snapshot:default:default'))`).Error
 }
 
-func governanceRequired(site domain.Site, mode string, policies []domain.Policy) bool {
-	return site.EffectiveDeviceGovernance() != domain.DeviceGovernanceLegacy || slices.ContainsFunc(policies, func(p domain.Policy) bool {
-		return p.Enabled && len(p.DeviceManagementStates) != 0 && (len(p.SiteIDs) == 0 || slices.Contains(p.SiteIDs, site.ID)) && (len(p.Modes) == 0 || slices.Contains(p.Modes, mode))
-	})
+func vpnPolicyVersionCurrent(tx *gorm.DB, expected int) (bool, error) {
+	var current int
+	err := tx.Raw(`SELECT COALESCE(MAX(policy_version), 0) FROM network_access_policy_snapshots WHERE tenant_id='default' AND workspace_id='default'`).Scan(&current).Error
+	return current == expected, err
 }
 
-func vpnGovernanceAllowed(tx *gorm.DB, scope vpnGovernanceScope) (bool, error) {
+func (r *Repository) vpnGovernanceAllowed(tx *gorm.DB, scope app.VPNGovernanceScope) (bool, error) {
 	// Share locks keep administrative reclassification from racing this commit.
 	for _, target := range []struct{ table, id string }{{"network_access_devices", scope.DeviceID}, {"network_access_sites", scope.SiteID}} {
 		var id string
@@ -43,33 +40,40 @@ func vpnGovernanceAllowed(tx *gorm.DB, scope vpnGovernanceScope) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if strings.HasPrefix(scope.SubjectID, "service_account:") {
-		return workloadScopeAllowed(tx, scope, time.Now().UTC())
+	facts := app.VPNGovernanceFacts{Scope: scope, Site: site, Snapshot: snapshot, EvaluatedAt: time.Now().UTC()}
+	path := r.governance.Path(scope, site, snapshot)
+	switch path {
+	case app.VPNGovernanceLegacy:
+		return r.governance.Allows(path, facts), nil
+	case app.VPNGovernanceWorkload:
+		return r.workloadVPNGovernanceAllowed(tx, facts)
 	}
-	if !governanceRequired(site, scope.Mode, snapshot.Policies) {
-		return true, nil
-	}
-	device, err := repo.GetDevice(tx.Statement.Context, scope.DeviceID)
+	return r.userVPNGovernanceAllowed(tx, path, facts)
+}
+
+func (r *Repository) userVPNGovernanceAllowed(tx *gorm.DB, path app.VPNGovernancePath, facts app.VPNGovernanceFacts) (bool, error) {
+	repo := networkrepo.New(tx)
+	var err error
+	facts.Device, err = repo.GetDevice(tx.Statement.Context, facts.Scope.DeviceID)
 	if err != nil {
 		return false, err
 	}
-	subject, err := repo.GetSubject(tx.Statement.Context, scope.SubjectID)
+	facts.Subject, err = repo.GetSubject(tx.Statement.Context, facts.Scope.SubjectID)
 	if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, apperrors.ErrAccessDenied) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	if scope.Mode == domain.ModeExternalVPN {
-		result := app.EvaluateAdmission(app.AdmissionInput{SubjectUserID: scope.SubjectID, DeviceID: scope.DeviceID, SiteID: scope.SiteID, Mode: scope.Mode}, subject, device, site, snapshot)
-		return result.Decision == domain.DecisionAllow && result.NetworkProfile == scope.Profile, nil
+	if path == app.VPNGovernanceAdmission {
+		return r.governance.Allows(path, facts), nil
 	}
-	return resourceVPNGovernanceAllowed(tx, scope, subject, device, site, snapshot)
+	return r.resourceVPNGovernanceAllowed(tx, path, facts)
 }
 
-func resourceVPNGovernanceAllowed(tx *gorm.DB, scope vpnGovernanceScope, subject domain.Subject, device domain.Device, site domain.Site, snapshot domain.PolicySnapshot) (bool, error) {
+func (r *Repository) resourceVPNGovernanceAllowed(tx *gorm.DB, path app.VPNGovernancePath, facts app.VPNGovernanceFacts) (bool, error) {
 	repo := networkrepo.New(tx)
-	ids := sortedUniqueStrings(scope.ResourceIDs)
+	ids := sortedUniqueStrings(facts.Scope.ResourceIDs)
 	resources, err := repo.ResourcesByIDs(tx.Statement.Context, ids)
 	if err != nil {
 		return false, err
@@ -77,28 +81,29 @@ func resourceVPNGovernanceAllowed(tx *gorm.DB, scope vpnGovernanceScope, subject
 	if len(ids) == 0 || len(resources) != len(ids) {
 		return false, nil
 	}
-	if scope.SpaceID == "" {
-		scope.SpaceID = resources[0].SpaceID
+	spaceID := facts.Scope.SpaceID
+	if spaceID == "" {
+		spaceID = resources[0].SpaceID
 	}
-	space, err := repo.GetSpace(tx.Statement.Context, scope.SpaceID)
+	facts.Space, err = repo.GetSpace(tx.Statement.Context, spaceID)
 	if err != nil {
 		return false, err
 	}
 	for _, resource := range resources {
-		result := app.EvaluatePolicy(app.PreviewInput{SubjectUserID: scope.SubjectID, DeviceID: scope.DeviceID, SiteID: scope.SiteID, ResourceID: resource.ID, Mode: scope.Mode}, subject, device, site, space, resource, snapshot)
-		if result.Decision != domain.DecisionAllow || result.NetworkProfile != scope.Profile {
+		facts.Resource = resource
+		if !r.governance.Allows(path, facts) {
 			return false, nil
 		}
 	}
 	return true, nil
 }
 
-func sessionGovernanceAllowed(tx *gorm.DB, session sessionRow, now time.Time) (bool, error) {
+func (r *Repository) sessionGovernanceAllowed(tx *gorm.DB, session sessionRow, now time.Time) (bool, error) {
 	networkLeases, leases, err := activeSessionLeases(tx, session.ID, now)
 	if err != nil {
 		return false, err
 	}
-	scope := vpnGovernanceScope{RuntimeID: session.RuntimeID, SubjectID: session.SubjectID, DeviceID: session.DeviceID, SiteID: session.SiteID, Mode: session.Mode, Profile: session.AccessProfile}
+	scope := app.VPNGovernanceScope{RuntimeID: session.RuntimeID, SubjectID: session.SubjectID, DeviceID: session.DeviceID, SiteID: session.SiteID, Mode: session.Mode, Profile: session.AccessProfile}
 	for _, lease := range leases {
 		scope.ResourceIDs = append(scope.ResourceIDs, lease.ResourceIDs...)
 	}
@@ -106,15 +111,15 @@ func sessionGovernanceAllowed(tx *gorm.DB, session sessionRow, now time.Time) (b
 		scope.SpaceID = networkLeases[0].NetworkSpaceID
 	}
 
-	return vpnGovernanceAllowed(tx, scope)
+	return r.vpnGovernanceAllowed(tx, scope)
 }
 
-func revokeGovernanceSessions(tx *gorm.DB, runtimeID string, now time.Time) error {
+func (r *Repository) revokeGovernanceSessions(tx *gorm.DB, runtimeID string, now time.Time) error {
 	snapshot, err := networkrepo.New(tx).GetPolicySnapshot(tx.Statement.Context)
 	if err != nil {
 		return err
 	}
-	hasSelectors := slices.ContainsFunc(snapshot.Policies, func(p domain.Policy) bool { return p.Enabled && len(p.DeviceManagementStates) != 0 })
+	hasSelectors := r.governance.HasManagementSelectors(snapshot)
 	var sessions []sessionRow
 	err = tx.Raw(`SELECT s.* FROM network_runtime_sessions s JOIN network_access_sites ns ON ns.id=s.site_id AND ns.tenant_id=s.tenant_id AND ns.workspace_id=s.workspace_id WHERE s.tenant_id='default' AND s.workspace_id='default'
  AND s.status IN ('pending','active','restricted','quarantine') AND (ns.device_governance <> 'legacy' OR ? OR s.subject_id LIKE 'service_account:%') AND EXISTS (
@@ -128,7 +133,7 @@ func revokeGovernanceSessions(tx *gorm.DB, runtimeID string, now time.Time) erro
 		return apperrors.ErrServiceUnavailable
 	}
 	for _, session := range sessions {
-		allowed, err := sessionGovernanceAllowed(tx, session, now)
+		allowed, err := r.sessionGovernanceAllowed(tx, session, now)
 		if err != nil {
 			return err
 		}
@@ -141,8 +146,8 @@ func revokeGovernanceSessions(tx *gorm.DB, runtimeID string, now time.Time) erro
 	return nil
 }
 
-func requireVPNGovernance(tx *gorm.DB, connection domainnetworkruntime.VPNConnection) error {
-	allowed, err := vpnGovernanceAllowed(tx, vpnGovernanceScope{RuntimeID: connection.RuntimeID, SubjectID: connection.SubjectID, DeviceID: connection.DeviceID, SiteID: connection.SiteID, SpaceID: connection.NetworkSpaceID, Mode: connection.Mode, Profile: connection.AccessProfile, ResourceIDs: connection.ResourceIDs})
+func (r *Repository) requireVPNGovernance(tx *gorm.DB, connection domainnetworkruntime.VPNConnection) error {
+	allowed, err := r.vpnGovernanceAllowed(tx, app.VPNGovernanceScope{RuntimeID: connection.RuntimeID, SubjectID: connection.SubjectID, DeviceID: connection.DeviceID, SiteID: connection.SiteID, SpaceID: connection.NetworkSpaceID, Mode: connection.Mode, Profile: connection.AccessProfile, ResourceIDs: connection.ResourceIDs})
 	if err != nil {
 		return err
 	}
@@ -152,12 +157,12 @@ func requireVPNGovernance(tx *gorm.DB, connection domainnetworkruntime.VPNConnec
 	return nil
 }
 
-func validateReplayedVPNGovernance(tx *gorm.DB, sessionID string, now time.Time) error {
+func (r *Repository) validateReplayedVPNGovernance(tx *gorm.DB, sessionID string, now time.Time) error {
 	var session sessionRow
 	if err := tx.Where("tenant_id='default' AND workspace_id='default' AND id=?", sessionID).First(&session).Error; err != nil {
 		return err
 	}
-	allowed, err := sessionGovernanceAllowed(tx, session, now)
+	allowed, err := r.sessionGovernanceAllowed(tx, session, now)
 	if err != nil {
 		return err
 	}

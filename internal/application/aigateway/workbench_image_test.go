@@ -57,7 +57,7 @@ func TestWorkbenchImageRouteEditAndOwnerAudit(t *testing.T) {
 	}))
 	defer server.Close()
 	repo := relayRepoForUpstream(t, server.URL, "openai", "image-fixture-key")
-	service := newRelayRuntimeTestService(repo, server.Client())
+	service := newRelayRuntimeTestService(repo)
 	service.permissions = appaccess.NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermAIGatewayInvoke, appaccess.PermObserveAIChatUse, appaccess.PermAIGatewayRelayInvoke}}})
 	principal := relayTestPrincipal()
 	principal.PermissionKeys = []string{appaccess.PermAIGatewayInvoke, appaccess.PermObserveAIChatUse, appaccess.PermAIGatewayRelayInvoke}

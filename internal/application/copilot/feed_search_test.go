@@ -67,7 +67,7 @@ func TestFeedGenerationUsesCurrentPrincipalAndBoundedGroundedCalls(t *testing.T)
 	service.conversations = searchReaderFixture{items: []domain.MessageCandidate{{Message: domain.Message{Role: "user", Content: "讨论开源文件服务"}}, {Message: domain.Message{Role: "assistant", Content: "revoked private interest", Metadata: map[string]any{"contextSnapshot": map[string]any{"citations": []map[string]any{{"uri": "memory:revoked"}}}}}}}}
 	service.settings = inspectionAuthzSettingsResolver{settings: settings.AISettings{WorkbenchModel: settings.AIWorkbenchModelSettings{Enabled: true, DefaultPublicModel: "configured-model", DefaultEndpoint: "chat/completions"}}}
 	invoker := &feedGatewayFixture{}
-	service.SetWorkbenchModelInvoker(invoker)
+	service.runtime = RuntimeDependencies{Model: invoker, Tools: invoker, CapabilityCatalog: invoker}
 	record := domain.FeedRecord{Owner: "owner", JobID: "bounded-job", Settings: domain.FeedSettings{Instructions: "简短资讯", SearchTool: "web.search"}}
 	items, err := service.generateFeed(t.Context(), record)
 	if err != nil || len(items) != 1 || items[0].Sources[0].URL != "https://example.com/article" {
@@ -83,13 +83,13 @@ func TestFeedGenerationUsesCurrentPrincipalAndBoundedGroundedCalls(t *testing.T)
 		t.Fatal("search pin or bound")
 	}
 	invoker = &feedGatewayFixture{approval: true}
-	service.SetWorkbenchModelInvoker(invoker)
+	service.runtime = RuntimeDependencies{Model: invoker, Tools: invoker, CapabilityCatalog: invoker}
 	if _, err := service.generateFeed(t.Context(), record); !errors.Is(err, apperrors.ErrUnsupportedOperation) || len(invoker.models) != 1 {
 		t.Fatal("approval was followed or writing proceeded")
 	}
 	service.agentPrincipals = &chatToolPrincipalResolver{principal: identity.Principal{UserID: "owner"}}
 	invoker = &feedGatewayFixture{}
-	service.SetWorkbenchModelInvoker(invoker)
+	service.runtime = RuntimeDependencies{Model: invoker, Tools: invoker, CapabilityCatalog: invoker}
 	if _, err := service.generateFeed(t.Context(), record); err == nil || len(invoker.models) > 0 {
 		t.Fatal("revoked current permission invoked the model")
 	}

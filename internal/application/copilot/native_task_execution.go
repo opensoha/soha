@@ -26,10 +26,6 @@ type NativeCapabilityTasks interface {
 	CancelCapabilityTask(context.Context, domainidentity.Principal, string) (domainaigateway.CapabilityTask, error)
 }
 
-type nativeTaskPlanValidator interface {
-	ValidateCapabilityPlan(context.Context, domainidentity.Principal, domainaigateway.CapabilityTaskInput) (domainaigateway.CapabilityPlanValidation, error)
-}
-
 type nativeTaskCheckpoint struct {
 	Parent          domaincopilot.NativeTaskParent      `json:"parent"`
 	Input           domainaigateway.CapabilityTaskInput `json:"input"`
@@ -74,8 +70,8 @@ func (s *Service) prepareNativeTask(ctx context.Context, principal domainidentit
 	if err != nil {
 		return nativeTaskCheckpoint{}, err
 	}
-	validator, ok := s.workbenchInvoker.(nativeTaskPlanValidator)
-	if !ok {
+	validator := s.runtime.PlanValidator
+	if validator == nil {
 		return nativeTaskCheckpoint{}, apperrors.ErrUnsupportedOperation
 	}
 	validation, err := validator.ValidateCapabilityPlan(ctx, principal, prepared)

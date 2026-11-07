@@ -7,8 +7,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,10 +20,11 @@ import (
 	domain "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkprotocol"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-func TestAdmissionProfilesRequireCapabilityAndCurrentPolicyScope(t *testing.T) {
-	now := time.Now().UTC()
+func testAdmissionTrust(t *testing.T, now time.Time) *access.EAPServerTrust {
+	t.Helper()
 	public, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +34,12 @@ func TestAdmissionProfilesRequireCapabilityAndCurrentPolicyScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	trust := &access.EAPServerTrust{ServerNames: []string{"radius.example.test"}, CaCertificates: []string{string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))}, WifiSecurity: sohaapi.NetworkEAPServerTrustWifiSecurityWpa2Enterprise}
+	return &access.EAPServerTrust{ServerNames: []string{"radius.example.test"}, CaCertificates: []string{string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))}, WifiSecurity: sohaapi.NetworkEAPServerTrustWifiSecurityWpa2Enterprise}
+}
+
+func TestAdmissionProfilesRequireCapabilityAndCurrentPolicyScope(t *testing.T) {
+	now := time.Now().UTC()
+	trust := testAdmissionTrust(t, now)
 	store := &controlStoreStub{subject: access.Subject{UserID: "user-1", Status: access.StatusActive}, device: access.Device{ID: "device-1", OwnerUserID: "user-1", SiteID: "allowed", Status: access.DeviceStatusActive, PostureStatus: access.PostureCompliant},
 		admissionSites:    map[string]access.Site{"allowed": {ID: "allowed", Status: access.StatusActive}, "denied": {ID: "denied", Status: access.StatusActive}},
 		admissionBindings: []access.NASBinding{{ID: "binding-1", SiteID: "allowed", Status: access.StatusActive, AccessMedium: access.AccessMediumWired, EAPServerTrust: trust}, {ID: "binding-2", SiteID: "denied", Status: access.StatusActive, AccessMedium: access.AccessMediumWiFi, SSID: "Private", EAPServerTrust: trust}}}
@@ -67,6 +75,108 @@ func TestAdmissionProfilesRequireCapabilityAndCurrentPolicyScope(t *testing.T) {
 	if _, err := service.endpointAdmissionConfiguration(context.Background(), credential, snapshot); err == nil {
 		t.Fatal("truncated profile set silently accepted")
 	}
+}
+
+func TestConfigurationRetriesStalePolicy(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	identity, _ := testIdentity(t, now)
+	trust := testAdmissionTrust(t, now)
+	schemas, err := networkprotocol.CompileSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	policies, err := json.Marshal([]access.Policy{{
+		ID: "allow", Enabled: true, Effect: access.PolicyEffectAllow, Subjects: access.PolicySubjects{Users: []string{"user-1"}},
+		SiteIDs: []string{"site-1"}, Modes: []string{access.ModeInternalDirect}, AccessProfile: access.ProfileFull,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name           string
+		publishOnRetry bool
+	}{
+		{name: "UsesRefreshedPolicyForDesiredAndAdmission"},
+		{name: "RejectsWhenPublicationSupersedesRetry", publishOnRetry: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &configurationPolicyStore{
+				controlStoreStub: controlStoreStub{
+					snapshot: domain.PolicySnapshot{PolicyVersion: 7, Policies: policies},
+					credential: domain.Credential{ID: "credential-1", RuntimeID: identity.ID, RuntimeKind: identity.Kind, SubjectID: "user-1", DeviceID: "device-1",
+						ExpiresAt: now.Add(time.Hour), Capabilities: []string{"eap-profile-v1"}},
+					subject:        access.Subject{UserID: "user-1", Status: access.StatusActive},
+					device:         access.Device{ID: "device-1", OwnerUserID: "user-1", SiteID: "site-1", Status: access.DeviceStatusActive, PostureStatus: access.PostureCompliant},
+					admissionSites: map[string]access.Site{"site-1": {ID: "site-1", Status: access.StatusActive}},
+					admissionBindings: []access.NASBinding{{
+						ID: "binding-1", SiteID: "site-1", Status: access.StatusActive, AccessMedium: access.AccessMediumWired, EAPServerTrust: trust,
+					}},
+				},
+				publishOnRetry: tt.publishOnRetry,
+			}
+			service, err := New(store, schemas, Options{MaxClockSkew: time.Minute, ConfigurationTTL: time.Minute, LeaseTTL: time.Minute})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := service.RefreshSnapshot(ctx); err != nil {
+				t.Fatal(err)
+			}
+			original, err := service.endpointAdmissionConfiguration(ctx, store.credential, store.snapshot)
+			if err != nil || original == nil || len(original.Profiles) != 1 {
+				t.Fatalf("original policy did not grant admission: %+v, %v", original, err)
+			}
+			store.snapshot = domain.PolicySnapshot{PolicyVersion: 8, Policies: json.RawMessage(`[]`), ProtectedResourceIDs: []string{"newly-protected"}}
+
+			message, err := service.Configuration(ctx, identity)
+			if !slices.Equal(store.versions, []int{7, 8}) {
+				t.Fatalf("configuration policy versions = %v, want [7 8]", store.versions)
+			}
+			if tt.publishOnRetry {
+				assertStaleConfigurationRejected(t, message, err)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := networkprotocol.DecodePayload[networkprotocol.ConfigurationDesired](message.Payload)
+			if err != nil || got.PolicyVersion != 8 || !slices.Equal(got.ProtectedResourceIDs, []string{"newly-protected"}) ||
+				got.Admission == nil || len(got.Admission.Profiles) != 0 {
+				t.Fatalf("refreshed desired configuration = %+v, %v", got, err)
+			}
+		})
+	}
+}
+
+func assertStaleConfigurationRejected(t *testing.T, message networkprotocol.RuntimeMessage, err error) {
+	t.Helper()
+	var stale *apperrors.BusinessError
+	if !errors.Is(err, apperrors.ErrConflict) || !errors.As(err, &stale) || stale.Code() != "stale_configuration_policy" || len(message.Payload) != 0 {
+		t.Fatalf("superseded retry = payload %s, error %v", message.Payload, err)
+	}
+}
+
+type configurationPolicyStore struct {
+	controlStoreStub
+	versions       []int
+	publishOnRetry bool
+}
+
+func (s *configurationPolicyStore) EnsureConfiguration(_ context.Context, runtimeID string, snapshot domain.PolicySnapshot, _, expiresAt time.Time) (domain.Configuration, error) {
+	s.versions = append(s.versions, snapshot.PolicyVersion)
+	if s.publishOnRetry && len(s.versions) == 2 {
+		s.snapshot.PolicyVersion++
+	}
+	if snapshot.PolicyVersion != s.snapshot.PolicyVersion {
+		return domain.Configuration{}, apperrors.NewBusiness(apperrors.ErrConflict, "stale_configuration_policy", "", "")
+	}
+	desired := networkprotocol.ConfigurationDesired{
+		ConfigurationVersion: 1, PolicyVersion: snapshot.PolicyVersion, ValidUntil: expiresAt, AccessProfile: access.ProfileOnboarding,
+		ProtectedResourceIDs: snapshot.ProtectedResourceIDs, NetworkLeases: []networkprotocol.NetworkLease{}, ResourceLeases: []networkprotocol.ResourceLease{},
+	}
+	return domain.Configuration{
+		RuntimeID: runtimeID, ConfigurationVersion: desired.ConfigurationVersion, PolicyVersion: snapshot.PolicyVersion, ValidUntil: expiresAt, Desired: desired,
+	}, nil
 }
 
 func TestConfigurationFitsEndpointResponseLimit(t *testing.T) {

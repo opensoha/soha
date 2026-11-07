@@ -33,7 +33,7 @@ func ensureSubjectNotDLPRestricted(tx *gorm.DB, subject string) error {
 	return nil
 }
 
-// The composition root acquires WG -> response-policy -> network-policy locks
+// WithinContentGovernance acquires WG -> response-policy -> network-policy locks
 // before this operation, sharing the issuance and NAS command serialization.
 func (r *Repository) RestrictContentSubject(ctx context.Context, event domain.Event) (string, error) {
 	tx := dbtx.DB(ctx, r.db)
@@ -171,23 +171,8 @@ func restrictContentProxy(tx *gorm.DB, event domain.NetworkCause) error {
 	}
 	return addHoldTarget(tx, event.ID, "unattributed_proxy", "", "", "", 0, "unsupported")
 }
-func (r *Repository) ReleaseContentSubject(ctx context.Context, eventID, reviewer string) error {
-	tx := dbtx.DB(ctx, r.db)
-	now := time.Now().UTC()
-	var actor string
-	// A coalesced hold represents every linked matched denial. Approving only
-	// its oldest event cannot clear newer, unresolved or rejected findings.
-	err := tx.Raw(`UPDATE network_security_holds h SET active=false,revision=h.revision+1,released_at=?,released_by=? WHERE h.id=? AND h.source_type='content_dlp' AND h.active AND NOT EXISTS (
- SELECT 1 FROM docker_volume_dlp_events e LEFT JOIN docker_volume_dlp_appeals a ON a.event_id=e.id
- WHERE e.action='transfer' AND e.metadata->>'networkHoldId'=h.id AND COALESCE(a.status,'pending')<>'approved'
- ) RETURNING h.subject_id`, now, reviewer, eventID).Row().Scan(&actor)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return releaseContentEffects(tx, eventID, actor, now)
+func (r *Repository) ReleaseContentSubject(ctx context.Context, id, reviewer string, approvals ContentHoldApprovalReader) error {
+	return r.releaseContentHold(ctx, id, reviewer, "content_dlp", approvals)
 }
 func releaseContentEffects(tx *gorm.DB, eventID, actor string, now time.Time) error {
 	if err := tx.Exec(`UPDATE network_nas_session_commands SET status='expired',completed_at=?,updated_at=?,result_reason_code='content_dlp_released_reauthenticate' WHERE id IN(SELECT command_id FROM network_security_hold_targets WHERE hold_id=?) AND status IN ('pending','delivered')`, now, now, eventID).Error; err != nil {

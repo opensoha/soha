@@ -2,10 +2,13 @@ package aigateway
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"strings"
 
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type CapabilityProvider interface {
@@ -31,14 +34,8 @@ type ToolTaskReferenceProvider interface {
 }
 
 func (r *capabilityRegistry) TaskReference(tool domainaigateway.ToolCapability, output, visibleOutput any) *domainaigateway.CapabilityTaskRef {
-	for _, provider := range r.providers {
-		if !providerHasTool(provider, tool.Name) {
-			continue
-		}
-		if tasks, ok := provider.(ToolTaskReferenceProvider); ok {
-			return tasks.TaskReference(tool, output, visibleOutput)
-		}
-		return nil
+	if tasks, ok := r.toolOwner(tool.Name).(ToolTaskReferenceProvider); ok {
+		return tasks.TaskReference(tool, output, visibleOutput)
 	}
 	return nil
 }
@@ -52,43 +49,77 @@ type ResourceCapabilityRefs struct {
 
 type capabilityRegistry struct {
 	providers []CapabilityProvider
+	tools     map[string]registeredTool
+	toolNames []string
 }
 
-// BuiltinCapabilityProvider supplies the legacy catalog during explicit startup registration.
+type registeredTool struct {
+	capability domainaigateway.ToolCapability
+	owner      CapabilityProvider
+}
+
+// BuiltinCapabilityProvider owns the tools dispatched by the built-in switch.
 type BuiltinCapabilityProvider struct{}
 
 func newDefaultCapabilityRegistry() *capabilityRegistry {
-	return newCapabilityRegistry(BuiltinCapabilityProvider{})
-}
-
-func newCapabilityRegistry(providers ...CapabilityProvider) *capabilityRegistry {
-	out := &capabilityRegistry{}
-	out.AddProviders(providers...)
-	return out
-}
-
-func (r *capabilityRegistry) AddProviders(providers ...CapabilityProvider) {
-	if r == nil {
-		return
+	registry, err := newCapabilityRegistry(BuiltinCapabilityProvider{})
+	if err != nil {
+		panic(err) // A duplicate in the static built-in catalog is a programming error.
 	}
+	return registry
+}
+
+func newCapabilityRegistry(providers ...CapabilityProvider) (*capabilityRegistry, error) {
+	registry := &capabilityRegistry{tools: make(map[string]registeredTool)}
+	if err := registry.addProviders(providers...); err != nil {
+		return nil, err
+	}
+	return registry, nil
+}
+
+func (r *capabilityRegistry) addProviders(providers ...CapabilityProvider) error {
+	tools := maps.Clone(r.tools)
+	var newProviders []CapabilityProvider
+	var newToolNames []string
+	var duplicate string
 	for _, provider := range providers {
 		if provider == nil {
 			continue
 		}
-		r.providers = append(r.providers, provider)
+		newProviders = append(newProviders, provider)
+		declared := provider.Tools()
+		_, builtin := provider.(BuiltinCapabilityProvider)
+		_, executable := provider.(ToolCapabilityInvoker)
+		if len(declared) > 0 && !builtin && !executable {
+			return fmt.Errorf("%w: AI Gateway tool provider %T has no invoker", apperrors.ErrInvalidArgument, provider)
+		}
+		for _, tool := range declared {
+			if tool.Name == "" || tool.Name != strings.TrimSpace(tool.Name) {
+				return fmt.Errorf("%w: invalid AI Gateway tool ID %q", apperrors.ErrInvalidArgument, tool.Name)
+			}
+			if _, exists := tools[tool.Name]; exists {
+				if duplicate == "" || tool.Name < duplicate {
+					duplicate = tool.Name
+				}
+				continue
+			}
+			tools[tool.Name] = registeredTool{capability: tool, owner: provider}
+			newToolNames = append(newToolNames, tool.Name)
+		}
 	}
+	if duplicate != "" {
+		return fmt.Errorf("%w: duplicate AI Gateway tool ID %q", apperrors.ErrConflict, duplicate)
+	}
+	r.providers = append(r.providers, newProviders...)
+	r.toolNames = append(r.toolNames, newToolNames...)
+	r.tools = tools
+	return nil
 }
 
 func (r *capabilityRegistry) Tools() []domainaigateway.ToolCapability {
-	out := make([]domainaigateway.ToolCapability, 0)
-	seen := map[string]bool{}
-	for _, provider := range r.providers {
-		for _, tool := range provider.Tools() {
-			if !seen[tool.Name] {
-				out = append(out, tool)
-				seen[tool.Name] = true
-			}
-		}
+	out := make([]domainaigateway.ToolCapability, 0, len(r.toolNames))
+	for _, name := range r.toolNames {
+		out = append(out, r.tools[name].capability)
 	}
 	return out
 }
@@ -167,13 +198,12 @@ func (r *capabilityRegistry) ResourceSkillRefs(name string) []string {
 }
 
 func (r *capabilityRegistry) ToolByName(name string) (domainaigateway.ToolCapability, bool) {
-	name = strings.TrimSpace(name)
-	for _, item := range r.Tools() {
-		if item.Name == name {
-			return item, true
-		}
-	}
-	return domainaigateway.ToolCapability{}, false
+	tool, ok := r.tools[strings.TrimSpace(name)]
+	return tool.capability, ok
+}
+
+func (r *capabilityRegistry) toolOwner(name string) CapabilityProvider {
+	return r.tools[strings.TrimSpace(name)].owner
 }
 
 func (r *capabilityRegistry) ResourceByName(name string) (domainaigateway.ResourceCapability, bool) {
@@ -204,21 +234,6 @@ func (r *capabilityRegistry) SkillByID(id string) (domainaigateway.SkillCapabili
 		}
 	}
 	return domainaigateway.SkillCapability{}, false
-}
-
-func (r *capabilityRegistry) InvokeTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, bool, error) {
-	for _, provider := range r.providers {
-		if !providerHasTool(provider, tool.Name) {
-			continue
-		}
-		invoker, ok := provider.(ToolCapabilityInvoker)
-		if !ok {
-			return nil, nil, false, nil
-		}
-		output, relatedIDs, err := invoker.InvokeTool(ctx, principal, tool, input)
-		return output, relatedIDs, true, err
-	}
-	return nil, nil, false, nil
 }
 
 func (BuiltinCapabilityProvider) Tools() []domainaigateway.ToolCapability {

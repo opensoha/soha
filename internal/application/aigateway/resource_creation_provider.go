@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
-	"slices"
 	"strings"
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
@@ -17,7 +16,8 @@ import (
 )
 
 type ResourceCreationCapabilityService interface {
-	KubernetesResourceCreationService
+	PreflightCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, error)
+	ExecuteCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, error)
 	ResolveCreateTargets(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) ([]domainresource.ResourceCreateRef, error)
 	FindCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, error)
 	GetCreate(context.Context, domainidentity.Principal, string, string) (domainresource.ResourceCreateExecution, error)
@@ -73,15 +73,7 @@ func NewResourceCreationCapabilityProvider(service ResourceCreationCapabilitySer
 func (p *resourceCreationCapabilityProvider) Tools() []domainai.ToolCapability       { return p.tools }
 func (*resourceCreationCapabilityProvider) Resources() []domainai.ResourceCapability { return nil }
 func (*resourceCreationCapabilityProvider) Prompts() []domainai.PromptCapability     { return nil }
-func (*resourceCreationCapabilityProvider) Skills() []domainai.SkillCapability {
-	for _, skill := range (BuiltinCapabilityProvider{}).Skills() {
-		if skill.ID == "k8s-resource-provisioner" {
-			skill.CapabilityRefs = append(slices.Clone(skill.CapabilityRefs), "k8s.resources.create.get", "k8s.resources.create.assess")
-			return []domainai.SkillCapability{skill}
-		}
-	}
-	return nil
-}
+func (*resourceCreationCapabilityProvider) Skills() []domainai.SkillCapability       { return nil }
 func (*resourceCreationCapabilityProvider) ResourceCapabilityRefs() []ResourceCapabilityRefs {
 	return []ResourceCapabilityRefs{{Resource: "soha://k8s/runtime", Tools: []string{"k8s.resources.create.get", "k8s.resources.create.assess"}}}
 }

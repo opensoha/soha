@@ -8,7 +8,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-type nativeTaskStore interface {
+type NativeTaskParentStore interface {
 	WithNativeTaskCreation(context.Context, domaincopilot.NativeLease, func(context.Context, domaincopilot.NativeTaskParent) error) error
 	NativeTaskStopReason(context.Context, domaincopilot.NativeTaskParent) (string, error)
 	WithNativeTaskParent(context.Context, domaincopilot.NativeTaskParent, bool, func(context.Context) error) error
@@ -23,13 +23,11 @@ func (s *Service) ReserveNativeTaskToolCall(ctx context.Context, parent domainco
 	return store.ReserveNativeChildToolCall(ctx, parent, cancellation)
 }
 
-func (s *Service) nativeTaskStore() (nativeTaskStore, NativeRunStore, error) {
-	tasks, ok := s.agentRuns.(nativeTaskStore)
-	runs, runOK := s.agentRuns.(NativeRunStore)
-	if !ok || !runOK {
+func (s *Service) nativeTaskStore() (NativeTaskParentStore, NativeRunStore, error) {
+	if s.nativeTaskParents == nil || s.nativeRuns == nil {
 		return nil, nil, apperrors.ErrUnsupportedOperation
 	}
-	return tasks, runs, nil
+	return s.nativeTaskParents, s.nativeRuns, nil
 }
 
 func (s *Service) WithNativeTaskCreation(ctx context.Context, expected domaincopilot.NativeLease, register func(context.Context, domaincopilot.NativeTaskParent, domainidentity.Principal) error) error {

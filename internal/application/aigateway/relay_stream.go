@@ -2,31 +2,26 @@ package aigateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-func (s *Service) RelayLLMWebSocket(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, writer http.ResponseWriter, clientRequest *http.Request) error {
+func (s *Service) RelayLLMWebSocket(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, upgrade relayport.UpgradeWebSocket) error {
 	if !s.relayConfig.Enabled {
 		return fmt.Errorf("%w: AI Gateway LLM relay is disabled", apperrors.ErrNotFound)
 	}
 	if normalizeRelayProviderKind(req.ProviderKind) != "openai" || strings.TrimSpace(req.Endpoint) != "realtime" {
 		return fmt.Errorf("%w: realtime relay only supports OpenAI-compatible websocket requests", apperrors.ErrInvalidArgument)
 	}
-	if clientRequest == nil {
+	if upgrade == nil {
 		return fmt.Errorf("%w: realtime relay request is required", apperrors.ErrInvalidArgument)
 	}
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayInvoke); err != nil {
@@ -104,10 +99,10 @@ func (s *Service) RelayLLMWebSocket(ctx context.Context, principal domainidentit
 		return fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, tokenConcurrencyMessage)
 	}
 	defer releaseTokenConcurrency()
-	return s.proxyRelayWebSocketWithFallback(ctx, principal, accessCtx, req, authorized, model, writer, clientRequest)
+	return s.proxyRelayWebSocketWithFallback(ctx, principal, accessCtx, req, authorized, model, upgrade)
 }
 
-func (s *Service) proxyRelayWebSocketWithFallback(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selections []relaySelection, publicModel string, writer http.ResponseWriter, clientRequest *http.Request) error {
+func (s *Service) proxyRelayWebSocketWithFallback(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selections []relaySelection, publicModel string, upgrade relayport.UpgradeWebSocket) error {
 	var lastErr error
 	attempts := relayFallbackMaxAttempts(selections)
 	for index, selection := range selections {
@@ -117,7 +112,7 @@ func (s *Service) proxyRelayWebSocketWithFallback(ctx context.Context, principal
 		if err := s.enforceRelayRateLimits(ctx, principal, accessCtx, req, selection, publicModel, true); err != nil {
 			return err
 		}
-		upgraded, retryable, err := s.proxyRelayWebSocket(ctx, principal, accessCtx, req, selection, publicModel, writer, clientRequest)
+		upgraded, retryable, err := s.proxyRelayWebSocket(ctx, principal, accessCtx, req, selection, publicModel, upgrade)
 		if err == nil || upgraded || !retryable || index == len(selections)-1 || ctx.Err() != nil {
 			return err
 		}
@@ -126,7 +121,7 @@ func (s *Service) proxyRelayWebSocketWithFallback(ctx context.Context, principal
 	return lastErr
 }
 
-func (s *Service) proxyRelayWebSocket(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, writer http.ResponseWriter, clientRequest *http.Request) (bool, bool, error) {
+func (s *Service) proxyRelayWebSocket(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, upgrade relayport.UpgradeWebSocket) (bool, bool, error) {
 	started := time.Now().UTC()
 	release, err := s.acquireRelayWebSocketUpstream(ctx, principal, accessCtx, req, selection, publicModel, started)
 	if err != nil {
@@ -134,35 +129,40 @@ func (s *Service) proxyRelayWebSocket(ctx context.Context, principal domainident
 	}
 	defer release()
 
-	targetURL, apiKey, err := s.prepareRelayWebSocketUpstream(selection, publicModel)
+	if err := s.requireRelayTransport(); err != nil {
+		return false, false, err
+	}
+	apiKey, err := s.decryptRelayAPIKey(selection.upstream.APIKeyCiphertext)
 	if err != nil {
 		return false, false, err
 	}
-
-	dialTimeout := relayWebSocketDialTimeout(s.relayConfig)
-	dialCtx, cancelDial := context.WithTimeout(ctx, dialTimeout)
-	upstreamStarted := time.Now().UTC()
-	upstreamConn, upstreamResp, err := relayWebSocketDialer().DialContext(dialCtx, targetURL, relayRealtimeUpstreamHeaders(req, selection.upstream, apiKey))
-	cancelDial()
-	if upstreamResp != nil && upstreamResp.Body != nil {
-		defer func() { _ = upstreamResp.Body.Close() }()
-	}
+	result, err := s.relayTransport.WebSocket(ctx, relayProviderRequest(req), relayProviderTarget(selection.upstream, selection.route), relayport.WebSocketOptions{
+		APIKey: apiKey, PublicModel: publicModel,
+		DialTimeout: relayWebSocketDialTimeout(s.relayConfig), IdleTimeout: s.relayConfig.StreamIdleTimeout,
+		Upgrade: func(headers http.Header) (relayport.WebSocketConn, error) {
+			writeRelayRouteTraceHeaders(headers, req, selection, publicModel, true, http.StatusSwitchingProtocols, relayCacheBypass)
+			return upgrade(headers)
+		},
+	})
 	if err != nil {
+		return false, false, err
+	}
+	if result.DialError != nil {
 		status := http.StatusBadGateway
 		errorCode := "upstream_request_failed"
-		if upstreamResp != nil {
-			status = upstreamResp.StatusCode
-			errorCode = relayErrorCodeForStatus(upstreamResp.StatusCode)
+		if result.HTTPStatus != 0 {
+			status = result.HTTPStatus
+			errorCode = relayErrorCodeForStatus(status)
 			if errorCode == "" {
 				errorCode = "upstream_ws_failed"
 			}
 		}
 		s.recordRelayCall(ctx, principal, accessCtx, req, selection, publicModel, true, domainaigateway.LLMCallLog{
-			Status:               relayStatusFromError(ctx, err),
+			Status:               relayStatusFromError(ctx, result.DialError),
 			HTTPStatus:           status,
 			UpstreamStatus:       status,
 			ErrorCode:            errorCode,
-			ErrorMessage:         redactRelayText(err.Error()),
+			ErrorMessage:         redactRelayText(result.DialError.Error()),
 			CacheStatus:          relayCacheBypass,
 			DurationMilliseconds: time.Since(started).Milliseconds(),
 			CreatedAt:            started,
@@ -170,49 +170,35 @@ func (s *Service) proxyRelayWebSocket(ctx context.Context, principal domainident
 		s.recordRelayUpstreamFailure(ctx, principal, selection, errorCode)
 		return false, true, fmt.Errorf("%w: relay realtime upstream connection failed", apperrors.ErrClusterUnready)
 	}
-	defer func() { _ = upstreamConn.Close() }()
-	upstreamConn.SetReadLimit(relayWebSocketMessageReadLimit)
-
-	responseHeader := http.Header{}
-	if upstreamResp != nil {
-		copyRelayResponseHeaders(responseHeader, upstreamResp.Header, "application/octet-stream")
-	}
-	writeRelayRouteTraceHeaders(responseHeader, req, selection, publicModel, true, http.StatusSwitchingProtocols, relayCacheBypass)
-	upgrader := relayWebSocketUpgrader()
-	clientConn, err := upgrader.Upgrade(writer, clientRequest, responseHeader)
-	if err != nil {
+	if result.UpgradeError != nil {
 		s.recordRelayCall(ctx, principal, accessCtx, req, selection, publicModel, true, domainaigateway.LLMCallLog{
 			Status:               "client_cancelled",
 			HTTPStatus:           http.StatusBadRequest,
 			UpstreamStatus:       http.StatusSwitchingProtocols,
 			ErrorCode:            "client_upgrade_failed",
-			ErrorMessage:         redactRelayText(err.Error()),
+			ErrorMessage:         redactRelayText(result.UpgradeError.Error()),
 			CacheStatus:          relayCacheBypass,
 			DurationMilliseconds: time.Since(started).Milliseconds(),
 			CreatedAt:            started,
 		})
 		return false, false, nil
 	}
-	defer func() { _ = clientConn.Close() }()
-	clientConn.SetReadLimit(relayWebSocketMessageReadLimit)
-
-	firstByteAt, clientBytes, upstreamBytes, bridgeErr := relayProxyWebSocketMessages(ctx, clientConn, upstreamConn, s.relayConfig.StreamIdleTimeout)
-	status, errorCode, errorMessage := relayWebSocketBridgeOutcome(bridgeErr)
+	status, errorCode, errorMessage := relayWebSocketBridgeOutcome(result)
 	s.recordRelayCall(ctx, principal, accessCtx, req, selection, publicModel, true, domainaigateway.LLMCallLog{
 		Status:               status,
 		HTTPStatus:           http.StatusSwitchingProtocols,
 		UpstreamStatus:       http.StatusSwitchingProtocols,
 		ErrorCode:            errorCode,
 		ErrorMessage:         redactRelayText(errorMessage),
-		InputBytes:           clientBytes,
-		OutputBytes:          upstreamBytes,
+		InputBytes:           result.InputBytes,
+		OutputBytes:          result.OutputBytes,
 		CacheStatus:          relayCacheBypass,
 		DurationMilliseconds: time.Since(started).Milliseconds(),
 		CreatedAt:            started,
-		TTFBMilliseconds:     relayDurationMilliseconds(started, firstByteAt),
-		TTFTMilliseconds:     relayDurationMilliseconds(started, firstByteAt),
+		TTFBMilliseconds:     relayDurationMilliseconds(started, result.FirstByteAt),
+		TTFTMilliseconds:     relayDurationMilliseconds(started, result.FirstByteAt),
 		Metadata: map[string]any{
-			"upstreamConnectedAt": upstreamStarted.Format(time.RFC3339Nano),
+			"upstreamConnectedAt": result.UpstreamStarted.Format(time.RFC3339Nano),
 			"transport":           "websocket",
 		},
 	})
@@ -239,32 +225,14 @@ func (s *Service) acquireRelayWebSocketUpstream(ctx context.Context, principal d
 	return nil, fmt.Errorf("%w: relay upstream concurrency limit exceeded", apperrors.ErrAccessDenied)
 }
 
-func relayWebSocketBridgeOutcome(err error) (string, string, string) {
-	if err == nil {
+func relayWebSocketBridgeOutcome(result relayport.WebSocketResult) (string, string, string) {
+	if result.BridgeError == nil {
 		return "success", "", ""
 	}
-	if errors.Is(err, context.Canceled) || relayWebSocketCloseError(err) {
-		return "client_cancelled", "client_cancelled", err.Error()
+	if result.ClientClosed {
+		return "client_cancelled", "client_cancelled", result.BridgeError.Error()
 	}
-	return "failure", "realtime_ws_closed", err.Error()
-}
-
-func (s *Service) prepareRelayWebSocketUpstream(selection relaySelection, publicModel string) (string, string, error) {
-	targetURL, err := relayRealtimeEndpointURLForSelection(selection, publicModel)
-	if err != nil {
-		return "", "", err
-	}
-	if err := s.validateRelayWebSocketUpstreamURL(targetURL); err != nil {
-		return "", "", err
-	}
-	apiKey, err := s.decryptRelayAPIKey(selection.upstream.APIKeyCiphertext)
-	if err != nil {
-		return "", "", err
-	}
-	if strings.TrimSpace(apiKey) == "" {
-		return "", "", fmt.Errorf("%w: relay upstream API key is not configured", apperrors.ErrInvalidArgument)
-	}
-	return targetURL, apiKey, nil
+	return "failure", "realtime_ws_closed", result.BridgeError.Error()
 }
 
 func relayWebSocketDialTimeout(config LLMRelayConfig) time.Duration {
@@ -276,193 +244,4 @@ func relayWebSocketDialTimeout(config LLMRelayConfig) time.Duration {
 		return config.FirstByteTimeout
 	}
 	return timeout
-}
-
-func relayWebSocketHopHeader(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "connection", "upgrade", "sec-websocket-key", "sec-websocket-accept", "sec-websocket-version", "sec-websocket-protocol", "sec-websocket-extensions":
-		return true
-	default:
-		return false
-	}
-}
-
-func relayWebSocketDialer() *websocket.Dialer {
-	dialer := *websocket.DefaultDialer
-	return &dialer
-}
-
-func relayWebSocketUpgrader() websocket.Upgrader {
-	return websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return relayAllowWebSocketOrigin(r)
-		},
-	}
-}
-
-const relayWebSocketMessageReadLimit = 8 << 20
-
-func relayAllowWebSocketOrigin(r *http.Request) bool {
-	if r == nil || len(r.Header.Values("Origin")) > 1 {
-		return false
-	}
-	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin == "" {
-		return true
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" || parsed.User != nil {
-		return false
-	}
-	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return false
-	}
-	if parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Hostname() == "" {
-		return false
-	}
-	if strings.EqualFold(parsed.Host, r.Host) {
-		return true
-	}
-	return relayIsLocalHost(parsed.Hostname()) && relayIsLocalHost(relayHostName(r.Host))
-}
-
-func relayHostName(hostport string) string {
-	host, _, err := net.SplitHostPort(hostport)
-	if err == nil {
-		return strings.Trim(host, "[]")
-	}
-	return strings.Trim(hostport, "[]")
-}
-
-func relayIsLocalHost(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasSuffix(host, ".localhost")
-}
-
-type relayWebSocketProxyResult struct {
-	firstByteAt   time.Time
-	clientBytes   int64
-	upstreamBytes int64
-	err           error
-}
-
-func relayProxyWebSocketMessages(ctx context.Context, clientConn, upstreamConn *websocket.Conn, upstreamIdleTimeout time.Duration) (time.Time, int64, int64, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	results := make(chan relayWebSocketProxyResult, 2)
-	var closeOnce sync.Once
-	closeBoth := func() {
-		closeOnce.Do(func() {
-			_ = clientConn.Close()
-			_ = upstreamConn.Close()
-		})
-	}
-	go relayCopyWebSocketMessages(ctx, upstreamConn, clientConn, true, 0, results, cancel, closeBoth)
-	go relayCopyWebSocketMessages(ctx, clientConn, upstreamConn, false, upstreamIdleTimeout, results, cancel, closeBoth)
-
-	var firstByteAt time.Time
-	var clientBytes int64
-	var upstreamBytes int64
-	var firstErr error
-	ctxDone := ctx.Done()
-	for completed := 0; completed < 2; {
-		select {
-		case <-ctxDone:
-			closeBoth()
-			ctxDone = nil
-		case result := <-results:
-			completed++
-			if !result.firstByteAt.IsZero() && firstByteAt.IsZero() {
-				firstByteAt = result.firstByteAt
-			}
-			clientBytes += result.clientBytes
-			upstreamBytes += result.upstreamBytes
-			if firstErr == nil && result.err != nil {
-				firstErr = result.err
-			}
-		}
-	}
-	return firstByteAt, clientBytes, upstreamBytes, firstErr
-}
-
-func relayCopyWebSocketMessages(ctx context.Context, dst, src *websocket.Conn, clientToUpstream bool, idleTimeout time.Duration, results chan<- relayWebSocketProxyResult, cancel context.CancelFunc, closeBoth func()) {
-	result := relayWebSocketProxyResult{}
-	defer func() {
-		cancel()
-		closeBoth()
-		results <- result
-	}()
-	for {
-		if idleTimeout > 0 {
-			_ = src.SetReadDeadline(time.Now().Add(idleTimeout))
-		}
-		messageType, reader, err := src.NextReader()
-		if err != nil {
-			result.err = err
-			return
-		}
-		writer, err := dst.NextWriter(messageType)
-		if err != nil {
-			result.err = err
-			return
-		}
-		count, copyErr := io.Copy(writer, reader)
-		closeErr := writer.Close()
-		if clientToUpstream {
-			result.clientBytes += count
-		} else {
-			result.upstreamBytes += count
-			if count > 0 && result.firstByteAt.IsZero() {
-				result.firstByteAt = time.Now().UTC()
-			}
-		}
-		if copyErr != nil {
-			result.err = copyErr
-			return
-		}
-		if closeErr != nil {
-			result.err = closeErr
-			return
-		}
-		select {
-		case <-ctx.Done():
-			result.err = ctx.Err()
-			return
-		default:
-		}
-	}
-}
-
-func relayWebSocketCloseError(err error) bool {
-	return errors.Is(err, net.ErrClosed) ||
-		errors.Is(err, websocket.ErrCloseSent) ||
-		websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure)
-}
-
-func (s *Service) validateRelayWebSocketUpstreamURL(rawURL string) error {
-	return s.relayTransportComponent().validateURL(rawURL, true)
-}
-
-func relayRealtimeUpstreamHeaders(req LLMRelayHTTPRequest, upstream domainaigateway.LLMUpstream, apiKey string) http.Header {
-	headers := http.Header{}
-	headers.Set("Authorization", "Bearer "+apiKey)
-	for key, value := range upstream.DefaultHeaders {
-		name := http.CanonicalHeaderKey(strings.TrimSpace(key))
-		if name == "" || isSensitiveRelayHeader(name) || relayWebSocketHopHeader(name) {
-			continue
-		}
-		headers.Set(name, fmt.Sprint(value))
-	}
-	if organization := req.Headers.Get("OpenAI-Organization"); organization != "" {
-		headers.Set("OpenAI-Organization", organization)
-	}
-	if beta := req.Headers.Get("OpenAI-Beta"); beta != "" {
-		headers.Set("OpenAI-Beta", beta)
-	}
-	return headers
 }

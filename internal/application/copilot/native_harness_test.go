@@ -123,7 +123,7 @@ func (s *nativeQueueCapture) CreateNativeRun(_ context.Context, run domaincopilo
 func TestNativeRequestDigestIncludesFrozenDefaults(t *testing.T) {
 	service, loop, _, _ := nativeLoopFixture(t)
 	capture := &nativeQueueCapture{inspectionAuthzTestRepository: &inspectionAuthzTestRepository{}, nativeLoopStore: loop}
-	service.agentRuns = capture
+	service.nativeRuns = capture
 	principal := domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}
 	input := domaincopilot.WorkbenchSendMessageInput{RequestID: "stable-request", Content: "Explain this", TaskIntent: &domaincopilot.TaskIntent{}}
 	metadata := domaincopilot.SessionMetadata{Scope: domaincopilot.SessionScope{ClusterID: "one"}}
@@ -245,7 +245,7 @@ func (g *nativeLoopGateway) WorkbenchAuthorizationRevision(context.Context, doma
 	return strings.Repeat("b", 64), nil
 }
 
-func (g *nativeLoopGateway) InvokeWorkbenchModel(ctx context.Context, _ domainidentity.Principal, input appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
+func (g *nativeLoopGateway) InvokeWorkbenchModelStream(ctx context.Context, _ domainidentity.Principal, input appaigateway.WorkbenchRelayRequest, _ func(appaigateway.WorkbenchRelayStreamDelta) bool) (appaigateway.WorkbenchRelayResponse, error) {
 	return g.model(ctx, input)
 }
 func (g *nativeLoopGateway) WorkbenchCapabilities(context.Context, domainidentity.Principal, domainaigateway.ManifestRequest) (domainaigateway.Manifest, error) {
@@ -298,7 +298,10 @@ func nativeLoopFixture(t *testing.T) (*Service, *nativeLoopStore, *nativeLoopGat
 	store.lease.Run.Input["_sohaAuthorizationCeiling"] = strings.Repeat("a", 64)
 	store.lease.Run.Input["_sohaGatewayAuthorizationCeiling"] = strings.Repeat("b", 64)
 	gateway := &nativeLoopGateway{}
-	service.workbenchInvoker = gateway
+	service.runtime = RuntimeDependencies{Stream: gateway, Tools: gateway, CapabilityCatalog: gateway, GatewayAuthorization: gateway, PlanValidator: gateway}
+	service.nativeRuns = store
+	service.nativeTaskParents = &nativeTaskStoreFixture{nativeQueueCapture: &nativeQueueCapture{nativeLoopStore: store}}
+	service.nativeTasks = &nativeTaskOwnerFixture{store: store}
 	return service, store, gateway, roles
 }
 
@@ -383,7 +386,7 @@ func (g *nativeCancelStreamGateway) InvokeWorkbenchModelStream(_ context.Context
 
 func TestNativeStreamingCancellationKeepsUnknownUsageAndFinishesImmediately(t *testing.T) {
 	service, store, gateway, _ := nativeLoopFixture(t)
-	service.workbenchInvoker = &nativeCancelStreamGateway{nativeLoopGateway: gateway, store: store}
+	service.runtime.Stream = &nativeCancelStreamGateway{nativeLoopGateway: gateway, store: store}
 	if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Run.Status != "canceled" || len(store.final) != 1 {
 		t.Fatalf("stream cancellation did not finish: status=%s final=%v err=%v", store.lease.Run.Status, store.final, err)
 	}

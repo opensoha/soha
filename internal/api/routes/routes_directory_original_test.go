@@ -32,7 +32,7 @@ func TestDirectoryOriginalLookupRequiresCurrentViewAndSyncIntersection(t *testin
 			if scenario == "key-ceiling" {
 				principal.PermissionKeys = []string{appaccess.PermAccessDirectoryView}
 			}
-			h := directoryhandler.New(nil, nil, nil)
+			h := directoryhandler.New(nil, nil, nil, nil)
 			h.SetPermissionResolver(appaccess.NewPermissionResolver(directoryOriginalRoles{keys}))
 			router := gin.New()
 			router.Use(func(c *gin.Context) { c.Set("principal", principal); c.Next() })

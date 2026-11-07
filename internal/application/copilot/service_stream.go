@@ -44,8 +44,7 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 	if input.TaskIntent != nil {
 		mode = "general"
 	}
-	_, nativeStorage := s.agentRuns.(NativeRunStore)
-	useNative := nativeStorage && providerID == agentProviderInternal
+	useNative := s.nativeRuns != nil && providerID == agentProviderInternal
 	effectiveToolset := narrowWorkbenchToolset(metadata.Toolset, input.Toolset, input.ScopeOverrides, metadata.Scope)
 	effectiveMetadata := metadata
 	effectiveMetadata.RequestContext = input.ContextSelection

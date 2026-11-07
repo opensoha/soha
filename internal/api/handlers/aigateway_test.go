@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -295,7 +296,7 @@ func (s *stubAIGatewayService) RelayLLMHTTP(_ context.Context, _ domainidentity.
 	return s.relayErr
 }
 
-func (s *stubAIGatewayService) RelayLLMWebSocket(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, req appaigateway.LLMRelayHTTPRequest, _ http.ResponseWriter, _ *http.Request) error {
+func (s *stubAIGatewayService) RelayLLMWebSocket(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, req appaigateway.LLMRelayHTTPRequest, _ relayport.UpgradeWebSocket) error {
 	s.relayReq = req
 	return s.relayErr
 }

@@ -14,6 +14,7 @@ import (
 	domain "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
@@ -38,7 +39,7 @@ func TestCapacityAdmissionWithPostgres(t *testing.T) {
 	if err := store.MigrateFromFile(ctx, filepath.Join("..", "..", "..", "migrations", "postgres")); err != nil {
 		t.Fatal(err)
 	}
-	repo := New(store.DB())
+	repo := New(store.DB(), WithWorkerPoolValidation(k8sinfra.ValidateWorkerPoolKubernetesSpec))
 	source := "capacity-test/" + uuid.NewString()
 	snapshot := domain.CapacitySnapshot{SourceID: source, ObservedAt: time.Now(), Complete: true, Nodes: []domain.CapacityNode{{Name: "a", CPU: 8, MemoryMiB: 16000}, {Name: "b", CPU: 8, MemoryMiB: 16000}}, Storage: []domain.CapacityStorage{{Key: "shared", Name: "disk", Nodes: []string{"a", "b"}, AvailableGiB: 40}}}
 	demand := domain.CapacityDemand{CPU: 2, MemoryMiB: 2048, DiskGiB: 40}

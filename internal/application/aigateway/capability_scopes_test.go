@@ -151,6 +151,9 @@ func TestCapabilityScopesRecheckApprovalRecoveryAndHistory(t *testing.T) {
 	service, repo, provider, call := capabilityScopesFixture()
 	provider.tools[0].RiskLevel = domainaigateway.RiskLevelExecute
 	provider.tools[0].RequiresApproval = true
+	if err := service.SetCapabilityProviders(provider); err != nil {
+		t.Fatal(err)
+	}
 	held, err := service.InvokeTool(context.Background(), testPrincipal("developer"), call)
 	if err != nil || !held.RequiresApproval || len(repo.approvalRequests) != 1 {
 		t.Fatalf("missing approval: %+v %v", held, err)
@@ -197,6 +200,9 @@ func TestCapabilityApprovalFreezesEveryResolvedTarget(t *testing.T) {
 			service, repo, provider, call := capabilityScopesFixture()
 			provider.tools[0].RiskLevel = domainaigateway.RiskLevelExecute
 			provider.tools[0].RequiresApproval = true
+			if err := service.SetCapabilityProviders(provider); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := service.InvokeTool(context.Background(), testPrincipal("developer"), call); err != nil {
 				t.Fatal(err)
 			}

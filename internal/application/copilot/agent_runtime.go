@@ -160,8 +160,8 @@ func (s *Service) CancelAgentRun(ctx context.Context, principal domainidentity.P
 		return domaincopilot.AgentRun{}, err
 	}
 	if run.ProviderKind == "native" {
-		store, ok := s.agentRuns.(NativeRunStore)
-		if !ok {
+		store := s.nativeRuns
+		if store == nil {
 			return domaincopilot.AgentRun{}, fmt.Errorf("%w: native storage unavailable", aperrors.ErrUnsupportedOperation)
 		}
 		canceled, err := store.RequestNativeCancel(ctx, principal.UserID, runID)

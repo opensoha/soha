@@ -2,10 +2,12 @@ package aigateway
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
@@ -26,9 +28,10 @@ func TestWorkbenchContextWindowUsesActualFallbackReceipt(t *testing.T) {
 	}))
 	defer second.Close()
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, "fixture-key")
+	repo.routes[1].Priority = 2
 	repo.routes[0].Metadata = map[string]any{"contextWindowTokens": 32000}
 	repo.routes[1].Metadata = map[string]any{"contextWindowTokens": 128000}
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	request := WorkbenchRelayRequest{PublicModel: "gpt-public", Messages: []WorkbenchRelayMessage{{Role: "user", Content: "fixture question"}}}
 	response, err := service.InvokeWorkbenchModel(t.Context(), relayWorkbenchTestPrincipal(), request)
 	if err != nil {
@@ -36,6 +39,53 @@ func TestWorkbenchContextWindowUsesActualFallbackReceipt(t *testing.T) {
 	}
 	if response.RouteID != "route-second" || response.ContextWindowTokens != 128000 || response.Usage["inputTokens"] != 8000 || response.UsageEstimated {
 		t.Fatalf("used initial route instead of actual fallback: %+v", response)
+	}
+}
+
+func TestWorkbenchPrivateCacheSeparatesExplicitRoutes(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":"answer %d"}}]}`, calls.Add(1))
+	}))
+	defer upstream.Close()
+	repo := relayRepoForUpstream(t, upstream.URL, "openai", "fixture-key")
+	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "scope": "private", "version": "same-version", "ttlSeconds": 60}
+	repo.routes[0].Metadata = map[string]any{"contextWindowTokens": 32000}
+	second := repo.routes[0]
+	second.ID = "route-2"
+	second.Metadata = map[string]any{"contextWindowTokens": 128000}
+	repo.routes = append(repo.routes, second)
+	service := newRelayRuntimeTestService(repo)
+	request := WorkbenchRelayRequest{
+		PublicModel: "gpt-public", Messages: []WorkbenchRelayMessage{{Role: "user", Content: "same prompt"}},
+	}
+	for _, test := range []struct {
+		route, content, cacheStatus string
+		window                      int64
+	}{
+		{"route-1", "answer 1", relayCacheWrite, 32000},
+		{"route-2", "answer 2", relayCacheWrite, 128000},
+		{"route-1", "answer 1", relayCacheHit, 32000},
+		{"route-2", "answer 2", relayCacheHit, 128000},
+	} {
+		request.RouteID = test.route
+		response, err := service.InvokeWorkbenchModel(t.Context(), relayWorkbenchTestPrincipal(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.RouteID != test.route || response.UpstreamID != "upstream-openai" ||
+			response.ContextWindowTokens != test.window || response.Content != test.content {
+			t.Fatalf("incorrect response for route %s: %+v", test.route, response)
+		}
+		logs := repo.logs()
+		log := logs[len(logs)-1]
+		if log.RouteTrace["routeId"] != test.route || log.CacheStatus != test.cacheStatus {
+			t.Fatalf("incorrect cache log for route %s: %+v", test.route, log)
+		}
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected one upstream call per route, got %d", calls.Load())
 	}
 }
 
@@ -47,7 +97,7 @@ func TestWorkbenchContextWindowStreamAndCatalog(t *testing.T) {
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", "fixture-key")
 	repo.routes[0].Metadata = map[string]any{"contextWindowTokens": float64(128000)}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	options, err := service.ListWorkbenchModels(context.Background(), relayWorkbenchTestPrincipal(), "chat/completions")
 	if err != nil || len(options) != 1 || options[0].ContextWindowTokens != 128000 {
 		t.Fatalf("catalog: %+v %v", options, err)

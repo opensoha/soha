@@ -32,8 +32,12 @@ func vpnRevocationScope(tx *gorm.DB, subjectID, deviceID, siteID string) *gorm.D
 }
 
 func (r *Repository) VPNRestrictionActive(ctx context.Context, subjectID, deviceID, siteID string) (bool, error) {
+	return vpnRestrictionActive(r.db.WithContext(ctx), subjectID, deviceID, siteID)
+}
+
+func vpnRestrictionActive(tx *gorm.DB, subjectID, deviceID, siteID string) (bool, error) {
 	var active bool
-	err := vpnRevocationScope(r.db.WithContext(ctx).Model(&vpnRevocationRow{}), subjectID, deviceID, siteID).Select("COALESCE(bool_or(active), false)").Scan(&active).Error
+	err := vpnRevocationScope(tx.Model(&vpnRevocationRow{}), subjectID, deviceID, siteID).Select("COALESCE(bool_or(active), false)").Scan(&active).Error
 	return active, err
 }
 
@@ -41,7 +45,7 @@ func ensureVPNNotRevoked(tx *gorm.DB, subjectID, deviceID, siteID string) error 
 	if err := ensureSubjectNotDLPRestricted(tx, subjectID); err != nil {
 		return err
 	}
-	active, err := New(tx).VPNRestrictionActive(tx.Statement.Context, subjectID, deviceID, siteID)
+	active, err := vpnRestrictionActive(tx, subjectID, deviceID, siteID)
 	if err != nil {
 		return err
 	}
@@ -123,7 +127,7 @@ func persistVPNRevocation(tx *gorm.DB, session sessionRow, actorID string, now t
 	if err != nil {
 		return err
 	}
-	snapshot, err := New(tx).LatestSnapshot(tx.Statement.Context)
+	snapshot, err := latestSnapshot(tx)
 	if err != nil {
 		return err
 	}

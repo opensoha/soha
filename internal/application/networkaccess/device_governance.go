@@ -16,15 +16,15 @@ func networkUserSubject(id string) error {
 	return nil
 }
 
-func governedUnmanaged(site domain.Site, device domain.Device) bool {
-	if site.DeviceGovernance == domain.DeviceGovernanceVerified && (device.ManagementVerifiedUntil == nil || !device.ManagementVerifiedUntil.After(time.Now()) || device.ManagementIssuerKey != site.ManagementIssuerKey) {
+func governedUnmanaged(now time.Time, site domain.Site, device domain.Device) bool {
+	if site.DeviceGovernance == domain.DeviceGovernanceVerified && (device.ManagementVerifiedUntil == nil || !device.ManagementVerifiedUntil.After(now) || device.ManagementIssuerKey != site.ManagementIssuerKey) {
 		return true
 	}
-	return site.EffectiveDeviceGovernance() != domain.DeviceGovernanceLegacy && device.EffectiveManagementState() != domain.DeviceManagementManaged
+	return site.EffectiveDeviceGovernance() != domain.DeviceGovernanceLegacy && device.EffectiveManagementStateAt(now) != domain.DeviceManagementManaged
 }
 
-func resourceGovernanceReason(site domain.Site, device domain.Device, resource domain.Resource, networkLease, resourceLease bool) string {
-	if !governedUnmanaged(site, device) {
+func resourceGovernanceReason(now time.Time, site domain.Site, device domain.Device, resource domain.Resource, networkLease, resourceLease bool) string {
+	if !governedUnmanaged(now, site, device) {
 		return ""
 	}
 	if site.EffectiveDeviceGovernance() == domain.DeviceGovernanceManaged || resource.Protected {
@@ -36,11 +36,11 @@ func resourceGovernanceReason(site domain.Site, device domain.Device, resource d
 	return ""
 }
 
-func governancePolicyAllows(site domain.Site, device domain.Device, policy domain.Policy, resourceID string) bool {
-	if !governedUnmanaged(site, device) {
+func governancePolicyAllows(now time.Time, site domain.Site, device domain.Device, policy domain.Policy, resourceID string) bool {
+	if !governedUnmanaged(now, site, device) {
 		return true
 	}
-	if site.EffectiveDeviceGovernance() != domain.DeviceGovernanceRestricted || !slices.Contains(policy.DeviceManagementStates, device.EffectiveManagementState()) {
+	if site.EffectiveDeviceGovernance() != domain.DeviceGovernanceRestricted || !slices.Contains(policy.DeviceManagementStates, device.EffectiveManagementStateAt(now)) {
 		return false
 	}
 	if resourceID != "" && policy.AccessProfile != domain.ProfileRestricted {
@@ -52,8 +52,8 @@ func governancePolicyAllows(site domain.Site, device domain.Device, policy domai
 	return resourceID == "" || slices.Contains(policy.ResourceIDs, resourceID)
 }
 
-func admissionGovernanceReason(site domain.Site, device domain.Device, networkLease, resourceLease bool) string {
-	if !governedUnmanaged(site, device) {
+func admissionGovernanceReason(now time.Time, site domain.Site, device domain.Device, networkLease, resourceLease bool) string {
+	if !governedUnmanaged(now, site, device) {
 		return ""
 	}
 	if site.EffectiveDeviceGovernance() == domain.DeviceGovernanceManaged {

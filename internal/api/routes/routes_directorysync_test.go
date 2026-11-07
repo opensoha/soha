@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appdirectory "github.com/opensoha/soha/internal/application/directorysync"
 	domaindirectory "github.com/opensoha/soha/internal/domain/directorysync"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -62,6 +63,20 @@ func (*directoryRouteLookup) GetConnection(context.Context, string) (domaindirec
 	return domaindirectory.Connection{}, domaindirectory.Policy{}, apperrors.ErrNotFound
 }
 
+type directoryRouteConnections struct{}
+
+func (directoryRouteConnections) CreateConnection(context.Context, domainidentity.Principal, appdirectory.ConnectionInput) (domaindirectory.Connection, domaindirectory.Policy, error) {
+	return domaindirectory.Connection{}, domaindirectory.Policy{}, apperrors.ErrInvalidArgument
+}
+
+func (directoryRouteConnections) UpdateConnection(context.Context, domainidentity.Principal, string, appdirectory.ConnectionInput) (domaindirectory.Connection, domaindirectory.Policy, error) {
+	return domaindirectory.Connection{}, domaindirectory.Policy{}, apperrors.ErrInvalidArgument
+}
+
+func (directoryRouteConnections) ValidateConnection(context.Context, domainidentity.Principal, string) (domaindirectory.Connection, error) {
+	return domaindirectory.Connection{}, apperrors.ErrNotFound
+}
+
 func TestDirectoryRoutesUseCanonicalPerActionPermissions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	routes := []struct {
@@ -86,7 +101,7 @@ func TestDirectoryRoutesUseCanonicalPerActionPermissions(t *testing.T) {
 					c.Set("principal", domainidentity.Principal{UserID: "actor", Roles: []string{"directory-actor"}})
 					c.Next()
 				})
-				handler := directorysynchandler.New(&directoryRouteLookup{}, nil, nil)
+				handler := directorysynchandler.New(&directoryRouteLookup{}, nil, nil, directoryRouteConnections{})
 				handler.SetPermissionResolver(appaccess.NewPermissionResolver(directoryActionRoles{permission}))
 				registerDirectorySyncRoutes(router.Group("/api/v1"), Dependencies{DirectorySync: handler})
 				recorder := httptest.NewRecorder()

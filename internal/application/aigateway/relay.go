@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -393,7 +394,8 @@ func (s *Service) RelayLLMHTTP(ctx context.Context, principal domainidentity.Pri
 		return fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, tokenConcurrencyMessage)
 	}
 	defer releaseTokenConcurrency()
-	return s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, authorized, model, stream, writer)
+	_, err = s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, authorized, model, stream, writer)
+	return err
 }
 
 func (s *Service) enforceRelayRateLimits(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, stream bool) error {
@@ -484,7 +486,7 @@ func relayRateLimitModelToolName(publicModel string) string {
 }
 
 func relayRateLimitProviderToolName(providerKind string) string {
-	return "llm-relay:provider:" + normalizeRelayProviderKind(providerKind)
+	return "llm-relay:provider:" + relayport.NormalizeProvider(providerKind)
 }
 
 type relayTokenPerMinuteLimit struct {
@@ -577,12 +579,15 @@ func (s *Service) normalizeLLMUpstreamInput(ctx context.Context, principal domai
 	if name == "" {
 		return domainaigateway.LLMUpstream{}, fmt.Errorf("%w: upstream name is required", apperrors.ErrInvalidArgument)
 	}
-	providerKind := normalizeRelayProviderKind(input.ProviderKind)
+	providerKind := relayport.NormalizeProvider(input.ProviderKind)
 	if providerKind == "" {
 		return domainaigateway.LLMUpstream{}, fmt.Errorf("%w: provider kind is required", apperrors.ErrInvalidArgument)
 	}
 	baseURL := strings.TrimSpace(input.BaseURL)
-	if err := s.validateRelayUpstreamURL(baseURL); err != nil {
+	if err := s.requireRelayTransport(); err != nil {
+		return domainaigateway.LLMUpstream{}, err
+	}
+	if err := s.relayTransport.ValidateURL(baseURL); err != nil {
 		return domainaigateway.LLMUpstream{}, err
 	}
 	id := strings.TrimSpace(upstreamID)
@@ -665,7 +670,7 @@ func normalizeLLMModelRouteInput(routeID string, input domainaigateway.LLMModelR
 	return domainaigateway.LLMModelRoute{
 		ID:                 id,
 		PublicModel:        publicModel,
-		ProviderKind:       normalizeRelayProviderKind(input.ProviderKind),
+		ProviderKind:       relayport.NormalizeProvider(input.ProviderKind),
 		UpstreamID:         strings.TrimSpace(input.UpstreamID),
 		UpstreamModel:      upstreamModel,
 		RouteGroup:         strings.TrimSpace(input.RouteGroup),
@@ -754,43 +759,12 @@ func sanitizeRelayHeadersMap(headers map[string]any) map[string]any {
 	out := make(map[string]any)
 	for key, value := range headers {
 		name := http.CanonicalHeaderKey(strings.TrimSpace(key))
-		if name == "" || isSensitiveRelayHeader(name) {
+		if name == "" || relayport.SensitiveHeader(name) {
 			continue
 		}
 		out[name] = value
 	}
 	return out
-}
-
-func isSensitiveRelayHeader(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "authorization", "proxy-authorization", "x-api-key", "x-goog-api-key", "google-api-key", "gemini-api-key", "cohere-api-key", "api-key", "openai-api-key", "anthropic-api-key", "cookie", "set-cookie":
-		return true
-	default:
-		return false
-	}
-}
-
-func normalizeRelayProviderKind(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "azure_openai" {
-		value = "azure-openai"
-	}
-	switch value {
-	case "openai", "anthropic", "openai-compatible", "deepseek", "qwen", "openrouter", "azure-openai", "gemini", "cohere":
-		return value
-	default:
-		return ""
-	}
-}
-
-func relayProviderUsesOpenAIWireProtocol(providerKind string) bool {
-	switch normalizeRelayProviderKind(providerKind) {
-	case "openai", "openai-compatible", "deepseek", "qwen", "openrouter", "azure-openai":
-		return true
-	default:
-		return false
-	}
 }
 
 func containsFold(values []string, candidate string) bool {

@@ -12,8 +12,8 @@ import (
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 )
 
-const protectedResourceUpdateTool = "k8s.resources.conditional.update"
-const protectedPodExecTool = "k8s.pods.exec"
+const protectedResourceUpdateTool = domainai.ProtectedResourceUpdateTool
+const protectedPodExecTool = domainai.ProtectedPodExecTool
 
 // Public approval records contain a digest of the YAML, never the YAML itself.
 // The exact replay input uses the existing credential keyring and is bound to
@@ -31,7 +31,7 @@ type protectedApprovalInput struct {
 }
 
 func hasProtectedApprovalInput(tool string) bool {
-	return tool == protectedResourceUpdateTool || tool == protectedPodExecTool
+	return domainai.RequiresProtectedToolInput(tool)
 }
 
 func (s *Service) authorizeProtectedWorkbenchInput(ctx context.Context, tool string) error {

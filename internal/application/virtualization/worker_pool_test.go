@@ -3,6 +3,7 @@ package virtualization
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -10,6 +11,7 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/virtualization"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -47,10 +49,13 @@ func TestWorkerPoolRegistrationPinsSourcesWithoutCreatingVM(t *testing.T) {
 	service.workerPools = store
 	service.authorizeWorkerCluster = func(context.Context, domainidentity.Principal, string, bool) error { return nil }
 	inspections := 0
-	service.workerRuntime = &WorkerRuntime{InspectCluster: func(context.Context, sohaapi.VirtualizationWorkerPoolSpec) (domain.WorkerPoolIdentity, error) {
-		inspections++
-		return domain.WorkerPoolIdentity{ClusterUID: "cluster-uid", APIServerEndpoint: "cluster.example:6443", CAHash: "sha256:pinned"}, nil
-	}}
+	service.workerRuntime = &WorkerRuntime{
+		ValidatePoolSpec: k8sinfra.ValidateWorkerPoolKubernetesSpec,
+		InspectCluster: func(context.Context, sohaapi.VirtualizationWorkerPoolSpec) (domain.WorkerPoolIdentity, error) {
+			inspections++
+			return domain.WorkerPoolIdentity{ClusterUID: "cluster-uid", APIServerEndpoint: "cluster.example:6443", CAHash: "sha256:pinned"}, nil
+		},
+	}
 	input := sohaapi.VirtualizationWorkerPoolInput{Spec: sohaapi.VirtualizationWorkerPoolSpec{Name: "workers", ConnectionID: "pve", ClusterID: "target", Owner: "soha-kubeadm", ImageID: "image", ProviderNode: "pve-a", Storage: "disk", Bridge: "vmbr0", SnippetStorage: "local", OsProfile: "ubuntu-24.04-amd64-containerd", KubernetesVersion: "v1.35.2", CPU: 4, MemoryMiB: 8192, DiskGiB: 80, MaxNodes: 2, Enabled: true, RequiredDaemonSets: []sohaapi.VirtualizationWorkerDaemonSet{{Namespace: "kube-system", Name: "network"}}}}
 	id := uuid.NewString()
 	saved, err := service.SaveWorkerPool(context.Background(), testPrincipal(), id, input)
@@ -68,6 +73,81 @@ func TestWorkerPoolRegistrationPinsSourcesWithoutCreatingVM(t *testing.T) {
 		t.Fatalf("disable required live provider access: %+v %v", pausedPool, err)
 	}
 	verifyInvalidWorkerPoolConfigurations(t, service, repo, connection, store, input, id)
+	t.Run("registration and replay validation", func(t *testing.T) {
+		for _, tt := range workerPoolValidationCases() {
+			t.Run(tt.name, func(t *testing.T) {
+				candidate := input
+				candidate.Spec.RequiredDaemonSets = append([]sohaapi.VirtualizationWorkerDaemonSet(nil), input.Spec.RequiredDaemonSets...)
+				tt.change(&candidate.Spec)
+				validate := service.workerRuntime.ValidatePoolSpec
+				if errors.Is(tt.want, apperrors.ErrUnsupportedOperation) {
+					service.workerRuntime.ValidatePoolSpec = nil
+				}
+				t.Cleanup(func() { service.workerRuntime.ValidatePoolSpec = validate })
+				frozen := store.saved
+				frozen.Spec = candidate.Spec
+				task := domain.Task{ConnectionID: frozen.Spec.ConnectionID, Payload: map[string]any{
+					"workerPoolId": frozen.ID.String(), "workerPoolRevision": frozen.Revision,
+					"workerPool": frozen.VirtualizationWorkerPool, "workerPoolIdentity": frozen.Identity,
+				}}
+				beforeWrites, beforeReads, beforeInspections := store.writes, adapter.reads, inspections
+				_, registrationErr := service.SaveWorkerPool(context.Background(), testPrincipal(), uuid.NewString(), candidate)
+				replayed, replayErr := service.workerPoolFromTask(task)
+				if !errors.Is(registrationErr, tt.want) || !errors.Is(replayErr, tt.want) {
+					t.Fatalf("registration error %v and replay error %v, want %v", registrationErr, replayErr, tt.want)
+				}
+				if scope := taskCapabilityScope(task); scope["workerPoolId"] != frozen.ID.String() || scope["clusterId"] != frozen.Spec.ClusterID {
+					t.Fatalf("frozen identity scope lost: %v", scope)
+				}
+				if tt.want == nil {
+					if replayed.Identity.ConnectionIdentity != frozen.Identity.ConnectionIdentity || store.writes != beforeWrites+1 {
+						t.Fatal("valid registration or original replay identity was lost")
+					}
+				} else if store.writes != beforeWrites || adapter.reads != beforeReads || inspections != beforeInspections {
+					t.Fatal("rejected spec reached a provider or pool write")
+				}
+				if len(repo.tasks) != 0 {
+					t.Fatal("registration or replay created a VM task")
+				}
+			})
+		}
+	})
+}
+
+type workerPoolValidationCase struct {
+	name   string
+	change func(*sohaapi.VirtualizationWorkerPoolSpec)
+	want   error
+}
+
+func workerPoolValidationCases() []workerPoolValidationCase {
+	invalid := apperrors.ErrInvalidArgument
+	return []workerPoolValidationCase{
+		{"valid Kubernetes boundaries", func(spec *sohaapi.VirtualizationWorkerPoolSpec) {
+			spec.RequiredDaemonSets[0].Namespace = strings.Repeat("n", 63)
+			spec.RequiredDaemonSets[0].Name = strings.Repeat("d", 63) + ".net"
+			spec.Labels = map[string]string{"example.com/" + strings.Repeat("k", 63): strings.Repeat("v", 63), "empty": ""}
+		}, nil},
+		{"invalid namespace", func(spec *sohaapi.VirtualizationWorkerPoolSpec) {
+			spec.RequiredDaemonSets[0].Namespace = strings.Repeat("n", 64)
+		}, invalid},
+		{"invalid daemon name", func(spec *sohaapi.VirtualizationWorkerPoolSpec) { spec.RequiredDaemonSets[0].Name = "Bad.Name" }, invalid},
+		{"invalid label key", func(spec *sohaapi.VirtualizationWorkerPoolSpec) {
+			spec.Labels = map[string]string{"bad/key/extra": "ok"}
+		}, invalid},
+		{"invalid label value", func(spec *sohaapi.VirtualizationWorkerPoolSpec) {
+			spec.Labels = map[string]string{"team": "invalid value"}
+		}, invalid},
+		{"reserved label prefix", func(spec *sohaapi.VirtualizationWorkerPoolSpec) {
+			spec.Labels = map[string]string{"custom.k8s.io/group": "ok"}
+		}, invalid},
+		{"duplicate daemon", func(spec *sohaapi.VirtualizationWorkerPoolSpec) {
+			spec.RequiredDaemonSets = append(spec.RequiredDaemonSets, spec.RequiredDaemonSets[0])
+		}, invalid},
+		{"invalid capacity", func(spec *sohaapi.VirtualizationWorkerPoolSpec) { spec.MaxNodes = 1001 }, invalid},
+		{"invalid owner", func(spec *sohaapi.VirtualizationWorkerPoolSpec) { spec.Owner = "other" }, invalid},
+		{"validator unavailable", func(*sohaapi.VirtualizationWorkerPoolSpec) {}, apperrors.ErrUnsupportedOperation},
+	}
 }
 
 func verifyInvalidWorkerPoolConfigurations(t *testing.T, service *Service, repo *memoryRepo, connection domain.Connection, store *workerPoolStore, input sohaapi.VirtualizationWorkerPoolInput, id string) {

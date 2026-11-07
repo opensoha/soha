@@ -10,7 +10,6 @@ import (
 	"time"
 
 	contractenv "github.com/opensoha/soha-contracts/agent/environment"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
@@ -74,6 +73,7 @@ import (
 	directorysyncdomain "github.com/opensoha/soha/internal/domain/directorysync"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
+	"github.com/opensoha/soha/internal/infrastructure/aigatewayrelay"
 	companionartifactinfra "github.com/opensoha/soha/internal/infrastructure/companionartifact"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
@@ -275,6 +275,7 @@ type coreServices struct {
 	providerPortalService          *appproviderportal.Service
 	applicationOnboardingService   *appproviderportal.OnboardingService
 	directorySyncService           *appdirectorysync.Service
+	directoryConnections           *appdirectorysync.ConnectionService
 	directorySyncConnectors        *directorysynchandler.Registry
 	pluginExtensions               *appplugin.ExtensionRegistry
 }
@@ -440,7 +441,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		scopeGrantRepository:          scopegrantrepo.New(db),
 		policyRepository:              policyrepo.New(db),
 		clusterRepository:             clusterrepo.New(db),
-		virtualizationRepository:      virtualizationrepo.New(db),
+		virtualizationRepository:      virtualizationrepo.New(db, virtualizationrepo.WithWorkerPoolValidation(k8sinfra.ValidateWorkerPoolKubernetesSpec)),
 		dockerRepository:              dockerrepo.New(db),
 		aiGatewayRepository:           aigatewayrepo.New(db),
 		pluginRepository:              pluginrepo.New(db),
@@ -466,7 +467,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		systemIntegrationRepository:   systemintegrationrepo.New(db),
 		secretRepository:              secretrepo.New(db),
 		networkAccessRepository:       networkaccessrepo.New(db),
-		networkRuntimeRepository:      networkruntimerepo.New(db),
+		networkRuntimeRepository:      networkruntimerepo.New(db, appnetworkaccess.VPNGovernancePolicy{}),
 		networkProxyRepository:        networkproxyrepo.New(db),
 	}
 }
@@ -621,6 +622,10 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		networkVPNService.SetVPNMetricsReader(metrics)
 	}
 	directorySyncService := appdirectorysync.New(repos.directorySyncRepository, directorysyncrepo.NewDatabaseProjector(infra.databaseStore.DB()))
+	directoryConnections, err := appdirectorysync.NewConnectionService(repos.directorySyncRepository, directorySyncConnectors, permissionResolver, auditService, operationService)
+	if err != nil {
+		return nil, fmt.Errorf("build directory connection service: %w", err)
+	}
 	directoryScheduler := appdirectorysync.NewScheduler(repos.directorySyncRepository, directorySyncService, func(_ context.Context, connection directorysyncdomain.Connection) (appdirectorysync.Connector, error) {
 		return directorySyncConnectors.Connector(connection.ProviderType)
 	})
@@ -739,6 +744,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		providerPortalService:          deliveryCore.providerPortal,
 		applicationOnboardingService:   appproviderportal.NewOnboarding(repos.providerPortalRepository, deliveryCore.providerPortal, deliveryCore.identityProvider),
 		directorySyncService:           directorySyncService,
+		directoryConnections:           directoryConnections,
 		directorySyncConnectors:        directorySyncConnectors,
 	}, nil
 }
@@ -1026,6 +1032,7 @@ func newVirtualizationService(lifecycleCtx context.Context, cfg cfgpkg.Config, i
 			WorkerPools:            repos.virtualizationRepository,
 			AuthorizeWorkerCluster: core.resourceService.Inventory().AuthorizeWorkerSupply,
 			WorkerRuntime: &appvirtualization.WorkerRuntime{
+				ValidatePoolSpec: k8sinfra.ValidateWorkerPoolKubernetesSpec,
 				InspectCluster:   infra.clusterManager.InspectWorkerCluster,
 				PrepareBootstrap: infra.clusterManager.PrepareWorkerBootstrap,
 				ClaimNode:        infra.clusterManager.ClaimWorkerNode,
@@ -1058,15 +1065,17 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	workflowService.SetAlertMutator(core.monitoringService)
 	core.executionService.SetWorkflowExecutionTaskSink(workflowService)
 	virtualizationService := newVirtualizationService(lifecycleCtx, cfg, infra, repos, core)
+	personalVM, err := newPersonalEnvironmentVM(core.identityService, repos.copilotRepository, virtualizationService)
+	if err != nil {
+		panic(fmt.Errorf("build personal environment VM runtime: %w", err))
+	}
 
 	aiProductionService, err := appaiproduction.New(repos.aiProductionRepository, core.clusterService.ValidateExecutionAgent)
 	if err != nil {
 		panic(fmt.Errorf("build AI production service: %w", err))
 	}
 
-	aiProductionService.SetPersonalVMValidator(func(ctx context.Context, principal domainidentity.Principal, policy domaincopilot.PersonalVMPolicy) error {
-		return validatePersonalVMAssignment(ctx, core, repos, virtualizationService, principal, policy)
-	})
+	aiProductionService.SetPersonalVMValidator(personalVM.ValidateAssignment)
 
 	copilotService := appcopilot.MustNew(appcopilot.Dependencies{
 		Conversations: repos.copilotRepository, Feed: repos.copilotRepository,
@@ -1074,15 +1083,9 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 			Store:     repos.copilotRepository,
 			Policy:    aiProductionService.ResolvePersonalEnvironmentPolicy,
 			Templates: aiProductionService.ListPersonalEnvironmentPolicies,
-			ObserveVM: func(ctx context.Context, principal domainidentity.Principal, policy domaincopilot.PersonalVMPolicy) (domaincopilot.PersonalVMIdentity, error) {
-				return observePersonalVM(ctx, core, virtualizationService, principal, policy)
-			},
-			InvokeVM: func(ctx context.Context, principal domainidentity.Principal, item domaincopilot.PersonalEnvironmentRecord, op guest.RuntimeOperation) (guest.RuntimeResult, error) {
-				return invokePersonalVM(ctx, repos.copilotRepository, virtualizationService, principal, item, op)
-			},
-			RecoverVM: func(ctx context.Context, principal domainidentity.Principal, item domaincopilot.PersonalEnvironmentRecord) (domaincopilot.PersonalEnvironmentRecord, error) {
-				return recoverPersonalVM(ctx, repos.copilotRepository, virtualizationService, principal, item)
-			},
+			ObserveVM: personalVM.Observe,
+			InvokeVM:  personalVM.Invoke,
+			RecoverVM: personalVM.Recover,
 			Transaction: func(ctx context.Context, apply func(context.Context) error) error {
 				return dbtx.Within(ctx, infra.databaseStore.DB(), apply)
 			},
@@ -1135,6 +1138,8 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		AgentPrincipals:     core.identityService,
 		NativeAuthorization: core.accessService,
 		NativeTasks:         workflowService,
+		NativeRuns:          repos.copilotRepository,
+		NativeTaskParents:   repos.copilotRepository,
 	},
 		appcopilot.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), mcptracesinfra.DefaultRegistry()),
 	)
@@ -1172,9 +1177,6 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	core.monitoringService.SetAutomation(copilotService)
 	if core.runtimeConfigService.ModuleEnabled("monitoring") {
 		core.monitoringService.Start(lifecycleCtx)
-	}
-	if core.runtimeConfigService.ModuleEnabled("ai") {
-		copilotService.Start(lifecycleCtx)
 	}
 
 	dockerService := appdocker.New(
@@ -1302,6 +1304,10 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 		Approvals:               repos.aiGatewayRepository,
 		LLMRelay:                repos.aiGatewayRepository,
 		Secrets:                 core.secretService,
+		RelayTransport: aigatewayrelay.New(aigatewayrelay.Config{
+			AllowInsecureUpstreamHTTP: cfg.AIGateway.Relay.AllowInsecureUpstreamHTTP,
+			AllowPrivateUpstreamHosts: cfg.AIGateway.Relay.AllowPrivateUpstreamHosts,
+		}),
 		RelayConfig: appaigateway.LLMRelayConfig{
 			Enabled:                     cfg.AIGateway.Relay.Enabled,
 			DefaultTimeout:              cfg.AIGateway.Relay.DefaultTimeout,
@@ -1311,13 +1317,14 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 			HealthCheckEnabled:          cfg.AIGateway.Relay.HealthCheckEnabled,
 			HealthCheckInterval:         cfg.AIGateway.Relay.HealthCheckInterval,
 			MaxRequestBodyBytes:         int64(cfg.AIGateway.Relay.MaxRequestBodyMB) << 20,
-			AllowInsecureUpstreamHTTP:   cfg.AIGateway.Relay.AllowInsecureUpstreamHTTP,
-			AllowPrivateUpstreamHosts:   cfg.AIGateway.Relay.AllowPrivateUpstreamHosts,
 			IncludeUsageForOpenAIStream: cfg.AIGateway.Relay.IncludeUsageForOpenAIStream,
 			CredentialEncryptionKey:     cfg.Security.CredentialEncryptionKey,
 			CredentialEncryptionKeys:    cfg.Security.CredentialEncryptionKeys,
 		},
 	})
+	if err := aiGatewayService.ValidateRelayTransport(); err != nil {
+		return nil, fmt.Errorf("build AI Gateway relay transport: %w", err)
+	}
 	var rateLimitBackend interface{ Close() error }
 	if strings.EqualFold(strings.TrimSpace(cfg.AIGateway.RateLimit.Backend), "redis") {
 		redisRateLimitBackend, err := ratelimitinfra.NewRedisBackend(cfg.AIGateway.RateLimit)
@@ -1349,46 +1356,10 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	}
 	aiGatewayService.SetCatalogService(core.catalogService)
 	aiGatewayService.SetResourceService(core.resourceService.Runtime())
-	aiGatewayService.SetResourceCreationService(core.resourceService.ResourceCreation())
 	aiGatewayService.SetAnalysisArtifactRecorder(delivery.copilotService)
-	draftCapabilities, err := appaigateway.NewDraftCapabilityProvider(delivery.deliveryService)
-	if err != nil {
-		return nil, fmt.Errorf("build draft capabilities: %w", err)
-	}
-	virtualizationCapabilities, err := appaigateway.NewVirtualizationCapabilityProvider(delivery.virtualizationService)
-	if err != nil {
-		return nil, fmt.Errorf("build virtualization capabilities: %w", err)
-	}
-	resourceCreationCapabilities, err := appaigateway.NewResourceCreationCapabilityProvider(core.resourceService.ResourceCreation())
-	if err != nil {
-		return nil, fmt.Errorf("build Kubernetes creation capabilities: %w", err)
-	}
-	aiGatewayService.SetCapabilityProviders(draftCapabilities, virtualizationCapabilities, resourceCreationCapabilities, appaigateway.BuiltinCapabilityProvider{})
-	if err := bindKubernetesGatewayCapabilities(core.resourceService, core.identityService, aiGatewayService, repos.conditionalMutationRepository); err != nil {
+	if err := bindGatewayCapabilities(aiGatewayService, core, delivery, repos); err != nil {
 		return nil, err
 	}
-	deliveryCapabilities, err := appaigateway.NewDeliveryCapabilityProvider(delivery.workflowService)
-	if err != nil {
-		return nil, fmt.Errorf("build delivery capabilities: %w", err)
-	}
-	aiGatewayService.AddCapabilityProviders(deliveryCapabilities)
-	observabilityCapabilities, err := appaigateway.NewObservabilityCapabilityProvider(core.monitoringService.AssessMetrics)
-	if err != nil {
-		return nil, fmt.Errorf("build observability capabilities: %w", err)
-	}
-	aiGatewayService.AddCapabilityProviders(observabilityCapabilities)
-	professionalCapabilities, err := appaigateway.NewProfessionalCapabilityProvider(delivery.copilotService.RunProfessionalCapability)
-	if err != nil {
-		return nil, fmt.Errorf("build professional capabilities: %w", err)
-	}
-	aiGatewayService.AddCapabilityProviders(professionalCapabilities)
-	dockerProjectCapabilities, err := appaigateway.NewDockerProjectCapabilityProvider(delivery.dockerService)
-	if err != nil {
-		return nil, fmt.Errorf("build Docker project capabilities: %w", err)
-	}
-	aiGatewayService.AddCapabilityProviders(dockerProjectCapabilities)
-	aiGatewayService.AddCapabilityProviders(appaigateway.NewKnowledgeCapabilityProvider(delivery.knowledgeService))
-	aiGatewayService.AddCapabilityProviders(appaigateway.NewPersonalEnvironmentCapabilityProvider(delivery.copilotService))
 	aiGatewayService.SetOperationRecorder(core.operationService)
 	aiGatewayService.SetOnCallResolver(core.monitoringService)
 	candidateExecutor, err := appaieval.NewGatewayCandidateExecutor(aiGatewayService)
@@ -1400,7 +1371,6 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 		return nil, fmt.Errorf("build advanced evaluation service: %w", err)
 	}
 	delivery.advancedEvaluationService.SetGateDecisionSink(delivery.aiProductionService)
-	delivery.copilotService.SetWorkbenchModelInvoker(aiGatewayService)
 	if err := registerAIGatewayConnectorRuntimes(ctx, aiGatewayService, cfg.AIGateway); err != nil {
 		if rateLimitBackend != nil {
 			_ = rateLimitBackend.Close()
@@ -1422,6 +1392,20 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	delivery.knowledgeService.SetRetrievalAdapters(knowledgeModels, knowledgeModels)
 	go delivery.knowledgeService.RunIngestionWorker(ctx)
 	delivery.copilotService.SetInspectionCapabilityRuntime(aiGatewayService, delivery.workflowService)
+	if err := delivery.copilotService.ConfigureRuntime(appcopilot.RuntimeDependencies{
+		Model: aiGatewayService, Stream: aiGatewayService, Tools: aiGatewayService,
+		ApprovalRequests: aiGatewayService, Approvals: aiGatewayService,
+		ModelCatalog: aiGatewayService, CapabilityCatalog: aiGatewayService,
+		GatewayAuthorization: aiGatewayService, PlanValidator: aiGatewayService, Image: aiGatewayService,
+	}); err != nil {
+		return nil, fmt.Errorf("bind Copilot runtime: %w", err)
+	}
+	if err := delivery.copilotService.ValidateRuntimeDependencies(); err != nil {
+		return nil, fmt.Errorf("validate Copilot runtime: %w", err)
+	}
+	if core.runtimeConfigService.ModuleEnabled("ai") {
+		delivery.copilotService.Start(ctx)
+	}
 	aiGatewayService.StartRelayHealthChecks(ctx)
 	return &gatewayServices{
 		aiGatewayService: aiGatewayService,
@@ -1480,7 +1464,7 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 }
 
 func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices, platform *apiHandlers.PlatformHandler) apiRoutes.Dependencies {
-	directorySyncHandler := directorysynchandler.New(repos.directorySyncRepository, core.directorySyncService, core.directorySyncConnectors)
+	directorySyncHandler := directorysynchandler.New(repos.directorySyncRepository, core.directorySyncService, core.directorySyncConnectors, core.directoryConnections)
 	directorySyncHandler.SetRecorders(core.auditService, core.operationService)
 	directorySyncHandler.SetPermissionResolver(core.permissionResolver)
 	manifestService := appmanifest.New(
@@ -1618,10 +1602,15 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Compute:                    apiHandlers.NewComputeHandler(delivery.computeService),
 		Virtualization:             newVirtualizationHandler(delivery.virtualizationService),
 		Docker:                     newDockerHandler(delivery.dockerService, delivery.dockerTerminals, cfg.Runtime.ExecutionRunnerKeys),
-		NetworkAccess:              apiHandlers.NewNetworkAccessHandler(core.networkAccessService, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery),
-		NetworkEndpointResponse:    apiHandlers.NewNetworkEndpointResponseHandler(core.networkEndpointResponseService, core.networkEndpointResponseService, core.networkEndpointResponseService),
-		NetworkProxy:               apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement, core.networkProxyManagement),
-		NetworkVPN:                 apiHandlers.NewNetworkVPNHandler(core.networkVPNService),
+		NetworkAccess: apiHandlers.NewNetworkAccessHandler(apiHandlers.NetworkAccessServices{
+			Device: core.networkAccessService, Site: core.networkAccessService, Space: core.networkAccessService,
+			Resource: core.networkAccessService, Gateway: core.networkAccessService, MihomoProfile: core.networkAccessService,
+			NASBinding: core.networkAccessService, SiteProfileBinding: core.networkAccessService, Session: core.networkAccessService,
+			Policy: core.networkAccessService, PolicyEvaluation: core.networkAccessService, Workload: core.networkAccessService,
+		}, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery),
+		NetworkEndpointResponse: apiHandlers.NewNetworkEndpointResponseHandler(core.networkEndpointResponseService, core.networkEndpointResponseService, core.networkEndpointResponseService),
+		NetworkProxy:            apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement, core.networkProxyManagement),
+		NetworkVPN:              apiHandlers.NewNetworkVPNHandler(core.networkVPNService),
 		Access: accesshandler.New(accesshandler.Services{
 			Users: core.accessConsoleService, Catalog: core.accessConsoleService,
 			Roles: core.accessConsoleService, Teams: core.accessConsoleService, Policies: core.accessConsoleService,
@@ -1671,7 +1660,7 @@ func newVirtualizationHandler(service *appvirtualization.Service) *apiHandlers.V
 	return apiHandlers.NewVirtualizationHandlerWithServices(apiHandlers.VirtualizationServices{
 		Connections: service, Sync: service, VMs: service,
 		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: service, WorkerPools: service,
-		CapacityPolicies: service, GuestAccess: service,
+		CapacityPolicies: service, GuestAccess: service, ConsoleDialer: virtualizationinfra.DialConsole,
 	})
 }
 

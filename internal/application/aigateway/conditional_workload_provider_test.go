@@ -70,7 +70,7 @@ func TestConditionalMutationSkillIsSeparateFromReadOnlyDiagnosis(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := newCreationGateway(&memoryGatewayRepository{}, provider)
+	service := newCreationGateway(t, &memoryGatewayRepository{}, provider)
 	tools := map[string]domainai.ToolCapability{}
 	for _, tool := range service.gatewayRegistry().Tools() {
 		tools[tool.Name] = tool

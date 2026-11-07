@@ -45,7 +45,7 @@ func TestDirectoryOriginalCancellationReportsRequestedRatherThanStopped(t *testi
 			c.Set("principal", domainidentity.Principal{UserID: "actor", AccessTokenID: "trusted-token"})
 			c.Next()
 		})
-		router.POST("/connections/:connectionID/runs/:runID/cancel", New(repo, service, nil).Cancel)
+		router.POST("/connections/:connectionID/runs/:runID/cancel", New(repo, service, nil, nil).Cancel)
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, httptest.NewRequest("POST", "/connections/"+connection+"/runs/original/cancel", nil))
 		if connection == "foreign" {
@@ -65,7 +65,7 @@ func TestDirectoryOriginalRequestHandlerBindsTrustedSessionOrToken(t *testing.T)
 		for _, method := range []string{"POST", "GET"} {
 			t.Run(method+"/"+session, func(t *testing.T) {
 				service := &originalSyncHandlerService{}
-				handler := New(nil, service, nil)
+				handler := New(nil, service, nil, nil)
 				router := gin.New()
 				router.Use(func(c *gin.Context) {
 					c.Set("principal", domainidentity.Principal{UserID: "actor", AccessTokenID: "token-id"})
@@ -113,7 +113,7 @@ func TestDirectoryOriginalRequestHandlerRejectsUntrustedOrMalformedInput(t *test
 			c.Set("principal", domainidentity.Principal{UserID: "actor", AccessTokenID: test.token})
 			c.Next()
 		})
-		router.POST("/connections/:connectionID/requests", New(nil, service, nil).CreateSyncRequest)
+		router.POST("/connections/:connectionID/requests", New(nil, service, nil, nil).CreateSyncRequest)
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/connections/owned/requests", strings.NewReader(test.body)))
 		if recorder.Code < 400 || service.calls != 0 {

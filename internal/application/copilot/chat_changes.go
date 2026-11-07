@@ -15,8 +15,8 @@ import (
 )
 
 func (s *Service) requestChatChange(ctx context.Context, run domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
-	gateway, ok := s.workbenchInvoker.(chatChangeRequester)
-	if !ok {
+	gateway := s.runtime.ApprovalRequests
+	if gateway == nil {
 		return nil, fmt.Errorf("%w: approval requests are unavailable", apperrors.ErrUnsupportedOperation)
 	}
 	tool := stringValue(input["toolName"])

@@ -11,7 +11,7 @@ func (l managedContentNetworkLinkage) Restrict(ctx context.Context, r d.Record) 
 	return l.runtime.RestrictManagedContentSubject(ctx, r)
 }
 func (l managedContentNetworkLinkage) Release(ctx context.Context, id, reviewer string) error {
-	return l.runtime.ReleaseManagedContentSubject(ctx, id, reviewer)
+	return l.runtime.ReleaseManagedContentSubject(ctx, id, reviewer, l.approvals)
 }
 func (l managedContentNetworkLinkage) State(ctx context.Context, id string) (d.NetworkHold, error) {
 	return l.runtime.ManagedContentState(ctx, id)

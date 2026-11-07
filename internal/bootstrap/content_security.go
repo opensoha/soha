@@ -9,6 +9,7 @@ import (
 	appintegration "github.com/opensoha/soha/internal/application/systemintegration"
 	infratransfer "github.com/opensoha/soha/internal/infrastructure/contenttransfer"
 	storage "github.com/opensoha/soha/internal/infrastructure/softwareobjectstore"
+	dlprepo "github.com/opensoha/soha/internal/repository/contentdlp"
 	transferrepo "github.com/opensoha/soha/internal/repository/contenttransfer"
 	endpointrepo "github.com/opensoha/soha/internal/repository/endpointcontrol"
 )
@@ -24,7 +25,11 @@ type contentSecurityServices struct {
 func newContentSecurityServices(infra *infrastructure, repos *repositories, scope *appaccess.Service, permissions *appaccess.PermissionResolver, connections *appintegration.Service, secrets *appsecret.Service, stepUp appdlp.StepUpVerifier) (contentSecurityServices, error) {
 	var result contentSecurityServices
 	var err error
-	result.content, err = newContentDLPService(infra.databaseStore.DB(), repos.dockerRepository, scope, permissions, contentNetworkLinkage{db: infra.databaseStore.DB(), runtime: repos.networkRuntimeRepository}, stepUp)
+	dlpStore, err := dlprepo.New(infra.databaseStore.DB())
+	if err != nil {
+		return result, err
+	}
+	result.content, err = newContentDLPService(infra.databaseStore.DB(), repos.dockerRepository, scope, permissions, contentNetworkLinkage{approvals: dlpStore, runtime: repos.networkRuntimeRepository}, stepUp)
 	if err != nil {
 		return result, err
 	}
@@ -32,7 +37,7 @@ func newContentSecurityServices(infra *infrastructure, repos *repositories, scop
 	if err != nil {
 		return result, err
 	}
-	result.managed, err = apptransfer.New(store, &infratransfer.Factory{Connections: connections, Storage: storage.NewProvider(connections), Secrets: secrets}, scope, permissions, apptransfer.WithNetworkLinkage(managedContentNetworkLinkage{contentNetworkLinkage{db: infra.databaseStore.DB(), runtime: repos.networkRuntimeRepository}}), apptransfer.WithStepUp(stepUp))
+	result.managed, err = apptransfer.New(store, &infratransfer.Factory{Connections: connections, Storage: storage.NewProvider(connections), Secrets: secrets}, scope, permissions, apptransfer.WithNetworkLinkage(managedContentNetworkLinkage{contentNetworkLinkage{approvals: store, runtime: repos.networkRuntimeRepository}}), apptransfer.WithStepUp(stepUp))
 	if err != nil {
 		return result, err
 	}

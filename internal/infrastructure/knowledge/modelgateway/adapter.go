@@ -102,7 +102,15 @@ func (a *Adapter) Embed(ctx context.Context, principal domainidentity.Principal,
 	if identity.Model == "" {
 		identity.Model = a.config.EmbeddingModel
 	}
-	return domainknowledge.EmbeddingBatch{Vectors: vectors, Model: identity.Model, Route: response.RouteID}, nil
+	source := domainknowledge.EmbeddingSource{
+		UpstreamID:    response.UpstreamID,
+		ProviderKind:  response.ProviderKind,
+		UpstreamModel: response.UpstreamModel,
+	}
+	if response.RouteID == "" || !source.Known() {
+		return domainknowledge.EmbeddingBatch{}, fmt.Errorf("knowledge embedding response lacks a complete execution receipt")
+	}
+	return domainknowledge.EmbeddingBatch{Vectors: vectors, Model: identity.Model, Route: response.RouteID, Source: source}, nil
 }
 
 func (a *Adapter) Rerank(

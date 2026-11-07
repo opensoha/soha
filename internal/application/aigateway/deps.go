@@ -2,12 +2,12 @@ package aigateway
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/opensoha/soha/internal/platform/keyring"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsecret "github.com/opensoha/soha/internal/domain/secret"
@@ -149,8 +149,6 @@ type LLMRelayConfig struct {
 	HealthCheckEnabled          bool
 	HealthCheckInterval         time.Duration
 	MaxRequestBodyBytes         int64
-	AllowInsecureUpstreamHTTP   bool
-	AllowPrivateUpstreamHosts   bool
 	IncludeUsageForOpenAIStream bool
 	CredentialEncryptionKey     string
 	CredentialEncryptionKeys    keyring.Ring
@@ -178,7 +176,7 @@ type ServiceDeps struct {
 
 	RateLimitBackend RateLimitBackend
 	RelayConfig      LLMRelayConfig
-	HTTPClient       *http.Client
+	RelayTransport   relayport.Transport
 }
 
 type CurrentPrincipalReader interface {

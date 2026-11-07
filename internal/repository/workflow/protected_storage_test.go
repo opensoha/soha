@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -91,7 +92,84 @@ func TestPrivateWorkflowStorageRejectsUnsealedProtectedCalls(t *testing.T) {
 	if _, err := repo.restoreWorkflowStorage(domainworkflow.Run{ID: run.ID, Scope: run.Scope, Metadata: stored}, nil); err == nil {
 		t.Fatal("actor index changed")
 	}
-	if !protectedpayload.ContainsNamedCall([]byte(`{"call":{"name":"k8s.pods.exec","arguments":{}}}`), "k8s.pods.exec") || protectedpayload.ContainsNamedCall([]byte(`{"message":"k8s.pods.exec"}`), "k8s.pods.exec") {
-		t.Fatal("call detection treated message text as a call")
+	stored["capabilityActorId"] = "actor-1"
+	protected, ok := stored[privateWorkflowMetadata].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected protected workflow metadata type %T", stored[privateWorkflowMetadata])
+	}
+	protected["ciphertext"] = "tampered"
+	if _, err := repo.restoreWorkflowStorage(domainworkflow.Run{ID: run.ID, Scope: run.Scope, Metadata: stored}, nil); !errors.Is(err, protectedpayload.ErrUnavailable) {
+		t.Fatalf("tampered state returned %v", err)
+	}
+}
+
+func TestPrivateWorkflowStorageRejectsEachPlaintextCallSlot(t *testing.T) {
+	cases := []struct {
+		name     string
+		metadata string
+	}{
+		{"current plan", `{"capabilityIntent":{"input":{"plan":{"steps":[{"call":{"toolName":"k8s.pods.exec"}}]}}}}`},
+		{"archived plan", `{"capabilityRevisions":[{"intent":{"input":{"plan":{"steps":[{"call":{"toolName":"k8s.resources.conditional.update"}}]}}}}]}`},
+		{"prepared call", `{"nodeRuns":[{"preparedCall":{"toolName":"k8s.pods.exec"}}]}`},
+		{"control call", `{"nodeRuns":[{"controlCall":{"toolName":"k8s.pods.exec"}}]}`},
+		{"archived prepared call", `{"capabilityRevisions":[{"nodes":[{"preparedCall":{"toolName":"k8s.pods.exec"}}]}]}`},
+		{"archived control call", `{"capabilityRevisions":[{"nodes":[{"controlCall":{"toolName":"k8s.pods.exec"}}]}]}`},
+		{"invocation", `{"nodeRuns":[{"invocation":{"toolName":"k8s.pods.exec"}}]}`},
+		{"task status call", `{"nodeRuns":[{"invocation":{"task":{"statusCall":{"toolName":"k8s.pods.exec"}}}}]}`},
+		{"task cancel call", `{"nodeRuns":[{"invocation":{"task":{"cancelCall":{"toolName":"k8s.pods.exec"}}}}]}`},
+		{"assessment reference", `{"nodeRuns":[{"invocation":{"assessment":{"evidence":[{"reference":{"toolName":"k8s.pods.exec"}}]}}}]}`},
+		{"unrecognized revision shape", `{"capabilityRevisions":{"intent":{"input":{"plan":{"steps":[{"call":{"toolName":"k8s.pods.exec"}}]}}}}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			keyed, run := privateWorkflowTest(t)
+			run.NodeRuns, run.Metadata = nil, nil
+			if err := json.Unmarshal([]byte(tc.metadata), &run.Metadata); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := New(nil).marshalWorkflowMetadata(run); !errors.Is(err, protectedpayload.ErrUnavailable) {
+				t.Fatalf("plaintext write returned %v", err)
+			}
+			if _, err := keyed.restoreWorkflowStorage(run, nil); !errors.Is(err, protectedpayload.ErrUnavailable) {
+				t.Fatalf("legacy plaintext read returned %v", err)
+			}
+		})
+	}
+}
+
+func TestPrivateWorkflowStorageRoundTripsOrdinaryBusinessNames(t *testing.T) {
+	_, run := privateWorkflowTest(t)
+	input := map[string]any{"name": "k8s.pods.exec", "nested": map[string]any{"toolName": "k8s.resources.conditional.update"}}
+	const reader = "k8s.resources.identity.read"
+	call := domainai.ToolInvocationRequest{ToolName: reader, Input: input}
+	intent, err := domainworkflow.CapabilityIntentFrom(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent.Input.Plan.Steps[0].Call = sohaapi.CapabilityCall{ToolName: reader, Input: input}
+	run.Metadata["capabilityIntent"] = intent
+	run.NodeRuns = []domainworkflow.NodeRun{{NodeID: "step-1", Name: "k8s.pods.exec", PreparedCall: &call, Invocation: &domainai.ToolInvocationResult{ToolName: reader, Output: input}}}
+	run.Metadata["capabilityRevisions"] = []domainworkflow.CapabilityRevision{{Intent: intent, Nodes: run.NodeRuns, Version: 1}}
+	repo := New(nil)
+	raw, err := repo.marshalWorkflowMetadata(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Metadata = nil
+	if err := json.Unmarshal(raw, &run.Metadata); err != nil {
+		t.Fatal(err)
+	}
+	run.NodeRuns = extractWorkflowNodeRuns(run.Metadata)
+	loaded, err := repo.restoreWorkflowStorage(run, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := domainworkflow.CapabilityIntentFrom(loaded)
+	if err != nil || current.Input.Plan.Steps[0].Call.Input["name"] != input["name"] {
+		t.Fatalf("current plan lost business input: %v", err)
+	}
+	revisions, err := domainworkflow.CapabilityRevisionsFrom(loaded)
+	if err != nil || len(revisions) != 1 || revisions[0].Nodes[0].PreparedCall.Input["name"] != input["name"] {
+		t.Fatalf("archived plan lost prepared input: %v", err)
 	}
 }

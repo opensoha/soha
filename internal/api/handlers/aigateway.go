@@ -13,8 +13,10 @@ import (
 	"github.com/gin-gonic/gin"
 	apierrors "github.com/opensoha/soha/internal/api/errors"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	"github.com/opensoha/soha/internal/api/relaywebsocket"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
@@ -108,7 +110,7 @@ type AIGatewayRelayObservabilityService interface {
 type AIGatewayRelayService interface {
 	LLMRelayMaxRequestBodyBytes() int64
 	RelayLLMHTTP(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, http.ResponseWriter) error
-	RelayLLMWebSocket(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, http.ResponseWriter, *http.Request) error
+	RelayLLMWebSocket(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, relayport.UpgradeWebSocket) error
 }
 
 type AIGatewayService interface {
@@ -1154,7 +1156,7 @@ func (h *aiGatewayRelayHandler) relayLLMWebSocket(c *gin.Context, providerKind, 
 		RequestID:    c.GetString("request_id"),
 		SourceIP:     c.ClientIP(),
 		UserAgent:    c.Request.UserAgent(),
-	}, c.Writer, c.Request)
+	}, relaywebsocket.Upgrader(c.Writer, c.Request))
 	if err != nil {
 		relayNativeServiceError(c, err)
 	}

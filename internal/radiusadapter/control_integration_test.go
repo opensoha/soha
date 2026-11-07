@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	"io"
 	"log/slog"
 	"net/http"
@@ -107,7 +108,7 @@ func TestNetworkCommandRuntimeWithPostgres(t *testing.T) {
 	now := time.Now().UTC()
 	runtimeID, nasID, sessionID := "task115-owned-runtime", "task115-owned-nas", "task115-owned-session"
 	credentials := newNetworkRuntimeTLS(t, runtimeID)
-	repository := runtimerepo.New(store.DB())
+	repository := runtimerepo.New(store.DB(), appnetworkaccess.VPNGovernancePolicy{})
 	reads := accessrepo.New(store.DB())
 	schemas, err := networkprotocol.CompileSchemas()
 	if err != nil {

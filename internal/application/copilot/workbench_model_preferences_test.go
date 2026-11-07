@@ -2,19 +2,21 @@ package copilot
 
 import (
 	"context"
+	"testing"
+
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
-	"testing"
 )
 
 func TestWorkbenchModelPreferencesPersistAndReachInvoker(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{"chat": {appaccess.PermObserveAIChatUse}})
 	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{WorkbenchModel: domainsettings.AIWorkbenchModelSettings{Enabled: true, DefaultPublicModel: "default", DefaultRouteID: "default-route", DefaultEndpoint: "chat/completions"}}}
-	invoker := &fakeWorkbenchModelInvoker{streamDeltas: []string{"ok"}}
-	service.SetWorkbenchModelInvoker(invoker)
+	invoker := &fakeWorkbenchModelInvoker{response: appaigateway.WorkbenchRelayResponse{Content: "ok"}}
+	service.runtime.Model = invoker
 	repo.session = domaincopilot.Session{ID: "session-1", CreatedBy: "user-1", Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "general"})}
 	principal := domainidentity.Principal{UserID: "user-1", Roles: []string{"chat"}}
 	prefs := domaincopilot.WorkbenchModelPreferences{PublicModel: "selected", ReasoningEffort: "high"}

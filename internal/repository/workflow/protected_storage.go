@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	domainai "github.com/opensoha/soha/internal/domain/aigateway"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/protectedpayload"
@@ -14,18 +15,17 @@ const privateWorkflowMetadata = "privateCapabilityState"
 
 func (r *Repository) marshalWorkflowMetadata(run domainworkflow.Run) ([]byte, error) {
 	metadata := persistWorkflowMetadata(run.Metadata, run.NodeRuns, run.GatewayAuthorization)
-	if run.Scope != domainworkflow.ScopeCapabilityTask || r.storageKeys.Active().ID() == "" {
-		raw, err := json.Marshal(metadata)
-		if run.Scope == domainworkflow.ScopeCapabilityTask && protectedpayload.ContainsNamedCall(raw, "k8s.resources.conditional.update", "k8s.pods.exec") {
-			return nil, protectedpayload.ErrUnavailable
-		}
+	raw, err := json.Marshal(metadata)
+	if err != nil || run.Scope != domainworkflow.ScopeCapabilityTask {
 		return raw, err
 	}
-	intent, err := domainworkflow.CapabilityIntentFrom(run)
-	if err != nil {
-		return nil, err
+	if r.storageKeys.Active().ID() == "" {
+		if workflowRequiresSealing(raw) {
+			return nil, protectedpayload.ErrUnavailable
+		}
+		return raw, nil
 	}
-	raw, err := json.Marshal(metadata)
+	intent, err := domainworkflow.CapabilityIntentFrom(run)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (r *Repository) restoreWorkflowStorage(run domainworkflow.Run, err error) (
 	value, sealed := run.Metadata[privateWorkflowMetadata]
 	if !sealed {
 		raw, encodeErr := json.Marshal(run.Metadata)
-		if encodeErr != nil || protectedpayload.ContainsNamedCall(raw, "k8s.resources.conditional.update", "k8s.pods.exec") {
+		if encodeErr != nil || workflowRequiresSealing(raw) {
 			return domainworkflow.Run{}, protectedpayload.ErrUnavailable
 		}
 		return run, nil
@@ -92,6 +92,63 @@ func (r *Repository) restoreWorkflowStorage(run domainworkflow.Run, err error) (
 		return domainworkflow.Run{}, protectedpayload.ErrUnavailable
 	}
 	return run, nil
+}
+
+// Classify the same call slots whether they come from a fresh run or a legacy row.
+func workflowRequiresSealing(raw json.RawMessage) bool {
+	var state struct {
+		Intent    domainworkflow.CapabilityIntent     `json:"capabilityIntent"`
+		Revisions []domainworkflow.CapabilityRevision `json:"capabilityRevisions"`
+		Nodes     []domainworkflow.NodeRun            `json:"nodeRuns"`
+	}
+	if protectedpayload.Decode(raw, &state) != nil {
+		return true
+	}
+	if domainai.RequiresProtectedPlanInput(state.Intent.Input.Plan) || workflowNodesRequireSealing(state.Nodes) {
+		return true
+	}
+	for _, revision := range state.Revisions {
+		if domainai.RequiresProtectedPlanInput(revision.Intent.Input.Plan) || workflowNodesRequireSealing(revision.Nodes) {
+			return true
+		}
+	}
+	return false
+}
+
+func workflowNodesRequireSealing(nodes []domainworkflow.NodeRun) bool {
+	for _, node := range nodes {
+		for _, call := range []*domainai.ToolInvocationRequest{node.PreparedCall, node.ControlCall} {
+			if call != nil && domainai.RequiresProtectedToolInput(call.ToolName) {
+				return true
+			}
+		}
+		if workflowInvocationRequiresSealing(node.Invocation) {
+			return true
+		}
+	}
+	return false
+}
+
+func workflowInvocationRequiresSealing(invocation *domainai.ToolInvocationResult) bool {
+	if invocation == nil {
+		return false
+	}
+	if domainai.RequiresProtectedToolInput(invocation.ToolName) {
+		return true
+	}
+	if task := invocation.Task; task != nil &&
+		(domainai.RequiresProtectedToolInput(task.StatusCall.ToolName) ||
+			task.CancelCall != nil && domainai.RequiresProtectedToolInput(task.CancelCall.ToolName)) {
+		return true
+	}
+	if assessment := invocation.Assessment; assessment != nil {
+		for _, evidence := range assessment.Evidence {
+			if evidence.Reference != nil && domainai.RequiresProtectedToolInput(evidence.Reference.ToolName) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *Repository) scanWorkflow(rows *sql.Rows) (domainworkflow.Run, error) {

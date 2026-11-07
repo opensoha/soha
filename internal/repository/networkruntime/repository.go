@@ -9,11 +9,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
 	domainnetworkruntime "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/networkprotocol"
@@ -22,9 +24,24 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type Repository struct{ db *gorm.DB }
+type Repository struct {
+	db         *gorm.DB
+	governance appnetworkaccess.VPNGovernanceEvaluator
+}
 
-func New(db *gorm.DB) *Repository { return &Repository{db: db} }
+func New(db *gorm.DB, governance appnetworkaccess.VPNGovernanceEvaluator) *Repository {
+	if governance == nil {
+		panic("networkruntime: VPN governance evaluator is required")
+	}
+	value := reflect.ValueOf(governance)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if value.IsNil() {
+			panic("networkruntime: VPN governance evaluator is required")
+		}
+	}
+	return &Repository{db: db, governance: governance}
+}
 
 func (r *Repository) CreateEnrollment(ctx context.Context, challenge domainnetworkruntime.EnrollmentChallenge) error {
 	return r.db.WithContext(ctx).Create(enrollmentRowFromDomain(challenge)).Error
@@ -67,11 +84,15 @@ func (r *Repository) RevokeEnrollment(ctx context.Context, id string, now time.T
 }
 
 func (r *Repository) LatestSnapshot(ctx context.Context) (domainnetworkruntime.PolicySnapshot, error) {
+	return latestSnapshot(r.db.WithContext(ctx))
+}
+
+func latestSnapshot(tx *gorm.DB) (domainnetworkruntime.PolicySnapshot, error) {
 	var version int
 	var hash string
 	var policies, protected []byte
 	var publishedAt time.Time
-	err := r.db.WithContext(ctx).Raw(`SELECT policy_version, content_hash, policies, protected_resource_ids, published_at FROM network_access_policy_snapshots WHERE tenant_id = 'default' AND workspace_id = 'default' ORDER BY policy_version DESC LIMIT 1`).Row().Scan(&version, &hash, &policies, &protected, &publishedAt)
+	err := tx.Raw(`SELECT policy_version, content_hash, policies, protected_resource_ids, published_at FROM network_access_policy_snapshots WHERE tenant_id = 'default' AND workspace_id = 'default' ORDER BY policy_version DESC LIMIT 1`).Row().Scan(&version, &hash, &policies, &protected, &publishedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainnetworkruntime.PolicySnapshot{}, apperrors.NewBusiness(apperrors.ErrServiceUnavailable, "policy_snapshot_unavailable", "No published network policy snapshot is available.", "没有可用的已发布网络策略快照。")
 	}
@@ -296,10 +317,13 @@ func (r *Repository) EnsureConfiguration(ctx context.Context, runtimeID string, 
 		if err := lockWireGuardMutations(tx); err != nil {
 			return err
 		}
+		if err := lockConfigurationPolicy(tx, snapshot.PolicyVersion); err != nil {
+			return err
+		}
 		if err := revokeInvalidManagedSessions(tx, runtimeID, now); err != nil {
 			return err
 		}
-		if err := revokeGovernanceSessions(tx, runtimeID, now); err != nil {
+		if err := r.revokeGovernanceSessions(tx, runtimeID, now); err != nil {
 			return err
 		}
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-runtime:"+runtimeID).Error; err != nil {
@@ -338,6 +362,20 @@ func (r *Repository) EnsureConfiguration(ctx context.Context, runtimeID string, 
 		return err
 	})
 	return result, err
+}
+
+func lockConfigurationPolicy(tx *gorm.DB, policyVersion int) error {
+	if err := lockVPNGovernancePolicy(tx); err != nil {
+		return err
+	}
+	current, err := vpnPolicyVersionCurrent(tx, policyVersion)
+	if err != nil {
+		return err
+	}
+	if !current {
+		return apperrors.NewBusiness(apperrors.ErrConflict, "stale_configuration_policy", "The configuration policy snapshot is stale.", "配置策略快照已过期。")
+	}
+	return nil
 }
 
 func currentRuntimeMihomoProfile(tx *gorm.DB, runtimeID string, now time.Time) (*domainnetworkaccess.MihomoProfile, error) {
@@ -391,7 +429,7 @@ func (r *Repository) ApplyConfiguration(ctx context.Context, runtimeID string, a
 func (r *Repository) RenewLeases(ctx context.Context, runtimeID string, request networkprotocol.LeaseRenewRequest, snapshot domainnetworkruntime.PolicySnapshot, now time.Time, ttl time.Duration) (networkprotocol.LeaseRenewResult, error) {
 	result := networkprotocol.LeaseRenewResult{PolicyVersion: snapshot.PolicyVersion, NetworkLeases: []networkprotocol.NetworkLease{}, ResourceLeases: []networkprotocol.ResourceLease{}, RevokedLeaseIDs: []string{}}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		session, gatewayRuntimeID, err := lockRenewalSession(tx, runtimeID, request, snapshot.PolicyVersion, now)
+		session, gatewayRuntimeID, err := r.lockRenewalSession(tx, runtimeID, request, snapshot.PolicyVersion, now)
 		if err != nil {
 			return err
 		}
@@ -409,7 +447,7 @@ func (r *Repository) RenewLeases(ctx context.Context, runtimeID string, request 
 	return result, err
 }
 
-func lockRenewalSession(tx *gorm.DB, runtimeID string, request networkprotocol.LeaseRenewRequest, policyVersion int, now time.Time) (sessionRow, string, error) {
+func (r *Repository) lockRenewalSession(tx *gorm.DB, runtimeID string, request networkprotocol.LeaseRenewRequest, policyVersion int, now time.Time) (sessionRow, string, error) {
 	if err := lockWireGuardMutations(tx); err != nil {
 		return sessionRow{}, "", err
 	}
@@ -417,13 +455,13 @@ func lockRenewalSession(tx *gorm.DB, runtimeID string, request networkprotocol.L
 	if err != nil {
 		return sessionRow{}, "", err
 	}
-	for _, lockedRuntimeID := range orderedRuntimeIDs(runtimeID, gatewayRuntimeID) {
-		if lockedRuntimeID == "" {
-			continue
-		}
-		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-runtime:"+lockedRuntimeID).Error; err != nil {
+	if gatewayRuntimeID != "" {
+		if err := lockVPNGovernancePolicy(tx); err != nil {
 			return sessionRow{}, "", err
 		}
+	}
+	if err := lockLeaseRuntimes(tx, runtimeID, gatewayRuntimeID); err != nil {
+		return sessionRow{}, "", err
 	}
 	var session sessionRow
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ?", request.SessionID, runtimeID).First(&session).Error; err != nil {
@@ -441,7 +479,7 @@ func lockRenewalSession(tx *gorm.DB, runtimeID string, request networkprotocol.L
 		return sessionRow{}, "", err
 	}
 	if gatewayRuntimeID != "" {
-		allowed, err := sessionGovernanceAllowed(tx, session, now)
+		allowed, err := r.sessionGovernanceAllowed(tx, session, now)
 		if err != nil {
 			return sessionRow{}, "", err
 		}
@@ -449,10 +487,29 @@ func lockRenewalSession(tx *gorm.DB, runtimeID string, request networkprotocol.L
 			return sessionRow{}, "", apperrors.NewBusiness(apperrors.ErrAccessDenied, "device_governance_revoked", "Device governance no longer allows this VPN session.", "设备治理已不允许该 VPN 会话。")
 		}
 	}
-	if !currentRenewalState(tx, session, request, policyVersion) {
+	policyCurrent := true
+	if gatewayRuntimeID != "" {
+		policyCurrent, err = vpnPolicyVersionCurrent(tx, policyVersion)
+		if err != nil {
+			return sessionRow{}, "", err
+		}
+	}
+	if !policyCurrent || !currentRenewalState(tx, session, request, policyVersion) {
 		return sessionRow{}, "", apperrors.NewBusiness(apperrors.ErrConflict, "stale_session_state", "The session policy, posture or configuration is stale.", "会话策略、设备状态或配置已过期。")
 	}
 	return session, gatewayRuntimeID, nil
+}
+
+func lockLeaseRuntimes(tx *gorm.DB, runtimeID, gatewayRuntimeID string) error {
+	for _, lockedRuntimeID := range orderedRuntimeIDs(runtimeID, gatewayRuntimeID) {
+		if lockedRuntimeID == "" {
+			continue
+		}
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-runtime:"+lockedRuntimeID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func currentRenewalState(tx *gorm.DB, session sessionRow, request networkprotocol.LeaseRenewRequest, policyVersion int) bool {
@@ -587,13 +644,8 @@ func (r *Repository) RevokeLeases(ctx context.Context, runtimeID string, revoke 
 		if err != nil {
 			return err
 		}
-		for _, lockedRuntimeID := range orderedRuntimeIDs(runtimeID, gatewayRuntimeID) {
-			if lockedRuntimeID == "" {
-				continue
-			}
-			if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-runtime:"+lockedRuntimeID).Error; err != nil {
-				return err
-			}
+		if err := lockLeaseRuntimes(tx, runtimeID, gatewayRuntimeID); err != nil {
+			return err
 		}
 		var session sessionRow
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ?", revoke.SessionID, runtimeID).First(&session).Error; err != nil {

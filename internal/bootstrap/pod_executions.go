@@ -23,7 +23,9 @@ func bindKubernetesGatewayCapabilities(resources *appresource.Service, identity 
 	if err != nil {
 		return fmt.Errorf("build conditional Kubernetes resource capabilities: %w", err)
 	}
-	gateway.AddCapabilityProviders(conditional)
+	if err := gateway.AddCapabilityProviders(conditional); err != nil {
+		return fmt.Errorf("register conditional Kubernetes resource capabilities: %w", err)
+	}
 	return bindGatewayPodExecutions(resources.Workloads(), identity, gateway)
 }
 
@@ -39,7 +41,9 @@ func bindGatewayPodExecutions(workloads *appresource.Workloads, identity *appide
 	if err != nil {
 		return fmt.Errorf("build Gateway Pod execution capabilities: %w", err)
 	}
-	gateway.AddCapabilityProviders(provider)
+	if err := gateway.AddCapabilityProviders(provider); err != nil {
+		return fmt.Errorf("register Pod execution capabilities: %w", err)
+	}
 	return nil
 }
 

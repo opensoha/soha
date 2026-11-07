@@ -58,7 +58,7 @@ func compatibleIndexedEmbedding(chunks []domainknowledge.Chunk, batch domainknow
 		return false
 	}
 	for _, chunk := range chunks {
-		if chunk.EmbeddingModel == batch.Model && chunk.EmbeddingRoute == batch.Route && chunk.EmbeddingDimension == len(batch.Vectors[0]) {
+		if batch.MatchesChunk(chunk) && chunk.EmbeddingDimension == len(batch.Vectors[0]) {
 			return true
 		}
 	}

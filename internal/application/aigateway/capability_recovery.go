@@ -42,18 +42,13 @@ func (s *Service) recoverCapabilityCall(ctx context.Context, principal domainide
 	}
 	var output any
 	var found bool
-	for _, provider := range s.gatewayRegistry().providers {
-		if !providerHasTool(provider, tool.Name) {
-			continue
-		}
-		if recovery, ok := provider.(OriginalToolRecoveryProvider); ok {
-			output, found, err = recovery.RecoverOriginalTool(ctx, principal, tool, call)
-		} else if recovery, ok := provider.(ToolRecoveryProvider); ok {
-			output, found, err = recovery.RecoverTool(ctx, principal, tool, call.Input)
-		} else if _, builtin := provider.(BuiltinCapabilityProvider); builtin {
-			output, found, err = s.recoverDockerCapability(ctx, principal, call)
-		}
-		break
+	switch owner := s.gatewayRegistry().toolOwner(tool.Name).(type) {
+	case OriginalToolRecoveryProvider:
+		output, found, err = owner.RecoverOriginalTool(ctx, principal, tool, call)
+	case ToolRecoveryProvider:
+		output, found, err = owner.RecoverTool(ctx, principal, tool, call.Input)
+	case BuiltinCapabilityProvider:
+		output, found, err = s.recoverDockerCapability(ctx, principal, call)
 	}
 	if err != nil || !found {
 		return nil, err
@@ -80,25 +75,19 @@ func (s *Service) recoverProtectedPodExecution(ctx context.Context, principal do
 	tool, _ := s.toolByName(call.ToolName)
 	readTool, _ := s.toolByName(observation.ToolName)
 	ctx = domainaigateway.WithExecutionAuthorization(ctx, domainaigateway.ExecutionAuthorization{ActorID: principal.UserID, ActorTokenID: principal.AccessTokenID, Call: observation, ResourceScope: resolvedCapabilityAuditScope(ctx, readTool, lookup, nil)})
-	for _, provider := range s.gatewayRegistry().providers {
-		if !providerHasTool(provider, tool.Name) {
-			continue
-		}
-		recovery, ok := provider.(ToolRecoveryProvider)
-		if !ok {
-			return nil, apperrors.ErrUnsupportedOperation
-		}
-		output, found, err := recovery.RecoverTool(ctx, principal, tool, call.Input)
-		if err != nil || !found {
-			return nil, err
-		}
-		visible, _, err := s.sanitizeToolOutputByAccessPolicy(ctx, principal, call.AIClientID, call.SkillID, tool, capabilityGatewayScope(tool, call.Input), output)
-		if err != nil {
-			return nil, err
-		}
-		return &domainaigateway.ToolInvocationResult{ToolName: tool.Name, CapabilityVersion: tool.Version, Result: "success", Output: visible, Task: s.gatewayRegistry().TaskReference(tool, output, visible)}, nil
+	recovery, ok := s.gatewayRegistry().toolOwner(tool.Name).(ToolRecoveryProvider)
+	if !ok {
+		return nil, apperrors.ErrUnsupportedOperation
 	}
-	return nil, apperrors.ErrUnsupportedOperation
+	output, found, err := recovery.RecoverTool(ctx, principal, tool, call.Input)
+	if err != nil || !found {
+		return nil, err
+	}
+	visible, _, err := s.sanitizeToolOutputByAccessPolicy(ctx, principal, call.AIClientID, call.SkillID, tool, capabilityGatewayScope(tool, call.Input), output)
+	if err != nil {
+		return nil, err
+	}
+	return &domainaigateway.ToolInvocationResult{ToolName: tool.Name, CapabilityVersion: tool.Version, Result: "success", Output: visible, Task: s.gatewayRegistry().TaskReference(tool, output, visible)}, nil
 }
 
 func (s *Service) recoverDockerCapability(ctx context.Context, principal domainidentity.Principal, call domainaigateway.ToolInvocationRequest) (any, bool, error) {

@@ -99,7 +99,7 @@ func (r *Repository) ActiveVPNGateway(ctx context.Context, siteID, requestedGate
 func (r *Repository) SaveVPNConnection(ctx context.Context, connection domainnetworkruntime.VPNConnection, snapshot domainnetworkruntime.PolicySnapshot) (networkprotocol.VPNConnectResult, error) {
 	var result networkprotocol.VPNConnectResult
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		started, done, err := beginVPNRequest(tx, connection, snapshot)
+		started, done, err := r.beginVPNRequest(tx, connection, snapshot)
 		if err != nil {
 			return err
 		}
@@ -107,7 +107,7 @@ func (r *Repository) SaveVPNConnection(ctx context.Context, connection domainnet
 			result = started
 			return nil
 		}
-		state, poolExhausted, err := prepareVPNConnection(tx, &connection)
+		state, poolExhausted, err := r.prepareVPNConnection(tx, &connection)
 		if err != nil {
 			return err
 		}
@@ -146,11 +146,14 @@ type vpnConnectionState struct {
 	address            netip.Addr
 }
 
-func beginVPNRequest(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, snapshot domainnetworkruntime.PolicySnapshot) (networkprotocol.VPNConnectResult, bool, error) {
+func (r *Repository) beginVPNRequest(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, snapshot domainnetworkruntime.PolicySnapshot) (networkprotocol.VPNConnectResult, bool, error) {
 	if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-vpn-request:"+connection.RuntimeID+":"+connection.RequestID).Error; err != nil {
 		return networkprotocol.VPNConnectResult{}, false, err
 	}
 	if err := lockWireGuardMutations(tx); err != nil {
+		return networkprotocol.VPNConnectResult{}, false, err
+	}
+	if err := lockVPNGovernancePolicy(tx); err != nil {
 		return networkprotocol.VPNConnectResult{}, false, err
 	}
 	if connection.Decision == domainnetworkaccess.DecisionAllow {
@@ -164,7 +167,7 @@ func beginVPNRequest(tx *gorm.DB, connection domainnetworkruntime.VPNConnection,
 		if existing.RequestHash != connection.RequestHash {
 			return networkprotocol.VPNConnectResult{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "vpn_request_reused", "The VPN request ID was already used with different content.", "VPN 请求 ID 已被不同内容使用。")
 		}
-		return replayVPNRequest(tx, existing, connection.CreatedAt)
+		return r.replayVPNRequest(tx, existing, connection.CreatedAt)
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return networkprotocol.VPNConnectResult{}, false, err
@@ -173,13 +176,17 @@ func beginVPNRequest(tx *gorm.DB, connection domainnetworkruntime.VPNConnection,
 		result := vpnConnectResult(connection, nil, nil, 0)
 		return result, true, insertVPNRequest(tx, connection, result)
 	}
-	if snapshot.PolicyVersion != connection.PolicyVersion || !connection.ValidUntil.After(connection.CreatedAt) {
+	current, err := vpnPolicyVersionCurrent(tx, connection.PolicyVersion)
+	if err != nil {
+		return networkprotocol.VPNConnectResult{}, false, err
+	}
+	if !current || snapshot.PolicyVersion != connection.PolicyVersion || !connection.ValidUntil.After(connection.CreatedAt) {
 		return networkprotocol.VPNConnectResult{}, false, apperrors.NewBusiness(apperrors.ErrConflict, "stale_vpn_decision", "The VPN decision is stale.", "VPN 决策已过期。")
 	}
 	return networkprotocol.VPNConnectResult{}, false, nil
 }
 
-func replayVPNRequest(tx *gorm.DB, existing vpnRequestRow, now time.Time) (networkprotocol.VPNConnectResult, bool, error) {
+func (r *Repository) replayVPNRequest(tx *gorm.DB, existing vpnRequestRow, now time.Time) (networkprotocol.VPNConnectResult, bool, error) {
 	result, err := existing.domain()
 	if err != nil || result.Decision != domainnetworkaccess.DecisionAllow {
 		return result, true, err
@@ -190,12 +197,12 @@ func replayVPNRequest(tx *gorm.DB, existing vpnRequestRow, now time.Time) (netwo
 		err = invalidVPNIntent()
 	}
 	if err == nil && live > 0 {
-		err = validateReplayedVPNGovernance(tx, result.SessionID, now)
+		err = r.validateReplayedVPNGovernance(tx, result.SessionID, now)
 	}
 	return result, true, err
 }
 
-func prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConnection) (vpnConnectionState, bool, error) {
+func (r *Repository) prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConnection) (vpnConnectionState, bool, error) {
 	if connection.Managed == nil {
 		required, err := requiresManagedVPN(tx, connection.SubjectID, connection.DeviceID)
 		if err != nil {
@@ -212,7 +219,7 @@ func prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConne
 	if err := lockVPNRuntimes(tx, *connection); err != nil {
 		return vpnConnectionState{}, false, err
 	}
-	endpointCredential, gateway, gatewayCredential, space, err := lockVPNInputs(tx, *connection)
+	endpointCredential, gateway, gatewayCredential, space, err := r.lockVPNInputs(tx, *connection)
 	if err != nil {
 		return vpnConnectionState{}, false, err
 	}
@@ -801,7 +808,7 @@ func vpnGatewayRuntimeForSession(tx *gorm.DB, runtimeID, sessionID string) (stri
 	return gatewayRuntimeID, err
 }
 
-func lockVPNInputs(tx *gorm.DB, connection domainnetworkruntime.VPNConnection) (credentialRow, gatewayRuntimeRow, credentialRow, domainnetworkaccess.Space, error) {
+func (r *Repository) lockVPNInputs(tx *gorm.DB, connection domainnetworkruntime.VPNConnection) (credentialRow, gatewayRuntimeRow, credentialRow, domainnetworkaccess.Space, error) {
 	var endpointCredential, gatewayCredential credentialRow
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND runtime_kind = 'endpoint' AND status = 'active' AND expires_at >= ?", connection.CredentialID, connection.RuntimeID, connection.ValidUntil).First(&endpointCredential).Error; err != nil {
 		return endpointCredential, gatewayRuntimeRow{}, gatewayCredential, domainnetworkaccess.Space{}, normalizeVPNInputError(err, "endpoint credential")
@@ -844,11 +851,11 @@ func lockVPNInputs(tx *gorm.DB, connection domainnetworkruntime.VPNConnection) (
 	if gatewayCredential.WireGuardPublicKey == "" || !gatewayCredentialSupportsOverlay(gatewayCredential, gateway.OverlayCIDR) {
 		return endpointCredential, gateway, gatewayCredential, domainnetworkaccess.Space{}, apperrors.NewBusiness(apperrors.ErrConflict, "gateway_configuration_invalid", "The gateway WireGuard key is unavailable.", "网关 WireGuard 公钥不可用。")
 	}
-	space, err := lockVPNSpace(tx, connection, gateway, gatewayCredential)
+	space, err := r.lockVPNSpace(tx, connection, gateway, gatewayCredential)
 	return endpointCredential, gateway, gatewayCredential, space, err
 }
 
-func lockVPNSpace(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, gateway gatewayRuntimeRow, gatewayCredential credentialRow) (domainnetworkaccess.Space, error) {
+func (r *Repository) lockVPNSpace(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, gateway gatewayRuntimeRow, gatewayCredential credentialRow) (domainnetworkaccess.Space, error) {
 	var space domainnetworkaccess.Space
 	var cidrs []byte
 	err := tx.Raw(`SELECT id, site_id, cidrs, status FROM network_access_spaces
@@ -881,7 +888,7 @@ func lockVPNSpace(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, ga
 			return space, apperrors.NewBusiness(apperrors.ErrConflict, "gateway_topology_unavailable", "The selected VPN gateway cannot currently reach the target network.", "所选 VPN 网关当前无法到达目标网络。")
 		}
 	}
-	if err := requireVPNGovernance(tx, connection); err != nil {
+	if err := r.requireVPNGovernance(tx, connection); err != nil {
 		return space, err
 	}
 	return space, nil

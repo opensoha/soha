@@ -161,6 +161,13 @@ type ConnectionCredential struct {
 	ConnectionID, Username, Password string
 }
 
+// ConnectionCredentials contains only credential replacements for a connection write.
+type ConnectionCredentials struct {
+	Webhook       WebhookCredential
+	SCIMTokenHash string
+	LDAP          ConnectionCredential
+}
+
 type EventEnvelope struct {
 	ID, ConnectionID, ProviderEventID, EventType, Status, ErrorSummary string
 	Payload                                                            json.RawMessage

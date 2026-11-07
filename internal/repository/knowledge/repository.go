@@ -252,14 +252,27 @@ func (r *Repository) CreateIndexRevision(ctx context.Context, item domainknowled
 		if err := tx.Exec(`UPDATE ai_knowledge_index_revisions SET status='superseded' WHERE knowledge_base_id=? AND status='active'`, item.KnowledgeBaseID).Error; err != nil {
 			return err
 		}
-		return tx.Exec(`INSERT INTO ai_knowledge_index_revisions(id,knowledge_base_id,revision,embedding_model,chunker_version,document_count,chunk_count,status,created_at,activated_at)VALUES(?,?,?,?,?,?,?,?,?,?)`, item.ID, item.KnowledgeBaseID, item.Revision, item.EmbeddingModel, item.ChunkerVersion, item.DocumentCount, item.ChunkCount, item.Status, item.CreatedAt, item.ActivatedAt).Error
+		return insertIndexRevision(tx, item)
 	})
 }
+
+func insertIndexRevision(tx *gorm.DB, item domainknowledge.IndexRevision) error {
+	source := item.EmbeddingSource
+	return tx.Exec(`INSERT INTO ai_knowledge_index_revisions(
+		id,knowledge_base_id,revision,embedding_model,chunker_version,document_count,chunk_count,status,created_at,activated_at,
+		embedding_upstream_id,embedding_provider_kind,embedding_upstream_model
+	) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		item.ID, item.KnowledgeBaseID, item.Revision, item.EmbeddingModel, item.ChunkerVersion, item.DocumentCount, item.ChunkCount, item.Status, item.CreatedAt, item.ActivatedAt,
+		source.UpstreamID, source.ProviderKind, source.UpstreamModel).Error
+}
+
 func (r *Repository) ListIndexRevisions(ctx context.Context, p domainknowledge.PrincipalScope, baseID string, limit int) ([]domainknowledge.IndexRevision, error) {
 	if _, err := r.GetBase(ctx, p, baseID); err != nil {
 		return nil, err
 	}
-	rows, err := r.db.WithContext(ctx).Raw(`SELECT id,knowledge_base_id,revision,embedding_model,chunker_version,document_count,chunk_count,status,created_at,activated_at FROM ai_knowledge_index_revisions WHERE knowledge_base_id=? ORDER BY revision DESC LIMIT ?`, baseID, limit).Rows()
+	rows, err := r.db.WithContext(ctx).Raw(`SELECT id,knowledge_base_id,revision,embedding_model,chunker_version,document_count,chunk_count,status,created_at,activated_at,
+		embedding_upstream_id,embedding_provider_kind,embedding_upstream_model
+		FROM ai_knowledge_index_revisions WHERE knowledge_base_id=? ORDER BY revision DESC LIMIT ?`, baseID, limit).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +280,9 @@ func (r *Repository) ListIndexRevisions(ctx context.Context, p domainknowledge.P
 	items := []domainknowledge.IndexRevision{}
 	for rows.Next() {
 		var item domainknowledge.IndexRevision
-		if err := rows.Scan(&item.ID, &item.KnowledgeBaseID, &item.Revision, &item.EmbeddingModel, &item.ChunkerVersion, &item.DocumentCount, &item.ChunkCount, &item.Status, &item.CreatedAt, &item.ActivatedAt); err != nil {
+		source := &item.EmbeddingSource
+		if err := rows.Scan(&item.ID, &item.KnowledgeBaseID, &item.Revision, &item.EmbeddingModel, &item.ChunkerVersion, &item.DocumentCount, &item.ChunkCount, &item.Status, &item.CreatedAt, &item.ActivatedAt,
+			&source.UpstreamID, &source.ProviderKind, &source.UpstreamModel); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

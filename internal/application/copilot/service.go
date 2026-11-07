@@ -252,10 +252,12 @@ type Service struct {
 	virtualization        VirtualizationReader
 	oncall                OnCallResolver
 	settings              AISettingsResolver
-	workbenchInvoker      WorkbenchModelInvoker
-	nativeReady           atomic.Bool
+	runtime               RuntimeDependencies
+	runtimeConfigured     bool
 	permissions           *appaccess.PermissionResolver
 	nativeAuthorization   NativeAuthorizationReader
+	nativeRuns            NativeRunStore
+	nativeTaskParents     NativeTaskParentStore
 	nativeTasks           NativeCapabilityTasks
 	agentPrincipals       AgentPrincipalResolver
 	logger                *zap.Logger
@@ -310,6 +312,8 @@ type Dependencies struct {
 	Settings            AISettingsResolver
 	Permissions         *appaccess.PermissionResolver
 	NativeAuthorization NativeAuthorizationReader
+	NativeRuns          NativeRunStore
+	NativeTaskParents   NativeTaskParentStore
 	NativeTasks         NativeCapabilityTasks
 	AgentPrincipals     AgentPrincipalResolver
 }
@@ -349,13 +353,19 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 	for _, dependency := range []struct {
 		name  string
 		value any
-	}{{"conversations", deps.Conversations}, {"feed", deps.Feed}} {
+	}{
+		{"conversations", deps.Conversations},
+		{"feed", deps.Feed},
+		{"AI settings", deps.Settings},
+		{"Native access authorization", deps.NativeAuthorization},
+		{"Native identity resolver", deps.AgentPrincipals},
+		{"Native run store", deps.NativeRuns},
+		{"Native task parent store", deps.NativeTaskParents},
+		{"Native task executor", deps.NativeTasks},
+	} {
 		if dependency.value != nil && isNilDependency(dependency.value) {
 			return nil, fmt.Errorf("copilot service: %s dependency is typed nil", dependency.name)
 		}
-	}
-	if deps.NativeTasks != nil && isNilDependency(deps.NativeTasks) {
-		return nil, fmt.Errorf("copilot service: Native task dependency is typed nil")
 	}
 	for _, dependency := range required {
 		if isNilDependency(dependency.value) {
@@ -385,6 +395,8 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		settings:            deps.Settings,
 		permissions:         deps.Permissions,
 		nativeAuthorization: deps.NativeAuthorization,
+		nativeRuns:          deps.NativeRuns,
+		nativeTaskParents:   deps.NativeTaskParents,
 		nativeTasks:         deps.NativeTasks,
 		agentPrincipals:     deps.AgentPrincipals,
 		logs:                unavailableTelemetry{},
@@ -504,11 +516,6 @@ func (s *Service) SetExternalAgentProviders(providers []domaincopilot.AgentProvi
 	s.agentProvidersMu.Lock()
 	defer s.agentProvidersMu.Unlock()
 	s.agentProviders = configured
-}
-
-func (s *Service) SetWorkbenchModelInvoker(invoker WorkbenchModelInvoker) {
-	s.workbenchInvoker = invoker
-	s.nativeReady.Store(invoker != nil)
 }
 
 func (s *Service) SetAgentRuntimeReaders(execution ExecutionTaskReader, resources PlatformResourceReader, docker DockerReader, virtualization VirtualizationReader, oncall OnCallResolver) {
@@ -1313,7 +1320,7 @@ func (s *Service) generateReply(ctx context.Context, principal domainidentity.Pr
 			Model:  workbenchModel.DefaultPublicModel,
 		}
 	}
-	if s.workbenchInvoker == nil {
+	if s.runtime.Model == nil {
 		return chatReply{
 			Content: localize(locale,
 				"AI Workbench 默认模型已选择，但内部 Gateway relay invoker 尚未接入。请检查服务启动接线。",
@@ -1323,7 +1330,7 @@ func (s *Service) generateReply(ctx context.Context, principal domainidentity.Pr
 			Model:  workbenchModel.DefaultPublicModel,
 		}
 	}
-	resp, err := s.workbenchInvoker.InvokeWorkbenchModel(ctx, principal, appaigateway.WorkbenchRelayRequest{
+	resp, err := s.runtime.Model.InvokeWorkbenchModel(ctx, principal, appaigateway.WorkbenchRelayRequest{
 		ReasoningEffort: preferences.ReasoningEffort,
 		PublicModel:     workbenchModel.DefaultPublicModel,
 		RouteID:         workbenchModel.DefaultRouteID,
@@ -1381,8 +1388,8 @@ func (s *Service) generateReplyStream(ctx context.Context, principal domainident
 			Model:  workbenchModel.DefaultPublicModel,
 		}
 	}
-	streamInvoker, ok := s.workbenchInvoker.(WorkbenchModelStreamInvoker)
-	if !ok || streamInvoker == nil {
+	streamInvoker := s.runtime.Stream
+	if streamInvoker == nil {
 		return s.generateReply(ctx, principal, sessionID, mode, messages, locale, preferences)
 	}
 	filtered := reactionStream{send: func(delta string) bool { return onDelta == nil || onDelta(delta) }}

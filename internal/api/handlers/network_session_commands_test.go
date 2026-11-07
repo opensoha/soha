@@ -14,7 +14,7 @@ import (
 )
 
 type networkCommandReadStub struct {
-	NetworkAccessService
+	NetworkSessionService
 	session, key string
 	command      domainnetworkaccess.SessionCommand
 }
@@ -33,7 +33,7 @@ func TestNetworkCommandQueriesPreservePublicProjection(t *testing.T) {
 	hash := "sha256:" + strings.Repeat("a", 64)
 	for _, original := range []bool{false, true} {
 		stub := &networkCommandReadStub{command: domainnetworkaccess.SessionCommand{ID: "command-1", SessionID: "session-1", PlanHash: hash, SubjectID: "private-subject", DeviceID: "private-device", Status: "applied"}}
-		handler := &NetworkAccessHandler{service: stub}
+		handler := &NetworkAccessHandler{session: stub}
 		recorder := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(recorder)
 		ctx.Params = gin.Params{{Key: "sessionID", Value: "session-1"}, {Key: "commandID", Value: "command-1"}}

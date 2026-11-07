@@ -2,6 +2,7 @@ package networkruntime_test
 
 import (
 	"errors"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ func (s *runtimeRepositoryScenario) checkEndpointChannelLifecycle(t *testing.T) 
 		if err := tx.Exec(`INSERT INTO network_access_devices(id,owner_user_id,name,hostname,platform,status,posture_status,created_at,updated_at) VALUES(?,?::uuid,?,?,'windows','active','compliant',?,?)`, deviceID, s.subjectID, deviceID, runtimeID, now, now).Error; err != nil {
 			return err
 		}
-		runtime := runtimerepo.New(tx)
+		runtime := runtimerepo.New(tx, appnetworkaccess.VPNGovernancePolicy{})
 		credential, err := s.enrollChannelRuntime(runtime, deviceID, runtimeID, "-1", now)
 		if err != nil {
 			return err

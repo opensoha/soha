@@ -14,6 +14,7 @@ import (
 	app "github.com/opensoha/soha/internal/application/networkcontrol"
 
 	appep "github.com/opensoha/soha/internal/application/endpointcontrol"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	appnetworkproxy "github.com/opensoha/soha/internal/application/networkproxy"
 	config "github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
@@ -74,7 +75,7 @@ func New(ctx context.Context) (*App, error) {
 	if err != nil {
 		return fail(err)
 	}
-	runtimeRepository := networkruntimerepository.New(store.DB())
+	runtimeRepository := networkruntimerepository.New(store.DB(), appnetworkaccess.VPNGovernancePolicy{})
 	var eapIssuer app.EAPCertificateIssuer
 	if cfg.EAPIssuer.CAFile != "" {
 		eapIssuer, err = networkidentity.LoadEAPIssuer(cfg.EAPIssuer.CAFile, cfg.EAPIssuer.KeyFile, cfg.TLS.ClientCAFile)

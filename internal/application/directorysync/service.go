@@ -50,36 +50,6 @@ func New(repository domain.Repository, projector LocalProjector) *Service {
 	return &Service{repository: repository, projector: projector, now: time.Now}
 }
 
-func (s *Service) CreateConnection(ctx context.Context, connection domain.Connection, policy domain.Policy) (domain.Connection, error) {
-	if connection.ID == "" {
-		connection.ID = uuid.NewString()
-	}
-	if policy.ConnectionID == "" {
-		policy = domain.DefaultPolicy(connection.ID)
-	}
-	policy.ConnectionID = connection.ID
-	if err := policy.ValidateForProvider(connection.ProviderType); err != nil {
-		return domain.Connection{}, err
-	}
-	if policy.Mode != domain.PolicyManual {
-		if err := ValidateSchedule(policy.Schedule); err != nil {
-			return domain.Connection{}, fmt.Errorf("%w: %v", domain.ErrInvalidPolicy, err)
-		}
-		if policy.FullReconcileSchedule != "" {
-			if err := ValidateSchedule(policy.FullReconcileSchedule); err != nil {
-				return domain.Connection{}, fmt.Errorf("%w: %v", domain.ErrInvalidPolicy, err)
-			}
-		}
-	}
-	now := s.now().UTC()
-	connection.CreatedAt = now
-	connection.UpdatedAt = now
-	if connection.Status == "" {
-		connection.Status = domain.ConnectionPending
-	}
-	return s.repository.CreateConnection(ctx, connection, policy)
-}
-
 func (s *Service) Preview(ctx context.Context, connectionID string, snapshot domain.Snapshot) (domain.Plan, error) {
 	_, policy, existingOrgs, existingPeople, err := s.load(ctx, connectionID)
 	if err != nil {

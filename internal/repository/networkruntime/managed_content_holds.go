@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
 	dlp "github.com/opensoha/soha/internal/domain/contentdlp"
 	d "github.com/opensoha/soha/internal/domain/contenttransfer"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
-	"time"
 )
 
 func (r *Repository) RestrictManagedContentSubject(ctx context.Context, record d.Record) (string, error) {
@@ -36,18 +36,8 @@ func (r *Repository) RestrictManagedContentSubject(ctx context.Context, record d
 	}
 	return record.ID, nil
 }
-func (r *Repository) ReleaseManagedContentSubject(ctx context.Context, id, reviewer string) error {
-	tx := dbtx.DB(ctx, r.db)
-	now := time.Now().UTC()
-	var actor string
-	err := tx.Raw(`UPDATE network_security_holds h SET active=false,revision=h.revision+1,released_at=?,released_by=? WHERE h.id=? AND h.source_type='managed_content' AND h.active AND NOT EXISTS(SELECT 1 FROM content_transfer_records r WHERE r.metadata->>'networkHoldId'=h.id AND COALESCE(r.metadata->>'appealStatus','pending')<>'approved') RETURNING h.subject_id`, now, reviewer, id).Row().Scan(&actor)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return releaseContentEffects(tx, id, actor, now)
+func (r *Repository) ReleaseManagedContentSubject(ctx context.Context, id, reviewer string, approvals ContentHoldApprovalReader) error {
+	return r.releaseContentHold(ctx, id, reviewer, "managed_content", approvals)
 }
 func (r *Repository) ManagedContentState(ctx context.Context, id string) (d.NetworkHold, error) {
 	tx := dbtx.DB(ctx, r.db)

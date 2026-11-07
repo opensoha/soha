@@ -13,6 +13,7 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/virtualization"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -105,6 +106,7 @@ func newWorkerExecutionFixture(t *testing.T) *workerExecutionFixture {
 	f.pool = &workerPoolStore{saved: domain.WorkerPool{VirtualizationWorkerPool: sohaapi.VirtualizationWorkerPool{ID: uuid.New(), Revision: 1, Spec: spec}, Identity: domain.WorkerPoolIdentity{ClusterUID: "cluster-uid", ConnectionIdentity: vmCreateConnectionIdentity(connection), TemplateID: "101", TemplateFingerprint: "template-fingerprint"}}}
 	f.service.workerPools = f.pool
 	f.service.workerRuntime = &WorkerRuntime{
+		ValidatePoolSpec: k8sinfra.ValidateWorkerPoolKubernetesSpec,
 		PrepareBootstrap: func(_ context.Context, _ domain.WorkerPool, operation, node string, deadline time.Time) (domain.WorkerBootstrap, error) {
 			f.bootstraps++
 			if node != domain.WorkerNodeName(operation) {
@@ -181,6 +183,43 @@ func TestWorkerCreationReadinessAndOriginalVMRecovery(t *testing.T) {
 	completed := f.run(t, context.Background())
 	if completed.Status != TaskStatusSucceeded || completed.ID != original.ID || !boolValue(completed.Result, "workerReady") || f.creates != 1 || f.bootstraps != 1 || f.claims != 1 {
 		t.Fatalf("worker recovery recreated resources or skipped readiness: %+v", completed)
+	}
+}
+
+func TestInvalidWorkerPoolSpecBlocksCreationAndRetry(t *testing.T) {
+	f := newWorkerExecutionFixture(t)
+	ctx := context.Background()
+	principal := testPrincipal()
+	input := sohaapi.VirtualizationWorkerCreateInput{PoolRevision: 1, IdempotencyKey: "worker-idempotency-1"}
+	f.pool.saved.Spec.Labels = map[string]string{"team": "invalid value"}
+	if _, err := f.service.CreateWorker(ctx, principal, f.pool.saved.ID.String(), input); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("creation error = %v, want invalid argument", err)
+	}
+	if len(f.repo.tasks) != 0 || f.repo.admissions != 0 {
+		t.Fatal("invalid persisted pool allocated a task")
+	}
+	f.pool.saved.Spec.Labels = nil
+	task := f.enqueue(t)
+	// Simulate a historical record whose snapshot contains an invalid spec.
+	invalid := f.pool.saved.VirtualizationWorkerPool
+	invalid.Spec.Labels = map[string]string{"team": "invalid value"}
+	task.Payload["workerPool"] = invalid
+	if _, err := f.repo.UpdateTask(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.CreateWorker(ctx, principal, f.pool.saved.ID.String(), input); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("idempotent replay error = %v, want invalid argument", err)
+	}
+	failed := f.run(t, ctx)
+	if failed.Status != TaskStatusFailed || f.bootstraps != 0 || f.creates != 0 || f.revocations != 0 || f.adapter.reads != 0 {
+		t.Fatalf("invalid replay did not fail before runtime effects: status=%s", failed.Status)
+	}
+	if _, err := f.service.RetryOperation(ctx, principal, task.ID); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("retry error = %v, want invalid argument", err)
+	}
+	current, err := f.repo.GetTask(ctx, task.ID)
+	if err != nil || current.Status != failed.Status || !current.UpdatedAt.Equal(failed.UpdatedAt) || f.repo.admissions != 1 || len(f.repo.tasks) != 1 {
+		t.Fatalf("rejected retry wrote task state: %+v, %v", current, err)
 	}
 }
 
@@ -293,6 +332,91 @@ func TestWorkerCreationRequiresBootstrapEncryptionBeforeAdmission(t *testing.T) 
 	_, err := f.service.CreateWorker(context.Background(), testPrincipal(), f.pool.saved.ID.String(), sohaapi.VirtualizationWorkerCreateInput{PoolRevision: 1, IdempotencyKey: "no-encryption"})
 	if err == nil || f.repo.admissions != 0 || f.bootstraps != 0 || f.creates != 0 {
 		t.Fatalf("unprotected worker admitted: %v", err)
+	}
+}
+
+func TestHistoricalWorkerOperationsWithoutRuntime(t *testing.T) {
+	f := newWorkerExecutionFixture(t)
+	task := f.enqueue(t)
+	// A bootstrap attempt may have created credentials before it saved their UID.
+	task.Payload["workerBootstrapDeadline"] = time.Now().Add(-time.Minute).Format(time.RFC3339Nano)
+	ctx := domain.WithScopeCheck(context.Background(), func(scope map[string]string) error {
+		if scope["operationId"] != task.ID || scope["clusterId"] != "target" || scope["workerPoolId"] != f.pool.saved.ID.String() || scope["connectionRevision"] != f.pool.saved.Identity.ConnectionIdentity {
+			t.Fatalf("historical task lost its frozen scope: %v", scope)
+		}
+		return nil
+	})
+	if _, err := f.repo.UpdateTask(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.repo.CreateTaskLog(ctx, domain.TaskLog{TaskID: task.ID, Message: "stored bootstrap attempt"}); err != nil {
+		t.Fatal(err)
+	}
+	f.service.workerRuntime = nil
+	principal := testPrincipal()
+	f.service.authorizeWorkerCluster = func(_ context.Context, caller domainidentity.Principal, clusterID string, mutate bool) error {
+		if clusterID != "target" || mutate {
+			t.Fatalf("historical access checked the wrong target or action: cluster=%q mutate=%v", clusterID, mutate)
+		}
+		if caller.UserID != principal.UserID {
+			return apperrors.ErrAccessDenied
+		}
+		return nil
+	}
+
+	f.checkHistoricalWorkerReads(t, ctx, principal, task)
+	f.checkHistoricalWorkerCancellation(t, ctx, principal, task)
+}
+
+func (f *workerExecutionFixture) checkHistoricalWorkerReads(t *testing.T, ctx context.Context, principal domainidentity.Principal, task domain.Task) {
+	t.Helper()
+	if items, err := f.service.ListOperations(ctx, principal, domain.TaskFilter{}); err != nil || len(items) != 1 || items[0].ID != task.ID {
+		t.Fatalf("ListOperations() returned %d tasks, error=%v", len(items), err)
+	}
+	if page, err := f.service.ListOperationsPage(ctx, principal, domain.TaskFilter{Page: 1, PageSize: 10}); err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != task.ID {
+		t.Fatalf("ListOperationsPage() returned %d items (total=%d), error=%v", len(page.Items), page.Total, err)
+	}
+	if got, err := f.service.GetOperation(ctx, principal, task.ID); err != nil || got.ID != task.ID {
+		t.Fatalf("GetOperation() returned ID %q, error=%v", got.ID, err)
+	}
+	if logs, err := f.service.ListOperationLogs(ctx, principal, task.ID, 10); err != nil || len(logs) != 1 || logs[0].Message != "stored bootstrap attempt" {
+		t.Fatalf("ListOperationLogs() did not return the stored log: %v", err)
+	}
+}
+
+func (f *workerExecutionFixture) checkHistoricalWorkerCancellation(t *testing.T, ctx context.Context, principal domainidentity.Principal, task domain.Task) {
+	t.Helper()
+	noWorkerPermissions := principal
+	noWorkerPermissions.PermissionKeys = []string{appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationOperationsManage}
+	noClusterAccess := principal
+	noClusterAccess.UserID = "other-user"
+	for _, tt := range []struct {
+		name      string
+		principal domainidentity.Principal
+	}{
+		{"missing worker permissions", noWorkerPermissions},
+		{"missing cluster access", noClusterAccess},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := f.service.ListOperationLogs(ctx, tt.principal, task.ID, 10); !errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("unauthorized log read error = %v", err)
+			}
+			if _, err := f.service.CancelOperation(ctx, tt.principal, task.ID); !errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("unauthorized cancellation error = %v", err)
+			}
+		})
+	}
+	if current, err := f.repo.GetTask(ctx, task.ID); err != nil || current.Status != TaskStatusQueued {
+		t.Fatalf("unauthorized cancellation changed status to %q, error=%v", current.Status, err)
+	}
+	canceled, err := f.service.CancelOperation(ctx, principal, task.ID)
+	if err != nil || canceled.Status != TaskStatusCanceling {
+		t.Fatalf("CancelOperation() returned status %q, error=%v", canceled.Status, err)
+	}
+	f.service.observeCanceledCreation(ctx, canceled)
+	current, err := f.repo.GetTask(ctx, task.ID)
+	if err != nil || current.Status != TaskStatusCanceling || current.FinishedAt != nil || current.Result["canceledBy"] != principal.UserID || current.Result["cancellationConfirmed"] != false || boolValue(current.Result, "workerBootstrapRevoked") {
+		t.Fatalf("cancellation intent or pending cleanup lost: status=%q, result=%+v, error=%v", current.Status, current.Result, err)
 	}
 }
 

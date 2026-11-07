@@ -9,7 +9,6 @@ import (
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/platform/apperrors"
-	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 type WorkerPool struct {
@@ -50,6 +49,7 @@ func WorkerNodeName(operationID string) string {
 
 var workerVersionPattern = regexp.MustCompile(`^v1\.([0-9]+)\.[0-9]+$`)
 
+// ValidateWorkerPoolSpec checks the business rules for a worker pool.
 func ValidateWorkerPoolSpec(spec sohaapi.VirtualizationWorkerPoolSpec) error {
 	invalid := func(reason string) error {
 		return fmt.Errorf("%w: worker pool %s", apperrors.ErrInvalidArgument, reason)
@@ -76,14 +76,14 @@ func ValidateWorkerPoolSpec(spec sohaapi.VirtualizationWorkerPoolSpec) error {
 	if len(spec.Labels) > 32 || len(spec.RequiredDaemonSets) < 1 || len(spec.RequiredDaemonSets) > 16 {
 		return invalid("requires 1 to 16 node daemon references and at most 32 labels")
 	}
-	if err := validateWorkerLabels(spec.Labels); err != nil {
-		return invalid(err.Error())
+	if workerLabelsUseReservedKeys(spec.Labels) {
+		return invalid("labels must not claim Kubernetes roles or reserved ownership")
 	}
-	seen := map[string]bool{}
+	seen := map[[2]string]bool{}
 	for _, daemon := range spec.RequiredDaemonSets {
-		key := daemon.Namespace + "/" + daemon.Name
-		if len(validation.IsDNS1123Label(daemon.Namespace)) != 0 || len(validation.IsDNS1123Subdomain(daemon.Name)) != 0 || seen[key] {
-			return invalid("requires unique valid daemon names and namespaces")
+		key := [2]string{daemon.Namespace, daemon.Name}
+		if seen[key] {
+			return invalid("requires unique daemon names and namespaces")
 		}
 		seen[key] = true
 	}
@@ -94,13 +94,12 @@ func workerPoolShapeValid(spec sohaapi.VirtualizationWorkerPoolSpec) bool {
 	return spec.CPU >= 2 && spec.CPU <= 256 && spec.MemoryMiB >= 2048 && spec.MemoryMiB <= 1048576 && spec.DiskGiB >= 20 && spec.DiskGiB <= 16384 && spec.MaxNodes >= 1 && spec.MaxNodes <= 1000
 }
 
-func validateWorkerLabels(labels map[string]string) error {
-	for key, value := range labels {
+func workerLabelsUseReservedKeys(labels map[string]string) bool {
+	for key := range labels {
 		prefix, _, _ := strings.Cut(key, "/")
-		if len(validation.IsQualifiedName(key)) != 0 || len(validation.IsValidLabelValue(value)) != 0 ||
-			prefix == "kubernetes.io" || strings.HasSuffix(prefix, ".kubernetes.io") || prefix == "k8s.io" || strings.HasSuffix(prefix, ".k8s.io") || strings.HasPrefix(key, "node-role.") || strings.HasPrefix(key, "soha.io/") {
-			return fmt.Errorf("labels must be valid and must not claim Kubernetes roles or reserved ownership")
+		if prefix == "kubernetes.io" || strings.HasSuffix(prefix, ".kubernetes.io") || prefix == "k8s.io" || strings.HasSuffix(prefix, ".k8s.io") || strings.HasPrefix(key, "node-role.") || strings.HasPrefix(key, "soha.io/") {
+			return true
 		}
 	}
-	return nil
+	return false
 }

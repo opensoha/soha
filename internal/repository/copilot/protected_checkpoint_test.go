@@ -17,6 +17,7 @@ import (
 	db "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
+	"github.com/opensoha/soha/internal/platform/protectedpayload"
 	workflowrepo "github.com/opensoha/soha/internal/repository/workflow"
 )
 
@@ -53,6 +54,10 @@ func TestPrivateNativeCheckpointSealsEveryCopyAndBindsRun(t *testing.T) {
 	if _, err := New(nil).decodeNativeCheckpoint(run, sealed); err == nil {
 		t.Fatal("missing key accepted")
 	}
+	unknown := json.RawMessage(strings.Replace(string(sealed), protectedpayload.Format, "soha.private-json/v2", 1))
+	if _, err := r.encodeNativeCheckpoint(run, unknown); !errors.Is(err, protectedpayload.ErrUnavailable) {
+		t.Fatalf("unknown envelope was allowed as checkpoint input: %v", err)
+	}
 	if _, err := New(nil).encodeNativeCheckpoint(run, raw); err == nil {
 		t.Fatal("plaintext fallback")
 	}
@@ -70,6 +75,45 @@ func TestPrivateNativeCheckpointSealsEveryCopyAndBindsRun(t *testing.T) {
 		if _, err := r.decodeNativeCheckpoint(run, encoded); err == nil {
 			t.Fatal("unsealed model function alias accepted")
 		}
+	}
+}
+
+func TestPrivateNativeCheckpointPlaintextCallSlots(t *testing.T) {
+	run := domain.AgentRun{ID: "run-1", CreatedBy: "owner", SessionID: "session-1"}
+	unkeyed := New(nil)
+	keyed := New(nil, checkpointTestKeys(t))
+	const protectedPlan = `{"steps":[{"call":{"toolName":"k8s.resources.conditional.update","input":{"content":"private"}}}]}`
+	cases := []struct {
+		name    string
+		raw     json.RawMessage
+		private bool
+	}{
+		{"pending resolved name", json.RawMessage(`{"pending":[{"toolName":"k8s.pods.exec"}]}`), true},
+		{"legacy pending model name", json.RawMessage(`{"Pending":[{"Call":{"name":"k8s.pods.exec"}}]}`), true},
+		{"pending model alias", json.RawMessage(`{"pending":[{"call":{"name":"k8s_pods_exec"}}]}`), true},
+		{"message model alias", json.RawMessage(`{"messages":[{"ToolCalls":[{"name":"k8s_resources_conditional_update"}]}]}`), true},
+		{"pending plan", json.RawMessage(`{"pending":[{"toolName":"harness.request_task","call":{"arguments":{"plan":` + protectedPlan + `}}}]}`), true},
+		{"message plan", json.RawMessage(`{"messages":[{"ToolCalls":[{"name":"harness_request_task","arguments":{"plan":` + protectedPlan + `}}]}]}`), true},
+		{"stored child plan", json.RawMessage(`{"tasks":[{"input":{"plan":` + protectedPlan + `}}]}`), true},
+		{"unknown envelope version", json.RawMessage(`{"format":"soha.private-json/v2","ciphertext":"example"}`), true},
+		{"unrecognized pending shape", json.RawMessage(`{"pending":{"toolName":"k8s.pods.exec"}}`), true},
+		{"ordinary tool arguments", json.RawMessage(`{"messages":[{"ToolCalls":[{"name":"k8s_resources_identity_read","arguments":{"name":"k8s.pods.exec","nested":{"toolName":"k8s_resources_conditional_update","format":"example"},"plan":` + protectedPlan + `}}]}]}`), false},
+		{"ordinary task plan", json.RawMessage(`{"pending":[{"toolName":"harness.request_task","call":{"name":"harness_request_task","arguments":{"plan":{"steps":[{"call":{"toolName":"k8s.resources.identity.read","input":{"name":"k8s.pods.exec","nested":{"toolName":"k8s_resources_conditional_update"}}}}]}}}}]}`), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			encoded, writeErr := unkeyed.encodeNativeCheckpoint(run, tc.raw)
+			decoded, readErr := keyed.decodeNativeCheckpoint(run, tc.raw)
+			if tc.private {
+				if !errors.Is(writeErr, protectedpayload.ErrUnavailable) || !errors.Is(readErr, protectedpayload.ErrUnavailable) {
+					t.Fatalf("plaintext write returned %v, legacy plaintext read returned %v", writeErr, readErr)
+				}
+				return
+			}
+			if writeErr != nil || readErr != nil || string(encoded) != string(tc.raw) || string(decoded) != string(tc.raw) {
+				t.Fatalf("ordinary checkpoint round trip failed: write %v, read %v", writeErr, readErr)
+			}
+		})
 	}
 }
 

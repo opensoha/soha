@@ -29,32 +29,69 @@ func New(db *gorm.DB, keys ...keyring.Ring) *Repository {
 	return r
 }
 
-func (r *Repository) CreateConnection(ctx context.Context, item domain.Connection, policy domain.Policy) (domain.Connection, error) {
+func (r *Repository) CreateConnection(ctx context.Context, item domain.Connection, policy domain.Policy, credentials domain.ConnectionCredentials) (domain.Connection, error) {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		capabilities, _ := json.Marshal(item.Capabilities)
 		metadata, _ := json.Marshal(item.Metadata)
 		if err := tx.Exec(`INSERT INTO directory_connections (id,name,provider_type,login_provider_id,credential_ref,enabled,capabilities,status,last_validated_at,metadata,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?::jsonb,?,?,?::jsonb,?,?,?,?)`, item.ID, item.Name, item.ProviderType, nullString(item.LoginProviderID), nullString(item.CredentialRef), item.Enabled, string(capabilities), item.Status, item.LastValidatedAt, string(metadata), item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return err
 		}
-		return upsertPolicy(tx, policy)
+		return r.saveConnectionDetails(ctx, tx, item.ID, item.UpdatedAt, policy, credentials)
 	})
 	return item, err
 }
 
-func (r *Repository) UpdateConnection(ctx context.Context, item domain.Connection, policy domain.Policy) (domain.Connection, error) {
+func (r *Repository) UpdateConnection(ctx context.Context, item domain.Connection, policy domain.Policy, credentials domain.ConnectionCredentials) (domain.Connection, error) {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		capabilities, _ := json.Marshal(item.Capabilities)
 		metadata, _ := json.Marshal(item.Metadata)
-		res := tx.Exec(`UPDATE directory_connections SET name=?,provider_type=?,login_provider_id=?,credential_ref=?,enabled=?,capabilities=?::jsonb,status=?,last_validated_at=?,metadata=?::jsonb,updated_by=?,updated_at=? WHERE id=?`, item.Name, item.ProviderType, nullString(item.LoginProviderID), nullString(item.CredentialRef), item.Enabled, string(capabilities), item.Status, item.LastValidatedAt, string(metadata), item.UpdatedBy, item.UpdatedAt, item.ID)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
+		var capabilities []byte
+		err := tx.Raw(`UPDATE directory_connections SET name=?,provider_type=?,login_provider_id=?,credential_ref=?,enabled=?,metadata=?::jsonb,updated_by=?,updated_at=? WHERE id=? RETURNING created_at,created_by,capabilities,status,last_validated_at`, item.Name, item.ProviderType, nullString(item.LoginProviderID), nullString(item.CredentialRef), item.Enabled, string(metadata), item.UpdatedBy, item.UpdatedAt, item.ID).Row().Scan(&item.CreatedAt, &item.CreatedBy, &capabilities, &item.Status, &item.LastValidatedAt)
+		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: directory connection", apperrors.ErrNotFound)
 		}
-		return upsertPolicy(tx, policy)
+		if err != nil {
+			return err
+		}
+		_ = json.Unmarshal(capabilities, &item.Capabilities)
+		return r.saveConnectionDetails(ctx, tx, item.ID, item.UpdatedAt, policy, credentials)
 	})
 	return item, err
+}
+
+func (r *Repository) saveConnectionDetails(ctx context.Context, tx *gorm.DB, id string, at time.Time, policy domain.Policy, credentials domain.ConnectionCredentials) error {
+	if err := upsertPolicy(tx, policy); err != nil {
+		return err
+	}
+	// Use the same encryption and upsert paths on this transaction's handle.
+	scoped := &Repository{db: tx, keys: r.keys}
+	if credentials.Webhook.VerificationToken != "" {
+		credentials.Webhook.ConnectionID = id
+		if err := scoped.SetWebhookCredential(ctx, credentials.Webhook); err != nil {
+			return err
+		}
+	}
+	if credentials.SCIMTokenHash != "" {
+		if err := scoped.SetSCIMToken(ctx, id, credentials.SCIMTokenHash, at); err != nil {
+			return err
+		}
+	}
+	if credentials.LDAP.Password != "" {
+		credentials.LDAP.ConnectionID = id
+		return scoped.SetConnectionCredential(ctx, credentials.LDAP)
+	}
+	return nil
+}
+
+func (r *Repository) SaveConnectionValidation(ctx context.Context, id string, version time.Time, capabilities domain.Capabilities, at time.Time) error {
+	encoded, _ := json.Marshal(capabilities)
+	res := r.db.WithContext(ctx).Exec(`UPDATE directory_connections SET capabilities=?::jsonb,status=?,last_validated_at=?,updated_at=? WHERE id=? AND updated_at=?`, string(encoded), domain.ConnectionHealthy, at, at, id, version)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("%w: directory connection changed during validation", apperrors.ErrConflict)
+	}
+	return nil
 }
 
 func upsertPolicy(tx *gorm.DB, p domain.Policy) error {

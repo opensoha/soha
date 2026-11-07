@@ -16,19 +16,24 @@ import (
 )
 
 type resourceCreationCapabilityFixture struct {
-	creates int
-	refs    []domainresource.ResourceCreateRef
-	item    domainresource.ResourceCreateExecution
+	creates    int
+	preflights int
+	refs       []domainresource.ResourceCreateRef
+	item       domainresource.ResourceCreateExecution
+	request    domainresource.ResourceCreateRequest
 }
 
-func (f *resourceCreationCapabilityFixture) PreflightCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, error) {
+func (f *resourceCreationCapabilityFixture) PreflightCreate(_ context.Context, _ domainidentity.Principal, _ string, request domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, error) {
+	f.preflights++
+	f.request = request
 	return domainresource.ResourceCreatePreflight{Ready: true}, nil
 }
 func (f *resourceCreationCapabilityFixture) ResolveCreateTargets(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) ([]domainresource.ResourceCreateRef, error) {
 	return f.refs, nil
 }
-func (f *resourceCreationCapabilityFixture) ExecuteCreate(_ context.Context, _ domainidentity.Principal, cluster string, _ domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, error) {
+func (f *resourceCreationCapabilityFixture) ExecuteCreate(_ context.Context, _ domainidentity.Principal, cluster string, request domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, error) {
 	f.creates++
+	f.request = request
 	f.item = domainresource.ResourceCreateExecution{OperationID: "original-operation", ClusterID: cluster, Status: "succeeded", ContentHash: strings.Repeat("a", 64), Documents: []domainresource.ResourceCreateExecutionDocument{{Index: 0, Resource: f.refs[0], Status: "succeeded"}}}
 	f.item.Documents[0].Resource.UID = "original-uid"
 	return f.item, nil
@@ -46,9 +51,12 @@ func (f *resourceCreationCapabilityFixture) AssessCreate(context.Context, domain
 	return sohaapi.CapabilityAssessment{Verdict: "inconclusive", Summary: "no observation", Evidence: []sohaapi.CapabilityEvidence{}}, nil
 }
 
-func newCreationGateway(repo *memoryGatewayRepository, provider CapabilityProvider) *Service {
+func newCreationGateway(t *testing.T, repo *memoryGatewayRepository, provider CapabilityProvider) *Service {
+	t.Helper()
 	s := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{"admin": {appaccess.PermAIGatewayManage, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayView, appaccess.PermPlatformResourceCreationUse}}}), nil, repo)
-	s.SetCapabilityProviders(provider, BuiltinCapabilityProvider{})
+	if err := s.SetCapabilityProviders(BuiltinCapabilityProvider{}, provider); err != nil {
+		t.Fatal(err)
+	}
 	return s
 }
 
@@ -60,13 +68,13 @@ func TestResourceCreationCapabilityPlanApprovalAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := &memoryGatewayRepository{}
-	s := newCreationGateway(repo, provider)
+	s := newCreationGateway(t, repo, provider)
 	count := 0
 	for _, skill := range s.gatewayRegistry().Skills() {
 		if skill.ID == "k8s-resource-provisioner" {
 			count++
 			if !slices.Contains(skill.CapabilityRefs, "k8s.resources.create.assess") {
-				t.Fatal("legacy skill shadowed provider verification")
+				t.Fatal("creation skill is missing provider verification")
 			}
 		}
 	}
@@ -114,7 +122,7 @@ func verifyResourceCreationRecovery(t *testing.T, repo *memoryGatewayRepository,
 	t.Helper()
 	ctx := context.Background()
 	principal := testPrincipal("admin")
-	recreated := newCreationGateway(repo, provider)
+	recreated := newCreationGateway(t, repo, provider)
 	recovered, err := recreated.recoverCapabilityCall(ctx, principal, call)
 	if err != nil || recovered == nil || recovered.Task == nil || recovered.Task.ID != "original-operation" || f.creates != 1 {
 		t.Fatalf("recovery: %+v %v", recovered, err)
@@ -141,7 +149,7 @@ func TestResourceCreationCapabilityChecksAllManifestNamespaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := &memoryGatewayRepository{accessPolicies: []domainai.AccessPolicy{{ID: "team-a-only", Enabled: true, SubjectType: "role", SubjectID: "admin", Effect: "allow", ToolPatterns: []string{"k8s.resources.create.*"}, RiskLevels: []domainai.RiskLevel{domainai.RiskLevelHigh}, ResourceScopes: map[string]any{"namespace": []string{"team-a"}}, ApprovalPolicy: map[string]any{"strategy": "allow"}}}}
-	s := newCreationGateway(repo, p)
+	s := newCreationGateway(t, repo, p)
 	_, err = s.InvokeTool(context.Background(), testPrincipal("admin"), domainai.ToolInvocationRequest{ToolName: "k8s.resources.create.trigger", CapabilityVersion: "1", Input: map[string]any{"clusterId": "cluster", "source": "global_yaml", "content": "two manifests", "idempotencyKey": "key"}})
 	if !errors.Is(err, apperrors.ErrAccessDenied) || f.creates != 0 {
 		t.Fatalf("second namespace escaped policy: %v creates=%d", err, f.creates)

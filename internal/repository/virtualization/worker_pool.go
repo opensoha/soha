@@ -65,6 +65,12 @@ func (r *Repository) SaveWorkerPool(ctx context.Context, pool domain.WorkerPool,
 	if err := domain.ValidateWorkerPoolSpec(pool.Spec); err != nil {
 		return domain.WorkerPool{}, err
 	}
+	if r.validateWorkerPoolSpec == nil {
+		return domain.WorkerPool{}, fmt.Errorf("%w: worker pool validation is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	if err := r.validateWorkerPoolSpec(pool.Spec); err != nil {
+		return domain.WorkerPool{}, err
+	}
 	spec, err := json.Marshal(pool.Spec)
 	if err != nil {
 		return domain.WorkerPool{}, err

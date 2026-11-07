@@ -13,7 +13,11 @@ const (
 )
 
 func (device Device) EffectiveManagementState() string {
-	if device.ManagementVerifiedUntil != nil && device.ManagementVerifiedUntil.After(time.Now()) {
+	return device.EffectiveManagementStateAt(time.Now())
+}
+
+func (device Device) EffectiveManagementStateAt(now time.Time) string {
+	if device.ManagementVerifiedUntil != nil && device.ManagementVerifiedUntil.After(now) {
 		return DeviceManagementManaged
 	}
 	switch device.ManagementState {

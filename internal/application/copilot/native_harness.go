@@ -65,11 +65,10 @@ type nativeCheckpoint struct {
 	CleanupToolCalls int                                  `json:"cleanupToolCalls,omitempty"`
 }
 
-type nativeCapabilities interface {
-	WorkbenchCapabilities(context.Context, domainidentity.Principal, domainaigateway.ManifestRequest) (domainaigateway.Manifest, error)
-}
-
 func (s *Service) queueNativeMessage(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, input domaincopilot.WorkbenchSendMessageInput, locale string) (domaincopilot.WorkbenchStreamResult, error) {
+	if err := s.validateNativeRuntime(s.runtime); err != nil {
+		return domaincopilot.WorkbenchStreamResult{}, err
+	}
 	input = nativeLegacyIntent(metadata, input)
 	if err := validateNativeMessage(input); err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
@@ -132,7 +131,7 @@ func (s *Service) queueNativeMessage(ctx context.Context, principal domainidenti
 	run.Input["_sohaNativeCatalog"] = catalog
 	run.Input["_sohaAuthorizationCeiling"] = authorization
 	run.Input["_sohaGatewayAuthorizationCeiling"] = gatewayAuthorization
-	run, err = s.createNativeMessage(ctx, run, domaincopilot.Message{ID: messageID, SessionID: session.ID, Role: "user", Content: input.Content, CreatedAt: now, Metadata: chatUserMetadata(map[string]any{"mode": "general", "agentRunId": runID}, input.ContextSelection)}, key, hex.EncodeToString(hash[:]))
+	run, err = s.nativeRuns.CreateNativeRun(ctx, run, domaincopilot.Message{ID: messageID, SessionID: session.ID, Role: "user", Content: input.Content, CreatedAt: now, Metadata: chatUserMetadata(map[string]any{"mode": "general", "agentRunId": runID}, input.ContextSelection)}, key, hex.EncodeToString(hash[:]))
 	if err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
 	}
@@ -154,14 +153,6 @@ func (s *Service) resolveNativeModelSettings(ctx context.Context, metadata domai
 		return domainsettings.AIWorkbenchModelSettings{}, fmt.Errorf("%w: configure a model route before using Native", apperrors.ErrUnsupportedOperation)
 	}
 	return settings, nil
-}
-
-func (s *Service) createNativeMessage(ctx context.Context, run domaincopilot.AgentRun, message domaincopilot.Message, key, hash string) (domaincopilot.AgentRun, error) {
-	store, ok := s.agentRuns.(NativeRunStore)
-	if !ok || isNilDependency(store) {
-		return domaincopilot.AgentRun{}, apperrors.ErrUnsupportedOperation
-	}
-	return store.CreateNativeRun(ctx, run, message, key, hash)
 }
 
 func validateNativeMessage(input domaincopilot.WorkbenchSendMessageInput) error {
@@ -191,10 +182,7 @@ func nativeLegacyIntent(metadata domaincopilot.SessionMetadata, input domaincopi
 }
 
 func (s *Service) runNativeWorker(ctx context.Context) {
-	store, ok := s.agentRuns.(NativeRunStore)
-	if !ok {
-		return
-	}
+	store := s.nativeRuns
 	worker := "native:" + uuid.NewString()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -203,9 +191,6 @@ func (s *Service) runNativeWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if !s.nativeReady.Load() {
-				continue
-			}
 			lease, err := store.ClaimNativeRun(ctx, worker)
 			if errors.Is(err, apperrors.ErrNotFound) {
 				continue
@@ -377,30 +362,25 @@ func (s *Service) nativeModelStep(ctx context.Context, store NativeRunStore, lea
 	defer cancel()
 	heartbeatDone := s.nativeHeartbeat(modelCtx, cancel, store, lease)
 	defer func() { cancel(); <-heartbeatDone }()
-	var response appaigateway.WorkbenchRelayResponse
-	if stream, ok := s.workbenchInvoker.(WorkbenchModelStreamInvoker); ok {
-		var saveErr error
-		filtered := reactionStream{send: func(content string) bool {
-			lease, saveErr = saveNativeCheckpoint(modelCtx, store, lease, *cp, "model", []domaincopilot.WorkbenchStreamEvent{{Type: "message.delta", Role: "assistant", MessageID: fmt.Sprintf("%s:model:%d", lease.Run.ID, cp.Usage.Steps), ContentDelta: content}})
-			return saveErr == nil
-		}}
-		response, err = stream.InvokeWorkbenchModelStream(modelCtx, principal, request, func(delta appaigateway.WorkbenchRelayStreamDelta) bool {
-			// A model can mention arguments before emitting its tool call. Buffer
-			// public text until the protected call is known; never stream a prefix
-			// that can expose a private argument across delta boundaries.
-			if nativeHasProtectedCapability(lease.Run) {
-				return modelCtx.Err() == nil
-			}
-			return delta.ContentDelta == "" || filtered.push(delta.ContentDelta)
-		})
-		if err == nil {
-			filtered.flush()
+	var saveErr error
+	filtered := reactionStream{send: func(content string) bool {
+		lease, saveErr = saveNativeCheckpoint(modelCtx, store, lease, *cp, "model", []domaincopilot.WorkbenchStreamEvent{{Type: "message.delta", Role: "assistant", MessageID: fmt.Sprintf("%s:model:%d", lease.Run.ID, cp.Usage.Steps), ContentDelta: content}})
+		return saveErr == nil
+	}}
+	response, err := s.runtime.Stream.InvokeWorkbenchModelStream(modelCtx, principal, request, func(delta appaigateway.WorkbenchRelayStreamDelta) bool {
+		// A model can mention arguments before emitting its tool call. Buffer
+		// public text until the protected call is known; never stream a prefix
+		// that can expose a private argument across delta boundaries.
+		if nativeHasProtectedCapability(lease.Run) {
+			return modelCtx.Err() == nil
 		}
-		if saveErr != nil {
-			err = errors.Join(err, saveErr)
-		}
-	} else {
-		response, err = s.workbenchInvoker.InvokeWorkbenchModel(modelCtx, principal, request)
+		return delta.ContentDelta == "" || filtered.push(delta.ContentDelta)
+	})
+	if err == nil {
+		filtered.flush()
+	}
+	if saveErr != nil {
+		err = errors.Join(err, saveErr)
 	}
 	if err != nil {
 		cp.UsageKnown = false
@@ -709,8 +689,8 @@ func (s *Service) ListAgentRunEvents(ctx context.Context, principal domainidenti
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.NativeEventPage{}, err
 	}
-	store, ok := s.agentRuns.(NativeRunStore)
-	if !ok {
+	store := s.nativeRuns
+	if store == nil {
 		return domaincopilot.NativeEventPage{}, apperrors.ErrUnsupportedOperation
 	}
 	page, err := store.ListNativeEvents(ctx, principal.UserID, id, after)
@@ -730,8 +710,8 @@ func (s *Service) ResumeAgentRun(ctx context.Context, principal domainidentity.P
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
-	store, ok := s.agentRuns.(NativeRunStore)
-	if !ok {
+	store := s.nativeRuns
+	if store == nil {
 		return domaincopilot.AgentRun{}, apperrors.ErrUnsupportedOperation
 	}
 	lease, err := store.ReadNativeLease(ctx, principal.UserID, id)

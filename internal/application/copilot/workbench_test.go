@@ -745,7 +745,7 @@ func TestSendMessageGeneralModeRequiresGatewayRouteWithoutAutoAnalysis(t *testin
 		PublicModel:         "gpt-public",
 		RouteID:             "route-openai",
 	}}
-	service.SetWorkbenchModelInvoker(invoker)
+	service.runtime.Model = invoker
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
 		Title:     "General chat",
@@ -1017,7 +1017,7 @@ func TestStreamMessageGeneralUsesGatewayTokenStream(t *testing.T) {
 			ProviderKind:        "openai",
 		},
 	}
-	service.SetWorkbenchModelInvoker(invoker)
+	service.runtime.Stream = invoker
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
 		Title:     "General chat",
@@ -1059,7 +1059,7 @@ func TestStreamMessageGeneralDoesNotPersistPartialAssistantWhenStreamStops(t *te
 			Enabled:            true,
 		},
 	}}
-	service.SetWorkbenchModelInvoker(&fakeWorkbenchModelInvoker{
+	service.runtime.Stream = &fakeWorkbenchModelInvoker{
 		streamDeltas: []string{"partial", " should not persist"},
 		streamResponse: appaigateway.WorkbenchRelayResponse{
 			Content:      "partial should not persist",
@@ -1067,7 +1067,7 @@ func TestStreamMessageGeneralDoesNotPersistPartialAssistantWhenStreamStops(t *te
 			RouteID:      "route-openai",
 			ProviderKind: "openai",
 		},
-	})
+	}
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
 		Title:     "General chat",

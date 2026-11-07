@@ -73,7 +73,7 @@ func TestNativePrivateModelTextIsBufferedAndRedactedAcrossDeltaBoundaries(t *tes
 	}
 	store.lease.Run.Input["_sohaNativeCatalog"] = catalog
 	store.lease.Run.ToolBindings = appendNativeTaskBindings(nil, catalog.Tasks)
-	s.workbenchInvoker = &nativeProtectedStreamFixture{gateway, private}
+	s.runtime.Stream = &nativeProtectedStreamFixture{gateway, private}
 	cp := initialNativeCheckpoint(store.lease.Run)
 	cp.Tasks = []nativeTaskCheckpoint{{ID: "verified-task", State: "completed", VerifiedThrough: time.Now(), Input: domainai.CapabilityTaskInput{Plan: domainai.CapabilityPlan{Steps: []domainai.CapabilityPlanStep{{Call: sohaapi.CapabilityCall{ToolName: "k8s.pods.exec", Input: map[string]any{"execution": map[string]any{"argv": []string{private}}}}}}}}}}
 	_, err = s.nativeModelStep(t.Context(), store, store.lease, &cp, actor)

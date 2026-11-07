@@ -100,7 +100,7 @@ func originalDirectorySyncWithPostgresPhase2(tb *testing.T, sharedCtx *context.C
 
 	tb.Helper()
 	id := uuid.NewString()
-	_, err := (*sharedRepo).CreateConnection((*sharedCtx), domain.Connection{ID: id, Name: "owned", ProviderType: domain.ProviderLDAP, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, domain.DefaultPolicy(id))
+	_, err := (*sharedRepo).CreateConnection((*sharedCtx), domain.Connection{ID: id, Name: "owned", ProviderType: domain.ProviderLDAP, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, domain.DefaultPolicy(id), domain.ConnectionCredentials{})
 	(*sharedMust)(tb, err)
 	// #nosec G101 -- synthetic credential identity hash, not an authentication credential.
 	return domain.Run{ID: uuid.NewString(), ConnectionID: id, Trigger: "manual", Mode: "full", Status: domain.RunQueued, IdempotencyKey: "manual-v1:" + uuid.NewString(), RequestedBy: "actor", RequestCredentialID: "sha256:test-identity", CreatedAt: time.Now().UTC()}

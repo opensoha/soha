@@ -45,6 +45,7 @@ type Store interface {
 	ActiveCredential(context.Context, string, time.Time) (domainnetworkruntime.Credential, error)
 	ActiveEndpointCredential(context.Context, string, string, time.Time) (domainnetworkruntime.Credential, error)
 	TouchCredential(context.Context, string, time.Time) error
+	// EnsureConfiguration returns stale_configuration_policy when publication has superseded the supplied snapshot.
 	EnsureConfiguration(context.Context, string, domainnetworkruntime.PolicySnapshot, time.Time, time.Time) (domainnetworkruntime.Configuration, error)
 	ApplyConfiguration(context.Context, string, networkprotocol.ConfigurationApplied, time.Time) error
 	RenewLeases(context.Context, string, networkprotocol.LeaseRenewRequest, domainnetworkruntime.PolicySnapshot, time.Time, time.Duration) (networkprotocol.LeaseRenewResult, error)
@@ -201,6 +202,17 @@ func (s *Service) Configuration(ctx context.Context, identity networkidentity.Id
 	}
 	now := s.now().UTC()
 	configuration, err := s.store.EnsureConfiguration(ctx, identity.ID, snapshot, now, now.Add(s.options.ConfigurationTTL))
+	if isStaleConfigurationPolicy(err) {
+		if err := s.RefreshSnapshot(ctx); err != nil {
+			return networkprotocol.RuntimeMessage{}, err
+		}
+		snapshot, err = s.CurrentSnapshot()
+		if err != nil {
+			return networkprotocol.RuntimeMessage{}, err
+		}
+		now = s.now().UTC()
+		configuration, err = s.store.EnsureConfiguration(ctx, identity.ID, snapshot, now, now.Add(s.options.ConfigurationTTL))
+	}
 	if err != nil {
 		return networkprotocol.RuntimeMessage{}, err
 	}
@@ -217,6 +229,11 @@ func (s *Service) Configuration(ctx context.Context, identity networkidentity.Id
 		return networkprotocol.RuntimeMessage{}, err
 	}
 	return s.outbound(identity, networkprotocol.MessageConfiguration, desired, configuration.ValidUntil)
+}
+
+func isStaleConfigurationPolicy(err error) bool {
+	var business *apperrors.BusinessError
+	return errors.As(err, &business) && business.Code() == "stale_configuration_policy"
 }
 
 func (s *Service) runtimeIntervals(ctx context.Context) (*networkprotocol.RuntimeIntervals, error) {

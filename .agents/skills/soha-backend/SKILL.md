@@ -14,7 +14,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 1. Identify the change boundary first: transport, orchestration, policy, infrastructure, repository, or bootstrap.
 2. Read `references/go-engineering-standards.md` for every production Go change, then inspect the existing handler, service, port, adapter, and route wiring before editing. Follow the current module rather than creating a parallel path.
 3. Keep authorization, scope semantics, audit, and operation logging aligned with the behavior change.
-4. For Kubernetes-facing work, decide whether the capability should use informer/cache, live query fallback, or agent mode, and make unsupported agent paths explicit.
+4. For capability-facing work, identify the unique owner and capability declaration, plus the durable approval/receipt path where required by the operation; make unsupported or degraded paths explicit. Ordinary reads retain authorization, scope, and applicable audit without adding an execution workflow. For Kubernetes work, preserve the intended informer/cache, live fallback, and agent routing.
 5. For external or long-running work, identify the existing durable task, operation, session, run, lease, or callback state machine before adding another execution path.
 6. When public behavior changes, update `../soha-contracts` first, then the affected consumer, docs, permissions, menus, config, and tests.
 7. Use `graphify-out/graph.json` for broad ownership or dependency questions. Refresh it only after structural changes are stable and the worktree contents are understood; follow the Graphify workflow in the repository AGENTS.md and run diagnostics. Do not bypass shrink guards with `--force` by default.
@@ -27,7 +27,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - `internal/repository` owns durable persistence details. Keep SQL and GORM concerns out of handlers and orchestration code.
 - `internal/infrastructure` owns external clients and vendor-specific wiring such as Kubernetes managers, informer startup, agent HTTP clients, config loading, DB, Swagger, and MCP registries.
 - `internal/bootstrap` wires dependencies and startup lifecycle. Do not hide new cross-module dependencies in ad hoc globals.
-- Keep manual constructor injection and `internal/bootstrap` as the composition root. Define narrow interfaces in the consuming package, reject missing or typed-nil required dependencies, and do not introduce a DI container or service locator without an explicit architecture decision.
+- Keep manual constructor injection and `internal/bootstrap` as the composition root. Complete two-phase assembly only when every required port and typed-nil check is resolved before `Start`; never defer required dependency discovery to runtime assertions. Do not introduce a DI container or service locator without an explicit architecture decision.
 - Prefer domain or platform view models for API output. Do not return raw Kubernetes schema objects unless the route is explicitly a YAML or passthrough surface.
 - Runtime shell work does not belong in handlers. Build, release, Docker Compose, Docker Engine, and VM-control execution must go through application services plus durable task/operation records and runner callbacks.
 
@@ -98,7 +98,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## CI Gate
 
-Use Go `1.27.2` and run the release-sensitive gate with the root workspace disabled:
+Use the toolchain and tool versions declared by [go.mod](../../../go.mod), [CI](../../../.github/workflows/ci.yml), and the [release workflow](../../../.github/workflows/release.yml). Run the release-sensitive gate with the root workspace disabled; local execution uses the workspace verification wrapper and its temporary output paths:
 
 ```bash
 GOWORK=off go mod tidy

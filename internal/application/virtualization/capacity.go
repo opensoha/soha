@@ -150,8 +150,11 @@ func (s *Service) retryTaskWithAdmission(ctx context.Context, task domain.Task) 
 	if !isWorkerCreation(task) {
 		return s.retryVMTaskWithAdmission(ctx, task)
 	}
-	pool, err := workerPoolFromTask(task)
-	if err != nil || s.workerPools == nil {
+	pool, err := s.workerPoolFromTask(task)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if s.workerPools == nil {
 		return domain.Task{}, apperrors.ErrConflict
 	}
 	var saved domain.Task

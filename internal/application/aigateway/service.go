@@ -2,13 +2,15 @@ package aigateway
 
 import (
 	"context"
-	"net/http"
+	"fmt"
+	"reflect"
 	"regexp"
 	"sync"
 	"time"
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	appcompute "github.com/opensoha/soha/internal/application/compute"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
@@ -23,6 +25,7 @@ import (
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 const manifestVersion = "v1alpha1"
@@ -68,8 +71,6 @@ type DeliveryActionExecutor interface {
 }
 
 type DeliveryWorkflowService interface {
-	CreateDeliveryDraft(context.Context, domainidentity.Principal, domaindelivery.DeliveryDraftInput) (domaindelivery.DeliveryDraft, error)
-	ConfirmDeliveryDraft(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryDraftConfirmResult, error)
 	CreateDeliveryPlan(context.Context, domainidentity.Principal, domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error)
 	ConfirmDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlanConfirmResult, error)
 }
@@ -181,8 +182,6 @@ type OnCallResolver interface {
 }
 
 type VirtualizationOperationsService interface {
-	PlanVMCreate(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainoperation.Plan, error)
-	CreateVM(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainvirtualization.Task, error)
 	VMAction(context.Context, domainidentity.Principal, string, appvirtualization.VMActionInput) (domainvirtualization.Task, error)
 }
 
@@ -193,11 +192,6 @@ type DockerOperationsService interface {
 	PlanProjectDeploy(context.Context, domainidentity.Principal, string, domaindocker.ProjectDeployInput) (domainoperation.Plan, error)
 	DeployProject(context.Context, domainidentity.Principal, string, domaindocker.ProjectDeployInput) (domaindocker.Operation, error)
 	ServiceAction(context.Context, domainidentity.Principal, string, domaindocker.ServiceActionInput) (domaindocker.Operation, error)
-}
-
-type KubernetesResourceCreationService interface {
-	PreflightCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, error)
-	ExecuteCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, error)
 }
 
 type ComputeReadService interface {
@@ -233,10 +227,9 @@ type Service struct {
 
 	rateLimits          RateLimitBackend
 	relayConfig         LLMRelayConfig
-	httpClient          *http.Client
 	relaySelector       *relaySelector
 	relayCredentials    *relayCredentialCodec
-	relayTransport      *relayHTTPTransport
+	relayTransport      relayport.Transport
 	relayCache          *relayResponseCache
 	relayConcurrencyMu  sync.Mutex
 	relayConcurrency    map[string]int
@@ -245,7 +238,6 @@ type Service struct {
 	delivery            DeliveryService
 	catalog             CatalogService
 	resources           ResourceService
-	resourceCreation    KubernetesResourceCreationService
 	copilot             AnalysisArtifactRecorder
 	oncall              OnCallResolver
 	virtualization      VirtualizationOperationsService
@@ -260,7 +252,6 @@ type Service struct {
 
 func NewWithDeps(deps ServiceDeps) *Service {
 	relayConfig := normalizedRelayConfig(deps.RelayConfig)
-	httpClient := normalizedHTTPClient(deps.HTTPClient)
 	credentials := newRelayCredentialCodec(relayConfig)
 	service := &Service{
 		protectedDurableStorage: deps.ProtectedDurableStorage && relayConfig.CredentialEncryptionKeys.Active().ID() != "",
@@ -281,25 +272,31 @@ func NewWithDeps(deps ServiceDeps) *Service {
 		secrets:                 deps.Secrets,
 		rateLimits:              deps.RateLimitBackend,
 		relayConfig:             relayConfig,
-		httpClient:              httpClient,
+		relayTransport:          deps.RelayTransport,
 		relaySelector:           newRelaySelector(deps.LLMRelay),
 		relayCredentials:        credentials,
 		registry:                newDefaultCapabilityRegistry(),
 	}
-	service.relayTransport = newRelayHTTPTransport(httpClient, relayConfig, credentials)
 	service.relayCache = newRelayResponseCache(deps.LLMRelay, credentials, relayConfig)
 	return service
 }
 
-func (s *Service) SetCapabilityProviders(providers ...CapabilityProvider) {
-	s.registry = newCapabilityRegistry(providers...)
+func (s *Service) SetCapabilityProviders(providers ...CapabilityProvider) error {
+	registry, err := newCapabilityRegistry(providers...)
+	if err != nil {
+		return err
+	}
+	s.registry = registry
+	return nil
 }
 
-func (s *Service) AddCapabilityProviders(providers ...CapabilityProvider) {
-	if s.registry == nil {
-		s.registry = newDefaultCapabilityRegistry()
+func (s *Service) AddCapabilityProviders(providers ...CapabilityProvider) error {
+	registry := s.gatewayRegistry()
+	if err := registry.addProviders(providers...); err != nil {
+		return err
 	}
-	s.registry.AddProviders(providers...)
+	s.registry = registry
+	return nil
 }
 
 func (s *Service) SetDeliveryServices(apps ApplicationService, delivery DeliveryService) {
@@ -313,10 +310,6 @@ func (s *Service) SetCatalogService(catalog CatalogService) {
 
 func (s *Service) SetResourceService(resources ResourceService) {
 	s.resources = resources
-}
-
-func (s *Service) SetResourceCreationService(resources KubernetesResourceCreationService) {
-	s.resourceCreation = resources
 }
 
 func (s *Service) SetAnalysisArtifactRecorder(copilot AnalysisArtifactRecorder) {
@@ -436,11 +429,24 @@ func normalizedRelayConfig(cfg LLMRelayConfig) LLMRelayConfig {
 	return cfg
 }
 
-func normalizedHTTPClient(client *http.Client) *http.Client {
-	if client != nil {
-		return client
+func (s *Service) ValidateRelayTransport() error {
+	if !s.relayConfig.Enabled {
+		return nil
 	}
-	// Relay requests carry per-operation deadlines. A client-wide timeout would
-	// incorrectly cap streams before their longer StreamTimeout expires.
-	return &http.Client{}
+	return s.requireRelayTransport()
+}
+
+func (s *Service) requireRelayTransport() error {
+	if s.relayTransport != nil {
+		value := reflect.ValueOf(s.relayTransport)
+		switch value.Kind() {
+		case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+			if !value.IsNil() {
+				return nil
+			}
+		default:
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: AI Gateway relay transport is not configured", apperrors.ErrServiceUnavailable)
 }

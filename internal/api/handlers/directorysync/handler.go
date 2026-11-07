@@ -32,11 +32,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/requestctx"
 )
 
-var errDirectoryLoginProviderUnavailable = errors.New("directory login provider unavailable")
-
 type Repository interface {
-	CreateConnection(context.Context, domain.Connection, domain.Policy) (domain.Connection, error)
-	UpdateConnection(context.Context, domain.Connection, domain.Policy) (domain.Connection, error)
 	GetConnection(context.Context, string) (domain.Connection, domain.Policy, error)
 	ListConnections(context.Context) ([]domain.Connection, error)
 	GetRun(context.Context, string) (domain.Run, error)
@@ -46,14 +42,12 @@ type Repository interface {
 	ResolveConflict(context.Context, string, string, string, time.Time) error
 	UnlinkIdentity(context.Context, string, string, time.Time) (domain.IdentityLinkSuppression, error)
 	ClearSuppression(context.Context, string, string, time.Time) error
-	SetWebhookCredential(context.Context, domain.WebhookCredential) error
 	GetWebhookCredential(context.Context, string) (domain.WebhookCredential, error)
 	EnqueueEvent(context.Context, domain.EventEnvelope) (bool, error)
 	MarkEventReceived(context.Context, string, time.Time) error
 	ListEvents(context.Context, string, string, int) ([]domain.EventEnvelope, error)
 	RetryEvent(context.Context, string, string, time.Time) (domain.EventEnvelope, error)
 	GetRuntimeStatus(context.Context, string) (domain.RuntimeStatus, error)
-	SetSCIMToken(context.Context, string, string, time.Time) error
 	ResolveSCIMConnectionForScope(context.Context, string, string) (string, error)
 	UpsertSCIMOrganization(context.Context, string, domain.Organization) error
 	DeleteSCIMOrganization(context.Context, string, string) error
@@ -61,17 +55,20 @@ type Repository interface {
 	DeleteSCIMPerson(context.Context, string, string) error
 	ReplaceSCIMMemberships(context.Context, string, string, []string) error
 	SCIMSnapshot(context.Context, string) (domain.Snapshot, error)
-	SetConnectionCredential(context.Context, domain.ConnectionCredential) error
-	GetConnectionCredential(context.Context, string) (domain.ConnectionCredential, error)
 	TransitionRun(context.Context, string, string, domain.RunStats, string, string) error
 }
 
 type Service interface {
-	CreateConnection(context.Context, domain.Connection, domain.Policy) (domain.Connection, error)
 	PullSnapshot(context.Context, string, appdirectorysync.Connector) (domain.Snapshot, string, error)
 	Preview(context.Context, string, domain.Snapshot) (domain.Plan, error)
 	Apply(context.Context, string, domain.Snapshot, string) (domain.Run, domain.Plan, error)
 	ApplyTriggered(context.Context, string, domain.Snapshot, string, string) (domain.Run, domain.Plan, error)
+}
+
+type ConnectionService interface {
+	CreateConnection(context.Context, domainidentity.Principal, appdirectorysync.ConnectionInput) (domain.Connection, domain.Policy, error)
+	UpdateConnection(context.Context, domainidentity.Principal, string, appdirectorysync.ConnectionInput) (domain.Connection, domain.Policy, error)
+	ValidateConnection(context.Context, domainidentity.Principal, string) (domain.Connection, error)
 }
 
 type ConnectorFactory interface {
@@ -82,6 +79,7 @@ type Handler struct {
 	permissionResolver *appaccess.PermissionResolver
 	repository         Repository
 	service            Service
+	connections        ConnectionService
 	connectors         ConnectorFactory
 	now                func() time.Time
 	audit              interface {
@@ -100,8 +98,8 @@ func (h *Handler) SetRecorders(audit interface {
 	h.audit, h.operations = audit, operations
 }
 
-func New(repository Repository, service Service, connectors ConnectorFactory) *Handler {
-	return &Handler{repository: repository, service: service, connectors: connectors, now: time.Now}
+func New(repository Repository, service Service, connectors ConnectorFactory, connections ConnectionService) *Handler {
+	return &Handler{repository: repository, service: service, connectors: connectors, connections: connections, now: time.Now}
 }
 
 type connectionRequest struct {
@@ -232,95 +230,38 @@ func (h *Handler) GetConnection(c *gin.Context) {
 }
 
 func (h *Handler) CreateConnection(c *gin.Context) {
+	if h.connections == nil {
+		writeError(c, apperrors.ErrServiceUnavailable)
+		return
+	}
 	var request connectionRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		writeError(c, fmt.Errorf("%w: invalid directory connection payload", apperrors.ErrInvalidArgument))
 		return
 	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	connection, policy := request.models(uuid.NewString(), principal.UserID, h.now().UTC())
-	item, err := h.service.CreateConnection(c.Request.Context(), connection, policy)
+	item, policy, err := h.connections.CreateConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), request.input())
 	if err != nil {
 		writeError(c, normalizeError(err))
 		return
 	}
-	if request.WebhookVerificationToken != "" {
-		if err := h.repository.SetWebhookCredential(c.Request.Context(), domain.WebhookCredential{ConnectionID: item.ID, VerificationToken: request.WebhookVerificationToken, EncryptKey: request.WebhookEncryptKey}); err != nil {
-			writeError(c, err)
-			return
-		}
-	}
-	if request.SCIMBearerToken != "" {
-		if err := h.repository.SetSCIMToken(c.Request.Context(), item.ID, hashToken(request.SCIMBearerToken), h.now().UTC()); err != nil {
-			writeError(c, err)
-			return
-		}
-	}
-	if request.LDAPBindPassword != "" {
-		if err := h.repository.SetConnectionCredential(c.Request.Context(), domain.ConnectionCredential{ConnectionID: item.ID, Username: request.LDAPBindDN, Password: request.LDAPBindPassword}); err != nil {
-			writeError(c, err)
-			return
-		}
-	}
-	h.record(c, principal, "access.directory.connection.create", "DirectoryConnection", item.ID, "created directory connection")
 	apiresponse.Item(c, http.StatusCreated, connectionView(item, policy))
 }
 
 func (h *Handler) UpdateConnection(c *gin.Context) {
+	if h.connections == nil {
+		writeError(c, apperrors.ErrServiceUnavailable)
+		return
+	}
 	var request connectionRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		writeError(c, fmt.Errorf("%w: invalid directory connection payload", apperrors.ErrInvalidArgument))
 		return
 	}
-	existing, _, err := h.repository.GetConnection(c.Request.Context(), c.Param("connectionID"))
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	item, policy := request.models(existing.ID, principal.UserID, h.now().UTC())
-	if err := policy.ValidateForProvider(item.ProviderType); err != nil {
-		writeError(c, normalizeError(err))
-		return
-	}
-	if policy.Mode != domain.PolicyManual {
-		if err := appdirectorysync.ValidateSchedule(policy.Schedule); err != nil {
-			writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
-			return
-		}
-		if policy.FullReconcileSchedule != "" {
-			if err := appdirectorysync.ValidateSchedule(policy.FullReconcileSchedule); err != nil {
-				writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
-				return
-			}
-		}
-	}
-	item.CreatedAt, item.CreatedBy = existing.CreatedAt, existing.CreatedBy
-	item.Status, item.Capabilities, item.LastValidatedAt = existing.Status, existing.Capabilities, existing.LastValidatedAt
-	item, err = h.repository.UpdateConnection(c.Request.Context(), item, policy)
+	item, policy, err := h.connections.UpdateConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("connectionID"), request.input())
 	if err != nil {
 		writeError(c, normalizeError(err))
 		return
 	}
-	if request.WebhookVerificationToken != "" {
-		if err := h.repository.SetWebhookCredential(c.Request.Context(), domain.WebhookCredential{ConnectionID: item.ID, VerificationToken: request.WebhookVerificationToken, EncryptKey: request.WebhookEncryptKey}); err != nil {
-			writeError(c, err)
-			return
-		}
-	}
-	if request.SCIMBearerToken != "" {
-		if err := h.repository.SetSCIMToken(c.Request.Context(), item.ID, hashToken(request.SCIMBearerToken), h.now().UTC()); err != nil {
-			writeError(c, err)
-			return
-		}
-	}
-	if request.LDAPBindPassword != "" {
-		if err := h.repository.SetConnectionCredential(c.Request.Context(), domain.ConnectionCredential{ConnectionID: item.ID, Username: request.LDAPBindDN, Password: request.LDAPBindPassword}); err != nil {
-			writeError(c, err)
-			return
-		}
-	}
-	h.record(c, principal, "access.directory.connection.update", "DirectoryConnection", item.ID, "updated directory connection")
 	apiresponse.Item(c, http.StatusOK, connectionView(item, policy))
 }
 
@@ -329,29 +270,16 @@ func (h *Handler) DeleteConnection(c *gin.Context) {
 }
 
 func (h *Handler) ValidateConnection(c *gin.Context) {
-	connection, policy, err := h.repository.GetConnection(c.Request.Context(), c.Param("connectionID"))
-	if err != nil {
-		writeError(c, err)
+	if h.connections == nil {
+		writeError(c, apperrors.ErrServiceUnavailable)
 		return
 	}
-	connector, err := h.connectors.Connector(connection.ProviderType)
+	connection, err := h.connections.ValidateConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("connectionID"))
 	if err != nil {
 		writeError(c, normalizeError(err))
 		return
 	}
-	capabilities, err := connector.Validate(c.Request.Context(), connection)
-	if err != nil {
-		writeError(c, normalizeConnectorError("directory connection validation failed", err))
-		return
-	}
-	now := h.now().UTC()
-	connection.Capabilities, connection.Status, connection.LastValidatedAt, connection.UpdatedAt = capabilities, domain.ConnectionHealthy, &now, now
-	if _, err = h.repository.UpdateConnection(c.Request.Context(), connection, policy); err != nil {
-		writeError(c, err)
-		return
-	}
-	h.record(c, apiMiddleware.PrincipalFromContext(c), "access.directory.connection.validate", "DirectoryConnection", connection.ID, "validated directory connection")
-	apiresponse.Item(c, http.StatusOK, gin.H{"valid": true, "capabilities": capabilityNames(capabilities), "status": connection.Status, "validatedAt": now})
+	apiresponse.Item(c, http.StatusOK, gin.H{"valid": true, "capabilities": capabilityNames(connection.Capabilities), "status": connection.Status, "validatedAt": connection.LastValidatedAt})
 }
 
 func (h *Handler) Preview(c *gin.Context) {
@@ -741,11 +669,6 @@ func summarizeChanges(changes []domain.Change) (map[string]int, map[string]int) 
 	return organizations, people
 }
 
-func hashToken(value string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(value)))
-	return hex.EncodeToString(sum[:])
-}
-
 func (h *Handler) pull(c *gin.Context) (domain.Snapshot, string, error) {
 	connection, _, err := h.repository.GetConnection(c.Request.Context(), c.Param("connectionID"))
 	if err != nil {
@@ -757,38 +680,19 @@ func (h *Handler) pull(c *gin.Context) (domain.Snapshot, string, error) {
 	}
 	snapshot, cursor, err := h.service.PullSnapshot(c.Request.Context(), connection.ID, connector)
 	if err != nil {
-		return domain.Snapshot{}, "", normalizeConnectorError("pull directory snapshot failed", err)
+		return domain.Snapshot{}, "", appdirectorysync.ConnectorError("pull directory snapshot failed", err)
 	}
 	return snapshot, cursor, nil
 }
 
-func (r connectionRequest) models(id, actor string, now time.Time) (domain.Connection, domain.Policy) {
-	enabled := true
-	if r.Enabled != nil {
-		enabled = *r.Enabled
+func (r connectionRequest) input() appdirectorysync.ConnectionInput {
+	return appdirectorysync.ConnectionInput{
+		Name: r.Name, ProviderType: r.ProviderType, LoginProviderID: r.LoginProviderID,
+		CredentialRef: r.CredentialRef, Enabled: r.Enabled, Metadata: r.Metadata,
+		Policy:                   appdirectorysync.ConnectionPolicyInput(r.Policy),
+		WebhookVerificationToken: r.WebhookVerificationToken, WebhookEncryptKey: r.WebhookEncryptKey,
+		SCIMBearerToken: r.SCIMBearerToken, LDAPBindDN: r.LDAPBindDN, LDAPBindPassword: r.LDAPBindPassword,
 	}
-	connection := domain.Connection{ID: id, Name: strings.TrimSpace(r.Name), ProviderType: strings.ToLower(strings.TrimSpace(r.ProviderType)), LoginProviderID: strings.TrimSpace(r.LoginProviderID), CredentialRef: strings.TrimSpace(r.CredentialRef), Enabled: enabled, Metadata: r.Metadata, CreatedBy: actor, UpdatedBy: actor, UpdatedAt: now}
-	policy := domain.DefaultPolicy(id)
-	if r.Policy.SyncOrganizations != nil {
-		policy.SyncOrganizations = *r.Policy.SyncOrganizations
-	}
-	policy.SyncPeople = r.Policy.SyncPeople
-	if r.Policy.Mode != "" {
-		policy.Mode = r.Policy.Mode
-	}
-	policy.Schedule, policy.FullReconcileSchedule = strings.TrimSpace(r.Policy.Schedule), strings.TrimSpace(r.Policy.FullReconcileSchedule)
-	if r.Policy.ProvisionMode != "" {
-		policy.ProvisionMode = r.Policy.ProvisionMode
-	}
-	if r.Policy.UserDisablePolicy != "" {
-		policy.UserDisablePolicy = r.Policy.UserDisablePolicy
-	}
-	if r.Policy.MissingObjectPolicy != "" {
-		policy.MissingObjectPolicy = r.Policy.MissingObjectPolicy
-	}
-	policy.TrustedEmailDomains, policy.VerifiedEmailAutoLink, policy.FieldMappings = r.Policy.TrustedEmailDomains, r.Policy.VerifiedEmailAutoLink, r.Policy.FieldMappings
-	policy.ConnectionID, policy.UpdatedBy, policy.UpdatedAt = id, actor, now
-	return connection, policy
 }
 
 func (h *Handler) record(c *gin.Context, principal domainidentity.Principal, operationType, resourceKind, targetID, summary string) {
@@ -808,22 +712,7 @@ func normalizeError(err error) error {
 	return err
 }
 
-func normalizeConnectorError(operation string, err error) error {
-	if errors.Is(err, apperrors.ErrNotFound) {
-		return fmt.Errorf("%w: %w: %s: %w", apperrors.ErrInvalidArgument, errDirectoryLoginProviderUnavailable, operation, err)
-	}
-	return fmt.Errorf("%w: %s: %w", apperrors.ErrInvalidArgument, operation, err)
-}
-
 func writeError(c *gin.Context, err error) {
-	if errors.Is(err, errDirectoryLoginProviderUnavailable) {
-		err = errors.Join(err, apperrors.NewBusiness(
-			apperrors.ErrInvalidArgument,
-			"directory_login_provider_unavailable",
-			"login provider not found, disabled, or incompatible; select it again in the directory connection",
-			"登录提供方不存在、已禁用或不兼容，请在目录连接中重新选择",
-		))
-	}
 	_ = c.Error(err)
 	apiresponse.Error(
 		c,

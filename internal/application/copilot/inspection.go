@@ -32,6 +32,11 @@ func (s *Service) Start(ctx context.Context) {
 		s.lifecycleMu.Unlock()
 		return
 	}
+	if err := s.validateRuntimeDependencies(s.runtime); err != nil {
+		s.lifecycleMu.Unlock()
+		s.logWarnCtx(ctx, "Copilot runtime assembly is incomplete", zap.Error(err))
+		return
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	s.lifecycleCancel = cancel
@@ -41,11 +46,14 @@ func (s *Service) Start(ctx context.Context) {
 
 	go func() {
 		var workers sync.WaitGroup
-		workers.Add(4)
-		go func() {
-			defer workers.Done()
-			s.runNativeWorker(runCtx)
-		}()
+		workers.Add(3)
+		if s.validateNativeRuntime(s.runtime) == nil {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				s.runNativeWorker(runCtx)
+			}()
+		}
 		go func() {
 			defer workers.Done()
 			s.runInspectionScheduler(runCtx)

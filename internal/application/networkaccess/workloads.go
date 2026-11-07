@@ -88,20 +88,24 @@ func (s *Service) PutWorkloadBinding(ctx context.Context, p identity.Principal, 
 }
 
 func EvaluateWorkloadPolicy(input PreviewInput, subject domain.Subject, device domain.Device, site domain.Site, space domain.Space, resource domain.Resource, snapshot domain.PolicySnapshot) string {
-	if !workloadResourceEligible(input, subject, device, site, space, resource) {
+	return evaluateWorkloadPolicyAt(time.Now(), input, subject, device, site, space, resource, snapshot)
+}
+
+func evaluateWorkloadPolicyAt(now time.Time, input PreviewInput, subject domain.Subject, device domain.Device, site domain.Site, space domain.Space, resource domain.Resource, snapshot domain.PolicySnapshot) string {
+	if !workloadResourceEligible(now, input, subject, device, site, space, resource) {
 		return ""
 	}
 
 	var selected *domain.Policy
 	for i := range snapshot.Policies {
 		policy := &snapshot.Policies[i]
-		if !policy.Enabled || !matchesNetworkPolicy(*policy, input, subject, device, site, resource) {
+		if !policy.Enabled || !matchesNetworkPolicy(now, *policy, input, subject, device, site, resource) {
 			continue
 		}
 		if policy.Effect == domain.PolicyEffectDeny {
 			return ""
 		}
-		if explicitWorkloadAllow(*policy, subject, device, site, resource) && (selected == nil || policy.Priority < selected.Priority) {
+		if explicitWorkloadAllow(now, *policy, subject, device, site, resource) && (selected == nil || policy.Priority < selected.Priority) {
 			selected = policy
 		}
 	}
@@ -111,11 +115,11 @@ func EvaluateWorkloadPolicy(input PreviewInput, subject domain.Subject, device d
 	return selected.AccessProfile
 }
 
-func workloadResourceEligible(input PreviewInput, subject domain.Subject, device domain.Device, site domain.Site, space domain.Space, resource domain.Resource) bool {
+func workloadResourceEligible(now time.Time, input PreviewInput, subject domain.Subject, device domain.Device, site domain.Site, space domain.Space, resource domain.Resource) bool {
 	if !strings.HasPrefix(subject.UserID, "service_account:") || subject.Status != domain.StatusActive || device.Status != domain.DeviceStatusActive || site.Status != domain.StatusActive || space.Status != domain.StatusActive || space.SiteID != site.ID || resource.SpaceID != space.ID || input.Mode != domain.ModeExternalDirectZTNA {
 		return false
 	}
-	if reason := resourceGovernanceReason(site, device, resource, false, true); reason != "" {
+	if reason := resourceGovernanceReason(now, site, device, resource, false, true); reason != "" {
 		return false
 	}
 	if resource.PathMode != "" && resource.PathMode != domain.PathAutomatic && resource.PathMode != domain.PathWireGuardZTNA {
@@ -124,6 +128,6 @@ func workloadResourceEligible(input PreviewInput, subject domain.Subject, device
 	return true
 }
 
-func explicitWorkloadAllow(policy domain.Policy, subject domain.Subject, device domain.Device, site domain.Site, resource domain.Resource) bool {
-	return policy.Effect == domain.PolicyEffectAllow && slices.Contains(policy.Subjects.Users, subject.UserID) && slices.Contains(policy.ResourceIDs, resource.ID) && governancePolicyAllows(site, device, policy, resource.ID)
+func explicitWorkloadAllow(now time.Time, policy domain.Policy, subject domain.Subject, device domain.Device, site domain.Site, resource domain.Resource) bool {
+	return policy.Effect == domain.PolicyEffectAllow && slices.Contains(policy.Subjects.Users, subject.UserID) && slices.Contains(policy.ResourceIDs, resource.ID) && governancePolicyAllows(now, site, device, policy, resource.ID)
 }

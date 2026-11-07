@@ -9,6 +9,7 @@ import (
 
 	domain "github.com/opensoha/soha/internal/domain/networkaccess"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	networkrepo "github.com/opensoha/soha/internal/repository/networkaccess"
 	"gorm.io/gorm"
 )
 
@@ -33,7 +34,7 @@ func (r *Repository) CreateVPNIntent(ctx context.Context, item domain.VPNIntent)
 		if err := lockWireGuardMutations(tx); err != nil {
 			return err
 		}
-		profile, err := New(tx).GetVPNProfile(ctx, item.ProfileID)
+		profile, err := networkrepo.New(tx).GetVPNProfile(ctx, item.ProfileID)
 		if err != nil {
 			return err
 		}

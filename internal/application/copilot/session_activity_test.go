@@ -21,7 +21,7 @@ func (activityApprovals) ListApprovalRequests(context.Context, domainidentity.Pr
 	return []domainaigateway.ApprovalRequest{{ActorID: "owner", ActorSessionID: "approval", Status: "pending"}, {ActorID: "other", ActorSessionID: "foreign", Status: "pending"}}, nil
 }
 func TestSessionActivityUsesOwnedRootRunsAndCurrentApprovals(t *testing.T) {
-	service := &Service{agentRuns: activityRuns{&inspectionAuthzTestRepository{}}, workbenchInvoker: &activityApprovals{}}
+	service := &Service{agentRuns: activityRuns{&inspectionAuthzTestRepository{}}, runtime: RuntimeDependencies{Approvals: &activityApprovals{}}}
 	sessions := []domaincopilot.Session{{ID: "queued"}, {ID: "running"}, {ID: "approval"}, {ID: "foreign"}, {ID: "child"}}
 	result := service.sessionActivities(context.Background(), domainidentity.Principal{UserID: "owner"}, sessions)
 	for index, want := range []string{"queued", "running", "waiting_approval", "", ""} {

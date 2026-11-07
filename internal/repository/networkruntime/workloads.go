@@ -3,7 +3,6 @@ package networkruntime
 import (
 	"context"
 	"encoding/json"
-	"slices"
 	"strings"
 	"time"
 
@@ -76,49 +75,41 @@ func (r *Repository) WorkloadContext(ctx context.Context, runtimeID, subjectID s
 	return binding, subject, err
 }
 
-func workloadScopeAllowed(tx *gorm.DB, scope vpnGovernanceScope, now time.Time) (bool, error) {
-	credential, err := activeRuntimeCredential(tx, scope.RuntimeID, now)
+func (r *Repository) workloadVPNGovernanceAllowed(tx *gorm.DB, facts app.VPNGovernanceFacts) (bool, error) {
+	scope := facts.Scope
+	credential, err := activeRuntimeCredential(tx, scope.RuntimeID, facts.EvaluatedAt)
 	if err != nil {
 		return false, nil
 	}
-	binding, err := validateWorkloadCredential(tx, credential, now)
+	binding, err := validateWorkloadCredential(tx, credential, facts.EvaluatedAt)
 	if err != nil {
 		return false, nil
 	}
-	if credential.SubjectID != scope.SubjectID || binding.DeviceID != scope.DeviceID || binding.SiteID != scope.SiteID || binding.NetworkSpaceID != scope.SpaceID || scope.Mode != domain.ModeExternalDirectZTNA || len(scope.ResourceIDs) == 0 {
+	if !r.governance.WorkloadScopeMatches(scope, binding, credential.SubjectID) {
 		return false, nil
 	}
-	subject, err := workloadSubject(tx, binding.ServiceAccountID)
+	facts.Subject, err = workloadSubject(tx, binding.ServiceAccountID)
 	if err != nil {
 		return false, err
 	}
 	repo := accessrepo.New(tx)
-	device, err := repo.GetDevice(tx.Statement.Context, binding.DeviceID)
+	facts.Device, err = repo.GetDevice(tx.Statement.Context, binding.DeviceID)
 	if err != nil {
 		return false, err
 	}
-	site, err := repo.GetSite(tx.Statement.Context, binding.SiteID)
-	if err != nil {
-		return false, err
-	}
-	space, err := repo.GetSpace(tx.Statement.Context, binding.NetworkSpaceID)
-	if err != nil {
-		return false, err
-	}
-	snapshot, err := repo.GetPolicySnapshot(tx.Statement.Context)
+	facts.Space, err = repo.GetSpace(tx.Statement.Context, binding.NetworkSpaceID)
 	if err != nil {
 		return false, err
 	}
 	for _, id := range scope.ResourceIDs {
-		if !slices.Contains(binding.ResourceIDs, id) {
+		if !r.governance.WorkloadResourceMatches(binding, id) {
 			return false, nil
 		}
-		resource, err := repo.GetResource(tx.Statement.Context, id)
+		facts.Resource, err = repo.GetResource(tx.Statement.Context, id)
 		if err != nil {
 			return false, err
 		}
-		profile := app.EvaluateWorkloadPolicy(app.PreviewInput{SubjectUserID: scope.SubjectID, DeviceID: scope.DeviceID, ResourceID: id, SiteID: scope.SiteID, Mode: scope.Mode}, subject, device, site, space, resource, snapshot)
-		if profile == "" || profile != scope.Profile {
+		if !r.governance.Allows(app.VPNGovernanceWorkload, facts) {
 			return false, nil
 		}
 	}

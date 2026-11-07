@@ -32,38 +32,33 @@ func (s *Service) resolveCapabilityScopeContext(ctx context.Context, principal d
 		}
 	}()
 	ctx = context.WithValue(ctx, capabilityScopeContextKey{}, capabilityScopeContext{})
-	for _, provider := range s.gatewayRegistry().providers {
-		if !providerHasTool(provider, tool.Name) {
-			continue
-		}
-		resolver, ok := provider.(ToolScopeProvider)
-		if _, builtin := provider.(BuiltinCapabilityProvider); builtin && tool.Domain == "docker" {
-			resolver, ok = s.docker.(ToolScopeProvider)
-			if !ok {
-				return ctx, apperrors.ErrUnsupportedOperation
-			}
-		}
+	provider := s.gatewayRegistry().toolOwner(tool.Name)
+	resolver, ok := provider.(ToolScopeProvider)
+	if _, builtin := provider.(BuiltinCapabilityProvider); builtin && tool.Domain == "docker" {
+		resolver, ok = s.docker.(ToolScopeProvider)
 		if !ok {
-			return ctx, nil
+			return ctx, apperrors.ErrUnsupportedOperation
 		}
-		scopes, err := resolver.ToolInvocationScopes(ctx, principal, tool, input)
+	}
+	if !ok {
+		return ctx, nil
+	}
+	scopes, err := resolver.ToolInvocationScopes(ctx, principal, tool, input)
+	if err != nil {
+		return ctx, err
+	}
+	if len(scopes) == 0 || len(scopes) > 200 {
+		return ctx, fmt.Errorf("%w: domain must resolve 1..200 invocation scopes", apperrors.ErrInvalidArgument)
+	}
+	merged := make([]map[string]string, len(scopes))
+	base := capabilityGatewayScope(tool, input)
+	for i, scope := range scopes {
+		merged[i], err = mergeCapabilityScope(base, scope)
 		if err != nil {
 			return ctx, err
 		}
-		if len(scopes) == 0 || len(scopes) > 200 {
-			return ctx, fmt.Errorf("%w: domain must resolve 1..200 invocation scopes", apperrors.ErrInvalidArgument)
-		}
-		merged := make([]map[string]string, len(scopes))
-		base := capabilityGatewayScope(tool, input)
-		for i, scope := range scopes {
-			merged[i], err = mergeCapabilityScope(base, scope)
-			if err != nil {
-				return ctx, err
-			}
-		}
-		return context.WithValue(ctx, capabilityScopeContextKey{}, capabilityScopeContext{tool: tool.Name, scopes: merged}), nil
 	}
-	return ctx, nil
+	return context.WithValue(ctx, capabilityScopeContextKey{}, capabilityScopeContext{tool: tool.Name, scopes: merged}), nil
 }
 
 func mergeCapabilityScope(base, resolved map[string]string) (map[string]string, error) {
