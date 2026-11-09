@@ -323,6 +323,18 @@ async function writeGoCompatibilitySpec() {
 function applyGoCompatibility(spec) {
   const schemas = spec?.components?.schemas ?? {};
 
+  // oapi-codegen does not understand JSON Schema conditionals. Preserve the
+  // concrete object SDK; public OpenAPI validators and proxy helpers enforce
+  // these same conditional requirements.
+  for (const name of ["NetworkProxyInstance", "NetworkProxyInstanceInput", "NetworkProxyRuntimeCommandInput", "NetworkProxyRuleMatcher", "NetworkProxyRuleAction", "NetworkProxyTrafficSample", "NetworkProxyDeploymentRuntimeControl", "NetworkProxyDeploymentRuntimeAck"]) {
+    delete schemas[name].allOf;
+    delete schemas[name].oneOf;
+  }
+
+  // A positive stopped-process proof must carry explicit known zero. Keep the
+  // existing int64 SDK field while preventing omitempty from erasing that zero.
+  schemas.NetworkProxyDeploymentRuntimeAck.properties.activeConnections["x-omitempty"] = false;
+
   // Keep the published full-input request-body alias and its string Content.
   // Partial HTTP updates have a separate schema used explicitly by new consumers.
   const proxyBody = spec.paths?.["/network-access/proxy-instances/{instanceID}/configuration"]?.put?.requestBody?.content?.["application/json"];
@@ -355,6 +367,7 @@ function applyGoCompatibility(spec) {
     "ObservabilityMetricAssessmentInput",
     "WorkbenchProfessionalCapabilityInput",
     "NetworkProxyInstanceInput",
+    "NetworkProxyServerPublication",
     "NetworkProxyConfigurationInput",
     "NetworkProxyConfigurationPatchInput",
   ]);
@@ -381,7 +394,7 @@ function applyGoCompatibility(spec) {
     // oapi-codegen v2.7 cannot model OpenAPI 3.1 conditional validation.
     delete runtimeConfigItem.allOf;
   }
-  for (const name of ["NetworkVPNProfileConfig", "NetworkVPNSelectionPolicyConfig", "NetworkVPNConnectionIntentInput"]) {
+  for (const name of ["NetworkVPNProfileConfig", "NetworkVPNSelectionPolicyConfig", "NetworkVPNConnectionIntentInput", "NetworkEAPServerTrust", "NetworkRADIUSRuntimeACK"]) {
     // Keep strict 3.1 conditionals in the public spec. oapi-codegen otherwise
     // collapses these structured request DTOs to interface{}.
     if (isObject(schemas[name])) delete schemas[name].allOf;
@@ -415,7 +428,7 @@ function applyGoCompatibility(spec) {
     markOptionalPointerFields(schema, schemas);
   }
   // A missing monitoring sample is distinct from zero, including required nullable fields.
-  for (const name of ["ResourceMonitoringQuantity", "ResourceMonitoringPoint", "ResourceMonitoringSeries", "ResourceMonitoringNode", "ResourceMonitoringView"]) {
+  for (const name of ["ResourceMonitoringQuantity", "ResourceMonitoringPoint", "ResourceMonitoringSeries", "ResourceMonitoringNode", "ResourceMonitoringView", "NetworkProxyTrafficSample"]) {
     for (const property of Object.values(schemas[name]?.properties ?? {})) {
       if (property.nullable && property.type === "number") property["x-go-type"] = "*float64";
     }

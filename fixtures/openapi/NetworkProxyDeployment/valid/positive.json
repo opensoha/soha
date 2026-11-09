@@ -1,0 +1,7 @@
+{
+  "revision": 1,
+  "state": "ready",
+  "members": [],
+  "desiredReplicas": 2,
+  "observedReplicas": 2
+}

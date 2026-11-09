@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "proxy-runtime/v1alpha1",
+  "runtimeId": "runtime1",
+  "occurredAt": "2026-11-08T12:00:00Z",
+  "messageType": "ingress.check",
+  "payload": {
+    "wrongField": true
+  }
+}

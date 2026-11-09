@@ -48,7 +48,9 @@
         "eap.certificate.result",
         "eap.certificate.activate.request",
         "eap.certificate.activate.result",
-        "dns.observations"
+        "dns.observations",
+        "eap.certificate.revoke.request",
+        "eap.certificate.revoke.result"
       ]
     },
     "producerId": {
@@ -143,6 +145,12 @@
         },
         {
           "$ref": "#/$defs/DNSObservationBatch"
+        },
+        {
+          "$ref": "#/$defs/EAPCertificateRevokeRequest"
+        },
+        {
+          "$ref": "#/$defs/EAPCertificateRevokeResult"
         }
       ]
     }
@@ -654,6 +662,50 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "eap.certificate.revoke.request"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/EAPCertificateRevokeRequest"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "messageType": {
+            "const": "eap.certificate.revoke.result"
+          }
+        },
+        "required": [
+          "messageType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtimeKind": {
+            "const": "endpoint"
+          },
+          "payload": {
+            "$ref": "#/$defs/EAPCertificateRevokeResult"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -841,8 +893,69 @@
         "clientCertificateFingerprint": {
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "eapMethod": {
+          "type": "string",
+          "enum": [
+            "tls",
+            "ttls"
+          ],
+          "default": "tls"
+        },
+        "innerMethod": {
+          "type": "string",
+          "const": "pap"
+        },
+        "credentialSource": {
+          "type": "string",
+          "const": "user-input"
+        },
+        "profileRevision": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "eapMethod": {
+                "const": "ttls"
+              }
+            },
+            "required": [
+              "eapMethod"
+            ]
+          },
+          "then": {
+            "required": [
+              "innerMethod",
+              "credentialSource"
+            ],
+            "not": {
+              "required": [
+                "clientCertificateFingerprint"
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "innerMethod"
+                  ]
+                },
+                {
+                  "required": [
+                    "credentialSource"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     "VPNManagedPrepareRequest": {
       "type": "object",
@@ -1419,8 +1532,11 @@
           "items": {
             "enum": [
               "wireguard",
+              "wireguard-ipv6-v1",
+              "network-lifecycle-v1",
               "mihomo",
               "mihomo-policy-v1",
+              "mihomo-dns-pin-v1",
               "route-coordinator",
               "dns-coordinator",
               "managed-vpn-v1",
@@ -1428,13 +1544,18 @@
               "vpn-metrics-v1",
               "proxy-runtime-v1",
               "proxy-policy-v1",
+              "proxy-guarded-dns-v1",
               "radius-eap-tls-v1",
               "eap-profile-v1",
               "radius-aaa-v1",
               "endpoint-presence-v1",
               "nas-session-accounting-v1",
               "endpoint-ui-presence-v1",
-              "windows-channel-controls-v1"
+              "windows-channel-controls-v1",
+              "radius-eap-ttls-pap-v1",
+              "radius-ttls-pap-verifier-v1",
+              "eap-certificate-lifecycle-v1",
+              "radius-managed-runtime-v1"
             ]
           }
         }
@@ -1475,9 +1596,18 @@
           "then": {
             "properties": {
               "capabilities": {
-                "contains": {
-                  "const": "radius-eap-tls-v1"
-                }
+                "anyOf": [
+                  {
+                    "contains": {
+                      "const": "radius-eap-tls-v1"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "radius-eap-ttls-pap-v1"
+                    }
+                  }
+                ]
               }
             }
           }
@@ -1728,6 +1858,29 @@
         },
         "failClosed": {
           "type": "boolean"
+        },
+        "deliveryMode": {
+          "enum": [
+            "mapped_nodes",
+            "gateway",
+            "direct_subscription"
+          ]
+        },
+        "bundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "orgRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "sourceRevision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
         }
       },
       "allOf": [
@@ -2593,7 +2746,8 @@
         "authenticationMethod": {
           "enum": [
             "eap-tls",
-            "password-compatible"
+            "password-compatible",
+            "eap-ttls-pap"
           ]
         },
         "clientCertificateSerial": {
@@ -2605,6 +2759,69 @@
           "minLength": 16,
           "maxLength": 191,
           "pattern": "^[A-Fa-f0-9:]+$"
+        },
+        "authenticationReceipt": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "runtimeProof": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "poolId",
+            "memberId",
+            "credentialId",
+            "processEpoch",
+            "ownerEpoch",
+            "controlRevision",
+            "configurationRevision",
+            "configurationHash"
+          ],
+          "properties": {
+            "poolId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            "memberId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            "credentialId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            "processEpoch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            "ownerEpoch": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "controlRevision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "configurationRevision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "configurationHash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          }
         }
       },
       "allOf": [
@@ -2632,21 +2849,86 @@
             }
           },
           "else": {
-            "required": [
-              "deviceId"
-            ],
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "clientCertificateSerial"
-                  ]
-                },
-                {
-                  "required": [
-                    "clientCertificateAuthorityKeyId"
-                  ]
+            "if": {
+              "properties": {
+                "authenticationMethod": {
+                  "const": "eap-ttls-pap"
                 }
+              },
+              "required": [
+                "authenticationMethod"
+              ]
+            },
+            "then": {
+              "required": [
+                "stationId",
+                "authenticationReceipt"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "deviceId"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "clientCertificateSerial"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "clientCertificateAuthorityKeyId"
+                    ]
+                  }
+                ]
+              },
+              "properties": {
+                "stationId": {
+                  "type": "string",
+                  "pattern": "^[A-Fa-f0-9]{2}(?::[A-Fa-f0-9]{2}){5}$"
+                }
+              }
+            },
+            "else": {
+              "required": [
+                "deviceId"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "clientCertificateSerial"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "clientCertificateAuthorityKeyId"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "authenticationMethod": {
+                "enum": [
+                  "eap-tls",
+                  "password-compatible"
+                ]
+              }
+            },
+            "required": [
+              "authenticationMethod"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "authenticationReceipt"
               ]
             }
           }
@@ -2881,7 +3163,31 @@
         "fingerprint": {
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "profileId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "profileRevision": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
         }
+      },
+      "dependentRequired": {
+        "requestId": [
+          "profileId",
+          "profileRevision"
+        ],
+        "profileId": [
+          "requestId",
+          "profileRevision"
+        ],
+        "profileRevision": [
+          "requestId",
+          "profileId"
+        ]
       }
     },
     "EAPCertificateActivateResult": {
@@ -3050,6 +3356,61 @@
         "expiresAt": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "EAPCertificateRevokeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "credentialId",
+        "fingerprint",
+        "reasonCode"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "credentialId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "reasonCode": {
+          "type": "string",
+          "enum": [
+            "installation_failed",
+            "user_requested",
+            "rotation_failed"
+          ]
+        }
+      }
+    },
+    "EAPCertificateRevokeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "credentialId",
+        "fingerprint",
+        "status"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "credentialId": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "status": {
+          "const": "revoked"
         }
       }
     }

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "proxy-runtime/v1alpha1",
+  "runtimeId": "runtime1",
+  "occurredAt": "2026-11-08T12:00:00Z",
+  "messageType": "ingress.check",
+  "payload": {
+    "bundleId": "b1",
+    "revision": 1,
+    "nodeId": "n1",
+    "credentialId": "c1",
+    "credentialSecret": "synthetic-scoped-secret",
+    "credentialEpoch": 1,
+    "destinationHost": "example.invalid",
+    "destinationPort": 443,
+    "network": "tcp",
+    "processEpoch": "epoch1"
+  }
+}

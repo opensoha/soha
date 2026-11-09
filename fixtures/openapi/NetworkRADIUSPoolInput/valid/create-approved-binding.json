@@ -1,0 +1,9 @@
+{
+  "name": "Approved new NAS",
+  "siteId": "site-1",
+  "nasBindingId": "binding-1",
+  "slotId": "slot-1",
+  "configurationRef": "config-1",
+  "requestId": "request-1",
+  "createApprovedBinding": true
+}

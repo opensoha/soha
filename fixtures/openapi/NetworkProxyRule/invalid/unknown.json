@@ -1,0 +1,15 @@
+{
+  "ruleId": "r1",
+  "source": "personal",
+  "order": 0,
+  "enabled": true,
+  "matcher": {
+    "type": "domain",
+    "value": "example.invalid"
+  },
+  "action": {
+    "type": "group",
+    "targetId": "g1"
+  },
+  "controllerPath": "/configs"
+}

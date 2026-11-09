@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "proxy-runtime/v1alpha1",
+  "runtimeId": "runtime1",
+  "occurredAt": "2026-11-08T12:00:00Z",
+  "messageType": "publication.ready",
+  "payload": {
+    "bundleId": "b1",
+    "revision": 1,
+    "configurationRevision": 2,
+    "serverHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "processEpoch": "epoch1",
+    "ingressReady": true,
+    "protectionReady": true,
+    "observedAt": "2026-11-08T12:00:00Z"
+  }
+}

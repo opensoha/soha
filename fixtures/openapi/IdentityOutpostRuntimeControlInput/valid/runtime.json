@@ -1,0 +1,6 @@
+{
+  "action": "stop",
+  "expectedGeneration": 3,
+  "requestId": "req-stop-1",
+  "drainTimeoutSeconds": 30
+}

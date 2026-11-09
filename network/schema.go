@@ -3,6 +3,12 @@ package network
 import _ "embed"
 
 var (
+	//go:embed radius-runtime.schema.json
+	radiusRuntimeSchema []byte
+
+	//go:embed radius-password-verifier.schema.json
+	radiusPasswordVerifierSchema []byte
+
 	//go:embed network-runtime-protocol.schema.json
 	runtimeProtocolSchema []byte
 
@@ -31,3 +37,9 @@ func RadiusAccountingSchema() []byte {
 func ProxyRuntimeSchema() []byte {
 	return append([]byte(nil), proxyRuntimeSchema...)
 }
+
+func RadiusPasswordVerifierSchema() []byte {
+	return append([]byte(nil), radiusPasswordVerifierSchema...)
+}
+
+func RadiusRuntimeSchema() []byte { return append([]byte(nil), radiusRuntimeSchema...) }

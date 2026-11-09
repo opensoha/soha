@@ -1,0 +1,11 @@
+{
+  "agentId": "edge-a",
+  "configurationVersion": 1,
+  "status": "healthy",
+  "checkedAt": "2026-11-07T01:00:00Z",
+  "instanceId": "pod-uid",
+  "processEpoch": "boot-1",
+  "acceptingRequests": false,
+  "activeChecks": 0,
+  "appliedControlGeneration": 3
+}

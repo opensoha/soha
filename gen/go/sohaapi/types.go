@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	AgentBearerAuthScopes    agentBearerAuthContextKey    = "agentBearerAuth.Scopes"
-	BearerAuthScopes         bearerAuthContextKey         = "bearerAuth.Scopes"
-	NetworkControlMTLSScopes networkControlMTLSContextKey = "networkControlMTLS.Scopes"
-	RuntimeBearerAuthScopes  runtimeBearerAuthContextKey  = "runtimeBearerAuth.Scopes"
-	SohaXAPIKeyScopes        sohaXAPIKeyContextKey        = "sohaXAPIKey.Scopes"
+	AgentBearerAuthScopes            agentBearerAuthContextKey            = "agentBearerAuth.Scopes"
+	BearerAuthScopes                 bearerAuthContextKey                 = "bearerAuth.Scopes"
+	NetworkControlMTLSScopes         networkControlMTLSContextKey         = "networkControlMTLS.Scopes"
+	OutpostRuntimeExecutorAuthScopes outpostRuntimeExecutorAuthContextKey = "outpostRuntimeExecutorAuth.Scopes"
+	RuntimeBearerAuthScopes          runtimeBearerAuthContextKey          = "runtimeBearerAuth.Scopes"
+	SohaXAPIKeyScopes                sohaXAPIKeyContextKey                = "sohaXAPIKey.Scopes"
 )
 
 // Defines values for AIEnvironmentTemplateBackend.
@@ -4977,6 +4978,21 @@ func (e IdentityOutpostAccessCheckDecision) Valid() bool {
 	}
 }
 
+// Defines values for IdentityOutpostClaimRequestSupportedRuntimeControlVersion.
+const (
+	IdentityOutpostClaimRequestSupportedRuntimeControlVersionV1 IdentityOutpostClaimRequestSupportedRuntimeControlVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the IdentityOutpostClaimRequestSupportedRuntimeControlVersion enum.
+func (e IdentityOutpostClaimRequestSupportedRuntimeControlVersion) Valid() bool {
+	switch e {
+	case IdentityOutpostClaimRequestSupportedRuntimeControlVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IdentityOutpostHeartbeatRequestStatus.
 const (
 	IdentityOutpostHeartbeatRequestStatusDegraded    IdentityOutpostHeartbeatRequestStatus = "degraded"
@@ -5016,6 +5032,114 @@ func (e IdentityOutpostMode) Valid() bool {
 	case IdentityOutpostModeExternal:
 		return true
 	case IdentityOutpostModeKubernetes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityOutpostRuntimeOwner.
+const (
+	IdentityOutpostRuntimeOwnerExternal IdentityOutpostRuntimeOwner = "external"
+	IdentityOutpostRuntimeOwnerSoha     IdentityOutpostRuntimeOwner = "soha"
+)
+
+// Valid indicates whether the value is a known member of the IdentityOutpostRuntimeOwner enum.
+func (e IdentityOutpostRuntimeOwner) Valid() bool {
+	switch e {
+	case IdentityOutpostRuntimeOwnerExternal:
+		return true
+	case IdentityOutpostRuntimeOwnerSoha:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityOutpostRuntimePhase.
+const (
+	IdentityOutpostRuntimePhaseApplying IdentityOutpostRuntimePhase = "applying"
+	IdentityOutpostRuntimePhaseDraining IdentityOutpostRuntimePhase = "draining"
+	IdentityOutpostRuntimePhaseFailed   IdentityOutpostRuntimePhase = "failed"
+	IdentityOutpostRuntimePhasePending  IdentityOutpostRuntimePhase = "pending"
+	IdentityOutpostRuntimePhaseReady    IdentityOutpostRuntimePhase = "ready"
+	IdentityOutpostRuntimePhaseStopped  IdentityOutpostRuntimePhase = "stopped"
+	IdentityOutpostRuntimePhaseUnknown  IdentityOutpostRuntimePhase = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the IdentityOutpostRuntimePhase enum.
+func (e IdentityOutpostRuntimePhase) Valid() bool {
+	switch e {
+	case IdentityOutpostRuntimePhaseApplying:
+		return true
+	case IdentityOutpostRuntimePhaseDraining:
+		return true
+	case IdentityOutpostRuntimePhaseFailed:
+		return true
+	case IdentityOutpostRuntimePhasePending:
+		return true
+	case IdentityOutpostRuntimePhaseReady:
+		return true
+	case IdentityOutpostRuntimePhaseStopped:
+		return true
+	case IdentityOutpostRuntimePhaseUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityOutpostRuntimeControlAction.
+const (
+	Drain IdentityOutpostRuntimeControlAction = "drain"
+	Serve IdentityOutpostRuntimeControlAction = "serve"
+)
+
+// Valid indicates whether the value is a known member of the IdentityOutpostRuntimeControlAction enum.
+func (e IdentityOutpostRuntimeControlAction) Valid() bool {
+	switch e {
+	case Drain:
+		return true
+	case Serve:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityOutpostRuntimeControlProtocolVersion.
+const (
+	IdentityOutpostRuntimeControlProtocolVersionV1 IdentityOutpostRuntimeControlProtocolVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the IdentityOutpostRuntimeControlProtocolVersion enum.
+func (e IdentityOutpostRuntimeControlProtocolVersion) Valid() bool {
+	switch e {
+	case IdentityOutpostRuntimeControlProtocolVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityOutpostRuntimeControlInputAction.
+const (
+	IdentityOutpostRuntimeControlInputActionReconcile IdentityOutpostRuntimeControlInputAction = "reconcile"
+	IdentityOutpostRuntimeControlInputActionScale     IdentityOutpostRuntimeControlInputAction = "scale"
+	IdentityOutpostRuntimeControlInputActionStart     IdentityOutpostRuntimeControlInputAction = "start"
+	IdentityOutpostRuntimeControlInputActionStop      IdentityOutpostRuntimeControlInputAction = "stop"
+)
+
+// Valid indicates whether the value is a known member of the IdentityOutpostRuntimeControlInputAction enum.
+func (e IdentityOutpostRuntimeControlInputAction) Valid() bool {
+	switch e {
+	case IdentityOutpostRuntimeControlInputActionReconcile:
+		return true
+	case IdentityOutpostRuntimeControlInputActionScale:
+		return true
+	case IdentityOutpostRuntimeControlInputActionStart:
+		return true
+	case IdentityOutpostRuntimeControlInputActionStop:
 		return true
 	default:
 		return false
@@ -8676,6 +8800,24 @@ func (e NetworkDeviceGovernanceMode) Valid() bool {
 	}
 }
 
+// Defines values for NetworkEAPServerTrustEapMethod.
+const (
+	TLS  NetworkEAPServerTrustEapMethod = "tls"
+	Ttls NetworkEAPServerTrustEapMethod = "ttls"
+)
+
+// Valid indicates whether the value is a known member of the NetworkEAPServerTrustEapMethod enum.
+func (e NetworkEAPServerTrustEapMethod) Valid() bool {
+	switch e {
+	case TLS:
+		return true
+	case Ttls:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkEAPServerTrustWifiSecurity.
 const (
 	NetworkEAPServerTrustWifiSecurityWpa2Enterprise NetworkEAPServerTrustWifiSecurity = "wpa2-enterprise"
@@ -9180,13 +9322,52 @@ func (e NetworkPolicyPath) Valid() bool {
 	}
 }
 
+// Defines values for NetworkProxyBundleState.
+const (
+	NetworkProxyBundleStateActivated      NetworkProxyBundleState = "activated"
+	NetworkProxyBundleStateClientEligible NetworkProxyBundleState = "client_eligible"
+	NetworkProxyBundleStateFailed         NetworkProxyBundleState = "failed"
+	NetworkProxyBundleStatePrepare        NetworkProxyBundleState = "prepare"
+	NetworkProxyBundleStateRevoked        NetworkProxyBundleState = "revoked"
+	NetworkProxyBundleStateServerReady    NetworkProxyBundleState = "server_ready"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyBundleState enum.
+func (e NetworkProxyBundleState) Valid() bool {
+	switch e {
+	case NetworkProxyBundleStateActivated:
+		return true
+	case NetworkProxyBundleStateClientEligible:
+		return true
+	case NetworkProxyBundleStateFailed:
+		return true
+	case NetworkProxyBundleStatePrepare:
+		return true
+	case NetworkProxyBundleStateRevoked:
+		return true
+	case NetworkProxyBundleStateServerReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkProxyCapability.
 const (
 	NetworkProxyCapabilityCloseConnection         NetworkProxyCapability = "close_connection"
 	NetworkProxyCapabilityConnections             NetworkProxyCapability = "connections"
+	NetworkProxyCapabilityDNS                     NetworkProxyCapability = "dns"
+	NetworkProxyCapabilityDiagnostics             NetworkProxyCapability = "diagnostics"
+	NetworkProxyCapabilityGroups                  NetworkProxyCapability = "groups"
 	NetworkProxyCapabilityGuardedDNSTCPV1         NetworkProxyCapability = "guarded_dns_tcp_v1"
+	NetworkProxyCapabilityGuardedUDPV1            NetworkProxyCapability = "guarded_udp_v1"
+	NetworkProxyCapabilityLogs                    NetworkProxyCapability = "logs"
+	NetworkProxyCapabilityProbe                   NetworkProxyCapability = "probe"
 	NetworkProxyCapabilityProtectedDestinationsV1 NetworkProxyCapability = "protected_destinations_v1"
 	NetworkProxyCapabilityProtectionRulesReadback NetworkProxyCapability = "protection_rules_readback"
+	NetworkProxyCapabilityRefresh                 NetworkProxyCapability = "refresh"
+	NetworkProxyCapabilityRules                   NetworkProxyCapability = "rules"
+	NetworkProxyCapabilitySelect                  NetworkProxyCapability = "select"
 	NetworkProxyCapabilityTraffic                 NetworkProxyCapability = "traffic"
 )
 
@@ -9197,11 +9378,29 @@ func (e NetworkProxyCapability) Valid() bool {
 		return true
 	case NetworkProxyCapabilityConnections:
 		return true
+	case NetworkProxyCapabilityDNS:
+		return true
+	case NetworkProxyCapabilityDiagnostics:
+		return true
+	case NetworkProxyCapabilityGroups:
+		return true
 	case NetworkProxyCapabilityGuardedDNSTCPV1:
+		return true
+	case NetworkProxyCapabilityGuardedUDPV1:
+		return true
+	case NetworkProxyCapabilityLogs:
+		return true
+	case NetworkProxyCapabilityProbe:
 		return true
 	case NetworkProxyCapabilityProtectedDestinationsV1:
 		return true
 	case NetworkProxyCapabilityProtectionRulesReadback:
+		return true
+	case NetworkProxyCapabilityRefresh:
+		return true
+	case NetworkProxyCapabilityRules:
+		return true
+	case NetworkProxyCapabilitySelect:
 		return true
 	case NetworkProxyCapabilityTraffic:
 		return true
@@ -9258,6 +9457,27 @@ func (e NetworkProxyConnectionNetwork) Valid() bool {
 	}
 }
 
+// Defines values for NetworkProxyConnectionsEnvelopeFreshness.
+const (
+	NetworkProxyConnectionsEnvelopeFreshnessFresh       NetworkProxyConnectionsEnvelopeFreshness = "fresh"
+	NetworkProxyConnectionsEnvelopeFreshnessStale       NetworkProxyConnectionsEnvelopeFreshness = "stale"
+	NetworkProxyConnectionsEnvelopeFreshnessUnavailable NetworkProxyConnectionsEnvelopeFreshness = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyConnectionsEnvelopeFreshness enum.
+func (e NetworkProxyConnectionsEnvelopeFreshness) Valid() bool {
+	switch e {
+	case NetworkProxyConnectionsEnvelopeFreshnessFresh:
+		return true
+	case NetworkProxyConnectionsEnvelopeFreshnessStale:
+		return true
+	case NetworkProxyConnectionsEnvelopeFreshnessUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkProxyConnectionsEnvelopeState.
 const (
 	NetworkProxyConnectionsEnvelopeStateAvailable   NetworkProxyConnectionsEnvelopeState = "available"
@@ -9279,21 +9499,423 @@ func (e NetworkProxyConnectionsEnvelopeState) Valid() bool {
 	}
 }
 
+// Defines values for NetworkProxyConversionErrorCode.
+const (
+	NetworkProxyConversionErrorCodeDanglingReference     NetworkProxyConversionErrorCode = "dangling_reference"
+	NetworkProxyConversionErrorCodeIncompatibleTransport NetworkProxyConversionErrorCode = "incompatible_transport"
+	NetworkProxyConversionErrorCodeInvalidSource         NetworkProxyConversionErrorCode = "invalid_source"
+	NetworkProxyConversionErrorCodeProtectedDestination  NetworkProxyConversionErrorCode = "protected_destination"
+	NetworkProxyConversionErrorCodeQuotaExceeded         NetworkProxyConversionErrorCode = "quota_exceeded"
+	NetworkProxyConversionErrorCodeUnsafeField           NetworkProxyConversionErrorCode = "unsafe_field"
+	NetworkProxyConversionErrorCodeUnsupportedField      NetworkProxyConversionErrorCode = "unsupported_field"
+	NetworkProxyConversionErrorCodeUnsupportedProtocol   NetworkProxyConversionErrorCode = "unsupported_protocol"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyConversionErrorCode enum.
+func (e NetworkProxyConversionErrorCode) Valid() bool {
+	switch e {
+	case NetworkProxyConversionErrorCodeDanglingReference:
+		return true
+	case NetworkProxyConversionErrorCodeIncompatibleTransport:
+		return true
+	case NetworkProxyConversionErrorCodeInvalidSource:
+		return true
+	case NetworkProxyConversionErrorCodeProtectedDestination:
+		return true
+	case NetworkProxyConversionErrorCodeQuotaExceeded:
+		return true
+	case NetworkProxyConversionErrorCodeUnsafeField:
+		return true
+	case NetworkProxyConversionErrorCodeUnsupportedField:
+		return true
+	case NetworkProxyConversionErrorCodeUnsupportedProtocol:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyConversionPreviewNodesProtocol.
+const (
+	NetworkProxyConversionPreviewNodesItemProtocolHTTP   NetworkProxyConversionPreviewNodesProtocol = "http"
+	NetworkProxyConversionPreviewNodesItemProtocolSocks5 NetworkProxyConversionPreviewNodesProtocol = "socks5"
+	NetworkProxyConversionPreviewNodesItemProtocolSs     NetworkProxyConversionPreviewNodesProtocol = "ss"
+	NetworkProxyConversionPreviewNodesItemProtocolTrojan NetworkProxyConversionPreviewNodesProtocol = "trojan"
+	NetworkProxyConversionPreviewNodesItemProtocolVless  NetworkProxyConversionPreviewNodesProtocol = "vless"
+	NetworkProxyConversionPreviewNodesItemProtocolVmess  NetworkProxyConversionPreviewNodesProtocol = "vmess"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyConversionPreviewNodesProtocol enum.
+func (e NetworkProxyConversionPreviewNodesProtocol) Valid() bool {
+	switch e {
+	case NetworkProxyConversionPreviewNodesItemProtocolHTTP:
+		return true
+	case NetworkProxyConversionPreviewNodesItemProtocolSocks5:
+		return true
+	case NetworkProxyConversionPreviewNodesItemProtocolSs:
+		return true
+	case NetworkProxyConversionPreviewNodesItemProtocolTrojan:
+		return true
+	case NetworkProxyConversionPreviewNodesItemProtocolVless:
+		return true
+	case NetworkProxyConversionPreviewNodesItemProtocolVmess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDeliveryMode.
+const (
+	NetworkProxyDeliveryModeDirectSubscription NetworkProxyDeliveryMode = "direct_subscription"
+	NetworkProxyDeliveryModeGateway            NetworkProxyDeliveryMode = "gateway"
+	NetworkProxyDeliveryModeMappedNodes        NetworkProxyDeliveryMode = "mapped_nodes"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDeliveryMode enum.
+func (e NetworkProxyDeliveryMode) Valid() bool {
+	switch e {
+	case NetworkProxyDeliveryModeDirectSubscription:
+		return true
+	case NetworkProxyDeliveryModeGateway:
+		return true
+	case NetworkProxyDeliveryModeMappedNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDeploymentOwner.
+const (
+	NetworkProxyDeploymentOwnerExternal    NetworkProxyDeploymentOwner = "external"
+	NetworkProxyDeploymentOwnerGitops      NetworkProxyDeploymentOwner = "gitops"
+	NetworkProxyDeploymentOwnerHelm        NetworkProxyDeploymentOwner = "helm"
+	NetworkProxyDeploymentOwnerManual      NetworkProxyDeploymentOwner = "manual"
+	NetworkProxyDeploymentOwnerSohaManaged NetworkProxyDeploymentOwner = "soha-managed"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDeploymentOwner enum.
+func (e NetworkProxyDeploymentOwner) Valid() bool {
+	switch e {
+	case NetworkProxyDeploymentOwnerExternal:
+		return true
+	case NetworkProxyDeploymentOwnerGitops:
+		return true
+	case NetworkProxyDeploymentOwnerHelm:
+		return true
+	case NetworkProxyDeploymentOwnerManual:
+		return true
+	case NetworkProxyDeploymentOwnerSohaManaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDeploymentState.
+const (
+	NetworkProxyDeploymentStateConflict    NetworkProxyDeploymentState = "conflict"
+	NetworkProxyDeploymentStateDraining    NetworkProxyDeploymentState = "draining"
+	NetworkProxyDeploymentStateFailed      NetworkProxyDeploymentState = "failed"
+	NetworkProxyDeploymentStatePending     NetworkProxyDeploymentState = "pending"
+	NetworkProxyDeploymentStateReady       NetworkProxyDeploymentState = "ready"
+	NetworkProxyDeploymentStateStarting    NetworkProxyDeploymentState = "starting"
+	NetworkProxyDeploymentStateStopped     NetworkProxyDeploymentState = "stopped"
+	NetworkProxyDeploymentStateUnbound     NetworkProxyDeploymentState = "unbound"
+	NetworkProxyDeploymentStateUnknown     NetworkProxyDeploymentState = "unknown"
+	NetworkProxyDeploymentStateUnsupported NetworkProxyDeploymentState = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDeploymentState enum.
+func (e NetworkProxyDeploymentState) Valid() bool {
+	switch e {
+	case NetworkProxyDeploymentStateConflict:
+		return true
+	case NetworkProxyDeploymentStateDraining:
+		return true
+	case NetworkProxyDeploymentStateFailed:
+		return true
+	case NetworkProxyDeploymentStatePending:
+		return true
+	case NetworkProxyDeploymentStateReady:
+		return true
+	case NetworkProxyDeploymentStateStarting:
+		return true
+	case NetworkProxyDeploymentStateStopped:
+		return true
+	case NetworkProxyDeploymentStateUnbound:
+		return true
+	case NetworkProxyDeploymentStateUnknown:
+		return true
+	case NetworkProxyDeploymentStateUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDeploymentControlInputAction.
+const (
+	NetworkProxyDeploymentControlInputActionReconcile NetworkProxyDeploymentControlInputAction = "reconcile"
+	NetworkProxyDeploymentControlInputActionScale     NetworkProxyDeploymentControlInputAction = "scale"
+	NetworkProxyDeploymentControlInputActionStart     NetworkProxyDeploymentControlInputAction = "start"
+	NetworkProxyDeploymentControlInputActionStop      NetworkProxyDeploymentControlInputAction = "stop"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDeploymentControlInputAction enum.
+func (e NetworkProxyDeploymentControlInputAction) Valid() bool {
+	switch e {
+	case NetworkProxyDeploymentControlInputActionReconcile:
+		return true
+	case NetworkProxyDeploymentControlInputActionScale:
+		return true
+	case NetworkProxyDeploymentControlInputActionStart:
+		return true
+	case NetworkProxyDeploymentControlInputActionStop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDeploymentInputOwner.
+const (
+	NetworkProxyDeploymentInputOwnerExternal    NetworkProxyDeploymentInputOwner = "external"
+	NetworkProxyDeploymentInputOwnerGitops      NetworkProxyDeploymentInputOwner = "gitops"
+	NetworkProxyDeploymentInputOwnerHelm        NetworkProxyDeploymentInputOwner = "helm"
+	NetworkProxyDeploymentInputOwnerManual      NetworkProxyDeploymentInputOwner = "manual"
+	NetworkProxyDeploymentInputOwnerSohaManaged NetworkProxyDeploymentInputOwner = "soha-managed"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDeploymentInputOwner enum.
+func (e NetworkProxyDeploymentInputOwner) Valid() bool {
+	switch e {
+	case NetworkProxyDeploymentInputOwnerExternal:
+		return true
+	case NetworkProxyDeploymentInputOwnerGitops:
+		return true
+	case NetworkProxyDeploymentInputOwnerHelm:
+		return true
+	case NetworkProxyDeploymentInputOwnerManual:
+		return true
+	case NetworkProxyDeploymentInputOwnerSohaManaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDeploymentOperationStatus.
+const (
+	NetworkProxyDeploymentOperationStatusFailed    NetworkProxyDeploymentOperationStatus = "failed"
+	NetworkProxyDeploymentOperationStatusPending   NetworkProxyDeploymentOperationStatus = "pending"
+	NetworkProxyDeploymentOperationStatusRunning   NetworkProxyDeploymentOperationStatus = "running"
+	NetworkProxyDeploymentOperationStatusSucceeded NetworkProxyDeploymentOperationStatus = "succeeded"
+	NetworkProxyDeploymentOperationStatusUnknown   NetworkProxyDeploymentOperationStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDeploymentOperationStatus enum.
+func (e NetworkProxyDeploymentOperationStatus) Valid() bool {
+	switch e {
+	case NetworkProxyDeploymentOperationStatusFailed:
+		return true
+	case NetworkProxyDeploymentOperationStatusPending:
+		return true
+	case NetworkProxyDeploymentOperationStatusRunning:
+		return true
+	case NetworkProxyDeploymentOperationStatusSucceeded:
+		return true
+	case NetworkProxyDeploymentOperationStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDirectProjectionDeliveryMode.
+const (
+	NetworkProxyDirectProjectionDeliveryModeDirectSubscription NetworkProxyDirectProjectionDeliveryMode = "direct_subscription"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDirectProjectionDeliveryMode enum.
+func (e NetworkProxyDirectProjectionDeliveryMode) Valid() bool {
+	switch e {
+	case NetworkProxyDirectProjectionDeliveryModeDirectSubscription:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDirectProjectionFormat.
+const (
+	NetworkProxyDirectProjectionFormatMihomoYAML NetworkProxyDirectProjectionFormat = "mihomo_yaml"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDirectProjectionFormat enum.
+func (e NetworkProxyDirectProjectionFormat) Valid() bool {
+	switch e {
+	case NetworkProxyDirectProjectionFormatMihomoYAML:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDirectProjectionSchemaVersion.
+const (
+	NetworkProxyDirectProjectionSchemaVersionProxyDirectV1 NetworkProxyDirectProjectionSchemaVersion = "proxy-direct/v1"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDirectProjectionSchemaVersion enum.
+func (e NetworkProxyDirectProjectionSchemaVersion) Valid() bool {
+	switch e {
+	case NetworkProxyDirectProjectionSchemaVersionProxyDirectV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyDirectProjectionUpstreamDisclosure.
+const (
+	NetworkProxyDirectProjectionUpstreamDisclosureUpstreamParameters NetworkProxyDirectProjectionUpstreamDisclosure = "upstream_parameters"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyDirectProjectionUpstreamDisclosure enum.
+func (e NetworkProxyDirectProjectionUpstreamDisclosure) Valid() bool {
+	switch e {
+	case NetworkProxyDirectProjectionUpstreamDisclosureUpstreamParameters:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyEmployeeProjectionDeliveryMode.
+const (
+	NetworkProxyEmployeeProjectionDeliveryModeGateway     NetworkProxyEmployeeProjectionDeliveryMode = "gateway"
+	NetworkProxyEmployeeProjectionDeliveryModeMappedNodes NetworkProxyEmployeeProjectionDeliveryMode = "mapped_nodes"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyEmployeeProjectionDeliveryMode enum.
+func (e NetworkProxyEmployeeProjectionDeliveryMode) Valid() bool {
+	switch e {
+	case NetworkProxyEmployeeProjectionDeliveryModeGateway:
+		return true
+	case NetworkProxyEmployeeProjectionDeliveryModeMappedNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyEmployeeProjectionSchemaVersion.
+const (
+	NetworkProxyEmployeeProjectionSchemaVersionProxyProjectionV1 NetworkProxyEmployeeProjectionSchemaVersion = "proxy-projection/v1"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyEmployeeProjectionSchemaVersion enum.
+func (e NetworkProxyEmployeeProjectionSchemaVersion) Valid() bool {
+	switch e {
+	case NetworkProxyEmployeeProjectionSchemaVersionProxyProjectionV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NetworkProxyEngine.
 const (
-	NetworkProxyEngineMihomo  NetworkProxyEngine = "mihomo"
-	NetworkProxyEngineSingBox NetworkProxyEngine = "sing-box"
-	NetworkProxyEngineV2Ray   NetworkProxyEngine = "v2ray"
+	NetworkProxyEngineExternal NetworkProxyEngine = "external"
+	NetworkProxyEngineMihomo   NetworkProxyEngine = "mihomo"
+	NetworkProxyEngineSingBox  NetworkProxyEngine = "sing-box"
+	NetworkProxyEngineV2Ray    NetworkProxyEngine = "v2ray"
 )
 
 // Valid indicates whether the value is a known member of the NetworkProxyEngine enum.
 func (e NetworkProxyEngine) Valid() bool {
 	switch e {
+	case NetworkProxyEngineExternal:
+		return true
 	case NetworkProxyEngineMihomo:
 		return true
 	case NetworkProxyEngineSingBox:
 		return true
 	case NetworkProxyEngineV2Ray:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyEngineDescriptorProtocolMajor.
+const (
+	NetworkProxyEngineDescriptorProtocolMajor1 NetworkProxyEngineDescriptorProtocolMajor = 1
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyEngineDescriptorProtocolMajor enum.
+func (e NetworkProxyEngineDescriptorProtocolMajor) Valid() bool {
+	switch e {
+	case NetworkProxyEngineDescriptorProtocolMajor1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyEngineDescriptorProtocolMinor.
+const (
+	NetworkProxyEngineDescriptorProtocolMinor0 NetworkProxyEngineDescriptorProtocolMinor = 0
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyEngineDescriptorProtocolMinor enum.
+func (e NetworkProxyEngineDescriptorProtocolMinor) Valid() bool {
+	switch e {
+	case NetworkProxyEngineDescriptorProtocolMinor0:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyGroupType.
+const (
+	NetworkProxyGroupTypeFallback    NetworkProxyGroupType = "fallback"
+	NetworkProxyGroupTypeLoadBalance NetworkProxyGroupType = "load_balance"
+	NetworkProxyGroupTypeSelect      NetworkProxyGroupType = "select"
+	NetworkProxyGroupTypeURLTest     NetworkProxyGroupType = "url_test"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyGroupType enum.
+func (e NetworkProxyGroupType) Valid() bool {
+	switch e {
+	case NetworkProxyGroupTypeFallback:
+		return true
+	case NetworkProxyGroupTypeLoadBalance:
+		return true
+	case NetworkProxyGroupTypeSelect:
+		return true
+	case NetworkProxyGroupTypeURLTest:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyIngressCheckInputNetwork.
+const (
+	NetworkProxyIngressCheckInputNetworkTCP NetworkProxyIngressCheckInputNetwork = "tcp"
+	NetworkProxyIngressCheckInputNetworkUDP NetworkProxyIngressCheckInputNetwork = "udp"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyIngressCheckInputNetwork enum.
+func (e NetworkProxyIngressCheckInputNetwork) Valid() bool {
+	switch e {
+	case NetworkProxyIngressCheckInputNetworkTCP:
+		return true
+	case NetworkProxyIngressCheckInputNetworkUDP:
 		return true
 	default:
 		return false
@@ -9321,6 +9943,450 @@ func (e NetworkProxyInstanceStatus) Valid() bool {
 	case NetworkProxyInstanceStatusOnline:
 		return true
 	case NetworkProxyInstanceStatusUnregistered:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyNodeProtocol.
+const (
+	NetworkProxyNodeProtocolHTTP   NetworkProxyNodeProtocol = "http"
+	NetworkProxyNodeProtocolSocks5 NetworkProxyNodeProtocol = "socks5"
+	NetworkProxyNodeProtocolSs     NetworkProxyNodeProtocol = "ss"
+	NetworkProxyNodeProtocolTrojan NetworkProxyNodeProtocol = "trojan"
+	NetworkProxyNodeProtocolVless  NetworkProxyNodeProtocol = "vless"
+	NetworkProxyNodeProtocolVmess  NetworkProxyNodeProtocol = "vmess"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyNodeProtocol enum.
+func (e NetworkProxyNodeProtocol) Valid() bool {
+	switch e {
+	case NetworkProxyNodeProtocolHTTP:
+		return true
+	case NetworkProxyNodeProtocolSocks5:
+		return true
+	case NetworkProxyNodeProtocolSs:
+		return true
+	case NetworkProxyNodeProtocolTrojan:
+		return true
+	case NetworkProxyNodeProtocolVless:
+		return true
+	case NetworkProxyNodeProtocolVmess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyProjectionAppliedStatus.
+const (
+	NetworkProxyProjectionAppliedStatusApplied  NetworkProxyProjectionAppliedStatus = "applied"
+	NetworkProxyProjectionAppliedStatusRejected NetworkProxyProjectionAppliedStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyProjectionAppliedStatus enum.
+func (e NetworkProxyProjectionAppliedStatus) Valid() bool {
+	switch e {
+	case NetworkProxyProjectionAppliedStatusApplied:
+		return true
+	case NetworkProxyProjectionAppliedStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyRuleSource.
+const (
+	NetworkProxyRuleSourceFallback             NetworkProxyRuleSource = "fallback"
+	NetworkProxyRuleSourceOrganizationDefault  NetworkProxyRuleSource = "organization_default"
+	NetworkProxyRuleSourceOrganizationRequired NetworkProxyRuleSource = "organization_required"
+	NetworkProxyRuleSourcePersonal             NetworkProxyRuleSource = "personal"
+	NetworkProxyRuleSourceProtection           NetworkProxyRuleSource = "protection"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyRuleSource enum.
+func (e NetworkProxyRuleSource) Valid() bool {
+	switch e {
+	case NetworkProxyRuleSourceFallback:
+		return true
+	case NetworkProxyRuleSourceOrganizationDefault:
+		return true
+	case NetworkProxyRuleSourceOrganizationRequired:
+		return true
+	case NetworkProxyRuleSourcePersonal:
+		return true
+	case NetworkProxyRuleSourceProtection:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyRuleActionType.
+const (
+	NetworkProxyRuleActionTypeDirect NetworkProxyRuleActionType = "direct"
+	NetworkProxyRuleActionTypeGroup  NetworkProxyRuleActionType = "group"
+	NetworkProxyRuleActionTypeNode   NetworkProxyRuleActionType = "node"
+	NetworkProxyRuleActionTypeReject NetworkProxyRuleActionType = "reject"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyRuleActionType enum.
+func (e NetworkProxyRuleActionType) Valid() bool {
+	switch e {
+	case NetworkProxyRuleActionTypeDirect:
+		return true
+	case NetworkProxyRuleActionTypeGroup:
+		return true
+	case NetworkProxyRuleActionTypeNode:
+		return true
+	case NetworkProxyRuleActionTypeReject:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyRuleConflictReasonCode.
+const (
+	NetworkProxyRuleConflictReasonCodeAmbiguousOverlap   NetworkProxyRuleConflictReasonCode = "ambiguous_overlap"
+	NetworkProxyRuleConflictReasonCodeInvalidTarget      NetworkProxyRuleConflictReasonCode = "invalid_target"
+	NetworkProxyRuleConflictReasonCodeMandatoryConflict  NetworkProxyRuleConflictReasonCode = "mandatory_conflict"
+	NetworkProxyRuleConflictReasonCodeMaskedByRequired   NetworkProxyRuleConflictReasonCode = "masked_by_required"
+	NetworkProxyRuleConflictReasonCodeUnsupportedMatcher NetworkProxyRuleConflictReasonCode = "unsupported_matcher"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyRuleConflictReasonCode enum.
+func (e NetworkProxyRuleConflictReasonCode) Valid() bool {
+	switch e {
+	case NetworkProxyRuleConflictReasonCodeAmbiguousOverlap:
+		return true
+	case NetworkProxyRuleConflictReasonCodeInvalidTarget:
+		return true
+	case NetworkProxyRuleConflictReasonCodeMandatoryConflict:
+		return true
+	case NetworkProxyRuleConflictReasonCodeMaskedByRequired:
+		return true
+	case NetworkProxyRuleConflictReasonCodeUnsupportedMatcher:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyRuleMatcherType.
+const (
+	NetworkProxyRuleMatcherTypeAll          NetworkProxyRuleMatcherType = "all"
+	NetworkProxyRuleMatcherTypeCidr         NetworkProxyRuleMatcherType = "cidr"
+	NetworkProxyRuleMatcherTypeDomain       NetworkProxyRuleMatcherType = "domain"
+	NetworkProxyRuleMatcherTypeDomainSuffix NetworkProxyRuleMatcherType = "domain_suffix"
+	NetworkProxyRuleMatcherTypeProcessName  NetworkProxyRuleMatcherType = "process_name"
+	NetworkProxyRuleMatcherTypeProcessPath  NetworkProxyRuleMatcherType = "process_path"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyRuleMatcherType enum.
+func (e NetworkProxyRuleMatcherType) Valid() bool {
+	switch e {
+	case NetworkProxyRuleMatcherTypeAll:
+		return true
+	case NetworkProxyRuleMatcherTypeCidr:
+		return true
+	case NetworkProxyRuleMatcherTypeDomain:
+		return true
+	case NetworkProxyRuleMatcherTypeDomainSuffix:
+		return true
+	case NetworkProxyRuleMatcherTypeProcessName:
+		return true
+	case NetworkProxyRuleMatcherTypeProcessPath:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyRuntimeCommandKind.
+const (
+	NetworkProxyRuntimeCommandKindDNS         NetworkProxyRuntimeCommandKind = "dns"
+	NetworkProxyRuntimeCommandKindDiagnostics NetworkProxyRuntimeCommandKind = "diagnostics"
+	NetworkProxyRuntimeCommandKindGroups      NetworkProxyRuntimeCommandKind = "groups"
+	NetworkProxyRuntimeCommandKindLogs        NetworkProxyRuntimeCommandKind = "logs"
+	NetworkProxyRuntimeCommandKindProbe       NetworkProxyRuntimeCommandKind = "probe"
+	NetworkProxyRuntimeCommandKindRefresh     NetworkProxyRuntimeCommandKind = "refresh"
+	NetworkProxyRuntimeCommandKindRules       NetworkProxyRuntimeCommandKind = "rules"
+	NetworkProxyRuntimeCommandKindSelect      NetworkProxyRuntimeCommandKind = "select"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyRuntimeCommandKind enum.
+func (e NetworkProxyRuntimeCommandKind) Valid() bool {
+	switch e {
+	case NetworkProxyRuntimeCommandKindDNS:
+		return true
+	case NetworkProxyRuntimeCommandKindDiagnostics:
+		return true
+	case NetworkProxyRuntimeCommandKindGroups:
+		return true
+	case NetworkProxyRuntimeCommandKindLogs:
+		return true
+	case NetworkProxyRuntimeCommandKindProbe:
+		return true
+	case NetworkProxyRuntimeCommandKindRefresh:
+		return true
+	case NetworkProxyRuntimeCommandKindRules:
+		return true
+	case NetworkProxyRuntimeCommandKindSelect:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyRuntimeCommandReceiptStatus.
+const (
+	NetworkProxyRuntimeCommandReceiptStatusCancelled   NetworkProxyRuntimeCommandReceiptStatus = "cancelled"
+	NetworkProxyRuntimeCommandReceiptStatusExpired     NetworkProxyRuntimeCommandReceiptStatus = "expired"
+	NetworkProxyRuntimeCommandReceiptStatusFailed      NetworkProxyRuntimeCommandReceiptStatus = "failed"
+	NetworkProxyRuntimeCommandReceiptStatusPending     NetworkProxyRuntimeCommandReceiptStatus = "pending"
+	NetworkProxyRuntimeCommandReceiptStatusRunning     NetworkProxyRuntimeCommandReceiptStatus = "running"
+	NetworkProxyRuntimeCommandReceiptStatusSucceeded   NetworkProxyRuntimeCommandReceiptStatus = "succeeded"
+	NetworkProxyRuntimeCommandReceiptStatusUnavailable NetworkProxyRuntimeCommandReceiptStatus = "unavailable"
+	NetworkProxyRuntimeCommandReceiptStatusUnknown     NetworkProxyRuntimeCommandReceiptStatus = "unknown"
+	NetworkProxyRuntimeCommandReceiptStatusUnsupported NetworkProxyRuntimeCommandReceiptStatus = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyRuntimeCommandReceiptStatus enum.
+func (e NetworkProxyRuntimeCommandReceiptStatus) Valid() bool {
+	switch e {
+	case NetworkProxyRuntimeCommandReceiptStatusCancelled:
+		return true
+	case NetworkProxyRuntimeCommandReceiptStatusExpired:
+		return true
+	case NetworkProxyRuntimeCommandReceiptStatusFailed:
+		return true
+	case NetworkProxyRuntimeCommandReceiptStatusPending:
+		return true
+	case NetworkProxyRuntimeCommandReceiptStatusRunning:
+		return true
+	case NetworkProxyRuntimeCommandReceiptStatusSucceeded:
+		return true
+	case NetworkProxyRuntimeCommandReceiptStatusUnavailable:
+		return true
+	case NetworkProxyRuntimeCommandReceiptStatusUnknown:
+		return true
+	case NetworkProxyRuntimeCommandReceiptStatusUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyRuntimeCommandResultDiagnosticsState.
+const (
+	NetworkProxyRuntimeCommandResultDiagnosticsItemStateAvailable   NetworkProxyRuntimeCommandResultDiagnosticsState = "available"
+	NetworkProxyRuntimeCommandResultDiagnosticsItemStateUnavailable NetworkProxyRuntimeCommandResultDiagnosticsState = "unavailable"
+	NetworkProxyRuntimeCommandResultDiagnosticsItemStateUnsupported NetworkProxyRuntimeCommandResultDiagnosticsState = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyRuntimeCommandResultDiagnosticsState enum.
+func (e NetworkProxyRuntimeCommandResultDiagnosticsState) Valid() bool {
+	switch e {
+	case NetworkProxyRuntimeCommandResultDiagnosticsItemStateAvailable:
+		return true
+	case NetworkProxyRuntimeCommandResultDiagnosticsItemStateUnavailable:
+		return true
+	case NetworkProxyRuntimeCommandResultDiagnosticsItemStateUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyRuntimeCommandResultLogsLevel.
+const (
+	NetworkProxyRuntimeCommandResultLogsItemLevelDebug NetworkProxyRuntimeCommandResultLogsLevel = "debug"
+	NetworkProxyRuntimeCommandResultLogsItemLevelError NetworkProxyRuntimeCommandResultLogsLevel = "error"
+	NetworkProxyRuntimeCommandResultLogsItemLevelInfo  NetworkProxyRuntimeCommandResultLogsLevel = "info"
+	NetworkProxyRuntimeCommandResultLogsItemLevelWarn  NetworkProxyRuntimeCommandResultLogsLevel = "warn"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyRuntimeCommandResultLogsLevel enum.
+func (e NetworkProxyRuntimeCommandResultLogsLevel) Valid() bool {
+	switch e {
+	case NetworkProxyRuntimeCommandResultLogsItemLevelDebug:
+		return true
+	case NetworkProxyRuntimeCommandResultLogsItemLevelError:
+		return true
+	case NetworkProxyRuntimeCommandResultLogsItemLevelInfo:
+		return true
+	case NetworkProxyRuntimeCommandResultLogsItemLevelWarn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyServerPublicationDeliveryMode.
+const (
+	NetworkProxyServerPublicationDeliveryModeGateway     NetworkProxyServerPublicationDeliveryMode = "gateway"
+	NetworkProxyServerPublicationDeliveryModeMappedNodes NetworkProxyServerPublicationDeliveryMode = "mapped_nodes"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyServerPublicationDeliveryMode enum.
+func (e NetworkProxyServerPublicationDeliveryMode) Valid() bool {
+	switch e {
+	case NetworkProxyServerPublicationDeliveryModeGateway:
+		return true
+	case NetworkProxyServerPublicationDeliveryModeMappedNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxySourceFormat.
+const (
+	NetworkProxySourceFormatManual      NetworkProxySourceFormat = "manual"
+	NetworkProxySourceFormatMihomoYaml  NetworkProxySourceFormat = "mihomo_yaml"
+	NetworkProxySourceFormatSingBoxJSON NetworkProxySourceFormat = "sing_box_json"
+	NetworkProxySourceFormatURIList     NetworkProxySourceFormat = "uri_list"
+	NetworkProxySourceFormatV2RayJSON   NetworkProxySourceFormat = "v2ray_json"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxySourceFormat enum.
+func (e NetworkProxySourceFormat) Valid() bool {
+	switch e {
+	case NetworkProxySourceFormatManual:
+		return true
+	case NetworkProxySourceFormatMihomoYaml:
+		return true
+	case NetworkProxySourceFormatSingBoxJSON:
+		return true
+	case NetworkProxySourceFormatURIList:
+		return true
+	case NetworkProxySourceFormatV2RayJSON:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyTrafficEnvelopeFreshness.
+const (
+	NetworkProxyTrafficEnvelopeFreshnessFresh       NetworkProxyTrafficEnvelopeFreshness = "fresh"
+	NetworkProxyTrafficEnvelopeFreshnessStale       NetworkProxyTrafficEnvelopeFreshness = "stale"
+	NetworkProxyTrafficEnvelopeFreshnessUnavailable NetworkProxyTrafficEnvelopeFreshness = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyTrafficEnvelopeFreshness enum.
+func (e NetworkProxyTrafficEnvelopeFreshness) Valid() bool {
+	switch e {
+	case NetworkProxyTrafficEnvelopeFreshnessFresh:
+		return true
+	case NetworkProxyTrafficEnvelopeFreshnessStale:
+		return true
+	case NetworkProxyTrafficEnvelopeFreshnessUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyTrafficSampleRateState.
+const (
+	NetworkProxyTrafficSampleRateStateGap     NetworkProxyTrafficSampleRateState = "gap"
+	NetworkProxyTrafficSampleRateStateKnown   NetworkProxyTrafficSampleRateState = "known"
+	NetworkProxyTrafficSampleRateStateUnknown NetworkProxyTrafficSampleRateState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyTrafficSampleRateState enum.
+func (e NetworkProxyTrafficSampleRateState) Valid() bool {
+	switch e {
+	case NetworkProxyTrafficSampleRateStateGap:
+		return true
+	case NetworkProxyTrafficSampleRateStateKnown:
+		return true
+	case NetworkProxyTrafficSampleRateStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkProxyTransportType.
+const (
+	NetworkProxyTransportTypeGrpc NetworkProxyTransportType = "grpc"
+	NetworkProxyTransportTypeTCP  NetworkProxyTransportType = "tcp"
+	NetworkProxyTransportTypeWs   NetworkProxyTransportType = "ws"
+)
+
+// Valid indicates whether the value is a known member of the NetworkProxyTransportType enum.
+func (e NetworkProxyTransportType) Valid() bool {
+	switch e {
+	case NetworkProxyTransportTypeGrpc:
+		return true
+	case NetworkProxyTransportTypeTCP:
+		return true
+	case NetworkProxyTransportTypeWs:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkRADIUSControlInputAction.
+const (
+	NetworkRADIUSControlInputActionReconcile NetworkRADIUSControlInputAction = "reconcile"
+	NetworkRADIUSControlInputActionScale     NetworkRADIUSControlInputAction = "scale"
+	NetworkRADIUSControlInputActionStart     NetworkRADIUSControlInputAction = "start"
+	NetworkRADIUSControlInputActionStop      NetworkRADIUSControlInputAction = "stop"
+)
+
+// Valid indicates whether the value is a known member of the NetworkRADIUSControlInputAction enum.
+func (e NetworkRADIUSControlInputAction) Valid() bool {
+	switch e {
+	case NetworkRADIUSControlInputActionReconcile:
+		return true
+	case NetworkRADIUSControlInputActionScale:
+		return true
+	case NetworkRADIUSControlInputActionStart:
+		return true
+	case NetworkRADIUSControlInputActionStop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NetworkRADIUSPoolState.
+const (
+	NetworkRADIUSPoolStateConflict NetworkRADIUSPoolState = "conflict"
+	NetworkRADIUSPoolStateDraining NetworkRADIUSPoolState = "draining"
+	NetworkRADIUSPoolStateFailed   NetworkRADIUSPoolState = "failed"
+	NetworkRADIUSPoolStatePending  NetworkRADIUSPoolState = "pending"
+	NetworkRADIUSPoolStateReady    NetworkRADIUSPoolState = "ready"
+	NetworkRADIUSPoolStateStarting NetworkRADIUSPoolState = "starting"
+	NetworkRADIUSPoolStateStopped  NetworkRADIUSPoolState = "stopped"
+	NetworkRADIUSPoolStateUnknown  NetworkRADIUSPoolState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the NetworkRADIUSPoolState enum.
+func (e NetworkRADIUSPoolState) Valid() bool {
+	switch e {
+	case NetworkRADIUSPoolStateConflict:
+		return true
+	case NetworkRADIUSPoolStateDraining:
+		return true
+	case NetworkRADIUSPoolStateFailed:
+		return true
+	case NetworkRADIUSPoolStatePending:
+		return true
+	case NetworkRADIUSPoolStateReady:
+		return true
+	case NetworkRADIUSPoolStateStarting:
+		return true
+	case NetworkRADIUSPoolStateStopped:
+		return true
+	case NetworkRADIUSPoolStateUnknown:
 		return true
 	default:
 		return false
@@ -11693,19 +12759,19 @@ func (e RuntimeConfigValueType) Valid() bool {
 
 // Defines values for RuntimeNetworkUsageScope.
 const (
-	NetworkNamespace RuntimeNetworkUsageScope = "network_namespace"
-	Process          RuntimeNetworkUsageScope = "process"
-	Unavailable      RuntimeNetworkUsageScope = "unavailable"
+	RuntimeNetworkUsageScopeNetworkNamespace RuntimeNetworkUsageScope = "network_namespace"
+	RuntimeNetworkUsageScopeProcess          RuntimeNetworkUsageScope = "process"
+	RuntimeNetworkUsageScopeUnavailable      RuntimeNetworkUsageScope = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeNetworkUsageScope enum.
 func (e RuntimeNetworkUsageScope) Valid() bool {
 	switch e {
-	case NetworkNamespace:
+	case RuntimeNetworkUsageScopeNetworkNamespace:
 		return true
-	case Process:
+	case RuntimeNetworkUsageScopeProcess:
 		return true
-	case Unavailable:
+	case RuntimeNetworkUsageScopeUnavailable:
 		return true
 	default:
 		return false
@@ -12836,16 +13902,16 @@ func (e VirtualizationWorkerPoolSpecOwner) Valid() bool {
 
 // Defines values for WorkbenchAgentRunExecutionOwner.
 const (
-	External WorkbenchAgentRunExecutionOwner = "external"
-	Native   WorkbenchAgentRunExecutionOwner = "native"
+	WorkbenchAgentRunExecutionOwnerExternal WorkbenchAgentRunExecutionOwner = "external"
+	WorkbenchAgentRunExecutionOwnerNative   WorkbenchAgentRunExecutionOwner = "native"
 )
 
 // Valid indicates whether the value is a known member of the WorkbenchAgentRunExecutionOwner enum.
 func (e WorkbenchAgentRunExecutionOwner) Valid() bool {
 	switch e {
-	case External:
+	case WorkbenchAgentRunExecutionOwnerExternal:
 		return true
-	case Native:
+	case WorkbenchAgentRunExecutionOwnerNative:
 		return true
 	default:
 		return false
@@ -14804,19 +15870,19 @@ func (e ExecuteKubernetesWorkloadActionConditionalParamsKind) Valid() bool {
 
 // Defines values for ExecuteKubernetesWorkloadActionConditionalParamsAction.
 const (
-	Restart  ExecuteKubernetesWorkloadActionConditionalParamsAction = "restart"
-	Rollback ExecuteKubernetesWorkloadActionConditionalParamsAction = "rollback"
-	Scale    ExecuteKubernetesWorkloadActionConditionalParamsAction = "scale"
+	ExecuteKubernetesWorkloadActionConditionalParamsActionRestart  ExecuteKubernetesWorkloadActionConditionalParamsAction = "restart"
+	ExecuteKubernetesWorkloadActionConditionalParamsActionRollback ExecuteKubernetesWorkloadActionConditionalParamsAction = "rollback"
+	ExecuteKubernetesWorkloadActionConditionalParamsActionScale    ExecuteKubernetesWorkloadActionConditionalParamsAction = "scale"
 )
 
 // Valid indicates whether the value is a known member of the ExecuteKubernetesWorkloadActionConditionalParamsAction enum.
 func (e ExecuteKubernetesWorkloadActionConditionalParamsAction) Valid() bool {
 	switch e {
-	case Restart:
+	case ExecuteKubernetesWorkloadActionConditionalParamsActionRestart:
 		return true
-	case Rollback:
+	case ExecuteKubernetesWorkloadActionConditionalParamsActionRollback:
 		return true
-	case Scale:
+	case ExecuteKubernetesWorkloadActionConditionalParamsActionScale:
 		return true
 	default:
 		return false
@@ -14861,16 +15927,16 @@ func (e SearchWorkbenchMessagesParamsWorkspace) Valid() bool {
 
 // Defines values for ExportDeliveryDocumentParamsFormat.
 const (
-	JSON ExportDeliveryDocumentParamsFormat = "json"
-	Yaml ExportDeliveryDocumentParamsFormat = "yaml"
+	ExportDeliveryDocumentParamsFormatJSON ExportDeliveryDocumentParamsFormat = "json"
+	ExportDeliveryDocumentParamsFormatYaml ExportDeliveryDocumentParamsFormat = "yaml"
 )
 
 // Valid indicates whether the value is a known member of the ExportDeliveryDocumentParamsFormat enum.
 func (e ExportDeliveryDocumentParamsFormat) Valid() bool {
 	switch e {
-	case JSON:
+	case ExportDeliveryDocumentParamsFormatJSON:
 		return true
-	case Yaml:
+	case ExportDeliveryDocumentParamsFormatYaml:
 		return true
 	default:
 		return false
@@ -14979,6 +16045,66 @@ func (e GetOriginalDockerProjectDeploymentParamsAction) Valid() bool {
 	case GetOriginalDockerProjectDeploymentParamsActionStart:
 		return true
 	case GetOriginalDockerProjectDeploymentParamsActionStop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetNextNetworkProxyRuntimeCommand200JSONResponseBodyMessageType.
+const (
+	NetworkProxyCommandRequestMessageType GetNextNetworkProxyRuntimeCommand200JSONResponseBodyMessageType = "command.request"
+)
+
+// Valid indicates whether the value is a known member of the GetNextNetworkProxyRuntimeCommand200JSONResponseBodyMessageType enum.
+func (e GetNextNetworkProxyRuntimeCommand200JSONResponseBodyMessageType) Valid() bool {
+	switch e {
+	case NetworkProxyCommandRequestMessageType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetNextNetworkProxyRuntimeCommand200JSONResponseBodySchemaVersion.
+const (
+	NetworkProxyCommandRequestSchemaVersion GetNextNetworkProxyRuntimeCommand200JSONResponseBodySchemaVersion = "proxy-runtime/v1alpha1"
+)
+
+// Valid indicates whether the value is a known member of the GetNextNetworkProxyRuntimeCommand200JSONResponseBodySchemaVersion enum.
+func (e GetNextNetworkProxyRuntimeCommand200JSONResponseBodySchemaVersion) Valid() bool {
+	switch e {
+	case NetworkProxyCommandRequestSchemaVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CompleteNetworkProxyRuntimeCommandJSONBodyMessageType.
+const (
+	NetworkProxyCommandResultMessageType CompleteNetworkProxyRuntimeCommandJSONBodyMessageType = "command.result"
+)
+
+// Valid indicates whether the value is a known member of the CompleteNetworkProxyRuntimeCommandJSONBodyMessageType enum.
+func (e CompleteNetworkProxyRuntimeCommandJSONBodyMessageType) Valid() bool {
+	switch e {
+	case NetworkProxyCommandResultMessageType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion.
+const (
+	NetworkProxyCommandResultSchemaVersion CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion = "proxy-runtime/v1alpha1"
+)
+
+// Valid indicates whether the value is a known member of the CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion enum.
+func (e CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion) Valid() bool {
+	switch e {
+	case NetworkProxyCommandResultSchemaVersion:
 		return true
 	default:
 		return false
@@ -22369,11 +23495,17 @@ type IdentityOutpostAccessCheckRequest struct {
 
 // IdentityOutpostClaimRequest defines model for IdentityOutpostClaimRequest.
 type IdentityOutpostClaimRequest struct {
-	AgentID                     string `json:"agentId"`
-	CurrentConfigurationVersion int64  `json:"currentConfigurationVersion,omitempty"`
-	RuntimeVersion              string `json:"runtimeVersion,omitempty"`
-	SupportedProtocolVersion    string `json:"supportedProtocolVersion"`
+	AgentID                        string                                                    `json:"agentId"`
+	CurrentConfigurationVersion    int64                                                     `json:"currentConfigurationVersion,omitempty"`
+	InstanceID                     string                                                    `json:"instanceId,omitempty"`
+	ProcessEpoch                   string                                                    `json:"processEpoch,omitempty"`
+	RuntimeVersion                 string                                                    `json:"runtimeVersion,omitempty"`
+	SupportedProtocolVersion       string                                                    `json:"supportedProtocolVersion"`
+	SupportedRuntimeControlVersion IdentityOutpostClaimRequestSupportedRuntimeControlVersion `json:"supportedRuntimeControlVersion,omitempty"`
 }
+
+// IdentityOutpostClaimRequestSupportedRuntimeControlVersion defines model for IdentityOutpostClaimRequest.SupportedRuntimeControlVersion.
+type IdentityOutpostClaimRequestSupportedRuntimeControlVersion string
 
 // IdentityOutpostDeployment Server-derived deployment settings. Trust material contains only the public verification key; credentials are supplied separately.
 type IdentityOutpostDeployment struct {
@@ -22407,13 +23539,18 @@ type IdentityOutpostHeartbeatEnvelope struct {
 
 // IdentityOutpostHeartbeatRequest defines model for IdentityOutpostHeartbeatRequest.
 type IdentityOutpostHeartbeatRequest struct {
-	AgentID                string                                `json:"agentId"`
-	CheckedAt              time.Time                             `json:"checkedAt"`
-	ConfigurationExpiresAt *time.Time                            `json:"configurationExpiresAt,omitempty"`
-	ConfigurationVersion   int64                                 `json:"configurationVersion"`
-	ErrorCode              string                                `json:"errorCode,omitempty"`
-	RuntimeVersion         string                                `json:"runtimeVersion,omitempty"`
-	Status                 IdentityOutpostHeartbeatRequestStatus `json:"status"`
+	AcceptingRequests        *bool                                 `json:"acceptingRequests,omitempty"`
+	ActiveChecks             *int                                  `json:"activeChecks,omitempty"`
+	AgentID                  string                                `json:"agentId"`
+	AppliedControlGeneration *int64                                `json:"appliedControlGeneration,omitempty"`
+	CheckedAt                time.Time                             `json:"checkedAt"`
+	ConfigurationExpiresAt   *time.Time                            `json:"configurationExpiresAt,omitempty"`
+	ConfigurationVersion     int64                                 `json:"configurationVersion"`
+	ErrorCode                string                                `json:"errorCode,omitempty"`
+	InstanceID               string                                `json:"instanceId,omitempty"`
+	ProcessEpoch             string                                `json:"processEpoch,omitempty"`
+	RuntimeVersion           string                                `json:"runtimeVersion,omitempty"`
+	Status                   IdentityOutpostHeartbeatRequestStatus `json:"status"`
 }
 
 // IdentityOutpostHeartbeatRequestStatus defines model for IdentityOutpostHeartbeatRequest.Status.
@@ -22455,6 +23592,54 @@ type IdentityOutpostRoute struct {
 	SkipPaths     []string `json:"skipPaths,omitempty"`
 }
 
+// IdentityOutpostRuntime defines model for IdentityOutpostRuntime.
+type IdentityOutpostRuntime struct {
+	// ActualReplicas Omitted when not observed.
+	ActualReplicas     *int                               `json:"actualReplicas,omitempty"`
+	Capabilities       IdentityOutpostRuntimeCapabilities `json:"capabilities"`
+	DesiredReplicas    int                                `json:"desiredReplicas"`
+	Generation         int64                              `json:"generation"`
+	LatestTaskID       string                             `json:"latestTaskId,omitempty"`
+	Namespace          string                             `json:"namespace,omitempty"`
+	ObservedAt         *time.Time                         `json:"observedAt,omitempty"`
+	ObservedGeneration *int64                             `json:"observedGeneration,omitempty"`
+	OutpostID          string                             `json:"outpostId"`
+	Owner              IdentityOutpostRuntimeOwner        `json:"owner"`
+	Phase              IdentityOutpostRuntimePhase        `json:"phase"`
+
+	// ReadyReplicas Omitted when not observed.
+	ReadyReplicas *int   `json:"readyReplicas,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+
+	// SlotID Installer-approved named workload slot.
+	SlotID       string `json:"slotId,omitempty"`
+	WorkloadName string `json:"workloadName,omitempty"`
+
+	// WorkloadUID Immutable Kubernetes workload UID resolved by the installation allowlist.
+	WorkloadUID string `json:"workloadUid,omitempty"`
+}
+
+// IdentityOutpostRuntimeOwner defines model for IdentityOutpostRuntime.Owner.
+type IdentityOutpostRuntimeOwner string
+
+// IdentityOutpostRuntimePhase defines model for IdentityOutpostRuntime.Phase.
+type IdentityOutpostRuntimePhase string
+
+// IdentityOutpostRuntimeBindingInput defines model for IdentityOutpostRuntimeBindingInput.
+type IdentityOutpostRuntimeBindingInput struct {
+	ExpectedGeneration int64  `json:"expectedGeneration"`
+	ExplicitAdoption   bool   `json:"explicitAdoption,omitempty"`
+	RequestID          string `json:"requestId"`
+	SlotID             string `json:"slotId"`
+}
+
+// IdentityOutpostRuntimeCapabilities defines model for IdentityOutpostRuntimeCapabilities.
+type IdentityOutpostRuntimeCapabilities struct {
+	// SupportsDrain True only when supported and observed for the bound runtime instances. Legacy clients without control capability do not support managed drain.
+	SupportsDrain bool `json:"supportsDrain"`
+	SupportsScale bool `json:"supportsScale"`
+}
+
 // IdentityOutpostRuntimeCapability defines model for IdentityOutpostRuntimeCapability.
 type IdentityOutpostRuntimeCapability struct {
 	AgentRuntime       IdentityCapability `json:"agentRuntime"`
@@ -22474,12 +23659,54 @@ type IdentityOutpostRuntimeConfig struct {
 	OutpostID            string                 `json:"outpostId"`
 	ProtocolVersion      string                 `json:"protocolVersion"`
 	Routes               []IdentityOutpostRoute `json:"routes"`
-	Signature            string                 `json:"signature"`
+
+	// RuntimeControl Independently signed per-instance control. Sign UTF-8 compact JSON of these fields in schema order excluding signature, using UTC RFC3339 timestamps as serialized by Go time.Time. Verify separately from the unchanged v1 configuration signature. expiresAt must be later than issuedAt and no more than 30 seconds after it; implementations reject expired, replayed, mismatched-instance or mismatched-process controls. This object grants no configuration lease renewal.
+	RuntimeControl *IdentityOutpostRuntimeControl `json:"runtimeControl,omitempty"`
+	Signature      string                         `json:"signature"`
 }
 
 // IdentityOutpostRuntimeConfigEnvelope defines model for IdentityOutpostRuntimeConfigEnvelope.
 type IdentityOutpostRuntimeConfigEnvelope struct {
 	Data *IdentityOutpostRuntimeConfig `json:"data,omitempty"`
+}
+
+// IdentityOutpostRuntimeControl Independently signed per-instance control. Sign UTF-8 compact JSON of these fields in schema order excluding signature, using UTC RFC3339 timestamps as serialized by Go time.Time. Verify separately from the unchanged v1 configuration signature. expiresAt must be later than issuedAt and no more than 30 seconds after it; implementations reject expired, replayed, mismatched-instance or mismatched-process controls. This object grants no configuration lease renewal.
+type IdentityOutpostRuntimeControl struct {
+	Action          IdentityOutpostRuntimeControlAction          `json:"action"`
+	ExpiresAt       time.Time                                    `json:"expiresAt"`
+	Generation      int64                                        `json:"generation"`
+	InstanceID      string                                       `json:"instanceId"`
+	IssuedAt        time.Time                                    `json:"issuedAt"`
+	KeyID           string                                       `json:"keyId"`
+	OutpostID       string                                       `json:"outpostId"`
+	ProcessEpoch    string                                       `json:"processEpoch"`
+	ProtocolVersion IdentityOutpostRuntimeControlProtocolVersion `json:"protocolVersion"`
+	Signature       string                                       `json:"signature"`
+}
+
+// IdentityOutpostRuntimeControlAction defines model for IdentityOutpostRuntimeControl.Action.
+type IdentityOutpostRuntimeControlAction string
+
+// IdentityOutpostRuntimeControlProtocolVersion defines model for IdentityOutpostRuntimeControl.ProtocolVersion.
+type IdentityOutpostRuntimeControlProtocolVersion string
+
+// IdentityOutpostRuntimeControlInput defines model for IdentityOutpostRuntimeControlInput.
+type IdentityOutpostRuntimeControlInput struct {
+	Action              IdentityOutpostRuntimeControlInputAction `json:"action"`
+	DrainTimeoutSeconds *int                                     `json:"drainTimeoutSeconds,omitempty"`
+	ExpectedGeneration  int64                                    `json:"expectedGeneration"`
+
+	// Replicas Required for scale; forbidden for read-only reconcile.
+	Replicas  *int   `json:"replicas,omitempty"`
+	RequestID string `json:"requestId"`
+}
+
+// IdentityOutpostRuntimeControlInputAction defines model for IdentityOutpostRuntimeControlInput.Action.
+type IdentityOutpostRuntimeControlInputAction string
+
+// IdentityOutpostRuntimeEnvelope defines model for IdentityOutpostRuntimeEnvelope.
+type IdentityOutpostRuntimeEnvelope struct {
+	Data IdentityOutpostRuntime `json:"data"`
 }
 
 // IdentityOutpostRuntimeEvent defines model for IdentityOutpostRuntimeEvent.
@@ -22494,6 +23721,24 @@ type IdentityOutpostRuntimeEvent struct {
 
 // IdentityOutpostRuntimeEventType defines model for IdentityOutpostRuntimeEvent.Type.
 type IdentityOutpostRuntimeEventType string
+
+// IdentityOutpostRuntimeExecutorClaimRequest defines model for IdentityOutpostRuntimeExecutorClaimRequest.
+type IdentityOutpostRuntimeExecutorClaimRequest struct {
+	ExecutorID string `json:"executorId"`
+}
+
+// IdentityOutpostRuntimeMutationEnvelope defines model for IdentityOutpostRuntimeMutationEnvelope.
+type IdentityOutpostRuntimeMutationEnvelope struct {
+	Data IdentityOutpostRuntimeMutationResult `json:"data"`
+}
+
+// IdentityOutpostRuntimeMutationResult defines model for IdentityOutpostRuntimeMutationResult.
+type IdentityOutpostRuntimeMutationResult struct {
+	Runtime IdentityOutpostRuntime `json:"runtime"`
+
+	// Task Reference to an existing domain execution record, not a second task queue. A terminal record is not proof that the user's business goal is satisfied.
+	Task *CapabilityTaskRef `json:"task,omitempty"`
+}
 
 // IdentityOutpostStatus Legacy Outpost management status; use runtimeStatus for observed health.
 type IdentityOutpostStatus string
@@ -28970,10 +30215,16 @@ type NetworkDeviceGovernanceMode string
 
 // NetworkEAPServerTrust defines model for NetworkEAPServerTrust.
 type NetworkEAPServerTrust struct {
-	CaCertificates []string                          `json:"caCertificates"`
-	ServerNames    []string                          `json:"serverNames"`
-	WifiSecurity   NetworkEAPServerTrustWifiSecurity `json:"wifiSecurity"`
+	CaCertificates   []string                          `json:"caCertificates"`
+	CredentialSource string                            `json:"credentialSource,omitempty"`
+	EapMethod        NetworkEAPServerTrustEapMethod    `json:"eapMethod,omitempty"`
+	InnerMethod      string                            `json:"innerMethod,omitempty"`
+	ServerNames      []string                          `json:"serverNames"`
+	WifiSecurity     NetworkEAPServerTrustWifiSecurity `json:"wifiSecurity"`
 }
+
+// NetworkEAPServerTrustEapMethod defines model for NetworkEAPServerTrust.EapMethod.
+type NetworkEAPServerTrustEapMethod string
 
 // NetworkEAPServerTrustWifiSecurity defines model for NetworkEAPServerTrust.WifiSecurity.
 type NetworkEAPServerTrustWifiSecurity string
@@ -29324,13 +30575,15 @@ type NetworkMihomoMode string
 
 // NetworkMihomoProfile defines model for NetworkMihomoProfile.
 type NetworkMihomoProfile struct {
-	BypassCidrs    []NetworkIPCIDR      `json:"bypassCidrs"`
-	BypassHosts    []string             `json:"bypassHosts"`
-	ControllerPort int                  `json:"controllerPort"`
-	CreatedAt      time.Time            `json:"createdAt"`
-	DeviceID       string               `json:"deviceId"`
-	DNSMode        NetworkMihomoDNSMode `json:"dnsMode"`
-	FailClosed     bool                 `json:"failClosed"`
+	BundleID       string                   `json:"bundleId,omitempty"`
+	BypassCidrs    []NetworkIPCIDR          `json:"bypassCidrs"`
+	BypassHosts    []string                 `json:"bypassHosts"`
+	ControllerPort int                      `json:"controllerPort"`
+	CreatedAt      time.Time                `json:"createdAt"`
+	DeliveryMode   NetworkProxyDeliveryMode `json:"deliveryMode,omitempty"`
+	DeviceID       string                   `json:"deviceId"`
+	DNSMode        NetworkMihomoDNSMode     `json:"dnsMode"`
+	FailClosed     bool                     `json:"failClosed"`
 
 	// FakeIPRange IPv4 CIDR accepted by the first network-access slice; consumers must additionally require canonical network addresses.
 	FakeIPRange            NetworkIPv4CIDR            `json:"fakeIpRange,omitempty"`
@@ -29339,9 +30592,11 @@ type NetworkMihomoProfile struct {
 	MixedPort              int                        `json:"mixedPort"`
 	Mode                   NetworkMihomoMode          `json:"mode"`
 	Name                   string                     `json:"name"`
+	OrgRevision            int64                      `json:"orgRevision,omitempty"`
 	Revision               int                        `json:"revision"`
 	SelectedProxy          string                     `json:"selectedProxy,omitempty"`
 	SelectorGroup          string                     `json:"selectorGroup"`
+	SourceRevision         int64                      `json:"sourceRevision,omitempty"`
 	SourceType             NetworkMihomoSourceType    `json:"sourceType,omitempty"`
 	Status                 NetworkMihomoProfileStatus `json:"status"`
 	SubscriptionConfigured bool                       `json:"subscriptionConfigured"`
@@ -29355,23 +30610,27 @@ type NetworkMihomoProfileEnvelope struct {
 
 // NetworkMihomoProfileInput defines model for NetworkMihomoProfileInput.
 type NetworkMihomoProfileInput struct {
-	BypassCidrs    []NetworkIPCIDR      `json:"bypassCidrs"`
-	BypassHosts    []string             `json:"bypassHosts"`
-	ControllerPort int                  `json:"controllerPort"`
-	DeviceID       string               `json:"deviceId"`
-	DNSMode        NetworkMihomoDNSMode `json:"dnsMode"`
-	FailClosed     bool                 `json:"failClosed"`
+	BundleID       string                   `json:"bundleId,omitempty"`
+	BypassCidrs    []NetworkIPCIDR          `json:"bypassCidrs"`
+	BypassHosts    []string                 `json:"bypassHosts"`
+	ControllerPort int                      `json:"controllerPort"`
+	DeliveryMode   NetworkProxyDeliveryMode `json:"deliveryMode,omitempty"`
+	DeviceID       string                   `json:"deviceId"`
+	DNSMode        NetworkMihomoDNSMode     `json:"dnsMode"`
+	FailClosed     bool                     `json:"failClosed"`
 
 	// FakeIPRange IPv4 CIDR accepted by the first network-access slice; consumers must additionally require canonical network addresses.
-	FakeIPRange   NetworkIPv4CIDR               `json:"fakeIpRange,omitempty"`
-	ManualNode    *NetworkMihomoManualNodeInput `json:"manualNode,omitempty"`
-	MixedPort     int                           `json:"mixedPort"`
-	Mode          NetworkMihomoMode             `json:"mode"`
-	Name          string                        `json:"name"`
-	SelectedProxy string                        `json:"selectedProxy,omitempty"`
-	SelectorGroup string                        `json:"selectorGroup"`
-	SourceType    NetworkMihomoSourceType       `json:"sourceType,omitempty"`
-	Status        NetworkMihomoProfileStatus    `json:"status"`
+	FakeIPRange    NetworkIPv4CIDR               `json:"fakeIpRange,omitempty"`
+	ManualNode     *NetworkMihomoManualNodeInput `json:"manualNode,omitempty"`
+	MixedPort      int                           `json:"mixedPort"`
+	Mode           NetworkMihomoMode             `json:"mode"`
+	Name           string                        `json:"name"`
+	OrgRevision    int64                         `json:"orgRevision,omitempty"`
+	SelectedProxy  string                        `json:"selectedProxy,omitempty"`
+	SelectorGroup  string                        `json:"selectorGroup"`
+	SourceRevision int64                         `json:"sourceRevision,omitempty"`
+	SourceType     NetworkMihomoSourceType       `json:"sourceType,omitempty"`
+	Status         NetworkMihomoProfileStatus    `json:"status"`
 
 	// SubscriptionURL Write-only HTTPS subscription URL encrypted by Soha and released only to the assigned endpoint over mTLS. Required when creating managed_subscription and forbidden for other sources.
 	SubscriptionURL string `json:"subscriptionUrl,omitempty"`
@@ -29531,7 +30790,65 @@ type NetworkProxyBinding struct {
 	SiteID      string   `json:"siteId"`
 }
 
-// NetworkProxyCapability defines model for NetworkProxyCapability.
+// NetworkProxyBundle For mapped_nodes/gateway, server-ready requires authenticated runtime readback matching bundle revision/hash/epoch. Revocation/deleted nodes invalidate old credentials/flows immediately; old lease cannot keep access. For direct_subscription, prepare validates source conversion, policy and explicit device authorization; proceed through client_eligible to activated without server_ready. No server relay or Pod readiness is required or implied, and disclosed upstream credentials cannot promise immediate revocation.
+type NetworkProxyBundle struct {
+	ActiveRevision      int64                    `json:"activeRevision"`
+	BundleID            string                   `json:"bundleId"`
+	ConverterVersion    string                   `json:"converterVersion"`
+	CredentialEpoch     int64                    `json:"credentialEpoch"`
+	DeliveryMode        NetworkProxyDeliveryMode `json:"deliveryMode"`
+	NodeMappingRevision int64                    `json:"nodeMappingRevision"`
+	OrgRevision         int64                    `json:"orgRevision"`
+	ProjectionHash      string                   `json:"projectionHash"`
+	ReasonCode          string                   `json:"reasonCode,omitempty"`
+	Revision            int64                    `json:"revision"`
+	ServerHash          string                   `json:"serverHash"`
+	SourceID            string                   `json:"sourceId"`
+	SourceRevision      int64                    `json:"sourceRevision"`
+	State               NetworkProxyBundleState  `json:"state"`
+	ValidUntil          time.Time                `json:"validUntil"`
+}
+
+// NetworkProxyBundleState defines model for NetworkProxyBundle.State.
+type NetworkProxyBundleState string
+
+// NetworkProxyBundleActivateInput Only requests activation; never accepts caller supplied serverReady or observation.
+type NetworkProxyBundleActivateInput struct {
+	ExpectedRevision int64  `json:"expectedRevision"`
+	RequestID        string `json:"requestId"`
+}
+
+// NetworkProxyBundleInput defines model for NetworkProxyBundleInput.
+type NetworkProxyBundleInput struct {
+	DeliveryMode     NetworkProxyDeliveryMode  `json:"deliveryMode"`
+	Endpoints        []NetworkProxyEndpointRef `json:"endpoints"`
+	ExpectedRevision int64                     `json:"expectedRevision"`
+	OrgRevision      int64                     `json:"orgRevision"`
+	RequestID        string                    `json:"requestId"`
+	Scope            NetworkProxyScope         `json:"scope"`
+	SourceID         string                    `json:"sourceId"`
+	SourceRevision   int64                     `json:"sourceRevision"`
+}
+
+// NetworkProxyBundleList defines model for NetworkProxyBundleList.
+type NetworkProxyBundleList struct {
+	Items []NetworkProxyBundle `json:"items"`
+}
+
+// NetworkProxyBundleReadback Authenticated real proxy runtime observation only. Core compares current desired/applied configuration revision/hash, bundle revision, process/member and credential identity. Caller flags alone never activate a bundle; reject stale, mismatched or unauthorized observations.
+type NetworkProxyBundleReadback struct {
+	BundleID              string    `json:"bundleId"`
+	ConfigurationRevision int64     `json:"configurationRevision"`
+	IngressReady          bool      `json:"ingressReady"`
+	ObservedAt            time.Time `json:"observedAt"`
+	ProcessEpoch          string    `json:"processEpoch"`
+	ProtectionReady       bool      `json:"protectionReady"`
+	ReasonCode            string    `json:"reasonCode,omitempty"`
+	Revision              int64     `json:"revision"`
+	ServerHash            string    `json:"serverHash"`
+}
+
+// NetworkProxyCapability guarded_udp_v1 requires an installed and verified datagram gate, authenticated transport, guarded owned backend and current per-packet policy enforcement. It does not assert that every upstream protocol or node supports UDP.
 type NetworkProxyCapability string
 
 // NetworkProxyCloseCommandEnvelope defines model for NetworkProxyCloseCommandEnvelope.
@@ -29539,12 +30856,21 @@ type NetworkProxyCloseCommandEnvelope struct {
 	CommandID    string                                 `json:"commandId"`
 	ConnectionID string                                 `json:"connectionId,omitempty"`
 	ExpiresAt    time.Time                              `json:"expiresAt"`
+	ProcessEpoch string                                 `json:"processEpoch,omitempty"`
 	ReasonCode   string                                 `json:"reasonCode,omitempty"`
 	Status       NetworkProxyCloseCommandEnvelopeStatus `json:"status"`
 }
 
 // NetworkProxyCloseCommandEnvelopeStatus defines model for NetworkProxyCloseCommandEnvelope.Status.
 type NetworkProxyCloseCommandEnvelopeStatus string
+
+// NetworkProxyCloseInput defines model for NetworkProxyCloseInput.
+type NetworkProxyCloseInput struct {
+	ExpiresAt    time.Time `json:"expiresAt"`
+	IssuedAt     time.Time `json:"issuedAt"`
+	ProcessEpoch string    `json:"processEpoch"`
+	RequestID    string    `json:"requestId"`
+}
 
 // NetworkProxyConfigurationHistoryEnvelope defines model for NetworkProxyConfigurationHistoryEnvelope.
 type NetworkProxyConfigurationHistoryEnvelope struct {
@@ -29585,6 +30911,7 @@ type NetworkProxyConnection struct {
 	DownloadBytes int64                         `json:"downloadBytes"`
 	ID            string                        `json:"id"`
 	Network       NetworkProxyConnectionNetwork `json:"network"`
+	ProcessEpoch  string                        `json:"processEpoch,omitempty"`
 	StartedAt     *time.Time                    `json:"startedAt,omitempty"`
 	UploadBytes   int64                         `json:"uploadBytes"`
 }
@@ -29594,17 +30921,287 @@ type NetworkProxyConnectionNetwork string
 
 // NetworkProxyConnectionsEnvelope defines model for NetworkProxyConnectionsEnvelope.
 type NetworkProxyConnectionsEnvelope struct {
-	Connections []NetworkProxyConnection             `json:"connections"`
-	InstanceID  string                               `json:"instanceId"`
-	ObservedAt  *time.Time                           `json:"observedAt,omitempty"`
-	State       NetworkProxyConnectionsEnvelopeState `json:"state"`
+	Connections    []NetworkProxyConnection                 `json:"connections"`
+	Freshness      NetworkProxyConnectionsEnvelopeFreshness `json:"freshness,omitempty"`
+	InstanceID     string                                   `json:"instanceId"`
+	ObservedAt     *time.Time                               `json:"observedAt,omitempty"`
+	ProcessEpoch   string                                   `json:"processEpoch,omitempty"`
+	ReturnedCount  int64                                    `json:"returnedCount,omitempty"`
+	SampleSequence int64                                    `json:"sampleSequence,omitempty"`
+	State          NetworkProxyConnectionsEnvelopeState     `json:"state"`
+	TotalActive    int64                                    `json:"totalActive,omitempty"`
+	Truncated      bool                                     `json:"truncated,omitempty"`
 }
+
+// NetworkProxyConnectionsEnvelopeFreshness defines model for NetworkProxyConnectionsEnvelope.Freshness.
+type NetworkProxyConnectionsEnvelopeFreshness string
 
 // NetworkProxyConnectionsEnvelopeState defines model for NetworkProxyConnectionsEnvelope.State.
 type NetworkProxyConnectionsEnvelopeState string
 
+// NetworkProxyConversionError Messages contain sanitized field locations, never original source values, URLs or credentials.
+type NetworkProxyConversionError struct {
+	Code     NetworkProxyConversionErrorCode `json:"code"`
+	Location string                          `json:"location"`
+	Message  string                          `json:"message"`
+}
+
+// NetworkProxyConversionErrorCode defines model for NetworkProxyConversionError.Code.
+type NetworkProxyConversionErrorCode string
+
+// NetworkProxyConversionPreview Preview contains only opaque IDs and safe labels. No upstream addresses or source secrets.
+type NetworkProxyConversionPreview struct {
+	Errors []NetworkProxyConversionError `json:"errors"`
+	Groups []NetworkProxyGroup           `json:"groups"`
+	Nodes  []struct {
+		Label    string                                     `json:"label"`
+		NodeID   string                                     `json:"nodeId"`
+		Protocol NetworkProxyConversionPreviewNodesProtocol `json:"protocol"`
+	} `json:"nodes"`
+	SourceRevision int64 `json:"sourceRevision"`
+	Supported      bool  `json:"supported"`
+}
+
+// NetworkProxyConversionPreviewNodesProtocol defines model for NetworkProxyConversionPreview.Nodes.Protocol.
+type NetworkProxyConversionPreviewNodesProtocol string
+
+// NetworkProxyDeliveryMode defines model for NetworkProxyDeliveryMode.
+type NetworkProxyDeliveryMode string
+
+// NetworkProxyDeployment defines model for NetworkProxyDeployment.
+type NetworkProxyDeployment struct {
+	// DesiredReplicas Known desired replica count, including zero when stopped.
+	DesiredReplicas    int64                          `json:"desiredReplicas"`
+	Members            []NetworkProxyDeploymentMember `json:"members"`
+	ObjectUID          string                         `json:"objectUID,omitempty"`
+	ObservedGeneration int64                          `json:"observedGeneration,omitempty"`
+
+	// ObservedReplicas Omitted when not observed; zero is an observed zero replica count.
+	ObservedReplicas *int64                      `json:"observedReplicas,omitempty"`
+	OperationID      string                      `json:"operationId,omitempty"`
+	Owner            NetworkProxyDeploymentOwner `json:"owner,omitempty"`
+	OwnerEpoch       int64                       `json:"ownerEpoch,omitempty"`
+	ReasonCode       string                      `json:"reasonCode,omitempty"`
+	Revision         int64                       `json:"revision"`
+	SlotID           string                      `json:"slotId,omitempty"`
+	State            NetworkProxyDeploymentState `json:"state"`
+	TemplateHash     string                      `json:"templateHash,omitempty"`
+}
+
+// NetworkProxyDeploymentOwner defines model for NetworkProxyDeployment.Owner.
+type NetworkProxyDeploymentOwner string
+
+// NetworkProxyDeploymentState defines model for NetworkProxyDeployment.State.
+type NetworkProxyDeploymentState string
+
+// NetworkProxyDeploymentControlInput Reconcile is read-only observation of approved UID/template. Unknown prior result blocks new writes. Scale-down requires known active counts and drain; withdrawal/revocation is immediate. Installer may cap drain below120s.
+type NetworkProxyDeploymentControlInput struct {
+	Action           NetworkProxyDeploymentControlInputAction `json:"action"`
+	DrainSeconds     int                                      `json:"drainSeconds,omitempty"`
+	ExpectedRevision int64                                    `json:"expectedRevision"`
+	Replicas         int                                      `json:"replicas,omitempty"`
+	RequestID        string                                   `json:"requestId"`
+}
+
+// NetworkProxyDeploymentControlInputAction defines model for NetworkProxyDeploymentControlInput.Action.
+type NetworkProxyDeploymentControlInputAction string
+
+// NetworkProxyDeploymentInput Bind only installer-approved slot/UID/template; no arbitrary image/spec/namespace/shell. Explicit adoption and installer allow_adoption/previous_owner_stopped are required.
+type NetworkProxyDeploymentInput struct {
+	Adopt            bool                             `json:"adopt"`
+	ExpectedRevision int64                            `json:"expectedRevision"`
+	ObjectUID        string                           `json:"objectUID"`
+	Owner            NetworkProxyDeploymentInputOwner `json:"owner"`
+	OwnerEpoch       int64                            `json:"ownerEpoch"`
+	RequestID        string                           `json:"requestId"`
+	SlotID           string                           `json:"slotId"`
+	TemplateHash     string                           `json:"templateHash"`
+}
+
+// NetworkProxyDeploymentInputOwner defines model for NetworkProxyDeploymentInput.Owner.
+type NetworkProxyDeploymentInputOwner string
+
+// NetworkProxyDeploymentMember Each process has independent runtime/credential identity. Shared certificate replicas do not establish independent members.
+type NetworkProxyDeploymentMember struct {
+	AcceptingRequests bool       `json:"acceptingRequests,omitempty"`
+	AckRevision       int64      `json:"ackRevision,omitempty"`
+	ActiveConnections int64      `json:"activeConnections,omitempty"`
+	ActiveCountKnown  bool       `json:"activeCountKnown"`
+	ControlExpiresAt  *time.Time `json:"controlExpiresAt,omitempty"`
+	CredentialEpoch   int64      `json:"credentialEpoch"`
+	CredentialID      string     `json:"credentialId"`
+	InstanceID        string     `json:"instanceId"`
+	ObservedAt        time.Time  `json:"observedAt"`
+	ProcessEpoch      string     `json:"processEpoch"`
+	Ready             bool       `json:"ready"`
+	RuntimeID         string     `json:"runtimeId"`
+	TrafficReady      bool       `json:"trafficReady"`
+}
+
+// NetworkProxyDeploymentOperation defines model for NetworkProxyDeploymentOperation.
+type NetworkProxyDeploymentOperation struct {
+	DesiredRevision int64                                 `json:"desiredRevision"`
+	OperationID     string                                `json:"operationId"`
+	ReasonCode      string                                `json:"reasonCode,omitempty"`
+	RequestID       string                                `json:"requestId"`
+	Status          NetworkProxyDeploymentOperationStatus `json:"status"`
+}
+
+// NetworkProxyDeploymentOperationStatus defines model for NetworkProxyDeploymentOperation.Status.
+type NetworkProxyDeploymentOperationStatus string
+
+// NetworkProxyDeploymentRuntimeAck defines model for NetworkProxyDeploymentRuntimeAck.
+type NetworkProxyDeploymentRuntimeAck struct {
+	AcceptingRequests bool      `json:"acceptingRequests"`
+	ActiveConnections int64     `json:"activeConnections"`
+	ActiveCountKnown  bool      `json:"activeCountKnown"`
+	ControlRevision   int64     `json:"controlRevision"`
+	CredentialEpoch   int64     `json:"credentialEpoch"`
+	CredentialID      string    `json:"credentialId"`
+	ExpiresAt         time.Time `json:"expiresAt"`
+	InstanceID        string    `json:"instanceId"`
+	ObservedAt        time.Time `json:"observedAt"`
+	OwnerEpoch        int64     `json:"ownerEpoch"`
+	ProcessEpoch      string    `json:"processEpoch"`
+
+	// ProcessStopped Optional, false omitted. True proves the exact owned engine and ingress exited under the current stopRequired control revision, not merely a stopped Pod or a zero default. Requires explicit known activeConnections=0 and acceptingRequests=false. Old or late ACKs cannot confirm a newer revision; no positive proof means no scale-down.
+	ProcessStopped bool   `json:"processStopped,omitempty"`
+	RuntimeID      string `json:"runtimeId"`
+}
+
+// NetworkProxyDeploymentRuntimeControl defines model for NetworkProxyDeploymentRuntimeControl.
+type NetworkProxyDeploymentRuntimeControl struct {
+	AcceptingRequests bool      `json:"acceptingRequests"`
+	ControlRevision   int64     `json:"controlRevision"`
+	CredentialEpoch   int64     `json:"credentialEpoch"`
+	CredentialID      string    `json:"credentialId"`
+	ExpiresAt         time.Time `json:"expiresAt"`
+	InstanceID        string    `json:"instanceId"`
+	IssuedAt          time.Time `json:"issuedAt"`
+	OwnerEpoch        int64     `json:"ownerEpoch"`
+	ProcessEpoch      string    `json:"processEpoch"`
+	RuntimeID         string    `json:"runtimeId"`
+
+	// StopRequired Optional, false omitted. True authorizes bounded confirmation that the exact owned engine and ingress have stopped, only under this newly issued controlRevision with acceptingRequests=false. Core issues a higher revision after the fixed drain expiry; confirmation expires within 30 seconds and no later than the original 240-second task deadline or certificate expiry. It never extends old-flow authorization or allows new traffic.
+	StopRequired bool `json:"stopRequired,omitempty"`
+}
+
+// NetworkProxyDirectProjection Separate explicit direct-subscription device projection. This mode deliberately discloses upstream parameters, has no scoped gateway credential and promises neither upstream privacy nor immediate revocation of already disclosed credentials. It must never be returned by the protected /projection path or used as automatic fallback. Prepare validates conversion, policy and current device authorization; it may proceed client_eligible to activated without server relay readiness.
+type NetworkProxyDirectProjection struct {
+	ActiveRevision int64  `json:"activeRevision"`
+	BundleID       string `json:"bundleId"`
+
+	// Content Sensitive upstream parameters. Contains only converted, validated Mihomo proxies subset, never original source URL, subscription providers, listeners or arbitrary raw configuration. Deliver only to the explicitly direct-authorized device over mTLS; private/no-store. Never put content in logs, audit/error details, IPC or exports.
+	Content      string                                   `json:"content"`
+	DeliveryMode NetworkProxyDirectProjectionDeliveryMode `json:"deliveryMode"`
+	ExpiresAt    time.Time                                `json:"expiresAt"`
+	Format       NetworkProxyDirectProjectionFormat       `json:"format"`
+	Groups       []NetworkProxyGroup                      `json:"groups"`
+	OrgRevision  int64                                    `json:"orgRevision"`
+
+	// ProcessEpoch Endpoint-service boot nonce bound to the endpoint credential; not the epoch of an HA proxy server. The profile-scoped projection receipt must echo this exact nonce.
+	ProcessEpoch       string                                         `json:"processEpoch"`
+	ProfileID          string                                         `json:"profileId"`
+	ProjectionHash     string                                         `json:"projectionHash"`
+	Revision           int64                                          `json:"revision"`
+	Rules              []NetworkProxyRule                             `json:"rules"`
+	RuntimeID          string                                         `json:"runtimeId"`
+	SchemaVersion      NetworkProxyDirectProjectionSchemaVersion      `json:"schemaVersion"`
+	SourceRevision     int64                                          `json:"sourceRevision"`
+	UpstreamDisclosure NetworkProxyDirectProjectionUpstreamDisclosure `json:"upstreamDisclosure"`
+}
+
+// NetworkProxyDirectProjectionDeliveryMode defines model for NetworkProxyDirectProjection.DeliveryMode.
+type NetworkProxyDirectProjectionDeliveryMode string
+
+// NetworkProxyDirectProjectionFormat defines model for NetworkProxyDirectProjection.Format.
+type NetworkProxyDirectProjectionFormat string
+
+// NetworkProxyDirectProjectionSchemaVersion defines model for NetworkProxyDirectProjection.SchemaVersion.
+type NetworkProxyDirectProjectionSchemaVersion string
+
+// NetworkProxyDirectProjectionUpstreamDisclosure defines model for NetworkProxyDirectProjection.UpstreamDisclosure.
+type NetworkProxyDirectProjectionUpstreamDisclosure string
+
+// NetworkProxyEmployeeCredential Only delivered through scoped device mTLS channel with private/no-store caching; never administrator list/read response.
+type NetworkProxyEmployeeCredential struct {
+	CredentialEpoch int64     `json:"credentialEpoch"`
+	CredentialID    string    `json:"credentialId"`
+	DeviceID        string    `json:"deviceId"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+	NodeIDs         []string  `json:"nodeIds"`
+	Secret          string    `json:"secret"`
+	UserID          string    `json:"userId"`
+}
+
+// NetworkProxyEmployeeEndpoint Operator approved internal endpoint; validate against approved endpoint set before delivery. HTTP CONNECT supports TCP only.
+type NetworkProxyEmployeeEndpoint struct {
+	EndpointID string `json:"endpointId"`
+	URL        string `json:"url"`
+}
+
+// NetworkProxyEmployeeNode defines model for NetworkProxyEmployeeNode.
+type NetworkProxyEmployeeNode struct {
+	EndpointID string `json:"endpointId"`
+	Label      string `json:"label"`
+	NodeID     string `json:"nodeId"`
+}
+
+// NetworkProxyEmployeeProjection Separate employee DTO. Safe aliases only; no upstream parameters/source URL. Fail closed on expiry, epoch change, unreachable internal endpoint. Never fetch direct source as fallback.
+type NetworkProxyEmployeeProjection struct {
+	ActiveRevision int64  `json:"activeRevision"`
+	BundleID       string `json:"bundleId"`
+
+	// Credential Only delivered through scoped device mTLS channel with private/no-store caching; never administrator list/read response.
+	Credential      NetworkProxyEmployeeCredential             `json:"credential"`
+	CredentialEpoch int64                                      `json:"credentialEpoch"`
+	DeliveryMode    NetworkProxyEmployeeProjectionDeliveryMode `json:"deliveryMode"`
+	Endpoints       []NetworkProxyEmployeeEndpoint             `json:"endpoints"`
+	ExpiresAt       time.Time                                  `json:"expiresAt"`
+	Groups          []NetworkProxyGroup                        `json:"groups"`
+	Nodes           []NetworkProxyEmployeeNode                 `json:"nodes"`
+	OrgRevision     int64                                      `json:"orgRevision"`
+
+	// ProcessEpoch Endpoint-service boot nonce bound to the endpoint credential; not the epoch of an HA proxy server. The profile-scoped projection receipt must echo this exact nonce.
+	ProcessEpoch   string                                      `json:"processEpoch"`
+	ProfileID      string                                      `json:"profileId"`
+	ProjectionHash string                                      `json:"projectionHash"`
+	Revision       int64                                       `json:"revision"`
+	Rules          []NetworkProxyRule                          `json:"rules"`
+	RuntimeID      string                                      `json:"runtimeId"`
+	SchemaVersion  NetworkProxyEmployeeProjectionSchemaVersion `json:"schemaVersion"`
+	SourceRevision int64                                       `json:"sourceRevision"`
+}
+
+// NetworkProxyEmployeeProjectionDeliveryMode defines model for NetworkProxyEmployeeProjection.DeliveryMode.
+type NetworkProxyEmployeeProjectionDeliveryMode string
+
+// NetworkProxyEmployeeProjectionSchemaVersion defines model for NetworkProxyEmployeeProjection.SchemaVersion.
+type NetworkProxyEmployeeProjectionSchemaVersion string
+
+// NetworkProxyEndpointRef Installer-approved internal HTTPS endpoint reference, never arbitrary caller URL.
+type NetworkProxyEndpointRef struct {
+	EndpointID string `json:"endpointId"`
+}
+
 // NetworkProxyEngine defines model for NetworkProxyEngine.
 type NetworkProxyEngine string
+
+// NetworkProxyEngineDescriptor defines model for NetworkProxyEngineDescriptor.
+type NetworkProxyEngineDescriptor struct {
+	AdapterID     string                                    `json:"adapterId"`
+	Capabilities  []string                                  `json:"capabilities"`
+	EngineID      string                                    `json:"engineId"`
+	ProtocolMajor NetworkProxyEngineDescriptorProtocolMajor `json:"protocolMajor"`
+	ProtocolMinor NetworkProxyEngineDescriptorProtocolMinor `json:"protocolMinor"`
+	Version       string                                    `json:"version"`
+}
+
+// NetworkProxyEngineDescriptorProtocolMajor defines model for NetworkProxyEngineDescriptor.ProtocolMajor.
+type NetworkProxyEngineDescriptorProtocolMajor int
+
+// NetworkProxyEngineDescriptorProtocolMinor defines model for NetworkProxyEngineDescriptor.ProtocolMinor.
+type NetworkProxyEngineDescriptorProtocolMinor int
 
 // NetworkProxyFlowSummary defines model for NetworkProxyFlowSummary.
 type NetworkProxyFlowSummary struct {
@@ -29620,25 +31217,67 @@ type NetworkProxyFlowSummary struct {
 	UploadBytes       int64             `json:"uploadBytes"`
 }
 
-// NetworkProxyInstance defines model for NetworkProxyInstance.
+// NetworkProxyGroup defines model for NetworkProxyGroup.
+type NetworkProxyGroup struct {
+	GroupID        string                `json:"groupId"`
+	Label          string                `json:"label"`
+	NodeIDs        []string              `json:"nodeIds"`
+	SelectedNodeID string                `json:"selectedNodeId,omitempty"`
+	Type           NetworkProxyGroupType `json:"type"`
+}
+
+// NetworkProxyGroupType defines model for NetworkProxyGroup.Type.
+type NetworkProxyGroupType string
+
+// NetworkProxyIngressCheckInput Online authorization request from enrolled runtime. Core derives identity from real mTLS, resolves current user/device/profile/scope and rechecks bundle/node/epoch and destination protection. No caller field grants identity or authorization. Never log, audit, echo or include credentialSecret in errors. UDP is explicitly unsupported unless the verified ingress transport provides it; never silently convert to TCP or DIRECT.
+type NetworkProxyIngressCheckInput struct {
+	BundleID         string                               `json:"bundleId"`
+	CredentialEpoch  int64                                `json:"credentialEpoch"`
+	CredentialID     string                               `json:"credentialId"`
+	CredentialSecret string                               `json:"credentialSecret,omitempty"`
+	DestinationHost  string                               `json:"destinationHost"`
+	DestinationPort  int                                  `json:"destinationPort"`
+	Network          NetworkProxyIngressCheckInputNetwork `json:"network"`
+	NodeID           string                               `json:"nodeId"`
+	ProcessEpoch     string                               `json:"processEpoch"`
+	Revision         int64                                `json:"revision"`
+}
+
+// NetworkProxyIngressCheckInputNetwork defines model for NetworkProxyIngressCheckInput.Network.
+type NetworkProxyIngressCheckInputNetwork string
+
+// NetworkProxyIngressCheckResult Scoped, short-lived decision, not a reusable grant. Revalidate active flows against current authorization; old epoch/lease cannot preserve revoked access. Denials/errors never expose credential or upstream values.
+type NetworkProxyIngressCheckResult struct {
+	Allowed         bool      `json:"allowed"`
+	BundleID        string    `json:"bundleId"`
+	CredentialEpoch int64     `json:"credentialEpoch"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+	NodeID          string    `json:"nodeId"`
+	ReasonCode      string    `json:"reasonCode,omitempty"`
+	Revision        int64     `json:"revision"`
+}
+
+// NetworkProxyInstance  External engine requires engineDescriptor; adapter selected by descriptor.engineId/adapterId, never legacy engine dispatch.
 type NetworkProxyInstance struct {
 	// Binding Administrative placement only. Does not authenticate proxy users or grant resource access.
-	Binding               *NetworkProxyBinding     `json:"binding,omitempty"`
-	Capabilities          []NetworkProxyCapability `json:"capabilities"`
-	CreatedAt             time.Time                `json:"createdAt"`
-	DesiredRevision       int64                    `json:"desiredRevision"`
-	Enabled               bool                     `json:"enabled"`
-	Engine                NetworkProxyEngine       `json:"engine"`
-	EngineVersion         string                   `json:"engineVersion,omitempty"`
-	Host                  string                   `json:"host,omitempty"`
-	ID                    string                   `json:"id"`
-	LastSampleAt          *time.Time               `json:"lastSampleAt,omitempty"`
-	LastSeenAt            *time.Time               `json:"lastSeenAt,omitempty"`
-	Name                  string                   `json:"name"`
-	ObservedPolicyVersion int                      `json:"observedPolicyVersion,omitempty"`
-	ObservedRevision      int64                    `json:"observedRevision"`
-	PolicyVersion         int                      `json:"policyVersion,omitempty"`
-	ReasonCode            string                   `json:"reasonCode,omitempty"`
+	Binding               *NetworkProxyBinding          `json:"binding,omitempty"`
+	Capabilities          []NetworkProxyCapability      `json:"capabilities"`
+	CreatedAt             time.Time                     `json:"createdAt"`
+	DesiredRevision       int64                         `json:"desiredRevision"`
+	Enabled               bool                          `json:"enabled"`
+	Engine                NetworkProxyEngine            `json:"engine"`
+	EngineDescriptor      *NetworkProxyEngineDescriptor `json:"engineDescriptor,omitempty"`
+	EngineVersion         string                        `json:"engineVersion,omitempty"`
+	Host                  string                        `json:"host,omitempty"`
+	ID                    string                        `json:"id"`
+	LastSampleAt          *time.Time                    `json:"lastSampleAt,omitempty"`
+	LastSeenAt            *time.Time                    `json:"lastSeenAt,omitempty"`
+	Name                  string                        `json:"name"`
+	ObservedPolicyVersion int                           `json:"observedPolicyVersion,omitempty"`
+	ObservedRevision      int64                         `json:"observedRevision"`
+	PolicyVersion         int                           `json:"policyVersion,omitempty"`
+	ProcessEpoch          string                        `json:"processEpoch,omitempty"`
+	ReasonCode            string                        `json:"reasonCode,omitempty"`
 
 	// SecurityRestricted Owner-bound managed runtime suspension; not per-flow user attribution.
 	SecurityRestricted bool                       `json:"securityRestricted,omitempty"`
@@ -29648,15 +31287,17 @@ type NetworkProxyInstance struct {
 
 // NetworkProxyInstanceEnvelope defines model for NetworkProxyInstanceEnvelope.
 type NetworkProxyInstanceEnvelope struct {
+	// Data  External engine requires engineDescriptor; adapter selected by descriptor.engineId/adapterId, never legacy engine dispatch.
 	Data NetworkProxyInstance `json:"data"`
 }
 
-// NetworkProxyInstanceInput defines model for NetworkProxyInstanceInput.
+// NetworkProxyInstanceInput  External engine requires engineDescriptor; adapter selected by descriptor.engineId/adapterId, never legacy engine dispatch.
 type NetworkProxyInstanceInput struct {
-	Engine NetworkProxyEngine `json:"engine"`
-	Host   string             `json:"host,omitempty"`
-	ID     string             `json:"id"`
-	Name   string             `json:"name"`
+	Engine           NetworkProxyEngine            `json:"engine"`
+	EngineDescriptor *NetworkProxyEngineDescriptor `json:"engineDescriptor,omitempty"`
+	Host             string                        `json:"host,omitempty"`
+	ID               string                        `json:"id"`
+	Name             string                        `json:"name"`
 }
 
 // NetworkProxyInstanceListEnvelope defines model for NetworkProxyInstanceListEnvelope.
@@ -29667,26 +31308,450 @@ type NetworkProxyInstanceListEnvelope struct {
 // NetworkProxyInstanceStatus defines model for NetworkProxyInstanceStatus.
 type NetworkProxyInstanceStatus string
 
+// NetworkProxyNode Administrator/server IR only. Never serialize into an employee projection. Labels must be replaced by safe aliases in employee views.
+type NetworkProxyNode struct {
+	Cipher   string                   `json:"cipher,omitempty"`
+	Label    string                   `json:"label"`
+	NodeID   string                   `json:"nodeId"`
+	Port     int                      `json:"port"`
+	Protocol NetworkProxyNodeProtocol `json:"protocol"`
+	Secret   string                   `json:"secret,omitempty"`
+	Server   string                   `json:"server"`
+	TLS      *NetworkProxyTLS         `json:"tls,omitempty"`
+
+	// Transport Trusted converter only: validate equivalence for the pinned target engine; unknown fields reject the whole conversion.
+	Transport *NetworkProxyTransport `json:"transport,omitempty"`
+	Username  string                 `json:"username,omitempty"`
+	UUID      openapi_types.UUID     `json:"uuid,omitempty"`
+}
+
+// NetworkProxyNodeProtocol defines model for NetworkProxyNode.Protocol.
+type NetworkProxyNodeProtocol string
+
+// NetworkProxyProjectionApplied defines model for NetworkProxyProjectionApplied.
+type NetworkProxyProjectionApplied struct {
+	BundleID string `json:"bundleId"`
+
+	// ProcessEpoch Exact endpoint-service boot nonce from the delivered projection, bound to endpoint credential; stale or mismatched echoes are rejected.
+	ProcessEpoch   string                              `json:"processEpoch"`
+	ProjectionHash string                              `json:"projectionHash"`
+	ReasonCode     string                              `json:"reasonCode,omitempty"`
+	Revision       int64                               `json:"revision"`
+	Status         NetworkProxyProjectionAppliedStatus `json:"status"`
+}
+
+// NetworkProxyProjectionAppliedStatus defines model for NetworkProxyProjectionApplied.Status.
+type NetworkProxyProjectionAppliedStatus string
+
 // NetworkProxyRestoreInput defines model for NetworkProxyRestoreInput.
 type NetworkProxyRestoreInput struct {
 	ExpectedRevision int `json:"expectedRevision"`
 }
 
-// NetworkProxyTrafficEnvelope defines model for NetworkProxyTrafficEnvelope.
-type NetworkProxyTrafficEnvelope struct {
-	InstanceID string                      `json:"instanceId"`
-	Samples    []NetworkProxyTrafficSample `json:"samples"`
-	Supported  bool                        `json:"supported"`
+// NetworkProxyRule defines model for NetworkProxyRule.
+type NetworkProxyRule struct {
+	// Action node/group require a logical targetId; reject/direct forbid targetId. ProtectedSet reject always wins.
+	Action  NetworkProxyRuleAction `json:"action"`
+	Enabled bool                   `json:"enabled"`
+
+	// Matcher domain is case insensitive exact; domain_suffix matches label boundaries; cidr canonical netip prefix; process matching is local only, never trusted server-mandatory input. all has no value.
+	Matcher NetworkProxyRuleMatcher `json:"matcher"`
+	Order   int64                   `json:"order"`
+	RuleID  string                  `json:"ruleId"`
+	Source  NetworkProxyRuleSource  `json:"source"`
 }
 
-// NetworkProxyTrafficSample defines model for NetworkProxyTrafficSample.
+// NetworkProxyRuleSource defines model for NetworkProxyRule.Source.
+type NetworkProxyRuleSource string
+
+// NetworkProxyRuleAction node/group require a logical targetId; reject/direct forbid targetId. ProtectedSet reject always wins.
+type NetworkProxyRuleAction struct {
+	TargetID string                     `json:"targetId,omitempty"`
+	Type     NetworkProxyRuleActionType `json:"type"`
+}
+
+// NetworkProxyRuleActionType defines model for NetworkProxyRuleAction.Type.
+type NetworkProxyRuleActionType string
+
+// NetworkProxyRuleConflict defines model for NetworkProxyRuleConflict.
+type NetworkProxyRuleConflict struct {
+	BlockingRuleID string                             `json:"blockingRuleId"`
+	ReasonCode     NetworkProxyRuleConflictReasonCode `json:"reasonCode"`
+	RuleID         string                             `json:"ruleId"`
+}
+
+// NetworkProxyRuleConflictReasonCode defines model for NetworkProxyRuleConflict.ReasonCode.
+type NetworkProxyRuleConflictReasonCode string
+
+// NetworkProxyRuleMatcher domain is case insensitive exact; domain_suffix matches label boundaries; cidr canonical netip prefix; process matching is local only, never trusted server-mandatory input. all has no value.
+type NetworkProxyRuleMatcher struct {
+	Type  NetworkProxyRuleMatcherType `json:"type"`
+	Value string                      `json:"value,omitempty"`
+}
+
+// NetworkProxyRuleMatcherType defines model for NetworkProxyRuleMatcher.Type.
+type NetworkProxyRuleMatcherType string
+
+// NetworkProxyRules Personal drafts persist independently of subscription/org updates. CAS both revisions; conflicts retain original drafts.
+type NetworkProxyRules struct {
+	Conflicts        []NetworkProxyRuleConflict `json:"conflicts"`
+	EffectiveRules   []NetworkProxyRule         `json:"effectiveRules"`
+	OrgRevision      int64                      `json:"orgRevision"`
+	PersonalRevision int64                      `json:"personalRevision"`
+	Rules            []NetworkProxyRule         `json:"rules"`
+}
+
+// NetworkProxyRulesInput defines model for NetworkProxyRulesInput.
+type NetworkProxyRulesInput struct {
+	ExpectedOrgRevision      int64              `json:"expectedOrgRevision"`
+	ExpectedPersonalRevision int64              `json:"expectedPersonalRevision"`
+	Rules                    []NetworkProxyRule `json:"rules"`
+}
+
+// NetworkProxyRuntimeCommandInput Single typed bounded operation. Select requires groupId/nodeId; probe requires registered probeProfileId, never arbitrary URL. No controller path/body/shell. Expiry <=30 seconds; epoch must match.
+type NetworkProxyRuntimeCommandInput struct {
+	Cursor         string                         `json:"cursor,omitempty"`
+	ExpiresAt      time.Time                      `json:"expiresAt"`
+	GroupID        string                         `json:"groupId,omitempty"`
+	IssuedAt       time.Time                      `json:"issuedAt"`
+	Kind           NetworkProxyRuntimeCommandKind `json:"kind"`
+	Limit          int                            `json:"limit,omitempty"`
+	NodeID         string                         `json:"nodeId,omitempty"`
+	ProbeProfileID string                         `json:"probeProfileId,omitempty"`
+	ProcessEpoch   string                         `json:"processEpoch"`
+	RequestID      string                         `json:"requestId"`
+	SourceID       string                         `json:"sourceId,omitempty"`
+}
+
+// NetworkProxyRuntimeCommandKind defines model for NetworkProxyRuntimeCommandKind.
+type NetworkProxyRuntimeCommandKind string
+
+// NetworkProxyRuntimeCommandReceipt Durable idempotent receipt; same requestId with different intent conflicts. Accepted does not mean applied. commandId equals requestId; durable uniqueness is scoped to (instanceID, requestId). Reuse by another actor or for a different intent returns conflict; no cross-actor receipt disclosure.
+type NetworkProxyRuntimeCommandReceipt struct {
+	CommandID    string                         `json:"commandId"`
+	ExpiresAt    time.Time                      `json:"expiresAt"`
+	Kind         NetworkProxyRuntimeCommandKind `json:"kind"`
+	ProcessEpoch string                         `json:"processEpoch"`
+	ReasonCode   string                         `json:"reasonCode,omitempty"`
+	RequestID    string                         `json:"requestId"`
+
+	// Result Bounded sanitized results; no raw kernel config/controller dumps or upstream secrets.
+	Result *NetworkProxyRuntimeCommandResult       `json:"result,omitempty"`
+	Status NetworkProxyRuntimeCommandReceiptStatus `json:"status"`
+}
+
+// NetworkProxyRuntimeCommandReceiptStatus defines model for NetworkProxyRuntimeCommandReceipt.Status.
+type NetworkProxyRuntimeCommandReceiptStatus string
+
+// NetworkProxyRuntimeCommandResult Bounded sanitized results; no raw kernel config/controller dumps or upstream secrets.
+type NetworkProxyRuntimeCommandResult struct {
+	Diagnostics []struct {
+		Code    string                                           `json:"code"`
+		Message string                                           `json:"message"`
+		State   NetworkProxyRuntimeCommandResultDiagnosticsState `json:"state"`
+	} `json:"diagnostics,omitempty"`
+	DNS []struct {
+		Addresses []string  `json:"addresses"`
+		ExpiresAt time.Time `json:"expiresAt"`
+		Name      string    `json:"name"`
+	} `json:"dns,omitempty"`
+	Groups              []NetworkProxyGroup `json:"groups,omitempty"`
+	LatencyMilliseconds float32             `json:"latencyMilliseconds,omitempty"`
+	Logs                []struct {
+		Level      NetworkProxyRuntimeCommandResultLogsLevel `json:"level"`
+		Message    string                                    `json:"message"`
+		OccurredAt time.Time                                 `json:"occurredAt"`
+		Sequence   int64                                     `json:"sequence"`
+	} `json:"logs,omitempty"`
+	Rules          []NetworkProxyRule `json:"rules,omitempty"`
+	SelectedNodeID string             `json:"selectedNodeId,omitempty"`
+}
+
+// NetworkProxyRuntimeCommandResultDiagnosticsState defines model for NetworkProxyRuntimeCommandResult.Diagnostics.State.
+type NetworkProxyRuntimeCommandResultDiagnosticsState string
+
+// NetworkProxyRuntimeCommandResultLogsLevel defines model for NetworkProxyRuntimeCommandResult.Logs.Level.
+type NetworkProxyRuntimeCommandResultLogsLevel string
+
+// NetworkProxyScope defines model for NetworkProxyScope.
+type NetworkProxyScope struct {
+	DeviceIDs []string `json:"deviceIds"`
+	NodeIDs   []string `json:"nodeIds"`
+	UserIDs   []string `json:"userIds"`
+}
+
+// NetworkProxyServerPublication Server-runtime-only publication metadata, delivered with ConfigurationDesired. Real upstream remains in encrypted server configuration content; never send this DTO through employee/admin command results. The host independently compiles/validates outbound references and enforces lease, protection and ingress authorization.
+type NetworkProxyServerPublication struct {
+	BundleID         string                                    `json:"bundleId"`
+	ConverterVersion string                                    `json:"converterVersion"`
+	CredentialEpoch  int64                                     `json:"credentialEpoch"`
+	DeliveryMode     NetworkProxyServerPublicationDeliveryMode `json:"deliveryMode"`
+	Groups           []NetworkProxyGroup                       `json:"groups"`
+	MemberSetHash    string                                    `json:"memberSetHash"`
+	Nodes            []NetworkProxyServerPublicationNode       `json:"nodes"`
+	OrgRevision      int64                                     `json:"orgRevision"`
+	Revision         int64                                     `json:"revision"`
+	Rules            []NetworkProxyRule                        `json:"rules"`
+	ServerHash       string                                    `json:"serverHash"`
+	SourceRevision   int64                                     `json:"sourceRevision"`
+	ValidUntil       time.Time                                 `json:"validUntil"`
+}
+
+// NetworkProxyServerPublicationDeliveryMode defines model for NetworkProxyServerPublication.DeliveryMode.
+type NetworkProxyServerPublicationDeliveryMode string
+
+// NetworkProxyServerPublicationNode Logical node and host-compiled outbound reference only. Never a caller-selected listener, controller path or upstream configuration.
+type NetworkProxyServerPublicationNode struct {
+	NodeID     string `json:"nodeId"`
+	OutboundID string `json:"outboundId"`
+}
+
+// NetworkProxySource defines model for NetworkProxySource.
+type NetworkProxySource struct {
+	Configured   bool                     `json:"configured"`
+	DeliveryMode NetworkProxyDeliveryMode `json:"deliveryMode"`
+	Format       NetworkProxySourceFormat `json:"format"`
+	Name         string                   `json:"name"`
+	NodeCount    int64                    `json:"nodeCount"`
+	Revision     int64                    `json:"revision"`
+	SourceID     string                   `json:"sourceId"`
+	UpdatedAt    time.Time                `json:"updatedAt"`
+}
+
+// NetworkProxySourceFormat defines model for NetworkProxySourceFormat.
+type NetworkProxySourceFormat string
+
+// NetworkProxySourceInput Secrets encrypted by server; omitted secret preserves existing value. Historical source defaults to direct_subscription. Unknown formats/fields reject atomically.
+type NetworkProxySourceInput struct {
+	Content          string                   `json:"content,omitempty"`
+	DeliveryMode     NetworkProxyDeliveryMode `json:"deliveryMode,omitempty"`
+	ExpectedRevision int64                    `json:"expectedRevision"`
+	Format           NetworkProxySourceFormat `json:"format"`
+	Name             string                   `json:"name"`
+	Nodes            []NetworkProxyNode       `json:"nodes,omitempty"`
+	URL              string                   `json:"url,omitempty"`
+}
+
+// NetworkProxySourceList defines model for NetworkProxySourceList.
+type NetworkProxySourceList struct {
+	Items []NetworkProxySource `json:"items"`
+}
+
+// NetworkProxyTLS defines model for NetworkProxyTLS.
+type NetworkProxyTLS struct {
+	Alpn        []string `json:"alpn,omitempty"`
+	Enabled     bool     `json:"enabled"`
+	Fingerprint string   `json:"fingerprint,omitempty"`
+	ServerName  string   `json:"serverName,omitempty"`
+}
+
+// NetworkProxyTrafficEnvelope defines model for NetworkProxyTrafficEnvelope.
+type NetworkProxyTrafficEnvelope struct {
+	Freshness      NetworkProxyTrafficEnvelopeFreshness `json:"freshness,omitempty"`
+	InstanceID     string                               `json:"instanceId"`
+	ObservedAt     *time.Time                           `json:"observedAt,omitempty"`
+	ProcessEpoch   string                               `json:"processEpoch,omitempty"`
+	ReturnedCount  int64                                `json:"returnedCount,omitempty"`
+	SampleSequence int64                                `json:"sampleSequence,omitempty"`
+	Samples        []NetworkProxyTrafficSample          `json:"samples"`
+	Supported      bool                                 `json:"supported"`
+	TotalActive    int64                                `json:"totalActive,omitempty"`
+	Truncated      bool                                 `json:"truncated,omitempty"`
+}
+
+// NetworkProxyTrafficEnvelopeFreshness defines model for NetworkProxyTrafficEnvelope.Freshness.
+type NetworkProxyTrafficEnvelopeFreshness string
+
+// NetworkProxyTrafficSample Rates are numeric for existing clients. When rateState is unknown or gap, numeric placeholders carry no rate information. A known rate requires contiguous sample sequence within one process epoch and an acceptable sampling interval. An absent rateState identifies a legacy response.
 type NetworkProxyTrafficSample struct {
-	ActiveConnections      int       `json:"activeConnections,omitempty"`
-	DownloadBytesPerSecond float32   `json:"downloadBytesPerSecond"`
-	DownloadTotal          int64     `json:"downloadTotal"`
-	ObservedAt             time.Time `json:"observedAt"`
-	UploadBytesPerSecond   float32   `json:"uploadBytesPerSecond"`
-	UploadTotal            int64     `json:"uploadTotal"`
+	ActiveConnections      int                                `json:"activeConnections,omitempty"`
+	DownloadBytesPerSecond float32                            `json:"downloadBytesPerSecond"`
+	DownloadTotal          int64                              `json:"downloadTotal"`
+	ObservedAt             time.Time                          `json:"observedAt"`
+	ProcessEpoch           string                             `json:"processEpoch,omitempty"`
+	RateState              NetworkProxyTrafficSampleRateState `json:"rateState,omitempty"`
+	SampleSequence         int64                              `json:"sampleSequence,omitempty"`
+	UploadBytesPerSecond   float32                            `json:"uploadBytesPerSecond"`
+	UploadTotal            int64                              `json:"uploadTotal"`
+}
+
+// NetworkProxyTrafficSampleRateState defines model for NetworkProxyTrafficSample.RateState.
+type NetworkProxyTrafficSampleRateState string
+
+// NetworkProxyTransport Trusted converter only: validate equivalence for the pinned target engine; unknown fields reject the whole conversion.
+type NetworkProxyTransport struct {
+	Host        string                    `json:"host,omitempty"`
+	Path        string                    `json:"path,omitempty"`
+	ServiceName string                    `json:"serviceName,omitempty"`
+	Type        NetworkProxyTransportType `json:"type"`
+}
+
+// NetworkProxyTransportType defines model for NetworkProxyTransport.Type.
+type NetworkProxyTransportType string
+
+// NetworkRADIUSConfiguration defines model for NetworkRADIUSConfiguration.
+type NetworkRADIUSConfiguration struct {
+	EapCARef                string `json:"eapCARef"`
+	EapServerCertificateRef string `json:"eapServerCertificateRef"`
+	EapServerKeyRef         string `json:"eapServerKeyRef"`
+	HooksAttested           bool   `json:"hooksAttested"`
+	NasSharedSecretRef      string `json:"nasSharedSecretRef"`
+	Reference               string `json:"reference"`
+	TreeHash                string `json:"treeHash"`
+}
+
+// NetworkRADIUSConfigurationInput defines model for NetworkRADIUSConfigurationInput.
+type NetworkRADIUSConfigurationInput struct {
+	ConfigurationRef string `json:"configurationRef"`
+	ExpectedRevision int    `json:"expectedRevision"`
+	RequestID        string `json:"requestId"`
+}
+
+// NetworkRADIUSControlInput defines model for NetworkRADIUSControlInput.
+type NetworkRADIUSControlInput struct {
+	Action           NetworkRADIUSControlInputAction `json:"action"`
+	DrainSeconds     int                             `json:"drainSeconds,omitempty"`
+	ExpectedRevision int                             `json:"expectedRevision"`
+	Replicas         *int                            `json:"replicas,omitempty"`
+	RequestID        string                          `json:"requestId"`
+}
+
+// NetworkRADIUSControlInputAction defines model for NetworkRADIUSControlInput.Action.
+type NetworkRADIUSControlInputAction string
+
+// NetworkRADIUSMember defines model for NetworkRADIUSMember.
+type NetworkRADIUSMember struct {
+	AcceptingNewAuthentications bool       `json:"acceptingNewAuthentications"`
+	ActiveStates                *int       `json:"activeStates,omitempty"`
+	ConfigurationRevision       int        `json:"configurationRevision,omitempty"`
+	ControlRevision             int        `json:"controlRevision,omitempty"`
+	CredentialID                string     `json:"credentialId,omitempty"`
+	Endpoint                    string     `json:"endpoint"`
+	LastObservedAt              *time.Time `json:"lastObservedAt,omitempty"`
+	LeaseUntil                  *time.Time `json:"leaseUntil,omitempty"`
+	MemberID                    string     `json:"memberId"`
+	Ordinal                     int        `json:"ordinal"`
+	ProcessEpoch                string     `json:"processEpoch,omitempty"`
+	ProcessStopped              bool       `json:"processStopped"`
+	Ready                       bool       `json:"ready"`
+	ReasonCode                  string     `json:"reasonCode,omitempty"`
+	RuntimeID                   string     `json:"runtimeId"`
+	RuntimeVersion              string     `json:"runtimeVersion,omitempty"`
+	StateCountKnown             bool       `json:"stateCountKnown"`
+	TrafficReady                bool       `json:"trafficReady"`
+}
+
+// NetworkRADIUSOptions defines model for NetworkRADIUSOptions.
+type NetworkRADIUSOptions struct {
+	Slots []NetworkRADIUSSlotOption `json:"slots"`
+}
+
+// NetworkRADIUSPool defines model for NetworkRADIUSPool.
+type NetworkRADIUSPool struct {
+	ConfigurationHash     string                 `json:"configurationHash"`
+	ConfigurationRef      string                 `json:"configurationRef"`
+	ConfigurationRevision int                    `json:"configurationRevision"`
+	DesiredReplicas       int                    `json:"desiredReplicas"`
+	Enabled               bool                   `json:"enabled"`
+	LogicalRuntimeID      string                 `json:"logicalRuntimeId"`
+	Members               []NetworkRADIUSMember  `json:"members"`
+	Name                  string                 `json:"name"`
+	NASBindingID          string                 `json:"nasBindingId"`
+	ObjectUID             string                 `json:"objectUid"`
+	ObservedReplicas      *int                   `json:"observedReplicas,omitempty"`
+	OperationID           string                 `json:"operationId,omitempty"`
+	OwnerEpoch            int                    `json:"ownerEpoch"`
+	PoolID                string                 `json:"poolId"`
+	ReadyReplicas         *int                   `json:"readyReplicas,omitempty"`
+	ReasonCode            string                 `json:"reasonCode,omitempty"`
+	Revision              int                    `json:"revision"`
+	SiteID                string                 `json:"siteId"`
+	SlotID                string                 `json:"slotId"`
+	State                 NetworkRADIUSPoolState `json:"state"`
+	TemplateHash          string                 `json:"templateHash"`
+}
+
+// NetworkRADIUSPoolState defines model for NetworkRADIUSPool.State.
+type NetworkRADIUSPoolState string
+
+// NetworkRADIUSPoolInput defines model for NetworkRADIUSPoolInput.
+type NetworkRADIUSPoolInput struct {
+	ConfigurationRef         string     `json:"configurationRef"`
+	CreateApprovedBinding    bool       `json:"createApprovedBinding,omitempty"`
+	ExpectedBindingUpdatedAt *time.Time `json:"expectedBindingUpdatedAt,omitempty"`
+	Name                     string     `json:"name"`
+	NASBindingID             string     `json:"nasBindingId"`
+	RequestID                string     `json:"requestId"`
+	SiteID                   string     `json:"siteId"`
+	SlotID                   string     `json:"slotId"`
+}
+
+// NetworkRADIUSPoolList defines model for NetworkRADIUSPoolList.
+type NetworkRADIUSPoolList struct {
+	Items []NetworkRADIUSPool `json:"items"`
+}
+
+// NetworkRADIUSRuntimeACK defines model for NetworkRADIUSRuntimeACK.
+type NetworkRADIUSRuntimeACK struct {
+	AcceptingNewAuthentications bool      `json:"acceptingNewAuthentications"`
+	ActiveStates                *int      `json:"activeStates,omitempty"`
+	ConfigurationApplied        bool      `json:"configurationApplied"`
+	ConfigurationHash           string    `json:"configurationHash"`
+	ConfigurationRevision       int       `json:"configurationRevision"`
+	ControlRevision             int       `json:"controlRevision"`
+	CredentialID                string    `json:"credentialId"`
+	HooksReady                  bool      `json:"hooksReady"`
+	MemberID                    string    `json:"memberId"`
+	ObservedAt                  time.Time `json:"observedAt"`
+	ObservedNASUse              bool      `json:"observedNASUse"`
+	OwnerEpoch                  int       `json:"ownerEpoch"`
+	PoolID                      string    `json:"poolId"`
+	ProcessEpoch                string    `json:"processEpoch"`
+	ProcessStopped              bool      `json:"processStopped"`
+	Ready                       bool      `json:"ready"`
+	RuntimeID                   string    `json:"runtimeId"`
+	RuntimeVersion              string    `json:"runtimeVersion"`
+	StateCountKnown             bool      `json:"stateCountKnown"`
+}
+
+// NetworkRADIUSRuntimeControl defines model for NetworkRADIUSRuntimeControl.
+type NetworkRADIUSRuntimeControl struct {
+	AcceptNewAuthentications bool                       `json:"acceptNewAuthentications"`
+	Configuration            NetworkRADIUSConfiguration `json:"configuration"`
+	ConfigurationHash        string                     `json:"configurationHash"`
+	ConfigurationLeaseUntil  time.Time                  `json:"configurationLeaseUntil"`
+	ConfigurationRevision    int                        `json:"configurationRevision"`
+	ControlLeaseUntil        time.Time                  `json:"controlLeaseUntil"`
+	ControlRevision          int                        `json:"controlRevision"`
+	CredentialID             string                     `json:"credentialId"`
+	DrainUntil               *time.Time                 `json:"drainUntil,omitempty"`
+	MemberID                 string                     `json:"memberId"`
+	NASBindingID             string                     `json:"nasBindingId"`
+	NASID                    string                     `json:"nasId"`
+	OwnerEpoch               int                        `json:"ownerEpoch"`
+	PoolID                   string                     `json:"poolId"`
+	ProcessEpoch             string                     `json:"processEpoch"`
+	RunProcess               bool                       `json:"runProcess"`
+	RuntimeID                string                     `json:"runtimeId"`
+	ServeExistingUntil       time.Time                  `json:"serveExistingUntil"`
+	SiteID                   string                     `json:"siteId"`
+	StopConfirmUntil         *time.Time                 `json:"stopConfirmUntil,omitempty"`
+	StopRequired             bool                       `json:"stopRequired"`
+}
+
+// NetworkRADIUSSlotOption defines model for NetworkRADIUSSlotOption.
+type NetworkRADIUSSlotOption struct {
+	Available                     bool       `json:"available"`
+	BindingExists                 bool       `json:"bindingExists"`
+	BindingUpdatedAt              *time.Time `json:"bindingUpdatedAt,omitempty"`
+	ConfigurationRefs             []string   `json:"configurationRefs"`
+	CreateApprovedBindingRequired bool       `json:"createApprovedBindingRequired"`
+	MaxReplicas                   int        `json:"maxReplicas"`
+	NASBindingID                  string     `json:"nasBindingId"`
+	ReasonCode                    string     `json:"reasonCode"`
+	ReservedPoolID                string     `json:"reservedPoolId,omitempty"`
+	SiteID                        string     `json:"siteId"`
+	SlotID                        string     `json:"slotId"`
 }
 
 // NetworkResource defines model for NetworkResource.
@@ -37373,6 +39438,9 @@ type bearerAuthContextKey string
 // networkControlMTLSContextKey is the context key for networkControlMTLS security scheme
 type networkControlMTLSContextKey string
 
+// outpostRuntimeExecutorAuthContextKey is the context key for outpostRuntimeExecutorAuth security scheme
+type outpostRuntimeExecutorAuthContextKey string
+
 // runtimeBearerAuthContextKey is the context key for runtimeBearerAuth security scheme
 type runtimeBearerAuthContextKey string
 
@@ -39416,6 +41484,11 @@ type ListHealingRunRecordsParams struct {
 	Limit    int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// GetIdentityOutpostRuntimeExecutionStatusParams defines parameters for GetIdentityOutpostRuntimeExecutionStatus.
+type GetIdentityOutpostRuntimeExecutionStatusParams struct {
+	TaskID string `form:"taskId" json:"taskId"`
+}
+
 // GetIdentityProviderUserMetadataParams defines parameters for GetIdentityProviderUserMetadata.
 type GetIdentityProviderUserMetadataParams struct {
 	// ClientID OIDC client record ID. Required for OIDC; the client must belong to this provider.
@@ -39563,6 +41636,12 @@ type ListNetworkProxyInstancesParams struct {
 	Limit  int                `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// DeleteNetworkProxySourceParams defines parameters for DeleteNetworkProxySource.
+type DeleteNetworkProxySourceParams struct {
+	ExpectedRevision int64  `form:"expectedRevision" json:"expectedRevision"`
+	RequestID        string `form:"requestId" json:"requestId"`
+}
+
 // GetNetworkProxyTrafficParams defines parameters for GetNetworkProxyTraffic.
 type GetNetworkProxyTrafficParams struct {
 	From time.Time `form:"from,omitempty" json:"from,omitempty"`
@@ -39666,6 +41745,61 @@ type ListNetworkVPNSelectionPoliciesParams struct {
 // DeleteNetworkVPNSelectionPolicyParams defines parameters for DeleteNetworkVPNSelectionPolicy.
 type DeleteNetworkVPNSelectionPolicyParams struct {
 	ExpectedRevision int `form:"expectedRevision" json:"expectedRevision"`
+}
+
+// GetNextNetworkProxyRuntimeCommandParams defines parameters for GetNextNetworkProxyRuntimeCommand.
+type GetNextNetworkProxyRuntimeCommandParams struct {
+	ProcessEpoch string `form:"processEpoch" json:"processEpoch"`
+}
+
+// GetNextNetworkProxyRuntimeCommand200JSONResponseBodyMessageType defines parameters for GetNextNetworkProxyRuntimeCommand.
+type GetNextNetworkProxyRuntimeCommand200JSONResponseBodyMessageType string
+
+// GetNextNetworkProxyRuntimeCommand200JSONResponseBodySchemaVersion defines parameters for GetNextNetworkProxyRuntimeCommand.
+type GetNextNetworkProxyRuntimeCommand200JSONResponseBodySchemaVersion string
+
+// CompleteNetworkProxyRuntimeCommandJSONBody defines parameters for CompleteNetworkProxyRuntimeCommand.
+type CompleteNetworkProxyRuntimeCommandJSONBody struct {
+	MessageType CompleteNetworkProxyRuntimeCommandJSONBodyMessageType `json:"messageType"`
+	OccurredAt  time.Time                                             `json:"occurredAt"`
+
+	// Payload Durable idempotent receipt; same requestId with different intent conflicts. Accepted does not mean applied. commandId equals requestId; durable uniqueness is scoped to (instanceID, requestId). Reuse by another actor or for a different intent returns conflict; no cross-actor receipt disclosure.
+	Payload       NetworkProxyRuntimeCommandReceipt                       `json:"payload"`
+	RuntimeID     string                                                  `json:"runtimeId"`
+	SchemaVersion CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion `json:"schemaVersion"`
+}
+
+// CompleteNetworkProxyRuntimeCommandJSONBodyMessageType defines parameters for CompleteNetworkProxyRuntimeCommand.
+type CompleteNetworkProxyRuntimeCommandJSONBodyMessageType string
+
+// CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion defines parameters for CompleteNetworkProxyRuntimeCommand.
+type CompleteNetworkProxyRuntimeCommandJSONBodySchemaVersion string
+
+// GetNetworkProxyDeploymentRuntimeControlParams defines parameters for GetNetworkProxyDeploymentRuntimeControl.
+type GetNetworkProxyDeploymentRuntimeControlParams struct {
+	// InstanceID PodName member identity; must appear exactly once and match the authenticated runtime control binding.
+	InstanceID string `form:"instanceId" json:"instanceId"`
+
+	// ProcessEpoch Process boot nonce; must appear exactly once and match the current member epoch.
+	ProcessEpoch string `form:"processEpoch" json:"processEpoch"`
+}
+
+// GetNetworkRADIUSRuntimeControlParams defines parameters for GetNetworkRADIUSRuntimeControl.
+type GetNetworkRADIUSRuntimeControlParams struct {
+	MemberID     string `form:"memberId" json:"memberId"`
+	ProcessEpoch string `form:"processEpoch" json:"processEpoch"`
+}
+
+// GetNetworkProxyDirectProjectionParams defines parameters for GetNetworkProxyDirectProjection.
+type GetNetworkProxyDirectProjectionParams struct {
+	// ProcessEpoch Endpoint-service boot nonce bound to endpoint credential; receipt echoes exactly.
+	ProcessEpoch string `form:"processEpoch" json:"processEpoch"`
+}
+
+// GetNetworkProxyEmployeeProjectionParams defines parameters for GetNetworkProxyEmployeeProjection.
+type GetNetworkProxyEmployeeProjectionParams struct {
+	// ProcessEpoch Endpoint-service boot nonce bound to endpoint credential. Receipt echoes exactly; never an HA server epoch.
+	ProcessEpoch string `form:"processEpoch" json:"processEpoch"`
 }
 
 // ListObservabilityMetricCatalogParams defines parameters for ListObservabilityMetricCatalog.
@@ -40867,6 +43001,12 @@ type CreateIdentityOIDCClientJSONRequestBody = OIDCClientInput
 // UpdateIdentityOIDCClientJSONRequestBody defines body for UpdateIdentityOIDCClient for application/json ContentType.
 type UpdateIdentityOIDCClientJSONRequestBody = OIDCClientInput
 
+// RecordIdentityOutpostRuntimeExecutionCallbackJSONRequestBody defines body for RecordIdentityOutpostRuntimeExecutionCallback for application/json ContentType.
+type RecordIdentityOutpostRuntimeExecutionCallbackJSONRequestBody = ExecutionCallbackRequest
+
+// ClaimIdentityOutpostRuntimeExecutionJSONRequestBody defines body for ClaimIdentityOutpostRuntimeExecution for application/json ContentType.
+type ClaimIdentityOutpostRuntimeExecutionJSONRequestBody = IdentityOutpostRuntimeExecutorClaimRequest
+
 // CreateIdentityOutpostJSONRequestBody defines body for CreateIdentityOutpost for application/json ContentType.
 type CreateIdentityOutpostJSONRequestBody = IdentityOutpostInput
 
@@ -40884,6 +43024,12 @@ type RecordIdentityOutpostRuntimeEventsJSONRequestBody = IdentityOutpostEventBat
 
 // HeartbeatIdentityOutpostRuntimeJSONRequestBody defines body for HeartbeatIdentityOutpostRuntime for application/json ContentType.
 type HeartbeatIdentityOutpostRuntimeJSONRequestBody = IdentityOutpostHeartbeatRequest
+
+// BindIdentityOutpostRuntimeJSONRequestBody defines body for BindIdentityOutpostRuntime for application/json ContentType.
+type BindIdentityOutpostRuntimeJSONRequestBody = IdentityOutpostRuntimeBindingInput
+
+// ControlIdentityOutpostRuntimeJSONRequestBody defines body for ControlIdentityOutpostRuntime for application/json ContentType.
+type ControlIdentityOutpostRuntimeJSONRequestBody = IdentityOutpostRuntimeControlInput
 
 // CreateIdentityPolicyJSONRequestBody defines body for CreateIdentityPolicy for application/json ContentType.
 type CreateIdentityPolicyJSONRequestBody = IdentityPolicyInput
@@ -41038,11 +43184,53 @@ type PreviewNetworkAccessPolicyJSONRequestBody = NetworkPolicyPreviewRequest
 // CreateNetworkProxyInstanceJSONRequestBody defines body for CreateNetworkProxyInstance for application/json ContentType.
 type CreateNetworkProxyInstanceJSONRequestBody = NetworkProxyInstanceInput
 
+// CreateNetworkProxyBundleJSONRequestBody defines body for CreateNetworkProxyBundle for application/json ContentType.
+type CreateNetworkProxyBundleJSONRequestBody = NetworkProxyBundleInput
+
+// ActivateNetworkProxyBundleJSONRequestBody defines body for ActivateNetworkProxyBundle for application/json ContentType.
+type ActivateNetworkProxyBundleJSONRequestBody = NetworkProxyBundleActivateInput
+
+// CreateNetworkProxyRuntimeCommandJSONRequestBody defines body for CreateNetworkProxyRuntimeCommand for application/json ContentType.
+type CreateNetworkProxyRuntimeCommandJSONRequestBody = NetworkProxyRuntimeCommandInput
+
 // UpdateNetworkProxyConfigurationJSONRequestBody defines body for UpdateNetworkProxyConfiguration for application/json ContentType.
 type UpdateNetworkProxyConfigurationJSONRequestBody = NetworkProxyConfigurationInput
 
 // RestoreNetworkProxyConfigurationJSONRequestBody defines body for RestoreNetworkProxyConfiguration for application/json ContentType.
 type RestoreNetworkProxyConfigurationJSONRequestBody = NetworkProxyRestoreInput
+
+// CloseNetworkProxyConnectionJSONRequestBody defines body for CloseNetworkProxyConnection for application/json ContentType.
+type CloseNetworkProxyConnectionJSONRequestBody = NetworkProxyCloseInput
+
+// BindNetworkProxyDeploymentJSONRequestBody defines body for BindNetworkProxyDeployment for application/json ContentType.
+type BindNetworkProxyDeploymentJSONRequestBody = NetworkProxyDeploymentInput
+
+// ControlNetworkProxyDeploymentJSONRequestBody defines body for ControlNetworkProxyDeployment for application/json ContentType.
+type ControlNetworkProxyDeploymentJSONRequestBody = NetworkProxyDeploymentControlInput
+
+// UpdateNetworkProxyPersonalRulesJSONRequestBody defines body for UpdateNetworkProxyPersonalRules for application/json ContentType.
+type UpdateNetworkProxyPersonalRulesJSONRequestBody = NetworkProxyRulesInput
+
+// UpdateNetworkProxyRulesJSONRequestBody defines body for UpdateNetworkProxyRules for application/json ContentType.
+type UpdateNetworkProxyRulesJSONRequestBody = NetworkProxyRulesInput
+
+// CreateNetworkProxySourceJSONRequestBody defines body for CreateNetworkProxySource for application/json ContentType.
+type CreateNetworkProxySourceJSONRequestBody = NetworkProxySourceInput
+
+// PreviewNetworkProxySourceJSONRequestBody defines body for PreviewNetworkProxySource for application/json ContentType.
+type PreviewNetworkProxySourceJSONRequestBody = NetworkProxySourceInput
+
+// UpdateNetworkProxySourceJSONRequestBody defines body for UpdateNetworkProxySource for application/json ContentType.
+type UpdateNetworkProxySourceJSONRequestBody = NetworkProxySourceInput
+
+// CreateNetworkRADIUSPoolJSONRequestBody defines body for CreateNetworkRADIUSPool for application/json ContentType.
+type CreateNetworkRADIUSPoolJSONRequestBody = NetworkRADIUSPoolInput
+
+// ConfigureNetworkRADIUSPoolJSONRequestBody defines body for ConfigureNetworkRADIUSPool for application/json ContentType.
+type ConfigureNetworkRADIUSPoolJSONRequestBody = NetworkRADIUSConfigurationInput
+
+// ControlNetworkRADIUSPoolJSONRequestBody defines body for ControlNetworkRADIUSPool for application/json ContentType.
+type ControlNetworkRADIUSPoolJSONRequestBody = NetworkRADIUSControlInput
 
 // CreateNetworkResourceJSONRequestBody defines body for CreateNetworkResource for application/json ContentType.
 type CreateNetworkResourceJSONRequestBody = NetworkResourceInput
@@ -41110,8 +43298,26 @@ type PreviewNetworkVPNSelectionJSONRequestBody = NetworkVPNPreviewInput
 // PutNetworkWorkloadBindingJSONRequestBody defines body for PutNetworkWorkloadBinding for application/json ContentType.
 type PutNetworkWorkloadBindingJSONRequestBody = NetworkWorkloadBindingInput
 
+// CheckNetworkProxyIngressJSONRequestBody defines body for CheckNetworkProxyIngress for application/json ContentType.
+type CheckNetworkProxyIngressJSONRequestBody = NetworkProxyIngressCheckInput
+
+// AcknowledgeNetworkProxyBundleReadbackJSONRequestBody defines body for AcknowledgeNetworkProxyBundleReadback for application/json ContentType.
+type AcknowledgeNetworkProxyBundleReadbackJSONRequestBody = NetworkProxyBundleReadback
+
+// CompleteNetworkProxyRuntimeCommandJSONRequestBody defines body for CompleteNetworkProxyRuntimeCommand for application/json ContentType.
+type CompleteNetworkProxyRuntimeCommandJSONRequestBody CompleteNetworkProxyRuntimeCommandJSONBody
+
+// AcknowledgeNetworkProxyDeploymentRuntimeControlJSONRequestBody defines body for AcknowledgeNetworkProxyDeploymentRuntimeControl for application/json ContentType.
+type AcknowledgeNetworkProxyDeploymentRuntimeControlJSONRequestBody = NetworkProxyDeploymentRuntimeAck
+
+// AcknowledgeNetworkRADIUSRuntimeControlJSONRequestBody defines body for AcknowledgeNetworkRADIUSRuntimeControl for application/json ContentType.
+type AcknowledgeNetworkRADIUSRuntimeControlJSONRequestBody = NetworkRADIUSRuntimeACK
+
 // ReportRuntimeChannelControlsJSONRequestBody defines body for ReportRuntimeChannelControls for application/json ContentType.
 type ReportRuntimeChannelControlsJSONRequestBody = EndpointChannelReport
+
+// AcknowledgeNetworkProxyEmployeeProjectionJSONRequestBody defines body for AcknowledgeNetworkProxyEmployeeProjection for application/json ContentType.
+type AcknowledgeNetworkProxyEmployeeProjectionJSONRequestBody = NetworkProxyProjectionApplied
 
 // ImportGrafanaDashboardJSONRequestBody defines body for ImportGrafanaDashboard for application/json ContentType.
 type ImportGrafanaDashboardJSONRequestBody = ObservabilityGrafanaDashboardImportInput
@@ -49397,10 +51603,10 @@ const FileRead PersonalGuestRuntimeInputKind = "file_read"
 const FileWrite PersonalGuestRuntimeInputKind = "file_write"
 
 // Retained for Go SDK source compatibility.
-const ExportDeliveryDocumentParamsFormatJSON ExportDeliveryDocumentParamsFormat = "json"
+const JSON ExportDeliveryDocumentParamsFormat = "json"
 
 // Retained for Go SDK source compatibility.
-const ExportDeliveryDocumentParamsFormatYaml ExportDeliveryDocumentParamsFormat = "yaml"
+const Yaml ExportDeliveryDocumentParamsFormat = "yaml"
 
 // Retained for Go SDK source compatibility.
 const ExternalService DeliveryDraftServiceServiceKind = "external_service"
@@ -49460,13 +51666,13 @@ const DeliveryPlanStatusConfirming DeliveryPlanStatus = "confirming"
 const DeliveryPlanStatusConfirmed DeliveryPlanStatus = "confirmed"
 
 // Retained for Go SDK source compatibility.
-const RuntimeNetworkUsageScopeNetworkNamespace RuntimeNetworkUsageScope = "network_namespace"
+const NetworkNamespace RuntimeNetworkUsageScope = "network_namespace"
 
 // Retained for Go SDK source compatibility.
-const RuntimeNetworkUsageScopeProcess RuntimeNetworkUsageScope = "process"
+const Process RuntimeNetworkUsageScope = "process"
 
 // Retained for Go SDK source compatibility.
-const RuntimeNetworkUsageScopeUnavailable RuntimeNetworkUsageScope = "unavailable"
+const Unavailable RuntimeNetworkUsageScope = "unavailable"
 
 // Retained for Go SDK source compatibility.
 const Accepted WorkflowRequestReceiptSubmissionStatus = "accepted"

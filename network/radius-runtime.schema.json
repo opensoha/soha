@@ -1,0 +1,929 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/network/radius-runtime.schema.json",
+  "title": "Managed RADIUS pool and member runtime",
+  "description": "Installer-approved slots only. Dedicated member credentials, leases and native EAP State attestations. No UDP round-robin affinity or secret bodies. Unknown State never permits scale-down.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Control"
+    },
+    {
+      "$ref": "#/$defs/ACK"
+    },
+    {
+      "$ref": "#/$defs/Pool"
+    },
+    {
+      "$ref": "#/$defs/CreateInput"
+    },
+    {
+      "$ref": "#/$defs/ConfigurationInput"
+    },
+    {
+      "$ref": "#/$defs/ControlInput"
+    }
+  ],
+  "$defs": {
+    "RuntimeProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poolId",
+        "memberId",
+        "credentialId",
+        "processEpoch",
+        "ownerEpoch",
+        "controlRevision",
+        "configurationRevision",
+        "configurationHash"
+      ],
+      "properties": {
+        "poolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "memberId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "ownerEpoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "controlRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "configurationRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "configurationHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "Configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "treeHash",
+        "nasSharedSecretRef",
+        "eapServerCertificateRef",
+        "eapServerKeyRef",
+        "eapCARef",
+        "hooksAttested"
+      ],
+      "properties": {
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "treeHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "nasSharedSecretRef": {
+          "type": "string",
+          "maxLength": 266,
+          "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+        },
+        "eapServerCertificateRef": {
+          "type": "string",
+          "maxLength": 266,
+          "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+        },
+        "eapServerKeyRef": {
+          "type": "string",
+          "maxLength": 266,
+          "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+        },
+        "eapCARef": {
+          "type": "string",
+          "maxLength": 266,
+          "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+        },
+        "hooksAttested": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poolId",
+        "memberId",
+        "runtimeId",
+        "credentialId",
+        "processEpoch",
+        "ownerEpoch",
+        "controlRevision",
+        "configurationRevision",
+        "configurationHash",
+        "nasBindingId",
+        "nasId",
+        "siteId",
+        "runProcess",
+        "acceptNewAuthentications",
+        "serveExistingUntil",
+        "controlLeaseUntil",
+        "configurationLeaseUntil",
+        "stopRequired",
+        "configuration"
+      ],
+      "properties": {
+        "poolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "memberId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "ownerEpoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "controlRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "configurationRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "configurationHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "nasBindingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "nasId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "siteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "runProcess": {
+          "type": "boolean"
+        },
+        "acceptNewAuthentications": {
+          "type": "boolean"
+        },
+        "serveExistingUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "controlLeaseUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "configurationLeaseUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "drainUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stopRequired": {
+          "type": "boolean"
+        },
+        "stopConfirmUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reference",
+            "treeHash",
+            "nasSharedSecretRef",
+            "eapServerCertificateRef",
+            "eapServerKeyRef",
+            "eapCARef",
+            "hooksAttested"
+          ],
+          "properties": {
+            "reference": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            "treeHash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "nasSharedSecretRef": {
+              "type": "string",
+              "maxLength": 266,
+              "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+            },
+            "eapServerCertificateRef": {
+              "type": "string",
+              "maxLength": 266,
+              "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+            },
+            "eapServerKeyRef": {
+              "type": "string",
+              "maxLength": 266,
+              "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+            },
+            "eapCARef": {
+              "type": "string",
+              "maxLength": 266,
+              "pattern": "^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+            },
+            "hooksAttested": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "ACK": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poolId",
+        "memberId",
+        "credentialId",
+        "processEpoch",
+        "ownerEpoch",
+        "controlRevision",
+        "configurationRevision",
+        "configurationHash",
+        "runtimeId",
+        "stateCountKnown",
+        "acceptingNewAuthentications",
+        "configurationApplied",
+        "hooksReady",
+        "ready",
+        "processStopped",
+        "observedNASUse",
+        "runtimeVersion",
+        "observedAt"
+      ],
+      "properties": {
+        "poolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "memberId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "ownerEpoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "controlRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "configurationRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "configurationHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "stateCountKnown": {
+          "type": "boolean"
+        },
+        "activeStates": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "acceptingNewAuthentications": {
+          "type": "boolean"
+        },
+        "configurationApplied": {
+          "type": "boolean"
+        },
+        "hooksReady": {
+          "type": "boolean"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "processStopped": {
+          "type": "boolean"
+        },
+        "observedNASUse": {
+          "type": "boolean"
+        },
+        "runtimeVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "stateCountKnown": {
+                "const": true
+              }
+            },
+            "required": [
+              "stateCountKnown"
+            ]
+          },
+          "then": {
+            "required": [
+              "activeStates"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "activeStates"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "processStopped": {
+                "const": true
+              }
+            },
+            "required": [
+              "processStopped"
+            ]
+          },
+          "then": {
+            "properties": {
+              "stateCountKnown": {
+                "const": true
+              },
+              "activeStates": {
+                "const": 0
+              },
+              "acceptingNewAuthentications": {
+                "const": false
+              },
+              "ready": {
+                "const": false
+              }
+            },
+            "required": [
+              "activeStates"
+            ]
+          }
+        }
+      ]
+    },
+    "Member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memberId",
+        "runtimeId",
+        "ordinal",
+        "endpoint",
+        "stateCountKnown",
+        "ready",
+        "trafficReady",
+        "acceptingNewAuthentications",
+        "processStopped"
+      ],
+      "properties": {
+        "memberId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "runtimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "credentialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "processEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "runtimeVersion": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "configurationRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "controlRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stateCountKnown": {
+          "type": "boolean"
+        },
+        "activeStates": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "trafficReady": {
+          "type": "boolean"
+        },
+        "acceptingNewAuthentications": {
+          "type": "boolean"
+        },
+        "processStopped": {
+          "type": "boolean"
+        },
+        "lastObservedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "leaseUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reasonCode": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "Pool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poolId",
+        "name",
+        "siteId",
+        "nasBindingId",
+        "logicalRuntimeId",
+        "slotId",
+        "objectUid",
+        "templateHash",
+        "revision",
+        "ownerEpoch",
+        "configurationRevision",
+        "configurationHash",
+        "configurationRef",
+        "enabled",
+        "desiredReplicas",
+        "state",
+        "members"
+      ],
+      "properties": {
+        "poolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "siteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "nasBindingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "logicalRuntimeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "slotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "objectUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "templateHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "ownerEpoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "configurationRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "configurationHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "configurationRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "desiredReplicas": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "observedReplicas": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "readyReplicas": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "stopped",
+            "pending",
+            "starting",
+            "ready",
+            "draining",
+            "unknown",
+            "failed",
+            "conflict"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "memberId",
+              "runtimeId",
+              "ordinal",
+              "endpoint",
+              "stateCountKnown",
+              "ready",
+              "trafficReady",
+              "acceptingNewAuthentications",
+              "processStopped"
+            ],
+            "properties": {
+              "memberId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              "runtimeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              "ordinal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 127
+              },
+              "endpoint": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253
+              },
+              "credentialId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              "processEpoch": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              "runtimeVersion": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "configurationRevision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "controlRevision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "stateCountKnown": {
+                "type": "boolean"
+              },
+              "activeStates": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65536
+              },
+              "ready": {
+                "type": "boolean"
+              },
+              "trafficReady": {
+                "type": "boolean"
+              },
+              "acceptingNewAuthentications": {
+                "type": "boolean"
+              },
+              "processStopped": {
+                "type": "boolean"
+              },
+              "lastObservedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "leaseUntil": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reasonCode": {
+                "type": "string",
+                "maxLength": 128
+              }
+            }
+          }
+        }
+      }
+    },
+    "CreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "siteId",
+        "nasBindingId",
+        "slotId",
+        "configurationRef",
+        "requestId"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "siteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "nasBindingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "slotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "expectedBindingUpdatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "configurationRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "createApprovedBinding": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "ConfigurationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configurationRef",
+        "expectedRevision",
+        "requestId"
+      ],
+      "properties": {
+        "configurationRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      }
+    },
+    "ControlInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "expectedRevision",
+        "requestId"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "start",
+            "stop",
+            "scale",
+            "reconcile"
+          ]
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "drainSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        }
+      }
+    }
+  }
+}

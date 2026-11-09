@@ -1,0 +1,9 @@
+{
+  "name": "HQ Radius",
+  "siteId": "site-1",
+  "nasBindingId": "binding-1",
+  "slotId": "slot-1",
+  "expectedBindingUpdatedAt": "2026-11-09T00:00:00Z",
+  "configurationRef": "config-1",
+  "requestId": "request-1"
+}

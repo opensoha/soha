@@ -8,16 +8,32 @@ import (
 	"strings"
 )
 
+// LookupNetIP resolves names through a trusted, process-owned resolver.
+// It has the same call shape as net.Resolver.LookupNetIP.
+type LookupNetIP func(context.Context, string, string) ([]netip.Addr, error)
+
 type Scope struct {
+	lookup   LookupNetIP
 	prefixes []netip.Prefix
 	hosts    []string
 }
 
 func NewScope(cidrs, hosts []string) (*Scope, error) {
+	return NewScopeWithResolver(cidrs, hosts, func(ctx context.Context, network, host string) ([]netip.Addr, error) {
+		return net.DefaultResolver.LookupNetIP(ctx, network, host)
+	})
+}
+
+// NewScopeWithResolver retains all destination protection checks while using
+// only lookup for names. A nil resolver or lookup failure never falls back.
+func NewScopeWithResolver(cidrs, hosts []string, lookup LookupNetIP) (*Scope, error) {
+	if lookup == nil {
+		return nil, errors.New("proxy resolver unavailable")
+	}
 	if len(cidrs) > 4096 || len(hosts) > 2048 {
 		return nil, errors.New("proxy destination scope exceeds its limit")
 	}
-	scope := &Scope{hosts: append([]string(nil), hosts...)}
+	scope := &Scope{hosts: append([]string(nil), hosts...), lookup: lookup}
 	for _, raw := range cidrs {
 		prefix, err := netip.ParsePrefix(raw)
 		if err != nil || !prefix.Addr().IsGlobalUnicast() || prefix.Addr().Is4In6() || prefix.Bits() == 0 || prefix != prefix.Masked() || prefix.String() != raw {
@@ -50,8 +66,12 @@ func (s *Scope) Resolve(ctx context.Context, host string) (netip.Addr, error) {
 			return netip.Addr{}, errors.New("invalid proxy hostname")
 		}
 		var err error
-		addresses, err = net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-		if err != nil {
+		lookup := s.lookup
+		if lookup == nil { // Preserve the historical zero-value Scope behavior.
+			lookup = net.DefaultResolver.LookupNetIP
+		}
+		addresses, err = lookup(ctx, "ip", host)
+		if err != nil || ctx.Err() != nil {
 			return netip.Addr{}, errors.New("proxy DNS unavailable")
 		}
 	}

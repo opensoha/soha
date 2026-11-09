@@ -8,6 +8,10 @@ const root = new URL("..", import.meta.url);
 const openapiPath = "openapi/soha-api.yaml";
 
 const requiredJsonSchemas = [
+  { file: "network/radius-runtime.schema.json", fixtureDir: "fixtures/json-schema/radius-runtime" },
+  { file: "network/radius-password-verifier.schema.json", fixtureDir: "fixtures/json-schema/radius-password-verifier" },
+  { file: "network/proxy-adapter.schema.json", fixtureDir: "fixtures/json-schema/proxy-adapter" },
+  { file: "network/proxy-runtime.schema.json", fixtureDir: "fixtures/json-schema/proxy-runtime" },
   { file: "runner/docker-project-identity.schema.json", fixtureDir: "fixtures/json-schema/docker-project-identity" },
   { file: "runner/docker-container-identity.schema.json", fixtureDir: "fixtures/json-schema/docker-container-identity" },
   { file: "runner/docker-runtime-read.schema.json", fixtureDir: "fixtures/json-schema/docker-runtime-read" },

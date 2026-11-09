@@ -1,0 +1,7 @@
+{
+  "agentId": "edge-a",
+  "supportedProtocolVersion": "v1",
+  "instanceId": "pod-uid",
+  "processEpoch": "boot-1",
+  "supportedRuntimeControlVersion": "v1"
+}

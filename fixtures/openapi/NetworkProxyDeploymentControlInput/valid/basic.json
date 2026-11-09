@@ -1,0 +1,6 @@
+{
+  "requestId": "r1",
+  "expectedRevision": 0,
+  "action": "stop",
+  "drainSeconds": 120
+}

@@ -1,0 +1,16 @@
+{
+  "control:Tmp-String-4": {
+    "do_xlat": false,
+    "op": ":=",
+    "value": [
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    ]
+  },
+  "control:Tmp-String-5": {
+    "do_xlat": false,
+    "op": ":=",
+    "value": [
+      "user-1"
+    ]
+  }
+}

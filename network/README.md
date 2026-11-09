@@ -200,3 +200,82 @@ for telemetry.
 - A dedicated EAP issuer signs only client authentication certificates with a `network-eap` URI. EAP certificates cannot authenticate control or ingest requests. Without an issuer, issuance is unavailable. Existing runtime certificates are accepted for legacy EAP only when enrollment explicitly declares `radius-eap-tls-v1`; ordinary control credentials do not imply EAP permission.
 - Issuance is idempotent per runtime/request ID and CSR. Certificates start pending and cannot grant network access. After native installation and readback, activation atomically replaces the old EAP certificate under the parent runtime credential lock. A retired or expired parent invalidates every child. Replaying an older activation cannot revive it.
 - `admission.profiles` is delivered only to `eap-profile-v1` endpoints, with exact EAP server names, CA certificates, subject and the dedicated active EAP certificate fingerprint. Configuration export, installation, 802.1X connection and actual NAS enforcement are separate results.
+
+## Restricted TTLS/PAP authentication (B3-ADMISSION-v1)
+
+`radius-password-verifier.schema.json` owns the request/result for
+`POST /api/network-control/v1/runtimes/{runtimeId}/radius:verify-password`.
+Only a dedicated active NAS mTLS identity with `radius-ttls-pap-verifier-v1`
+and an allowed direct peer may call it. The NAS binding determines site scope.
+`passwordBase64` is standard canonical Base64 of 1–72 original password bytes;
+it is a secret transport encoding, never a hash or encryption. No passwords,
+encoded passwords or hashes enter runtime messages, logs, audits or queues.
+
+Success returns authentication only, with an opaque 256-bit receipt expiring in
+30 seconds. Core stores only its SHA-256 and runtime/NAS/site/station/subject/
+password-version binding. NAS authorization uses `eap-ttls-pap` plus the receipt;
+it cannot supply a device ID. Consumption is transactional and one-use across
+authorization requests; retrying the same authorization request returns its
+existing result without extending validity. Wrong scope, expiry, changed password,
+disabled account or newly required MFA fails closed. Success is still subject
+to current policy and the restricted profile ceiling. Legacy `password-compatible`
+is a trust classification, never proof of TTLS authentication.
+
+Password verification refuses accounts requiring MFA or configured interactive
+checks, disabled local password login, unavailable protection state, lockouts
+or exhausted persistent NAS/source/principal budgets. It issues no login token.
+Unknown accounts and wrong passwords share the generic authentication failure.
+
+Admission profiles and NAS server trust add `eapMethod` (`tls` by default, or
+`ttls`), with `innerMethod: pap` and `credentialSource: user-input` required only
+for TTLS. TTLS profiles never carry a client certificate fingerprint or password
+reference. Server names and CA validation remain mandatory. A TTLS endpoint must
+advertise `radius-eap-ttls-pap-v1`; PEAP is unsupported without a compatible backend.
+`profileRevision` is a secret-free normalized profile SHA-256.
+
+Endpoints advertising `eap-certificate-lifecycle-v1` bind activation to the issue
+`requestId`, `profileId` and `profileRevision`. `eap.certificate.revoke.request`
+uses `eap:revoke`, binds the owning endpoint and certificate fingerprint, and is
+idempotent. Revocation also requests withdrawal of matching online sessions.
+Native installation, certificate activation, NAS authentication and data-plane
+enforcement remain distinct outcomes.
+
+The verifier HTTP success body is a strict FreeRADIUS attribute map:
+`control:Tmp-String-4` contains the receipt and `control:Tmp-String-5` the subject.
+Each attribute uses `op: ":="`, `do_xlat: false`, and one `value` string.
+Authentication failure is HTTP 401 with no body; no account-specific reason
+appears on this transport. The schema's `Result` definition describes internal
+application semantics; `RADIUSSuccess` describes the HTTP 200 wire body.
+
+The verifier's `login` is the exact Soha subject ID from the trusted profile
+identity, not an email or username alias. Core resolves it by account ID only
+and binds the resulting receipt to that same subject. User-supplied alias
+resolution must not redirect an enrolled profile to another account.
+
+## Managed RADIUS pools (RT04-RAD-C1)
+
+`radius-runtime.schema.json` owns pool/member, approved configuration references,
+control leases, native State acknowledgements and the managed NAS runtime proof.
+Management uses `/network-access/radius-pools`; members use the dedicated mTLS
+`/api/network-control/v1/radius-runtimes/{runtimeID}/control` GET and its
+`/control/receipt` POST. GET requires exactly one `memberId` and `processEpoch`.
+
+Pool logical runtime IDs use reserved `radius-pool:` identities and cannot enroll.
+Each installed member has an independent `radius-member:` identity and current
+credential. Managed resolution takes precedence over legacy exact NAS matching;
+stale members and logical IDs cannot fall through. NAS authorization and TTLS
+verification require the current `runtimeProof` for managed members. External
+NAS callers retain their exact binding and must not provide a managed proof.
+
+`runProcess` and `acceptNewAuthentications` are independent. Bootstrap can run
+a child while new traffic is refused. `stateCountKnown: true` requires an explicit
+non-null `activeStates` (including zero); unknown counts omit that field.
+`processStopped: true` requires known zero, ready=false and no new acceptance,
+but does not require live hooks. Lease/configuration expiry and drain updates
+never extend an existing State hard bound. Unknown State cannot permit scaling;
+only a bounded known-zero drain or exact owned-child stop/wait proof can do so.
+
+Every member publishes an installer-approved endpoint for explicit NAS primary/
+backup configuration. Pod readiness is not traffic readiness, endpoints are not
+a UDP round-robin service, and scaling does not move EAP State or change NAS
+configuration. Configuration materials contain approved `secretref:` values only.
