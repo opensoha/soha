@@ -3,6 +3,8 @@ package routes
 import "github.com/gin-gonic/gin"
 
 func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerProxyWorkspaceRoutes(protected, deps)
+	registerRadiusDeploymentRoutes(protected, deps)
 	registerNetworkEndpointResponseRoutes(protected, deps)
 	registerManagedContentRoutes(protected, deps)
 	registerNetworkVPNRoutes(protected, deps)

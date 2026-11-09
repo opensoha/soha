@@ -3,6 +3,7 @@ package networkproxyruntime
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,14 @@ type enrollmentState struct {
 }
 
 type Runner struct {
+	health            runtimeHealth
+	logs              []hostLog
+	logSequence       int64
+	hostBootEpoch     string
+	deployment        deploymentState
+	ingress           *publicationIngress
+	retiredIngress    []*publicationIngress
+	commandReceipts   map[string]commandReceiptEntry
 	config            Config
 	client            *Client
 	ingest            *IngestClient
@@ -68,7 +77,11 @@ func NewRunner(config Config) (*Runner, error) {
 			return nil, err
 		}
 	}
-	runner := &Runner{config: config, client: client, ingest: ingest, engine: newEngine(config, secret)}
+	engine := newEngine(config, secret)
+	if err := engine.configureExternal(); err != nil {
+		return nil, err
+	}
+	runner := &Runner{hostBootEpoch: rand.Text(), config: config, client: client, ingest: ingest, engine: engine}
 	if err := runner.restoreConfigurationFloor(); err != nil {
 		return nil, err
 	}
@@ -122,11 +135,15 @@ func (r *Runner) enroll(ctx context.Context) error {
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	defer r.engine.stop()
+	if err := r.health.start(r.config.HealthListen); err != nil {
+		return err
+	}
+	defer func() { r.health.close(); r.closeIngress(); r.engine.stop() }()
 	if err := r.enroll(ctx); err != nil {
 		return fmt.Errorf("enroll proxy runtime: %w", err)
 	}
 	lastWall := time.Now().UnixNano()
+	var nextPoll time.Time
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -141,19 +158,44 @@ func (r *Runner) Run(ctx context.Context) error {
 		if gap < 0 || gap > max(3*r.config.PollInterval, 15*time.Second) {
 			r.suspend("system_resume_requires_refresh")
 		}
-		r.expire(time.Now())
-		cycleCtx, cancel := r.cycleContext(ctx)
-		err := r.cycle(cycleCtx)
-		cancel()
-		r.expire(time.Now())
-		if err != nil && ctx.Err() == nil {
-			slog.Warn("proxy runtime cycle failed", "error", err)
+		now := time.Now()
+		r.expire(now)
+		// Lease boundaries close owned resources without accelerating HTTP retries.
+		if !now.Before(nextPoll) {
+			err := r.cycle(ctx)
+			r.expire(time.Now())
+			if err != nil && ctx.Err() == nil {
+				slog.Warn("proxy runtime cycle failed", "error", err)
+			}
+			nextPoll = time.Now().Add(r.config.PollInterval)
 		}
-		timer.Reset(r.nextCycleDelay(time.Now()))
+		now = time.Now()
+		timer.Reset(max(time.Millisecond, min(r.nextCycleDelay(now), nextPoll.Sub(now))))
 	}
 }
 
-func (r *Runner) cycle(ctx context.Context) error {
+func (r *Runner) cycle(ctx context.Context) (cycleErr error) {
+	defer func() {
+		if cycleErr != nil {
+			r.health.invalidate()
+		}
+	}()
+	r.expire(time.Now())
+	controlCtx := ctx
+	if r.enabled && !r.suspended {
+		// A blocked refresh cannot keep serving beyond the current authorization.
+		var cancel context.CancelFunc
+		controlCtx, cancel = r.cycleContext(ctx)
+		defer cancel()
+	}
+	if err := r.syncDeployment(controlCtx); err != nil {
+		return err
+	}
+	if r.stopConfirmationRequired() {
+		return r.confirmOwnedStop(ctx)
+	}
+	ctx, cycleCancel := r.cycleContext(ctx)
+	defer cycleCancel()
 	if err := r.syncConfiguration(ctx); err != nil {
 		return err
 	}
@@ -161,16 +203,24 @@ func (r *Runner) cycle(ctx context.Context) error {
 	ctx, cancel := r.cycleContext(ctx)
 	defer cancel()
 	r.ensureRunning(ctx)
+	r.refreshExistingIngressDeadline(time.Now())
 	observation, connections := r.observe(ctx)
+	r.publishReadiness(observation.Health == "healthy", time.Now())
 	if err := r.client.Observe(ctx, observation); err != nil {
 		return fmt.Errorf("report proxy observation: %w", err)
 	}
 	if connections != nil {
-		if err := r.client.PutConnections(ctx, r.config.Engine, connections); err != nil {
+		if err := r.client.PutSnapshot(ctx, r.config.Engine, observation, connections); err != nil {
 			return fmt.Errorf("report proxy connections: %w", err)
 		}
 	}
-	closeErr := r.executeClose(ctx)
+	closeErr := errors.Join(r.executeClose(ctx), r.executeCommand(ctx))
+	if err := r.updatePublication(ctx); err != nil {
+		return err
+	}
+	if err := r.ackDeployment(ctx, observation); err != nil {
+		return err
+	}
 	if slices.Contains(observation.Capabilities, "traffic") {
 		if err := r.ingest.Send(ctx, observation); err != nil {
 			return errors.Join(closeErr, fmt.Errorf("report proxy traffic: %w", err))
@@ -180,6 +230,13 @@ func (r *Runner) cycle(ctx context.Context) error {
 }
 
 func (r *Runner) cycleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if r.config.ManagedDeployment && r.deployment.grant != nil {
+		until := r.deployment.flowUntil()
+		if r.enabled && !r.validUntil.IsZero() {
+			until = minTime(until, r.validUntil)
+		}
+		return context.WithDeadline(ctx, until)
+	}
 	if r.enabled && !r.validUntil.IsZero() {
 		return context.WithDeadline(ctx, r.validUntil)
 	}
@@ -187,18 +244,33 @@ func (r *Runner) cycleContext(ctx context.Context) (context.Context, context.Can
 }
 
 func (r *Runner) nextCycleDelay(now time.Time) time.Duration {
-	if r.enabled && !r.validUntil.IsZero() {
-		return max(time.Millisecond, min(r.config.PollInterval, r.validUntil.Sub(now)))
+	delay := r.config.PollInterval
+	if r.config.ManagedDeployment && r.deployment.grant != nil {
+		if until := r.deployment.flowUntil(); until.After(now) {
+			delay = min(delay, until.Sub(now))
+		}
 	}
-	return r.config.PollInterval
+	if r.enabled && r.validUntil.After(now) {
+		delay = min(delay, r.validUntil.Sub(now))
+	}
+	return max(time.Millisecond, delay)
 }
 
 func (r *Runner) suspend(reason string) {
+	r.health.invalidate()
+	if r.reasonCode != reason {
+		r.recordEvent(reason)
+	}
+	r.closeIngress()
 	r.engine.stop()
 	r.enabled, r.suspended, r.reasonCode = false, true, reason
 }
 
 func (r *Runner) expire(now time.Time) {
+	if r.config.ManagedDeployment && (r.deployment.grant == nil || !r.deployment.flowUntil().After(now)) {
+		r.suspend("deployment_control_expired")
+		return
+	}
 	if r.enabled && !r.validUntil.After(now) {
 		r.suspend("configuration_expired")
 	}
@@ -230,14 +302,8 @@ func (r *Runner) syncConfiguration(ctx context.Context) error {
 		return err
 	}
 	r.applyConfiguration(ctx, *desired)
-	if r.appliedRevision == desired.Revision && !r.suspended {
-		if desired.Enabled {
-			if err := r.engine.refreshEgress(desired.ValidUntil); err != nil {
-				r.suspend("egress_lease_failed")
-				return err
-			}
-		}
-		r.validUntil = desired.ValidUntil
+	if err := r.refreshAppliedConfigurationLease(desired); err != nil {
+		return err
 	}
 	if r.lastAttempt != nil && !r.attemptReported {
 		if err := r.client.Applied(ctx, *r.lastAttempt); err != nil {
@@ -245,18 +311,58 @@ func (r *Runner) syncConfiguration(ctx context.Context) error {
 		}
 		r.attemptReported = true
 	}
+	if r.config.ManagedDeployment && r.engine.egress != nil {
+		r.engine.egress.accepting.Store(r.deployment.mayApply(time.Now()) && r.enabled && !r.suspended && r.attemptReported)
+	}
+	return nil
+}
+
+func (r *Runner) refreshAppliedConfigurationLease(desired *domain.Configuration) error {
+	if r.appliedRevision == desired.Revision && !r.suspended {
+		if r.config.ManagedDeployment && !r.deployment.drainLease.IsZero() {
+			desired.ValidUntil = minTime(desired.ValidUntil, r.deployment.flowUntil())
+		}
+		if desired.Enabled {
+			if err := r.engine.refreshEgress(desired.ValidUntil); err != nil {
+				r.suspend("egress_lease_failed")
+				return err
+			}
+		}
+		r.validUntil = desired.ValidUntil
+		r.engine.desired = *desired
+		if r.engine.egress != nil {
+			r.engine.egress.udpPolicy.Store(copyUDPPolicy(*desired))
+		}
+	}
 	return nil
 }
 
 func (r *Runner) applyConfiguration(ctx context.Context, desired domain.Configuration) {
+	if r.config.ManagedDeployment && !r.deployment.mayApply(time.Now()) {
+		if r.enabled && (desired.Revision != r.appliedRevision || desired.Digest() != r.engine.desired.Digest() || !desired.Enabled) {
+			r.suspend("configuration_changed_while_draining")
+		}
+		return
+	}
 	refreshBootstrap := desired.Enabled && time.Since(r.engine.bootstrapAt) >= 5*time.Minute
+	var prepared *bootstrapPreparation
+	if refreshBootstrap && desired.Revision == r.appliedRevision {
+		var handled bool
+		prepared, handled = r.preparePeriodicBootstrap(ctx, desired)
+		if handled {
+			return
+		}
+	}
 	if desired.Revision != r.appliedRevision || r.suspended || refreshBootstrap {
 		if r.lastAttempt == nil || r.lastAttempt.Revision != desired.Revision || r.suspended || refreshBootstrap {
+			r.health.invalidate()
 			applyCtx, cancel := context.WithDeadline(ctx, desired.ValidUntil)
-			applied := r.engine.apply(applyCtx, desired)
+			r.closeIngress()
+			applied := r.engine.applyPrepared(applyCtx, desired, prepared)
 			cancel()
 			r.lastAttempt, r.attemptReported = &applied, false
 			if applied.Status == "applied" {
+				r.recordEvent("configuration_applied")
 				r.appliedRevision, r.enabled = desired.Revision, desired.Enabled
 				r.suspended, r.reasonCode = false, ""
 			} else {
@@ -279,7 +385,7 @@ func (r *Runner) ensureRunning(ctx context.Context) {
 }
 
 func (r *Runner) executeClose(ctx context.Context) error {
-	if r.config.Engine == domain.EngineV2Ray || !r.enabled {
+	if !r.engine.adapter.supportsClose() || !r.enabled {
 		return nil
 	}
 	command, err := r.client.NextClose(ctx)
@@ -289,9 +395,18 @@ func (r *Runner) executeClose(ctx context.Context) error {
 	if command == nil || !command.ExpiresAt.After(time.Now()) {
 		return nil
 	}
-	command.Status, err = r.engine.close(ctx, command.ConnectionID)
+	if command.ProcessEpoch != r.engine.processEpoch || command.ExpiresAt.After(time.Now().Add(30*time.Second)) {
+		command.Status, command.ReasonCode = "failed", "epoch_mismatch"
+		return r.client.CompleteClose(ctx, *command)
+	}
+	closeCtx, cancel := context.WithDeadline(ctx, command.ExpiresAt)
+	command.Status, err = r.engine.close(closeCtx, command.ConnectionID)
+	cancel()
 	if err != nil {
 		command.Status, command.ReasonCode = "failed", "controller_unavailable"
+	}
+	if !command.ExpiresAt.After(time.Now()) {
+		return errors.New("proxy close result expired")
 	}
 	if err := r.client.CompleteClose(ctx, *command); err != nil {
 		return fmt.Errorf("complete proxy close command: %w", err)
@@ -313,36 +428,27 @@ func (r *Runner) observe(ctx context.Context) (observation domain.Observation, c
 	if !r.enabled || r.engine.process == nil {
 		return observation, nil
 	}
+	r.engine.sampleSequence++
+	observation.ProcessEpoch, observation.SampleSequence = r.engine.processEpoch, r.engine.sampleSequence
+	observation.EngineDescriptor = r.engine.desired.EngineDescriptor
 	observation.UptimeSeconds = int64(time.Since(r.engine.startedAt).Seconds())
-	if r.engine.controller != nil {
-		version, err := r.engine.controller.version(ctx)
-		if err != nil {
-			observation.Health, observation.ReasonCode = "degraded", "controller_unavailable"
-			return observation, nil
-		}
-		observation.EngineVersion = version
-		upload, download, active, connections, err := r.engine.controller.snapshot(ctx)
-		if err != nil {
-			observation.Health, observation.ReasonCode = "degraded", "traffic_unavailable"
-			return observation, nil
-		}
-		observation.Health = "healthy"
-		observation.Capabilities = []string{"traffic", "connections", "close_connection", "protected_destinations_v1", "guarded_dns_tcp_v1"}
-		if r.config.Engine == domain.EngineMihomo {
-			observation.Capabilities = append(observation.Capabilities, "protection_rules_readback")
-		}
-		observation.UploadTotal, observation.DownloadTotal = upload, download
-		observation.ActiveConnections = &active
-		return observation, connections
+	sample, connections := r.engine.adapter.observe(ctx)
+	observation.EngineVersion = sample.EngineVersion
+	observation.Health, observation.ReasonCode = sample.Health, sample.ReasonCode
+	observation.Capabilities = sample.Capabilities
+	if sample.Health == "healthy" && r.engine.egress != nil && r.engine.egress.udpVerified.Load() {
+		observation.Capabilities = append(observation.Capabilities, "guarded_udp_v1")
 	}
-	version, upload, download, err := r.engine.v2rayStats(ctx)
-	if err != nil {
-		observation.Health, observation.ReasonCode = "degraded", "stats_unavailable"
-		return observation, nil
+	observation.UploadTotal, observation.DownloadTotal = sample.UploadTotal, sample.DownloadTotal
+	observation.ActiveConnections = sample.ActiveConnections
+	if sample.Health == "healthy" {
+		observation.Capabilities = append(observation.Capabilities, "logs", "diagnostics")
+		if r.engine.dialect() == domain.EngineMihomo && r.engine.desired.Publication != nil {
+			observation.Capabilities = append(observation.Capabilities, "groups", "select", "rules")
+			if r.config.ProbeProfilesFile != "" {
+				observation.Capabilities = append(observation.Capabilities, "probe", "dns")
+			}
+		}
 	}
-	observation.EngineVersion = version
-	observation.Health = "healthy"
-	observation.Capabilities = []string{"traffic", "protected_destinations_v1", "guarded_dns_tcp_v1"}
-	observation.UploadTotal, observation.DownloadTotal = upload, download
-	return observation, nil
+	return observation, connections
 }

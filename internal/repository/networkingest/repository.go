@@ -167,9 +167,11 @@ LIMIT ?`, filter.From, filter.To, filter.ProducerID, filter.ProducerID, filter.L
 func (r *Repository) ProxyRuntimeSamples(ctx context.Context, instanceID string, from, to time.Time) (domainnetworkingest.ProxyRuntimeSeries, error) {
 	series := domainnetworkingest.ProxyRuntimeSeries{InstanceID: instanceID, Samples: []domainnetworkingest.ProxyRuntimeSample{}}
 	err := r.db.WithContext(ctx).Raw(`
-SELECT observed_at, uptime_seconds, upload_total, download_total, active_connections FROM (
+SELECT observed_at, process_epoch, sample_sequence, uptime_seconds, upload_total, download_total, active_connections FROM (
     SELECT DISTINCT ON (date_trunc('minute', occurred_at))
         occurred_at AS observed_at,
+ COALESCE(payload ->> 'processEpoch','') AS process_epoch,
+ COALESCE((payload ->> 'sampleSequence')::bigint,0) AS sample_sequence,
         (payload ->> 'uptimeSeconds')::bigint AS uptime_seconds,
         (payload ->> 'uploadTotal')::bigint AS upload_total,
         (payload ->> 'downloadTotal')::bigint AS download_total,

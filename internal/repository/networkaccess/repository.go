@@ -57,6 +57,9 @@ func (r *Repository) GetDevice(ctx context.Context, id string) (domainnetworkacc
 }
 
 func (r *Repository) RegisterDevice(ctx context.Context, item domainnetworkaccess.Device) (domainnetworkaccess.Device, error) {
+	if strings.HasPrefix(item.ID, "nas-station:") {
+		return domainnetworkaccess.Device{}, apperrors.ErrAccessDenied
+	}
 	if item.DeviceType == "" {
 		item.DeviceType = domainnetworkaccess.DeviceTypeUnknown
 	}

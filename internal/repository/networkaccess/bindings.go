@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
@@ -34,6 +35,12 @@ func (r *Repository) GetNASBinding(ctx context.Context, id string) (domainnetwor
 }
 
 func (r *Repository) FindActiveNASBinding(ctx context.Context, runtimeID, nasID string) (domainnetworkaccess.NASBinding, error) {
+	if strings.HasPrefix(runtimeID, "radius-pool:") {
+		return domainnetworkaccess.NASBinding{}, apperrors.ErrUnauthorized
+	}
+	if strings.HasPrefix(runtimeID, "radius-member:") {
+		return r.findManagedNASBinding(ctx, runtimeID, nasID)
+	}
 	return scanOne(r.db.WithContext(ctx).Raw(`SELECT `+nasBindingColumns+` FROM network_access_nas_bindings WHERE tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND nas_id = ? AND status = 'active' LIMIT 1`, runtimeID, nasID).Row(), scanNASBinding, "active NAS binding")
 }
 

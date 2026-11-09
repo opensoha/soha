@@ -370,7 +370,7 @@ func (s *Service) authenticatePassword(ctx context.Context, login, password stri
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+	if err := comparePasswordHash(hash, []byte(password)); err != nil {
 		_ = s.recordAudit(ctx, domainidentity.Principal{UserID: user.ID, UserName: user.DisplayName, Email: user.Email}, "login", "deny", "password login failed: invalid password", map[string]any{"provider": "password"})
 		return domainidentity.Principal{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
 	}
@@ -938,7 +938,7 @@ func (s *Service) ChangeCurrentPassword(ctx context.Context, principal domainide
 		}
 		return fmt.Errorf("load current password: %w", err)
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(input.CurrentPassword)); err != nil {
+	if err := comparePasswordHash(hash, []byte(input.CurrentPassword)); err != nil {
 		return fmt.Errorf("%w: current password is incorrect", apperrors.ErrUnauthorized)
 	}
 	if utf8.RuneCountInString(input.NewPassword) < 8 {

@@ -15,6 +15,16 @@ import (
 )
 
 type Config struct {
+	HealthListen         string
+	KernelSourceRef      string
+	ManagedDeployment    bool
+	InstanceID           string
+	IngressListen        string
+	IngressEndpointID    string
+	IngressCertFile      string
+	IngressKeyFile       string
+	AdapterPolicyFile    string
+	ProbeProfilesFile    string
 	RuntimeID            string
 	Engine               string
 	ControlURL           string
@@ -39,7 +49,20 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
+	if value := os.Getenv("SOHA_PROXY_MANAGED_DEPLOYMENT"); value != "" && value != "true" && value != "false" {
+		return Config{}, fmt.Errorf("proxy managed deployment flag is invalid")
+	}
 	c := Config{
+		HealthListen:         strings.TrimSpace(os.Getenv("SOHA_PROXY_HEALTH_LISTEN")),
+		KernelSourceRef:      strings.TrimSpace(os.Getenv("SOHA_PROXY_KERNEL_SOURCE_REF")),
+		ManagedDeployment:    os.Getenv("SOHA_PROXY_MANAGED_DEPLOYMENT") == "true",
+		InstanceID:           os.Getenv("SOHA_PROXY_INSTANCE_ID"),
+		IngressListen:        os.Getenv("SOHA_PROXY_INGRESS_LISTEN"),
+		IngressEndpointID:    os.Getenv("SOHA_PROXY_INGRESS_ENDPOINT_ID"),
+		IngressCertFile:      os.Getenv("SOHA_PROXY_INGRESS_CERT_FILE"),
+		IngressKeyFile:       os.Getenv("SOHA_PROXY_INGRESS_KEY_FILE"),
+		AdapterPolicyFile:    os.Getenv("SOHA_PROXY_ADAPTER_POLICY_FILE"),
+		ProbeProfilesFile:    os.Getenv("SOHA_PROXY_PROBE_PROFILES_FILE"),
 		RuntimeID:            strings.TrimSpace(os.Getenv("SOHA_PROXY_RUNTIME_ID")),
 		Engine:               strings.TrimSpace(os.Getenv("SOHA_PROXY_ENGINE")),
 		ControlURL:           strings.TrimSpace(os.Getenv("SOHA_PROXY_CONTROL_URL")),
@@ -68,6 +91,9 @@ func LoadConfig() (Config, error) {
 	if c.ConfigFile == "" {
 		c.ConfigFile = filepath.Join(c.StateDir, "engine.conf")
 	}
+	if c.KernelSourceRef != "" && !validKernelSourceRef(c.KernelSourceRef) {
+		return Config{}, fmt.Errorf("proxy kernel provenance must be redacted")
+	}
 	if err := c.validate(); err != nil {
 		return Config{}, err
 	}
@@ -75,10 +101,13 @@ func LoadConfig() (Config, error) {
 }
 
 func (c Config) validate() error {
+	if err := c.validateExtensions(); err != nil {
+		return err
+	}
 	if err := c.validateRequired(); err != nil {
 		return err
 	}
-	if c.Engine != "mihomo" && c.Engine != "sing-box" && c.Engine != "v2ray" {
+	if c.Engine != "mihomo" && c.Engine != "sing-box" && c.Engine != "v2ray" && c.Engine != "external" {
 		return fmt.Errorf("proxy engine is invalid")
 	}
 	if err := loopbackHTTP(c.ControllerURL); err != nil {

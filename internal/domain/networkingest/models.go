@@ -74,6 +74,8 @@ type Summary struct {
 }
 
 type ProxyRuntimeSample struct {
+	ProcessEpoch      string    `json:"processEpoch,omitempty"`
+	SampleSequence    int64     `json:"sampleSequence,omitempty"`
 	ObservedAt        time.Time `json:"observedAt"`
 	UptimeSeconds     int64     `json:"uptimeSeconds"`
 	UploadTotal       int64     `json:"uploadTotal"`

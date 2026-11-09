@@ -10,6 +10,9 @@ import (
 )
 
 func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependencies) {
+	registerOutpostExecutorRoutes(v1, deps)
+	registerProxyExecutorRoutes(v1, deps)
+	registerRadiusExecutorRoutes(v1, deps)
 	_ = cfg
 	limits := apiMiddleware.NewBoundedRateLimiter(10_000)
 	provider := func(c *gin.Context) string { return c.Param("providerID") }

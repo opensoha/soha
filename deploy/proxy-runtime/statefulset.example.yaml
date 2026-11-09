@@ -1,0 +1,248 @@
+# Operator sample: replace image, URLs and identity Secret references before installation.
+# No live UID or adoption is specified. Starts with zero replicas.
+---
+# Source: soha/templates/proxy-runtime.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soha-proxy-identities
+data:
+  soha-proxy-0: "runtime-0"
+  soha-proxy-1: "runtime-1"
+
+
+---
+# Source: soha/templates/proxy-runtime.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: soha-proxy-members
+spec:
+  clusterIP: None
+  selector:
+    soha-proxy-runtime: soha-proxy
+  ports:
+    - name: https
+      port: 8443
+
+
+---
+# Source: soha/templates/proxy-runtime.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: soha-proxy
+spec:
+  type: LoadBalancer
+  selector:
+    soha-proxy-runtime: soha-proxy
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443
+
+
+---
+# Source: soha/templates/proxy-runtime.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: soha-proxy
+spec:
+  replicas: 0
+  serviceName: soha-proxy-members
+  podManagementPolicy: Parallel
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      soha-proxy-runtime: soha-proxy
+  template:
+    metadata:
+      labels:
+        soha-proxy-runtime: soha-proxy
+      annotations:
+        checksum/config: "57c83d9d633a39e1c3254f384d7fc50b99cbe6a087431feff08e5e9abec9f54a"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: prepare-identity
+          image: "registry.example/soha-proxy-mihomo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              umask 077
+              mkdir -p /private/identity
+              chmod 0700 /private/identity
+              for key in control.crt control.key control-ca.crt ingest.crt ingest.key ingest-ca.crt ingress.crt ingress.key controller-secret; do
+                test -s "/secret-source/$key"
+                cp "/secret-source/$key" "/private/identity/$key"
+                chmod 0600 "/private/identity/$key"
+              done
+          volumeMounts:
+            - name: identity-source
+              mountPath: /secret-source
+              subPathExpr: $(POD_NAME)
+              readOnly: true
+            - name: identities
+              mountPath: /private
+      containers:
+        - name: runtime
+          image: "registry.example/soha-proxy-mihomo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          command: ["/bin/sh", "-ec"]
+          args:
+            - 'export SOHA_PROXY_RUNTIME_ID="$(cat /etc/soha-proxy-runtime/runtime-id)"; exec /usr/local/bin/soha-proxy-runtime'
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SOHA_PROXY_INSTANCE_ID
+              value: $(POD_NAME)
+            - name: SOHA_PROXY_MANAGED_DEPLOYMENT
+              value: "true"
+            - name: SOHA_PROXY_ENGINE
+              value: "mihomo"
+            - name: SOHA_PROXY_ENGINE_BINARY
+              value: "/mihomo"
+            - name: SOHA_PROXY_STATE_DIR
+              value: /var/lib/soha-proxy-runtime/state
+            - name: SOHA_PROXY_CONTROL_URL
+              value: "https://control.example:8082"
+            - name: SOHA_PROXY_INGEST_URL
+              value: "https://ingest.example:8083"
+            - name: SOHA_PROXY_CONTROLLER_URL
+              value: http://127.0.0.1:9090
+            - name: SOHA_PROXY_CONTROLLER_SECRET_FILE
+              value: /run/identity/controller-secret
+            - name: SOHA_PROXY_CONTROL_CERT_FILE
+              value: /run/identity/control.crt
+            - name: SOHA_PROXY_CONTROL_KEY_FILE
+              value: /run/identity/control.key
+            - name: SOHA_PROXY_CONTROL_CA_FILE
+              value: /run/identity/control-ca.crt
+            - name: SOHA_PROXY_INGEST_CERT_FILE
+              value: /run/identity/ingest.crt
+            - name: SOHA_PROXY_INGEST_KEY_FILE
+              value: /run/identity/ingest.key
+            - name: SOHA_PROXY_INGEST_CA_FILE
+              value: /run/identity/ingest-ca.crt
+            - name: SOHA_PROXY_HEALTH_LISTEN
+              value: 0.0.0.0:9091
+            - name: SOHA_PROXY_INGRESS_LISTEN
+              value: 0.0.0.0:8443
+            - name: SOHA_PROXY_INGRESS_ENDPOINT_ID
+              value: "proxy-ingress"
+            - name: SOHA_PROXY_INGRESS_CERT_FILE
+              value: /run/identity/ingress.crt
+            - name: SOHA_PROXY_INGRESS_KEY_FILE
+              value: /run/identity/ingress.key
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: health
+              containerPort: 9091
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            failureThreshold: 2
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/soha-proxy-runtime
+            - name: identities
+              mountPath: /run/identity
+              subPath: identity
+              readOnly: true
+            - name: runtime-ids
+              mountPath: /etc/soha-proxy-runtime/runtime-id
+              subPathExpr: $(POD_NAME)
+              readOnly: true
+      volumes:
+        - name: runtime-ids
+          configMap:
+            name: soha-proxy-identities
+        - name: identities
+          emptyDir:
+            medium: Memory
+        - name: identity-source
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: "proxy-member-0"
+                  items:
+                    - key: control.crt
+                      path: soha-proxy-0/control.crt
+                    - key: control.key
+                      path: soha-proxy-0/control.key
+                    - key: control-ca.crt
+                      path: soha-proxy-0/control-ca.crt
+                    - key: ingest.crt
+                      path: soha-proxy-0/ingest.crt
+                    - key: ingest.key
+                      path: soha-proxy-0/ingest.key
+                    - key: ingest-ca.crt
+                      path: soha-proxy-0/ingest-ca.crt
+                    - key: ingress.crt
+                      path: soha-proxy-0/ingress.crt
+                    - key: ingress.key
+                      path: soha-proxy-0/ingress.key
+                    - key: controller-secret
+                      path: soha-proxy-0/controller-secret
+              - secret:
+                  name: "proxy-member-1"
+                  items:
+                    - key: control.crt
+                      path: soha-proxy-1/control.crt
+                    - key: control.key
+                      path: soha-proxy-1/control.key
+                    - key: control-ca.crt
+                      path: soha-proxy-1/control-ca.crt
+                    - key: ingest.crt
+                      path: soha-proxy-1/ingest.crt
+                    - key: ingest.key
+                      path: soha-proxy-1/ingest.key
+                    - key: ingest-ca.crt
+                      path: soha-proxy-1/ingest-ca.crt
+                    - key: ingress.crt
+                      path: soha-proxy-1/ingress.crt
+                    - key: ingress.key
+                      path: soha-proxy-1/ingress.key
+                    - key: controller-secret
+                      path: soha-proxy-1/controller-secret
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: "1Gi"

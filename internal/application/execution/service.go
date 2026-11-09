@@ -43,21 +43,24 @@ type Repository interface {
 }
 
 type Service struct {
-	repo            Repository
-	builds          BuildRecordRepository
-	releases        ReleaseRecordRepository
-	clusters        ClusterRuntime
-	jobConfigMu     sync.RWMutex
-	jobConfig       JobRuntimeOptions
-	runnerToken     string
-	permissions     *appaccess.PermissionResolver
-	secretLeases    SecretLeaseService
-	payloadHydrator ExecutionTaskHydrator
-	workflowSink    WorkflowExecutionTaskSink
-	resultSinksMu   sync.RWMutex
-	resultSinks     []ExecutionTaskSink
-	pipelines       ExternalPipelineResolver
-	pipelineImages  BuildImageVerifier
+	repo               Repository
+	builds             BuildRecordRepository
+	releases           ReleaseRecordRepository
+	clusters           ClusterRuntime
+	jobConfigMu        sync.RWMutex
+	jobConfig          JobRuntimeOptions
+	runnerToken        string
+	permissions        *appaccess.PermissionResolver
+	secretLeases       SecretLeaseService
+	payloadHydrator    ExecutionTaskHydrator
+	workflowSink       WorkflowExecutionTaskSink
+	resultSinksMu      sync.RWMutex
+	resultSinks        []ExecutionTaskSink
+	outpostMonitorOnce sync.Once
+	proxyMonitorOnce   sync.Once
+	radiusMonitorOnce  sync.Once
+	pipelines          ExternalPipelineResolver
+	pipelineImages     BuildImageVerifier
 }
 
 type ExecutionTaskHydrator interface {
@@ -308,6 +311,9 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if domaindelivery.IsPrivateRuntimeTask(task) {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrAccessDenied
+	}
 	if domaindelivery.RequiresStopConfirmation(task) {
 		return s.cancelDeliveryTask(ctx, task.ID, firstNonEmpty(input.Reason, "canceled from control plane"))
 	}
@@ -390,6 +396,9 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
+	}
+	if domaindelivery.IsPrivateRuntimeTask(task) {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrAccessDenied
 	}
 	if task.TaskKind == "vm_ssh_command" {
 		return task, apperrors.ErrUnsupportedOperation
@@ -628,6 +637,9 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if err := domaindelivery.AuthorizePrivateRuntimeTask(ctx, task); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
 	if task.ProviderKind == domainbuild.ExternalPipelineProvider {
 		return task, fmt.Errorf("%w: external CI tasks are reconciled through their source connection", apperrors.ErrAccessDenied)
 	}
@@ -753,6 +765,9 @@ func (s *Service) recoverStaleTasks(ctx context.Context, now time.Time) error {
 			return err
 		}
 		for _, task := range tasks {
+			if domaindelivery.IsPrivateRuntimeTask(task) {
+				continue
+			}
 			if task.ProviderKind == domainbuild.ExternalPipelineProvider {
 				_, _ = s.reconcileExternalPipeline(ctx, task, now)
 				continue
@@ -865,8 +880,10 @@ func (s *Service) markTaskTimedOut(ctx context.Context, task domaindelivery.Exec
 		Metadata:        timeoutPayload,
 		CreatedAt:       now,
 	})
-	_ = s.stopK8sJobExecution(ctx, task, "callback_timeout")
-	_ = s.stopRemoteRuntimeTask(ctx, task.ID, task.Result, "callback_timeout")
+	if !domaindelivery.IsPrivateRuntimeTask(task) {
+		_ = s.stopK8sJobExecution(ctx, task, "callback_timeout")
+		_ = s.stopRemoteRuntimeTask(ctx, task.ID, task.Result, "callback_timeout")
+	}
 	task.Status = "callback_timeout"
 	task.AttemptCount = maxInt(task.AttemptCount, 1)
 	task.Result = mergeMaps(task.Result, timeoutPayload)

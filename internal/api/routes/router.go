@@ -14,7 +14,9 @@ import (
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
+	outpostruntimehandler "github.com/opensoha/soha/internal/api/handlers/outpostruntime"
 	providerportalhandler "github.com/opensoha/soha/internal/api/handlers/providerportal"
+	radiushandler "github.com/opensoha/soha/internal/api/handlers/radiusdeployment"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	swaggerinfra "github.com/opensoha/soha/internal/infrastructure/swagger"
@@ -32,6 +34,9 @@ const (
 )
 
 type Dependencies struct {
+	RadiusDeployment           *radiushandler.Handler
+	RadiusExecutor             *radiushandler.ExecutorHandler
+	OutpostLifecycle           *outpostruntimehandler.Handler
 	CLIAuth                    *apiHandlers.CLIAuthHandler
 	ManagedContentDestinations *apiHandlers.ManagedContentDestinationsHandler
 	ManagedContentTransfers    *apiHandlers.ManagedContentTransfersHandler
@@ -81,6 +86,11 @@ type Dependencies struct {
 	NetworkAccess              *apiHandlers.NetworkAccessHandler
 	NetworkEndpointResponse    *apiHandlers.NetworkEndpointResponseHandler
 	NetworkProxy               *apiHandlers.NetworkProxyHandler
+	ProxyCommands              *apiHandlers.NetworkProxyCommandsHandler
+	ProxySources               *apiHandlers.ProxyPublicationSourcesHandler
+	ProxyBundles               *apiHandlers.ProxyPublicationBundlesHandler
+	ProxyRules                 *apiHandlers.ProxyPublicationRulesHandler
+	ProxyDeployment            *apiHandlers.ProxyDeploymentHandler
 	NetworkVPN                 *apiHandlers.NetworkVPNHandler
 	Access                     *accesshandler.Handler
 	DirectorySync              *directorysynchandler.Handler

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -31,14 +32,21 @@ type proxyMessage struct {
 }
 
 type proxyConnectionsPayload struct {
-	Engine      string              `json:"engine"`
-	Connections []domain.Connection `json:"connections"`
+	ProcessEpoch   string              `json:"processEpoch,omitempty"`
+	SampleSequence int64               `json:"sampleSequence,omitempty"`
+	TotalActive    *int                `json:"totalActive,omitempty"`
+	ReturnedCount  *int                `json:"returnedCount,omitempty"`
+	Truncated      *bool               `json:"truncated,omitempty"`
+	Freshness      string              `json:"freshness,omitempty"`
+	Engine         string              `json:"engine"`
+	Connections    []domain.Connection `json:"connections"`
 }
 
 type proxyCloseResultPayload struct {
-	CommandID  string `json:"commandId"`
-	Status     string `json:"status"`
-	ReasonCode string `json:"reasonCode"`
+	ProcessEpoch string `json:"processEpoch,omitempty"`
+	CommandID    string `json:"commandId"`
+	Status       string `json:"status"`
+	ReasonCode   string `json:"reasonCode"`
 }
 
 func (h *handler) proxyIdentity(c *gin.Context) (networkidentity.Identity, bool) {
@@ -160,7 +168,18 @@ func (h *handler) proxyConnections(c *gin.Context) {
 	if !valid {
 		return
 	}
-	if err := h.options.ProxyRuntime.PutConnections(c.Request.Context(), identity, message.OccurredAt, payload.Engine, payload.Connections); err != nil {
+	var err error
+	if payload.ProcessEpoch != "" {
+		svc, ok := h.options.ProxyRuntime.(ProxyEpochRuntime)
+		if !ok {
+			respondError(c, fmt.Errorf("epoch snapshot unavailable"))
+			return
+		}
+		err = svc.PutConnectionsSnapshot(c.Request.Context(), identity, message.OccurredAt, payload.Engine, domain.ConnectionsSnapshot{ProcessEpoch: payload.ProcessEpoch, SampleSequence: payload.SampleSequence, TotalActive: payload.TotalActive, ReturnedCount: payload.ReturnedCount, Truncated: payload.Truncated, Freshness: payload.Freshness, Connections: payload.Connections})
+	} else {
+		err = h.options.ProxyRuntime.PutConnections(c.Request.Context(), identity, message.OccurredAt, payload.Engine, payload.Connections)
+	}
+	if err != nil {
 		respondError(c, err)
 		return
 	}
@@ -181,9 +200,11 @@ func (h *handler) proxyNextClose(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 		return
 	}
-	proxyResponse(c, identity.ID, "connection.close.request", gin.H{
-		"commandId": command.ID, "connectionId": command.ConnectionID, "expiresAt": command.ExpiresAt,
-	})
+	payload := gin.H{"commandId": command.ID, "connectionId": command.ConnectionID, "expiresAt": command.ExpiresAt}
+	if command.ProcessEpoch != "" {
+		payload["processEpoch"] = command.ProcessEpoch
+	}
+	proxyResponse(c, identity.ID, "connection.close.request", payload)
 }
 
 func (h *handler) proxyCloseResult(c *gin.Context) {
@@ -203,7 +224,69 @@ func (h *handler) proxyCloseResult(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_proxy_payload", "the proxy close result is invalid")
 		return
 	}
-	if err := h.options.ProxyRuntime.CompleteClose(c.Request.Context(), identity, payload.CommandID, payload.Status, payload.ReasonCode); err != nil {
+	var err error
+	if payload.ProcessEpoch != "" {
+		svc, ok := h.options.ProxyRuntime.(ProxyEpochRuntime)
+		if !ok {
+			respondError(c, fmt.Errorf("epoch close unavailable"))
+			return
+		}
+		err = svc.CompleteCloseWithEpoch(c.Request.Context(), identity, payload.CommandID, payload.ProcessEpoch, payload.Status, payload.ReasonCode)
+	} else {
+		err = h.options.ProxyRuntime.CompleteClose(c.Request.Context(), identity, payload.CommandID, payload.Status, payload.ReasonCode)
+	}
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+type ProxyEpochRuntime interface {
+	PutConnectionsSnapshot(context.Context, networkidentity.Identity, time.Time, string, domain.ConnectionsSnapshot) error
+	CompleteCloseWithEpoch(context.Context, networkidentity.Identity, string, string, string, string) error
+}
+type ProxyCommandRuntime interface {
+	NextCommand(context.Context, networkidentity.Identity, string) (*domain.RuntimeCommand, error)
+	CompleteCommand(context.Context, networkidentity.Identity, domain.RuntimeCommandResult) error
+}
+
+func (h *handler) proxyNextCommand(c *gin.Context) {
+	identity, ok := h.proxyIdentity(c)
+	if !ok {
+		return
+	}
+	command, err := h.options.ProxyCommands.NextCommand(c.Request.Context(), identity, c.Query("processEpoch"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	if command == nil {
+		c.Status(http.StatusNoContent)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	proxyResponse(c, identity.ID, "command.request", command.Input)
+}
+func (h *handler) proxyCommandResult(c *gin.Context) {
+	identity, ok := h.proxyIdentity(c)
+	if !ok {
+		return
+	}
+	message, ok := h.proxyBody(c, "command.result", identity)
+	if !ok {
+		return
+	}
+	receipt, ok := decodeProxyPayload[domain.RuntimeCommandReceipt](c, message.Payload)
+	if !ok {
+		return
+	}
+	if receipt.CommandID != c.Param("commandID") {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	err := h.options.ProxyCommands.CompleteCommand(c.Request.Context(), identity, domain.RuntimeCommandResult{Kind: string(receipt.Kind), ExpiresAt: receipt.ExpiresAt, CommandID: receipt.CommandID, RequestID: receipt.RequestID, ProcessEpoch: receipt.ProcessEpoch, Status: string(receipt.Status), ReasonCode: receipt.ReasonCode, Result: receipt.Result})
+	if err != nil {
 		respondError(c, err)
 		return
 	}

@@ -3,6 +3,7 @@
 
 import argparse
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,15 +17,55 @@ import urllib.request
 import uuid
 
 
-PROJECT = 'soha-task53-radius-lab'
-STATE = Path('/opt/opensoha/task53-radius-lab')
-CORE_IMAGE = 'soha-task53-core:20261014'
-RADIUS_IMAGE = 'soha-task53-radius:20261014'
-EAP_IMAGE = 'soha-task53-eap-client:20261014'
-API = 'http://127.0.0.1:18180/api/v1'
-RUNTIME_ID = 'radius-task53-lab'
-NAS_ID = 'nas-task53-software'
-DEVICE_ID = 'endpoint-task53-eap'
+# CLI mutations require either a complete explicit target or --legacy-task53.
+PROJECT = OWNER = CORE_IMAGE = RADIUS_IMAGE = EAP_IMAGE = API = None
+RUNTIME_ID = NAS_ID = DEVICE_ID = None
+STATE = Path('/unconfigured-radius-lab')
+PORTS = {}
+
+
+def identity():
+    return {'version': 2, 'owner': OWNER, 'project': PROJECT, 'state': str(STATE),
+            'images': [CORE_IMAGE, RADIUS_IMAGE, EAP_IMAGE], 'api': API,
+            'runtime': RUNTIME_ID, 'nas': NAS_ID, 'device': DEVICE_ID, 'ports': {str(k): v for k, v in PORTS.items()}}
+
+
+def ownership_labels():
+    return {'io.opensoha.lab.owner': OWNER, 'io.opensoha.lab.project': PROJECT,
+            'io.opensoha.lab.identity': hashlib.sha256(json.dumps(identity(), sort_keys=True).encode()).hexdigest()}
+
+
+def configure(args):
+    global PROJECT, OWNER, STATE, CORE_IMAGE, RADIUS_IMAGE, EAP_IMAGE, API
+    global RUNTIME_ID, NAS_ID, DEVICE_ID, PORTS
+    fields = ['project', 'owner', 'state', 'core_image', 'radius_image', 'eap_image',
+              'api', 'runtime_id', 'nas_id', 'device_id', 'api_port', 'control_port', 'ingest_port']
+    if args.legacy_task53:
+        if any(getattr(args, name) is not None for name in fields):
+            raise ValueError('Legacy mode cannot be mixed with explicit targets')
+        values = ['soha-task53-radius-lab', 'legacy-task53-explicit', '/opt/opensoha/task53-radius-lab',
+                  'soha-task53-core:20261014', 'soha-task53-radius:20261014', 'soha-task53-eap-client:20261014',
+                  'http://127.0.0.1:18180/api/v1', 'radius-task53-lab', 'nas-task53-software',
+                  'endpoint-task53-eap', 18180, 18182, 18183]
+        for name, value in zip(fields, values):
+            setattr(args, name, value)
+    if any(getattr(args, name) is None for name in fields):
+        raise ValueError('Supply every explicit target parameter; historical targets require --legacy-task53')
+    for name in ['project', 'owner', 'runtime_id', 'nas_id', 'device_id']:
+        if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}', getattr(args, name)):
+            raise ValueError('Invalid target identifier: ' + name)
+    ports = [args.api_port, args.control_port, args.ingest_port]
+    if len(set(ports)) != 3 or any(not 1024 <= port <= 65535 for port in ports):
+        raise ValueError('Three distinct unprivileged host ports required')
+    if args.api != 'http://127.0.0.1:' + str(args.api_port) + '/api/v1':
+        raise ValueError('API must match the explicit loopback port')
+    for name in ['core_image', 'radius_image', 'eap_image']:
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/:@-]+', getattr(args, name)):
+            raise ValueError('Invalid image reference')
+    PROJECT, OWNER, STATE = args.project, args.owner, Path(args.state)
+    CORE_IMAGE, RADIUS_IMAGE, EAP_IMAGE = args.core_image, args.radius_image, args.eap_image
+    API, RUNTIME_ID, NAS_ID, DEVICE_ID = args.api, args.runtime_id, args.nas_id, args.device_id
+    PORTS = {8080: args.api_port, 8082: args.control_port, 8083: args.ingest_port}
 
 
 def run(*args, input=None):
@@ -38,16 +79,16 @@ def write(path, value):
 
 
 def owned_state(create=False):
-    if not STATE.is_absolute() or STATE == Path('/') or STATE.is_symlink():
+    if not STATE.is_absolute() or STATE == Path('/') or any(p.is_symlink() for p in (STATE, *STATE.parents)):
         raise RuntimeError('The lab needs an absolute, non-symlink state directory')
     marker = STATE / 'lab.json'
     if marker.exists():
-        if json.loads(marker.read_text()) != {'project': PROJECT, 'version': 1}:
+        if json.loads(marker.read_text()) != identity():
             raise RuntimeError('The state directory belongs to a different lab')
     elif create and (not STATE.exists() or not any(STATE.iterdir())):
         STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
         STATE.chmod(0o700)
-        write(marker, {'project': PROJECT, 'version': 1})
+        write(marker, identity())
     else:
         raise RuntimeError('Refusing to use an unrecognized state directory')
 
@@ -88,7 +129,7 @@ def prepare():
     if not (ca / 'ca.crt').exists():
         run('openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
             '-keyout', str(ca / 'ca.key'), '-out', str(ca / 'ca.crt'), '-days', '30',
-            '-subj', '/CN=Disposable Task53 Radius Lab CA', '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
+            '-subj', '/CN=Disposable Software Lab Radius Lab CA', '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
             '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-addext', 'subjectKeyIdentifier=hash')
         (ca / 'ca.key').chmod(0o600)
     run('openssl', 'x509', '-in', str(ca / 'ca.crt'), '-checkend', '86400', '-noout')
@@ -97,8 +138,8 @@ def prepare():
     for name, uri in {
         'freeradius-control': 'network-control/nas/' + RUNTIME_ID,
         'freeradius-ingest': 'network-ingest/freeradius/' + RUNTIME_ID,
-        'core-query': 'network-ingest/core/task53-lab',
-        'control-query': 'network-ingest/network-control/task53-lab',
+        'core-query': 'network-ingest/core/' + PROJECT,
+        'control-query': 'network-ingest/network-control/' + PROJECT,
     }.items():
         certificate(name, name, uri='spiffe://opensoha.local/' + uri)
     if not (STATE / 'secrets' / 'shared-secret').exists():
@@ -115,7 +156,7 @@ def prepare_eap_issuer():
     if not (folder / 'ca.crt').exists():
         run('openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
             '-keyout', str(folder / 'ca.key'), '-out', str(folder / 'ca.crt'), '-days', '30',
-            '-subj', '/CN=Disposable Task53 Dedicated EAP Issuer', '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
+            '-subj', '/CN=Disposable Software Lab Dedicated EAP Issuer', '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
             '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-addext', 'subjectKeyIdentifier=hash')
         (folder / 'ca.key').chmod(0o600)
     run('openssl', 'x509', '-in', str(folder / 'ca.crt'), '-checkend', '86400', '-noout')
@@ -155,7 +196,7 @@ def compose_document(credentials):
                         'SOHA_AUTH_LOGIN_VERIFICATION_SLIDER_ENABLED': 'false', 'SOHA_AUTH_JWT_SECRET': credentials['jwt'],
                         'SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN': credentials['runner'], 'SOHA_MONITORING_WEBHOOK_TOKEN': credentials['webhook']},
         'volumes': [tls_mount('core-query', '/lab/query'), 'core-data:/app/data'],
-        'ports': ['127.0.0.1:18180:8080'], 'depends_on': {'postgres': {'condition': 'service_healthy'}},
+        'ports': ['127.0.0.1:' + str(PORTS[8080]) + ':8080'], 'depends_on': {'postgres': {'condition': 'service_healthy'}},
         'healthcheck': {'test': ['CMD-SHELL', 'wget -q -O - http://127.0.0.1:8080/readyz >/dev/null'],
                         'interval': '5s', 'timeout': '3s', 'retries': 30},
     }
@@ -176,7 +217,7 @@ def compose_document(credentials):
         services[name] = {
             **safety, 'image': CORE_IMAGE, 'command': ['/app/' + name],
             'environment': env, 'volumes': volumes,
-            'ports': ['127.0.0.1:' + str(18180 + port - 8080) + ':' + str(port)],
+            'ports': ['127.0.0.1:' + str(PORTS[port]) + ':' + str(port)],
             'depends_on': {host: {'condition': 'service_healthy'}, **({'core': {'condition': 'service_healthy'}} if name == 'network-control' else {})},
             'healthcheck': {'test': ['CMD-SHELL', 'wget --no-check-certificate -q -O - https://127.0.0.1:' + str(port) + '/readyz >/dev/null'],
                             'interval': '5s', 'timeout': '3s', 'retries': 30},
@@ -212,7 +253,12 @@ def compose_document(credentials):
         **services['eap-client'],
         'volumes': [secret_mount, tls_mount('eap-issued-client', '/run/soha-radius/eap-test')],
     }
-    return {'name': PROJECT, 'services': services, 'volumes': {name + '-data': {} for name in ('postgres', 'ingest-postgres', 'core')}}
+    for service in services.values():
+        service['labels'] = ownership_labels()
+    labels = ownership_labels()
+    return {'name': PROJECT, 'services': services,
+            'networks': {'default': {'labels': labels}},
+            'volumes': {name + '-data': {'labels': labels} for name in ('postgres', 'ingest-postgres', 'core')}}
 
 
 def make_compose():
@@ -220,6 +266,25 @@ def make_compose():
 
 
 def compose(*args, input=None):
+    owned_state()
+    expected = compose_document(json.loads((STATE / 'secrets.json').read_text()))
+    if json.loads((STATE / 'compose.json').read_text()) != expected:
+        raise RuntimeError('Compose configuration changed; refusing operation')
+    # Reject a foreign project before compose can stop or reuse its resources.
+    for kind, listing in [('container', ('ps', '-aq')), ('network', ('network', 'ls', '-q')),
+                          ('volume', ('volume', 'ls', '-q'))]:
+        ids = run('docker', *listing, '--filter', 'label=com.docker.compose.project=' + PROJECT).split()
+        if kind in ('network', 'volume'):
+            existing = set(run('docker', kind, 'ls', '--format', '{{.Name}}').split())
+            expected_names = ({PROJECT + '_default'} if kind == 'network' else
+                              {PROJECT + '_' + name for name in expected['volumes']})
+            ids = set(ids) | (existing & expected_names)
+        for ident in ids:
+            objects = json.loads(run('docker', kind, 'inspect', ident))
+            item = objects[0]
+            labels = item.get('Labels', item.get('Config', {}).get('Labels', {})) or {}
+            if any(labels.get(key) != value for key, value in ownership_labels().items()):
+                raise RuntimeError('Existing compose resource belongs to a different owner')
     return run('docker', 'compose', '-f', str(STATE / 'compose.json'), *args, input=input)
 
 
@@ -237,11 +302,11 @@ def runtime_credentials():
             path.chmod(0o600)
 
 
-def request(method, path, token=None, body=None, context=None, origin=API):
+def request(method, path, token=None, body=None, context=None, origin=None):
     headers = {'Content-Type': 'application/json'}
     if token:
         headers['Authorization'] = 'Bearer ' + token
-    req = urllib.request.Request(origin + path, data=None if body is None else json.dumps(body).encode(),
+    req = urllib.request.Request((origin or API) + path, data=None if body is None else json.dumps(body).encode(),
                                  headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, context=context, timeout=20) as response:
@@ -269,9 +334,9 @@ def enroll(token, runtime_id, kind, subject_id, device_id, certificate_dir, capa
                'occurredAt': now.isoformat(), 'expiresAt': (now + timedelta(minutes=1)).isoformat(),
                'payload': {'enrollmentId': enrollment['enrollment']['id'], 'challengeId': enrollment['enrollment']['challengeId'],
                            'deviceId': device_id, 'devicePublicKey': public_key, 'platform': 'linux',
-                           'clientVersion': 'task53-software-lab', 'capabilities': capability if isinstance(capability, list) else [capability]}}
+                           'clientVersion': 'software-lab', 'capabilities': capability if isinstance(capability, list) else [capability]}}
     result = request('POST', '/runtimes/' + runtime_id + '/enroll', enrollment['token'], message, context,
-                     'https://127.0.0.1:18182/api/network-control/v1')
+                     'https://127.0.0.1:' + str(PORTS[8082]) + '/api/network-control/v1')
     if not result['payload']['accepted']:
         raise RuntimeError('Runtime enrollment was not accepted')
 
@@ -286,7 +351,7 @@ def seed():
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', subject):
         raise RuntimeError('The test subject ID cannot be encoded in RADIUS')
     device = request('PUT', '/network-access/devices/' + DEVICE_ID + '/registration', token,
-                     {'name': 'Task53 EAP software client', 'hostname': 'middleware-lab', 'platform': 'linux', 'deviceType': 'desktop'})
+                     {'name': 'Lab EAP software client', 'hostname': 'middleware-lab', 'platform': 'linux', 'deviceType': 'desktop'})
     progress_file = STATE / 'bootstrap.json'
     progress = json.loads(progress_file.read_text()) if progress_file.exists() else {}
 
@@ -297,15 +362,15 @@ def seed():
         return progress[key]
 
     site_id = create_once('siteId', '/network-access/sites',
-                          {'name': 'Task53 software RADIUS lab', 'description': 'Protocol tests only; no physical SSID or NAS', 'status': 'active'})
+                          {'name': 'Software RADIUS lab', 'description': 'Protocol tests only; no physical SSID or NAS', 'status': 'active'})
     request('PUT', '/network-access/devices/' + device['id'], token,
             {'name': device['name'], 'siteId': site_id, 'status': 'active', 'postureStatus': 'compliant',
              'deviceType': 'desktop', 'ownershipType': 'company'})
     for profile, vlan in [('full', 10), ('restricted', 20), ('quarantine', 30)]:
         create_once('profile-' + profile, '/network-access/site-profile-bindings',
-                {'siteId': site_id, 'accessProfile': profile, 'vlanId': vlan, 'filterId': 'task53-' + profile, 'sessionTimeoutSeconds': 300})
+                {'siteId': site_id, 'accessProfile': profile, 'vlanId': vlan, 'filterId': PROJECT + '-' + profile, 'sessionTimeoutSeconds': 300})
     policy_id = create_once('policyId', '/network-access/policies',
-                     {'name': 'Task53 EAP software client only', 'enabled': True, 'priority': 100, 'effect': 'allow',
+                     {'name': 'Lab EAP software client only', 'enabled': True, 'priority': 100, 'effect': 'allow',
                       'subjects': {'users': [subject], 'teams': [], 'tags': []}, 'siteIds': [site_id], 'resourceIds': [],
                       'modes': ['internal_direct'], 'deviceStatuses': ['active'], 'postureStatuses': ['compliant'], 'accessProfile': 'full'})
     request('POST', '/network-access/policies/compile', token, {})
@@ -349,7 +414,7 @@ def verify():
     session = matching[0]
     # Accounting is synthesized, because eapol_test does not implement a physical NAS lifecycle.
     for status in ('Start', 'Interim-Update', 'Stop'):
-        attributes = {'Acct-Status-Type': status, 'Acct-Session-Id': 'task53-' + session['id'], 'Class': session['id'],
+        attributes = {'Acct-Status-Type': status, 'Acct-Session-Id': PROJECT + '-' + session['id'], 'Class': session['id'],
                       'NAS-Identifier': NAS_ID, 'NAS-Port-Id': 'software-port-1', 'User-Name': seed_data['subjectId'],
                       'Calling-Station-Id': '02:00:00:00:00:01', 'Event-Timestamp': int(datetime.now(timezone.utc).timestamp()),
                       'Acct-Session-Time': 1, 'Message-Authenticator': '0x00'}
@@ -363,7 +428,7 @@ def verify():
     context = ssl.create_default_context(cafile=str(folder / 'ca.crt'))
     context.load_cert_chain(str(folder / 'tls.crt'), str(folder / 'tls.key'))
     summary = request('GET', '/query/summary?producerId=' + RUNTIME_ID, context=context,
-                      origin='https://127.0.0.1:18183/api/ingest/v1')
+                      origin='https://127.0.0.1:' + str(PORTS[8083]) + '/api/ingest/v1')
     if summary['radiusAccountingCount'] < 3:
         raise RuntimeError('Ingest did not persist all three Accounting lifecycle packets')
     if not re.fullmatch(r'[A-Za-z0-9._:-]+', session['id']):
@@ -375,7 +440,7 @@ def verify():
         raise RuntimeError('Accounting records did not retain the authorized Core session ID')
     policy_path = '/network-access/policies/' + seed_data['policyId']
     policy = request('GET', policy_path, token)
-    if (policy['name'] != 'Task53 EAP software client only' or policy['siteIds'] != [seed_data['siteId']]
+    if (policy['name'] != 'Lab EAP software client only' or policy['siteIds'] != [seed_data['siteId']]
             or policy['subjects']['users'] != [seed_data['subjectId']] or not policy['enabled']):
         raise RuntimeError('The lab policy changed; refusing to run its temporary deny exercise')
     original = {key: policy[key] for key in ('name', 'enabled', 'priority', 'effect', 'subjects', 'siteIds',
@@ -399,7 +464,7 @@ def verify():
     if not re.search(r'^SUCCESS$', recovered, re.MULTILINE):
         raise RuntimeError('The restored policy did not restore EAP authentication')
     write(STATE / 'verification.json', {'verifiedAt': datetime.now(timezone.utc).isoformat(), 'sessionId': session['id'],
-                                     'eapTLS': 'passed', 'accountingPackets': 'start/interim/stop acknowledged', 'ingestSummary': summary,
+                                     'eapTLS': 'passed', 'accountingSource': 'synthetic-radclient', 'accountingPackets': 'start/interim/stop acknowledged', 'ingestSummary': summary,
                                      'distinctAuthenticationSessions': [item['id'] for item in matching],
                                      'policyDenyAndRecovery': 'passed',
                                      'physicalNAS': 'not tested', 'VLANACL': 'not tested', 'endpointPresenceResponse': 'not implemented'})
@@ -410,7 +475,15 @@ def verify():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['prepare', 'up', 'seed', 'verify', 'status', 'stop'])
-    action = parser.parse_args().action
+    parser.add_argument('--legacy-task53', action='store_true')
+    for name in ['project', 'owner', 'state', 'core-image', 'radius-image', 'eap-image',
+                 'api', 'runtime-id', 'nas-id', 'device-id']:
+        parser.add_argument('--' + name)
+    for name in ['api-port', 'control-port', 'ingest-port']:
+        parser.add_argument('--' + name, type=int)
+    args = parser.parse_args()
+    configure(args)
+    action = args.action
     if action == 'prepare':
         prepare()
         return

@@ -3,6 +3,7 @@ package networkaccess
 import "github.com/opensoha/soha/internal/networkprotocol"
 
 type NASAdmissionSnapshot struct {
+	AuthenticationMethod            string
 	Session                         Session
 	Subject                         Subject
 	Device                          Device

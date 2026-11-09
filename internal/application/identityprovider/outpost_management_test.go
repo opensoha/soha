@@ -23,6 +23,9 @@ func TestOutpostManagementHealth(t *testing.T) {
 		change               func(*domainprovider.Outpost)
 	}{
 		{name: "fresh", status: "available"},
+		{name: "future heartbeat", status: "unavailable", reason: "heartbeat_time_invalid", change: func(o *domainprovider.Outpost) { future := now.Add(time.Second); o.LastHeartbeatAt = &future }},
+		{name: "unbounded lease", status: "unavailable", reason: "configuration_lease_invalid", change: func(o *domainprovider.Outpost) { future := now.Add(time.Hour); o.ConfigurationExpiresAt = &future }},
+		{name: "legacy observation on v1", status: "degraded", reason: "legacy_runtime", change: func(o *domainprovider.Outpost) { o.RuntimeReason = "legacy_runtime" }},
 		{name: "45 seconds", age: 45 * time.Second, status: "available"},
 		{name: "stale", age: 45*time.Second + time.Nanosecond, status: "degraded", reason: "heartbeat_stale"},
 		{name: "90 seconds", age: 90 * time.Second, status: "degraded", reason: "heartbeat_stale"},
@@ -65,7 +68,7 @@ func TestOutpostManagementHealth(t *testing.T) {
 
 func TestOutpostManagementUsesRuntimeObservations(t *testing.T) {
 	ctx := context.Background()
-	repo := newMemoryRepo(t)
+	repo := newOutpostLeaseMemoryRepo(t)
 	service := New(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, "test-encryption-key-32-bytes-long")
 	seed := sha256.Sum256([]byte("management-outpost-test"))
 	service.SetOutpostSigningKey("test-key", ed25519.NewKeyFromSeed(seed[:]))

@@ -31,7 +31,11 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o /out/soha ./cmd/server && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/network-control ./cmd/network-control && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ingest ./cmd/ingest && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-adapter ./cmd/radius-adapter
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-adapter ./cmd/radius-adapter && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-runtime ./cmd/radius-runtime && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-runtime-executor ./cmd/radius-runtime-executor && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/outpost-runtime-executor ./cmd/outpost-runtime-executor && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/proxy-runtime-executor ./cmd/proxy-runtime-executor
 
 FROM go-source AS network-gateway-build
 ARG TARGETOS=linux
@@ -80,11 +84,14 @@ FROM --platform=linux/amd64 freeradius/freeradius-server:3.2.10@sha256:cc7fd136e
 RUN rm -f /etc/freeradius/sites-enabled/default /etc/freeradius/sites-enabled/inner-tunnel /etc/freeradius/mods-enabled/eap
 COPY deploy/freeradius/default /etc/freeradius/sites-enabled/default
 COPY deploy/freeradius/eap /etc/freeradius/mods-enabled/eap
+COPY deploy/freeradius/inner-tunnel /etc/freeradius/sites-enabled/soha-inner-tunnel
 COPY deploy/freeradius/soha /etc/freeradius/mods-enabled/soha
+COPY deploy/freeradius/soha-managed-policy /etc/freeradius/policy.d/soha-managed
 COPY deploy/freeradius/clients.conf /etc/freeradius/clients.conf
 COPY deploy/freeradius/entrypoint.sh /soha-radius-entrypoint.sh
 COPY --from=go-build /out/radius-adapter /usr/local/bin/radius-adapter
-RUN chmod 0755 /soha-radius-entrypoint.sh /usr/local/bin/radius-adapter
+COPY --from=go-build /out/radius-runtime /usr/local/bin/radius-runtime
+RUN chmod 0755 /soha-radius-entrypoint.sh /usr/local/bin/radius-adapter /usr/local/bin/radius-runtime
 EXPOSE 1812/udp 1813/udp
 ENTRYPOINT ["/soha-radius-entrypoint.sh"]
 CMD ["freeradius"]
@@ -132,6 +139,9 @@ WORKDIR /app
 COPY --from=go-build /out/soha /app/soha
 COPY --from=go-build /out/network-control /app/network-control
 COPY --from=go-build /out/ingest /app/ingest
+COPY --from=go-build /out/outpost-runtime-executor /app/outpost-runtime-executor
+COPY --from=go-build /out/proxy-runtime-executor /app/proxy-runtime-executor
+COPY --from=go-build /out/radius-runtime-executor /app/radius-runtime-executor
 COPY configs/config.example.yaml /app/configs/config.yaml
 COPY migrations /app/migrations
 COPY deploy/entrypoint.sh /app/entrypoint.sh

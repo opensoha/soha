@@ -307,14 +307,25 @@ func (r *Repository) UpdateOutpost(ctx context.Context, item domainprovider.Outp
 }
 
 func (r *Repository) DeleteOutpost(ctx context.Context, outpostID string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM identity_outposts WHERE id = ?`, strings.TrimSpace(outpostID))
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("%w: identity outpost not found", apperrors.ErrNotFound)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Runtime binding and control take the same parent lock.
+		var id string
+		err := tx.Raw(`SELECT id FROM identity_outposts WHERE id = ? FOR UPDATE`, strings.TrimSpace(outpostID)).Row().Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: identity outpost not found", apperrors.ErrNotFound)
+		}
+		if err != nil {
+			return err
+		}
+		var bound bool
+		if err := tx.Raw(`SELECT EXISTS (SELECT 1 FROM identity_outpost_runtime_deployments WHERE outpost_id = ?)`, id).Row().Scan(&bound); err != nil {
+			return err
+		}
+		if bound {
+			return fmt.Errorf("%w: outpost has a reserved runtime slot", apperrors.ErrConflict)
+		}
+		return tx.Exec(`DELETE FROM identity_outposts WHERE id = ?`, id).Error
+	})
 }
 
 func (r *Repository) ListOIDCClients(ctx context.Context, providerID string) ([]domainprovider.OIDCClient, error) {
@@ -626,10 +637,10 @@ func (r *Repository) CreateOIDCSession(ctx context.Context, session domainprovid
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
 			INSERT INTO identity_oidc_sessions (
-				id, provider_id, client_id, user_id, platform_session_id, scopes,
+				id, provider_id, client_id, user_id, platform_session_id, authorization_source_ip, scopes,
 				auth_time, expires_at, last_seen_at, revoked_at, created_at
-			) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)
-		`, session.ID, session.ProviderID, session.ClientID, session.UserID, nullableString(session.PlatformSessionID), scopes,
+			) VALUES (?, ?, ?, ?, ?, ?::inet, ?::jsonb, ?, ?, ?, ?, ?)
+		`, session.ID, session.ProviderID, session.ClientID, session.UserID, nullableString(session.PlatformSessionID), nullableString(session.AuthorizationSourceIP), scopes,
 			session.AuthTime, session.ExpiresAt, session.LastSeenAt, session.RevokedAt, session.CreatedAt).Error; err != nil {
 			return err
 		}
@@ -747,7 +758,7 @@ func getOIDCRefreshTokenForUpdate(tx *gorm.DB, tokenHash string) (domainprovider
 
 func getActiveOIDCSession(db *gorm.DB, sessionID string, now time.Time) (domainprovider.OIDCSession, error) {
 	row := db.Raw(`
-		SELECT s.id, s.provider_id, s.client_id, s.user_id, s.platform_session_id, s.scopes,
+		SELECT s.id, s.provider_id, s.client_id, s.user_id, s.platform_session_id, COALESCE(host(s.authorization_source_ip), ''), s.scopes,
 		       s.auth_time, s.expires_at, s.last_seen_at, s.revoked_at, s.created_at
 		FROM identity_oidc_sessions s
 		LEFT JOIN sessions ps ON ps.id = s.platform_session_id
@@ -976,7 +987,7 @@ func scanOIDCSession(row scanner) (domainprovider.OIDCSession, error) {
 	var scopesRaw []byte
 	var revokedAt sql.NullTime
 	if err := row.Scan(
-		&item.ID, &item.ProviderID, &item.ClientID, &item.UserID, &platformSessionID, &scopesRaw,
+		&item.ID, &item.ProviderID, &item.ClientID, &item.UserID, &platformSessionID, &item.AuthorizationSourceIP, &scopesRaw,
 		&item.AuthTime, &item.ExpiresAt, &item.LastSeenAt, &revokedAt, &item.CreatedAt,
 	); err != nil {
 		return domainprovider.OIDCSession{}, err

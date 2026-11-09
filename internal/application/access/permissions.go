@@ -218,6 +218,9 @@ const (
 	PermNetworkAccessResourcesDelete       = "network_access.resources.delete"
 	PermNetworkAccessResourcesUpdate       = "network_access.resources.update"
 	PermNetworkAccessResourcesView         = "network_access.resources.view"
+	PermNetworkAccessNASBindingsView       = "network_access.nas_bindings.view"
+	PermNetworkAccessNASBindingsCreate     = "network_access.nas_bindings.create"
+	PermNetworkAccessNASBindingsUpdate     = "network_access.nas_bindings.update"
 	PermNetworkAccessSitesCreate           = "network_access.sites.create"
 	PermNetworkAccessSitesDelete           = "network_access.sites.delete"
 	PermNetworkAccessSitesUpdate           = "network_access.sites.update"
@@ -320,6 +323,9 @@ var resourceMonitoringPermissionKeys = []string{
 }
 
 var allPermissionKeySet = []string{
+	PermNetworkAccessNASBindingsView,
+	PermNetworkAccessNASBindingsCreate,
+	PermNetworkAccessNASBindingsUpdate,
 	PermWorkbenchAIView,
 	PermWorkbenchComputeView,
 	PermWorkbenchDeliveryView,

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
@@ -13,6 +14,7 @@ import (
 	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	networkaccessrepo "github.com/opensoha/soha/internal/repository/networkaccess"
+	radiusrepo "github.com/opensoha/soha/internal/repository/radiusdeployment"
 	"gorm.io/gorm"
 )
 
@@ -49,6 +51,15 @@ func (r *Repository) SaveNASAuthorization(ctx context.Context, authorization dom
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-nas-accounting:"+authorization.RuntimeID+":"+authorization.NASID).Error; err != nil {
 			return err
 		}
+		if authorization.ManagedRuntimeProof != nil || strings.HasPrefix(authorization.RuntimeID, "radius-") {
+			if _, err := radiusrepo.ValidateNASAuthorization(tx, authorization); err != nil {
+				return err
+			}
+		}
+		if err := preparePasswordStationAuthorization(tx, authorization); err != nil {
+			return err
+		}
+
 		if err := validateEndpointAuthorization(tx, authorization); err != nil {
 			return err
 		}
@@ -70,11 +81,8 @@ func (r *Repository) SaveNASAuthorization(ctx context.Context, authorization dom
 			saved = decoded
 			return nil
 		}
-		if authorization.Decision == domainnetworkaccess.DecisionAllow {
-			status := nasSessionStatus(authorization.AccessProfile)
-			if err := tx.Exec(`INSERT INTO network_runtime_sessions (id, runtime_id, subject_id, device_id, site_id, mode, access_profile, status, policy_version, configuration_version, posture_version, valid_until, nas_id, authentication_method, created_at, updated_at) VALUES (?, ?, ?, ?, (SELECT site_id FROM network_access_nas_bindings WHERE tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND nas_id = ? AND status = 'active' LIMIT 1), ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)`, authorization.SessionID, authorization.RuntimeID, authorization.SubjectID, authorization.DeviceID, authorization.RuntimeID, authorization.NASID, domainnetworkaccess.ModeInternalDirect, authorization.AccessProfile, status, authorization.PolicyVersion, authorization.ValidUntil, authorization.NASID, authorization.AuthenticationMethod, authorization.CreatedAt, authorization.CreatedAt).Error; err != nil {
-				return err
-			}
+		if err := insertAuthorizedNASSession(tx, authorization); err != nil {
+			return err
 		}
 		row, err := nasAuthorizationRowFromDomain(authorization)
 		if err != nil {
@@ -140,7 +148,12 @@ func validateEndpointAuthorization(tx *gorm.DB, authorization domainnetworkrunti
 	if presence.PayloadHash != authorization.PresenceHash {
 		return staleNASAuthorization()
 	}
-	binding, err := repo.FindActiveNASBinding(tx.Statement.Context, authorization.RuntimeID, authorization.NASID)
+	var binding domainnetworkaccess.NASBinding
+	if authorization.ManagedBindingID != "" {
+		binding, err = repo.GetNASBinding(tx.Statement.Context, authorization.ManagedBindingID)
+	} else {
+		binding, err = repo.FindActiveNASBinding(tx.Statement.Context, authorization.RuntimeID, authorization.NASID)
+	}
 	if err != nil {
 		return err
 	}
@@ -321,5 +334,21 @@ func lockNASAuthorizationPolicy(tx *gorm.DB, authorization domainnetworkruntime.
 		return err
 	}
 
+	return nil
+}
+
+func insertAuthorizedNASSession(tx *gorm.DB, authorization domainnetworkruntime.NASAuthorization) error {
+	if authorization.Decision == domainnetworkaccess.DecisionAllow {
+		status := nasSessionStatus(authorization.AccessProfile)
+		query := `INSERT INTO network_runtime_sessions (id, runtime_id, subject_id, device_id, site_id, mode, access_profile, status, policy_version, configuration_version, posture_version, valid_until, nas_id, authentication_method, created_at, updated_at) VALUES (?, ?, ?, ?, (SELECT site_id FROM network_access_nas_bindings WHERE tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND nas_id = ? AND status = 'active' LIMIT 1), ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)`
+		bindingScope := authorization.RuntimeID
+		if authorization.ManagedBindingID != "" {
+			query = strings.Replace(query, "runtime_id = ? AND nas_id", "id = ? AND nas_id", 1)
+			bindingScope = authorization.ManagedBindingID
+		}
+		if err := tx.Exec(query, authorization.SessionID, authorization.RuntimeID, authorization.SubjectID, authorization.DeviceID, bindingScope, authorization.NASID, domainnetworkaccess.ModeInternalDirect, authorization.AccessProfile, status, authorization.PolicyVersion, authorization.ValidUntil, authorization.NASID, authorization.AuthenticationMethod, authorization.CreatedAt, authorization.CreatedAt).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }

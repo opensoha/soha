@@ -21,19 +21,23 @@ type MutualTLSConfig struct {
 }
 
 type NetworkControlConfig struct {
-	EAPIssuer                EAPIssuerConfig          `mapstructure:"eap_issuer"`
-	IngestQuery              NetworkIngestQueryConfig `mapstructure:"ingest_query"`
-	HTTP                     HTTPConfig               `mapstructure:"http"`
-	Logger                   LoggerConfig             `mapstructure:"logger"`
-	Database                 DatabaseConfig           `mapstructure:"database"`
-	TLS                      MutualTLSConfig          `mapstructure:"tls"`
-	SnapshotRefreshInterval  time.Duration            `mapstructure:"snapshot_refresh_interval"`
-	MaxBodyBytes             int64                    `mapstructure:"max_body_bytes"`
-	RequestsPerMinute        int                      `mapstructure:"requests_per_minute"`
-	MaxClockSkew             time.Duration            `mapstructure:"max_clock_skew"`
-	ConfigurationTTL         time.Duration            `mapstructure:"configuration_ttl"`
-	LeaseTTL                 time.Duration            `mapstructure:"lease_ttl"`
-	CredentialEncryptionKeys keyring.Ring             `mapstructure:"-"`
+	RadiusSlots              []RadiusRuntimeSlotConfig    `mapstructure:"-"`
+	PasswordVerifier         RadiusPasswordVerifierConfig `mapstructure:"password_verifier"`
+	PasswordAuth             AuthConfig                   `mapstructure:"-"`
+	ProxySlots               []ProxyRuntimeSlotConfig     `mapstructure:"-"`
+	EAPIssuer                EAPIssuerConfig              `mapstructure:"eap_issuer"`
+	IngestQuery              NetworkIngestQueryConfig     `mapstructure:"ingest_query"`
+	HTTP                     HTTPConfig                   `mapstructure:"http"`
+	Logger                   LoggerConfig                 `mapstructure:"logger"`
+	Database                 DatabaseConfig               `mapstructure:"database"`
+	TLS                      MutualTLSConfig              `mapstructure:"tls"`
+	SnapshotRefreshInterval  time.Duration                `mapstructure:"snapshot_refresh_interval"`
+	MaxBodyBytes             int64                        `mapstructure:"max_body_bytes"`
+	RequestsPerMinute        int                          `mapstructure:"requests_per_minute"`
+	MaxClockSkew             time.Duration                `mapstructure:"max_clock_skew"`
+	ConfigurationTTL         time.Duration                `mapstructure:"configuration_ttl"`
+	LeaseTTL                 time.Duration                `mapstructure:"lease_ttl"`
+	CredentialEncryptionKeys keyring.Ring                 `mapstructure:"-"`
 }
 
 type EAPIssuerConfig struct {
@@ -54,6 +58,8 @@ type IngestConfig struct {
 }
 
 type networkRuntimeConfig struct {
+	Auth           AuthConfig           `mapstructure:"auth"`
+	Runtime        RuntimeConfig        `mapstructure:"runtime"`
 	NetworkControl NetworkControlConfig `mapstructure:"network_control"`
 	Ingest         IngestConfig         `mapstructure:"ingest"`
 	Security       struct {
@@ -97,6 +103,12 @@ func loadNetworkRuntimeConfig() (networkRuntimeConfig, error) {
 		return networkRuntimeConfig{}, fmt.Errorf("unmarshal network runtime config: %w", err)
 	}
 	cfg.expandEnv()
+	if err := runtimeConfigError(append(validateProxyRuntimeConfig(cfg.Runtime), validateRadiusRuntimeConfig(cfg.Runtime)...)); err != nil {
+		return networkRuntimeConfig{}, err
+	}
+	cfg.NetworkControl.RadiusSlots = cfg.Runtime.RadiusSlots
+	cfg.NetworkControl.PasswordAuth = cfg.Auth
+	cfg.NetworkControl.ProxySlots = cfg.Runtime.ProxySlots
 	key, err := keyring.NewKey(encryptionKeyID, cfg.Security.CredentialEncryptionKey, time.Unix(0, 0).UTC(), nil)
 	if err != nil {
 		return networkRuntimeConfig{}, fmt.Errorf("build network control credential key: %w", err)
@@ -110,6 +122,9 @@ func loadNetworkRuntimeConfig() (networkRuntimeConfig, error) {
 
 func (c NetworkControlConfig) Validate() error {
 	problems := validateRuntimeConfig("network_control", c.HTTP, c.Logger, c.Database, c.TLS)
+	if err := c.PasswordVerifier.Validate(); err != nil {
+		problems = append(problems, err.Error())
+	}
 	if (strings.TrimSpace(c.EAPIssuer.CAFile) == "") != (strings.TrimSpace(c.EAPIssuer.KeyFile) == "") {
 		problems = append(problems, "network_control.eap_issuer requires both ca_file and key_file")
 	}
@@ -253,6 +268,9 @@ func runtimeConfigError(problems []string) error {
 }
 
 func setNetworkRuntimeDefaults(v *viper.Viper) {
+	v.SetDefault("network_control.password_verifier.enabled", false)
+	v.SetDefault("network_control.password_verifier.allowed_peer_cidrs", []string{})
+	v.SetDefault("auth.login_verification.slider_enabled", false)
 	setRuntimeDefaults(v, "network_control", ":8082", "soha", "migrations", false, 8, 4)
 	setRuntimeDefaults(v, "ingest", ":8083", "soha_ingest", "migrations/network-ingest/postgres", true, 12, 6)
 	v.SetDefault("network_control.snapshot_refresh_interval", "1s")
@@ -297,6 +315,9 @@ func setRuntimeDefaults(v *viper.Viper, prefix, address, databaseName, migration
 		"database.conn_max_lifetime": "1h",
 		"database.auto_migrate":      autoMigrate,
 		"database.migration_path":    migrationPath,
+		"tls.cert_file":              "",
+		"tls.key_file":               "",
+		"tls.client_ca_file":         "",
 	} {
 		v.SetDefault(prefix+"."+key, value)
 	}

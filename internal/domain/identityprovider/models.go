@@ -309,17 +309,18 @@ type AuthorizationCode struct {
 }
 
 type OIDCSession struct {
-	ID                string
-	ProviderID        string
-	ClientID          string
-	UserID            string
-	PlatformSessionID string
-	Scopes            []string
-	AuthTime          time.Time
-	ExpiresAt         time.Time
-	LastSeenAt        time.Time
-	RevokedAt         *time.Time
-	CreatedAt         time.Time
+	AuthorizationSourceIP string
+	ID                    string
+	ProviderID            string
+	ClientID              string
+	UserID                string
+	PlatformSessionID     string
+	Scopes                []string
+	AuthTime              time.Time
+	ExpiresAt             time.Time
+	LastSeenAt            time.Time
+	RevokedAt             *time.Time
+	CreatedAt             time.Time
 }
 
 type OIDCRefreshToken struct {
@@ -534,6 +535,7 @@ type Repository interface {
 	RecordOutpostHeartbeat(context.Context, Outpost) (Outpost, error)
 	RotateOutpostToken(context.Context, Outpost) (Outpost, error)
 	DeleteOutpost(context.Context, string) error
+	AuthorizeLegacyOutpostAccess(context.Context, string, string) error
 	ListOIDCClients(context.Context, string) ([]OIDCClient, error)
 	GetOIDCClient(context.Context, string) (OIDCClient, error)
 	GetOIDCClientByClientID(context.Context, string) (OIDCClient, error)

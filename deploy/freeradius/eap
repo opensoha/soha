@@ -22,4 +22,12 @@ eap {
 	tls {
 		tls = tls-common
 	}
+
+	ttls {
+		tls = tls-common
+		copy_request_to_tunnel = no
+		use_tunneled_reply = no
+		virtual_server = soha-inner-tunnel
+		require_client_cert = no
+	}
 }

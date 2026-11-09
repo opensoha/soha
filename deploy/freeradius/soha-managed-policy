@@ -1,0 +1,14 @@
+# Only outer requests carry this nonce. Never copy it to session-state/reply.
+soha_managed_finish_reject {
+	if ("$ENV{SOHA_RADIUS_MANAGED_ENABLED}" == "true" && &control:Tmp-String-8 =~ /^[A-Za-z0-9_-]{43}$/) {
+		soha_managed_reject
+		update control {
+			&Tmp-String-8 := ""
+		}
+	}
+}
+
+soha_reject_tracked {
+	soha_managed_finish_reject
+	reject
+}

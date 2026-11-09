@@ -16,6 +16,13 @@ func ValidateEAPServerTrust(trust *domain.EAPServerTrust) error {
 	if trust == nil {
 		return nil
 	}
+	if trust.EapMethod == "ttls" {
+		if trust.InnerMethod != "pap" || trust.CredentialSource != "user-input" {
+			return invalid("TTLS requires PAP and user-input credentials")
+		}
+	} else if trust.EapMethod != "" && trust.EapMethod != "tls" || trust.InnerMethod != "" || trust.CredentialSource != "" {
+		return invalid("unsupported EAP method configuration")
+	}
 	if !trust.WifiSecurity.Valid() || len(trust.ServerNames) < 1 || len(trust.ServerNames) > 16 || len(trust.CaCertificates) < 1 || len(trust.CaCertificates) > 8 {
 		return invalid("eapServerTrust is invalid")
 	}

@@ -34,6 +34,26 @@ func TestAllowsExternalBearerToken(t *testing.T) {
 		want bool
 	}{
 		{path: "/api/v1/agent-sessions/connect", want: true},
+		{path: "/api/v1/network/proxy-deployment-executor/claim", want: true},
+		{path: "/api/v1/network/proxy-deployment-executor/status", want: true},
+		{path: "/api/v1/network/proxy-deployment-executor/callback", want: true},
+		{path: "/custom/v2/network/proxy-deployment-executor/claim", want: true},
+		{path: "/api/v1/network/proxy-deployment-executor", want: false},
+		{path: "/api/v1/network/proxy-deployment-executor/claim/extra", want: false},
+		{path: "/api/v1/network/proxy-deployment-executor/other", want: false},
+		{path: "/api/v1/network-access/proxy-instances/proxy-1/deployment/control", want: false},
+		{path: "/api/v1/identity/outpost-runtime-executor/claim", want: true},
+		{path: "/api/v1/identity/outpost-runtime-executor/status", want: true},
+		{path: "/api/v1/identity/outpost-runtime-executor/callback", want: true},
+		{path: "/api/v1/identity/outposts/edge/runtime", want: false},
+		{path: "/api/v1/identity/outposts/edge/runtime/control", want: false},
+		{path: "/api/v1/identity/outposts/runtime/claim", want: true},
+		{path: "/api/v1/identity/outposts/edge/heartbeat", want: true},
+		{path: "/api/v1/identity/outposts/edge/check", want: true},
+		{path: "/api/v1/identity/outposts/edge/events", want: true},
+		{path: "/api/v1/identity/outposts/edge/token/rotate", want: false},
+		{path: "/api/v1/identity/outposts/edge/check/extra", want: false},
+		{path: "/api/v1/identity/outposts", want: false},
 		{path: "/api/v1/integrations/alerts/webhook", want: true},
 		{path: "/api/v1/delivery/execution-callbacks", want: true},
 		{path: "/api/v1/delivery/execution-tasks/claim", want: true},
@@ -63,6 +83,54 @@ func TestAllowsExternalBearerToken(t *testing.T) {
 				t.Fatalf("allowsExternalBearerToken(%q) = %t, want %t", test.path, got, test.want)
 			}
 		})
+	}
+}
+
+func TestBuildPrincipalMiddlewareHandsNetworkExecutorCredentialToEndpointAuthentication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, executor := range []string{"proxy-deployment-executor", "radius-deployment-executor"} {
+		for _, endpoint := range []string{"claim", "status", "callback"} {
+			for _, test := range []struct {
+				name, token string
+				duplicate   bool
+				wantStatus  int
+				wantHandler bool
+			}{
+				{name: "dedicated credential", token: "dedicated-executor-token", wantStatus: http.StatusOK, wantHandler: true},
+				{name: "wrong credential still rejected", token: "wrong-token", wantStatus: http.StatusUnauthorized, wantHandler: true},
+				{name: "anonymous still rejected", wantStatus: http.StatusUnauthorized, wantHandler: true},
+				{name: "user token cannot replace executor", token: "valid-key", wantStatus: http.StatusUnauthorized, wantHandler: true},
+				{name: "duplicate header rejected before handler", token: "dedicated-executor-token", duplicate: true, wantStatus: http.StatusUnauthorized},
+			} {
+				t.Run(executor+"/"+endpoint+"/"+test.name, func(t *testing.T) {
+					parser := &stubAccessTokenParser{}
+					router := gin.New()
+					router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser))
+					handled := false
+					path := "/api/v1/network/" + executor + "/" + endpoint
+					router.POST(path, func(c *gin.Context) {
+						handled = true
+						if c.GetHeader("Authorization") != "Bearer dedicated-executor-token" {
+							c.Status(http.StatusUnauthorized)
+							return
+						}
+						c.Status(http.StatusOK)
+					})
+					request := httptest.NewRequest(http.MethodPost, path, nil)
+					if test.token != "" {
+						request.Header.Set("Authorization", "Bearer "+test.token)
+					}
+					if test.duplicate {
+						request.Header.Add("Authorization", "Bearer another-token")
+					}
+					recorder := httptest.NewRecorder()
+					router.ServeHTTP(recorder, request)
+					if recorder.Code != test.wantStatus || handled != test.wantHandler {
+						t.Fatalf("status=%d handler=%t, want status=%d handler=%t", recorder.Code, handled, test.wantStatus, test.wantHandler)
+					}
+				})
+			}
+		}
 	}
 }
 

@@ -111,6 +111,7 @@ type Credential struct {
 }
 
 type EnrollmentConsumption struct {
+	ManagedNAS                *ManagedNASMemberScope
 	EnrollmentID              string
 	ChallengeID               string
 	TokenHash                 string
@@ -171,28 +172,33 @@ type Session struct {
 }
 
 type NASAuthorization struct {
-	AttributeVersion     string
-	RequestID            string
-	RequestHash          string
-	RuntimeID            string
-	NASID                string
-	SubjectID            string
-	DeviceID             string
-	CredentialID         string
-	StationID            string
-	InputsHash           string
-	ResponsePolicyHash   string
-	PresenceHash         string
-	RestrictionEpoch     int
-	AuthenticationMethod string
-	SessionID            string
-	Decision             string
-	AccessProfile        string
-	PolicyVersion        int
-	ReasonCode           string
-	RadiusAttributes     *networkprotocol.RadiusAttributes
-	ValidUntil           time.Time
-	CreatedAt            time.Time
+	ManagedRuntimeProof       *networkprotocol.ManagedNASProof
+	ManagedBindingID          string
+	ManagedSlotHash           string
+	ManagedRuntimeFingerprint string
+	PasswordProof             *PasswordReceipt
+	AttributeVersion          string
+	RequestID                 string
+	RequestHash               string
+	RuntimeID                 string
+	NASID                     string
+	SubjectID                 string
+	DeviceID                  string
+	CredentialID              string
+	StationID                 string
+	InputsHash                string
+	ResponsePolicyHash        string
+	PresenceHash              string
+	RestrictionEpoch          int
+	AuthenticationMethod      string
+	SessionID                 string
+	Decision                  string
+	AccessProfile             string
+	PolicyVersion             int
+	ReasonCode                string
+	RadiusAttributes          *networkprotocol.RadiusAttributes
+	ValidUntil                time.Time
+	CreatedAt                 time.Time
 }
 
 type VPNConnection struct {
@@ -223,3 +229,5 @@ type VPNConnection struct {
 	ValidUntil           time.Time
 	CreatedAt            time.Time
 }
+
+type ManagedNASMemberScope struct{ PoolID, MemberID, SlotHash string }

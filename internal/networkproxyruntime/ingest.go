@@ -33,6 +33,7 @@ func NewIngestClient(origin, runtimeID string, tlsConfig *tls.Config) *IngestCli
 func (c *IngestClient) Send(ctx context.Context, observation domain.Observation) error {
 	now := time.Now().UTC()
 	payload, err := json.Marshal(networkprotocol.ProxyRuntimeSample{
+		ProcessEpoch: observation.ProcessEpoch, SampleSequence: observation.SampleSequence,
 		Engine: observation.Engine, UptimeSeconds: observation.UptimeSeconds,
 		UploadTotal: observation.UploadTotal, DownloadTotal: observation.DownloadTotal,
 		ActiveConnections: observation.ActiveConnections,

@@ -2,10 +2,13 @@ package networkproxyruntime
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/opensoha/soha-contracts/proxytransport"
+	"golang.org/x/net/proxy"
 	"io"
 	"net"
 	"net/http"
@@ -43,8 +46,8 @@ func init() {
 }
 
 type fixtureProxy struct {
-	Name, Server, Username, Password string
-	Port                             int
+	Name, Server, Username, Password, Type string
+	Port                                   int
 }
 type fixtureListener struct {
 	Listen, Proxy string
@@ -94,6 +97,12 @@ func runEngineFixture() error {
 		sock, err := net.Listen("tcp4", net.JoinHostPort(listener.Listen, strconv.Itoa(listener.Port)))
 		if err != nil {
 			return err
+		}
+		if front.Type == "socks5" {
+			if err := fixtureSOCKSFrontend(sock, listener, front); err != nil {
+				return err
+			}
+			continue
 		}
 		go func() {
 			for {
@@ -256,4 +265,24 @@ func lifecycleDesired(revision int64, port int) domain.Configuration {
 		Content: fmt.Sprintf("port: %d\n", port), ValidUntil: time.Now().Add(2 * time.Minute),
 		Binding:    &domain.Binding{SiteID: "site-test", DeviceID: "device-test", ResourceIDs: []string{}},
 		Protection: &domain.Protection{PolicyVersion: 1, CIDRs: []string{"10.0.0.0/8"}, Hosts: []string{"protected.example"}}}
+}
+
+func fixtureSOCKSFrontend(listener net.Listener, definition fixtureListener, front fixtureProxy) error {
+	until := time.Now().Add(2 * time.Minute)
+	dialTCP := func(ctx context.Context, _ string, target string) (net.Conn, error) {
+		d, err := proxy.SOCKS5("tcp", net.JoinHostPort(front.Server, strconv.Itoa(front.Port)), &proxy.Auth{User: front.Username, Password: front.Password}, &net.Dialer{Timeout: time.Second})
+		if err != nil {
+			return nil, err
+		}
+		return d.(proxy.ContextDialer).DialContext(ctx, "tcp", target)
+	}
+	dialPacket := func(ctx context.Context, _ string, target string) (net.Conn, error) {
+		return proxytransport.DialSOCKS5UDP(ctx, net.JoinHostPort(front.Server, strconv.Itoa(front.Port)), front.Username, front.Password, target, until)
+	}
+	gate, err := proxytransport.NewSOCKS5Gate(map[string]string{definition.Users[0].Username: definition.Users[0].Password}, dialTCP, dialPacket, func(context.Context, string, string) error { return nil }, until)
+	if err != nil {
+		return err
+	}
+	go func() { _ = gate.Serve(listener) }()
+	return nil
 }
