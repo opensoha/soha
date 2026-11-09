@@ -55,11 +55,14 @@ spec:
         app.kubernetes.io/name: soha-outpost
     spec:
       serviceAccountName: soha-outpost
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -72,7 +75,15 @@ spec:
           env:
             - name: SOHA_AGENT_CONFIG_FILE
               value: /etc/soha/agent.config.yaml
+            - name: SOHA_AGENT_CONTROL_PLANE_OUTPOST_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: SOHA_AGENT_CONTROL_PLANE_OUTPOST_STATE_DIR
+              value: /var/lib/soha-outpost/instances/$(SOHA_AGENT_CONTROL_PLANE_OUTPOST_INSTANCE_ID)/.soha/outpost
           volumeMounts:
+            - name: state
+              mountPath: /var/lib/soha-outpost
             - name: config
               mountPath: /etc/soha
               readOnly: true
@@ -105,6 +116,9 @@ spec:
             capabilities:
               drop: ["ALL"]
       volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: soha-outpost-state
         - name: config
           configMap:
             name: soha-outpost-config

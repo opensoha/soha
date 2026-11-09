@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/base64"
 	"fmt"
 	"net"
 	"net/url"
@@ -126,13 +125,17 @@ type SessionConfig struct {
 }
 
 type OutpostConfig struct {
-	Enabled           bool          `mapstructure:"enabled"`
-	AgentID           string        `mapstructure:"agent_id"`
-	ProtocolVersion   string        `mapstructure:"protocol_version"`
-	TrustKeyID        string        `mapstructure:"trust_key_id"`
-	TrustPublicKey    string        `mapstructure:"trust_public_key"`
-	PollInterval      time.Duration `mapstructure:"poll_interval"`
-	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
+	InstanceID            string            `mapstructure:"instance_id"`
+	RuntimeControlEnabled bool              `mapstructure:"runtime_control_enabled"`
+	Enabled               bool              `mapstructure:"enabled"`
+	AgentID               string            `mapstructure:"agent_id"`
+	ProtocolVersion       string            `mapstructure:"protocol_version"`
+	TrustKeyID            string            `mapstructure:"trust_key_id"`
+	TrustPublicKey        string            `mapstructure:"trust_public_key"`
+	TrustPublicKeys       map[string]string `mapstructure:"trust_public_keys"`
+	StateDir              string            `mapstructure:"state_dir"`
+	PollInterval          time.Duration     `mapstructure:"poll_interval"`
+	HeartbeatInterval     time.Duration     `mapstructure:"heartbeat_interval"`
 }
 
 type CallbackRetryConfig struct {
@@ -344,14 +347,11 @@ func validateOutpostConfig(controlPlane ControlPlaneConfig) error {
 		if strings.TrimSpace(controlPlane.Outpost.AgentID) == "" {
 			return fmt.Errorf("control_plane.outpost.agent_id is required when outpost runtime is enabled")
 		}
-		if strings.TrimSpace(controlPlane.Outpost.TrustKeyID) == "" || strings.TrimSpace(controlPlane.Outpost.TrustPublicKey) == "" {
-			return fmt.Errorf("control_plane.outpost trust_key_id and trust_public_key are required when outpost runtime is enabled")
+		if _, err := controlPlane.Outpost.TrustedKeys(); err != nil {
+			return err
 		}
 		if controlPlane.Outpost.ProtocolVersion != "v1" {
 			return fmt.Errorf("control_plane.outpost.protocol_version must be v1")
-		}
-		if key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(controlPlane.Outpost.TrustPublicKey)); err != nil || len(key) != 32 {
-			return fmt.Errorf("control_plane.outpost.trust_public_key must be a base64-encoded Ed25519 public key")
 		}
 	}
 	return nil
@@ -411,6 +411,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("control_plane.agent_runtime.providers.hermes.prompt_arg", "-q")
 	v.SetDefault("control_plane.agent_runtime.providers.hermes.skill_arg", "")
 	v.SetDefault("control_plane.agent_runtime.providers.hermes.provider_skill_arg", "-s")
+	v.SetDefault("control_plane.outpost.instance_id", "")
+	v.SetDefault("control_plane.outpost.runtime_control_enabled", false)
+	v.SetDefault("control_plane.outpost.state_dir", ".soha/outpost")
+	v.SetDefault("control_plane.outpost.trust_public_keys", map[string]string{})
 	v.SetDefault("control_plane.outpost.enabled", false)
 	v.SetDefault("control_plane.outpost.agent_id", "local-outpost-agent")
 	v.SetDefault("control_plane.outpost.protocol_version", "v1")
