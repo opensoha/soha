@@ -3,6 +3,8 @@ import {
   createIdentityOutpost,
   deleteIdentityOutpost,
   getIdentityOutpost,
+  getIdentityOutpostRuntime,
+  mutateIdentityOutpostRuntime,
   listIdentityOutposts,
   rotateIdentityOutpostToken,
   updateIdentityOutpost,
@@ -88,6 +90,41 @@ describe('identity outposts api', () => {
 
     await expect(deleteIdentityOutpost(' edge/id ')).resolves.toBeUndefined()
     expect(apiMocks.delete).toHaveBeenCalledWith('/identity/outposts/edge%2Fid')
+  })
+
+  it('uses the runtime endpoint and preserves stable intent fields for retry', async () => {
+    const runtime = { owner: 'external', generation: 4 }
+    apiMocks.get.mockResolvedValueOnce({ data: runtime })
+    expect(await getIdentityOutpostRuntime(' edge/id ')).toBe(runtime)
+    expect(apiMocks.get).toHaveBeenCalledWith('/identity/outposts/edge%2Fid/runtime')
+    const bind = {
+      outpostId: ' edge/id ',
+      kind: 'bind' as const,
+      input: {
+        slotId: 'approved',
+        expectedGeneration: 4,
+        requestId: 'stable',
+        explicitAdoption: true,
+      },
+    }
+    apiMocks.put
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({ data: { runtime } })
+    await expect(mutateIdentityOutpostRuntime(bind)).rejects.toThrow('network')
+    await expect(mutateIdentityOutpostRuntime(bind)).resolves.toEqual({ runtime })
+    expect(apiMocks.put.mock.calls[0]).toEqual(apiMocks.put.mock.calls[1])
+    const input = {
+      action: 'stop' as const,
+      expectedGeneration: 4,
+      requestId: 'stop-id',
+      drainTimeoutSeconds: 30,
+    }
+    apiMocks.post.mockResolvedValueOnce({ data: { runtime } })
+    await mutateIdentityOutpostRuntime({ outpostId: 'edge/id', kind: 'control', input })
+    expect(apiMocks.post).toHaveBeenCalledWith(
+      '/identity/outposts/edge%2Fid/runtime/control',
+      input,
+    )
   })
 
   it('returns a rotated token only from the one-time response', async () => {

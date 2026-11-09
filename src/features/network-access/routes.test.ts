@@ -5,6 +5,29 @@ import type { PermissionSnapshot } from '@/types'
 import { networkAccessRoutes } from './routes'
 
 describe('network access routes', () => {
+  it('allows NAS-view-only staff to reach managed RADIUS without granting other sections', () => {
+    const routes = resolveRouteDefinitions(networkAccessRoutes)
+    const snapshot = {
+      permissionKeys: ['workbench.security.view', 'network_access.nas_bindings.view'],
+      visibleMenuIds: ['network-access-settings', 'network-access-radius-services'],
+      visibleMenus: [],
+    } as PermissionSnapshot
+    for (const id of [
+      'network-access',
+      'network-access-settings',
+      'network-access-radius-services',
+    ]) {
+      const route = routes.find(({ meta }) => meta.id === id)!
+      expect(canAccessRoute(route.meta, snapshot)).toBe(true)
+      expect(
+        canAccessRoute(route.meta, { ...snapshot, permissionKeys: ['workbench.security.view'] }),
+      ).toBe(false)
+    }
+    for (const id of ['network-access-sites', 'network-access-enrollments']) {
+      expect(canAccessRoute(routes.find(({ meta }) => meta.id === id)!.meta, snapshot)).toBe(false)
+    }
+  })
+
   it('allows maintenance-only staff into endpoint response with the security workbench entry', () => {
     const routes = resolveRouteDefinitions(networkAccessRoutes)
     const snapshot = {
@@ -48,6 +71,9 @@ describe('network access routes', () => {
       'network_access.content_destinations.view',
       'network_access.content_transfer_events.view',
     ])
+    expect(
+      routes.find(({ meta }) => meta.id === 'network-access-proxy-workspace')?.meta.navVisible,
+    ).toBe(false)
     expect(
       routes.slice(1).map(({ meta }) => [meta.id, meta.path, meta.menuId, meta.permissionKey]),
     ).toEqual([
@@ -104,7 +130,7 @@ describe('network access routes', () => {
         'network-access-radius-services',
         '/network-access/radius-services',
         'network-access-radius-services',
-        'network_access.enrollments.view',
+        undefined,
       ],
       [
         'network-access-endpoint-response',
@@ -179,6 +205,12 @@ describe('network access routes', () => {
         'network_access.proxy_instances.view',
       ],
       [
+        'network-access-proxy-workspace',
+        '/network-access/proxy-instances/:instanceID/workspace',
+        undefined,
+        'network_access.proxy_instances.view',
+      ],
+      [
         'network-access-proxy-overview',
         '/network-access/proxy-overview',
         'network-access-proxy-overview',
@@ -227,7 +259,11 @@ describe('network access routes', () => {
     }
     expect(
       routes.find(({ meta }) => meta.id === 'network-access-settings')?.meta.permissionKeysAny,
-    ).toEqual(['network_access.sites.view', 'network_access.enrollments.view'])
+    ).toEqual([
+      'network_access.sites.view',
+      'network_access.enrollments.view',
+      'network_access.nas_bindings.view',
+    ])
     expect(validateRouteDefinitions(networkAccessRoutes)).toEqual([])
 
     const route = routes.find(({ meta }) => meta.id === 'network-access-resources')!

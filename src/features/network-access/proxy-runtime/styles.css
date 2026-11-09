@@ -132,3 +132,39 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.soha-proxy-workspace-section {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.soha-proxy-workspace-editor {
+  padding: 20px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+}
+.soha-proxy-workspace-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 0 20px;
+  align-items: start;
+}
+.soha-proxy-workspace-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.soha-proxy-workspace-section h2,
+.soha-proxy-workspace-section h3 {
+  margin: 0;
+  font-size: var(--soha-font-size-section);
+}
+
+.soha-proxy-workspace,
+.soha-proxy-workspace-section {
+  grid-template-columns: minmax(0, 1fr);
+}
+.soha-proxy-workspace-editor {
+  min-width: 0;
+}

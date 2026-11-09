@@ -1,3 +1,4 @@
+import { rateText } from './traffic-model'
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementKeywordField,
@@ -10,28 +11,39 @@ import { formatBytes } from '@/components/resource-metrics-format'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission } from '@/features/auth'
 import { useI18n } from '@/i18n'
-import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
+import { ApiError } from '@/services/api-error'
+import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
 import { ReloadOutlined } from '@ant-design/icons'
-import type { NetworkProxyConnection } from '@opensoha/contracts/gen/ts/sohaapi'
+import type {
+  NetworkProxyCloseCommandEnvelope,
+  NetworkProxyConnection,
+} from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
 import { Alert, Button, Card, Popconfirm, Typography } from 'antd'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { closeConnection } from './api'
 import { ProxyInstanceHeader, useProxyContext } from './context'
 import { proxyKeys, proxyQueries } from './queries'
 import './styles.css'
+type CloseTarget = { instanceId: string; connectionId: string; epoch: string; requestId: string }
+function matchesClose(target: CloseTarget, receipt?: NetworkProxyCloseCommandEnvelope) {
+  return (
+    receipt?.commandId === target.requestId &&
+    receipt.connectionId === target.connectionId &&
+    receipt.processEpoch === target.epoch
+  )
+}
 export default function ProxyConnectionsPage() {
   const { t, localeCode } = useI18n()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
 
   const queryClient = useQueryClient()
   const context = useProxyContext('network_access.proxy_instances.view')
-  const canView = hasPermission(
-    context.permissions.data?.data,
-    'network_access.proxy_connections.view',
-  )
+  const canView =
+    context.allowed &&
+    hasPermission(context.permissions.data?.data, 'network_access.proxy_connections.view')
   const canClose = hasPermission(
     context.permissions.data?.data,
     'network_access.proxy_connections.close',
@@ -45,20 +57,30 @@ export default function ProxyConnectionsPage() {
   const latest = samples[samples.length - 1]
   const [draft, setDraft] = useState('')
   const [keyword, setKeyword] = useState('')
-  const [lastCommand, setLastCommand] = useState<{ instanceId: string; commandId: string }>()
-  const currentCommand = lastCommand?.instanceId === selected?.id ? lastCommand : undefined
-  const command = useQuery(
-    proxyQueries.closeCommand(selected?.id, currentCommand?.commandId, canView),
-  )
-  const receipt = command.isEnabled === false ? undefined : readableQueryData(command)
+  const [lastCommand, setLastCommand] = useState<CloseTarget>()
+  const [confirmation, setConfirmation] = useState<CloseTarget>()
   const close = useOperationMutation(
     {
-      mutationFn: (target: { instanceId: string; connectionId: string }) =>
-        closeConnection(target.instanceId, target.connectionId),
+      mutationFn: async (target: CloseTarget) => {
+        const now = Date.now()
+        const result = await closeConnection(target.instanceId, target.connectionId, {
+          requestId: target.requestId,
+          processEpoch: target.epoch,
+          issuedAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + 30000).toISOString(),
+        })
+        if (!matchesClose(target, result))
+          throw new ApiError(0, '返回的关闭回执与原请求不符，请读取原回执。', { method: 'POST' })
+        return result
+      },
+      onMutate: setLastCommand,
+      onError: (error, target) => {
+        if (!writeOutcomeUnknown(error))
+          setLastCommand((current) => (current === target ? undefined : current))
+      },
       onSuccess: (result, target) => {
-        setLastCommand({ instanceId: target.instanceId, commandId: result.commandId })
         queryClient.setQueryData(
-          proxyKeys.closeCommand(target.instanceId, result.commandId),
+          proxyKeys.closeCommand(target.instanceId, target.requestId),
           result,
         )
         void queryClient.invalidateQueries({ queryKey: proxyKeys.connections(target.instanceId) })
@@ -76,10 +98,32 @@ export default function ProxyConnectionsPage() {
       }),
     },
   )
-  const operationBlocked =
-    close.blocked ||
-    Boolean(currentCommand && (!receipt || receipt.status === 'pending' || command.isError)) ||
-    (snapshot.isEnabled !== false && queryAccessDenied(snapshot))
+  const currentCommand = canView ? lastCommand : undefined
+  const command = useQuery(
+    proxyQueries.closeCommand(
+      currentCommand?.instanceId,
+      currentCommand?.requestId,
+      canView && !close.isPending,
+    ),
+  )
+  const candidate = command.isEnabled === false ? undefined : readableQueryData(command)
+  const receipt = currentCommand && matchesClose(currentCommand, candidate) ? candidate : undefined
+  const terminal = Boolean(
+    receipt && ['closed', 'not-found', 'failed', 'expired'].includes(receipt.status),
+  )
+  const { outcomeUnknown, resolveUnknown } = close
+  useEffect(() => {
+    if (currentCommand && terminal && !command.isError && outcomeUnknown)
+      resolveUnknown(currentCommand)
+  }, [currentCommand, terminal, command.isError, outcomeUnknown, resolveUnknown])
+  useEffect(() => {
+    if (!canView || !context.allowed) {
+      void queryClient.cancelQueries({ queryKey: proxyKeys.all })
+      queryClient.removeQueries({ queryKey: proxyKeys.all })
+      setConfirmation(undefined)
+    }
+  }, [canView, context.allowed, queryClient])
+  const operationBlocked = close.blocked || Boolean(currentCommand && !terminal) || snapshot.isError
   const rows = (visibleSnapshotData?.connections ?? []).filter(
     (item) =>
       !keyword ||
@@ -112,7 +156,12 @@ export default function ProxyConnectionsPage() {
       width: 185,
       render: (value?: string) => (value ? formatDateTime(value) : '—'),
     },
-    ...(canClose && selected?.capabilities.includes('close_connection')
+    ...(canClose &&
+    selected?.processEpoch &&
+    visibleSnapshotData?.freshness !== 'stale' &&
+    visibleSnapshotData?.freshness !== 'unavailable' &&
+    visibleSnapshotData?.processEpoch === selected.processEpoch &&
+    selected?.capabilities.includes('close_connection')
       ? [
           {
             title: t('common.actions', '操作'),
@@ -125,13 +174,44 @@ export default function ProxyConnectionsPage() {
                 description={record.destination}
                 okText={t('networkAccess.proxyRuntime.disconnect', '断开')}
                 okButtonProps={{ ...{ danger: true }, disabled: operationBlocked }}
-                onConfirm={() =>
-                  close.mutate({ instanceId: selected!.id, connectionId: record.id })
+                onOpenChange={(open) => {
+                  if (open && selected?.processEpoch) {
+                    setConfirmation({
+                      instanceId: selected.id,
+                      connectionId: record.id,
+                      epoch: selected.processEpoch,
+                      requestId: crypto.randomUUID(),
+                    })
+                  }
+                }}
+                onConfirm={() => {
+                  const target = confirmation
+                  setConfirmation(undefined)
+                  if (
+                    !canView ||
+                    !canClose ||
+                    operationBlocked ||
+                    !target ||
+                    target.instanceId !== selected?.id ||
+                    target.epoch !== selected.processEpoch ||
+                    target.connectionId !== record.id ||
+                    visibleSnapshotData?.processEpoch !== target.epoch ||
+                    (record.processEpoch && record.processEpoch !== target.epoch)
+                  )
+                    return
+                  close.mutate(target)
+                }}
+                disabled={
+                  operationBlocked ||
+                  (!!record.processEpoch && record.processEpoch !== selected?.processEpoch)
                 }
-                disabled={operationBlocked}
               >
                 <Button
                   danger
+                  disabled={
+                    operationBlocked ||
+                    (!!record.processEpoch && record.processEpoch !== selected?.processEpoch)
+                  }
                   size="small"
                   loading={close.isPending && close.variables?.connectionId === record.id}
                 >
@@ -191,7 +271,8 @@ export default function ProxyConnectionsPage() {
             title={`${text('关闭命令', 'Close command')} · ${receipt?.status ?? text('未知', 'Unknown')}`}
             description={
               <>
-                {currentCommand.commandId} · {receipt?.connectionId} ·{' '}
+                {currentCommand.instanceId} · {currentCommand.requestId} ·{' '}
+                {currentCommand.connectionId} ·{' '}
                 {receipt?.reasonCode ||
                   text(
                     '等待运行时确认；连接采样不替代回执。',
@@ -221,7 +302,7 @@ export default function ProxyConnectionsPage() {
           <h2>{t('networkAccess.proxyRuntime.connections', '活动连接')}</h2>
           <Typography.Text type="secondary">
             {visibleSnapshotData?.observedAt
-              ? `${t('networkAccess.proxyRuntime.sampledAt', '最近采样')}：${formatDateTime(visibleSnapshotData.observedAt)} · ${t('networkAccess.proxyRuntime.maxConnections', '最多展示 200 条')}`
+              ? `${t('networkAccess.proxyRuntime.sampledAt', '最近采样')}：${formatDateTime(visibleSnapshotData.observedAt)} · 已返回 ${visibleSnapshotData.returnedCount ?? visibleSnapshotData.connections.length} / 活动总数 ${visibleSnapshotData.totalActive ?? '未知'} · ${visibleSnapshotData.truncated ? '已截断，仅筛选返回范围' : '仅筛选已返回范围'} · ${visibleSnapshotData.freshness ?? '新鲜度未知'}`
               : t('networkAccess.proxyRuntime.noSample', '未采集')}
           </Typography.Text>
         </div>
@@ -257,7 +338,7 @@ export default function ProxyConnectionsPage() {
           <div className="soha-server-proxy-metrics soha-server-proxy-connection-metrics">
             <Card size="small">
               <span>{t('networkAccess.proxyRuntime.activeConnections', '活动连接')}</span>
-              <strong>{latest?.activeConnections ?? '—'}</strong>
+              <strong>{visibleSnapshotData?.totalActive ?? '—'}</strong>
               <small>
                 {latest
                   ? t('networkAccess.proxyRuntime.sampleCount', '最新快照')
@@ -271,7 +352,11 @@ export default function ProxyConnectionsPage() {
             </Card>
             <Card size="small">
               <span>{t('networkAccess.proxyRuntime.uploadRate', '上传速率')}</span>
-              <strong>{latest ? `${formatBytes(latest.uploadBytesPerSecond)}/s` : '—'}</strong>
+              <strong>
+                {latest
+                  ? rateText(latest.uploadBytesPerSecond, formatBytes, latest.rateState)
+                  : '—'}
+              </strong>
               <small>
                 {latest
                   ? formatDateTime(latest.observedAt)
@@ -280,7 +365,11 @@ export default function ProxyConnectionsPage() {
             </Card>
             <Card size="small">
               <span>{t('networkAccess.proxyRuntime.downloadRate', '下载速率')}</span>
-              <strong>{latest ? `${formatBytes(latest.downloadBytesPerSecond)}/s` : '—'}</strong>
+              <strong>
+                {latest
+                  ? rateText(latest.downloadBytesPerSecond, formatBytes, latest.rateState)
+                  : '—'}
+              </strong>
               <small>
                 {latest
                   ? formatDateTime(latest.observedAt)

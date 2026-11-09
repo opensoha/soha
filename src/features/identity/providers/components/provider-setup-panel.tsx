@@ -6,7 +6,7 @@ import { isApiError } from '@/services/api-error'
 import { readableQueryData } from '@/utils/query-feedback'
 import { InfoCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { Descriptions, Space, Typography } from 'antd'
+import { Alert, Button, Descriptions, Space, Typography } from 'antd'
 import { identityProviderQueries } from '../queries'
 import type { IdentityProvider } from '../types'
 import { ProxySetupPanel } from './proxy-setup-panel'
@@ -40,7 +40,18 @@ export function ProviderSetupPanel({ provider }: { provider: IdentityProvider })
   const visibleQueryData = query.isEnabled === false ? undefined : readableQueryData(query)
   if (query.isPending) return <ManagementState kind="loading" compact />
   if (!visibleQueryData)
-    return <ReadFeedback canRead={query.isEnabled} query={query} label="接入配置" />
+    return (
+      <>
+        <ReadFeedback canRead={query.isEnabled} query={query} label="接入配置" />
+        <Button
+          disabled={query.isEnabled === false}
+          loading={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
+          重新读取配置
+        </Button>
+      </>
+    )
   const setup = visibleQueryData
   return (
     <div className="soha-identity-provider-setup">
@@ -59,18 +70,50 @@ export function ProviderSetupPanel({ provider }: { provider: IdentityProvider })
             tooltip={t('identity.providers.setup.statusHint')}
             icon={<InfoCircleOutlined />}
           />
+          <Button
+            disabled={query.isEnabled === false}
+            loading={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            重新读取配置
+          </Button>
         </Space>
       </div>
+      <Alert
+        showIcon
+        type="info"
+        title="真实接入验证需在业务应用中完成"
+        description="此处检查已保存配置的完整性，不执行真实登录。请在业务应用验证登录、无权拒绝和注销后的会话；修改回调、证书或网关配置后需要重新验证。此页面不保存验证结果。"
+      />
       {setup.issues.map((issue) => (
         <Typography.Paragraph key={issue} type="warning">
           {issues[issue] ?? issue}
         </Typography.Paragraph>
       ))}
       {setup.migrationRequired ? (
-        <Typography.Paragraph type="warning">
-          此接入仍使用 Core Reverse Proxy。请先旁路验证以下 Forward Auth
-          配置，再切换业务入口；保留回退窗口。
-        </Typography.Paragraph>
+        <Alert
+          showIcon
+          type="warning"
+          title="Legacy Core Reverse Proxy：仍需迁移"
+          description={
+            <>
+              {setup.endpoints.legacyReverseProxyUrl && (
+                <Typography.Paragraph>
+                  当前旧入口：
+                  <Typography.Text copyable>
+                    {setup.endpoints.legacyReverseProxyUrl}
+                  </Typography.Text>
+                </Typography.Paragraph>
+              )}
+              <ol>
+                <li>保留原配置与旧入口，在独立入口部署以下 Forward Auth 配置。</li>
+                <li>旁路验证登录、无权拒绝、伪造身份头、Cookie、长连接及节点断联。</li>
+                <li>验证后再切换业务入口并观察；失败时恢复原入口和配置，重新核验当前权限。</li>
+              </ol>
+              读取或复制模板不会完成迁移，也不会关闭旧入口；切换与回退由应用和网关管理员执行。
+            </>
+          }
+        />
       ) : null}
       {provider.type === 'proxy' ? (
         <ProxySetupPanel provider={provider} setup={setup} />

@@ -19,3 +19,22 @@ export interface UpdateIdentityOutpostVariables {
   outpostId: string
   input: IdentityOutpostInput
 }
+
+export type {
+  IdentityOutpostRuntime,
+  IdentityOutpostRuntimeBindingInput,
+  IdentityOutpostRuntimeControlInput,
+  IdentityOutpostRuntimeMutationResult,
+} from '@opensoha/contracts/gen/ts/sohaapi'
+
+export type OutpostRuntimeIntent =
+  | {
+      outpostId: string
+      kind: 'bind'
+      input: import('@opensoha/contracts/gen/ts/sohaapi').IdentityOutpostRuntimeBindingInput
+    }
+  | {
+      outpostId: string
+      kind: 'control'
+      input: import('@opensoha/contracts/gen/ts/sohaapi').IdentityOutpostRuntimeControlInput
+    }

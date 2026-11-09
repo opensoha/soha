@@ -121,58 +121,112 @@ function setInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe('network sessions pane', () => {
-  it('preserves EAP server validation when editing a NAS', async () => {
-    const trust = {
-      serverNames: ['radius.example.com'],
-      caCertificates: ['test-public-ca'],
-      wifiSecurity: 'wpa2-enterprise',
-    }
-    apiMocks.listNetworkNASBindings.mockResolvedValue([
-      {
-        id: 'binding-1',
-        name: 'Test NAS',
-        nasId: 'nas-1',
-        runtimeId: 'radius-1',
-        siteId: 'site-1',
-        accessMedium: 'wired',
-        deviceType: 'switch',
-        status: 'active',
-        coaSupported: false,
-        disconnectSupported: true,
-        eapServerTrust: trust,
-      },
-    ])
-    apiMocks.updateNetworkNASBinding.mockResolvedValue({ id: 'binding-1' })
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const node = document.createElement('div')
-    document.body.appendChild(node)
-    const root = createRoot(node)
-    roots.push(root)
-    await act(async () =>
-      root.render(
-        <AntdApp>
-          <QueryClientProvider client={client}>
-            <NetworkNASBindingsPane canManage />
-          </QueryClientProvider>
-        </AntdApp>,
-      ),
-    )
-    await settle(client)
-    await click(document.querySelector('button[aria-label="编辑网络设备"]'))
-    await clickButton('保存')
-    await settle(client)
-    expect(apiMocks.updateNetworkNASBinding).toHaveBeenCalledWith(
-      {
-        bindingId: 'binding-1',
-        input: expect.objectContaining({
-          eapServerTrust: trust,
+  it.each(['legacy', 'ttls', 'tls-switch', 'disable', 'denied', 'failure'] as const)(
+    'preserves server trust and applies EAP boundaries: %s',
+    async (scenario) => {
+      const trust = {
+        serverNames: ['radius.example.com'],
+        caCertificates: ['test-public-ca'],
+        wifiSecurity: 'wpa2-enterprise',
+        ...(scenario !== 'legacy'
+          ? { eapMethod: 'ttls', innerMethod: 'pap', credentialSource: 'user-input' }
+          : {}),
+      }
+      apiMocks.listNetworkNASBindings.mockResolvedValue([
+        {
+          id: 'binding-1',
+          name: 'Test NAS',
+          nasId: 'nas-1',
+          runtimeId: 'radius-1',
+          siteId: 'site-1',
+          accessMedium: 'wired',
+          deviceType: 'switch',
+          status: 'active',
           coaSupported: false,
           disconnectSupported: true,
-        }),
-      },
-      expect.anything(),
-    )
-  })
+          eapServerTrust: trust,
+        },
+      ])
+      apiMocks.updateNetworkNASBinding.mockResolvedValue({ id: 'binding-1' })
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      const node = document.createElement('div')
+      document.body.appendChild(node)
+      const root = createRoot(node)
+      roots.push(root)
+      await act(async () =>
+        root.render(
+          <AntdApp>
+            <QueryClientProvider client={client}>
+              <NetworkNASBindingsPane canManage />
+            </QueryClientProvider>
+          </AntdApp>,
+        ),
+      )
+      await settle(client)
+      await click(document.querySelector('button[aria-label="编辑网络设备"]'))
+      expect(document.querySelector('input[type="password"]')).toBeNull()
+      if (scenario === 'tls-switch') {
+        await selectOption(
+          document.querySelector('#eapServerTrust_eapMethod')?.closest('.ant-select'),
+          'EAP-TLS',
+        )
+      }
+      if (scenario === 'disable') await click(document.querySelector('#configureEAP'))
+      if (scenario === 'denied') {
+        await act(async () =>
+          root.render(
+            <AntdApp>
+              <QueryClientProvider client={client}>
+                <NetworkNASBindingsPane canManage={false} />
+              </QueryClientProvider>
+            </AntdApp>,
+          ),
+        )
+        expect(
+          Array.from(document.querySelectorAll('button')).find(
+            (button) => button.textContent?.replace(/\s+/g, '') === '保存',
+          )?.disabled,
+        ).toBe(true)
+        return
+      }
+      if (scenario === 'failure')
+        apiMocks.updateNetworkNASBinding.mockRejectedValueOnce(new Error('Configuration rejected'))
+      await clickButton('保存')
+      await settle(client)
+      if (scenario === 'failure') {
+        expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+        expect(document.body.textContent).toContain('Configuration rejected')
+        return
+      }
+      expect(apiMocks.updateNetworkNASBinding).toHaveBeenCalledWith(
+        {
+          bindingId: 'binding-1',
+          input: expect.objectContaining({
+            ...(scenario === 'disable'
+              ? {}
+              : {
+                  eapServerTrust:
+                    scenario === 'tls-switch'
+                      ? {
+                          serverNames: trust.serverNames,
+                          caCertificates: trust.caCertificates,
+                          wifiSecurity: trust.wifiSecurity,
+                          eapMethod: 'tls',
+                        }
+                      : trust,
+                }),
+            coaSupported: false,
+            disconnectSupported: true,
+          }),
+        },
+        expect.anything(),
+      )
+      if (scenario === 'disable')
+        expect(apiMocks.updateNetworkNASBinding.mock.calls[0][0].input).not.toHaveProperty(
+          'eapServerTrust',
+        )
+    },
+  )
   it('separates persisted restrictions from NAS acknowledgements', async () => {
     apiMocks.listNetworkSessions.mockResolvedValue([
       {

@@ -31,12 +31,15 @@ export const identityOutpostKeys = {
   lists: () => [...identityOutpostKeys.all, 'list'] as const,
   list: (filters: IdentityOutpostFilters = {}) =>
     [...identityOutpostKeys.lists(), normalizeIdentityOutpostFilters(filters)] as const,
+  runtime: (outpostId: string) =>
+    [...identityOutpostKeys.all, 'runtime', normalizeId(outpostId)] as const,
   details: () => [...identityOutpostKeys.all, 'detail'] as const,
   detail: (outpostId: string) =>
     [...identityOutpostKeys.details(), normalizeId(outpostId)] as const,
 }
 
 export const identityOutpostMutationKeys = {
+  runtime: [...identityOutpostKeys.all, 'mutation', 'runtime'] as const,
   create: [...identityOutpostKeys.all, 'mutation', 'create'] as const,
   update: [...identityOutpostKeys.all, 'mutation', 'update'] as const,
   remove: [...identityOutpostKeys.all, 'mutation', 'delete'] as const,

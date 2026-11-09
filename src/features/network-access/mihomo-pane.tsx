@@ -1,3 +1,5 @@
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
+import { MihomoBundleFields, type ProfileBundle } from './mihomo-bundle-fields'
 import { ManagementIconButton } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { useOperationMutation } from '@/components/use-operation-mutation'
@@ -18,6 +20,7 @@ import type { TableColumnsType } from 'antd'
 import {
   Alert,
   Button,
+  Checkbox,
   Divider,
   Form,
   Input,
@@ -57,6 +60,7 @@ interface MihomoFormValues {
   name: string
   selectedProxy?: string
   selectorGroup: string
+  connectionSource?: 'legacy' | 'bundle'
   sourceType?: NetworkMihomoSourceType
   status: NetworkMihomoProfileStatus
   subscriptionUrl?: string
@@ -71,6 +75,11 @@ function textList(value?: string) {
 }
 export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMihomoPaneProps) {
   const { t } = useI18n()
+  const permissions = usePermissionSnapshot()
+  const canBrowseBundles = hasPermission(
+    permissions.data?.data,
+    'network_access.proxy_instances.view',
+  )
   const queryClient = useQueryClient()
   const profiles = useQuery(networkAccessQueries.mihomoProfiles(LIST_FILTER))
   const visibleProfilesData = profiles.isEnabled === false ? undefined : readableQueryData(profiles)
@@ -92,11 +101,19 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
     deleteProfile.blocked ||
     (profiles.isEnabled !== false && queryAccessDenied(profiles))
   const [editor, setEditor] = useState<NetworkMihomoProfile | 'create' | null>(null)
+  const [binding, setBinding] = useState<ProfileBundle>()
+  const [disclosure, setDisclosure] = useState(false)
+  const [bindingError, setBindingError] = useState('')
   const [form] = Form.useForm<MihomoFormValues>()
+  const connectionSource = Form.useWatch('connectionSource', form)
   function openCreate() {
     if (operationBlocked) return
     form.resetFields()
+    setBinding(undefined)
+    setDisclosure(false)
+    setBindingError('')
     form.setFieldsValue({
+      connectionSource: 'legacy',
       mode: 'managed_follow',
       sourceType: 'managed_subscription',
       status: 'active',
@@ -116,6 +133,7 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
     form.resetFields()
     form.setFieldsValue({
       ...profile,
+      connectionSource: profile.bundleId ? 'bundle' : 'legacy',
       sourceType: profile.sourceType ?? 'managed_subscription',
       subscriptionUrl: undefined,
       manualPassword: undefined,
@@ -126,11 +144,26 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
       bypassCidrsText: profile.bypassCidrs.join('\n'),
       bypassHostsText: profile.bypassHosts.join('\n'),
     })
+    setBinding(
+      profile.bundleId && profile.deliveryMode
+        ? {
+            bundleId: profile.bundleId,
+            deliveryMode: profile.deliveryMode,
+            sourceRevision: profile.sourceRevision ?? 0,
+            orgRevision: profile.orgRevision ?? 0,
+          }
+        : undefined,
+    )
+    setDisclosure(false)
+    setBindingError('')
     setEditor(profile)
   }
   function closeEditor() {
     setEditor(null)
     form.resetFields()
+    setBinding(undefined)
+    setDisclosure(false)
+    setBindingError('')
   }
   function validateManualRequired(value: unknown) {
     const manualValues = form.getFieldsValue([
@@ -149,6 +182,21 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
   }
   async function submit() {
     const values = await form.validateFields()
+    if (
+      values.connectionSource === 'bundle' &&
+      (!binding || (binding.deliveryMode === 'direct_subscription' && !disclosure))
+    ) {
+      setBindingError('请选择已激活发布包，并确认直接交付的上游披露范围。')
+      return
+    }
+    if (
+      values.connectionSource === 'bundle' &&
+      !canBrowseBundles &&
+      (editor === 'create' || !editor || editor.bundleId !== binding?.bundleId)
+    ) {
+      setBindingError('无代理实例查看权限，不能建立或更换发布绑定。')
+      return
+    }
     const subscriptionUrl = values.subscriptionUrl?.trim()
     const manualServer = values.manualServer?.trim()
     const manualUsername = values.manualUsername?.trim()
@@ -195,6 +243,13 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
         ? { fakeIpRange: values.fakeIpRange.trim() }
         : {}),
     }
+    if (values.connectionSource === 'bundle' && binding) {
+      delete input.sourceType
+      delete input.subscriptionUrl
+      delete input.manualNode
+      delete input.selectedProxy
+      Object.assign(input, binding, { mode: 'managed_follow', failClosed: true })
+    }
     if (editor === 'create') await createProfile.mutateAsync(input)
     else if (editor) await updateProfile.mutateAsync({ profileId: editor.id, input })
     closeEditor()
@@ -234,11 +289,13 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
       key: 'source',
       width: 120,
       render: (_, profile) =>
-        profile.mode === 'app_subscription'
-          ? t('networkAccess.mihomo.appSource', 'App 自选')
-          : profile.sourceType === 'manual_node'
-            ? t('networkAccess.mihomo.manualNode', '手动节点')
-            : t('networkAccess.mihomo.managedSubscription', '订阅导入'),
+        profile.bundleId
+          ? `受管发布包 · ${profile.deliveryMode}`
+          : profile.mode === 'app_subscription'
+            ? t('networkAccess.mihomo.appSource', 'App 自选')
+            : profile.sourceType === 'manual_node'
+              ? t('networkAccess.mihomo.manualNode', '手动节点')
+              : t('networkAccess.mihomo.managedSubscription', '订阅导入'),
     },
     { title: t('networkAccess.mihomo.selectedProxy', '代理节点'), dataIndex: 'selectedProxy' },
     {
@@ -380,12 +437,50 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
           >
             <Input maxLength={200} />
           </Form.Item>
+          <Form.Item name="connectionSource" label="连接配置来源">
+            <Select
+              disabled={!!(editor && editor !== 'create' && editor.bundleId && !canBrowseBundles)}
+              options={[
+                { value: 'legacy', label: '既有直订阅 / 手动 / App 自选' },
+                { value: 'bundle', label: '受管发布包' },
+              ]}
+              onChange={(value) => {
+                setDisclosure(false)
+                setBindingError('')
+                if (value === 'bundle') {
+                  form.setFieldsValue({ mode: 'managed_follow', failClosed: true })
+                }
+              }}
+            />
+          </Form.Item>
+          {connectionSource === 'bundle' && (
+            <>
+              <MihomoBundleFields
+                value={binding}
+                onChange={(b) => {
+                  setBinding(b)
+                  setDisclosure(false)
+                  setBindingError('')
+                }}
+              />
+              {binding?.deliveryMode === 'direct_subscription' && (
+                <>
+                  <Alert type="warning" title="直接交付真实上游参数，不是内网映射" />
+                  <Checkbox checked={disclosure} onChange={(e) => setDisclosure(e.target.checked)}>
+                    我已确认向授权设备披露上游参数
+                  </Checkbox>
+                </>
+              )}
+              {bindingError && <Alert type="error" title={bindingError} />}
+            </>
+          )}
           <Form.Item
             name="mode"
             label={t('networkAccess.mihomo.mode', '运行模式')}
             rules={[{ required: true }]}
           >
             <Select
+              disabled={connectionSource === 'bundle'}
               options={(['managed_follow', 'app_subscription'] as NetworkMihomoMode[]).map(
                 (value) => ({ value, label: modeLabel(value) }),
               )}
@@ -409,9 +504,15 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
           <Divider titlePlacement="start" plain>
             {t('networkAccess.mihomo.source', '连接来源')}
           </Divider>
-          <Form.Item noStyle shouldUpdate={(previous, current) => previous.mode !== current.mode}>
+          <Form.Item
+            noStyle
+            shouldUpdate={(previous, current) =>
+              previous.mode !== current.mode ||
+              previous.connectionSource !== current.connectionSource
+            }
+          >
             {({ getFieldValue }) =>
-              getFieldValue('mode') === 'managed_follow' ? (
+              getFieldValue('mode') === 'managed_follow' && connectionSource !== 'bundle' ? (
                 <>
                   <Form.Item name="sourceType" rules={[{ required: true }]}>
                     <Segmented
@@ -623,7 +724,13 @@ export function NetworkMihomoPane({ canCreate, canDelete, canUpdate }: NetworkMi
               placeholder={t('networkAccess.mihomo.oneRulePerLine', '每行一条规则')}
             />
           </Form.Item>
-          <Form.Item noStyle shouldUpdate={(previous, current) => previous.mode !== current.mode}>
+          <Form.Item
+            noStyle
+            shouldUpdate={(previous, current) =>
+              previous.mode !== current.mode ||
+              previous.connectionSource !== current.connectionSource
+            }
+          >
             {({ getFieldValue }) => (
               <Form.Item
                 name="failClosed"

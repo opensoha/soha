@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementKeywordField,
@@ -33,7 +34,7 @@ import { createEnrollment, createInstance, updateConfiguration } from './api'
 import { proxyKeys, proxyQueries } from './queries'
 import './styles.css'
 import { ProxyConfigurationHistory } from './history'
-const engines: NetworkProxyEngine[] = ['mihomo', 'sing-box', 'v2ray']
+const engines: NetworkProxyEngine[] = ['mihomo', 'sing-box', 'v2ray', 'external']
 export default function ProxyInstancesPage() {
   const { t, localeCode } = useI18n()
   const text = (zh: string, en: string) => (localeCode === 'zh_CN' ? zh : en)
@@ -69,6 +70,7 @@ export default function ProxyInstancesPage() {
     }
     if (!canEnroll || readDenied) setSecret(undefined)
   }, [canUpdate, canCreate, canEnroll, readDenied, configurationForm, createForm])
+  const createEngine = Form.useWatch('engine', createForm)
   const configurationEnabled = Form.useWatch('enabled', configurationForm)
   const clearingBinding = Form.useWatch('clearBinding', configurationForm)
   const refresh = () => void queryClient.invalidateQueries({ queryKey: proxyKeys.all })
@@ -129,7 +131,11 @@ export default function ProxyInstancesPage() {
       title: t('networkAccess.proxyRuntime.engine', '引擎'),
       dataIndex: 'engine',
       width: 105,
-      render: (value: string) => <MetadataTag label={value} />,
+      render: (value: string, item) => (
+        <MetadataTag
+          label={value === 'external' ? (item.engineDescriptor?.engineId ?? value) : value}
+        />
+      ),
     },
     {
       title: t('networkAccess.proxyRuntime.status', '状态'),
@@ -209,6 +215,9 @@ export default function ProxyInstancesPage() {
       fixed: 'right',
       render: (_, item) => (
         <Space size={4}>
+          <Link to={`/network-access/proxy-instances/${encodeURIComponent(item.id)}/workspace`}>
+            工作区
+          </Link>
           <ProxyConfigurationHistory
             instance={item}
             canUpdate={canUpdate}
@@ -358,7 +367,22 @@ export default function ProxyInstancesPage() {
         }}
         onOk={() => {
           if (canCreate && !readDenied)
-            void createForm.validateFields().then((values) => create.mutate(values))
+            void createForm
+              .validateFields()
+              .then((values) =>
+                create.mutate({
+                  ...values,
+                  engineDescriptor:
+                    values.engine === 'external' && values.engineDescriptor
+                      ? {
+                          ...values.engineDescriptor,
+                          protocolMajor: 1,
+                          protocolMinor: 0,
+                          capabilities: [],
+                        }
+                      : undefined,
+                }),
+              )
         }}
         closable={!operationBlocked}
         cancelButtonProps={{ disabled: operationBlocked }}
@@ -390,6 +414,32 @@ export default function ProxyInstancesPage() {
           >
             <Select options={engines.map((value) => ({ value, label: value }))} />
           </Form.Item>
+          {createEngine === 'external' && (
+            <>
+              <Alert type="info" title="外部内核须由安装者预先登记，页面不会下载或安装程序" />
+              <Form.Item
+                name={['engineDescriptor', 'engineId']}
+                label="内核名称"
+                rules={[{ required: true }]}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item
+                name={['engineDescriptor', 'adapterId']}
+                label="已登记适配器"
+                rules={[{ required: true }]}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item
+                name={['engineDescriptor', 'version']}
+                label="适配器版本"
+                rules={[{ required: true }]}
+              >
+                <Input />
+              </Form.Item>
+            </>
+          )}
           <Form.Item name="host" label={t('networkAccess.proxyRuntime.host', '主机标识')}>
             <Input maxLength={128} />
           </Form.Item>
