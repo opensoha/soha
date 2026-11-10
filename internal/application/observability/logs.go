@@ -41,7 +41,7 @@ func (s *Service) QueryDurableLogs(ctx context.Context, principal domainidentity
 	if selector == nil {
 		return domainresource.LogPage{}, fmt.Errorf("%w: log selector is required", apperrors.ErrInvalidArgument)
 	}
-	item, err := s.selectDataSource(ctx, query.DataSourceID, clusterID, selector.Namespace)
+	item, provider, err := s.selectDataSource(ctx, query.DataSourceID, clusterID, selector.Namespace)
 	if err != nil {
 		return domainresource.LogPage{}, err
 	}
@@ -65,19 +65,14 @@ func (s *Service) QueryDurableLogs(ctx context.Context, principal domainidentity
 	if err != nil {
 		return domainresource.LogPage{}, fmt.Errorf("%w: data-source credentials are unavailable", apperrors.ErrClusterUnready)
 	}
-	provider, found, err := s.resolveProvider(ctx, item.BackendType)
-	if err != nil || !found || !supportsLogQuery(provider) {
-		return domainresource.LogPage{}, fmt.Errorf("%w: durable log provider is unavailable", apperrors.ErrClusterUnready)
-	}
 	queryCtx, cancel := context.WithTimeout(ctx, time.Duration(budget.TimeoutSeconds)*time.Second)
 	startedAt := s.now()
 	var result telemetry.LogSearchResult
 	if provider.definition.BuiltIn {
 		result, err = s.logs.Search(queryCtx, item.BackendType, item.ID, config, search)
-	} else if runtime, available := provider.runtimeFor(logsQueryCapability); available && s.externalLogs != nil {
-		result, err = s.externalLogs.Search(queryCtx, runtime, item.ID, config, search)
 	} else {
-		err = fmt.Errorf("provider log query runtime is unavailable")
+		runtime, _ := provider.runtimeFor(logsQueryCapability)
+		result, err = s.externalLogs.Search(queryCtx, runtime, item.ID, config, search)
 	}
 	cancel()
 	if err != nil {
@@ -117,20 +112,41 @@ func (s *Service) resolveCursor(value string, expected durableCursor) (string, e
 	return cursor.Provider, nil
 }
 
-func (s *Service) selectDataSource(ctx context.Context, dataSourceID, clusterID, namespace string) (domainobservability.DataSource, error) {
+func (s *Service) selectDataSource(ctx context.Context, dataSourceID, clusterID, namespace string) (domainobservability.DataSource, resolvedProvider, error) {
 	items, err := s.dataSources.ListDataSources(ctx)
 	if err != nil {
-		return domainobservability.DataSource{}, err
+		return domainobservability.DataSource{}, resolvedProvider{}, err
+	}
+	providers, err := s.providerCatalog(ctx)
+	if err != nil {
+		return domainobservability.DataSource{}, resolvedProvider{}, fmt.Errorf("%w: durable log provider is unavailable", apperrors.ErrClusterUnready)
+	}
+	queryable := make(map[string]resolvedProvider, len(providers))
+	for _, provider := range providers {
+		if !supportsLogQuery(provider) {
+			continue
+		}
+		_, runtimeAvailable := provider.runtimeFor(logsQueryCapability)
+		if provider.definition.BuiltIn || (runtimeAvailable && s.externalLogs != nil) {
+			queryable[provider.definition.ProviderKey] = provider
+		}
 	}
 	for _, item := range items {
 		if dataSourceID != "" && item.ID != dataSourceID {
 			continue
 		}
-		if item.SourceKind == dataSourceKindLogs && item.Enabled && scopeAllows(item.Scope, "clusterIds", clusterID) && scopeAllows(item.Scope, "namespaces", namespace) {
-			return item, nil
+		if item.SourceKind != dataSourceKindLogs || !scopeAllows(item.Scope, "clusterIds", clusterID) || !scopeAllows(item.Scope, "namespaces", namespace) {
+			continue
+		}
+		if provider, ok := queryable[providerKeyForDataSource(item)]; item.Enabled && ok {
+			return item, provider, nil
+		}
+		if dataSourceID != "" {
+			return domainobservability.DataSource{}, resolvedProvider{}, apperrors.NewBusiness(apperrors.ErrClusterUnready,
+				"observability_provider_unavailable", "The selected log provider is unavailable", "所选日志 Provider 不可用")
 		}
 	}
-	return domainobservability.DataSource{}, fmt.Errorf("%w: durable log data source is not configured for this scope", apperrors.ErrClusterUnready)
+	return domainobservability.DataSource{}, resolvedProvider{}, fmt.Errorf("%w: durable log data source is not configured for this scope", apperrors.ErrClusterUnready)
 }
 
 func durableSearchQuery(query domainresource.LogQuery, clusterID string, budget sohaapi.ObservabilityLogQueryBudget, now time.Time) (telemetry.LogSearchQuery, error) {

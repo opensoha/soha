@@ -18,6 +18,13 @@ import (
 
 const maxSignalQueryRange = 7 * 24 * time.Hour
 
+var (
+	errTraceProviderUnavailable = apperrors.NewBusiness(apperrors.ErrNotFound, "observability_provider_unavailable",
+		"No executable trace query provider is configured", "尚未配置可执行的链路查询 Provider")
+	errServiceProviderUnavailable = apperrors.NewBusiness(apperrors.ErrNotFound, "observability_provider_unavailable",
+		"No executable service query provider is configured for this capability", "尚未配置支持此能力的服务查询 Provider")
+)
+
 var metricKeys = map[string]struct{}{
 	"cpu_usage": {}, "memory_usage": {}, "restart_rate": {}, "error_rate": {}, "latency_p95": {},
 }
@@ -153,7 +160,15 @@ func (s *Service) QueryTraces(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return TraceQueryResult{}, err
 	}
-	source, err := s.selectSignalDataSource(ctx, dataSourceID, map[string]struct{}{"jaeger": {}, "skywalking": {}})
+	if s.traces == nil {
+		return TraceQueryResult{}, errTraceProviderUnavailable
+	}
+	source, err := s.selectQueryableSource(ctx, dataSourceID, errTraceProviderUnavailable, func(ctx context.Context, source domaincopilot.DataSource) (bool, error) {
+		if source.SourceKind != "traces" {
+			return false, nil
+		}
+		return s.traces.SupportsTraceSource(ctx, source)
+	})
 	if err != nil {
 		return TraceQueryResult{}, err
 	}
@@ -161,7 +176,7 @@ func (s *Service) QueryTraces(ctx context.Context, principal domainidentity.Prin
 		!serviceScopeSupported(source.Scope, "namespaces", query.Scope.Namespace) {
 		return TraceQueryResult{}, fmt.Errorf("%w: trace query scope is not isolated by the data source", apperrors.ErrInvalidArgument)
 	}
-	result, err := s.traceBackend().FindSlowSpans(ctx, source.BackendType, source.ID, source.Config, query)
+	result, err := s.traces.FindSlowSpans(ctx, source.BackendType, source.ID, source.Config, query)
 	if err != nil {
 		return TraceQueryResult{}, err
 	}
@@ -206,29 +221,29 @@ func (s *Service) QueryTraces(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) ListServices(ctx context.Context, principal domainidentity.Principal, dataSourceID string, query telemetry.ServiceQuery) (ServiceListResult, error) {
-	source, query, warnings, err := s.prepareServiceQuery(ctx, principal, dataSourceID, query)
+	source, query, err := s.prepareServiceQuery(ctx, principal, dataSourceID, query, ServiceCatalogCapability)
 	if err != nil {
 		return ServiceListResult{}, err
 	}
-	result, err := s.serviceBackend().ListServices(ctx, source.BackendType, source.ID, source.Config, query)
+	result, err := s.services.ListServices(ctx, source.BackendType, source.ID, source.Config, query)
 	if err != nil {
-		return ServiceListResult{}, fmt.Errorf("%w: SkyWalking service query failed", apperrors.ErrClusterUnready)
+		return ServiceListResult{}, fmt.Errorf("%w: service provider query failed", apperrors.ErrClusterUnready)
 	}
 	return ServiceListResult{
 		DataSourceID: source.ID, BackendType: source.BackendType, Items: result.Services,
 		Scope: query.Scope, Environment: query.Environment, ClusterIDs: serviceClusterIDs(source, query.Scope.ClusterID),
-		Meta: serviceQueryMeta(len(result.Services), warnings),
+		Meta: serviceQueryMeta(len(result.Services)),
 	}, nil
 }
 
 func (s *Service) GetService(ctx context.Context, principal domainidentity.Principal, dataSourceID string, query telemetry.ServiceQuery) (ServiceDetailResult, error) {
-	source, query, warnings, err := s.prepareServiceQuery(ctx, principal, dataSourceID, query)
+	source, query, err := s.prepareServiceQuery(ctx, principal, dataSourceID, query, ServiceCatalogCapability)
 	if err != nil {
 		return ServiceDetailResult{}, err
 	}
-	item, err := s.serviceBackend().GetService(ctx, source.BackendType, source.ID, source.Config, query)
+	item, err := s.services.GetService(ctx, source.BackendType, source.ID, source.Config, query)
 	if err != nil {
-		return ServiceDetailResult{}, fmt.Errorf("%w: SkyWalking service query failed", apperrors.ErrClusterUnready)
+		return ServiceDetailResult{}, fmt.Errorf("%w: service provider query failed", apperrors.ErrClusterUnready)
 	}
 	if strings.TrimSpace(item.ID) == "" {
 		return ServiceDetailResult{}, fmt.Errorf("%w: observability service not found", apperrors.ErrNotFound)
@@ -236,58 +251,64 @@ func (s *Service) GetService(ctx context.Context, principal domainidentity.Princ
 	return ServiceDetailResult{
 		DataSourceID: source.ID, BackendType: source.BackendType, Item: item,
 		Scope: query.Scope, Environment: query.Environment, ClusterIDs: serviceClusterIDs(source, query.Scope.ClusterID),
-		Meta: serviceQueryMeta(1, warnings),
+		Meta: serviceQueryMeta(1),
 	}, nil
 }
 
 func (s *Service) GetServiceTopology(ctx context.Context, principal domainidentity.Principal, dataSourceID string, query telemetry.ServiceQuery) (ServiceTopologyResult, error) {
-	source, query, warnings, err := s.prepareServiceQuery(ctx, principal, dataSourceID, query)
+	source, query, err := s.prepareServiceQuery(ctx, principal, dataSourceID, query, ServiceTopologyCapability)
 	if err != nil {
 		return ServiceTopologyResult{}, err
 	}
-	topology, err := s.serviceBackend().GetServiceTopology(ctx, source.BackendType, source.ID, source.Config, query)
+	topology, err := s.services.GetServiceTopology(ctx, source.BackendType, source.ID, source.Config, query)
 	if err != nil {
-		return ServiceTopologyResult{}, fmt.Errorf("%w: SkyWalking topology query failed", apperrors.ErrClusterUnready)
+		return ServiceTopologyResult{}, fmt.Errorf("%w: topology provider query failed", apperrors.ErrClusterUnready)
 	}
 	return ServiceTopologyResult{
 		DataSourceID: source.ID, BackendType: source.BackendType, Topology: topology,
-		Meta: serviceQueryMeta(len(topology.Nodes), warnings),
+		Meta: serviceQueryMeta(len(topology.Nodes)),
 	}, nil
 }
 
-func (s *Service) prepareServiceQuery(ctx context.Context, principal domainidentity.Principal, dataSourceID string, query telemetry.ServiceQuery) (domaincopilot.DataSource, telemetry.ServiceQuery, []string, error) {
+func (s *Service) prepareServiceQuery(ctx context.Context, principal domainidentity.Principal, dataSourceID string, query telemetry.ServiceQuery, capability ServiceCapability) (domaincopilot.DataSource, telemetry.ServiceQuery, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveMonitoringView); err != nil {
-		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, nil, err
+		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, err
 	}
 	query.ServiceID = strings.TrimSpace(query.ServiceID)
 	query.ServiceName = strings.TrimSpace(query.ServiceName)
 	query.Environment = strings.TrimSpace(query.Environment)
 	if err := validateSignalTimeRange(query.TimeFrom, query.TimeTo); err != nil {
-		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, nil, err
+		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, err
 	}
 	if len(query.ServiceID) > 253 || len(query.ServiceName) > 253 || len(query.Environment) > 128 {
-		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, nil, fmt.Errorf("%w: service query is too long", apperrors.ErrInvalidArgument)
+		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, fmt.Errorf("%w: service query is too long", apperrors.ErrInvalidArgument)
 	}
-	source, err := s.selectSignalDataSource(ctx, dataSourceID, map[string]struct{}{"skywalking": {}})
+	if s.services == nil {
+		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, errServiceProviderUnavailable
+	}
+	source, err := s.selectQueryableSource(ctx, dataSourceID, errServiceProviderUnavailable, func(ctx context.Context, source domaincopilot.DataSource) (bool, error) {
+		if source.SourceKind != "traces" {
+			return false, nil
+		}
+		return s.services.SupportsServiceSource(ctx, source, capability)
+	})
 	if err != nil {
-		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, nil, err
+		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, err
 	}
-	if !serviceScopeSupported(source.Scope, "clusterIds", query.Scope.ClusterID) || !serviceScopeSupported(source.Scope, "namespaces", query.Scope.Namespace) {
-		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, nil, fmt.Errorf("%w: SkyWalking data source cannot isolate the requested scope", apperrors.ErrInvalidArgument)
+	if !serviceScopeSupported(source.Scope, "clusterIds", query.Scope.ClusterID) ||
+		!serviceScopeSupported(source.Scope, "namespaces", query.Scope.Namespace) ||
+		!serviceScopeSupported(source.Scope, "environments", query.Environment) {
+		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, fmt.Errorf("%w: service query scope is not isolated by the data source", apperrors.ErrInvalidArgument)
 	}
-	if query.Environment != "" {
-		return domaincopilot.DataSource{}, telemetry.ServiceQuery{}, nil, fmt.Errorf("%w: SkyWalking Metadata V2 cannot isolate environment scope", apperrors.ErrInvalidArgument)
-	}
-	warnings := []string{"SkyWalking Metadata V2 provides identity only; RED health is unavailable"}
-	return source, query, warnings, nil
+	return source, query, nil
 }
 
-func serviceQueryMeta(count int, warnings []string) QueryMeta {
+func serviceQueryMeta(count int) QueryMeta {
 	state := "success"
 	if count == 0 {
 		state = "empty"
 	}
-	return QueryMeta{State: state, Warnings: warnings, ObservedAt: time.Now().UTC()}
+	return QueryMeta{State: state, ObservedAt: time.Now().UTC()}
 }
 
 func serviceClusterIDs(source domaincopilot.DataSource, requested string) []string {
@@ -387,15 +408,24 @@ func validateSignalTimeRange(from, to time.Time) error {
 }
 
 func (s *Service) selectSignalDataSource(ctx context.Context, dataSourceID string, backends map[string]struct{}) (domaincopilot.DataSource, error) {
+	return s.selectQueryableSource(ctx, dataSourceID, fmt.Errorf("%w: no enabled telemetry data source", apperrors.ErrNotFound), func(_ context.Context, source domaincopilot.DataSource) (bool, error) {
+		return signalDataSourceReady(source, backends), nil
+	})
+}
+
+func (s *Service) selectQueryableSource(ctx context.Context, dataSourceID string, unavailable error, supports func(context.Context, domaincopilot.DataSource) (bool, error)) (domaincopilot.DataSource, error) {
 	if id := strings.TrimSpace(dataSourceID); id != "" {
 		source, err := s.dataSources.GetDataSource(ctx, id)
 		if err != nil {
 			return domaincopilot.DataSource{}, err
 		}
-		if signalDataSourceReady(source, backends) {
-			return source, nil
+		if source.Enabled && !source.RetiredBackend() {
+			ok, err := supports(ctx, source)
+			if err != nil || ok {
+				return source, err
+			}
 		}
-		return domaincopilot.DataSource{}, fmt.Errorf("%w: telemetry data source not found", apperrors.ErrNotFound)
+		return domaincopilot.DataSource{}, unavailable
 	}
 	items, err := s.dataSources.ListDataSources(ctx)
 	if err != nil {
@@ -403,11 +433,15 @@ func (s *Service) selectSignalDataSource(ctx context.Context, dataSourceID strin
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	for _, source := range items {
-		if signalDataSourceReady(source, backends) {
-			return source, nil
+		if !source.Enabled || source.RetiredBackend() {
+			continue
+		}
+		ok, err := supports(ctx, source)
+		if err != nil || ok {
+			return source, err
 		}
 	}
-	return domaincopilot.DataSource{}, fmt.Errorf("%w: no enabled telemetry data source", apperrors.ErrNotFound)
+	return domaincopilot.DataSource{}, unavailable
 }
 
 func signalDataSourceReady(source domaincopilot.DataSource, allowed map[string]struct{}) bool {
@@ -415,7 +449,7 @@ func signalDataSourceReady(source domaincopilot.DataSource, allowed map[string]s
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(source.BackendType)) {
-	case "prometheus", "jaeger", "skywalking":
+	case "prometheus":
 		endpoint, _ := source.Config["endpoint"].(string)
 		return strings.TrimSpace(endpoint) != ""
 	}

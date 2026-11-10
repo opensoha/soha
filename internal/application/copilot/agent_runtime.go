@@ -1532,7 +1532,7 @@ func (s *Service) findAgentDataSource(ctx context.Context, sourceKind, adapterID
 	}
 	sourceID := strings.TrimSpace(stringValue(input["sourceId"]))
 	for _, source := range sources {
-		if !source.Enabled || source.SourceKind != sourceKind || source.MCPAdapter != adapterID {
+		if !source.Enabled || source.RetiredBackend() || source.SourceKind != sourceKind || source.MCPAdapter != adapterID {
 			continue
 		}
 		if sourceID != "" && source.ID != sourceID {
@@ -2520,12 +2520,12 @@ func defaultAgentCapabilities() []domaincopilot.AgentCapability {
 	bindings := defaultAgentToolBindings()
 	skillBindings := defaultAgentSkillBindings()
 	return []domaincopilot.AgentCapability{
-		agentCapability(bindings, skillBindings, "root_cause", "根因分析", "observability", "汇总告警、事件、日志、指标、链路和发布上下文生成根因假设与建议。", []string{"cluster", "namespace", "workload", "alert"}, []string{"platform.events", "observability.logs", "observability.metrics", "observability.traces", "delivery.releases"}),
+		agentCapability(bindings, skillBindings, "root_cause", "根因分析", "observability", "汇总告警、事件、日志、指标和发布上下文生成根因假设与建议。", []string{"cluster", "namespace", "workload", "alert"}, []string{"platform.events", "observability.logs", "observability.metrics", "delivery.releases"}),
 		agentCapability(bindings, skillBindings, "performance", "性能分析", "observability", "聚合指标、事件和资源范围，分析容量、延迟、错误率和瓶颈。", []string{"cluster", "namespace", "workload"}, []string{"observability.metrics", "platform.events"}),
-		agentCapability(bindings, skillBindings, "trace", "链路分析", "observability", "通过 Trace/Metrics/事件上下文定位跨服务调用异常。", []string{"service", "workload"}, []string{"observability.traces", "observability.metrics", "observability.logs"}),
+		agentCapability(bindings, skillBindings, "trace", "链路分析", "observability", "关联指标和日志。查询链路需要可执行的 Provider。", []string{"service", "workload"}, []string{"observability.metrics", "observability.logs"}),
 		agentCapability(bindings, skillBindings, "inspection_review", "巡检复盘", "inspection", "将定期巡检结果转换为风险摘要、证据和整改动作。", []string{"cluster", "namespace"}, []string{"platform.events", "observability.metrics"}),
 		agentCapability(bindings, skillBindings, "delivery_failure", "交付失败分析", "delivery", "关联构建、发布、执行任务和运行态事件定位交付失败原因。", []string{"application", "environment", "release"}, []string{"delivery.builds", "delivery.releases", "delivery.execution_tasks", "platform.events"}),
-		agentCapability(bindings, skillBindings, "post_deploy_observation", "发布后观察", "delivery", "围绕发布窗口检查告警、事件、指标与链路变化。", []string{"application", "cluster", "namespace"}, []string{"delivery.releases", "observability.metrics", "observability.traces", "platform.events"}),
+		agentCapability(bindings, skillBindings, "post_deploy_observation", "发布后观察", "delivery", "围绕发布窗口检查告警、事件与指标变化。", []string{"application", "cluster", "namespace"}, []string{"delivery.releases", "observability.metrics", "platform.events"}),
 		agentCapability(bindings, skillBindings, "platform_resource_diagnosis", "平台资源诊断", "platform", "针对 Kubernetes 资源、节点、事件和配置漂移生成诊断结论。", []string{"cluster", "namespace", "resource"}, []string{"platform.resources", "platform.events", "observability.metrics"}),
 		agentCapability(bindings, skillBindings, "docker_diagnosis", "容器运行时诊断", "docker", "关联 Docker host、Compose 项目、服务和 operation 日志分析故障。", []string{"dockerHost", "composeProject"}, []string{"docker.operations", "docker.services"}),
 		agentCapability(bindings, skillBindings, "virtualization_diagnosis", "虚拟化诊断", "virtualization", "关联虚拟机、连接、任务和运行时指标进行故障分析。", []string{"virtualizationConnection", "vm"}, []string{"virtualization.operations", "observability.metrics"}),
@@ -2546,7 +2546,6 @@ func defaultAgentToolBindings() []domaincopilot.AgentToolBinding {
 		{ID: "platform.events", CapabilityID: "root_cause", ToolKind: "mcp", AdapterID: "platform-native.v1", ToolName: "events.query", PermissionKey: appaccess.PermObserveEventsView},
 		{ID: "observability.logs", CapabilityID: "root_cause", ToolKind: "mcp", AdapterID: "logs.v1", ToolName: "logs.query", PermissionKey: appaccess.PermObserveAIChatUse},
 		{ID: "observability.metrics", CapabilityID: "performance", ToolKind: "mcp", AdapterID: "metrics.v1", ToolName: "metrics.query", PermissionKey: appaccess.PermObserveAIChatUse},
-		{ID: "observability.traces", CapabilityID: "trace", ToolKind: "mcp", AdapterID: "traces.v1", ToolName: "traces.query", PermissionKey: appaccess.PermObserveAIChatUse},
 		{ID: "delivery.releases", CapabilityID: "delivery_failure", ToolKind: "internal_api", ToolName: "delivery.releases.list", PermissionKey: appaccess.PermDeliveryReleasesView},
 		{ID: "delivery.builds", CapabilityID: "delivery_failure", ToolKind: "internal_api", ToolName: "delivery.builds.list", PermissionKey: appaccess.PermDeliveryApplicationsView},
 		{ID: "delivery.execution_tasks", CapabilityID: "delivery_failure", ToolKind: "internal_api", ToolName: "delivery.execution_tasks.list", PermissionKey: appaccess.PermDeliveryExecutionTasksView},
@@ -2595,7 +2594,7 @@ func filterSkillBindings(items []domaincopilot.AgentSkillBinding, capabilityID s
 func agentToolSharedWithCapability(toolID, capabilityID string) bool {
 	switch capabilityID {
 	case "root_cause":
-		return toolID == "observability.metrics" || toolID == "observability.traces" || toolID == "delivery.releases"
+		return toolID == "observability.metrics" || toolID == "delivery.releases"
 	case "performance":
 		return toolID == "platform.events"
 	case "trace":
@@ -2603,7 +2602,7 @@ func agentToolSharedWithCapability(toolID, capabilityID string) bool {
 	case "inspection_review":
 		return toolID == "platform.events" || toolID == "observability.metrics"
 	case "post_deploy_observation":
-		return toolID == "delivery.releases" || toolID == "observability.metrics" || toolID == "observability.traces" || toolID == "platform.events"
+		return toolID == "delivery.releases" || toolID == "observability.metrics" || toolID == "platform.events"
 	case "platform_resource_diagnosis":
 		return toolID == "platform.events" || toolID == "observability.metrics"
 	case "virtualization_diagnosis":

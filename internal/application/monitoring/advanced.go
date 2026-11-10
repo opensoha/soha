@@ -582,15 +582,8 @@ func applyRuleQuerySnapshotDetails(snapshot map[string]any, rule domainalert.Ale
 		if query == "" {
 			query = strings.TrimSpace(stringValue(rule.QuerySpec["pattern"], ""))
 		}
-		if len(matching) == 1 {
-			switch matching[0].BackendType {
-			case "loki":
-				snapshot["queryLanguage"] = "logql"
-			case "es", "elasticsearch":
-				snapshot["queryLanguage"] = "elasticsearch"
-			case "clickhouse":
-				snapshot["queryLanguage"] = "clickhouse_sql"
-			}
+		if len(matching) == 1 && matching[0].BackendType == "loki" {
+			snapshot["queryLanguage"] = "logql"
 		}
 	case "traces":
 		if query != "" {
@@ -735,6 +728,12 @@ func (s *Service) evaluateLogRule(ctx context.Context, rule domainalert.AlertRul
 		if source.SourceKind != "logs" {
 			continue
 		}
+		// A retired source is missing evidence. A successful query against another
+		// source must not clear alerts that may have been raised by this source.
+		if source.RetiredBackend() {
+			result.Errors = append(result.Errors, source.ID+": data source backend has been retired")
+			continue
+		}
 		correlation, queryErr := s.logBackend().Correlate(ctx, source.BackendType, source.ID, source.Config, telemetry.LogCorrelationQuery{
 			Scope:    scope,
 			Query:    query,
@@ -780,6 +779,12 @@ func (s *Service) evaluateTraceRule(ctx context.Context, rule domainalert.AlertR
 	hasData := false
 	for _, source := range sources {
 		if source.SourceKind != "traces" {
+			continue
+		}
+		// A retired source is missing evidence. A successful query against another
+		// source must not clear alerts that may have been raised by this source.
+		if source.RetiredBackend() {
+			result.Errors = append(result.Errors, source.ID+": data source backend has been retired")
 			continue
 		}
 		traceResult, queryErr := s.traceBackend().FindSlowSpans(ctx, source.BackendType, source.ID, source.Config, telemetry.TraceQuery{
@@ -1008,9 +1013,6 @@ func validateOnCallAssignmentRuleInput(input domainalert.OnCallAssignmentRuleInp
 
 func filterDataSources(items []domaincopilot.DataSource, selector map[string]any) []domaincopilot.DataSource {
 	if len(items) == 0 {
-		return items
-	}
-	if len(selector) == 0 {
 		return items
 	}
 	filtered := make([]domaincopilot.DataSource, 0, len(items))

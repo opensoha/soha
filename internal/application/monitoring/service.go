@@ -13,6 +13,7 @@ import (
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainevent "github.com/opensoha/soha/internal/domain/event"
 	domaingovernance "github.com/opensoha/soha/internal/domain/governance"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -38,15 +39,25 @@ type MetricTelemetry interface {
 	Analyze(context.Context, string, string, map[string]any, telemetry.MetricRangeQuery) (telemetry.MetricAnomalySummary, error)
 }
 
+// TraceTelemetry resolves executable sources separately from querying their data.
 type TraceTelemetry interface {
+	SupportsTraceSource(context.Context, domaincopilot.DataSource) (bool, error)
 	FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error)
 }
 
 type ServiceTelemetry interface {
+	SupportsServiceSource(context.Context, domaincopilot.DataSource, ServiceCapability) (bool, error)
 	ListServices(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceResult, error)
 	GetService(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.Service, error)
 	GetServiceTopology(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceTopology, error)
 }
+
+type ServiceCapability string
+
+const (
+	ServiceCatalogCapability  ServiceCapability = "services.catalog"
+	ServiceTopologyCapability ServiceCapability = "services.topology"
+)
 
 type Service struct {
 	alertReader              AlertReader
@@ -128,10 +139,13 @@ func WithTelemetryBackends(logs LogTelemetry, metrics MetricTelemetry, traces Tr
 		}
 		if traces != nil {
 			service.traces = traces
-			if services, ok := traces.(ServiceTelemetry); ok {
-				service.services = services
-			}
 		}
+	}
+}
+
+func WithServiceTelemetry(services ServiceTelemetry) Option {
+	return func(service *Service) {
+		service.services = services
 	}
 }
 
@@ -196,8 +210,6 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		alertEventStreamInterval: 2 * time.Second,
 		logs:                     unavailableTelemetry{},
 		metrics:                  unavailableTelemetry{},
-		traces:                   unavailableTelemetry{},
-		services:                 unavailableTelemetry{},
 	}
 	for _, option := range options {
 		if option != nil {
@@ -253,13 +265,6 @@ func (s *Service) traceBackend() TraceTelemetry {
 	return unavailableTelemetry{}
 }
 
-func (s *Service) serviceBackend() ServiceTelemetry {
-	if s.services != nil {
-		return s.services
-	}
-	return unavailableTelemetry{}
-}
-
 type unavailableTelemetry struct{}
 
 func (unavailableTelemetry) Correlate(context.Context, string, string, map[string]any, telemetry.LogCorrelationQuery) (telemetry.LogCorrelationResult, error) {
@@ -274,20 +279,12 @@ func (unavailableTelemetry) RangeQuery(context.Context, string, string, map[stri
 	return nil, nil, errors.New("metric telemetry backend is not configured")
 }
 
+func (unavailableTelemetry) SupportsTraceSource(context.Context, domaincopilot.DataSource) (bool, error) {
+	return false, nil
+}
+
 func (unavailableTelemetry) FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error) {
 	return telemetry.TraceResult{}, errors.New("trace telemetry backend is not configured")
-}
-
-func (unavailableTelemetry) ListServices(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceResult, error) {
-	return telemetry.ServiceResult{}, errors.New("service telemetry backend is not configured")
-}
-
-func (unavailableTelemetry) GetService(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.Service, error) {
-	return telemetry.Service{}, errors.New("service telemetry backend is not configured")
-}
-
-func (unavailableTelemetry) GetServiceTopology(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceTopology, error) {
-	return telemetry.ServiceTopology{}, errors.New("service telemetry backend is not configured")
 }
 
 func (s *Service) RecordGovernanceAlert(ctx context.Context, input domaingovernance.AlertInput) error {

@@ -3646,6 +3646,10 @@ func (r *inspectionAuthzTestRepository) UpdateDataSource(context.Context, string
 	return domaincopilot.DataSource{}, nil
 }
 
+func (r *inspectionAuthzTestRepository) DisableDataSource(context.Context, string, string, string) (domaincopilot.DataSource, error) {
+	return domaincopilot.DataSource{}, fmt.Errorf("not implemented")
+}
+
 func (r *inspectionAuthzTestRepository) UpdateDataSourceValidation(context.Context, string, string, string, time.Time) (domaincopilot.DataSource, error) {
 	return domaincopilot.DataSource{}, nil
 }

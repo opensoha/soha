@@ -9,7 +9,6 @@ import (
 
 	logsinfra "github.com/opensoha/soha/internal/infrastructure/mcp/logs"
 	metricsinfra "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
-	tracesinfra "github.com/opensoha/soha/internal/infrastructure/mcp/traces"
 	"github.com/opensoha/soha/internal/platform/telemetry"
 )
 
@@ -29,8 +28,6 @@ func TestLiveObservabilitySmoke(t *testing.T) {
 	marker := required("SOHA_SMOKE_LOG_MARKER")
 	lokiEndpoint := required("SOHA_SMOKE_LOKI_ENDPOINT")
 	prometheusEndpoint := required("SOHA_SMOKE_PROMETHEUS_ENDPOINT")
-	skyWalkingEndpoint := required("SOHA_SMOKE_SKYWALKING_ENDPOINT")
-	zipkinEndpoint := required("SOHA_SMOKE_ZIPKIN_ENDPOINT")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -68,21 +65,6 @@ func TestLiveObservabilitySmoke(t *testing.T) {
 		}
 		if len(series) == 0 || len(series[0].Points) == 0 {
 			t.Fatalf("expected live metric series, got %#v", series)
-		}
-	})
-
-	t.Run("traces", func(t *testing.T) {
-		result, err := tracesinfra.DefaultRegistry().FindSlowSpans(ctx, "skywalking", "live-skywalking", map[string]any{
-			"endpoint": skyWalkingEndpoint, "zipkinEndpoint": zipkinEndpoint,
-		}, telemetry.TraceQuery{
-			Scope: telemetry.TraceScope{Service: service}, TimeFrom: from, TimeTo: to,
-			MinDuration: time.Millisecond, Limit: 20,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(result.Spans) == 0 || result.Spans[0].Service != service {
-			t.Fatalf("expected live OTLP trace, got %#v", result.Spans)
 		}
 	})
 }
