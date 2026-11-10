@@ -681,7 +681,7 @@ def extract_gateway_tool_names_from_source(path: Path) -> set[str]:
         names = set(re.findall(r'(?m)^\s*Name:\s+"([^"]+)"', "\n".join(catalogs)))
     else:
         names = extract_gateway_capability_names_from_source(path, "defaultTools", "ToolCapability")
-    for provider_name in ("knowledge_provider.go", "delivery_provider.go", "docker_project_provider.go", "observability_provider.go", "virtualization_provider.go", "resource_creation_provider.go", "conditional_resource_provider.go", "workload_scale_assessment.go", "pod_execution_provider.go"):
+    for provider_name in ("knowledge_provider.go", "delivery_provider.go", "draft_provider.go", "docker_project_provider.go", "observability_provider.go", "virtualization_provider.go", "resource_creation_provider.go", "conditional_resource_provider.go", "workload_scale_assessment.go", "pod_execution_provider.go"):
         provider = path.with_name(provider_name)
         if provider.exists():
             names.update(re.findall(r'(?:^\s*|\{)Name:\s+"([^"]+)"', provider.read_text(), re.MULTILINE))
