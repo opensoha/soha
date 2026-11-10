@@ -1,4 +1,6 @@
 export const workbenchKeys = {
+  runtimeProfiles: (owner?: string) =>
+    owner ? (['copilot-runtime-profiles', owner] as const) : (['copilot-runtime-profiles'] as const),
   personalAgentAccess: (owner?: string) => ['personal-agent-access', owner] as const,
   personalAgentAccessRequests: (owner?: string) =>
     owner === undefined
@@ -43,7 +45,7 @@ export const workbenchKeys = {
   catalog: () => ['copilot-workbench-catalog'] as const,
   agentRuns: {
     request: (owner: string | undefined, sessionId: string, requestId: string) =>
-      ['copilot-native-request', owner, sessionId, requestId] as const,
+      ['copilot-run-request', owner, sessionId, requestId] as const,
     all: () => ['copilot-agent-runs'] as const,
     session: (sessionId?: string) => ['copilot-agent-runs', sessionId] as const,
     events: (runId: string, afterSequence: number) =>

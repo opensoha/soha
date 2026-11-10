@@ -3,6 +3,7 @@ import type {
   WorkbenchModelOption,
   WorkbenchAgentRun as ContractWorkbenchAgentRun,
 } from '@opensoha/contracts/gen/ts/sohaapi'
+import type { WorkbenchRuntimeAssembly } from './runtime-profile'
 
 export type WorkbenchMode = NonNullable<NonNullable<WorkbenchSession['metadata']>['mode']>
 
@@ -76,6 +77,7 @@ export interface WorkbenchSession {
   metadata?: {
     conversationKind?: 'main' | 'side' | 'personal_main' | 'personal_side'
     modelPreferences?: WorkbenchModelPreferences
+    runtimeProfileId?: string
     mode?: 'general' | 'root_cause' | 'performance' | 'trace' | 'inspection_review'
     status?: string
     agentProviderId?: string
@@ -198,6 +200,7 @@ export interface WorkbenchAgentRun extends Pick<
   ContractWorkbenchAgentRun,
   'executionOwner' | 'phase' | 'stopReason' | 'eventSequence' | 'usageKnown'
 > {
+  runtimeAssembly?: WorkbenchRuntimeAssembly
   parentRunId?: string
   id: string
   providerId: string

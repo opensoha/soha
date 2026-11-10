@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import {
+  canonicalAgentProviderId,
   agentUnavailableReason,
   agentConnectionUnavailableReason,
   preferredExternalAgent,
@@ -49,4 +50,10 @@ it('checks every requested capability and rejects unsupported combinations or qu
   expect(
     taskAgentUnavailableReason({ ...external, id: 'internal' }, ['performance', 'trace'], true),
   ).toBe('')
+})
+
+it('canonicalizes new default requests while preserving explicit Hermes providers', () => {
+  for (const id of [undefined, 'internal', 'native', 'dsh'])
+    expect(canonicalAgentProviderId(id)).toBe('dsh')
+  expect(canonicalAgentProviderId('hermes')).toBe('hermes')
 })

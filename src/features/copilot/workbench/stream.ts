@@ -1,3 +1,4 @@
+import { memoryEventMetadata } from './memory-feedback'
 import type {
   WorkbenchSource,
   WorkbenchSendMessageStreamRequest,
@@ -29,6 +30,7 @@ export interface WorkbenchStreamAgentStatusState {
   providerKind: string
   status: string
   runId?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface WorkbenchStreamErrorState {
@@ -145,7 +147,7 @@ function isTerminalWorkbenchStreamEvent(event: WorkbenchStreamEvent) {
 export function isNativeRunHandoff(event: WorkbenchStreamEvent) {
   return (
     event.type === 'agent.status' &&
-    event.providerKind === 'native' &&
+    ['native', 'dsh'].includes(event.providerKind) &&
     Boolean(event.runId) &&
     isRunningWorkbenchAgentStatus(event.status)
   )
@@ -201,7 +203,7 @@ function reduceToolDelta(
 
 export function reduceWorkbenchStreamState(
   state: WorkbenchStreamState,
-  event: WorkbenchStreamEvent,
+  event: WorkbenchStreamEvent & { metadata?: Record<string, unknown> },
 ): WorkbenchStreamState {
   switch (event.type) {
     case 'message.delta':
@@ -275,6 +277,9 @@ export function reduceWorkbenchStreamState(
           providerId: event.providerId,
           providerKind: event.providerKind,
           status: canonicalWorkbenchAgentStatus(event.status),
+          metadata:
+            memoryEventMetadata(event) ??
+            (state.agentStatus?.runId === event.runId ? state.agentStatus?.metadata : undefined),
           ...(event.runId ? { runId: event.runId } : {}),
         },
       }

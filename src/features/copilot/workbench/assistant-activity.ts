@@ -1,3 +1,4 @@
+import { isLegacyAgentRun } from './agent-run-replay'
 import { artifactSnapshotText, type WorkbenchArtifactEntry } from './artifacts'
 import { modeLabel } from './mode'
 import type { ConversationMessage } from './conversation'
@@ -50,6 +51,7 @@ function latestTime(values: (string | undefined)[]) {
 
 export function activitySummary(item: AssistantActivity) {
   const run = item.run
+  if (run && isLegacyAgentRun(run)) return '旧版任务记录，仅供查看'
   if (run?.stopReason === 'unknown_outcome') return '执行结果未知，请核对原任务回执'
   if (run?.phase === 'paused' && run.stopReason === 'waiting_input') return '等待你补充信息后继续'
   if (run?.phase === 'waiting_approval' || item.status === 'waiting_approval') return '等待变更审批'

@@ -10,6 +10,12 @@ import {
 import { workbenchMutationKeys } from './keys'
 
 export const workbenchMutations = {
+  selectRuntimeProfile: () =>
+    mutationOptions({
+      mutationKey: workbenchMutationKeys.sessions('runtime-profile'),
+      mutationFn: workbenchApi.runtimeProfiles.select,
+      retry: false,
+    }),
   runtime: (assistantId: string) => mutationOptions({
     mutationKey: ['copilot', 'workspace-runtime', assistantId],
     mutationFn: (input: Parameters<typeof workbenchApi.assistant.runtime>[1]) => workbenchApi.assistant.runtime(assistantId, input),

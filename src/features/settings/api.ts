@@ -1,6 +1,8 @@
 import { api } from '@/services/api-client'
+import { ApiError } from '@/services/api-error'
 import type { ApiResponse, BrandingSettings } from '@/types'
 import type { LLMModelRoute, WorkbenchAgentRun, WorkbenchCatalog } from '@/features/copilot'
+import type { WorkbenchRuntimeProfile, WorkbenchRuntimeProfileUpdate } from '@/features/copilot'
 import type {
   AISettings,
   AISkillSetting,
@@ -12,6 +14,8 @@ import type {
   DataSourceCapability,
   IdentitySettingsResponse,
   SaveIdentitySettingsInput,
+  WorkbenchRuntimeAsset,
+  WorkbenchRuntimeAssetProbe,
 } from './types'
 
 async function unwrap<T>(request: Promise<ApiResponse<T>>): Promise<T> {
@@ -22,6 +26,13 @@ async function unwrap<T>(request: Promise<ApiResponse<T>>): Promise<T> {
 export interface UpsertSettingsRecordInput {
   id?: string
   values: Record<string, unknown>
+}
+
+const runtimeAssetsPath = '/settings/ai/workbench-runtime-assets'
+type RuntimeAssetIdentity = Pick<WorkbenchRuntimeAsset, 'kind' | 'id' | 'version'>
+
+function runtimeAssetPath({ kind, id, version }: RuntimeAssetIdentity) {
+  return `${runtimeAssetsPath}/${kind}/${encodeURIComponent(id)}/${encodeURIComponent(version)}`
 }
 
 export const settingsApi = {
@@ -37,6 +48,57 @@ export const settingsApi = {
       api.put<void>('/settings/identity/providers', input.values),
   },
   ai: {
+    runtimeAssets: async () => {
+      const items = await unwrap(api.get<ApiResponse<WorkbenchRuntimeAsset[]>>(runtimeAssetsPath))
+      if (!Array.isArray(items)) {
+        throw new ApiError(502, '未收到有效的运行资产目录', {
+          method: 'GET',
+          path: runtimeAssetsPath,
+        })
+      }
+      return items
+    },
+    setRuntimeAssetEnabled: async ({
+      enabled,
+      ...asset
+    }: RuntimeAssetIdentity & { enabled: boolean }) => {
+      const path = runtimeAssetPath(asset)
+      const updated = await unwrap(api.put<ApiResponse<WorkbenchRuntimeAsset>>(path, { enabled }))
+      if (
+        updated?.kind !== asset.kind ||
+        updated.id !== asset.id ||
+        updated.version !== asset.version ||
+        updated.enabled !== enabled
+      ) {
+        throw new ApiError(502, '保存回执与资产版本不匹配', { method: 'PUT', path })
+      }
+      return updated
+    },
+    probeRuntimeMCP: async ({
+      scope,
+      ...asset
+    }: Pick<RuntimeAssetIdentity, 'id' | 'version'> & { scope: 'chat' | 'heya' }) => {
+      const path = `${runtimeAssetPath({ ...asset, kind: 'mcp' })}/probe`
+      const result = await unwrap(
+        api.post<ApiResponse<WorkbenchRuntimeAssetProbe>>(path, { scope }),
+      )
+      if (!result || !['ready', 'unavailable', 'cleanup_unknown'].includes(result.status)) {
+        throw new ApiError(502, '未收到有效的探测回执', { method: 'POST', path })
+      }
+      return result
+    },
+    runtimeProfileHistory: (id: string) =>
+      unwrap(api.get<ApiResponse<WorkbenchRuntimeProfile[]>>(
+        `/settings/ai/workbench-runtime-profiles/${encodeURIComponent(id)}`,
+      )),
+    publishRuntimeProfile: async ({ id, profile }: { id: string; profile: WorkbenchRuntimeProfileUpdate }) => {
+      const path = `/settings/ai/workbench-runtime-profiles/${encodeURIComponent(id)}`
+      const published = await unwrap(api.put<ApiResponse<WorkbenchRuntimeProfile>>(path, profile))
+      if (published?.id !== id || published.revision !== profile.expectedRevision + 1) {
+        throw new ApiError(502, '发布回执与运行配置版本不匹配', { method: 'PUT', path })
+      }
+      return published
+    },
     get: () => unwrap(api.get<ApiResponse<AISettings>>('/settings/ai')),
     skills: () =>
       unwrap(

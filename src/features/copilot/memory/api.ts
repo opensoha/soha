@@ -5,7 +5,10 @@ export const memoryApi = {
   records: {
     put: (input: { record: MemoryRecord; policyId: string; policyVersion: string }) =>
       api.post<ApiResponse<MemoryRecord>>('/ai/memory', input),
-    list: () => api.get<ApiResponse<MemoryRecord[]>>('/ai/memory'),
+    list: (includeDeleted = false) =>
+      api.get<ApiResponse<MemoryRecord[]>>(
+        `/ai/memory${includeDeleted ? '?includeDeleted=true' : ''}`,
+      ),
     delete: (id: string) => api.delete<void>(`/ai/memory/${encodeURIComponent(id)}`),
   },
   policies: {

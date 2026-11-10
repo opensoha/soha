@@ -1,16 +1,19 @@
+import * as workbenchStream from '../stream'
+import { isReadOnlyAgentRun, isRunningAgentRun } from '../agent-run-replay'
 /** @vitest-environment jsdom */
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useNativeRequestRecovery } from './use-native-request-recovery'
+import { useRunRequestRecovery } from './use-run-request-recovery'
 import { workbenchApi } from '../api'
 import { workbenchKeys } from '../keys'
 import {
-  pendingNativeRequests,
-  rememberNativeRequest,
-  requestNativeCancellation,
-} from '../native-request-journal'
+  pendingRunRequests,
+  runCancellationRequested,
+  rememberRunRequest,
+  requestRunCancellation,
+} from '../run-request-journal'
 import type { WorkbenchAgentRun } from '../types'
 
 const run: WorkbenchAgentRun = {
@@ -29,9 +32,9 @@ const run: WorkbenchAgentRun = {
 const scope = (owner = 'owner-1') => JSON.stringify([workbenchApi.serviceScope(), owner])
 let client: QueryClient
 let root: Root
-let recovery: ReturnType<typeof useNativeRequestRecovery>
+let recovery: ReturnType<typeof useRunRequestRecovery>
 function Probe({ owner, session, enabled }: { owner: string; session: string; enabled: boolean }) {
-  recovery = useNativeRequestRecovery(owner, session, enabled)
+  recovery = useRunRequestRecovery(owner, session, enabled)
   return null
 }
 async function flush() {
@@ -56,8 +59,10 @@ async function recheck() {
   await act(flush)
 }
 
-describe('Native request cancellation recovery', () => {
+describe.each(['dsh'])('%s request cancellation recovery', (providerKind) => {
   beforeEach(() => {
+    run.providerKind = providerKind
+    run.executionOwner = providerKind === 'dsh' ? 'external' : 'native'
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     localStorage.clear()
     client = new QueryClient({
@@ -76,10 +81,77 @@ describe('Native request cancellation recovery', () => {
     localStorage.clear()
   })
 
-  it('retains stop intent across an absent creation, retries failures, and waits for cancellation confirmation', async () => {
-    rememberNativeRequest(scope(), 'session-1', 'request-1')
+  it('reconciles readonly history without cancellation dispatch, fake terminal status or a composer fence', async () => {
+    const old = `soha.native-request.v1:${encodeURIComponent(scope())}/session-1/request-1`
+    localStorage.setItem(old, 'cancel')
+    const history = {
+      ...run,
+      phase: 'paused',
+      output: { executionReadOnly: true, stopReason: 'legacy_reconciliation_required' },
+    }
+    vi.mocked(workbenchApi.agentRuns.findRequest).mockResolvedValue({ data: history })
     await mount()
-    expect(recovery.canRetry('request-1')).toBe(true)
+    expect(recovery.pending).toBe(false)
+    expect(recovery.cancelling).toBe(false)
+    expect(recovery.canRetry('new-dsh-request')).toBe(true)
+    expect(workbenchApi.agentRuns.cancel).not.toHaveBeenCalled()
+    expect(localStorage.getItem(old)).toBe('cancel')
+    expect(client.getQueryData(workbenchKeys.agentRuns.session('session-1'))).toMatchObject({
+      data: [
+        {
+          status: 'running',
+          phase: 'paused',
+          output: { stopReason: 'legacy_reconciliation_required' },
+        },
+      ],
+    })
+  })
+
+  it.each([
+    ['native', 'external', 'queued'],
+    ['hermes-api', 'native', 'running'],
+  ] as const)(
+    'reconciles unmarked Native identity %s/%s/%s without dispatch or fake terminal state',
+    async (kind, owner, status) => {
+      const old = `soha.native-request.v1:${encodeURIComponent(scope())}/session-1/request-1`
+      localStorage.setItem(old, 'cancel')
+      const history = {
+        ...run,
+        providerKind: kind,
+        executionOwner: owner,
+        status,
+        output: undefined,
+      }
+      vi.mocked(workbenchApi.agentRuns.findRequest).mockResolvedValue({ data: history })
+      const resend = vi.spyOn(workbenchStream, 'streamWorkbenchMessage')
+      await mount()
+      await recheck()
+      expect(isReadOnlyAgentRun(history)).toBe(true)
+      expect(isRunningAgentRun(history)).toBe(false)
+      expect(recovery.pending).toBe(false)
+      expect(recovery.cancelling).toBe(false)
+      expect(recovery.canRetry('independent-dsh-request')).toBe(true)
+      expect(workbenchApi.agentRuns.cancel).not.toHaveBeenCalled()
+      expect(resend).not.toHaveBeenCalled()
+      expect(localStorage.getItem(old)).toBe('cancel')
+      expect(runCancellationRequested(scope(), 'session-1', 'request-1')).toBe(true)
+      expect(client.getQueryData(workbenchKeys.agentRuns.session('session-1'))).toMatchObject({
+        data: [{ status, providerKind: kind, executionOwner: owner }],
+      })
+      const activeDSH: WorkbenchAgentRun = {
+        ...history,
+        providerKind: 'dsh',
+        executionOwner: 'external',
+      }
+      expect(isReadOnlyAgentRun(activeDSH)).toBe(false)
+      expect(isRunningAgentRun(activeDSH)).toBe(true)
+    },
+  )
+
+  it('retains stop intent across an absent creation, retries failures, and waits for cancellation confirmation', async () => {
+    rememberRunRequest(scope(), 'session-1', 'request-1')
+    await mount()
+    expect(recovery.canRetry('request-1')).toBe(false)
     expect(recovery.canRetry('new-request')).toBe(false)
     await act(async () => {
       recovery.cancel('session-1')
@@ -94,7 +166,7 @@ describe('Native request cancellation recovery', () => {
     vi.mocked(workbenchApi.agentRuns.cancel).mockRejectedValueOnce(new Error('offline'))
     await recheck()
     expect(recovery.error).toContain('offline')
-    expect(pendingNativeRequests(scope(), 'session-1')).toEqual(['request-1'])
+    expect(pendingRunRequests(scope(), 'session-1')).toEqual(['request-1'])
     await recheck()
     expect(workbenchApi.agentRuns.cancel).toHaveBeenCalledTimes(2)
     expect(recovery.pending).toBe(true)
@@ -108,10 +180,10 @@ describe('Native request cancellation recovery', () => {
   })
 
   it('recovers persisted cancellation in another session after reload and isolates owners', async () => {
-    rememberNativeRequest(scope(), 'session-1', 'request-1')
-    requestNativeCancellation(scope(), 'session-1')
-    rememberNativeRequest(scope('owner-2'), 'session-2', 'request-2')
-    requestNativeCancellation(scope('owner-2'), 'session-2')
+    rememberRunRequest(scope(), 'session-1', 'request-1')
+    requestRunCancellation(scope(), 'session-1')
+    rememberRunRequest(scope('owner-2'), 'session-2', 'request-2')
+    requestRunCancellation(scope('owner-2'), 'session-2')
     vi.mocked(workbenchApi.agentRuns.findRequest).mockResolvedValue({ data: run })
     vi.mocked(workbenchApi.agentRuns.cancel).mockResolvedValue({
       data: { ...run, status: 'canceled' },
@@ -119,13 +191,13 @@ describe('Native request cancellation recovery', () => {
     await mount('owner-1', 'session-3')
     expect(workbenchApi.agentRuns.findRequest).toHaveBeenCalledWith('session-1', 'request-1')
     expect(workbenchApi.agentRuns.cancel).toHaveBeenCalledExactlyOnceWith('late-run')
-    expect(pendingNativeRequests(scope(), 'session-1')).toEqual([])
-    expect(pendingNativeRequests(scope('owner-2'), 'session-2')).toEqual(['request-2'])
+    expect(pendingRunRequests(scope(), 'session-1')).toEqual([])
+    expect(pendingRunRequests(scope('owner-2'), 'session-2')).toEqual(['request-2'])
   })
 
   it('does not overlap slow cancellations or apply late responses after an owner change', async () => {
-    rememberNativeRequest(scope(), 'session-1', 'request-1')
-    requestNativeCancellation(scope(), 'session-1')
+    rememberRunRequest(scope(), 'session-1', 'request-1')
+    requestRunCancellation(scope(), 'session-1')
     vi.mocked(workbenchApi.agentRuns.findRequest).mockResolvedValue({ data: run })
     let resolveCancel!: (value: { data: WorkbenchAgentRun }) => void
     vi.mocked(workbenchApi.agentRuns.cancel).mockImplementation(
@@ -143,14 +215,14 @@ describe('Native request cancellation recovery', () => {
       resolveCancel({ data: { ...run, status: 'canceled' } })
       await flush()
     })
-    expect(pendingNativeRequests(scope(), 'session-1')).toEqual(['request-1'])
+    expect(pendingRunRequests(scope(), 'session-1')).toEqual(['request-1'])
     expect(client.getQueryData(workbenchKeys.agentRuns.session('session-1'))).toBeUndefined()
     expect(recovery.error).toBeUndefined()
   })
 
   it('does not dispatch cancellation when recovery is disabled', async () => {
-    rememberNativeRequest(scope(), 'session-1', 'request-1')
-    requestNativeCancellation(scope(), 'session-1')
+    rememberRunRequest(scope(), 'session-1', 'request-1')
+    requestRunCancellation(scope(), 'session-1')
     client.setQueryData(workbenchKeys.agentRuns.request(scope(), 'session-1', 'request-1'), {
       data: run,
     })
@@ -159,12 +231,12 @@ describe('Native request cancellation recovery', () => {
   })
 
   it('keeps a queued receipt stoppable after handoff and retries a failed stop after reload', async () => {
-    rememberNativeRequest(scope(), 'session-1', 'request-1')
+    rememberRunRequest(scope(), 'session-1', 'request-1')
     vi.mocked(workbenchApi.agentRuns.findRequest).mockResolvedValue({
       data: { ...run, status: 'queued' },
     })
     await mount()
-    expect(pendingNativeRequests(scope(), 'session-1')).toEqual(['request-1'])
+    expect(pendingRunRequests(scope(), 'session-1')).toEqual(['request-1'])
     expect(workbenchApi.agentRuns.cancel).not.toHaveBeenCalled()
     vi.mocked(workbenchApi.agentRuns.cancel).mockRejectedValueOnce(new Error('offline'))
     await act(async () => {
@@ -181,11 +253,11 @@ describe('Native request cancellation recovery', () => {
     })
     await mount()
     expect(workbenchApi.agentRuns.cancel).toHaveBeenCalledTimes(2)
-    expect(pendingNativeRequests(scope(), 'session-1')).toEqual([])
+    expect(pendingRunRequests(scope(), 'session-1')).toEqual([])
   })
 
   it('keeps a storage failure visible until the user retries saving stop intent', async () => {
-    rememberNativeRequest(scope(), 'session-1', 'request-1')
+    rememberRunRequest(scope(), 'session-1', 'request-1')
     await mount()
     const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('quota')
