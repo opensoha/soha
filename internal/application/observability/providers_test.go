@@ -91,13 +91,30 @@ func TestPluginProviderJoinsCatalogAndExecutesDurableLogs(t *testing.T) {
 	}
 }
 
-func TestLegacyElasticsearchProviderAlias(t *testing.T) {
-	provider, found, err := (&Service{}).resolveProvider(context.Background(), "es")
-	if err != nil || !found || provider.definition.ProviderKey != "elasticsearch" {
-		t.Fatalf("resolveProvider(es) = %#v, %t, %v", provider.definition, found, err)
+func TestRetiredProviderKeysCannotBeClaimedByPlugins(t *testing.T) {
+	keys := []string{"es", "elasticsearch", "clickhouse", "jaeger", "skywalking"}
+	contributions := make([]sohaapi.PluginObservabilityProvider, 0, len(keys))
+	for _, key := range keys {
+		contributions = append(contributions, sohaapi.PluginObservabilityProvider{
+			ProviderKey: key, ProtocolVersion: "v1",
+			Signals:      []sohaapi.PluginObservabilityProviderSignals{sohaapi.Logs},
+			Capabilities: []string{logsQueryCapability}, ActionRefs: map[string]string{logsQueryCapability: "logs.query"},
+		})
+	}
+	service := &Service{plugins: providerPluginStore{{
+		ID: "same-key", Status: "enabled",
+		Manifest: domainplugin.PluginManifest{
+			Runtime: &domainplugin.PluginRuntimeSpec{Mode: sohaapi.ExternalHTTP},
+			ExtensionPoints: &domainplugin.PluginExtensionPoints{
+				Observability: &sohaapi.PluginObservabilityExtensions{Providers: contributions},
+			},
+		},
+	}}}
+	providers, err := service.providerCatalog(t.Context())
+	if err != nil || len(providers) != 2 || providers[0].definition.ProviderKey != "loki" || providers[1].definition.ProviderKey != "prometheus" {
+		t.Fatalf("providerCatalog() = %#v, %v", providers, err)
 	}
 }
-
 func TestProviderCatalogUsesSignalNeutralViewPermission(t *testing.T) {
 	service := &Service{
 		dataSources: &memoryDataSources{items: map[string]domainobservability.DataSource{}},

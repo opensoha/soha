@@ -364,6 +364,21 @@ func (r *Repository) UpdateDataSource(ctx context.Context, dataSourceID string, 
 	return r.GetDataSource(ctx, dataSourceID)
 }
 
+func (r *Repository) DisableDataSource(ctx context.Context, dataSourceID, sourceKind, backendType string) (domaincopilot.DataSource, error) {
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE ai_data_sources
+		SET enabled = FALSE, updated_at = ?
+		WHERE id = ? AND source_kind = ? AND backend_type = ?
+	`, time.Now().UTC(), dataSourceID, sourceKind, backendType)
+	if result.Error != nil {
+		return domaincopilot.DataSource{}, fmt.Errorf("disable data source: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domaincopilot.DataSource{}, copilotNotFound("data source", dataSourceID)
+	}
+	return r.GetDataSource(ctx, dataSourceID)
+}
+
 func (r *Repository) UpdateDataSourceValidation(ctx context.Context, dataSourceID, status, message string, validatedAt time.Time) (domaincopilot.DataSource, error) {
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE ai_data_sources

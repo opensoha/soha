@@ -93,7 +93,6 @@ import (
 	mcpinfra "github.com/opensoha/soha/internal/infrastructure/mcp"
 	mcplogsinfra "github.com/opensoha/soha/internal/infrastructure/mcp/logs"
 	mcpmetricsinfra "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
-	mcptracesinfra "github.com/opensoha/soha/internal/infrastructure/mcp/traces"
 	observabilityproviderinfra "github.com/opensoha/soha/internal/infrastructure/observabilityprovider"
 	ratelimitinfra "github.com/opensoha/soha/internal/infrastructure/ratelimit"
 	releasebackendinfra "github.com/opensoha/soha/internal/infrastructure/releasebackend"
@@ -870,7 +869,7 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 		Integrations: repos.alertRepository, Events: repos.eventRepository, DataSources: repos.copilotRepository,
 		Dashboards: repos.dashboardRepository, Audit: audit, Permissions: permissions,
 		Enabled: cfg.Monitoring.Enabled, WebhookKeys: cfg.Monitoring.WebhookKeys,
-	}, appmonitoring.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), mcptracesinfra.DefaultRegistry()))
+	}, appmonitoring.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), nil))
 	if err != nil {
 		return nil, fmt.Errorf("build monitoring service: %w", err)
 	}
@@ -1174,7 +1173,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		NativeRuns:          repos.copilotRepository,
 		NativeTaskParents:   repos.copilotRepository,
 	},
-		appcopilot.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), mcptracesinfra.DefaultRegistry()),
+		appcopilot.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), nil),
 		appcopilot.WithRuntimeProfiles(repos.copilotRepository),
 		appcopilot.WithRuntimeAssets(repos.copilotRepository),
 	)

@@ -60,6 +60,7 @@ type DataSourceStore interface {
 	GetDataSource(context.Context, string) (domaincopilot.DataSource, error)
 	CreateDataSource(context.Context, domaincopilot.DataSource) (domaincopilot.DataSource, error)
 	UpdateDataSource(context.Context, string, domaincopilot.DataSourceInput) (domaincopilot.DataSource, error)
+	DisableDataSource(context.Context, string, string, string) (domaincopilot.DataSource, error)
 	UpdateDataSourceValidation(context.Context, string, string, string, time.Time) (domaincopilot.DataSource, error)
 }
 

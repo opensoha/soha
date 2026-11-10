@@ -567,6 +567,9 @@ func (s *Service) ensureManagedLokiDataSource(ctx context.Context, clusterID str
 		}, CreatedAt: now, UpdatedAt: now,
 	}
 	if current, err := s.dataSources.GetDataSource(ctx, item.ID); err == nil {
+		if current.SourceKind != dataSourceKindLogs || current.BackendType != "loki" {
+			return "", fmt.Errorf("%w: managed Loki data source ID is in use by a different backend", apperrors.ErrConflict)
+		}
 		item.CredentialRef = current.CredentialRef
 		_, err = s.dataSources.UpdateDataSource(ctx, item.ID, domainobservability.DataSourceInput{
 			ID: item.ID, Name: item.Name, SourceKind: item.SourceKind, BackendType: item.BackendType, Enabled: item.Enabled,

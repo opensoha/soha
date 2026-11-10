@@ -104,7 +104,7 @@ func (s *Service) selectProfessionalSource(ctx context.Context, kind, adapter st
 	selected := strings.TrimSpace(stringValue(toolset.ScopeOverrides["dataSourceId"]))
 	var found []domaincopilot.DataSource
 	for _, source := range sources {
-		if source.Enabled && source.SourceKind == kind && source.MCPAdapter == adapter && toolsetAllowsAdapter(toolset, adapter) && (selected == "" || source.ID == selected) {
+		if source.Enabled && !source.RetiredBackend() && source.SourceKind == kind && source.MCPAdapter == adapter && toolsetAllowsAdapter(toolset, adapter) && (selected == "" || source.ID == selected) {
 			found = append(found, source)
 		}
 	}
