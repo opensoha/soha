@@ -124,6 +124,7 @@ func serveGitSSHSession(ctx context.Context, session ssh.Channel, requests <-cha
 		}
 		_ = request.Reply(true, nil)
 		commands.Add(1)
+		// #nosec G204 -- Fixed Git fixture server and test-owned bare repository, passed without a shell.
 		command := exec.CommandContext(ctx, "git-upload-pack", root)
 		command.Env = append(os.Environ(), "GIT_PROTOCOL="+protocol)
 		command.Stdin, command.Stdout, command.Stderr = session, session, io.Discard

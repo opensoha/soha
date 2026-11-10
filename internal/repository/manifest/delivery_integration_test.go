@@ -10,18 +10,21 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	deliveryrepo "github.com/opensoha/soha/internal/repository/delivery"
 	manifestrepo "github.com/opensoha/soha/internal/repository/manifest"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 )
 
@@ -32,15 +35,18 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	}
 	port, err := strconv.Atoi(portText)
 	requireManifestRepositoryNoError(t, err)
-	store, err := dbstore.New(config.DatabaseConfig{
+	store, err := dbstore.New(testpostgres.Configure(t, config.DatabaseConfig{
 		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable",
 		MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
-	}, zap.NewNop())
+	}), zap.NewNop())
 	requireManifestRepositoryNoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	requireManifestRepositoryNoError(t, store.MigrateFromFile(ctx, filepath.Join("..", "..", "..", "migrations", "postgres")))
+	t.Run("binding-edit-and-operation-package-lock-order", func(t *testing.T) {
+		verifyManifestBindingOperationOrder(t, ctx, store.DB())
+	})
 
 	// The fixture lives in a transaction, so repeated runs leave no business data.
 	tx := store.DB().WithContext(ctx).Begin()
@@ -61,6 +67,9 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	}
 	repository := manifestrepo.New(tx)
 	verifyConfigurationRevisionCAS(t, ctx, repository, applicationID)
+	t.Run("root-cr-publication-control", func(t *testing.T) {
+		verifyRootCRPublicationControl(t, ctx, tx, repository, applicationID, environmentID, clusterID)
+	})
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	item, err := repository.Create(ctx, domainmanifest.Package{
 		ID: uuid.NewString(), Name: "API", ApplicationID: applicationID, Renderer: domainmanifest.RendererKustomize,
@@ -84,10 +93,11 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	snapshot := domainmanifest.DeliverySnapshot{
 		DeliveryPlanID: uuid.NewString(), TargetID: "target-1", PackageID: item.ID, BindingID: binding.ID, BindingVersion: binding.Version,
 		ApplicationEnvironmentID: environmentID, ClusterID: clusterID, Namespace: binding.Namespace, Revision: 1,
-		PackageUpdatedAt: item.UpdatedAt, RevisionDigest: "sha256:revision", RendererVersion: "kustomize/test", InputDigest: "sha256:input", RenderedDigest: "sha256:rendered",
+		PackageUpdatedAt: item.UpdatedAt.UTC(), RevisionDigest: "sha256:revision", RendererVersion: "kustomize/test", InputDigest: "sha256:input", RenderedDigest: "sha256:rendered",
 		Documents: []domainmanifest.RenderedDocument{{APIVersion: "v1", Kind: "ConfigMap", Namespace: "test", Name: "api", Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: api\n  namespace: test\n"}}, PreflightTaskID: "preflight-1",
 	}
 	verifyDeliveryPlanRoundTrip(t, ctx, deliveryrepo.New(tx), applicationID, snapshot)
+	t.Run("publication-operation-context", func(t *testing.T) { verifyPublicationOperationContext(t, ctx, tx, repository, item, binding) })
 
 	next := domainmanifest.Deployment{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, CreatedAt: now, UpdatedAt: now,
 		Spec: domainmanifest.DeploymentSpec{DesiredRevision: 1, DesiredDigest: snapshot.RenderedDigest, ReconcilePolicy: "continuous", DriftPolicy: "report", DeletionPolicy: "orphan", DeliverySnapshot: &snapshot}}
@@ -103,14 +113,133 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	if err != nil || deployment.Generation != 2 {
 		t.Fatalf("update deployment: %#v, %v", deployment, err)
 	}
+	t.Run("migration-baseline-is-success-only", func(t *testing.T) { verifyMigrationBaseline(t, ctx, tx, repository, deployment) })
 	verifyManifestObservationCadence(t, ctx, tx, repository, deployment.ID)
 	verifyResourceObservationRoundTrip(t, ctx, repository, deployment)
+	t.Run("pending-plan-retains-observed-identities", func(t *testing.T) {
+		verifyPendingPlanInventory(t, ctx, tx, repository, deployment)
+	})
 
 	verifyManifestResourceOwnership(t, ctx, tx, repository, next, binding, item)
 	verifyHelmResourceOwnership(t, ctx, tx, repository, next, binding, item)
 	verifyGitOpsResourceOwnership(t, ctx, tx, repository, next, binding, item)
 
 	verifyManifestChangedInputConflict(t, ctx, tx, repository, next, binding, item)
+}
+
+func verifyManifestBindingOperationOrder(t *testing.T, ctx context.Context, db *gorm.DB) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	appID, envID, clusterID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	pkgID, bindingID := uuid.NewString(), uuid.NewString()
+	for _, statement := range []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO applications(id,name,app_key,app_group,language) VALUES (?,'Lock order',?,'test','configuration')`, []any{appID, appID}},
+		{`INSERT INTO application_environments(id,application_id,environment_id) VALUES (?,?,'test')`, []any{envID, appID}},
+		{`INSERT INTO clusters(id,name) VALUES (?,'Lock order')`, []any{clusterID}},
+		{`INSERT INTO manifest_packages(id,name,application_id) VALUES (?,'Lock order',?)`, []any{pkgID, appID}},
+		{`INSERT INTO manifest_bindings(id,package_id,application_environment_id,environment_key,cluster_id,namespace) VALUES (?,?,?,'test',?,'test')`, []any{bindingID, pkgID, envID, clusterID}},
+	} {
+		requireManifestRepositoryNoError(t, db.WithContext(ctx).Exec(statement.query, statement.args...).Error)
+	}
+	t.Cleanup(func() {
+		for _, row := range []struct{ table, id string }{
+			{"manifest_packages", pkgID}, {"applications", appID}, {"clusters", clusterID},
+		} {
+			if err := db.Exec("DELETE FROM "+row.table+" WHERE id=?", row.id).Error; err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	repo := manifestrepo.New(db)
+	binding, err := repo.GetBinding(ctx, bindingID)
+	requireManifestRepositoryNoError(t, err)
+	holder := db.WithContext(ctx).Begin()
+	requireManifestRepositoryNoError(t, holder.Error)
+	defer func() { _ = holder.Rollback().Error }()
+	requireManifestRepositoryNoError(t, holder.Exec(`SELECT id FROM manifest_packages WHERE id=? FOR SHARE`, pkgID).Error)
+	var pid int
+	requireManifestRepositoryNoError(t, holder.Raw(`SELECT pg_backend_pid()`).Row().Scan(&pid))
+	done := make(chan error, 1)
+	go func() {
+		binding.Overlay = map[string]string{"image": "changed"}
+		_, err := repo.UpdateBinding(ctx, binding, binding.Version)
+		done <- err
+	}()
+	waitForManifestPackageLock(t, ctx, db, pid, done)
+	requireManifestRepositoryNoError(t, holder.Exec(`SELECT id FROM manifest_bindings WHERE id=? FOR SHARE NOWAIT`, bindingID).Error)
+	now := time.Now().UTC()
+	_, err = manifestrepo.New(holder).SetDesiredRevision(ctx, domainmanifest.Deployment{
+		ID: uuid.NewString(), PackageID: pkgID, BindingID: bindingID, CreatedAt: now, UpdatedAt: now,
+		Spec: domainmanifest.DeploymentSpec{DesiredRevision: 1, ReconcilePolicy: "continuous", DriftPolicy: "report", DeletionPolicy: "orphan"},
+	}, 0)
+	requireManifestRepositoryNoError(t, err)
+	requireManifestRepositoryNoError(t, holder.Commit().Error)
+	select {
+	case err := <-done:
+		requireManifestRepositoryNoError(t, err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	stored, err := repo.GetBinding(ctx, bindingID)
+	requireManifestRepositoryNoError(t, err)
+	if stored.Overlay["image"] != "changed" {
+		t.Fatal("binding edit did not complete after ordinary operation")
+	}
+}
+
+func waitForManifestPackageLock(t *testing.T, ctx context.Context, db *gorm.DB, pid int, done <-chan error) {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var waiting bool
+		requireManifestRepositoryNoError(t, db.WithContext(ctx).Raw(`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ?=ANY(pg_blocking_pids(pid)))`, pid).Row().Scan(&waiting))
+		if waiting {
+			return
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("binding edit completed before reaching the held lock: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func verifyPendingPlanInventory(t *testing.T, ctx context.Context, tx *gorm.DB, repository *manifestrepo.Repository, deployment domainmanifest.Deployment) {
+	t.Helper()
+	requireManifestRepositoryNoError(t, tx.SavePoint("pending_inventory").Error)
+	defer func() { requireManifestRepositoryNoError(t, tx.RollbackTo("pending_inventory").Error) }()
+	deployment.Status.ObservedGeneration = deployment.Generation
+	deployment.Status.AppliedDigest = deployment.Spec.DesiredDigest
+	deployment.Status.Phase = "converged"
+	deployment.Status.Inventory = []domainmanifest.ResourceInventory{{APIVersion: "v1", Kind: "ConfigMap", Namespace: "test", Name: "api", UID: "known-uid", Health: "healthy", LastObservedAt: time.Now().UTC().Truncate(time.Microsecond)}}
+	requireManifestRepositoryNoError(t, repository.UpdateDeploymentStatus(ctx, deployment.ID, deployment.Generation, deployment.Status))
+	next, err := repository.SetDesiredRevision(ctx, deployment, deployment.Generation)
+	requireManifestRepositoryNoError(t, err)
+	if next.Generation != deployment.Generation+1 || next.Status.ObservedGeneration != deployment.Generation || next.Status.Phase != "pending" || len(next.Status.Inventory) != 1 || next.Status.Inventory[0].UID != "known-uid" || next.Status.Inventory[0].Generation != deployment.Generation {
+		t.Fatalf("pending Plan lost observed identities or fabricated health: %#v", next)
+	}
+	// A new observation, including partial/unhealthy inventory, is authoritative.
+	next.Status.ObservedGeneration = next.Generation
+	next.Status.Inventory = []domainmanifest.ResourceInventory{{APIVersion: "v1", Kind: "ConfigMap", Namespace: "test", Name: "api", UID: "new-uid", Health: "degraded", LastObservedAt: time.Now().UTC().Truncate(time.Microsecond)}}
+	requireManifestRepositoryNoError(t, repository.UpdateDeploymentStatus(ctx, next.ID, next.Generation, next.Status))
+	loaded, err := repository.GetDeployment(ctx, next.ID)
+	requireManifestRepositoryNoError(t, err)
+	if len(loaded.Status.Inventory) != 1 || loaded.Status.Inventory[0].UID != "new-uid" || loaded.Status.Inventory[0].Health != "degraded" {
+		t.Fatalf("old inventory replaced current observation: %#v", loaded.Status.Inventory)
+	}
+	next.Status.Inventory = nil
+	requireManifestRepositoryNoError(t, repository.UpdateDeploymentStatus(ctx, next.ID, next.Generation, next.Status))
+	loaded, err = repository.GetDeployment(ctx, next.ID)
+	requireManifestRepositoryNoError(t, err)
+	if len(loaded.Status.Inventory) != 0 {
+		t.Fatal("empty current observation resurrected an old UID")
+	}
 }
 
 func verifyResourceObservationRoundTrip(t *testing.T, ctx context.Context, repository *manifestrepo.Repository, deployment domainmanifest.Deployment) {
@@ -272,7 +401,7 @@ func verifyDeliveryPlanRoundTrip(t *testing.T, ctx context.Context, plans *deliv
 	plan, err = plans.GetDeliveryPlan(ctx, plan.ID)
 	requireManifestRepositoryNoError(t, err)
 	if !reflect.DeepEqual(plan.ManifestSnapshots, []domainmanifest.DeliverySnapshot{snapshot}) {
-		t.Fatalf("plan snapshot round trip: %#v", plan.ManifestSnapshots)
+		t.Fatalf("plan snapshot round trip: got %#v, want %#v", plan.ManifestSnapshots, []domainmanifest.DeliverySnapshot{snapshot})
 	}
 	plan.Status = domaindelivery.DeliveryPlanStatusConfirmed
 	if _, err := plans.UpdateDeliveryPlan(ctx, plan); err != nil {
@@ -456,5 +585,88 @@ func verifyGitOpsResourceOwnership(t *testing.T, ctx context.Context, tx *gorm.D
 	other.Spec.DeliverySnapshot = &incoming
 	if _, err := repository.SetDesiredRevision(ctx, other, 0); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("incoming GitOps child ignored another binding: %v", err)
+	}
+}
+
+func verifyRootCRPublicationControl(t *testing.T, ctx context.Context, tx *gorm.DB, repository *manifestrepo.Repository, applicationID, environmentID, clusterID string) {
+	t.Helper()
+	for _, mode := range []string{"valid", "withdrawn", "uid-replaced", "baseline-changed", "binding-changed"} {
+		t.Run(mode, func(t *testing.T) {
+			requireManifestRepositoryNoError(t, tx.SavePoint("root_cr").Error)
+			defer func() { requireManifestRepositoryNoError(t, tx.RollbackTo("root_cr").Error) }()
+			now := time.Now().UTC().Truncate(time.Microsecond)
+			item, err := repository.Create(ctx, domainmanifest.Package{ID: uuid.NewString(), Name: "Generic CR", ApplicationID: applicationID, Renderer: "raw_yaml", Status: "published", CurrentRevision: 1, Files: []domainmanifest.File{}, Bindings: []domainmanifest.Binding{}, CreatedAt: now, UpdatedAt: now})
+			requireManifestRepositoryNoError(t, err)
+			binding, err := repository.CreateBinding(ctx, domainmanifest.EnvironmentBinding{ID: uuid.NewString(), PackageID: item.ID, ApplicationEnvironmentID: environmentID, ClusterID: clusterID, Namespace: "test", Enabled: true, Version: 1, DriftPolicy: "report", DeletionPolicy: "orphan", Overlay: map[string]string{}, CreatedAt: now, UpdatedAt: now})
+			requireManifestRepositoryNoError(t, err)
+			item, err = repository.Get(ctx, item.ID)
+			requireManifestRepositoryNoError(t, err)
+			targetID := uuid.NewString()
+			metadata := map[string]any{"importSource": "kubernetes", "ownershipMode": "managed", "rootCRGeneration": 2, "resourceSource": `{"resource":{"apiVersion":"unknown.example/v1","kind":"Database","uid":"root-uid"}}`}
+			switch mode {
+			case "withdrawn":
+				metadata["ownershipMode"] = "observe_only"
+			case "uid-replaced":
+				metadata["resourceSource"] = `{"resource":{"apiVersion":"unknown.example/v1","kind":"Database","uid":"new-uid"}}`
+			case "baseline-changed":
+				metadata["rootCRGeneration"] = 3
+			}
+			data, err := json.Marshal(metadata)
+			requireManifestRepositoryNoError(t, err)
+			configRef := binding.ID
+			if mode == "binding-changed" {
+				configRef = "different"
+			}
+			requireManifestRepositoryNoError(t, tx.Exec(`INSERT INTO release_targets (id,application_environment_id,cluster_id,namespace,target_kind,executor_kind,config_ref,workload_kind,workload_name,metadata,enabled) VALUES (?,?,?,'test','kubernetes_workload','manifest_ssa',?,'CustomResource','root',?::jsonb,TRUE)`, targetID, environmentID, clusterID, configRef, string(data)).Error)
+			root := &sohaapi.ManifestRootResource{APIVersion: "unknown.example/v1", Kind: "Database", Namespace: "test", Name: "root", UID: "root-uid", Generation: 2, CrdName: "databases.unknown.example", TargetID: targetID, DeliveryPlanID: uuid.NewString()}
+			snapshot := domainmanifest.DeliverySnapshot{RootResource: root, DeliveryPlanID: root.DeliveryPlanID, TargetID: targetID, PackageID: item.ID, BindingID: binding.ID, BindingVersion: binding.Version, ApplicationEnvironmentID: environmentID, ClusterID: clusterID, Namespace: "test", Revision: 1, PackageUpdatedAt: item.UpdatedAt, Documents: []domainmanifest.RenderedDocument{{APIVersion: root.APIVersion, Kind: root.Kind, Namespace: "test", Name: "root"}}}
+			next := domainmanifest.Deployment{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, CreatedAt: now, UpdatedAt: now, Spec: domainmanifest.DeploymentSpec{DesiredRevision: 1, ReconcilePolicy: "continuous", DriftPolicy: "report", DeletionPolicy: "orphan", DeliverySnapshot: &snapshot}}
+			admission := domainmanifest.TaskPayload{Action: "apply", BindingID: binding.ID, ClusterID: clusterID, Namespace: "test", Documents: snapshot.Documents}
+			rejectLegacyRootAdmission(t, ctx, repository, admission)
+			admission.RootResource = root
+			if err := repository.ValidateImportedManifestTargets(ctx, admission); mode == "valid" && err != nil || mode != "valid" && !errors.Is(err, apperrors.ErrConflict) {
+				t.Fatalf("root ownership admission: %v", err)
+			}
+			stored, err := repository.SetDesiredRevision(ctx, next, 0)
+			if mode != "valid" {
+				if !errors.Is(err, apperrors.ErrConflict) {
+					t.Fatalf("changed control accepted: %v", err)
+				}
+				return
+			}
+			requireManifestRepositoryNoError(t, err)
+			if stored.Spec.DeliverySnapshot.RootResource.UID != "root-uid" {
+				t.Fatal("root fence not persisted")
+			}
+			data, err = json.Marshal(admission)
+			requireManifestRepositoryNoError(t, err)
+			wire := map[string]any{}
+			requireManifestRepositoryNoError(t, json.Unmarshal(data, &wire))
+			task := domaindelivery.ExecutionTask{ID: uuid.NewString(), ApplicationID: applicationID, ApplicationEnvironmentID: environmentID, TaskKind: "manifest_apply", ProviderKind: "manifest_direct", TargetKind: "manifest_deployment", Status: "queued", Payload: wire, SecretPrincipal: domainidentity.Principal{UserID: "actor", AccessTokenID: "private-token-id"}}
+			run := domainmanifest.OperationRun{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, DeploymentID: stored.ID, Generation: stored.Generation, Action: "apply", IdempotencyKey: uuid.NewString(), CreatedAt: now}
+			taskID, _, err := repository.CreateOperationTask(ctx, run, task)
+			requireManifestRepositoryNoError(t, err)
+			restored, err := deliveryrepo.New(tx).GetExecutionTask(ctx, taskID)
+			requireManifestRepositoryNoError(t, err)
+			if restored.SecretPrincipal.AccessTokenID != "private-token-id" {
+				t.Fatal("execution token identity lost")
+			}
+			public, err := json.Marshal(restored)
+			requireManifestRepositoryNoError(t, err)
+			if strings.Contains(string(public), "private-token-id") {
+				t.Fatal("private token identity leaked")
+			}
+
+		})
+	}
+}
+
+func rejectLegacyRootAdmission(t *testing.T, ctx context.Context, repository *manifestrepo.Repository, payload domainmanifest.TaskPayload) {
+	t.Helper()
+	for _, namespace := range []string{payload.Namespace, "different-binding-namespace"} {
+		payload.Namespace = namespace
+		if err := repository.ValidateImportedManifestTargets(ctx, payload); !errors.Is(err, apperrors.ErrConflict) {
+			t.Fatalf("legacy publication bypass accepted from binding namespace %s: %v", namespace, err)
+		}
 	}
 }

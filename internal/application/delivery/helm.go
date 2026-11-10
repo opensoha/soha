@@ -186,10 +186,20 @@ func (s *Service) prepareHelmTarget(ctx context.Context, principal domainidentit
 		result.References = append(result.References, refs...)
 		result.Payload.Prepared.Values = values
 	}
+	if input.HelmRevision == 0 && input.FrozenHelmCiphertext == "" {
+		ref, refErr := s.helmTemplateReference(ctx, principal, service.ID, binding, target)
+		if refErr != nil {
+			return result, refErr
+		}
+		result.Payload.Snapshot.TemplateInputs = ref
+	}
 	intended := result.Payload.Snapshot
 	result.Payload, err = s.helm.Runtime.PrepareHelmDelivery(ctx, principal, result.Payload)
 	if err == nil {
 		err = validateHelmPreparation(intended, result.Payload)
+	}
+	if err == nil {
+		result.Payload.Snapshot.Migration, err = s.assessHelmMigration(ctx, principal, result.Payload.Snapshot, target)
 	}
 	if err == nil {
 		_, err = s.helm.Runtime.AuthorizeHelmDelivery(ctx, principal, result.Payload.Snapshot, true)

@@ -10,6 +10,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
 )
@@ -20,7 +21,7 @@ func (r *Repository) createBatchPlan(ctx context.Context, input domaindelivery.D
 		return domaindelivery.DeliveryPlan{}, apperrors.ErrConflict
 	}
 	var item domaindelivery.DeliveryPlan
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := repoworkflow.LockDeliveryNode(ctx, tx, input.ApplicationID, input.ApplicationEnvironmentID); err != nil {
 			return err
 		}
@@ -49,7 +50,7 @@ func (r *Repository) createBatchPlan(ctx context.Context, input domaindelivery.D
 
 func (r *Repository) updateBatchPlan(ctx context.Context, input domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlan, error) {
 	var item domaindelivery.DeliveryPlan
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		repo := New(tx)
 		current, err := repo.GetDeliveryPlan(ctx, input.ID)
 		if err != nil {

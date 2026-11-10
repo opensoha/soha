@@ -15,6 +15,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -110,7 +111,7 @@ func (r *Repository) ListSyncRuns(ctx context.Context, packageID string, limit i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainmanifest.SyncRun, 0)
 	for rows.Next() {
 		var item domainmanifest.SyncRun
@@ -148,7 +149,7 @@ func (r *Repository) ListDueSources(ctx context.Context, limit int) ([]domainman
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainmanifest.Source, 0)
 	for rows.Next() {
 		item, err := scanSource(rows)
@@ -165,8 +166,14 @@ func (r *Repository) UpdateSyncTask(ctx context.Context, task domaindelivery.Exe
 	if task.Status == "dispatching" || task.Status == "running" {
 		return r.db.WithContext(ctx).Exec(`UPDATE manifest_sync_runs SET status='running', started_at=COALESCE(started_at, ?), updated_at=? WHERE execution_task_id=? AND source_generation=?`, now, now, task.ID, payload.Generation).Error
 	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		var sourceID, packageID, actor string
+		if err := tx.Raw(`SELECT package_id FROM manifest_sync_runs WHERE execution_task_id = ?`, task.ID).Row().Scan(&packageID); err != nil {
+			return err
+		}
+		if err := lockPackageConfiguration(tx, packageID, ""); err != nil {
+			return err
+		}
 		var sourceGeneration, currentSourceGeneration int64
 		var autoPublish bool
 		var previousCanonical string
@@ -226,23 +233,8 @@ func (r *Repository) UpdateSyncTask(ctx context.Context, task domaindelivery.Exe
 		}
 		revision := 0
 		if autoPublish {
-			var currentRevision int
-			var bindings []byte
-			if err := tx.Raw(`SELECT current_revision, bindings FROM manifest_packages WHERE id=? FOR UPDATE`, packageID).Row().Scan(&currentRevision, &bindings); err != nil {
-				return err
-			}
-			revision = currentRevision + 1
-			var bindingValue any
-			_ = json.Unmarshal(bindings, &bindingValue)
-			digestInput, _ := json.Marshal(struct {
-				Files    []domainmanifest.File `json:"files"`
-				Bindings any                   `json:"bindings"`
-			}{Files: result.SyncedFiles, Bindings: bindingValue})
-			digest := sha256.Sum256(digestInput)
-			if err := tx.Exec(`INSERT INTO manifest_revisions (id, package_id, version, digest, note, files, bindings, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)`, uuid.NewString(), packageID, revision, hex.EncodeToString(digest[:]), "Published by Git synchronization", string(filesJSON), string(bindings), updatedBy, now).Error; err != nil {
-				return err
-			}
-			if err := tx.Exec(`UPDATE manifest_packages SET status='published', current_revision=? WHERE id=?`, revision, packageID).Error; err != nil {
+			revision, err = publishSyncedManifestRevision(tx, packageID, updatedBy, result.SyncedFiles, filesJSON, now)
+			if err != nil {
 				return err
 			}
 		}
@@ -259,6 +251,26 @@ func (r *Repository) UpdateSyncTask(ctx context.Context, task domaindelivery.Exe
 			WHERE execution_task_id=?
 		`, result.ResolvedCommit, result.TreeDigest, result.CanonicalDigest, string(pathsJSON), revision, now, now, task.ID).Error
 	})
+}
+
+func publishSyncedManifestRevision(tx *gorm.DB, packageID, updatedBy string, files []domainmanifest.File, filesJSON []byte, now time.Time) (int, error) {
+	var currentRevision int
+	var bindings []byte
+	if err := tx.Raw(`SELECT current_revision, bindings FROM manifest_packages WHERE id=? FOR UPDATE`, packageID).Row().Scan(&currentRevision, &bindings); err != nil {
+		return 0, err
+	}
+	revision := currentRevision + 1
+	var bindingValue any
+	_ = json.Unmarshal(bindings, &bindingValue)
+	digestInput, _ := json.Marshal(struct {
+		Files    []domainmanifest.File `json:"files"`
+		Bindings any                   `json:"bindings"`
+	}{Files: files, Bindings: bindingValue})
+	digest := sha256.Sum256(digestInput)
+	if err := tx.Exec(`INSERT INTO manifest_revisions (id, package_id, version, digest, note, files, bindings, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)`, uuid.NewString(), packageID, revision, hex.EncodeToString(digest[:]), "Published by Git synchronization", string(filesJSON), string(bindings), updatedBy, now).Error; err != nil {
+		return 0, err
+	}
+	return revision, tx.Exec(`UPDATE manifest_packages SET status='published', current_revision=? WHERE id=?`, revision, packageID).Error
 }
 
 func syncTaskError(result map[string]any) string {

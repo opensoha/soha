@@ -49,6 +49,9 @@ func validateDeliveryTargets(targets []domainworkflow.DeliveryTargetInput) error
 			return err
 		}
 		identity := target.ApplicationID + "\x00" + target.ServiceID + "\x00" + target.ApplicationEnvironmentID
+		if target.TemplateCandidateID != "" {
+			identity += "\x00" + target.TemplateCandidateID
+		}
 		if identities[identity] {
 			return fmt.Errorf("%w: target %s repeats the same service environment", apperrors.ErrInvalidArgument, target.ID)
 		}
@@ -70,14 +73,14 @@ func validateDeliveryTarget(target domainworkflow.DeliveryTargetInput) error {
 	if target.HelmRevision < 0 || target.HelmRevision > 0 && (target.Action != "config_update" || target.ReleaseBundleID != "") {
 		return fmt.Errorf("%w: Helm rollback requires config_update without an artifact override", apperrors.ErrInvalidArgument)
 	}
-	if strings.TrimSpace(target.ApplicationID) == "" || strings.TrimSpace(target.ServiceID) == "" || target.Group < 0 || target.Group > 199 {
+	if strings.TrimSpace(target.ApplicationID) == "" || (strings.TrimSpace(target.ServiceID) == "" && target.TemplateCandidateID == "") || target.Group < 0 || target.Group > 199 {
 		return fmt.Errorf("%w: target %s requires application, service and a valid group", apperrors.ErrInvalidArgument, target.ID)
 	}
 	if err := validateDeliveryTargetAction(target); err != nil {
 		return err
 	}
 
-	if target.Action != "build" && strings.TrimSpace(target.ApplicationEnvironmentID) == "" {
+	if target.Action != "build" && target.TemplateCandidateID == "" && strings.TrimSpace(target.ApplicationEnvironmentID) == "" {
 		return fmt.Errorf("%w: deployment target %s requires an application environment binding", apperrors.ErrInvalidArgument, target.ID)
 	}
 	if target.Action == "deploy" || target.Action == "config_update" {
@@ -89,6 +92,12 @@ func validateDeliveryTarget(target domainworkflow.DeliveryTargetInput) error {
 }
 
 func validateDeliveryTargetAction(target domainworkflow.DeliveryTargetInput) error {
+	if target.TemplateCandidateID != "" {
+		if target.Action != "config_update" || target.ReleaseBundleID != "" || target.HelmRevision != 0 || len(target.BuildArgs) > 0 || len(target.RepositoryRefs) > 0 {
+			return fmt.Errorf("%w: template adoption requires a frozen configuration candidate without runtime overrides", apperrors.ErrInvalidArgument)
+		}
+		return nil
+	}
 	switch target.Action {
 	case "build", "build_deploy":
 		if target.ReleaseBundleID != "" {
@@ -136,7 +145,11 @@ func compileDeliveryDAG(definition domainworkflow.DeliveryWorkflowDefinition, ta
 			last[target.ID] = id
 		}
 		if target.Action != "build" {
-			for _, stage := range []string{"plan", "deploy", "health"} {
+			stages := []string{"plan", "deploy", "health"}
+			if target.TemplateCandidateID != "" {
+				stages = []string{"plan", "deploy"}
+			}
+			for _, stage := range stages {
 				id := target.ID + ":" + stage
 				dag.Nodes = append(dag.Nodes, deliveryStageNode(id, target.ID, stage, policy))
 				if previous := last[target.ID]; previous != "" {

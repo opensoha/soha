@@ -89,7 +89,7 @@ func verifySSOProxyTemplates(t *testing.T, f *ssoProtocolFixture, renderer, prov
 				request.Header.Set("X-Soha-Outpost-Token", "forged-service-token")
 				request.Header.Set("X-Forwarded-Host", "attacker.example.test")
 				if cookie != "" {
-					request.AddCookie(&http.Cookie{Name: "soha_proxy_session", Value: cookie})
+					request.AddCookie(&http.Cookie{Name: "soha_proxy_session", Value: cookie}) // #nosec G124 -- Request cookie only; browser response flags are tested separately.
 				}
 				return request
 			}
@@ -156,7 +156,7 @@ func verifySSOProxyManifests(t *testing.T, templates map[string]string) {
 				}
 				args = append(args, "-schema-location", schema)
 			}
-			command := exec.Command(validator, append(args, "-")...) // #nosec G204 -- local validator explicitly supplied by the test runner.
+			command := exec.Command(validator, append(args, "-")...) // #nosec G204 G702 -- local validator explicitly supplied by the test runner.
 			command.Stdin = strings.NewReader(content)
 			if output, err := command.CombinedOutput(); err != nil {
 				t.Fatalf("%s validation: %v; %s", target, err, output)
@@ -167,6 +167,7 @@ func verifySSOProxyManifests(t *testing.T, templates map[string]string) {
 
 func ssoDocker(t *testing.T, arguments ...string) string {
 	t.Helper()
+	// #nosec G204 -- Fixed Docker executable with arguments assembled by this isolated test harness; no shell.
 	command := exec.Command("docker", arguments...)
 	output, err := command.CombinedOutput()
 	ssoCheck(t, err == nil, "Docker %s failed: %v; %s", arguments[0], err, output)
@@ -185,6 +186,7 @@ func renderSSOProxyTemplates(t *testing.T, f *ssoProtocolFixture, renderer, prov
 	ssoNoError(t, err)
 	payload, err := json.Marshal(map[string]any{"provider": provider, "setup": setup})
 	ssoNoError(t, err)
+	// #nosec G204 G702 -- Fixed Node executable and repository-owned renderer used by the isolated fixture, without a shell.
 	command := exec.Command("node", "--experimental-strip-types", renderer)
 	command.Stdin = bytes.NewReader(payload)
 	output, err := command.Output()

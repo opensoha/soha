@@ -22,7 +22,7 @@ func TestRadclientRequestUsesSecretFileAndEscapesValues(t *testing.T) {
 		Action: "coa", TargetAccessProfile: "restricted", PolicyVersion: 7, EffectiveAt: time.Now().UTC(), ReasonCode: "risk_changed",
 		RadiusAttributes: &networkprotocol.RadiusAttributes{VLANID: 30, FilterID: "restricted\nFilter-Id = injected", SessionTimeoutSeconds: 900},
 	}
-	args, input := radclientRequest(Config{
+	args, input := radclientRequest(Config{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		RadclientPath: "/usr/bin/radclient", NASTarget: "192.0.2.10:3799", SecretFile: "/run/secrets/radius", CommandTimeout: 3 * time.Second,
 	}, command)
 	joined := strings.Join(args, " ")

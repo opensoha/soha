@@ -114,6 +114,8 @@ func verifyHelmHydration(t *testing.T, s *Service, repo *batchRuntimeRepository,
 		t.Fatal("preparation was not encrypted")
 	}
 	repo.plan = domaindelivery.DeliveryPlan{ID: "plan", ApplicationID: "app", ApplicationEnvironmentID: "env", Status: domaindelivery.DeliveryPlanStatusDraft, HelmSnapshots: snapshots, HelmPreparedCiphertext: ciphertext}
+	seedPlanReferenceSnapshot(t, s, &repo.planRepository)
+	s.SetExecutionPrincipalReader(fixtureExecutionPrincipalReader{})
 	snapshot := snapshots[0]
 	payload := sohaapi.HelmExecutionTaskPayload{Action: sohaapi.Preflight, Snapshot: snapshot}
 	task := domaindelivery.ExecutionTask{ID: snapshot.PreflightTaskID, ApplicationID: "app", ApplicationEnvironmentID: "env", ProviderKind: "helm_direct", TaskKind: "helm_preflight", SecretPrincipal: deliveryActionPrincipal(), Payload: map[string]any{"helm": payload}}
@@ -302,6 +304,7 @@ func TestHelmConfirmRecoversPersistedDispatchAndReturnsOriginalTask(t *testing.T
 				t.Fatal(err)
 			}
 			repo.plan = domaindelivery.DeliveryPlan{ID: "plan", Action: "deploy", ApplicationID: "app", ApplicationEnvironmentID: "env", TargetID: "target", TargetIDs: []string{"target"}, Status: status, HelmSnapshots: snapshots, HelmPreparedCiphertext: ciphertext}
+			seedPlanReferenceSnapshot(t, s, &repo.planRepository)
 			snapshot := snapshots[0]
 			repo.tasks[snapshot.PreflightTaskID] = domaindelivery.ExecutionTask{ID: snapshot.PreflightTaskID, Status: "completed", Payload: map[string]any{"helm": sohaapi.HelmExecutionTaskPayload{Action: sohaapi.Preflight, Snapshot: snapshot}}, Result: map[string]any{"helm": sohaapi.HelmExecutionTaskResult{Stopped: true, Ready: true, Status: "preflighted", RenderedDigest: snapshot.RenderedDigest}}}
 			s.repository = &helmConfirmFailureRepository{batchRuntimeRepository: repo, failConfirmed: true}

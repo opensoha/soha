@@ -8,6 +8,7 @@ import (
 
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domainupdate "github.com/opensoha/soha/internal/domain/templateupdate"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -21,15 +22,8 @@ func (s *Service) SetBuildTemplateReader(reader BuildTemplateReader) { s.templat
 func (s *Service) pinBuildTemplates(ctx context.Context, input *domainapp.UpsertInput, current domainapp.App) error {
 	input.BuildSources = slices.Clone(input.BuildSources)
 	for index, source := range input.BuildSources {
-		if source.Type == domainapp.BuildSourceTypeExternalPipeline {
-			if _, err := domainapp.ExternalPipelineConfiguration(source.Config); err != nil {
-				return err
-			}
-		}
-		if source.Type == domainapp.BuildSourceTypeBuildpacks {
-			if _, err := domainapp.BuildpacksConfiguration(source.Config); err != nil {
-				return err
-			}
+		if err := validateBuildSourceConfiguration(source); err != nil {
+			return err
 		}
 		if source.Type != domainapp.BuildSourceTypePlatformTemplate {
 			continue
@@ -41,9 +35,15 @@ func (s *Service) pinBuildTemplates(ctx context.Context, input *domainapp.Upsert
 		if err != nil {
 			return err
 		}
+		if err := validateBuildTemplateReplacement(ctx, current, source.ID, id); err != nil {
+			return err
+		}
 		previousVersion := currentBuildTemplateVersion(current, source.ID, id)
 		if version == 0 {
 			version = previousVersion
+		}
+		if previousVersion > 0 && version != previousVersion && !domainupdate.IsAdoption(ctx, "build", current.ID) {
+			return fmt.Errorf("%w: adopt the build template version through a frozen template comparison and configuration Plan", apperrors.ErrConflict)
 		}
 		template, err := s.templates.GetBuildTemplate(ctx, id)
 		if err != nil {
@@ -68,6 +68,31 @@ func (s *Service) pinBuildTemplates(ctx context.Context, input *domainapp.Upsert
 		config := maps.Clone(source.Config)
 		config["buildTemplateId"], config["buildTemplateVersion"] = id, version
 		input.BuildSources[index].Config = config
+	}
+	return nil
+}
+
+func validateBuildSourceConfiguration(source domainapp.BuildSourceInput) error {
+	switch source.Type {
+	case domainapp.BuildSourceTypeExternalPipeline:
+		_, err := domainapp.ExternalPipelineConfiguration(source.Config)
+		return err
+	case domainapp.BuildSourceTypeBuildpacks:
+		_, err := domainapp.BuildpacksConfiguration(source.Config)
+		return err
+	default:
+		return nil
+	}
+}
+
+func validateBuildTemplateReplacement(ctx context.Context, current domainapp.App, sourceID, templateID string) error {
+	for _, previous := range current.BuildSources {
+		if previous.ID == sourceID && previous.Type == domainapp.BuildSourceTypePlatformTemplate {
+			oldID, oldVersion, err := domaincatalog.BuildTemplateReference(previous.Config)
+			if err == nil && oldVersion > 0 && oldID != templateID && !domainupdate.IsAdoption(ctx, "build", current.ID) {
+				return fmt.Errorf("%w: compare and adopt a build template before replacing a fixed reference", apperrors.ErrConflict)
+			}
+		}
 	}
 	return nil
 }

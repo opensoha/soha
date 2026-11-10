@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha-contracts/helmrelease"
 	contractresource "github.com/opensoha/soha-contracts/resource"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -47,7 +49,16 @@ func (h *Helm) AuthorizeHelmDelivery(ctx context.Context, principal domainidenti
 				return "", err
 			}
 		}
+		if helmrelease.IsInitialization(snapshot) {
+			if !slices.Contains(connection.Summary.Capabilities, helmrelease.InitializationCapability) {
+				return "", fmt.Errorf("%w: Agent does not support create-only Helm initialization", apperrors.ErrUnsupportedOperation)
+			}
+			return helmrelease.InitializationProviderPrefix + snapshot.ClusterID, nil
+		}
 		return "helm_agent." + snapshot.ClusterID, nil
+	}
+	if helmrelease.IsInitialization(snapshot) {
+		return domaindelivery.HelmDirectInitializationProvider, nil
 	}
 	return "helm_direct", nil
 }

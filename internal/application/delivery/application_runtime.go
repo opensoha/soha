@@ -69,7 +69,7 @@ func applicationRuntimeSummaryFor(environments []domaindelivery.ApplicationRunti
 				summary.HealthyWorkloadCount++
 			case runtimeHealthProgressing:
 				summary.ProgressingWorkloads++
-			default:
+			case runtimeHealthUnhealthy:
 				summary.UnhealthyWorkloads++
 			}
 		}
@@ -79,13 +79,16 @@ func applicationRuntimeSummaryFor(environments []domaindelivery.ApplicationRunti
 		summary.HealthStatus = runtimeHealthUnhealthy
 	case summary.ProgressingWorkloads > 0:
 		summary.HealthStatus = runtimeHealthProgressing
-	case summary.WorkloadCount > 0:
+	case summary.WorkloadCount > 0 && summary.HealthyWorkloadCount == summary.WorkloadCount:
 		summary.HealthStatus = runtimeHealthHealthy
 	}
 	return summary
 }
 
 func runtimeWorkloadHealth(workload domaindelivery.ApplicationRuntimeWorkload) string {
+	if (workload.SourceStatus != "" && !workload.NativeObservationAvailable) || workload.WorkloadKind == "CustomResource" || workload.WorkloadKind == "Job" || workload.WorkloadKind == "CronJob" {
+		return runtimeHealthUnknown
+	}
 	if workload.DesiredReplicas == 0 {
 		return runtimeHealthHealthy
 	}

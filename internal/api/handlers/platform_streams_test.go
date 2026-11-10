@@ -28,6 +28,7 @@ func (s *reconnectPodStreamService) StreamPodLogs(
 	_, _, _, _ string,
 	tailLines, _ int64,
 	_ io.Writer,
+	expectedUID string,
 ) error {
 	s.tailLines = append(s.tailLines, tailLines)
 	if len(s.tailLines) == 2 {
@@ -52,6 +53,7 @@ func TestStreamPodLogsWithReconnectKeepsReplayBounded(t *testing.T) {
 		37,
 		0,
 		&logStreamWriter{},
+		"",
 	)
 
 	if !errors.Is(err, context.Canceled) {
@@ -74,6 +76,7 @@ func (s *terminalPodStreamService) StreamPodTerminal(
 	_ io.Reader,
 	_, _ io.Writer,
 	_ domainresource.TerminalSizeQueue,
+	expectedUID string,
 ) error {
 	return s.err
 }
@@ -99,11 +102,14 @@ func TestStreamPodTerminalReportsSafeResult(t *testing.T) {
 			defer server.Close()
 
 			endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/clusters/cluster-a/workloads/pods/pod-a/terminal"
-			conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+			conn, response, err := websocket.DefaultDialer.Dial(endpoint, nil)
+			if response != nil && response.Body != nil {
+				defer func() { _ = response.Body.Close() }()
+			}
 			if err != nil {
 				t.Fatalf("dial terminal websocket: %v", err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
 			var status terminalMessage
@@ -161,11 +167,14 @@ func TestStreamResourceEventsWritesStatusAndMetadataEvent(t *testing.T) {
 	defer server.Close()
 
 	endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/clusters/cluster-a/resources/stream?namespace=team-a&kinds=Pod,Deployment"
-	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	conn, response, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if response != nil && response.Body != nil {
+		defer func() { _ = response.Body.Close() }()
+	}
 	if err != nil {
 		t.Fatalf("dial resource websocket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
 	var status domainresource.ResourceStreamEvent
@@ -184,5 +193,67 @@ func TestStreamResourceEventsWritesStatusAndMetadataEvent(t *testing.T) {
 	}
 	if service.namespace != "team-a" || !reflect.DeepEqual(service.kinds, []string{"Pod", "Deployment"}) {
 		t.Fatalf("subscription = namespace %q kinds %#v", service.namespace, service.kinds)
+	}
+}
+
+type cancelAwarePodStreamService struct {
+	PodStreamService
+	started  chan string
+	released chan struct{}
+}
+
+func (s *cancelAwarePodStreamService) StreamPodTerminal(ctx context.Context, _ domainidentity.Principal, _, _, _, _, _ string, _ io.Reader, _, _ io.Writer, _ domainresource.TerminalSizeQueue, expectedUID string) error {
+	s.started <- expectedUID
+	defer close(s.released)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestPodTerminalDisconnectReleasesUpstream(t *testing.T) {
+	for _, mode := range []string{"close-message", "transport-close", "silent-peer-timeout"} {
+		t.Run(mode, func(t *testing.T) {
+			service := &cancelAwarePodStreamService{started: make(chan string, 1), released: make(chan struct{})}
+			handler := &podStreamResourceHandler{service: service}
+			router := gin.New()
+			router.GET("/clusters/:clusterID/workloads/pods/:podName/terminal", handler.StreamPodTerminal)
+			server := httptest.NewServer(router)
+			defer server.Close()
+			conn, response, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/clusters/c/workloads/pods/api/terminal?expectedUid=uid-a&namespace=test", nil)
+			if response != nil && response.Body != nil {
+				_ = response.Body.Close()
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = conn.Close() }()
+			select {
+			case uid := <-service.started:
+				if uid != "uid-a" {
+					t.Fatalf("UID = %q", uid)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("upstream did not start")
+			}
+			switch mode {
+			case "close-message":
+				if err := conn.WriteJSON(terminalMessage{Type: "input", Data: "blocked-input"}); err != nil {
+					t.Fatal(err)
+				}
+				if err := conn.WriteJSON(terminalMessage{Type: "close"}); err != nil {
+					t.Fatal(err)
+				}
+			case "transport-close":
+				_ = conn.Close()
+			}
+			limit := 2 * time.Second
+			if mode == "silent-peer-timeout" {
+				limit = podLogPongWait + 2*time.Second
+			}
+			select {
+			case <-service.released:
+			case <-time.After(limit):
+				t.Fatal("upstream was not released")
+			}
+		})
 	}
 }

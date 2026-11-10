@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"errors"
+	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 	"time"
@@ -90,13 +91,9 @@ func (p *recordingCollectionPortForwards) RegisterPortForward(_ context.Context,
 func newCollectionTestService(t *testing.T, now time.Time, authorizer domainaccess.Authorizer, helm CollectionHelm) (*Service, domainidentity.Principal) {
 	t.Helper()
 	key, err := keyring.NewKey("collection.test", "01234567890123456789012345678901", now.Add(-time.Hour), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	keys, err := keyring.New(key, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	service, err := New(Dependencies{
 		DataSources: &memoryDataSources{items: map[string]domainobservability.DataSource{}},
 		Permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"admin": {
@@ -106,9 +103,7 @@ func newCollectionTestService(t *testing.T, now time.Time, authorizer domainacce
 		}}),
 		Logs: &recordingLogRegistry{}, Keys: keys,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	service.now = func() time.Time { return now }
 	service.ConfigureCollection(CollectionDependencies{
 		Settings: &memoryCollectionSettings{values: map[string]map[string]any{}},
@@ -159,9 +154,7 @@ func TestCollectionPlanTokenRejectsTamperingWrongPrincipalAndExpiry(t *testing.T
 	}), &recordingCollectionHelm{})
 	plan := collectionPlan{ClusterID: "cluster-a", UserID: "user-1", ExpiresAt: now.Add(time.Minute)}
 	token, err := service.signCollectionPlan(plan)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := service.verifyCollectionPlan(token, "cluster-a", "user-1"); err != nil {
 		t.Fatalf("valid token error = %v", err)
 	}
@@ -186,30 +179,28 @@ func TestCollectionLifecycleResumesReleaseAndPreservesHistory(t *testing.T) {
 	}), helm)
 
 	preflight, err := service.PreflightLogCollection(context.Background(), principal, "cluster-a", starterCollectionInput("team-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	state, err := service.EnableLogCollection(context.Background(), principal, "cluster-a", sohaapi.LogCollectionEnableInput{PlanToken: preflight.PlanToken})
 	if err != nil || state.Status != sohaapi.LogCollectionStatusHealthy || helm.installs != 1 {
 		t.Fatalf("enable state=%#v installs=%d error=%v", state, helm.installs, err)
 	}
-	forwards := service.collection.PortForwards.(*recordingCollectionPortForwards)
+	forwards, ok := service.collection.PortForwards.(*recordingCollectionPortForwards)
+	require.True(t, ok, "unexpected collection port-forward adapter %T", service.collection.PortForwards)
 	if forwards.registrations != 1 || !strings.Contains(helm.values[0], managedLokiEndpoint("soha-observability")) {
 		t.Fatalf("managed Loki forward=%#v values=%q", forwards.sessions, helm.values[0])
 	}
 	dataSource, err := service.dataSources.GetDataSource(context.Background(), state.DataSourceID)
-	if err != nil || !strings.HasPrefix(dataSource.Config["endpoint"].(string), "http://127.0.0.1:") {
-		t.Fatalf("managed Loki data source=%#v error=%v", dataSource, err)
-	}
+	require.NoError(t, err)
+	endpoint, ok := dataSource.Config["endpoint"].(string)
+	require.True(t, ok, "unexpected Loki endpoint %T", dataSource.Config["endpoint"])
+	require.True(t, strings.HasPrefix(endpoint, "http://127.0.0.1:"), "managed Loki endpoint=%q", endpoint)
 	state, err = service.DisableLogCollection(context.Background(), principal, "cluster-a", sohaapi.LogCollectionDisableInput{Action: sohaapi.LogCollectionDisableActionStop})
 	if err != nil || state.Status != sohaapi.LogCollectionStatusDisabled || !state.HistoryPreserved || helm.updates != 1 {
 		t.Fatalf("stop state=%#v updates=%d error=%v", state, helm.updates, err)
 	}
 
 	preflight, err = service.PreflightLogCollection(context.Background(), principal, "cluster-a", starterCollectionInput("team-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	state, err = service.EnableLogCollection(context.Background(), principal, "cluster-a", sohaapi.LogCollectionEnableInput{PlanToken: preflight.PlanToken})
 	if err != nil || state.Status != sohaapi.LogCollectionStatusHealthy || helm.installs != 1 || helm.updates != 2 {
 		t.Fatalf("resume state=%#v installs=%d updates=%d error=%v", state, helm.installs, helm.updates, err)

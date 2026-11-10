@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opensoha/soha/internal/api/dto"
@@ -37,7 +40,12 @@ type DeliveryReleaseService interface {
 	GetReleaseBundle(context.Context, domainidentity.Principal, string) (domaindelivery.ReleaseBundle, error)
 }
 
+type DeliveryTargetRelationsService interface {
+	GetImportedTargetRelations(context.Context, domainidentity.Principal, string, string) (contractresource.ResourceRelationsView, error)
+}
+
 type DeliveryKubernetesImportService interface {
+	GetImportedTargetSource(context.Context, domainidentity.Principal, string, string) (domainresource.ResourceYAMLView, error)
 	ListKubernetesImportCandidates(context.Context, domainidentity.Principal, domaindelivery.KubernetesImportCandidateFilter) (domaindelivery.KubernetesImportCandidatePage, error)
 	ImportKubernetesServices(context.Context, domainidentity.Principal, domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error)
 	ImportHelmReleases(context.Context, domainidentity.Principal, domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error)
@@ -272,6 +280,7 @@ func (h *DeliveryHandler) ListTargetCandidates(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	page, err := h.imports.ListKubernetesImportCandidates(c.Request.Context(), principal, domaindelivery.KubernetesImportCandidateFilter{
 		ClusterID: c.Query("clusterId"), Namespace: c.Query("namespace"), Search: c.Query("search"), Limit: limit,
+		WorkloadKind: c.Query("workloadKind"), CRDName: c.Query("crdName"),
 	})
 	if err != nil {
 		writeError(c, err)
@@ -280,10 +289,35 @@ func (h *DeliveryHandler) ListTargetCandidates(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, page)
 }
 
+func (h *DeliveryHandler) GetImportedTargetSource(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	item, err := h.imports.GetImportedTargetSource(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("applicationEnvironmentID"), c.Param("targetID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) ImportMappedKubernetesServices(c *gin.Context) {
+	h.importKubernetesServices(c, true)
+}
+
 func (h *DeliveryHandler) ImportKubernetesServices(c *gin.Context) {
+	h.importKubernetesServices(c, false)
+}
+
+func (h *DeliveryHandler) importKubernetesServices(c *gin.Context, mapped bool) {
 	var request domaindelivery.KubernetesServiceImportInput
 	if err := c.ShouldBindJSON(&request); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Kubernetes service import payload")
+		return
+	}
+	if mapped && !slices.ContainsFunc(request.Workloads, func(item domaindelivery.KubernetesWorkloadImportInput) bool {
+		return strings.TrimSpace(item.ServiceID) != ""
+	}) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "mapped import requires an existing serviceId")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -295,10 +329,22 @@ func (h *DeliveryHandler) ImportKubernetesServices(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
+func (h *DeliveryHandler) ImportMappedHelmReleases(c *gin.Context) {
+	h.importHelmReleases(c, true)
+}
+
 func (h *DeliveryHandler) ImportHelmReleases(c *gin.Context) {
+	h.importHelmReleases(c, false)
+}
+
+func (h *DeliveryHandler) importHelmReleases(c *gin.Context, mapped bool) {
 	var request domaindelivery.HelmReleaseImportInput
 	if err := c.ShouldBindJSON(&request); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Helm release import payload")
+		return
+	}
+	if mapped && !slices.ContainsFunc(request.Releases, func(item domaindelivery.HelmReleaseImportItem) bool { return strings.TrimSpace(item.ServiceID) != "" }) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "mapped import requires an existing serviceId")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -702,6 +748,13 @@ func (h *DeliveryHandler) ClaimExecutionTask(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	if domaindelivery.RequiresManifestAdmission(item) {
+		if !item.ManifestAdmissionValidated {
+			writeError(c, apperrors.ErrUnsupportedOperation)
+			return
+		}
+		c.Header(domaindelivery.ManifestAdmissionHeader, "1")
+	}
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
@@ -800,4 +853,19 @@ func remarshal(source any, target any) error {
 		return err
 	}
 	return json.Unmarshal(payload, target)
+}
+
+func (h *DeliveryHandler) GetImportedTargetRelations(c *gin.Context) {
+	reader, ok := h.imports.(DeliveryTargetRelationsService)
+	if !ok {
+		apiresponse.Error(c, 503, "unsupported_operation", "resource relationships unavailable")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	item, err := reader.GetImportedTargetRelations(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("applicationEnvironmentID"), c.Param("targetID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }

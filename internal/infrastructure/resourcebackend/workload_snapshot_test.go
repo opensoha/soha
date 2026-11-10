@@ -2,6 +2,9 @@ package resourcebackend
 
 import (
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/stretchr/testify/require"
+	"math"
 	"testing"
 
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -23,32 +26,13 @@ func TestBuildWorkloadSnapshotCopiesRuntimeAndBuildsBatchResources(t *testing.T)
 				TargetKind: domainresource.WorkloadSnapshotTargetJob, TargetName: "report", RestartPolicy: domainresource.WorkloadSnapshotRestartNever,
 				Description: "nightly report", Command: []string{"php"}, Args: []string{"artisan", "report"}, BackoffLimit: 0,
 			})
-			if err != nil {
-				t.Fatalf("BuildWorkloadSnapshot() error = %v", err)
-			}
-			if result.SelectedContainer != "worker" || len(result.Containers) != 2 || len(result.Warnings) == 0 {
-				t.Fatalf("snapshot summary = %#v", result)
-			}
+			require.NoError(t, err, "BuildWorkloadSnapshot() error = %v", err)
+			require.Equal(t, "worker", result.SelectedContainer)
+			require.Len(t, result.Containers, 2)
+			require.NotEmpty(t, result.Warnings)
 			var job batchv1.Job
-			if err := yaml.Unmarshal([]byte(result.Content), &job); err != nil {
-				t.Fatalf("decode Job: %v", err)
-			}
-			containers := job.Spec.Template.Spec.Containers
-			if len(containers) != 1 || containers[0].Name != "worker" || len(containers[0].Env) != 1 || len(containers[0].Command) != 1 || len(containers[0].Args) != 2 {
-				t.Fatalf("selected container = %#v", containers)
-			}
-			if containers[0].LivenessProbe == nil || containers[0].ReadinessProbe == nil {
-				t.Fatalf("legacy snapshot omitted probes = %#v", containers[0])
-			}
-			if job.Spec.Template.Spec.ServiceAccountName != "runtime" || len(job.Spec.Template.Spec.InitContainers) != 1 || len(job.Spec.Template.Spec.Volumes) != 1 || job.Spec.Template.Spec.RestartPolicy != "Never" {
-				t.Fatalf("copied pod spec = %#v", job.Spec.Template.Spec)
-			}
-			if len(job.OwnerReferences) != 0 || len(job.Spec.Template.OwnerReferences) != 0 || job.Spec.Template.Labels["pod-template-hash"] != "" || job.Spec.Template.Labels["app"] != "api" {
-				t.Fatalf("cleaned metadata = target %#v template %#v", job.ObjectMeta, job.Spec.Template.ObjectMeta)
-			}
-			if job.Annotations["soha.io/source-kind"] != string(sourceKind) || job.Annotations["soha.io/source-uid"] != "source-uid" || job.Annotations["soha.io/description"] != "nightly report" {
-				t.Fatalf("provenance annotations = %#v", job.Annotations)
-			}
+			require.NoError(t, yaml.Unmarshal([]byte(result.Content), &job), "decode Job")
+			requireCopiedSnapshotJob(t, job, sourceKind)
 		})
 	}
 
@@ -57,13 +41,9 @@ func TestBuildWorkloadSnapshotCopiesRuntimeAndBuildsBatchResources(t *testing.T)
 		TargetKind: domainresource.WorkloadSnapshotTargetCronJob, TargetName: "hourly", RestartPolicy: domainresource.WorkloadSnapshotRestartOnFailure,
 		Schedule: "0 * * * *", Suspend: true, BackoffLimit: 6,
 	})
-	if err != nil {
-		t.Fatalf("BuildWorkloadSnapshot(CronJob) error = %v", err)
-	}
+	require.NoError(t, err, "BuildWorkloadSnapshot(CronJob) error = %v", err)
 	var cronJob batchv1.CronJob
-	if err := yaml.Unmarshal([]byte(result.Content), &cronJob); err != nil {
-		t.Fatalf("decode CronJob: %v", err)
-	}
+	require.NoError(t, yaml.Unmarshal([]byte(result.Content), &cronJob), "decode CronJob")
 	if cronJob.Spec.Schedule != "0 * * * *" || cronJob.Spec.Suspend == nil || !*cronJob.Spec.Suspend || cronJob.Spec.JobTemplate.Spec.Template.Spec.RestartPolicy != "OnFailure" {
 		t.Fatalf("CronJob spec = %#v", cronJob.Spec)
 	}
@@ -73,13 +53,9 @@ func TestBuildWorkloadSnapshotCopiesRuntimeAndBuildsBatchResources(t *testing.T)
 		TargetKind: domainresource.WorkloadSnapshotTargetWorkloadCronJob, TargetName: "following", RestartPolicy: domainresource.WorkloadSnapshotRestartNever,
 		Schedule: "*/5 * * * *", BackoffLimit: 2,
 	})
-	if err != nil {
-		t.Fatalf("BuildWorkloadSnapshot(WorkloadCronJob) error = %v", err)
-	}
+	require.NoError(t, err, "BuildWorkloadSnapshot(WorkloadCronJob) error = %v", err)
 	var following workloadCronJob
-	if err := yaml.Unmarshal([]byte(result.Content), &following); err != nil {
-		t.Fatalf("decode WorkloadCronJob: %v", err)
-	}
+	require.NoError(t, yaml.Unmarshal([]byte(result.Content), &following), "decode WorkloadCronJob")
 	container := following.Spec.CronJobSpec.JobTemplate.Spec.Template.Spec.Containers[0]
 	if following.APIVersion != "workloads.soha.io/v1alpha1" || following.Kind != "WorkloadCronJob" ||
 		following.Spec.SourceRef != (workloadReference{Kind: "Deployment", Name: "api", Container: "worker"}) ||
@@ -102,13 +78,9 @@ func TestBuildWorkloadSnapshotSelectsRuntimeModules(t *testing.T) {
 			domainresource.WorkloadSnapshotInheritScheduling,
 		},
 	})
-	if err != nil {
-		t.Fatalf("BuildWorkloadSnapshot() error = %v", err)
-	}
+	require.NoError(t, err, "BuildWorkloadSnapshot() error = %v", err)
 	var job batchv1.Job
-	if err := yaml.Unmarshal([]byte(result.Content), &job); err != nil {
-		t.Fatalf("decode Job: %v", err)
-	}
+	require.NoError(t, yaml.Unmarshal([]byte(result.Content), &job), "decode Job")
 	template := job.Spec.Template
 	container := template.Spec.Containers[0]
 	if len(template.Labels) != 0 || len(template.Annotations) != 0 {
@@ -199,4 +171,56 @@ spec:
           configMap:
             name: api-config
 `, kind)
+}
+
+func TestWorkloadSnapshotJobCounterBounds(t *testing.T) {
+	for _, field := range []string{"parallelism", "completions", "backoff"} {
+		for _, value := range []int{-1, 0, math.MaxInt32, math.MaxInt} {
+			t.Run(fmt.Sprintf("%s/%d", field, value), func(t *testing.T) {
+				request := domainresource.WorkloadSnapshotRequest{}
+				switch field {
+				case "parallelism":
+					request.Parallelism = value
+				case "completions":
+					request.Completions = value
+				case "backoff":
+					request.BackoffLimit = value
+				}
+				spec, err := snapshotJobSpec(batchv1.JobSpec{}.Template, request)
+				if value < 0 || value > math.MaxInt32 {
+					require.ErrorIs(t, err, apperrors.ErrInvalidArgument)
+					return
+				}
+				require.NoError(t, err)
+				require.NotNil(t, spec.BackoffLimit)
+				if value == 0 {
+					require.Nil(t, spec.Parallelism)
+					require.Nil(t, spec.Completions)
+				}
+			})
+		}
+	}
+}
+
+func requireCopiedSnapshotJob(t *testing.T, job batchv1.Job, sourceKind domainresource.WorkloadSnapshotSourceKind) {
+	t.Helper()
+	containers := job.Spec.Template.Spec.Containers
+	require.Len(t, containers, 1)
+	require.Equal(t, "worker", containers[0].Name)
+	require.Len(t, containers[0].Env, 1)
+	require.Len(t, containers[0].Command, 1)
+	require.Len(t, containers[0].Args, 2)
+	require.NotNil(t, containers[0].LivenessProbe)
+	require.NotNil(t, containers[0].ReadinessProbe)
+	require.Equal(t, "runtime", job.Spec.Template.Spec.ServiceAccountName)
+	require.Len(t, job.Spec.Template.Spec.InitContainers, 1)
+	require.Len(t, job.Spec.Template.Spec.Volumes, 1)
+	require.EqualValues(t, "Never", job.Spec.Template.Spec.RestartPolicy)
+	require.Empty(t, job.OwnerReferences)
+	require.Empty(t, job.Spec.Template.OwnerReferences)
+	require.Empty(t, job.Spec.Template.Labels["pod-template-hash"])
+	require.Equal(t, "api", job.Spec.Template.Labels["app"])
+	require.Equal(t, string(sourceKind), job.Annotations["soha.io/source-kind"])
+	require.Equal(t, "source-uid", job.Annotations["soha.io/source-uid"])
+	require.Equal(t, "nightly report", job.Annotations["soha.io/description"])
 }

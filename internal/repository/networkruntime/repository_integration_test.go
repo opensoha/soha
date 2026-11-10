@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
+	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,9 +35,7 @@ func newRuntimeRepositoryScenario(t *testing.T) *runtimeRepositoryScenario {
 		t.Skip("set SOHA_NETWORK_RUNTIME_TEST_POSTGRES_PORT to run the PostgreSQL integration test")
 	}
 	port, err := strconv.Atoi(portText)
-	if err != nil {
-		t.Fatalf("invalid PostgreSQL test port: %v", err)
-	}
+	require.NoError(t, err, "invalid PostgreSQL test port: %v", err)
 	database := os.Getenv("SOHA_NETWORK_RUNTIME_TEST_POSTGRES_DATABASE")
 	if database == "" {
 		database = "soha"
@@ -45,9 +44,7 @@ func newRuntimeRepositoryScenario(t *testing.T) *runtimeRepositoryScenario {
 		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: database, User: "pgsql", Password: "test-only", SSLMode: "disable",
 		MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
 	}, zap.NewNop())
-	if err != nil {
-		t.Fatalf("open PostgreSQL: %v", err)
-	}
+	require.NoError(t, err, "open PostgreSQL: %v", err)
 	t.Cleanup(func() { _ = store.Close() })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -63,6 +60,7 @@ func newRuntimeRepositoryScenario(t *testing.T) *runtimeRepositoryScenario {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
+		// #nosec G703 -- Migration basename comes from the fixed repository fixture list and destination is a test-owned temporary directory.
 		if err := os.WriteFile(filepath.Join(migrationDir, name), contents, 0o600); err != nil {
 			t.Fatalf("stage %s: %v", name, err)
 		}
@@ -101,9 +99,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	scenario.expireNASCommand(t)
 	scenario.renewVPN(t)
 	scenario.revokeVPN(t)
-	if err := scenario.store.DB().Exec(`UPDATE network_vpn_documents SET published_configuration=jsonb_set(published_configuration,'{enabled}','false') WHERE id=?`, "vpn-profile-"+scenario.suffix).Error; err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, scenario.store.DB().Exec(`UPDATE network_vpn_documents SET published_configuration=jsonb_set(published_configuration,'{enabled}','false') WHERE id=?`, "vpn-profile-"+scenario.suffix).Error)
 	scenario.prepareVPNZTNA(t)
 	scenario.consumeVPNZTNA(t)
 	scenario.checkAndRevokeVPNZTNA(t)

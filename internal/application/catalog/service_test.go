@@ -768,7 +768,7 @@ func TestBuildTemplateUsageFindsApplicationBuildSources(t *testing.T) {
 }
 
 func accessServiceForCatalogTests(grants []domainscopegrant.Record, environments []domaincatalog.Environment, applicationEnvironments []domaincatalog.ApplicationEnvironment) domainaccess.Authorizer {
-	return appaccess.New(
+	authorizer := appaccess.New(
 		policy.NewEngine(),
 		nil,
 		stubScopeGrantReader{items: grants},
@@ -777,6 +777,12 @@ func accessServiceForCatalogTests(grants []domainscopegrant.Record, environments
 			applicationEnvironments: applicationEnvironments,
 		},
 	)
+	authorizer.SetPermissionResolver(appaccess.NewPermissionResolver(stubCatalogRolePermissionReader{matrix: map[string][]string{
+		"admin":     {appaccess.PermDeliveryApplicationEnvView, "delivery.application-environments.create", "delivery.application-environments.update", "delivery.application-environments.delete"},
+		"developer": {appaccess.PermDeliveryApplicationEnvView, "delivery.application-environments.create", "delivery.application-environments.update", "delivery.application-environments.delete"},
+		"viewer":    {appaccess.PermDeliveryApplicationEnvView},
+	}}))
+	return authorizer
 }
 
 func (s *stubCatalogRepository) ListBuildTemplateVersions(context.Context, string) ([]domaincatalog.BuildTemplate, error) {

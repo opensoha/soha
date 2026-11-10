@@ -105,7 +105,34 @@ def main():
     parser.add_argument("--mfa-session", action="store_true", help="Strict original MFA transaction/session binding on disposable PostgreSQL")
     parser.add_argument("--healing-requests", action="store_true", help="Strict original healing request transaction and dispatch CAS")
     parser.add_argument("--docker-native-terminals", action="store_true", help="Strict Docker native terminal one-use leases and encrypted recovery")
+    parser.add_argument("--kubernetes-import", action="store_true")
+    parser.add_argument("--service-reference-candidates", action="store_true")
+    parser.add_argument("--service-references", action="store_true")
+    parser.add_argument("--relation-rules", action="store_true")
+    parser.add_argument("--manifest-root", action="store_true")
+    parser.add_argument("--template-adoption", action="store_true")
+    parser.add_argument("--template-adoption-recovery", action="store_true")
+    parser.add_argument("--template-migration", action="store_true")
+    parser.add_argument("--manifest-migration", action="store_true")
+    parser.add_argument("--manifest-control", action="store_true")
+    parser.add_argument("--initialization", action="store_true")
     args = parser.parse_args()
+    delivery_scopes = {
+        "kubernetes_import": ("TestKubernetesImportIdentityWithPostgres", "./internal/repository/delivery", "KUBERNETES_IMPORT_SCOPE"),
+        "service_reference_candidates": ("TestServiceReferenceCandidatesWithPostgres", "./internal/repository/delivery", "SERVICE_REFERENCE_CANDIDATES_SCOPE"),
+        "service_references": ("(TestServiceReferencesPostgres|TestServiceReferenceImpactsPostgres)", "./internal/repository/delivery", None),
+        "relation_rules": ("TestTemplateVersionsWithPostgres/relation-rules-persistence-and-cas", "./internal/repository/catalog", "RELATION_RULES_SCOPE"),
+        "manifest_root": ("TestDeliverySnapshotWithPostgres", "./internal/repository/manifest", "MANIFEST_ROOT_SCOPE"),
+        "template_adoption": ("TestTemplateAdoptionWithPostgres", "./internal/repository/templateupdate", "TEMPLATE_ADOPTION_SCOPE"),
+        "template_adoption_recovery": ("TestTemplateAdoptionRecoveryWithPostgres", "./internal/application/delivery", "TEMPLATE_ADOPTION_RECOVERY_SCOPE"),
+        "template_migration": ("TestTemplateVersionsWithPostgres", "./internal/repository/catalog", "TEMPLATE_MIGRATION_SCOPE"),
+        "manifest_migration": ("TestDeliverySnapshotWithPostgres", "./internal/repository/manifest", "MANIFEST_MIGRATION_SCOPE"),
+        "manifest_control": ("TestDeliverySnapshotWithPostgres", "./internal/repository/manifest", "MANIFEST_CONTROL_SCOPE"),
+        "initialization": ("TestInitializationHistoryWithPostgres", "./internal/repository/delivery", "INITIALIZATION_SCOPE"),
+    }
+    delivery_scope = next((scope for name, scope in delivery_scopes.items() if getattr(args, name)), None)
+    if delivery_scope and sum(value is True for name, value in vars(args).items() if name != "allow_remote_docker") != 1:
+        parser.error("select one delivery integration scope")
     if args.docker_native_terminals and any(value is True for name,value in vars(args).items() if name not in ("docker_native_terminals","allow_remote_docker")):
         parser.error("--docker-native-terminals is a separate persistence scope")
     if args.healing_requests and any(value is True for name,value in vars(args).items() if name not in ('healing_requests','allow_remote_docker')):
@@ -130,7 +157,7 @@ def main():
         parser.error('--native-docker-go only runs the CLI-auth integration scope')
     if args.contracts_dir and not args.native_docker_go:
         parser.error('--contracts-dir requires --native-docker-go')
-    if (args.docker_native_terminals or args.healing_requests or args.native_docker_go or args.docker_identity or args.docker_project_configuration or args.workflow_requests or args.protected_storage or args.docker_configuration_mutations or args.docker_runtime_identity or args.conditional_mutations or args.directory_original_requests or args.network_command_runtime or args.mfa_session) and (args.output.exists() or args.output.with_suffix(".manifest.json").exists()):
+    if (delivery_scope or args.docker_native_terminals or args.healing_requests or args.native_docker_go or args.docker_identity or args.docker_project_configuration or args.workflow_requests or args.protected_storage or args.docker_configuration_mutations or args.docker_runtime_identity or args.conditional_mutations or args.directory_original_requests or args.network_command_runtime or args.mfa_session) and (args.output.exists() or args.output.with_suffix(".manifest.json").exists()):
         raise ValueError("Refusing to replace prior Docker evidence")
     run_id = str(uuid.uuid4())
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -151,6 +178,7 @@ def main():
         postgres_attempted = True
         container = command([*docker_command, "run", "--detach", "--rm", '--name', postgres_name, "--label", "soha.test.run=" + run_id,
                              "--publish", host + "::5432", "--env", "POSTGRES_DB=soha",
+                             *(["--tmpfs", "/var/lib/postgresql"] if delivery_scope else []),
                              "--env", "POSTGRES_USER=pgsql", "--env", "POSTGRES_PASSWORD", IMAGE], env=docker_env, timeout=90)
         info = json.loads(command([*docker_command, "inspect", container]))[0]
         check_owner(info, container, run_id)
@@ -170,7 +198,7 @@ def main():
         else:
             raise ValueError("Disposable PG readiness timed out")
         env = {**os.environ, "GOWORK": "off", "SOHA_APPLICATION_TEST_POSTGRES_PORT": port, "SOHA_CATALOG_TEST_POSTGRES_PORT": port,
-               "SOHA_TEST_POSTGRES_HOST": host, "SOHA_TEST_POSTGRES_PASSWORD": password}
+               "SOHA_MANIFEST_TEST_POSTGRES_PORT": port, "SOHA_TEST_POSTGRES_HOST": host, "SOHA_TEST_POSTGRES_PASSWORD": password}
         with args.output.open("w") as log, args.output.with_suffix('.stderr.log').open('w') as diagnostics:
             parent = "TestFeedSearchWithPostgres" if args.feed_search else "TestKnowledgeVectorIndexesWithPostgres" if args.knowledge_ann else "TestPersonalEnvironmentWithPostgres" if args.personal_environment else "TestKnowledgeRetrievalWithPostgres" if args.knowledge else "TestNativeRunWithPostgres" if args.native_harness else "TestMainSessionWithPostgres" if args.main_chat else "TestApplicationAndClusterDeletionWithPostgres"
             if args.identity:
@@ -226,8 +254,11 @@ def main():
                 package = "alert"
             if args.mfa_session:
                 package = "identitymfa"
+            test_package = "./internal/radiusadapter" if args.network_command_runtime else "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package
+            if delivery_scope:
+                parent, test_package, _ = delivery_scope
             test_command = ["go", "test", "-json", "-count=1", "-race", "-timeout=10m", "-run", "^" + parent + "$",
-                            "./internal/radiusadapter" if args.network_command_runtime else "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package]
+                            test_package]
             if args.native_docker_go:
                 spec = importlib.util.spec_from_file_location('native_pg_race', ROOT / 'scripts/docker-native-go-test.py')
                 native = importlib.util.module_from_spec(spec)
@@ -290,7 +321,12 @@ def main():
         if args.docker_native_terminals:
             scope = {"package":"github.com/opensoha/soha/internal/repository/dockerterminal", "parent":parent,
                      "children":["actor_and_credential_binding","concurrent_ticket_once","reopened_encrypted_authorization","close_active_then_terminal_cas","close_pending_consumes_ticket","expired_pending_never_consumed","bounded_admission","crashed_active_unknown_and_retention","global_admission"]}
-        evidence = module.validate(args.output.read_text(), code, **scope)
+        if args.service_references:
+            evidence = module.validate_service_references(args.output.read_text(), code)
+        else:
+            if delivery_scope:
+                scope = getattr(module, delivery_scope[2])
+            evidence = module.validate(args.output.read_text(), code, **scope)
         manifest['result'] = evidence
     except Exception as error:
         manifest['failure'] = str(error)

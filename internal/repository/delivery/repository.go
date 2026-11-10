@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	"strings"
 	"time"
 
@@ -35,7 +36,27 @@ func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+func (r *Repository) ResolveImportDestination(ctx context.Context, applicationKey, environmentKey string) (domaindelivery.ImportDestination, error) {
+	var destination domaindelivery.ImportDestination
+	err := dbtx.DB(ctx, r.db).Raw(`
+		SELECT COALESCE(a.id, ''), COALESCE(e.id, ''), COALESCE(b.id, '')
+		FROM (SELECT 1) AS anchor
+		LEFT JOIN applications a ON a.app_key = ?
+		LEFT JOIN delivery_environments e ON e.environment_key = ?
+		LEFT JOIN application_environments b ON b.application_id = a.id AND b.environment_id = e.id
+	`, applicationKey, environmentKey).Row().Scan(&destination.ApplicationID, &destination.EnvironmentID, &destination.BindingID)
+	if err != nil {
+		return destination, fmt.Errorf("resolve import destination: %w", err)
+	}
+	return destination, nil
+}
+
 func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error) {
+	for _, workload := range input.Workloads {
+		if workload.Source == nil || workload.Source.Resource.UID == "" || workload.Source.SpecDigest == "" {
+			return domaindelivery.KubernetesServiceImportResult{}, fmt.Errorf("%w: live source identity is required", apperrors.ErrInvalidArgument)
+		}
+	}
 	result := domaindelivery.KubernetesServiceImportResult{OwnershipMode: input.OwnershipMode}
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		// ponytail: namespace-scoped serialization; narrow to per-resource locks if import throughput demands it.
@@ -48,6 +69,9 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 		if err != nil {
 			return err
 		}
+		if err := servicereferencelock.Applications(tx, application.ID); err != nil {
+			return err
+		}
 		environment, err := importEnvironment(tx, input.EnvironmentKey, input.EnvironmentName)
 		if err != nil {
 			return err
@@ -56,12 +80,19 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 		if err != nil {
 			return err
 		}
+		if !matchesImportDestination(input.Destination, application, environment, bindingID, bindingCreated) {
+			return fmt.Errorf("%w: import destination changed; preview and authorize again", apperrors.ErrConflict)
+		}
+		if err := lockImportBinding(tx, bindingID); err != nil {
+			return err
+		}
 		result.Application = application
 		result.Environment = environment
 		result.ApplicationEnvironmentID = bindingID
 		result.ApplicationEnvironmentCreated = bindingCreated
 		result.Services = make([]domaindelivery.KubernetesImportedService, 0, len(input.Workloads))
 		result.Targets = make([]domaindelivery.KubernetesImportedTarget, 0, len(input.Workloads))
+		changed := false
 		for _, workload := range input.Workloads {
 			service, err := importApplicationService(tx, application.ID, input, workload)
 			if err != nil {
@@ -72,12 +103,16 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 				return err
 			}
 			result.Services = append(result.Services, service)
+			changed = changed || target.Created
 			result.Targets = append(result.Targets, target)
+		}
+		if changed {
+			return touchImportBinding(tx, bindingID)
 		}
 		return nil
 	})
 	if err != nil {
-		return domaindelivery.KubernetesServiceImportResult{}, err
+		return domaindelivery.KubernetesServiceImportResult{}, referenceConstraintError(err)
 	}
 	return result, nil
 }
@@ -94,12 +129,21 @@ func (r *Repository) ImportHelmReleases(ctx context.Context, input domaindeliver
 		if err != nil {
 			return err
 		}
+		if err := servicereferencelock.Applications(tx, application.ID); err != nil {
+			return err
+		}
 		environment, err := importEnvironment(tx, input.EnvironmentKey, input.EnvironmentName)
 		if err != nil {
 			return err
 		}
 		bindingID, bindingCreated, err := importApplicationEnvironment(tx, application.ID, environment.ID, input.OwnershipMode)
 		if err != nil {
+			return err
+		}
+		if input.Destination.ApplicationID != "" && !matchesImportDestination(input.Destination, application, environment, bindingID, bindingCreated) {
+			return fmt.Errorf("%w: import destination changed; preview and authorize again", apperrors.ErrConflict)
+		}
+		if err := lockImportBinding(tx, bindingID); err != nil {
 			return err
 		}
 		result.Application = application
@@ -120,10 +164,10 @@ func (r *Repository) ImportHelmReleases(ctx context.Context, input domaindeliver
 			result.Services = append(result.Services, service)
 			result.Targets = append(result.Targets, target)
 		}
-		return nil
+		return touchImportBinding(tx, bindingID)
 	})
 	if err != nil {
-		return domaindelivery.HelmReleaseImportResult{}, err
+		return domaindelivery.HelmReleaseImportResult{}, referenceConstraintError(err)
 	}
 	return result, nil
 }
@@ -188,7 +232,11 @@ func importApplicationEnvironment(tx *gorm.DB, applicationID, environmentID, own
 }
 
 func importApplicationService(tx *gorm.DB, applicationID string, input domaindelivery.KubernetesServiceImportInput, workload domaindelivery.KubernetesWorkloadImportInput) (domaindelivery.KubernetesImportedService, error) {
-	serviceKey := "k8s-" + strings.ToLower(workload.WorkloadKind) + "-" + workload.WorkloadName
+	if workload.ServiceID != "" {
+		service, err := existingImportService(tx, applicationID, workload.ServiceID)
+		return domaindelivery.KubernetesImportedService{ID: service.ID, Key: service.Key, Name: service.Name, WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName}, err
+	}
+	serviceKey := domaindelivery.KubernetesImportServiceKey(input.ClusterID, input.Namespace, workload)
 	expected := kubernetesImportMetadata(input, workload)
 	metadata, _ := json.Marshal(expected)
 	id := uuid.NewString()
@@ -206,13 +254,8 @@ func importApplicationService(tx *gorm.DB, applicationID string, input domaindel
 	if err := tx.Raw(`SELECT id, service_key, service_name, metadata FROM application_services WHERE application_id = ? AND service_key = ? LIMIT 1`, applicationID, serviceKey).Row().Scan(&item.ID, &item.Key, &item.Name, &rawMetadata); err != nil {
 		return domaindelivery.KubernetesImportedService{}, fmt.Errorf("read imported application service %s: %w", serviceKey, err)
 	}
-	if !item.Created && !matchesImportMetadata(rawMetadata, expected, "ownershipMode") {
+	if !item.Created && !matchesImportMetadata(rawMetadata, expected, "resourceSource") {
 		return domaindelivery.KubernetesImportedService{}, fmt.Errorf("%w: application service %s is already owned by another source", apperrors.ErrConflict, serviceKey)
-	}
-	if !item.Created {
-		if err := tx.Exec(`UPDATE application_services SET metadata = ?, updated_at = ? WHERE id = ?`, string(metadata), now, item.ID).Error; err != nil {
-			return domaindelivery.KubernetesImportedService{}, fmt.Errorf("update imported application service %s: %w", serviceKey, err)
-		}
 	}
 	return item, nil
 }
@@ -221,32 +264,38 @@ func importReleaseTarget(tx *gorm.DB, bindingID string, service domaindelivery.K
 	expected := kubernetesImportMetadata(input, workload)
 	expected["serviceId"] = service.ID
 	expected["serviceKey"] = service.Key
-	var item domaindelivery.KubernetesImportedTarget
+	item := domaindelivery.KubernetesImportedTarget{ServiceID: service.ID}
 	var existingBindingID string
 	var rawMetadata []byte
-	err := tx.Raw(`
+	query := `
 		SELECT id, application_environment_id, workload_kind, workload_name, metadata
 		FROM release_targets
 		WHERE cluster_id = ? AND namespace = ? AND workload_kind = ? AND workload_name = ?
+		AND COALESCE(metadata->>'crdName', '') = ?
+	`
+	args := []any{input.ClusterID, input.Namespace, workload.WorkloadKind, workload.WorkloadName, workload.CRDName}
+	if workload.WorkloadKind == "CustomResource" {
+		// A CR may be referenced by several applications; it remains owned by its operator.
+		query += ` AND application_environment_id = ?`
+		args = append(args, bindingID)
+	}
+	query += `
 		ORDER BY created_at ASC
 		LIMIT 1
-	`, input.ClusterID, input.Namespace, workload.WorkloadKind, workload.WorkloadName).Row().Scan(&item.ID, &existingBindingID, &item.WorkloadKind, &item.WorkloadName, &rawMetadata)
+	`
+	err := tx.Raw(query, args...).Row().Scan(&item.ID, &existingBindingID, &item.WorkloadKind, &item.WorkloadName, &rawMetadata)
 	if err == nil {
-		if existingBindingID != bindingID || !matchesImportMetadata(rawMetadata, expected, "ownershipMode") {
+		if existingBindingID != bindingID || !matchesImportMetadata(rawMetadata, expected, "resourceSource") {
 			return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("%w: release target %s/%s is already owned by another source", apperrors.ErrConflict, workload.WorkloadKind, workload.WorkloadName)
 		}
-		executorKind, enabled := importTargetExecution(input.OwnershipMode, "k8s_job_runner")
-		metadata, _ := json.Marshal(expected)
-		if updateErr := tx.Exec(`UPDATE release_targets SET executor_kind = ?, metadata = ?, enabled = ?, updated_at = ? WHERE id = ?`, executorKind, string(metadata), enabled, time.Now().UTC(), item.ID).Error; updateErr != nil {
-			return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("update imported release target %s/%s: %w", workload.WorkloadKind, workload.WorkloadName, updateErr)
-		}
+		item.Source = workload.Source
 		return item, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("read imported release target: %w", err)
 	}
 	metadata, _ := json.Marshal(expected)
-	item = domaindelivery.KubernetesImportedTarget{ID: uuid.NewString(), WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName, Created: true}
+	item = domaindelivery.KubernetesImportedTarget{ServiceID: service.ID, ID: uuid.NewString(), WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName, Created: true, Source: workload.Source}
 	now := time.Now().UTC()
 	executorKind, enabled := importTargetExecution(input.OwnershipMode, "k8s_job_runner")
 	if err := tx.Exec(`
@@ -259,13 +308,39 @@ func importReleaseTarget(tx *gorm.DB, bindingID string, service domaindelivery.K
 }
 
 func kubernetesImportMetadata(input domaindelivery.KubernetesServiceImportInput, workload domaindelivery.KubernetesWorkloadImportInput) map[string]string {
-	return map[string]string{
+	metadata := map[string]string{
 		"importSource": "kubernetes", "ownershipMode": input.OwnershipMode, "clusterId": input.ClusterID,
 		"namespace": input.Namespace, "workloadKind": workload.WorkloadKind, "workloadName": workload.WorkloadName,
 	}
+	if workload.Source != nil {
+		raw, _ := json.Marshal(workload.Source)
+		metadata["resourceSource"] = string(raw)
+		metadata["resourceUid"] = workload.Source.Resource.UID
+		metadata["resourceApiVersion"] = workload.Source.Resource.APIVersion
+		metadata["resourceKind"] = workload.Source.Resource.Kind
+		metadata["crdName"] = workload.CRDName
+	}
+	return metadata
+}
+
+func matchesImportDestination(expected domaindelivery.ImportDestination, app, env domaindelivery.KubernetesImportEntityRef, bindingID string, bindingCreated bool) bool {
+	return matchesImportDestinationEntity(expected.ApplicationID, app.ID, app.Created) &&
+		matchesImportDestinationEntity(expected.EnvironmentID, env.ID, env.Created) &&
+		matchesImportDestinationEntity(expected.BindingID, bindingID, bindingCreated)
+}
+
+func matchesImportDestinationEntity(expected, actual string, created bool) bool {
+	if created {
+		return expected == ""
+	}
+	return expected != "" && expected == actual
 }
 
 func importHelmApplicationService(tx *gorm.DB, applicationID string, input domaindelivery.HelmReleaseImportInput, release domaindelivery.HelmReleaseImportItem) (domaindelivery.HelmImportedService, error) {
+	if release.ServiceID != "" {
+		service, err := existingImportService(tx, applicationID, release.ServiceID)
+		return domaindelivery.HelmImportedService{ID: service.ID, Key: service.Key, Name: service.Name, ReleaseName: release.ReleaseName}, err
+	}
 	serviceKey := "helm-" + release.ReleaseName
 	expected := helmImportMetadata(input, release)
 	metadata, _ := json.Marshal(expected)
@@ -299,7 +374,7 @@ func importHelmReleaseTarget(tx *gorm.DB, bindingID string, service domaindelive
 	expected := helmImportMetadata(input, release)
 	expected["serviceId"] = service.ID
 	expected["serviceKey"] = service.Key
-	var item domaindelivery.HelmImportedTarget
+	item := domaindelivery.HelmImportedTarget{ServiceID: service.ID}
 	var existingBindingID string
 	var rawMetadata []byte
 	err := tx.Raw(`
@@ -312,6 +387,12 @@ func importHelmReleaseTarget(tx *gorm.DB, bindingID string, service domaindelive
 	executorKind, enabled := importTargetExecution(input.OwnershipMode, "helm_sdk")
 	metadata, _ := json.Marshal(expected)
 	if err == nil {
+		if release.ServiceID != "" {
+			var existing map[string]any
+			if json.Unmarshal(rawMetadata, &existing) != nil || existing["ownershipMode"] != input.OwnershipMode {
+				return domaindelivery.HelmImportedTarget{}, fmt.Errorf("%w: association cannot change Helm publication control", apperrors.ErrConflict)
+			}
+		}
 		if existingBindingID != bindingID || !matchesImportMetadata(rawMetadata, expected, "ownershipMode", "revision", "status", "chart", "appVersion", "storageDriver") {
 			return domaindelivery.HelmImportedTarget{}, fmt.Errorf("%w: Helm release target %s is already owned by another source", apperrors.ErrConflict, release.ReleaseName)
 		}
@@ -323,7 +404,7 @@ func importHelmReleaseTarget(tx *gorm.DB, bindingID string, service domaindelive
 	if !errors.Is(err, sql.ErrNoRows) {
 		return domaindelivery.HelmImportedTarget{}, fmt.Errorf("read imported Helm release target: %w", err)
 	}
-	item = domaindelivery.HelmImportedTarget{ID: uuid.NewString(), ReleaseName: release.ReleaseName, Created: true}
+	item = domaindelivery.HelmImportedTarget{ServiceID: service.ID, ID: uuid.NewString(), ReleaseName: release.ReleaseName, Created: true}
 	now := time.Now().UTC()
 	if err := tx.Exec(`
 		INSERT INTO release_targets (id, application_environment_id, cluster_id, namespace, target_kind, executor_kind, workload_kind, workload_name, metadata, enabled, created_at, updated_at)
@@ -638,7 +719,7 @@ func (r *Repository) createExecutionTask(ctx context.Context, item domaindeliver
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task secret refs: %w", err)
 	}
-	secretPrincipal, err := json.Marshal(item.SecretPrincipal)
+	secretPrincipal, err := marshalExecutionPrincipal(item)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task secret principal: %w", err)
 	}
@@ -1109,7 +1190,7 @@ func (r *Repository) CreateDeliveryPlan(ctx context.Context, input domaindeliver
 
 func (r *Repository) GetDeliveryPlan(ctx context.Context, id string) (domaindelivery.DeliveryPlan, error) {
 	row := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at
+		SELECT id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at, template_candidate_id
 		FROM delivery_plans
 		WHERE id = ?
 		LIMIT 1
@@ -1178,18 +1259,18 @@ func (r *Repository) saveDeliveryPlan(ctx context.Context, item domaindelivery.D
 	}
 	if create {
 		if err := dbtx.DB(ctx, r.db).Exec(`
-			INSERT INTO delivery_plans (id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)
-		`, item.ID, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			INSERT INTO delivery_plans (id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at, template_candidate_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)
+		`, item.ID, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt, item.TemplateCandidateID).Error; err != nil {
 			return fmt.Errorf("create delivery plan: %w", err)
 		}
 		return nil
 	}
 	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE delivery_plans
-		SET source = ?, status = ?, application_id = ?, application_name = ?, application_environment_id = ?, environment_key = ?, action = ?, target_id = ?, target_ids = ?, target_summary = ?, build_source_id = ?, release_bundle_id = ?, ref_type = ?, ref_name = ?, image_tag = ?, release_name = ?, container_name = ?, reason = ?, risk_level = ?, requires_approval = ?, impact = ?, rollback_strategy = ?, variables = ?, build_args = ?, manifest_snapshots = ?::jsonb, helm_snapshots = ?::jsonb, helm_prepared_ciphertext = ?, docker_snapshots = ?::jsonb, docker_prepared = ?::jsonb, created_by = ?, confirmed_at = ?, updated_at = ?
+		SET source = ?, status = ?, application_id = ?, application_name = ?, application_environment_id = ?, environment_key = ?, action = ?, target_id = ?, target_ids = ?, target_summary = ?, build_source_id = ?, release_bundle_id = ?, ref_type = ?, ref_name = ?, image_tag = ?, release_name = ?, container_name = ?, reason = ?, risk_level = ?, requires_approval = ?, impact = ?, rollback_strategy = ?, variables = ?, build_args = ?, manifest_snapshots = ?::jsonb, helm_snapshots = ?::jsonb, helm_prepared_ciphertext = ?, docker_snapshots = ?::jsonb, docker_prepared = ?::jsonb, created_by = ?, confirmed_at = ?, updated_at = ?, template_candidate_id = ?
 		WHERE id = ? AND (source <> 'delivery_batch' OR ? = 'delivery_batch')
-	`, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.ID, item.Source)
+	`, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.TemplateCandidateID, item.ID, item.Source)
 	if result.Error != nil {
 		return fmt.Errorf("update delivery plan: %w", result.Error)
 	}
@@ -1270,7 +1351,7 @@ func scanExecutionTask(rows *sql.Rows) (domaindelivery.ExecutionTask, error) {
 	item.RuntimeClusterID = runtimeClusterID.String
 	item.StopTransport = stopTransport.String
 	_ = json.Unmarshal(secretRefs, &item.SecretRefs)
-	_ = json.Unmarshal(secretPrincipal, &item.SecretPrincipal)
+	item.SecretPrincipal = unmarshalExecutionPrincipal(secretPrincipal)
 	_ = json.Unmarshal(secretTarget, &item.SecretTarget)
 	_ = json.Unmarshal(payload, &item.Payload)
 	_ = json.Unmarshal(result, &item.Result)
@@ -1333,7 +1414,7 @@ func scanExecutionTaskRow(row *sql.Row) (domaindelivery.ExecutionTask, error) {
 	item.RuntimeClusterID = runtimeClusterID.String
 	item.StopTransport = stopTransport.String
 	_ = json.Unmarshal(secretRefs, &item.SecretRefs)
-	_ = json.Unmarshal(secretPrincipal, &item.SecretPrincipal)
+	item.SecretPrincipal = unmarshalExecutionPrincipal(secretPrincipal)
 	_ = json.Unmarshal(secretTarget, &item.SecretTarget)
 	_ = json.Unmarshal(payload, &item.Payload)
 	_ = json.Unmarshal(result, &item.Result)
@@ -1546,7 +1627,7 @@ func scanDeliveryPlanRow(row *sql.Row) (domaindelivery.DeliveryPlan, error) {
 	var helmSnapshots []byte
 	var createdBy sql.NullString
 	var confirmedAt sql.NullTime
-	if err := row.Scan(&item.ID, &item.Source, &item.Status, &item.ApplicationID, &applicationName, &item.ApplicationEnvironmentID, &environmentKey, &item.Action, &targetID, &targetIDs, &targetSummary, &buildSourceID, &releaseBundleID, &refType, &refName, &imageTag, &releaseName, &containerName, &reason, &riskLevel, &item.RequiresApproval, &impact, &rollbackStrategy, &variables, &buildArgs, &snapshots, &helmSnapshots, &item.HelmPreparedCiphertext, &dockerSnapshots, &dockerPrepared, &createdBy, &confirmedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.Source, &item.Status, &item.ApplicationID, &applicationName, &item.ApplicationEnvironmentID, &environmentKey, &item.Action, &targetID, &targetIDs, &targetSummary, &buildSourceID, &releaseBundleID, &refType, &refName, &imageTag, &releaseName, &containerName, &reason, &riskLevel, &item.RequiresApproval, &impact, &rollbackStrategy, &variables, &buildArgs, &snapshots, &helmSnapshots, &item.HelmPreparedCiphertext, &dockerSnapshots, &dockerPrepared, &createdBy, &confirmedAt, &item.CreatedAt, &item.UpdatedAt, &item.TemplateCandidateID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaindelivery.DeliveryPlan{}, ErrNotFound
 		}
@@ -1797,10 +1878,11 @@ func normalizeDeliveryPlanInput(input domaindelivery.DeliveryPlanInput, createdB
 		buildArgs = map[string]any{}
 	}
 	return domaindelivery.DeliveryPlan{
-		ID:                id,
-		ManifestSnapshots: input.ManifestSnapshots,
-		HelmSnapshots:     input.HelmSnapshots,
-		DockerSnapshots:   input.DockerSnapshots, DockerPrepared: input.DockerPrepared,
+		TemplateCandidateID: input.TemplateCandidateID,
+		ID:                  id,
+		ManifestSnapshots:   input.ManifestSnapshots,
+		HelmSnapshots:       input.HelmSnapshots,
+		DockerSnapshots:     input.DockerSnapshots, DockerPrepared: input.DockerPrepared,
 		HelmPreparedCiphertext:   input.HelmPreparedCiphertext,
 		Source:                   source,
 		Status:                   domaindelivery.DeliveryPlanStatusDraft,

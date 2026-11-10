@@ -222,7 +222,7 @@ func (s *Service) ImportURL(ctx context.Context, principal domainidentity.Princi
 	if remote.Content == nil {
 		return Package{}, fmt.Errorf("software package URL importer returned no content")
 	}
-	defer remote.Content.Close()
+	defer func() { _ = remote.Content.Close() }()
 	if input.FileName == "" {
 		input.FileName = remote.FileName
 	}

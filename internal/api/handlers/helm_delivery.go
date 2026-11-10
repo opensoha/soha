@@ -3,9 +3,12 @@ package handlers
 import (
 	"context"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha-contracts/helmrelease"
 	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"net/http"
 	"strings"
@@ -24,7 +27,11 @@ func (h *DeliveryHandler) authorizedExecutionProviders(c *gin.Context, providers
 	allowed := []string{}
 	clusters := map[string]bool{}
 	for _, provider := range providers {
-		if provider == "helm_direct" || provider == "manifest_direct" {
+		baseProvider := domaindelivery.ManifestBaseProvider(provider)
+		if baseProvider == domainmanifest.TaskProviderDirect || baseProvider == domainmanifest.TaskProviderDirectInitialization {
+			continue
+		}
+		if provider == "helm_direct" || provider == domaindelivery.HelmDirectInitializationProvider {
 			continue
 		}
 		clusterID, agentOnly := executionProviderCluster(provider)
@@ -66,6 +73,20 @@ func (h *DeliveryHandler) InspectApplicationHelmChart(c *gin.Context) {
 }
 
 func executionProviderCluster(provider string) (string, bool) {
+	if strings.HasPrefix(provider, domaindelivery.ManifestAdmissionProviderPrefix) {
+		base := domaindelivery.ManifestBaseProvider(provider)
+		for _, prefix := range []string{resourceruntime.ManifestAgentProviderPrefix, resourceruntime.RootCRAgentProviderPrefix, resourceruntime.ManifestInitializationProviderPrefix} {
+			if strings.HasPrefix(base, prefix) {
+				return strings.TrimPrefix(base, prefix), true
+			}
+		}
+		return "", true
+	}
+	for _, prefix := range []string{helmrelease.InitializationProviderPrefix, resourceruntime.ManifestInitializationProviderPrefix} {
+		if strings.HasPrefix(provider, prefix) {
+			return strings.TrimPrefix(provider, prefix), true
+		}
+	}
 	clusterID := strings.TrimPrefix(provider, "helm_agent.")
 	helm := clusterID != provider
 	ssh := strings.HasPrefix(provider, "vm_ssh.")
@@ -75,6 +96,9 @@ func executionProviderCluster(provider string) (string, bool) {
 	if !helm {
 		if !ssh {
 			clusterID = strings.TrimPrefix(provider, resourceruntime.ManifestAgentProviderPrefix)
+		}
+		if clusterID == provider {
+			clusterID = strings.TrimPrefix(provider, resourceruntime.RootCRAgentProviderPrefix)
 		}
 		if clusterID == provider {
 			clusterID = strings.TrimPrefix(provider, "manifest_agent.")

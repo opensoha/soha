@@ -165,7 +165,7 @@ func samlHTTPAuthRequest(t *testing.T, f *ssoProtocolFixture, auth infrasaml.Aut
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	if authenticated {
-		request.AddCookie(&http.Cookie{Name: "test-platform-session", Value: f.login(t, "saml")})
+		request.AddCookie(&http.Cookie{Name: "test-platform-session", Value: f.login(t, "saml")}) // #nosec G124 -- Request cookie only; browser response flags are tested separately.
 	}
 	return request
 }

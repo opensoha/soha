@@ -6,19 +6,7 @@ func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	registerNetworkEndpointResponseRoutes(protected, deps)
 	registerManagedContentRoutes(protected, deps)
 	registerNetworkVPNRoutes(protected, deps)
-	if deps.NetworkProxy != nil {
-		proxy := deps.NetworkProxy
-		protected.GET("/network-access/proxy-instances", proxy.List)
-		protected.POST("/network-access/proxy-instances", proxy.Create)
-		protected.GET("/network-access/proxy-instances/:instanceID", proxy.Get)
-		protected.PUT("/network-access/proxy-instances/:instanceID/configuration", proxy.UpdateConfiguration)
-		protected.GET("/network-access/proxy-instances/:instanceID/configuration-history", proxy.ConfigurationHistory)
-		protected.POST("/network-access/proxy-instances/:instanceID/configuration-history/:revision/restore", proxy.RestoreConfiguration)
-		protected.GET("/network-access/proxy-instances/:instanceID/traffic", proxy.Traffic)
-		protected.GET("/network-access/proxy-instances/:instanceID/connections", proxy.Connections)
-		protected.GET("/network-access/proxy-instances/:instanceID/close-commands/:commandID", proxy.GetClose)
-		protected.POST("/network-access/proxy-instances/:instanceID/connections/:connectionID/close", proxy.Close)
-	}
+	registerNetworkProxyRoutes(protected, deps)
 	if deps.NetworkAccess == nil {
 		return
 	}
@@ -76,6 +64,36 @@ func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/network-access/access-grants", handler.CreateAccessGrant)
 	protected.GET("/network-access/access-grants/:grantID", handler.GetAccessGrant)
 	protected.POST("/network-access/access-grants/:grantID/revoke", handler.RevokeAccessGrant)
+	registerNetworkAccessPolicyRoutes(protected, deps)
+}
+
+func registerNetworkAccessDeviceRoutes(protected gin.IRoutes, deps Dependencies) {
+	handler := deps.NetworkAccess
+	protected.GET("/network-access/devices", handler.ListDevices)
+	protected.GET("/network-access/devices/:deviceID", handler.GetDevice)
+	protected.PUT("/network-access/devices/:deviceID/registration", handler.RegisterDevice)
+	protected.PUT("/network-access/devices/:deviceID", handler.UpdateDevice)
+	protected.GET("/network-access/connection-options", handler.ListConnectionOptions)
+}
+
+func registerNetworkProxyRoutes(protected gin.IRoutes, deps Dependencies) {
+	if deps.NetworkProxy != nil {
+		proxy := deps.NetworkProxy
+		protected.GET("/network-access/proxy-instances", proxy.List)
+		protected.POST("/network-access/proxy-instances", proxy.Create)
+		protected.GET("/network-access/proxy-instances/:instanceID", proxy.Get)
+		protected.PUT("/network-access/proxy-instances/:instanceID/configuration", proxy.UpdateConfiguration)
+		protected.GET("/network-access/proxy-instances/:instanceID/configuration-history", proxy.ConfigurationHistory)
+		protected.POST("/network-access/proxy-instances/:instanceID/configuration-history/:revision/restore", proxy.RestoreConfiguration)
+		protected.GET("/network-access/proxy-instances/:instanceID/traffic", proxy.Traffic)
+		protected.GET("/network-access/proxy-instances/:instanceID/connections", proxy.Connections)
+		protected.GET("/network-access/proxy-instances/:instanceID/close-commands/:commandID", proxy.GetClose)
+		protected.POST("/network-access/proxy-instances/:instanceID/connections/:connectionID/close", proxy.Close)
+	}
+}
+
+func registerNetworkAccessPolicyRoutes(protected gin.IRoutes, deps Dependencies) {
+	handler := deps.NetworkAccess
 	protected.GET("/network-access/policies", handler.ListPolicies)
 	protected.POST("/network-access/policies", handler.CreatePolicy)
 	protected.POST("/network-access/policies/compile", handler.CompilePolicySnapshot)
@@ -86,13 +104,4 @@ func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/network-access/policy/preview", handler.PreviewPolicy)
 	protected.POST("/network-access/admission/preview", handler.PreviewAdmission)
 	protected.POST("/network-access/conflicts/analyze", handler.AnalyzeConflicts)
-}
-
-func registerNetworkAccessDeviceRoutes(protected gin.IRoutes, deps Dependencies) {
-	handler := deps.NetworkAccess
-	protected.GET("/network-access/devices", handler.ListDevices)
-	protected.GET("/network-access/devices/:deviceID", handler.GetDevice)
-	protected.PUT("/network-access/devices/:deviceID/registration", handler.RegisterDevice)
-	protected.PUT("/network-access/devices/:deviceID", handler.UpdateDevice)
-	protected.GET("/network-access/connection-options", handler.ListConnectionOptions)
 }

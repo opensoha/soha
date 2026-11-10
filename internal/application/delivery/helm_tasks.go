@@ -61,18 +61,31 @@ func (s *Service) queueHelmTask(ctx context.Context, principal domainidentity.Pr
 		timeoutSeconds = snapshot.TimeoutSeconds + 30
 	}
 	now := time.Now().UTC()
+	payload := sohaapi.HelmExecutionTaskPayload{Action: action, Snapshot: snapshot}
+	if helmrelease.IsInitialization(snapshot) && action == sohaapi.Observe {
+		payload.InitializationResources, err = s.initialHelmReceipt(ctx, snapshot)
+		if err != nil {
+			return domaindelivery.ExecutionTask{}, err
+		}
+	}
 	task := domaindelivery.ExecutionTask{ID: taskID, ApplicationID: snapshot.ApplicationID, ApplicationEnvironmentID: snapshot.ApplicationEnvironmentID,
 		ReleaseBundleID: snapshot.ReleaseBundleID,
 		TaskKind:        "helm_" + string(action), ProviderKind: provider, TargetKind: "helm_release", Status: "queued",
 		QueueKey: "helm:" + snapshot.ClusterID + ":" + snapshot.Namespace + ":" + snapshot.ReleaseName, LockKey: snapshot.DeliveryPlanID + ":" + snapshot.TargetID + ":" + string(action),
 		TimeoutSeconds: timeoutSeconds, CallbackToken: uuid.NewString(), SecretPrincipal: principal, SecretTarget: domainsecret.Target{Type: "project", Ref: snapshot.ApplicationID},
-		Payload: map[string]any{"helm": sohaapi.HelmExecutionTaskPayload{Action: action, Snapshot: snapshot}}, Result: map[string]any{}, CreatedAt: now, UpdatedAt: now}
+		Payload: map[string]any{"helm": payload}, Result: map[string]any{}, CreatedAt: now, UpdatedAt: now}
 	return s.repository.CreateExecutionTask(ctx, task)
 }
 
 func standaloneHelmDeployPlan(plan domaindelivery.DeliveryPlan) bool {
 	return plan.Source != domainworkflow.ScopeDeliveryBatch && plan.Action == domaindelivery.ApplicationDeliveryActionDeploy &&
-		len(plan.HelmSnapshots) > 0 && len(plan.HelmSnapshots) == len(plan.TargetIDs) && len(plan.ManifestSnapshots) == 0
+		len(plan.HelmSnapshots) > 0 && len(plan.HelmSnapshots) == len(plan.TargetIDs) && len(plan.ManifestSnapshots) == 0 && len(plan.DockerSnapshots) == 0
+}
+
+func matchesHelmApplyTask(task domaindelivery.ExecutionTask, plan domaindelivery.DeliveryPlan, snapshot sohaapi.HelmDeliverySnapshot) bool {
+	payload, err := decodeHelmPayload(task.Payload)
+	return err == nil && task.TaskKind == "helm_apply" && task.ApplicationID == plan.ApplicationID &&
+		task.ApplicationEnvironmentID == plan.ApplicationEnvironmentID && payload.Action == sohaapi.Apply && reflect.DeepEqual(payload.Snapshot, snapshot)
 }
 
 // A persisted apply task means confirmation already dispatched the frozen intent.
@@ -91,8 +104,7 @@ func (s *Service) recoverHelmPlanConfirmation(ctx context.Context, plan domainde
 		if err != nil {
 			return result, true, err
 		}
-		payload, err := decodeHelmPayload(task.Payload)
-		if err != nil || task.TaskKind != "helm_apply" || task.ApplicationID != plan.ApplicationID || task.ApplicationEnvironmentID != plan.ApplicationEnvironmentID || payload.Action != sohaapi.Apply || !reflect.DeepEqual(payload.Snapshot, snapshot) {
+		if !matchesHelmApplyTask(task, plan, snapshot) {
 			return result, true, apperrors.ErrConflict
 		}
 		result.Result.RelatedIDs.ExecutionTaskIDs = append(result.Result.RelatedIDs.ExecutionTaskIDs, task.ID)
@@ -144,7 +156,7 @@ func (s *Service) validateHelmSnapshot(ctx context.Context, principal domainiden
 			break
 		}
 	}
-	if selected == nil || selected.ClusterID != snapshot.ClusterID || selected.Namespace != snapshot.Namespace || selected.Helm.ReleaseName != snapshot.ReleaseName || service.Version != snapshot.ServiceVersion {
+	if !helmSnapshotMatchesTarget(selected, snapshot) || service.Version != snapshot.ServiceVersion {
 		return fmt.Errorf("%w: Helm target changed; create a new plan", apperrors.ErrConflict)
 	}
 	digest, err := s.deliveryConfigurationDigest(ctx, principal, service, binding, nil, selected)
@@ -160,10 +172,17 @@ func (s *Service) validateHelmSnapshot(ctx context.Context, principal domainiden
 	if _, err := s.helm.Runtime.AuthorizeHelmDelivery(ctx, principal, snapshot, true); err != nil {
 		return err
 	}
+	if err := s.validateHelmMigration(ctx, principal, snapshot, *selected); err != nil {
+		return err
+	}
 	if requirePreflight {
 		return s.validateHelmPreflight(ctx, snapshot)
 	}
 	return nil
+}
+
+func helmSnapshotMatchesTarget(target *domaincatalog.ReleaseTarget, snapshot sohaapi.HelmDeliverySnapshot) bool {
+	return target != nil && target.Helm != nil && target.ClusterID == snapshot.ClusterID && target.Namespace == snapshot.Namespace && target.Helm.ReleaseName == snapshot.ReleaseName
 }
 
 func (s *Service) validateHelmPreflight(ctx context.Context, snapshot sohaapi.HelmDeliverySnapshot) error {
@@ -186,35 +205,23 @@ func (s *Service) validateHelmPreflight(ctx context.Context, snapshot sohaapi.He
 // HydrateExecutionTask is called only after a runner claims a persisted task.
 // Public task reads and callbacks never load confidential chart/values contents.
 func (s *Service) HydrateExecutionTask(ctx context.Context, task domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
+	if strings.HasPrefix(task.TaskKind, "manifest_") || domaindelivery.RequiresManifestAdmission(task) {
+		return s.hydrateManifestExecutionTask(ctx, task)
+	}
 	if !strings.HasPrefix(task.TaskKind, "helm_") {
 		return task, nil
 	}
+	return s.hydrateHelmExecutionTask(ctx, task)
+}
+
+func (s *Service) hydrateHelmExecutionTask(ctx context.Context, task domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
 	payload, err := decodeHelmPayload(task.Payload)
 	if err != nil {
 		return task, err
 	}
-	if task.TaskKind != "helm_"+string(payload.Action) || task.ApplicationID != payload.Snapshot.ApplicationID || task.ApplicationEnvironmentID != payload.Snapshot.ApplicationEnvironmentID {
-		return task, apperrors.ErrConflict
-	}
-	plan, err := s.repository.GetDeliveryPlan(ctx, payload.Snapshot.DeliveryPlanID)
+	task, plan, err := s.validateHelmTaskAdmission(ctx, task, payload)
 	if err != nil {
 		return task, err
-	}
-	selected := slices.ContainsFunc(plan.HelmSnapshots, func(snapshot sohaapi.HelmDeliverySnapshot) bool {
-		return reflect.DeepEqual(snapshot, payload.Snapshot)
-	})
-	if !selected || plan.ApplicationID != task.ApplicationID || plan.ApplicationEnvironmentID != task.ApplicationEnvironmentID {
-		return task, fmt.Errorf("%w: Helm task is not part of this plan", apperrors.ErrConflict)
-	}
-	if payload.Action == sohaapi.Apply && (plan.Status != domaindelivery.DeliveryPlanStatusConfirming && plan.Status != domaindelivery.DeliveryPlanStatusConfirmed || plan.RequiresApproval && !deliveryPlanApprovalGranted(plan)) {
-		return task, fmt.Errorf("%w: Helm deployment requires a confirmed approved plan", apperrors.ErrConflict)
-	}
-	if err := s.validateHelmSnapshot(ctx, task.SecretPrincipal, payload.Snapshot, payload.Action != sohaapi.Preflight); err != nil {
-		return task, err
-	}
-	provider, err := s.helm.Runtime.AuthorizeHelmDelivery(ctx, task.SecretPrincipal, payload.Snapshot, payload.Action == sohaapi.Apply)
-	if err != nil || provider != task.ProviderKind {
-		return task, fmt.Errorf("%w: Helm runtime changed", apperrors.ErrConflict)
 	}
 	prepared, err := s.helmPlanPreparation(ctx, task.SecretPrincipal, plan, payload.Snapshot)
 	if err != nil {
@@ -223,6 +230,11 @@ func (s *Service) HydrateExecutionTask(ctx context.Context, task domaindelivery.
 	if payload.Action != sohaapi.Observe {
 		payload.Prepared = prepared.Payload.Prepared
 	}
+	payload, err = s.hydrateHelmInitialization(ctx, payload)
+	if err != nil {
+		return task, err
+	}
+
 	task.Payload = maps.Clone(task.Payload)
 	task.Payload["helm"] = payload
 	return task, nil
@@ -310,4 +322,43 @@ func (s *Service) applyHelmDelivery(ctx context.Context, principal domainidentit
 		return nil
 	}
 	return apperrors.ErrConflict
+}
+
+// Admission contains no chart/value hydration and is shared by claim and retry.
+func (s *Service) validateHelmTaskAdmission(ctx context.Context, task domaindelivery.ExecutionTask, payload sohaapi.HelmExecutionTaskPayload) (domaindelivery.ExecutionTask, domaindelivery.DeliveryPlan, error) {
+	var plan domaindelivery.DeliveryPlan
+	var err error
+	if task.TaskKind != "helm_"+string(payload.Action) || task.ApplicationID != payload.Snapshot.ApplicationID || task.ApplicationEnvironmentID != payload.Snapshot.ApplicationEnvironmentID {
+		return task, plan, apperrors.ErrConflict
+	}
+	plan, err = s.repository.GetDeliveryPlan(ctx, payload.Snapshot.DeliveryPlanID)
+	if err != nil {
+		return task, plan, err
+	}
+	selected := slices.ContainsFunc(plan.HelmSnapshots, func(snapshot sohaapi.HelmDeliverySnapshot) bool {
+		return reflect.DeepEqual(snapshot, payload.Snapshot)
+	})
+	if !selected || plan.ApplicationID != task.ApplicationID || plan.ApplicationEnvironmentID != task.ApplicationEnvironmentID {
+		return task, plan, fmt.Errorf("%w: Helm task is not part of this plan", apperrors.ErrConflict)
+	}
+	if payload.Action == sohaapi.Apply && (plan.Status != domaindelivery.DeliveryPlanStatusConfirming && plan.Status != domaindelivery.DeliveryPlanStatusConfirmed || plan.RequiresApproval && !deliveryPlanApprovalGranted(plan)) {
+		return task, plan, fmt.Errorf("%w: Helm deployment requires a confirmed approved plan", apperrors.ErrConflict)
+	}
+	principal, err := s.currentImpactExecutionPrincipal(ctx, task)
+	if err != nil {
+		return task, plan, err
+	}
+	task.SecretPrincipal = principal
+	if err := s.validateServiceReferenceImpact(ctx, task.SecretPrincipal, plan); err != nil {
+		return task, plan, err
+	}
+	if err := s.validateHelmSnapshot(ctx, task.SecretPrincipal, payload.Snapshot, payload.Action != sohaapi.Preflight); err != nil {
+		return task, plan, err
+	}
+	provider, err := s.helm.Runtime.AuthorizeHelmDelivery(ctx, task.SecretPrincipal, payload.Snapshot, payload.Action == sohaapi.Apply)
+	if err != nil || provider != task.ProviderKind {
+		return task, plan, fmt.Errorf("%w: Helm runtime changed", apperrors.ErrConflict)
+	}
+
+	return task, plan, nil
 }

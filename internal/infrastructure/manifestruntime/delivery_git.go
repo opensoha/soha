@@ -194,6 +194,7 @@ func (r deliveryGitReader) fetch(ctx context.Context, repositoryURL, refType, re
 }
 
 func (r deliveryGitReader) output(ctx context.Context, limit int, args ...string) (string, error) {
+	// #nosec G204 -- Fixed Git executable and private bare repository; refs are validated, fetch uses --, and source access pins the validated repository host.
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Dir, command.Env = r.directory, r.environment
 	command.WaitDelay = time.Second

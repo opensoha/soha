@@ -78,6 +78,7 @@ func (s *Service) restoreFrozenHelm(ctx context.Context, principal domainidentit
 	if previous.ConfigurationDigest != snapshot.ConfigurationDigest || previous.TargetID != snapshot.TargetID || previous.RollbackRevision != snapshot.RollbackRevision || prepared.Payload.Prepared == nil {
 		return prepared, fmt.Errorf("%w: Helm intent differs from the frozen batch", apperrors.ErrInvalidArgument)
 	}
+	snapshot.TemplateInputs = previous.TemplateInputs
 	if len(prepared.References) > 0 {
 		if s.helm.Secrets == nil {
 			return prepared, apperrors.ErrAccessDenied

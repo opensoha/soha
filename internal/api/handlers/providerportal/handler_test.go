@@ -197,7 +197,7 @@ func TestProxyReverseForwardsAuthorizedRequestWithoutSohaCredentials(t *testing.
 	request.Header.Set("X-Original-URL", "https://attacker.example/private")
 	request.Header.Set("X-Real-IP", "203.0.113.10")
 	request.AddCookie(&http.Cookie{Name: proxySessionCookieName, Value: "proxy-token"})
-	request.AddCookie(&http.Cookie{Name: apiMiddleware.ProtocolAccessCookieName, Value: "protocol-token"})
+	request.AddCookie(&http.Cookie{Name: apiMiddleware.ProtocolAccessCookieName, Value: "protocol-token"}) // #nosec G124 -- Request cookie only; browser response flags are tested separately.
 	request.AddCookie(&http.Cookie{Name: "application_session", Value: "keep-me"})
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

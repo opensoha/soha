@@ -144,6 +144,27 @@ func (s *Service) AuthorizeApplicationEnvironmentPermission(ctx context.Context,
 	return item, nil
 }
 
+func (s *Service) AuthorizeImportBinding(ctx context.Context, principal domainidentity.Principal, applicationID, environmentKey, bindingID string) error {
+	if bindingID != "" {
+		_, err := s.AuthorizeApplicationEnvironmentPermission(ctx, principal, bindingID, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"))
+		return err
+	}
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "create")); err != nil {
+		return err
+	}
+	if s.authorizer == nil {
+		return nil
+	}
+	businessLineID, group, err := s.lookupApplicationScope(ctx, applicationID)
+	if err != nil {
+		return err
+	}
+	if applicationID == "" {
+		group = "imported"
+	}
+	return s.authorizeDelivery(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "create"), domainaccess.ActionCreate, "ApplicationEnvironment", applicationID+":"+environmentKey, businessLineID, group, environmentKey, applicationID)
+}
+
 func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "create")); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
@@ -154,6 +175,14 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionCreate, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
+	prepared, err := s.prepareTargetServiceMappings(ctx, principal, input, domaincatalog.ApplicationEnvironment{})
+	if err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	input = prepared
+	if err := validateTemplateAdoptionUpdate(ctx, domaincatalog.ApplicationEnvironment{ApplicationID: input.ApplicationID}, input); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
@@ -161,6 +190,9 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	if err := validateDockerTargets(input.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateRelationTargets(input.Targets); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	item, err := s.repo.CreateApplicationEnvironment(ctx, input)
@@ -187,13 +219,31 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal do
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionUpdate, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {
+	if input.Targets == nil && len(current.Targets) > 0 && current.ApplicationID != input.ApplicationID {
+		return domaincatalog.ApplicationEnvironment{}, fmt.Errorf("%w: moving a binding requires explicit service target mappings", apperrors.ErrConflict)
+	}
+	prepared, err := s.prepareTargetServiceMappings(ctx, principal, input, current)
+	if err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := validateHelmTargets(input.Targets, current.Targets); err != nil {
+	input = prepared
+	validation := validationTargets(input, current)
+	if err := validateTemplateAdoptionUpdate(ctx, current, validation); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := validateDockerTargets(input.Targets); err != nil {
+	if err := s.validateApplicationEnvironmentWorkflow(ctx, validation); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateHelmTargets(validation.Targets, current.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateDockerTargets(validation.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateRelationTargets(validation.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateRelationRuleRevision(validation, current); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	item, err := s.repo.UpdateApplicationEnvironment(ctx, id, input)
@@ -328,6 +378,9 @@ func (s *Service) CreateWorkflowTemplate(ctx context.Context, principal domainid
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
+	if err := domaincatalog.ValidateMigrationPolicy(input.MigrationPolicy); err != nil {
+		return domaincatalog.WorkflowTemplate{}, err
+	}
 	if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
 	}
@@ -358,6 +411,9 @@ func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainid
 	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
+	}
+	if err := domaincatalog.ValidateMigrationPolicy(input.MigrationPolicy); err != nil {
+		return domaincatalog.WorkflowTemplate{}, err
 	}
 	if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
@@ -492,6 +548,9 @@ func normalizeBuildTemplateInput(input domaincatalog.BuildTemplateInput) domainc
 }
 
 func validateBuildTemplateInput(input domaincatalog.BuildTemplateInput) error {
+	if err := domaincatalog.ValidateMigrationPolicy(input.MigrationPolicy); err != nil {
+		return err
+	}
 	if len(input.BuildCommands) == 0 && strings.TrimSpace(input.DockerfileTemplate) == "" {
 		return fmt.Errorf("%w: a Dockerfile template or build commands are required", apperrors.ErrInvalidArgument)
 	}
@@ -1413,11 +1472,18 @@ func templateUsageAuditChangeSnapshot(before, after *domaincatalog.TemplateUsage
 	return snapshot
 }
 
+func applicationEnvironmentPermission(action domainaccess.Action) string {
+	if action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch {
+		return appaccess.PermDeliveryApplicationEnvView
+	}
+	return appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, string(action))
+}
+
 func (s *Service) authorizeApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domaincatalog.ApplicationEnvironment) error {
 	if s.authorizer == nil {
 		return nil
 	}
-	return s.authorizeDelivery(ctx, principal, "", action, "ApplicationEnvironment", item.ID, item.BusinessLineID, item.ApplicationGroup, item.EnvironmentKey, item.ApplicationID)
+	return s.authorizeDelivery(ctx, principal, applicationEnvironmentPermission(action), action, "ApplicationEnvironment", item.ID, item.BusinessLineID, item.ApplicationGroup, item.EnvironmentKey, item.ApplicationID)
 }
 
 func (s *Service) authorizeApplicationEnvironmentInput(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, input domaincatalog.ApplicationEnvironmentInput) error {
@@ -1432,7 +1498,7 @@ func (s *Service) authorizeApplicationEnvironmentInput(ctx context.Context, prin
 	if resourceName == "" {
 		resourceName = fmt.Sprintf("%s:%s", strings.TrimSpace(input.ApplicationID), strings.TrimSpace(input.EnvironmentID))
 	}
-	return s.authorizeDelivery(ctx, principal, "", action, "ApplicationEnvironment", resourceName, businessLineID, applicationGroup, input.EnvironmentID, input.ApplicationID)
+	return s.authorizeDelivery(ctx, principal, applicationEnvironmentPermission(action), action, "ApplicationEnvironment", resourceName, businessLineID, applicationGroup, input.EnvironmentID, input.ApplicationID)
 }
 
 func (s *Service) lookupApplicationScope(ctx context.Context, applicationID string) (string, string, error) {

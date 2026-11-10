@@ -129,12 +129,6 @@ func unsupportedAgentOperation(message string) error {
 	return fmt.Errorf("%w: %s", apperrors.ErrUnsupportedOperation, message)
 }
 
-func (s *resourceAccess) unsupportedMutation(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind, name string, action domainaccess.Action, message string) error {
-	err := unsupportedAgentOperation(message)
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(action), "failure", err.Error())
-	return err
-}
-
 func (s *resourceAccess) loadConnection(ctx context.Context, clusterID string) (domaincluster.Connection, error) {
 	if s.resolver != nil {
 		connection, err := s.resolver.GetConnection(ctx, clusterID)

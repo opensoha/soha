@@ -15,6 +15,9 @@ import (
 )
 
 func (s *Service) executeBatchPlan(ctx context.Context, principal domainidentity.Principal, run domainworkflow.Run, snapshot domainworkflow.DeliveryTargetSnapshot, node domainworkflow.NodeRun) (domainworkflow.NodeRun, error) {
+	if snapshot.Target.TemplateCandidateID != "" {
+		return s.executeTemplateBatchPlan(ctx, principal, snapshot, node)
+	}
 	capability, _ := domainworkflow.NodeExecutionFrom(ctx)
 	planID := capability.ResourceID("plan")
 	plan, err := s.repository.GetDeliveryPlan(ctx, planID)
@@ -133,6 +136,9 @@ func (s *Service) validateBatchPlanPreflight(ctx context.Context, principal doma
 }
 
 func (s *Service) executeBatchDeploy(ctx context.Context, principal domainidentity.Principal, run domainworkflow.Run, snapshot domainworkflow.DeliveryTargetSnapshot, node domainworkflow.NodeRun) (domainworkflow.NodeRun, error) {
+	if snapshot.Target.TemplateCandidateID != "" {
+		return s.executeTemplateBatchAdoption(ctx, principal, run, node)
+	}
 	planNode := batchStageNode(run, node.TargetID, "plan")
 	node.DeliveryPlanID, node.ReleaseBundleID = planNode.DeliveryPlanID, planNode.ReleaseBundleID
 	if snapshot.FrozenDocker != nil {

@@ -87,7 +87,7 @@ func TestDesktopOIDCCallbackCompletesThroughExchange(t *testing.T) {
 		case "/keys":
 			_ = json.NewEncoder(writer).Encode(map[string]any{"keys": []map[string]any{{
 				"kty": "RSA", "use": "sig", "alg": "RS256", "kid": keyID,
-				"n": base64.RawURLEncoding.EncodeToString(signingKey.PublicKey.N.Bytes()),
+				"n": base64.RawURLEncoding.EncodeToString(signingKey.N.Bytes()),
 				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(signingKey.PublicKey.E)).Bytes()),
 			}}})
 		case "/token":

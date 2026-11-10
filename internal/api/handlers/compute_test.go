@@ -17,10 +17,9 @@ import (
 )
 
 type computeHandlerFake struct {
-	filter         appcompute.TaskFilter
-	idempotencyKey string
-	mutationInput  appcompute.TaskMutationInput
-	task           sohaapi.ComputeTaskView
+	filter        appcompute.TaskFilter
+	mutationInput appcompute.TaskMutationInput
+	task          sohaapi.ComputeTaskView
 }
 
 func (*computeHandlerFake) Capabilities(context.Context, domainidentity.Principal) (sohaapi.ComputeCapabilityManifest, error) {

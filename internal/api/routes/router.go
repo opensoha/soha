@@ -33,6 +33,7 @@ const (
 
 type Dependencies struct {
 	CLIAuth                    *apiHandlers.CLIAuthHandler
+	TemplateUpdates            *apiHandlers.TemplateUpdateHandler
 	ManagedContentDestinations *apiHandlers.ManagedContentDestinationsHandler
 	ManagedContentTransfers    *apiHandlers.ManagedContentTransfersHandler
 	ManagedContentWorkflow     *apiHandlers.ManagedContentWorkflowHandler

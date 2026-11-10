@@ -215,6 +215,8 @@ func deliveryRunStatus(batch domainworkflow.DeliveryBatch, state *dagRunState) s
 		last := target.Target.ID + ":health"
 		if target.Target.Action == "build" {
 			last = target.Target.ID + ":done"
+		} else if target.Target.TemplateCandidateID != "" {
+			last = target.Target.ID + ":deploy"
 		}
 		if state.nodeRuns[last].Status == "completed" {
 			completed++

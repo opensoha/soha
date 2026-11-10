@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha-contracts/helmrelease"
 	contractresource "github.com/opensoha/soha-contracts/resource"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -54,6 +55,13 @@ func TestAgentHelmWritesRequireActionSpecificClusterWideDecision(t *testing.T) {
 			_, err := h.AuthorizeHelmDelivery(ctx, principal, sohaapi.HelmDeliverySnapshot{ClusterID: "agent-cluster", Namespace: "platform", Operation: sohaapi.HelmDeliverySnapshotOperationRollback}, true)
 			return err
 		}},
+		{domainaccess.ActionCreate, "managed initialization", func(h *Helm) error {
+			_, err := h.AuthorizeHelmDelivery(ctx, principal, sohaapi.HelmDeliverySnapshot{
+				ClusterID: "agent-cluster", Namespace: "platform", Operation: sohaapi.HelmDeliverySnapshotOperationInstall,
+				Migration: &sohaapi.TemplateMigrationAssessment{Initialization: true},
+			}, true)
+			return err
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -74,14 +82,20 @@ func TestAgentHelmWritesRequireActionSpecificClusterWideDecision(t *testing.T) {
 
 func TestManagedAgentHelmRequiresMatchingRuntimeOptIn(t *testing.T) {
 	tests := []struct {
-		name   string
-		checks []contractresource.AgentActionCheck
-		want   error
+		name                     string
+		checks                   []contractresource.AgentActionCheck
+		initialization           bool
+		initializationCapability bool
+		wantProvider             string
+		want                     error
 	}{
 		{name: "older Agent", want: apperrors.ErrClusterUnready},
 		{name: "different action", checks: []contractresource.AgentActionCheck{{Action: "platform.helm_releases.install", Configured: "allowed", Implementation: "supported"}}, want: apperrors.ErrAccessDenied},
 		{name: "action disabled", checks: []contractresource.AgentActionCheck{{Action: "platform.helm_releases.rollback", Configured: "denied", Implementation: "supported"}}, want: apperrors.ErrAccessDenied},
-		{name: "explicitly enabled", checks: []contractresource.AgentActionCheck{{Action: "platform.helm_releases.rollback", Configured: "allowed", Implementation: "supported"}}},
+		{name: "explicitly enabled", checks: []contractresource.AgentActionCheck{{Action: "platform.helm_releases.rollback", Configured: "allowed", Implementation: "supported"}}, wantProvider: "helm_agent.agent-cluster"},
+		{name: "initialization capability does not grant install", initialization: true, initializationCapability: true, checks: []contractresource.AgentActionCheck{}, want: apperrors.ErrAccessDenied},
+		{name: "install opt-in does not enable initialization", initialization: true, checks: []contractresource.AgentActionCheck{{Action: "platform.helm_releases.install", Configured: "allowed", Implementation: "supported"}}, want: apperrors.ErrUnsupportedOperation},
+		{name: "initialization with capability and install opt-in", initialization: true, initializationCapability: true, checks: []contractresource.AgentActionCheck{{Action: "platform.helm_releases.install", Configured: "allowed", Implementation: "supported"}}, wantProvider: helmrelease.InitializationProviderPrefix + "agent-cluster"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -93,16 +107,24 @@ func TestManagedAgentHelmRequiresMatchingRuntimeOptIn(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(map[string]any{"items": tt.checks})
 			}))
 			defer server.Close()
+			connection := agentConnection(server.URL)
+			if tt.initializationCapability {
+				connection.Summary.Capabilities = append(connection.Summary.Capabilities, helmrelease.InitializationCapability)
+			}
 			service := New(Dependencies{
 				Agents:      testAgentClients(agentinfra.NewRegistry(0)),
-				Connections: stubConnectionResolver{connection: agentConnection(server.URL)},
+				Connections: stubConnectionResolver{connection: connection},
 				Authorizer:  allowAllResourceAuthorizer{},
 				Audit:       noopResourceAuditRecorder{},
 			})
 			snapshot := sohaapi.HelmDeliverySnapshot{ClusterID: "agent-cluster", Namespace: "platform", Operation: sohaapi.HelmDeliverySnapshotOperationRollback}
+			if tt.initialization {
+				snapshot.Operation = sohaapi.HelmDeliverySnapshotOperationInstall
+				snapshot.Migration = &sohaapi.TemplateMigrationAssessment{Initialization: true}
+			}
 			provider, err := service.Helm().AuthorizeHelmDelivery(context.Background(), domainidentity.Principal{UserID: "user-1"}, snapshot, true)
-			if !errors.Is(err, tt.want) || tt.want == nil && provider != "helm_agent.agent-cluster" {
-				t.Fatalf("provider = %q, error = %v, want %v", provider, err, tt.want)
+			if !errors.Is(err, tt.want) || provider != tt.wantProvider {
+				t.Fatalf("provider = %q, error = %v, want provider %q, error %v", provider, err, tt.wantProvider, tt.want)
 			}
 		})
 	}

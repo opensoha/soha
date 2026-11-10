@@ -23,19 +23,7 @@ import (
 )
 
 func TestApplicationAndClusterDeletionWithPostgres(t *testing.T) {
-	portText := os.Getenv("SOHA_APPLICATION_TEST_POSTGRES_PORT")
-	if portText == "" {
-		t.Skip("set SOHA_APPLICATION_TEST_POSTGRES_PORT to an isolated PostgreSQL instance")
-	}
-	port, err := strconv.Atoi(portText)
-	requireApplicationIntegrationNoError(t, err)
-	store, err := dbstore.New(testpostgres.Configure(t, config.DatabaseConfig{
-		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable",
-		MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
-	}), zap.NewNop())
-	requireApplicationIntegrationNoError(t, err)
-	t.Cleanup(func() { _ = store.Close() })
-	requireApplicationIntegrationNoError(t, store.MigrateFromFile(t.Context(), filepath.Join("..", "..", "..", "migrations", "postgres")))
+	store := applicationDeletionTestStore(t)
 
 	for _, archived := range []bool{false, true} {
 		t.Run("application history archived="+strconv.FormatBool(archived), func(t *testing.T) {
@@ -177,4 +165,22 @@ func assertDeletionRowCount(t *testing.T, tx *gorm.DB, table, id string, want in
 	if count != want {
 		t.Fatalf("%s row count = %d, want %d", table, count, want)
 	}
+}
+
+func applicationDeletionTestStore(t *testing.T) *dbstore.Store {
+	t.Helper()
+	portText := os.Getenv("SOHA_APPLICATION_TEST_POSTGRES_PORT")
+	if portText == "" {
+		t.Skip("set SOHA_APPLICATION_TEST_POSTGRES_PORT to an isolated PostgreSQL instance")
+	}
+	port, err := strconv.Atoi(portText)
+	requireApplicationIntegrationNoError(t, err)
+	store, err := dbstore.New(testpostgres.Configure(t, config.DatabaseConfig{
+		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable",
+		MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
+	}), zap.NewNop())
+	requireApplicationIntegrationNoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	requireApplicationIntegrationNoError(t, store.MigrateFromFile(t.Context(), filepath.Join("..", "..", "..", "migrations", "postgres")))
+	return store
 }

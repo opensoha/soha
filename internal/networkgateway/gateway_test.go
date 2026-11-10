@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -756,7 +757,7 @@ func (s *fakeSystem) Baseline(_ context.Context, interfaceName string) error {
 }
 
 func (s *fakeSystem) Apply(_ context.Context, desired networkprotocol.ConfigurationDesired, _ wgtypes.Key) error {
-	s.calls = append(s.calls, "apply:"+string(rune('0'+desired.ConfigurationVersion)))
+	s.calls = append(s.calls, fmt.Sprintf("apply:%d", desired.ConfigurationVersion))
 	if s.failNextApply || s.failApply {
 		s.failNextApply = false
 		return os.ErrPermission
@@ -765,7 +766,7 @@ func (s *fakeSystem) Apply(_ context.Context, desired networkprotocol.Configurat
 }
 
 func (s *fakeSystem) Readback(_ context.Context, desired networkprotocol.ConfigurationDesired) (string, error) {
-	s.calls = append(s.calls, "readback:"+string(rune('0'+desired.ConfigurationVersion)))
+	s.calls = append(s.calls, fmt.Sprintf("readback:%d", desired.ConfigurationVersion))
 	return s.readbackHash, nil
 }
 

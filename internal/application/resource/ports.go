@@ -19,14 +19,14 @@ type ClusterMetadataProvider interface {
 type PodReaderAgent interface {
 	ListPods(context.Context, string) ([]domainresource.PodView, error)
 	GetPodDetail(context.Context, string, string) (domainresource.PodDetailView, error)
-	GetPodLogs(context.Context, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
+	GetPodLogs(context.Context, string, string, string, int64, int64, bool, string) (domainresource.PodLogsView, error)
 	GetPodYAML(context.Context, string, string) (domainresource.ResourceYAMLView, error)
 }
 
 type PodInteractiveAgent interface {
-	StreamPodLogs(context.Context, string, string, string, int64, int64, io.Writer) error
+	StreamPodLogs(context.Context, string, string, string, int64, int64, io.Writer, string) error
 	ExecPod(context.Context, string, string, string, string, int64) (domainresource.PodExecView, error)
-	StreamPodTerminal(context.Context, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue) error
+	StreamPodTerminal(context.Context, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue, string) error
 }
 
 type PodMutationAgent interface {
@@ -60,7 +60,7 @@ type LogStreamTicketIssuer interface {
 type DirectPodReader interface {
 	ListPods(context.Context, string, string) ([]domainresource.PodView, string, error)
 	GetPodDetail(context.Context, string, string, string) (domainresource.PodDetailView, error)
-	GetPodLogs(context.Context, string, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
+	GetPodLogs(context.Context, string, string, string, string, int64, int64, bool, string) (domainresource.PodLogsView, error)
 	GetPodYAML(context.Context, string, string, string) (domainresource.ResourceYAMLView, error)
 }
 
@@ -69,9 +69,9 @@ type DirectPodMutator interface {
 }
 
 type DirectPodInteractive interface {
-	StreamPodLogs(context.Context, string, string, string, string, int64, int64, io.Writer) error
+	StreamPodLogs(context.Context, string, string, string, string, int64, int64, io.Writer, string) error
 	ExecPod(context.Context, string, string, string, string, string, int64) (domainresource.PodExecView, error)
-	StreamPodTerminal(context.Context, string, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue) error
+	StreamPodTerminal(context.Context, string, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue, string) error
 }
 
 type DirectPods interface {

@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
@@ -209,13 +211,22 @@ func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]
 		if scanErr != nil {
 			return nil, scanErr
 		}
-		item.Containers, scanErr = r.listServiceContainers(ctx, item.ID)
-		if scanErr != nil {
-			return nil, scanErr
-		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Container reads may share the transaction connection with this result.
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close application services: %w", err)
+	}
+	for index := range items {
+		items[index].Containers, err = r.listServiceContainers(ctx, items[index].ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func (r *Repository) GetService(ctx context.Context, applicationID, serviceID string) (domainapp.Service, error) {
@@ -241,6 +252,9 @@ func (r *Repository) CreateService(ctx context.Context, applicationID string, in
 	now := time.Now().UTC()
 	item := normalizeServiceInput(strings.TrimSpace(applicationID), input, now)
 	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, item.ApplicationID); err != nil {
+			return err
+		}
 		if err := insertServiceTx(tx, item); err != nil {
 			return err
 		}
@@ -256,6 +270,9 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 	item := normalizeServiceInput(strings.TrimSpace(applicationID), input, now)
 	item.ID = strings.TrimSpace(serviceID)
 	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, item.ApplicationID); err != nil {
+			return err
+		}
 		if err := lockServiceUpdate(tx, &item, input); err != nil {
 			return err
 		}
@@ -289,12 +306,23 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 }
 
 func (r *Repository) DeleteService(ctx context.Context, applicationID, serviceID string) error {
-	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM application_services WHERE application_id = ? AND id = ?`, strings.TrimSpace(applicationID), strings.TrimSpace(serviceID))
-	if result.Error != nil {
-		return fmt.Errorf("delete application service: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
+	applicationID, serviceID = strings.TrimSpace(applicationID), strings.TrimSpace(serviceID)
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, applicationID); err != nil {
+			return err
+		}
+		result := tx.Exec(`DELETE FROM application_services WHERE application_id = ? AND id = ?`, applicationID, serviceID)
+		if result.Error == nil && result.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return result.Error
+	})
+	if err != nil {
+		var dependency *pgconn.PgError
+		if errors.As(err, &dependency) && (dependency.Code == "23001" || dependency.Code == "23503") && dependency.ConstraintName == "environment_service_references_service_id_fkey" {
+			return fmt.Errorf("%w: detach active environment references before deleting this service", apperrors.ErrConflict)
+		}
+		return fmt.Errorf("delete application service: %w", err)
 	}
 	return nil
 }
@@ -733,6 +761,8 @@ func (r *Repository) listServiceContainers(ctx context.Context, serviceID string
 }
 
 func normalizeServiceInput(applicationID string, input domainapp.ServiceInput, now time.Time) domainapp.Service {
+	// PostgreSQL stores timestamps at microsecond precision.
+	now = now.Truncate(time.Microsecond)
 	metadata := input.Metadata
 	if metadata == nil {
 		metadata = map[string]any{}

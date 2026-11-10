@@ -25,7 +25,7 @@ func lockManifestTarget(ctx context.Context, tx *gorm.DB, bindingID string) (str
 		return "", err
 	}
 	var clusterID string
-	if err := tx.Raw(`SELECT cluster_id FROM manifest_bindings WHERE id = ? FOR SHARE`, bindingID).Row().Scan(&clusterID); err != nil {
+	if err := tx.Raw(`SELECT cluster_id FROM manifest_bindings WHERE id = ? AND package_id = ? FOR SHARE`, bindingID, packageID).Row().Scan(&clusterID); err != nil {
 		return "", err
 	}
 	// ponytail: serialize only the short admission transaction per cluster; use
@@ -90,6 +90,15 @@ func lockManifestOperation(ctx context.Context, tx *gorm.DB, run domainmanifest.
 	}
 	if payload.ClusterID != clusterID || payload.BindingID != run.BindingID {
 		return fmt.Errorf("%w: Manifest task scope changed", apperrors.ErrConflict)
+	}
+	if payload.InitializationPlanID != "" {
+		previous, err := repodelivery.TargetWriteHistory(tx, clusterID, payload.Namespace, domainmanifest.ResourceKeys(clusterID, payload.Documents), "", payload.InitializationPlanID)
+		if err != nil {
+			return err
+		}
+		if previous {
+			return fmt.Errorf("%w: initialization target has previous writes", apperrors.ErrConflict)
+		}
 	}
 	if run.DeploymentID != "" {
 		var current bool

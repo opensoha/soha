@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/repository/servicereferencelock"
 	"strings"
 	"time"
 
@@ -67,6 +68,18 @@ func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domainc
 		if err != nil {
 			return nil, err
 		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// A transaction has one connection. Finish the outer result before querying
+	// targets or bound workflow versions on that same connection.
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close application environments: %w", err)
+	}
+	for index := range items {
+		item := &items[index]
 		targets, err := r.listReleaseTargets(ctx, item.ID)
 		if err != nil {
 			return nil, err
@@ -79,9 +92,8 @@ func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domainc
 			}
 			item.WorkflowTemplate = &template
 		}
-		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 func (r *Repository) GetApplicationEnvironment(ctx context.Context, id string) (domaincatalog.ApplicationEnvironment, error) {
@@ -114,6 +126,9 @@ func (r *Repository) GetApplicationEnvironment(ctx context.Context, id string) (
 func (r *Repository) CreateApplicationEnvironment(ctx context.Context, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
 	item := normalizeApplicationEnvironmentInput(input)
 	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, item.ApplicationID); err != nil {
+			return err
+		}
 		if err := resolveWorkflowBindingVersion(tx, &item, true); err != nil {
 			return err
 		}
@@ -146,6 +161,12 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 	item := normalizeApplicationEnvironmentInput(input)
 	item.ID = strings.TrimSpace(id)
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Binding(tx, item.ID, item.ApplicationID); err != nil {
+			if errors.Is(err, apperrors.ErrNotFound) && input.ExpectedUpdatedAt != nil {
+				return fmt.Errorf("%w: application environment changed; reload before saving", apperrors.ErrConflict)
+			}
+			return err
+		}
 		if err := resolveWorkflowBindingVersion(tx, &item, false); err != nil {
 			return err
 		}
@@ -173,13 +194,16 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 		}
 		result := tx.Exec(query, args...)
 		if result.Error != nil {
-			return fmt.Errorf("update application environment: %w", result.Error)
+			return referenceLifecycleError(result.Error)
 		}
 		if result.RowsAffected == 0 {
 			if input.ExpectedUpdatedAt != nil {
 				return fmt.Errorf("%w: application environment changed; reload before saving", apperrors.ErrConflict)
 			}
 			return ErrNotFound
+		}
+		if input.Targets == nil {
+			return nil
 		}
 		return replaceReleaseTargetsTx(tx, item.ID, input.Targets, item.UpdatedAt)
 	})
@@ -190,19 +214,23 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 }
 
 func (r *Repository) DeleteApplicationEnvironment(ctx context.Context, id string) error {
-	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM application_environments WHERE id = ?`, strings.TrimSpace(id))
-	if result.Error != nil {
-		return fmt.Errorf("delete application environment: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	id = strings.TrimSpace(id)
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Binding(tx, id); err != nil {
+			return err
+		}
+		result := tx.Exec(`DELETE FROM application_environments WHERE id = ?`, id)
+		if result.Error == nil && result.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return result.Error
+	})
+	return referenceLifecycleError(err)
 }
 
 func (r *Repository) ListBuildTemplates(ctx context.Context) ([]domaincatalog.BuildTemplate, error) {
 	rows, err := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest
+		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest, migration_policy
 		FROM build_templates
 		ORDER BY name ASC
 	`).Rows()
@@ -224,7 +252,7 @@ func (r *Repository) ListBuildTemplates(ctx context.Context) ([]domaincatalog.Bu
 
 func (r *Repository) GetBuildTemplate(ctx context.Context, id string) (domaincatalog.BuildTemplate, error) {
 	row := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest
+		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest, migration_policy
 		FROM build_templates
 		WHERE id = ?
 		LIMIT 1
@@ -246,7 +274,7 @@ func (r *Repository) DeleteBuildTemplate(ctx context.Context, id string) error {
 
 func (r *Repository) ListWorkflowTemplates(ctx context.Context) ([]domaincatalog.WorkflowTemplate, error) {
 	rows, err := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest
+		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest, migration_policy
 		FROM workflow_templates
 		ORDER BY name ASC
 	`).Rows()
@@ -268,7 +296,7 @@ func (r *Repository) ListWorkflowTemplates(ctx context.Context) ([]domaincatalog
 
 func (r *Repository) GetWorkflowTemplate(ctx context.Context, id string) (domaincatalog.WorkflowTemplate, error) {
 	row := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest
+		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest, migration_policy
 		FROM workflow_templates
 		WHERE id = ?
 		LIMIT 1
@@ -294,6 +322,9 @@ func (r *Repository) SaveApplicationWorkflow(ctx context.Context, applicationID,
 	input.Publish = nil
 	var item domaincatalog.WorkflowTemplate
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := servicereferencelock.Applications(tx, applicationID); err != nil {
+			return err
+		}
 		var currentID sql.NullString
 		var currentVersion int64
 		if err := tx.Raw(`SELECT workflow_template_id, workflow_template_version FROM application_environments WHERE id = ? AND application_id = ? FOR UPDATE`, bindingID, applicationID).Row().Scan(&currentID, &currentVersion); err != nil {
@@ -353,11 +384,17 @@ func (r *Repository) listReleaseTargets(ctx context.Context, applicationEnvironm
 }
 
 func replaceReleaseTargetsTx(tx *gorm.DB, applicationEnvironmentID string, inputs []domaincatalog.ReleaseTargetInput, now time.Time) error {
-	if err := tx.Exec(`DELETE FROM release_targets WHERE application_environment_id = ?`, applicationEnvironmentID).Error; err != nil {
-		return fmt.Errorf("delete release targets: %w", err)
-	}
+	ids := make([]string, 0, len(inputs))
+	seen := make(map[string]bool, len(inputs))
 	for _, input := range inputs {
-		item := normalizeReleaseTargetInput(applicationEnvironmentID, input, now)
+		canonical, err := input.WithCanonicalServiceID()
+		if err != nil {
+			return fmt.Errorf("%w: %s", apperrors.ErrInvalidArgument, err)
+		}
+		if err := validateTargetServiceTx(tx, applicationEnvironmentID, canonical.ServiceID); err != nil {
+			return err
+		}
+		item := normalizeReleaseTargetInput(applicationEnvironmentID, canonical, now)
 		metadata, err := json.Marshal(item.Metadata)
 		if err != nil {
 			return fmt.Errorf("marshal release target metadata: %w", err)
@@ -370,12 +407,37 @@ func replaceReleaseTargetsTx(tx *gorm.DB, applicationEnvironmentID string, input
 		if err != nil {
 			return fmt.Errorf("marshal Helm target configuration: %w", err)
 		}
-		if err := tx.Exec(`
+		if seen[item.ID] {
+			return fmt.Errorf("%w: duplicate release target identity", apperrors.ErrInvalidArgument)
+		}
+		seen[item.ID] = true
+		ids = append(ids, item.ID)
+		result := tx.Exec(`
 			INSERT INTO release_targets (id, application_environment_id, cluster_id, namespace, target_kind, executor_kind, group_key, wave_key, region_key, config_ref, workload_kind, workload_name, container_name, metadata, enabled, created_at, updated_at, helm_configuration, docker_configuration)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
-		`, item.ID, item.ApplicationEnvironmentID, nullableString(item.ClusterID), item.Namespace, item.TargetKind, item.ExecutorKind, nullableString(item.GroupKey), nullableString(item.WaveKey), nullableString(item.RegionKey), nullableString(item.ConfigRef), item.WorkloadKind, item.WorkloadName, nullableString(item.ContainerName), string(metadata), item.Enabled, item.CreatedAt, item.UpdatedAt, string(helm), string(docker)).Error; err != nil {
-			return fmt.Errorf("create release target: %w", err)
+            ON CONFLICT(id) DO UPDATE SET cluster_id=EXCLUDED.cluster_id, namespace=EXCLUDED.namespace,
+            target_kind=EXCLUDED.target_kind, executor_kind=EXCLUDED.executor_kind, group_key=EXCLUDED.group_key,
+            wave_key=EXCLUDED.wave_key, region_key=EXCLUDED.region_key, config_ref=EXCLUDED.config_ref,
+            workload_kind=EXCLUDED.workload_kind, workload_name=EXCLUDED.workload_name, container_name=EXCLUDED.container_name,
+            metadata=EXCLUDED.metadata, enabled=EXCLUDED.enabled, updated_at=EXCLUDED.updated_at,
+            helm_configuration=EXCLUDED.helm_configuration, docker_configuration=EXCLUDED.docker_configuration
+            WHERE release_targets.application_environment_id=EXCLUDED.application_environment_id
+		`, item.ID, item.ApplicationEnvironmentID, nullableString(item.ClusterID), item.Namespace, item.TargetKind, item.ExecutorKind, nullableString(item.GroupKey), nullableString(item.WaveKey), nullableString(item.RegionKey), nullableString(item.ConfigRef), item.WorkloadKind, item.WorkloadName, nullableString(item.ContainerName), string(metadata), item.Enabled, item.CreatedAt, item.UpdatedAt, string(helm), string(docker))
+		if result.Error != nil {
+			return referenceLifecycleError(result.Error)
 		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("%w: target belongs to another environment", apperrors.ErrConflict)
+		}
+	}
+	var deletion *gorm.DB
+	if len(ids) == 0 {
+		deletion = tx.Exec("DELETE FROM release_targets WHERE application_environment_id = ?", applicationEnvironmentID)
+	} else {
+		deletion = tx.Exec("DELETE FROM release_targets WHERE application_environment_id = ? AND id NOT IN ?", applicationEnvironmentID, ids)
+	}
+	if deletion.Error != nil {
+		return referenceLifecycleError(deletion.Error)
 	}
 	return nil
 }
@@ -498,6 +560,7 @@ func scanReleaseTarget(rows *sql.Rows) (domaincatalog.ReleaseTarget, error) {
 		}
 	}
 	_ = json.Unmarshal(metadata, &item.Metadata)
+	item.ServiceID = item.ResolvedServiceID()
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
 	}
@@ -505,14 +568,20 @@ func scanReleaseTarget(rows *sql.Rows) (domaincatalog.ReleaseTarget, error) {
 }
 
 func scanBuildTemplate(rows *sql.Rows) (domaincatalog.BuildTemplate, error) {
+	var policy []byte
 	var item domaincatalog.BuildTemplate
 	var description sql.NullString
 	var dockerfileTemplate sql.NullString
 	var buildCommands []byte
 	var variableSchema []byte
 	var defaultVariables []byte
-	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest); err != nil {
+	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest, &policy); err != nil {
 		return domaincatalog.BuildTemplate{}, fmt.Errorf("scan build template: %w", err)
+	}
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &item.MigrationPolicy); err != nil {
+			return item, fmt.Errorf("decode migration policy: %w", err)
+		}
 	}
 	item.Description = description.String
 	item.DockerfileTemplate = dockerfileTemplate.String
@@ -529,17 +598,23 @@ func scanBuildTemplate(rows *sql.Rows) (domaincatalog.BuildTemplate, error) {
 }
 
 func scanBuildTemplateRow(row *sql.Row) (domaincatalog.BuildTemplate, error) {
+	var policy []byte
 	var item domaincatalog.BuildTemplate
 	var description sql.NullString
 	var dockerfileTemplate sql.NullString
 	var buildCommands []byte
 	var variableSchema []byte
 	var defaultVariables []byte
-	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest); err != nil {
+	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest, &policy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaincatalog.BuildTemplate{}, ErrNotFound
 		}
 		return domaincatalog.BuildTemplate{}, fmt.Errorf("scan build template row: %w", err)
+	}
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &item.MigrationPolicy); err != nil {
+			return item, fmt.Errorf("decode migration policy: %w", err)
+		}
 	}
 	item.Description = description.String
 	item.DockerfileTemplate = dockerfileTemplate.String
@@ -556,12 +631,18 @@ func scanBuildTemplateRow(row *sql.Row) (domaincatalog.BuildTemplate, error) {
 }
 
 func scanWorkflowTemplate(rows *sql.Rows) (domaincatalog.WorkflowTemplate, error) {
+	var policy []byte
 	var item domaincatalog.WorkflowTemplate
 	var description sql.NullString
 	var category sql.NullString
 	var definition []byte
-	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &category, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest); err != nil {
+	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &category, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest, &policy); err != nil {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("scan workflow template: %w", err)
+	}
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &item.MigrationPolicy); err != nil {
+			return item, fmt.Errorf("decode migration policy: %w", err)
+		}
 	}
 	item.Description = description.String
 	item.Category = category.String
@@ -573,15 +654,21 @@ func scanWorkflowTemplate(rows *sql.Rows) (domaincatalog.WorkflowTemplate, error
 }
 
 func scanWorkflowTemplateRow(row *sql.Row) (domaincatalog.WorkflowTemplate, error) {
+	var policy []byte
 	var item domaincatalog.WorkflowTemplate
 	var description sql.NullString
 	var category sql.NullString
 	var definition []byte
-	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &category, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest); err != nil {
+	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &category, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest, &policy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaincatalog.WorkflowTemplate{}, ErrNotFound
 		}
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("scan workflow template row: %w", err)
+	}
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &item.MigrationPolicy); err != nil {
+			return item, fmt.Errorf("decode migration policy: %w", err)
+		}
 	}
 	item.Description = description.String
 	item.Category = category.String
@@ -632,6 +719,7 @@ func normalizeBuildTemplateInput(input domaincatalog.BuildTemplateInput) domainc
 		input.DefaultVariables = map[string]any{}
 	}
 	return domaincatalog.BuildTemplate{
+		MigrationPolicy:    input.MigrationPolicy,
 		ID:                 id,
 		Key:                strings.TrimSpace(input.Key),
 		Name:               strings.TrimSpace(input.Name),
@@ -657,15 +745,16 @@ func normalizeWorkflowTemplateInput(input domaincatalog.WorkflowTemplateInput) d
 		input.Definition = map[string]any{}
 	}
 	return domaincatalog.WorkflowTemplate{
-		ID:          id,
-		Key:         strings.TrimSpace(input.Key),
-		Name:        strings.TrimSpace(input.Name),
-		Description: strings.TrimSpace(input.Description),
-		Category:    strings.TrimSpace(input.Category),
-		Definition:  input.Definition,
-		Enabled:     input.Enabled,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		MigrationPolicy: input.MigrationPolicy,
+		ID:              id,
+		Key:             strings.TrimSpace(input.Key),
+		Name:            strings.TrimSpace(input.Name),
+		Description:     strings.TrimSpace(input.Description),
+		Category:        strings.TrimSpace(input.Category),
+		Definition:      input.Definition,
+		Enabled:         input.Enabled,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }
 
@@ -684,6 +773,7 @@ func normalizeReleaseTargetInput(applicationEnvironmentID string, input domainca
 		id = uuid.NewString()
 	}
 	return domaincatalog.ReleaseTarget{
+		ServiceID:                input.ResolvedServiceID(),
 		Helm:                     input.Helm,
 		Docker:                   input.Docker,
 		ID:                       id,
