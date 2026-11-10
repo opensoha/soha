@@ -31,6 +31,7 @@ func registerPlatformPodRoutes(platform *gin.RouterGroup, client *k8sagent.Clien
 		apiresponse.Items(c, http.StatusOK, items)
 	})
 	platform.GET("/workloads/pods/:name/detail", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
 		namespace := c.DefaultQuery("namespace", "default")
 		item, err := client.GetPodDetail(c.Request.Context(), namespace, c.Param("name"))
 		if err != nil {
@@ -39,26 +40,7 @@ func registerPlatformPodRoutes(platform *gin.RouterGroup, client *k8sagent.Clien
 		}
 		apiresponse.Item(c, http.StatusOK, item)
 	})
-	platform.GET("/workloads/pods/:name/logs", func(c *gin.Context) {
-		namespace := c.DefaultQuery("namespace", "default")
-		tailLines := int64(parseLimit(c.Query("tailLines"), 200))
-		sinceSeconds := int64(parseLimit(c.Query("sinceSeconds"), 0))
-		previous := c.Query("previous") == "true"
-		item, err := client.GetPodLogs(
-			c.Request.Context(),
-			namespace,
-			c.Param("name"),
-			c.Query("container"),
-			tailLines,
-			sinceSeconds,
-			previous,
-		)
-		if err != nil {
-			writeError(c, err)
-			return
-		}
-		apiresponse.Item(c, http.StatusOK, item)
-	})
+	platform.GET("/workloads/pods/:name/logs", podLogSnapshotHandler(client, false))
 	platform.GET("/workloads/pods/:name/yaml", func(c *gin.Context) {
 		namespace := c.DefaultQuery("namespace", "default")
 		item, err := client.GetPodYAML(c.Request.Context(), namespace, c.Param("name"))
@@ -90,6 +72,32 @@ func registerPlatformPodRoutes(platform *gin.RouterGroup, client *k8sagent.Clien
 		apiresponse.Item(c, http.StatusOK, item)
 	})
 }
+
+func podLogSnapshotHandler(client *k8sagent.Client, requireUID bool) gin.HandlerFunc {
+	return podSessionHandler(requireUID, func(c *gin.Context, expectedUID string) {
+		c.Header("Cache-Control", "no-store")
+		namespace := c.DefaultQuery("namespace", "default")
+		tailLines := int64(parseLimit(c.Query("tailLines"), 200))
+		sinceSeconds := int64(parseLimit(c.Query("sinceSeconds"), 0))
+		previous := c.Query("previous") == "true"
+		item, err := client.GetPodLogs(
+			c.Request.Context(),
+			namespace,
+			c.Param("name"),
+			c.Query("container"),
+			tailLines,
+			sinceSeconds,
+			previous,
+			expectedUID,
+		)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		apiresponse.Item(c, http.StatusOK, item)
+	})
+}
+
 func registerPlatformDeploymentRoutes(platform *gin.RouterGroup, client *k8sagent.Client) {
 	platform.GET("/workloads/deployments", func(c *gin.Context) {
 		namespace := c.DefaultQuery("namespace", "default")

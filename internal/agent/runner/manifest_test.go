@@ -140,7 +140,7 @@ func TestManifestClaimAdvertisesProtectedProtocol(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&claim); err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Contains(claim.ProviderKinds, "manifest_agent_v3.cluster-1") || !slices.Contains(claim.ProviderKinds, "manifest_agent.cluster-1") {
+		if !slices.Contains(claim.ProviderKinds, "manifest_root_cr_v1.cluster-1") || !slices.Contains(claim.ProviderKinds, "manifest_agent_v3.cluster-1") || !slices.Contains(claim.ProviderKinds, "manifest_agent.cluster-1") {
 			t.Errorf("claim providers = %v", claim.ProviderKinds)
 		}
 		return jsonResponse(t, http.StatusNoContent, nil), nil
@@ -148,5 +148,45 @@ func TestManifestClaimAdvertisesProtectedProtocol(t *testing.T) {
 	runner.claim(t.Context())
 	if !called {
 		t.Fatal("no manifest claim")
+	}
+}
+
+func TestManifestProtocolCannotDropOrDowngradeRootIdentity(t *testing.T) {
+	for _, mode := range []string{"protected", "missing-root", "legacy-root", "wrong-cluster", "native"} {
+		t.Run(mode, func(t *testing.T) {
+			payload := sohaapi.ManifestExecutionTaskPayload{ClusterID: "cluster-1", RootResource: &sohaapi.ManifestRootResource{UID: "root"}}
+			provider := resourceruntime.RootCRAgentProviderPrefix + "cluster-1"
+			switch mode {
+			case "missing-root":
+				payload.RootResource = nil
+			case "legacy-root":
+				provider = "manifest_agent_v3.cluster-1"
+			case "wrong-cluster":
+				provider = resourceruntime.RootCRAgentProviderPrefix + "cluster-2"
+			case "native":
+				provider, payload.RootResource = "manifest_agent_v3.cluster-1", nil
+			}
+			err := validateManifestProtocol(provider, "cluster-1", payload)
+			valid := mode == "protected" || mode == "native"
+			if valid && err != nil || !valid && err == nil {
+				t.Fatalf("protocol boundary: mode=%s error=%v", mode, err)
+			}
+		})
+	}
+}
+
+func TestInitializationManifestCannotUseLegacyProvider(t *testing.T) {
+	payload := sohaapi.ManifestExecutionTaskPayload{Action: "apply", InitializationPlanID: "first", ClusterID: "one"}
+	for _, provider := range []string{"manifest_agent.one", "manifest_agent_v3.one", "manifest_root_cr_v1.one", "manifest_initialize_v1.two"} {
+		if validateManifestProtocol(provider, "one", payload) == nil {
+			t.Fatalf("unsafe initialization provider %s", provider)
+		}
+	}
+	if err := validateManifestProtocol("manifest_initialize_v1.one", "one", payload); err != nil {
+		t.Fatal(err)
+	}
+	payload.InitializationPlanID = ""
+	if validateManifestProtocol("manifest_initialize_v1.one", "one", payload) == nil {
+		t.Fatal("dedicated provider accepted missing mode")
 	}
 }

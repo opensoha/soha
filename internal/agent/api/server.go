@@ -123,6 +123,8 @@ func registerPlatformRoutes(router *gin.Engine, cfg cfgpkg.Config, client *k8sag
 	)
 	registerHelmRoutes(platform, client, actions)
 	registerHelmDeliveryRoutes(platform, client, cfg.Kubernetes.ID)
+	// Dedicated UID-bound routes make older Agents reject sessions they cannot fence.
+	platform.GET("/workloads/pods/:name/uid-bound/logs", podLogSnapshotHandler(client, true))
 	registerPodStreamRoutes(platform, client)
 	registerAggregateLogRoutes(platform, client)
 	registerPodTerminalRoutes(platform, client, actions, origins)

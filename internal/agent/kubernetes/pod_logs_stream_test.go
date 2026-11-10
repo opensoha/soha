@@ -40,7 +40,7 @@ func TestStreamPodLogsCopiesKubernetesFollowStream(t *testing.T) {
 
 	client := &Client{typed: typed}
 	var out bytes.Buffer
-	if err := client.StreamPodLogs(t.Context(), "platform", "api-0", "app", 10, 5, &out); err != nil {
+	if err := client.StreamPodLogs(t.Context(), "platform", "api-0", "app", 10, 5, &out, ""); err != nil {
 		t.Fatalf("StreamPodLogs() error = %v", err)
 	}
 	if out.String() != "line 1\nline 2\n" {
@@ -75,7 +75,7 @@ func TestStreamPodLogsOmitsOptionalParams(t *testing.T) {
 
 	client := &Client{typed: typed}
 	var out bytes.Buffer
-	if err := client.StreamPodLogs(t.Context(), "default", "api-0", "", 0, 0, &out); err != nil {
+	if err := client.StreamPodLogs(t.Context(), "default", "api-0", "", 0, 0, &out, ""); err != nil {
 		t.Fatalf("StreamPodLogs() error = %v", err)
 	}
 	if out.String() != "ready\n" {

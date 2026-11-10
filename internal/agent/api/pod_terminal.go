@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -28,7 +29,7 @@ func registerPodTerminalRoutes(
 	origins websocketOriginPolicy,
 ) {
 	upgrader := websocket.Upgrader{CheckOrigin: origins.Check}
-	platform.GET("/workloads/pods/:name/terminal", actions.Require(actionPlatformPodsExec), func(c *gin.Context) {
+	terminal := func(c *gin.Context, expectedUID string) {
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			return
@@ -38,6 +39,8 @@ func registerPodTerminalRoutes(
 
 		ctx, cancel := context.WithCancel(c.Request.Context())
 		defer cancel()
+		startPodTerminalHeartbeat(ctx, cancel, conn)
+
 		stdinReader, stdinWriter := io.Pipe()
 		defer stdinWriter.Close()
 		sizeQueue := newPodTerminalSizeQueue()
@@ -58,9 +61,27 @@ func registerPodTerminalRoutes(
 				stdout,
 				stderr,
 				sizeQueue,
+				expectedUID,
 			)
 		}()
 
+		input := make(chan string, 16)
+		inputDone := make(chan struct{})
+		go func() {
+			defer close(inputDone)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case data := <-input:
+					if _, err := io.WriteString(stdinWriter, data); err != nil {
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+		go func() { <-ctx.Done(); _ = stdinWriter.Close() }()
 		readDone := make(chan struct{})
 		go func() {
 			defer close(readDone)
@@ -73,7 +94,9 @@ func registerPodTerminalRoutes(
 				}
 				switch message.Type {
 				case "input":
-					if _, err := io.WriteString(stdinWriter, message.Data); err != nil {
+					select {
+					case input <- message.Data:
+					default:
 						cancel()
 						return
 					}
@@ -88,13 +111,40 @@ func registerPodTerminalRoutes(
 
 		streamErr := <-streamErrCh
 		cancel()
-		<-readDone
+		_ = stdinWriter.Close()
 		if streamErr != nil && !errors.Is(streamErr, context.Canceled) {
 			_ = writePodTerminalMessage(conn, &writeMu, podTerminalMessage{Type: "error", Message: "terminal session ended with an error"})
-			return
+		} else {
+			_ = writePodTerminalMessage(conn, &writeMu, podTerminalMessage{Type: "exit", Message: "terminal session closed"})
 		}
-		_ = writePodTerminalMessage(conn, &writeMu, podTerminalMessage{Type: "exit", Message: "terminal session closed"})
-	})
+		_ = conn.Close()
+		<-readDone
+		<-inputDone
+
+	}
+	platform.GET("/workloads/pods/:name/terminal", actions.Require(actionPlatformPodsExec), podSessionHandler(false, terminal))
+	platform.GET("/workloads/pods/:name/uid-bound/terminal", actions.Require(actionPlatformPodsExec), podSessionHandler(true, terminal))
+}
+
+func startPodTerminalHeartbeat(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {
+	_ = conn.SetReadDeadline(time.Now().Add(45 * time.Second))
+	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(45 * time.Second)) })
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+					cancel()
+					_ = conn.Close()
+					return
+				}
+			}
+		}
+	}()
 }
 
 type podTerminalStreamWriter struct {
@@ -155,6 +205,9 @@ func (q *podTerminalSizeQueue) Close() {
 func writePodTerminalMessage(conn *websocket.Conn, writeMu *sync.Mutex, message podTerminalMessage) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
 	return conn.WriteJSON(message)
 }
 

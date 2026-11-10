@@ -13,24 +13,29 @@ import (
 	"github.com/opensoha/soha-contracts/helmrelease"
 )
 
+const helmAgentProviderPrefix = "helm_agent."
+
 type HelmExecutor interface {
 	ExecuteHelmDelivery(context.Context, sohaapi.HelmExecutionTaskPayload) (sohaapi.HelmExecutionTaskResult, error)
 }
 
 func (r *Runner) SetHelmExecutor(executor HelmExecutor, clusterID, token string, allowedActions []string) {
+	if nilExecutionPort(executor) {
+		executor = nil
+	}
 	r.helmExecutor, r.helmClusterID, r.helmClaimToken = executor, strings.TrimSpace(clusterID), strings.TrimSpace(token)
 	r.helmAllowedActions = slices.Clone(allowedActions)
 }
 
-func (r *Runner) claimHelmTask(ctx context.Context) (ExecutionTask, bool) {
+func (r *Runner) helmExecutionClaim() clusterExecutionClaim {
 	if r.helmExecutor == nil || r.helmClusterID == "" || r.helmClaimToken == "" {
-		return ExecutionTask{}, false
+		return clusterExecutionClaim{}
 	}
-	client := sohaapi.NewClient(r.cfg.BaseURL, sohaapi.WithBearerToken(r.helmClaimToken), sohaapi.WithHTTPClient(r.httpClient))
-	task, err := client.ClaimExecutionTask(ctx, claimRequest{AgentID: r.cfg.AgentID, ProviderKinds: []string{"helm_agent." + r.helmClusterID}, RuntimeEndpoint: r.cfg.RuntimeEndpoint})
-	ok := err == nil && task.ID != ""
-	r.metrics.markClaim(metricScopeExecution, ok)
-	return task, ok
+	return clusterExecutionClaim{
+		clusterID: r.helmClusterID,
+		token:     r.helmClaimToken,
+		providers: []string{helmAgentProviderPrefix + r.helmClusterID, helmrelease.InitializationProviderPrefix + r.helmClusterID},
+	}
 }
 
 func (r *Runner) executeHelmTask(ctx context.Context, task ExecutionTask) {
@@ -47,7 +52,11 @@ func (r *Runner) executeHelmTask(ctx context.Context, task ExecutionTask) {
 	if err == nil {
 		err = helmrelease.ValidateTaskIdentity(payload)
 	}
-	if err == nil && (r.helmExecutor == nil || payload.Snapshot.ClusterID != r.helmClusterID || task.ProviderKind != "helm_agent."+r.helmClusterID || task.TaskKind != "helm_"+string(payload.Action)) {
+	expectedProvider := helmAgentProviderPrefix + r.helmClusterID
+	if helmrelease.IsInitialization(payload.Snapshot) {
+		expectedProvider = helmrelease.InitializationProviderPrefix + r.helmClusterID
+	}
+	if err == nil && (r.helmExecutor == nil || payload.Snapshot.ClusterID != r.helmClusterID || task.ProviderKind != expectedProvider || task.TaskKind != "helm_"+string(payload.Action)) {
 		err = fmt.Errorf("helm runtime identity mismatch")
 	}
 	if err == nil && payload.Action == sohaapi.Apply && !r.helmMutationAllowed(payload.Snapshot.Operation) {

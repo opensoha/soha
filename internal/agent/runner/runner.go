@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -115,6 +114,7 @@ type Runner struct {
 	helmAllowedActions  []string
 	manifestExecutor    ManifestExecutor
 	manifestClusterID   string
+	manifestClaimToken  string
 	sshClusterID        string
 	chatToolGrants      sync.Map
 	buildpacksBlocked   atomic.Bool
@@ -231,11 +231,6 @@ func New(cfg cfgpkg.ControlPlaneConfig, logger *zap.Logger) *Runner {
 	}
 	runner.providerConformance = runnerProviderProbe{runner: runner}
 	return runner
-}
-
-func (r *Runner) SetManifestExecutor(executor ManifestExecutor, clusterID string) {
-	r.manifestExecutor = executor
-	r.manifestClusterID = strings.TrimSpace(clusterID)
 }
 
 func (r *Runner) SetSSHExecutor(clusterID string, enabled bool) {
@@ -444,10 +439,10 @@ func (s runnerMetricSet) snapshot() RunnerMetricSnapshot {
 }
 
 func (r *Runner) Start(ctx context.Context) {
-	if !r.cfg.Enabled || strings.TrimSpace(r.cfg.BaseURL) == "" || strings.TrimSpace(r.cfg.BearerToken) == "" {
+	if !r.controlPlaneEnabled() {
 		return
 	}
-	if len(r.cfg.ProviderKinds) > 0 || r.cfg.Buildpacks.Enabled || r.sshClusterID != "" {
+	if r.executionClaimEnabled() {
 		go r.loop(ctx)
 	}
 	if r.cfg.Docker.Enabled {
@@ -540,40 +535,6 @@ func (r *Runner) agentRuntimeLoop(ctx context.Context) {
 			}(run)
 		}
 	}
-}
-
-func (r *Runner) claim(ctx context.Context) (ExecutionTask, bool) {
-	if r.cfg.Buildpacks.Enabled && r.buildpacksBlocked.Load() {
-		return ExecutionTask{}, false
-	}
-	if task, ok := r.claimHelmTask(ctx); ok {
-		return task, true
-	}
-	providerKinds := append([]string(nil), r.cfg.ProviderKinds...)
-	if r.cfg.Buildpacks.Enabled {
-		providerKinds = []string{"buildpacks_runner." + r.cfg.AgentID}
-	}
-	if r.sshClusterID != "" {
-		providerKinds = append(providerKinds, "vm_ssh."+r.sshClusterID)
-	}
-	if r.manifestExecutor != nil && r.manifestClusterID != "" {
-		providerKinds = append(providerKinds, "manifest_agent."+r.manifestClusterID, resourceruntime.ManifestAgentProviderPrefix+r.manifestClusterID)
-	}
-	task, err := r.apiClient().ClaimExecutionTask(ctx, claimRequest{
-		AgentID:         firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
-		ProviderKinds:   providerKinds,
-		RuntimeEndpoint: strings.TrimSpace(r.cfg.RuntimeEndpoint),
-	})
-	if err != nil {
-		r.metrics.markClaim(metricScopeExecution, false)
-		return ExecutionTask{}, false
-	}
-	if strings.TrimSpace(task.ID) == "" {
-		r.metrics.markClaim(metricScopeExecution, false)
-		return ExecutionTask{}, false
-	}
-	r.metrics.markClaim(metricScopeExecution, true)
-	return task, true
 }
 
 func (r *Runner) claimAgentRun(ctx context.Context) (AgentRun, bool) {
@@ -716,6 +677,7 @@ func (r *Runner) execute(ctx context.Context, task ExecutionTask) {
 			return
 		}
 	}
+	workspaceArtifacts = collectWorkspaceArtifacts(workspacePath, parseWorkspaceSpec(task).ArtifactFiles)
 
 	payload := map[string]any{
 		"agentId":       agentID,
@@ -1965,7 +1927,7 @@ func (r *Runner) ensureCheckout(ctx context.Context, workspacePath string, spec 
 func parseWorkspaceSpec(task ExecutionTask) workspaceSpec {
 	spec := workspaceSpec{
 		Path: firstNonEmpty(
-			strings.TrimSpace(fmt.Sprint(task.Payload["repositoryPath"])),
+			stringMapValue(task.Payload, "repositoryPath"),
 			strings.TrimSpace(task.ApplicationID),
 			strings.TrimSpace(task.ID),
 		),
@@ -1975,33 +1937,33 @@ func parseWorkspaceSpec(task ExecutionTask) workspaceSpec {
 		return spec
 	}
 	spec.Path = firstNonEmpty(
-		strings.TrimSpace(fmt.Sprint(raw["path"])),
-		strings.TrimSpace(fmt.Sprint(raw["relativePath"])),
+		stringMapValue(raw, "path"),
+		stringMapValue(raw, "relativePath"),
 		spec.Path,
 	)
 	spec.CommandDir = firstNonEmpty(
-		strings.TrimSpace(fmt.Sprint(raw["commandDir"])),
-		strings.TrimSpace(fmt.Sprint(raw["workingDir"])),
+		stringMapValue(raw, "commandDir"),
+		stringMapValue(raw, "workingDir"),
 	)
 	spec.ArtifactFiles = firstNonEmptyStringSlice(valueAsStringSlice(raw["artifactFiles"]), valueAsStringSlice(task.Payload["artifactFiles"]))
 	if checkoutRaw, ok := raw["checkout"].(map[string]any); ok {
 		spec.Checkout = checkoutSpec{
 			Enabled:        boolValue(checkoutRaw["enabled"], false),
-			RepositoryURL:  firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryURL"])), strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryUrl"]))),
-			RepositoryPath: strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryPath"])),
-			RefType:        firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkoutRaw["refType"])), strings.TrimSpace(fmt.Sprint(task.Payload["refType"]))),
-			RefName:        firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkoutRaw["refName"])), strings.TrimSpace(fmt.Sprint(task.Payload["refName"]))),
-			DefaultBranch:  strings.TrimSpace(fmt.Sprint(checkoutRaw["defaultBranch"])),
+			RepositoryURL:  firstNonEmpty(stringMapValue(checkoutRaw, "repositoryURL"), stringMapValue(checkoutRaw, "repositoryUrl")),
+			RepositoryPath: stringMapValue(checkoutRaw, "repositoryPath"),
+			RefType:        firstNonEmpty(stringMapValue(checkoutRaw, "refType"), stringMapValue(task.Payload, "refType")),
+			RefName:        firstNonEmpty(stringMapValue(checkoutRaw, "refName"), stringMapValue(task.Payload, "refName")),
+			DefaultBranch:  stringMapValue(checkoutRaw, "defaultBranch"),
 		}
 	}
 	if spec.Checkout.RefType == "" {
-		spec.Checkout.RefType = strings.TrimSpace(fmt.Sprint(task.Payload["refType"]))
+		spec.Checkout.RefType = stringMapValue(task.Payload, "refType")
 	}
 	if spec.Checkout.RefName == "" {
-		spec.Checkout.RefName = strings.TrimSpace(fmt.Sprint(task.Payload["refName"]))
+		spec.Checkout.RefName = stringMapValue(task.Payload, "refName")
 	}
 	if spec.Checkout.DefaultBranch == "" {
-		spec.Checkout.DefaultBranch = strings.TrimSpace(fmt.Sprint(task.Payload["defaultBranch"]))
+		spec.Checkout.DefaultBranch = stringMapValue(task.Payload, "defaultBranch")
 	}
 	return spec
 }
@@ -2175,7 +2137,7 @@ func commandFingerprint(command string) string {
 }
 
 func resolveImageFromCommands(payload map[string]any, commands []string) string {
-	if value := strings.TrimSpace(fmt.Sprint(payload["image"])); value != "" {
+	if value := stringMapValue(payload, "image"); value != "" {
 		return value
 	}
 	for _, command := range commands {
@@ -2195,7 +2157,7 @@ func buildImageArtifact(payload map[string]any, image string) map[string]any {
 		"ref":    image,
 		"status": "completed",
 	}
-	if digest := strings.TrimSpace(fmt.Sprint(payload["imageDigest"])); digest != "" && digest != "pending" {
+	if digest := stringMapValue(payload, "imageDigest"); digest != "" && digest != "pending" {
 		artifact["digest"] = digest
 	}
 	return artifact
@@ -2216,7 +2178,7 @@ func buildArtifactList(payload map[string]any, image string) []map[string]any {
 		if !updated && strings.TrimSpace(fmt.Sprint(copyItem["kind"])) == "image" {
 			copyItem["ref"] = image
 			copyItem["status"] = "completed"
-			if digest := strings.TrimSpace(fmt.Sprint(payload["imageDigest"])); digest != "" && digest != "pending" {
+			if digest := stringMapValue(payload, "imageDigest"); digest != "" && digest != "pending" {
 				copyItem["digest"] = digest
 			}
 			updated = true

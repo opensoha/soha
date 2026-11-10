@@ -9,6 +9,7 @@ import (
 )
 
 func registerTopologySnapshotRoute(platform *gin.RouterGroup, client *k8sagent.Client, actions actionPolicy) {
+	registerRelationSnapshotRoute(platform, client, actions)
 	platform.GET("/infrastructure/resource-monitoring", func(c *gin.Context) {
 		output, err := client.ResourceMonitoringInventory(c.Request.Context())
 		if err != nil {

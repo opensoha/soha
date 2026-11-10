@@ -71,6 +71,11 @@ func TestNewRegistersRouteFamilies(t *testing.T) {
 	registered := make(map[string]struct{}, len(router.Routes()))
 	signatures := make([]string, 0, len(router.Routes()))
 	task115Baseline := make([]string, 0, len(router.Routes()))
+	const relationSnapshot = http.MethodPost + " /api/v1/platform/resources/relations/snapshot"
+	const uidBoundPod = http.MethodGet + " /api/v1/platform/workloads/pods/:name/uid-bound"
+	const uidBoundLogs = uidBoundPod + "/logs"
+	const uidBoundLogStream = uidBoundPod + "/logs/stream"
+	const uidBoundTerminal = uidBoundPod + "/terminal"
 	observedMutations := map[string]struct{}{
 		"DELETE /api/v1/platform/ownership-v2/resources/observed":              {},
 		"POST /api/v1/platform/ownership-v2/resources/yaml/observed/preflight": {},
@@ -80,6 +85,11 @@ func TestNewRegistersRouteFamilies(t *testing.T) {
 	for _, route := range router.Routes() {
 		signature := route.Method + " " + route.Path
 		registered[signature] = struct{}{}
+		// Assert these Task114 routes separately from the workbench baselines.
+		switch signature {
+		case relationSnapshot, uidBoundLogs, uidBoundLogStream, uidBoundTerminal:
+			continue
+		}
 		if _, observed := observedMutations[signature]; observed {
 			delete(observedMutations, signature)
 			continue
@@ -135,6 +145,10 @@ func TestNewRegistersRouteFamilies(t *testing.T) {
 	}
 
 	expected := slices.Concat(task115RuntimeRoutes, task115GuardedRoutes, task117Routes, []string{
+		relationSnapshot,
+		uidBoundLogs,
+		uidBoundLogStream,
+		uidBoundTerminal,
 		http.MethodGet + " /api/v1/platform/infrastructure/resource-monitoring",
 		http.MethodPost + " /api/v1/platform/network/topology/snapshot",
 		http.MethodGet + " /api/v1/diagnostics/actions",
