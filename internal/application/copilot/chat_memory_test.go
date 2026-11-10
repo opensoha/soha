@@ -43,7 +43,17 @@ func TestExplicitChatMemoryRechecksOwnerPolicyCorrectionsAndDeletion(t *testing.
 	}
 	other := record
 	other.OwnerID = "other"
-	if _, err := memory.PutRecord(ctx, other, policy); !errors.Is(err, apperrors.ErrAccessDenied) {
+	other.ScopeHash = appmemory.Scope(other.OwnerID, "chat")
+	if _, err := memory.PutRecord(ctx, other, policy); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("foreign policy accepted for a memory write: %v", err)
+	}
+	otherPolicy := policy
+	otherPolicy.ID = appmemory.PrivatePolicyID(other.OwnerID, "chat")
+	otherPolicy.OwnerID = other.OwnerID
+	if err := memory.PutPolicy(ctx, otherPolicy); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := memory.PutRecord(ctx, other, otherPolicy); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("memory owner was mutable: %v", err)
 	}
 	record.Fact = "corrected"
