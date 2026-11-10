@@ -102,7 +102,13 @@ const workflow = (id: string, status: string, name: string) => ({
   id,
   kind: 'application',
   createdAt: '2026-09-22T12:00:00Z',
-  application: { id, applicationId: 'app-1', workflowName: name, status, steps: [] },
+  application: {
+    id,
+    applicationId: 'app-1',
+    workflowName: name,
+    status,
+    steps: [] as Array<{ name: string; status: string }>,
+  },
 })
 
 describe('DeliveryOverviewPage', () => {
@@ -137,7 +143,24 @@ describe('DeliveryOverviewPage', () => {
   })
 
   it('keeps active, waiting and recent distinct and links exact records', async () => {
-    const running = workflow('run-live', 'running', '正在构建的工作流')
+    const running = workflow('run-live', 'waiting_execution', '正在构建的工作流')
+    running.application.steps = [{ name: '构建镜像', status: 'waiting_execution' }]
+    const batch = {
+      kind: 'batch',
+      id: 'batch-live',
+      batch: {
+        id: 'batch-live',
+        status: 'running',
+        definition: { name: '多目标交付' },
+        targets: [{ target: { applicationId: 'app-1' } }],
+        serviceCount: 2,
+        nodes: [
+          { name: 'build-fingerprint', stage: 'build', status: 'waiting_execution' },
+          { name: 'target-1:health', stage: 'health', status: 'running' },
+          { name: 'target-2:deploy', stage: 'deploy', status: 'queued' },
+        ],
+      },
+    }
     const waiting = workflow('run-review', 'waiting_approval', '待审核工作流')
     const finished = workflow('run-done', 'succeeded', '已完成工作流')
     apiGetMock.mockImplementation((path: string) => {
@@ -147,10 +170,10 @@ describe('DeliveryOverviewPage', () => {
           data: {
             items:
               status === 'running'
-                ? [running]
+                ? [running, batch]
                 : status === 'approval'
                   ? [waiting]
-                  : [running, waiting, finished],
+                  : [running, batch, waiting, finished],
           },
         })
       }
@@ -182,6 +205,11 @@ describe('DeliveryOverviewPage', () => {
     const container = await renderOverview()
     const path = (href: string) => container.querySelectorAll(`a[href="${href}"]`)
     expect(path('/workflows/run-live')).toHaveLength(1)
+    expect(path('/workflows/run-live')[0].textContent).toContain('等待执行器')
+    expect(path('/workflows/run-live')[0].textContent).toContain('当前阶段 构建镜像')
+    expect(path('/delivery/batches/batch-live')).toHaveLength(1)
+    expect(path('/delivery/batches/batch-live')[0].textContent).toContain('当前阶段 构建 · 就绪')
+    expect(path('/delivery/batches/batch-live')[0].textContent).not.toMatch(/target-1:health|部署/)
     expect(path('/workflows/run-review')).toHaveLength(1)
     expect(path('/workflows/run-done')).toHaveLength(1)
     expect(path('/delivery/analysis?applicationEnvironmentId=blocked')).toHaveLength(1)

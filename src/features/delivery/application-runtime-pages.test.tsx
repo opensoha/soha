@@ -1516,7 +1516,10 @@ describe('ApplicationDetailPage workbench', () => {
       ),
     )
     await openSection(container, '工作流')
-    expect(document.querySelector('.ant-drawer-open')?.textContent).toContain('构建与发布工作流')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.ant-drawer-open')?.textContent).toContain('交付配置'),
+    )
+    expect(document.querySelector('.ant-drawer-open')?.textContent).not.toContain('环境工作流')
     expect(document.body.querySelectorAll('[role="tablist"]')).toHaveLength(1)
     expect(container.querySelector('.soha-service-console__body')).toBe(pane)
     await openSection(container, '服务')
@@ -1525,9 +1528,10 @@ describe('ApplicationDetailPage workbench', () => {
   }, 15_000)
 
   it('keeps the selected service open and preserves scoped Pods and actions', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
-      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api',
+      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=runtime',
     )
     await act(async () => {
       await vi.dynamicImportSettled()
@@ -1575,14 +1579,16 @@ describe('ApplicationDetailPage workbench', () => {
     )
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
-        .find((tab) => tab.textContent === '状态与事件')!
+        .find((tab) => tab.textContent === '状态')!
         .click()
       await vi.dynamicImportSettled()
     })
     expect(container.querySelectorAll('.soha-rollout-stages > li')).toHaveLength(3)
+    expect(container.querySelector('.soha-service-state__footer')).toBeNull()
+    expect(container.textContent).not.toContain('查看 Pod 重启与事件')
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
-        .find((tab) => tab.textContent === '运行资源')!
+        .find((tab) => tab.textContent === '资源关系')!
         .click()
       await vi.dynamicImportSettled()
     })
@@ -1815,7 +1821,7 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.textContent).toContain('当前环境尚未部署此服务')
     expect(
       Array.from(container.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent),
-    ).toEqual(['运行资源', 'Pods', '指标', '发布与工作流', '配置与模板', '状态与事件'])
+    ).toEqual(['Pods', '指标', '发布与工作流', '配置与模板', '状态', '资源关系'])
     expect(
       Array.from(container.querySelectorAll('[role="tab"]')).some(
         (tab) => tab.textContent === '配置',
@@ -2522,7 +2528,7 @@ describe('ApplicationDetailPage workbench', () => {
     const location = container.querySelector('[data-testid="location"]')?.textContent || ''
     expect(location).toContain('serviceId=service-created')
     expect(location).toContain('applicationEnvironmentId=binding-test')
-    expect(location).toContain('serviceTab=runtime')
+    expect(location).toContain('serviceTab=pods')
   })
 
   it.each([
@@ -3079,16 +3085,70 @@ describe('ApplicationDetailPage workbench', () => {
         <ApplicationDetailPage />,
         '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test',
       )
+      expect(container.textContent).not.toContain('配置与资源状态')
+      await act(async () => {
+        findButton(container, '查看状态')!.click()
+        await vi.dynamicImportSettled()
+      })
+      expect(container.querySelector('[aria-label="状态"]')?.textContent).toContain(
+        '配置与资源状态',
+      )
       expect(container.textContent).toContain(
         phase === 'converged' ? '资源已就绪' : '已应用，等待就绪',
       )
-      expect(container.textContent).toContain('ConfigMap / api-settings')
+      const resource = container.querySelector('.manifest-resource-inventory__resource')
+      expect(resource?.textContent).toContain('api-settings')
+      expect(resource?.textContent).toContain('ConfigMap')
       expect(container.textContent).not.toContain('当前环境尚未部署此服务')
       expect(container.querySelector('[aria-label^="实例就绪"]')).toBeNull()
       expect(container.querySelector('a[href="/delivery/execution-tasks/apply-1"]')).not.toBeNull()
+      for (const label of ['Pods', '指标', '发布与工作流', '配置与模板', '资源关系']) {
+        await act(async () => {
+          Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
+            .find((tab) => tab.textContent?.startsWith(label))!
+            .click()
+          await vi.dynamicImportSettled()
+        })
+        expect(container.textContent).not.toContain('配置与资源状态')
+        expect(container.querySelector('a[href="/delivery/execution-tasks/apply-1"]')).toBeNull()
+      }
     },
   )
 
+  it.each(['', '&serviceTab=unknown'])(
+    'defaults the service to Pods for route %s',
+    async (suffix) => {
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test' + suffix,
+      )
+      await act(async () => {
+        await vi.dynamicImportSettled()
+      })
+      expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toMatch(
+        /^Pods/,
+      )
+      expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
+      expect(container.querySelector('.soha-service-runtime-overview')).toBeNull()
+    },
+  )
+  it.each([false, true])(
+    'exposes the manifest release menu only with trigger permission: %s',
+    async (allowed) => {
+      testState.manifestTarget = true
+      if (!allowed)
+        testState.permissionSnapshot.permissionKeys = defaultPermissionKeys.filter(
+          (key) => key !== 'delivery.releases.trigger',
+        )
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test',
+      )
+      const menu = container.querySelector('[aria-label="更多发布方式"]')
+      expect(Boolean(menu)).toBe(allowed)
+      expect(container.querySelector('.soha-service-actions')?.textContent).toContain('发布')
+    },
+  )
   it.each(['completed', 'failed'])(
     'deploys a Manifest without a build and gates confirmation on %s preflight',
     async (status) => {
@@ -3099,17 +3159,33 @@ describe('ApplicationDetailPage workbench', () => {
       testState.detailWithoutWorkflow = true
       testState.detailWithoutImageTagDefaults = true
       testState.permissionSnapshot.permissionKeys = defaultPermissionKeys.filter(
-        (key) => !['delivery.builds.trigger', 'delivery.workflows.trigger'].includes(key),
+        (key) =>
+          ![
+            'delivery.builds.trigger',
+            'delivery.workflows.trigger',
+            ...(status === 'failed' ? ['delivery.builds.view', 'delivery.workflows.view'] : []),
+          ].includes(key),
       )
       const container = await renderWithProviders(
         <ApplicationDetailPage />,
         '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test',
       )
-      await act(async () => {
-        findButton(container, '部署配置').click()
-        await new Promise((resolve) => setTimeout(resolve, 0))
-      })
-      const modal = findModal('部署配置')
+      if (status === 'completed') {
+        await act(async () => {
+          container.querySelector<HTMLButtonElement>('[aria-label="更多发布方式"]')!.click()
+          await new Promise((resolve) => setTimeout(resolve, 0))
+        })
+        await act(async () => {
+          ;[...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+            .find((item) => item.textContent === '发布清单')!
+            .click()
+        })
+      } else
+        await act(async () => {
+          findButton(container, '发布清单').click()
+        })
+      expect(api.post).not.toHaveBeenCalledWith('/delivery/plans', expect.anything())
+      const modal = findModal('发布清单')
       expect(modal.textContent).not.toContain('构建定义')
       expect(modal.textContent).not.toContain('镜像 Tag')
       await act(async () => {
@@ -3118,7 +3194,7 @@ describe('ApplicationDetailPage workbench', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }))
       })
       await act(async () => {
-        findButton(modal, '部署配置').click()
+        findButton(modal, '发布清单').click()
         await new Promise((resolve) => setTimeout(resolve, 0))
         await new Promise((resolve) => setTimeout(resolve, 0))
       })

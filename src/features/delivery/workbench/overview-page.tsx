@@ -8,6 +8,7 @@ import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
+import { deliveryStageLabels, deliveryStatusLabels } from '../batches/model'
 import { isDeliveryReadyStatus, releaseBoardQualitySignal } from '../delivery-status'
 import { deliveryQueries } from '../queries'
 import type { DeliveryExecutionHistoryEntry, ExecutionTask } from '../domain-types'
@@ -34,6 +35,7 @@ interface OverviewRecord {
   key: string
   title: string
   description?: string
+  stage?: string
   status: string
   statusLabel?: string
   path?: string
@@ -58,6 +60,21 @@ function historyRecord(
       ]
         .filter(Boolean)
         .join(' · '),
+      stage: [
+        ...new Set(
+          batch.nodes
+            .filter(
+              (node) =>
+                node.status !== 'pending' &&
+                node.status !== 'queued' &&
+                ACTIVE_HISTORY_STATUSES.has(node.status),
+            )
+            .map(({ stage, name }) =>
+              stage && stage !== 'barrier' ? (deliveryStageLabels[stage] ?? name) : name,
+            )
+            .filter(Boolean),
+        ),
+      ].join(' · '),
       status: batch.status,
       path: `/delivery/batches/${encodeURIComponent(batch.id)}`,
     }
@@ -76,7 +93,8 @@ function historyRecord(
     return {
       key,
       title: run.workflowName,
-      description: [application, run.deploymentName, current?.name].filter(Boolean).join(' · '),
+      description: [application, run.deploymentName].filter(Boolean).join(' · '),
+      stage: current?.name,
       status: run.status,
       path: run.deliveryBatchId
         ? `/delivery/batches/${encodeURIComponent(run.deliveryBatchId)}`
@@ -107,21 +125,34 @@ function taskRecord(task: ExecutionTask): OverviewRecord {
 
 function OverviewRecords({
   records,
-  className,
+  active = false,
 }: {
   records: OverviewRecord[]
-  className?: string
+  active?: boolean
 }) {
   return (
-    <div className={`soha-delivery-overview-records ${className ?? ''}`}>
-      {records.map(({ key, title, description, status, statusLabel, path }) => {
+    <div className="soha-delivery-overview-records" data-active={active}>
+      {records.map(({ key, title, description, stage, status, statusLabel, path }) => {
+        const context = [description, active ? undefined : stage].filter(Boolean).join(' · ')
+        const waitingForRunner = status === 'waiting_execution'
         const content = (
           <>
             <span className="soha-delivery-overview-record-main">
-              <strong>{title}</strong>
-              {description ? <small>{description}</small> : null}
+              <strong title={active ? title : undefined}>{title}</strong>
+              {context ? <small>{context}</small> : null}
+              {active && stage ? (
+                <small className="soha-delivery-overview-stage" title={stage}>
+                  <span>当前阶段</span> {stage}
+                </small>
+              ) : null}
             </span>
-            <StatusTag value={status} label={statusLabel} />
+            <StatusTag
+              value={waitingForRunner ? 'checking' : status}
+              label={
+                statusLabel ??
+                (waitingForRunner ? deliveryStatusLabels.waiting_execution : undefined)
+              }
+            />
           </>
         )
         return path ? (
@@ -350,10 +381,7 @@ export function DeliveryOverviewPage() {
                   >
                     <QueryState queries={[activeQuery]} label="运行记录" />
                     {activeRecords.length ? (
-                      <OverviewRecords
-                        records={activeRecords}
-                        className="soha-delivery-overview-active"
-                      />
+                      <OverviewRecords records={activeRecords} active />
                     ) : activeQuery.isSuccess ? (
                       <ManagementState
                         bordered={false}

@@ -5,13 +5,13 @@ import { parseDocument } from 'yaml'
 import { z } from 'zod'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { ManagementState } from '@/components/management-list'
-import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
-import { podQueries, workloadQueries } from '@/features/platform'
+import { podQueries, workloadQueries, WorkloadDetailEvents } from '@/features/platform'
 import { localeText, useI18n } from '@/i18n'
 import { toScopeKey, type WorkloadContainer } from '@/types'
 import { ReadFeedback } from '@/components/request-feedback'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
+import { readableQueryData } from '@/utils/query-feedback'
 
 const { Text } = Typography
 const port = z.union([z.number(), z.string()])
@@ -192,7 +192,7 @@ export function PodInspection({
     }
   }, [mode, yamlQuery.data?.content, podName, namespace, expectedUid])
   const query = mode === 'events' ? eventsQuery : yamlQuery
-  if (query.isError)
+  if (query.isError && mode !== 'events')
     return (
       <ManagementState
         compact
@@ -201,19 +201,29 @@ export function PodInspection({
         actions={<Button onClick={() => void query.refetch()}>{text('重试', 'Retry')}</Button>}
       />
     )
-  if (query.isPending || (expectedUid && mode !== 'events' && yamlQuery.isFetching))
+  if (mode !== 'events' && (query.isPending || (expectedUid && yamlQuery.isFetching)))
     return <ManagementState compact kind="loading" />
-  if (mode === 'events')
+  if (mode === 'events') {
+    const readableEvents = readableQueryData(eventsQuery)
+    const feedback = <ReadFeedback query={eventsQuery} label={text('Pod 事件', 'Pod events')} />
+    if (eventsQuery.isError && readableEvents === undefined) return feedback
     return (
-      <ResourceEventsTimeline
-        title={text('Pod 事件 · 最近优先', 'Pod events · newest first')}
-        events={[...(eventsQuery.data ?? [])].sort((a, b) => a.ageSeconds - b.ageSeconds)}
-        emptyDescription={text(
-          '当前返回的最近 100 条命名空间事件中，没有此 Pod 的事件。',
-          'No events for this Pod in the latest 100 namespace events returned.',
-        )}
-      />
+      <section className="soha-pod-events" aria-label={text('Pod 事件', 'Pod events')}>
+        {feedback}
+        <WorkloadDetailEvents
+          events={readableEvents ?? []}
+          observedAt={eventsQuery.dataUpdatedAt}
+          loading={eventsQuery.isPending}
+          onRefresh={() => void eventsQuery.refetch()}
+          scopeHint={text(
+            '仅展示最近 100 条命名空间事件中属于此 Pod 的记录。历史告警不代表当前健康状态，请结合 Pod 详情判断。',
+            'Shows this Pod’s records from the latest 100 namespace events. Historical warnings do not indicate current health; check Pod details for current state.',
+          )}
+        />
+      </section>
     )
+  }
+
   if (parsed?.identityMismatch)
     return (
       <ManagementState

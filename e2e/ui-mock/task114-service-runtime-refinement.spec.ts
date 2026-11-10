@@ -3,17 +3,11 @@ import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { task114Response } from '../fixtures/task114-delivery'
 
 const target = '/applications/retail?applicationEnvironmentId=retail-test&serviceId=order-api'
-async function setup(context: BrowserContext, page: Page, monitoring = true) {
+async function setup(context: BrowserContext, page: Page) {
   let uid = 'uid-order-api-pod-0'
-  let replaceDuringMetrics = false
-  let metricResponseError = false
   const evidence = await installMocks(context, page, (url, method) => {
     const path = url.pathname.replace(/^\/api\/v1/, '')
     const data = (value: unknown) => ({ body: { data: value } })
-    if (path.endsWith('/metrics') && metricResponseError)
-      return data({ configured: true, series: [], message: 'Prometheus fixture unavailable' })
-    if (path.endsWith('/order-api-pod-0/metrics') && replaceDuringMetrics) uid = 'replacement-uid'
-    if (path.endsWith('/metrics') && !monitoring) return data({ configured: false, series: [] })
     const detailPod = path.match(
       /^\/clusters\/cluster-a\/workloads\/pods\/(order-api-pod-\d+)\/detail$/,
     )?.[1]
@@ -72,75 +66,8 @@ async function setup(context: BrowserContext, page: Page, monitoring = true) {
     replacePod: () => {
       uid = 'replacement-uid'
     },
-    raceMetrics: () => {
-      replaceDuringMetrics = true
-    },
-    failMetricsResponse: () => {
-      metricResponseError = true
-    },
   }
 }
-
-test('Task114 service summary rejects Pod replacement during a metrics read', async ({
-  context,
-  page,
-}) => {
-  const { evidence, raceMetrics } = await setup(context, page)
-  raceMetrics()
-  await page.goto(`${target}&serviceTab=runtime`)
-  const indicators = page.getByRole('region', { name: '服务运行指标', exact: true })
-  await expect(indicators).toContainText('指标读取失败')
-  await expect(indicators.locator('dd strong')).toHaveText(['2/2', '1', '—', '—'])
-  await expect(indicators.getByRole('button', { name: '重试运行指标', exact: true })).toBeVisible()
-  verifyBrowserEvidence(evidence)
-})
-
-test('Task114 service summary surfaces HTTP 200 monitoring failures', async ({ context, page }) => {
-  const { evidence, failMetricsResponse } = await setup(context, page)
-  failMetricsResponse()
-  await page.goto(`${target}&serviceTab=runtime`)
-  const indicators = page.getByRole('region', { name: '服务运行指标', exact: true })
-  await expect(indicators).toContainText('指标读取失败')
-  await expect(indicators.getByRole('button', { name: '重试运行指标', exact: true })).toBeVisible()
-  verifyBrowserEvidence(evidence)
-})
-
-for (const width of [1280, 390]) {
-  test(`Task114 service landing shows scoped runtime indicators at ${width}px`, async ({
-    context,
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 1000 })
-    const { evidence } = await setup(context, page)
-    await page.goto(`${target}&serviceTab=runtime`)
-    const indicators = page.getByRole('region', { name: '服务运行指标', exact: true })
-    await expect(indicators).toContainText('2/2')
-    await expect(indicators.locator('dd strong')).toHaveText(['2/2', '1', '368 mCPU', '824 MB'])
-    await indicators.getByRole('button', { name: 'Pod 就绪', exact: true }).click()
-    await expect(page.getByRole('tab', { name: /^Pods/ })).toHaveAttribute('aria-selected', 'true')
-    await page.getByRole('tab', { name: '运行资源', exact: true }).click()
-    await expect(indicators).toContainText('368 mCPU')
-    await page
-      .getByRole('navigation', { name: '选择环境', exact: true })
-      .getByRole('button', { name: /生产环境/ })
-      .click()
-    await expect(indicators).not.toContainText('368 mCPU')
-    await expect(indicators).not.toContainText('2/2')
-    verifyBrowserEvidence(evidence)
-  })
-}
-
-test('Task114 service landing separates missing monitoring from zero usage', async ({
-  context,
-  page,
-}) => {
-  const { evidence } = await setup(context, page, false)
-  await page.goto(`${target}&serviceTab=runtime`)
-  const indicators = page.getByRole('region', { name: '服务运行指标', exact: true })
-  await expect(indicators.locator('dd strong')).toHaveText(['2/2', '1', '—', '—'])
-  await expect(indicators.getByText('未接入监控', { exact: true })).toHaveCount(2)
-  verifyBrowserEvidence(evidence)
-})
 
 for (const width of [1440, 1034, 900, 390]) {
   test(`Task114 header pushes the environment below wrapped chrome at ${width}px`, async ({

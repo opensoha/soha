@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   Button,
-  Descriptions,
   Drawer,
   Input,
   InputNumber,
@@ -617,7 +616,12 @@ export function ServicePodWorkspace({
   workloads: ApplicationRuntimeWorkload[]
   view: 'runtime' | 'pods' | 'metrics' | 'summary' | 'related-resources'
   podScope?: string
-  onPodCount?: (summary: { scope: string; count: number | undefined }) => void
+  onPodCount?: (summary: {
+    scope: string
+    count: number | undefined
+    ready?: number
+    restarts?: number
+  }) => void
 }) {
   const text = useText()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -666,12 +670,21 @@ export function ServicePodWorkspace({
     return pod.phase === 'Running' && total > 0 && ready === total
   }).length
   const podCount =
-    canReadRuntime && queries.length > 0 && queries.every((query) => query.isSuccess)
+    canReadRuntime && canView && queries.length > 0 && queries.every((query) => query.isSuccess)
       ? rows.length
       : undefined
+  const restarts = rows.every(({ pod }) => Number.isFinite(pod.restarts) && pod.restarts >= 0)
+    ? rows.reduce((total, { pod }) => total + pod.restarts, 0)
+    : undefined
   useEffect(() => {
-    if (podScope) onPodCount?.({ scope: podScope, count: podCount })
-  }, [onPodCount, podCount, podScope])
+    if (podScope)
+      onPodCount?.({
+        scope: podScope,
+        count: podCount,
+        ready: podCount === undefined ? undefined : readyCount,
+        restarts: podCount === undefined ? undefined : restarts,
+      })
+  }, [onPodCount, podCount, podScope, readyCount, restarts])
   const tool = searchParams.get('tool') || 'details'
   const selected = rows.filter(
     ({ pod, workload }) =>
@@ -1106,7 +1119,9 @@ export function ServicePodWorkspace({
                     : text('Pod详情', 'Pod details')}
               </strong>
               <span className="soha-pod-drawer-identity">
-                {requestedPod}
+                <Text type="secondary" copyable={{ text: requestedPod || '' }}>
+                  {requestedPod}
+                </Text>
                 {selectedRow?.pod.namespace || searchParams.get('podNamespace') ? (
                   <span> · {selectedRow?.pod.namespace || searchParams.get('podNamespace')}</span>
                 ) : null}
@@ -1132,30 +1147,19 @@ export function ServicePodWorkspace({
               />
             ) : (
               <Suspense fallback={<ManagementState compact kind="loading" />}>
-                <Descriptions
-                  size="small"
-                  column={2}
-                  items={[
-                    {
-                      key: 'pod',
-                      label: 'Pod',
-                      span: 2,
-                      children: <Text copyable>{selectedRow.pod.name}</Text>,
-                    },
-                    { key: 'ns', label: 'Namespace', children: selectedRow.pod.namespace },
-                    { key: 'ip', label: 'Pod IP', children: selectedRow.pod.podIp || '—' },
-                    {
-                      key: 'node',
-                      label: text('节点', 'Node'),
-                      children: selectedRow.pod.nodeName || '—',
-                    },
-                    {
-                      key: 'cluster',
-                      label: text('集群', 'Cluster'),
-                      children: selectedRow.workload.clusterId,
-                    },
-                  ]}
-                />
+                <dl className="soha-pod-drawer-context">
+                  {[
+                    ['Namespace', selectedRow.pod.namespace],
+                    ['Pod IP', selectedRow.pod.podIp || '—'],
+                    [text('节点', 'Node'), selectedRow.pod.nodeName || '—'],
+                    [text('集群', 'Cluster'), selectedRow.workload.clusterId],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
                 <PodInspection
                   clusterId={selectedRow.workload.clusterId}
                   namespace={selectedRow.pod.namespace}

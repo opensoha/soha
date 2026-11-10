@@ -276,3 +276,42 @@
   padding: 16px;
   overflow: auto;
 }
+
+.soha-pod-drawer-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin: 0 0 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+.soha-pod-drawer-context dt {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-pod-drawer-context dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 520px) {
+  .soha-pod-drawer-context {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-pod-events .soha-pod-detail-events > .ant-card-head .ant-card-head-wrapper {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .soha-pod-events .soha-pod-detail-events > .ant-card-head .ant-card-head-title {
+    flex-basis: 100%;
+    overflow: visible;
+    white-space: normal;
+  }
+  .soha-pod-events .soha-pod-detail-events > .ant-card-head .ant-card-extra {
+    width: 100%;
+    margin-inline-start: 0;
+  }
+  .soha-pod-events .soha-pod-detail-events > .ant-card-head .ant-card-extra > .ant-space {
+    display: flex;
+    justify-content: space-between;
+  }
+}

@@ -35,6 +35,7 @@ import {
   ArrowRightOutlined,
   DeleteOutlined,
   DeploymentUnitOutlined,
+  DownOutlined,
   EditOutlined,
   LinkOutlined,
   MoreOutlined,
@@ -125,9 +126,6 @@ const ServicePodWorkspace = lazy(async () => {
   const module = await import('../runtime/service-pod-workspace')
   return { default: module.ServicePodWorkspace }
 })
-const ServiceRuntimeIndicators = lazy(async () => ({
-  default: (await import('./service-runtime-indicators')).ServiceRuntimeIndicators,
-}))
 
 const { Text } = Typography
 
@@ -474,7 +472,7 @@ export function ApplicationDetailPage() {
   const requestedBuildSourceId = searchParams.get('buildSourceId') || ''
   const requestedEnvironmentId = searchParams.get('applicationEnvironmentId')?.trim() ?? ''
   const focusedServiceId = searchParams.get('serviceId')?.trim() ?? ''
-  const defaultServiceTab = searchParams.has('pod') ? 'pods' : 'runtime'
+  const defaultServiceTab = 'pods'
   const requestedServiceTab = searchParams.get('serviceTab') || defaultServiceTab
   const serviceTab = [
     'runtime',
@@ -488,7 +486,12 @@ export function ApplicationDetailPage() {
   ].includes(requestedServiceTab)
     ? requestedServiceTab
     : defaultServiceTab
-  const [observedPodCount, setObservedPodCount] = useState<{ scope: string; count?: number }>()
+  const [observedPodCount, setObservedPodCount] = useState<{
+    scope: string
+    count?: number
+    ready?: number
+    restarts?: number
+  }>()
   const requestedSettingsKey =
     searchParams.get('settings') ||
     (requestedTab &&
@@ -595,7 +598,7 @@ export function ApplicationDetailPage() {
   }
   const setFocusedService = (
     serviceId?: string,
-    nextServiceTab = 'runtime',
+    nextServiceTab = 'pods',
     nextSettings?: string,
   ) => {
     const next = new URLSearchParams(searchParams)
@@ -1133,7 +1136,7 @@ export function ApplicationDetailPage() {
     selectedDeliveryBinding?.targets?.[0]
   const manifestDelivery = deliveryActionKind === 'deploy'
   const deliveryActionLabel = manifestDelivery
-    ? '部署配置'
+    ? '发布清单'
     : deliveryActionKind === 'build'
       ? '运行构建'
       : '运行工作流'
@@ -1285,7 +1288,7 @@ export function ApplicationDetailPage() {
           deliveryActionKind !== 'build' && !canTriggerWorkflow && '缺少工作流权限',
           deliveryActionKind !== 'build' &&
             selectedDeliveryTarget?.executorKind === 'manifest_ssa' &&
-            '资源包请使用部署配置',
+            '资源包请使用发布清单',
         ],
   )
 
@@ -1573,8 +1576,13 @@ export function ApplicationDetailPage() {
       ])
       .sort(),
   ])
+  const canReadPodSummary =
+    !permissionSnapshotQuery.isError && hasPermission(permissionSnapshot, 'platform.pods.view')
   const podCount =
-    runtimeReadable && selectedPodWorkloads.length > 0 && observedPodCount?.scope === podScope
+    canReadPodSummary &&
+    runtimeReadable &&
+    selectedPodWorkloads.length > 0 &&
+    observedPodCount?.scope === podScope
       ? observedPodCount.count
       : undefined
   const hasOtherPodSources = selectedWorkloads.some(
@@ -1604,16 +1612,29 @@ export function ApplicationDetailPage() {
       metricRoot={view === 'metrics' ? metricRoot : undefined}
       onOpenPlan={
         canTriggerRelease
-          ? (targetId, revision) => {
-              populateDeliveryBinding(activeEnvironmentId)
-              deliveryForm.setFieldsValue({ targetId, manifestRevision: revision })
-              setDeliveryActionKind('deploy')
-              setDeliveryActionModalVisible(true)
-            }
+          ? (targetId, revision) => handleOpenManifestRelease(targetId, revision)
           : undefined
       }
     />
   )
+  const manifestReleaseTarget = (activeRuntimeBinding?.targets ?? []).find(
+    (target) =>
+      target.enabled &&
+      target.executorKind === 'manifest_ssa' &&
+      (!focusedService || target.metadata?.serviceId === focusedService.id),
+  )
+  const canOpenManifestRelease = canTriggerRelease && Boolean(manifestReleaseTarget)
+  const handleOpenManifestRelease = (targetId = manifestReleaseTarget?.id, revision?: number) => {
+    if (!canTriggerRelease || !targetId) return
+    populateDeliveryBinding(activeEnvironmentId)
+    deliveryForm.setFieldsValue({ targetId, manifestRevision: revision })
+    setDeliveryActionKind('deploy')
+    setDeliveryActionModalVisible(true)
+  }
+  const handleOpenWorkflowRelease = () =>
+    focusedService
+      ? openServiceWorkflow(focusedService.id)
+      : setActiveTab('delivery', activeEnvironmentId)
   const serviceDetails = (
     <div className="soha-service-detail" data-service-tab={serviceTab}>
       <header className="soha-service-summary">
@@ -1650,9 +1671,23 @@ export function ApplicationDetailPage() {
                   </span>
                 </Tooltip>
               ) : null}
-              {currentServiceCard?.kind ? (
-                <Text type="secondary">{currentServiceCard.kind}</Text>
-              ) : null}
+              {currentServiceCard?.kind ? <MetadataTag label={currentServiceCard.kind} /> : null}
+              <span className="soha-service-location__stat">
+                就绪{' '}
+                <strong>
+                  {podCount !== undefined && !hasOtherPodSources
+                    ? `${observedPodCount?.ready ?? '—'}/${podCount}`
+                    : '—'}
+                </strong>
+              </span>
+              <span className="soha-service-location__stat">
+                累计重启{' '}
+                <strong>
+                  {podCount !== undefined && !hasOtherPodSources
+                    ? (observedPodCount?.restarts ?? '—')
+                    : '—'}
+                </strong>
+              </span>
               {catalogEnvironment(activeEnvironment?.environmentId)?.isProduction ? (
                 <StatusTag value="warning" label="生产环境 PROD" />
               ) : null}
@@ -1699,17 +1734,34 @@ export function ApplicationDetailPage() {
               </Suspense>
             ) : null}
             <Button onClick={() => openServiceTab('configuration')}>更新配置</Button>
-            {canViewWorkflows || canViewBuilds ? (
+            {canViewWorkflows || (canViewBuilds && !canOpenManifestRelease) ? (
+              <Space.Compact>
+                <Button
+                  type="primary"
+                  icon={<PlayCircleOutlined />}
+                  onClick={handleOpenWorkflowRelease}
+                >
+                  发布
+                </Button>
+                {canOpenManifestRelease ? (
+                  <Dropdown
+                    trigger={['click']}
+                    menu={{
+                      items: [{ key: 'manifest', label: '发布清单' }],
+                      onClick: () => handleOpenManifestRelease(),
+                    }}
+                  >
+                    <Button type="primary" icon={<DownOutlined />} aria-label="更多发布方式" />
+                  </Dropdown>
+                ) : null}
+              </Space.Compact>
+            ) : canOpenManifestRelease ? (
               <Button
                 type="primary"
-                icon={<PlayCircleOutlined />}
-                onClick={() =>
-                  focusedService
-                    ? openServiceWorkflow(focusedService.id)
-                    : setActiveTab('delivery', activeEnvironmentId)
-                }
+                icon={<DeploymentUnitOutlined />}
+                onClick={() => handleOpenManifestRelease()}
               >
-                发布
+                发布清单
               </Button>
             ) : null}
             <Dropdown
@@ -1731,7 +1783,6 @@ export function ApplicationDetailPage() {
           activeKey={runtimeTab ? 'runtime' : serviceTab}
           onChange={openServiceTab}
           items={[
-            { key: 'runtime', label: '运行资源' },
             {
               key: 'pods',
               label: (
@@ -1749,58 +1800,11 @@ export function ApplicationDetailPage() {
             { key: 'metrics', label: '指标' },
             { key: 'build', label: '发布与工作流' },
             { key: 'configuration', label: '配置与模板' },
-            { key: 'events', label: '状态与事件' },
+            { key: 'events', label: '状态' },
+            { key: 'runtime', label: '资源关系' },
           ]}
         />
       </header>
-      {runtimeTab && runtimeReadable ? (
-        <Suspense fallback={null}>
-          <ServiceRuntimeIndicators
-            key={JSON.stringify([
-              podScope,
-              selectedWorkloads.map((workload) => [
-                workload.targetId,
-                workload.source?.resource.uid,
-                workload.sourceStatus,
-              ]),
-            ])}
-            applicationId={application.id}
-            workloads={selectedWorkloads}
-            podWorkloads={selectedPodWorkloads}
-            enabled={runtimeReadable}
-            onOpenPods={() => openServiceTab('pods')}
-            onOpenMetrics={() => openServiceTab('metrics')}
-          />
-        </Suspense>
-      ) : null}
-      {runtimeTab &&
-      canTriggerRelease &&
-      (activeRuntimeBinding?.targets ?? []).some(
-        (target) =>
-          target.enabled &&
-          target.executorKind === 'manifest_ssa' &&
-          (!focusedService || target.metadata?.serviceId === focusedService.id),
-      ) ? (
-        <Space>
-          <Button
-            icon={<DeploymentUnitOutlined />}
-            onClick={() => {
-              const target = activeRuntimeBinding?.targets?.find(
-                (item) =>
-                  item.enabled &&
-                  item.executorKind === 'manifest_ssa' &&
-                  (!focusedService || item.metadata?.serviceId === focusedService.id),
-              )
-              populateDeliveryBinding(activeEnvironmentId)
-              deliveryForm.setFieldsValue({ targetId: target?.id, manifestRevision: undefined })
-              setDeliveryActionKind('deploy')
-              setDeliveryActionModalVisible(true)
-            }}
-          >
-            部署配置
-          </Button>
-        </Space>
-      ) : null}
       {!selectedNativeImports &&
       selectedWorkloads.some((workload) =>
         ['StatefulSet', 'DaemonSet'].includes(workload.workloadKind),
@@ -1826,14 +1830,6 @@ export function ApplicationDetailPage() {
           </Space>
         </section>
       ) : null}
-      {!runtimePending &&
-      !runtimeUnavailable &&
-      !invalidEnvironment &&
-      activeEnvironment?.status !== 'unavailable'
-        ? selectedManifestDeployments.map((deployment) => (
-            <ManifestDeploymentState key={deployment.id} deployment={deployment} />
-          ))
-        : null}
       {serviceTab === 'configuration' ? (
         <section className="soha-service-configuration" aria-label="配置与模板">
           <div className="soha-service-section-heading">
@@ -1906,12 +1902,7 @@ export function ApplicationDetailPage() {
                 binding={activeRuntimeBinding}
                 onOpenPlan={
                   canTriggerRelease
-                    ? (targetId, revision) => {
-                        populateDeliveryBinding(activeEnvironmentId)
-                        deliveryForm.setFieldsValue({ targetId, manifestRevision: revision })
-                        setDeliveryActionKind('deploy')
-                        setDeliveryActionModalVisible(true)
-                      }
+                    ? (targetId, revision) => handleOpenManifestRelease(targetId, revision)
                     : undefined
                 }
               />
@@ -1969,20 +1960,35 @@ export function ApplicationDetailPage() {
           </Button>
         </section>
       ) : serviceTab === 'events' ? (
-        <section aria-label="状态与事件">
+        <section className="soha-service-state" aria-label="状态">
+          {!runtimePending &&
+          !runtimeUnavailable &&
+          !invalidEnvironment &&
+          activeEnvironment?.status !== 'unavailable'
+            ? selectedManifestDeployments.map((deployment) => (
+                <ManifestDeploymentState key={deployment.id} deployment={deployment} />
+              ))
+            : null}
           {!runtimePending &&
           !runtimeUnavailable &&
           !invalidEnvironment &&
           activeEnvironment?.status !== 'unavailable'
             ? selectedWorkloads.map((workload) => (
-                <WorkloadProgress
+                <section
                   key={`${workload.clusterId}/${workload.namespace}/${workload.workloadName}`}
-                  workload={workload}
-                />
+                  className="soha-service-state__workload"
+                  aria-label={`${workload.workloadName} 副本状态`}
+                >
+                  <div className="soha-service-state__heading">
+                    <h2>副本状态</h2>
+                    <Text type="secondary">
+                      {workload.workloadKind} / {workload.workloadName}
+                    </Text>
+                  </div>
+                  <WorkloadProgress workload={workload} />
+                </section>
               ))
             : null}
-
-          <Button onClick={() => openServiceTab('pods')}>查看 Pod 重启与事件</Button>
         </section>
       ) : null}
 
@@ -1990,7 +1996,7 @@ export function ApplicationDetailPage() {
         <section
           className="soha-service-pods-panel"
           hidden={podView === 'summary'}
-          aria-label={podView === 'metrics' ? '服务指标' : runtimeTab ? '运行资源' : 'Pods'}
+          aria-label={podView === 'metrics' ? '服务指标' : runtimeTab ? '资源关系' : 'Pods'}
         >
           <Suspense fallback={<ManagementState compact kind="loading" />}>
             {!runtimeReadable ? (
@@ -2003,9 +2009,9 @@ export function ApplicationDetailPage() {
               (selectedNativeImports ||
                 selectedPodWorkloads.length > 0 ||
                 helmNestedServices?.length) ? (
-              <section className="soha-service-runtime-overview" aria-label="运行资源概览">
+              <section className="soha-service-runtime-overview" aria-label="资源关系概览">
                 <div className="soha-service-section-heading">
-                  <h2>运行资源关系</h2>
+                  <h2>资源关系</h2>
                   {focusedService ? (
                     <Button onClick={() => openServiceTab('resources')}>资源清单</Button>
                   ) : null}
@@ -2095,8 +2101,8 @@ export function ApplicationDetailPage() {
                 compact
                 bordered={false}
                 kind="not-configured"
-                title="此资源的 Pod 关联见运行资源"
-                actions={<Button onClick={() => openServiceTab('runtime')}>查看运行资源</Button>}
+                title="此资源的 Pod 关联见资源关系"
+                actions={<Button onClick={() => openServiceTab('runtime')}>查看资源关系</Button>}
               />
             ) : (
               <ManagementState
@@ -2123,11 +2129,13 @@ export function ApplicationDetailPage() {
                 }
                 description={
                   selectedManifestDeployments.length
-                    ? '配置应用与资源就绪状态见当前清单状态。'
+                    ? '在“状态”查看配置应用与资源就绪状态。'
                     : '服务配置仍可查看，可进入工作流安排交付。'
                 }
                 actions={
-                  selectedManifestDeployments.length ? undefined : (
+                  selectedManifestDeployments.length ? (
+                    <Button onClick={() => openServiceTab('events')}>查看状态</Button>
+                  ) : (
                     <Button onClick={() => setActiveTab('delivery', activeEnvironmentId)}>
                       查看工作流
                     </Button>
@@ -3953,11 +3961,13 @@ export function ApplicationDetailPage() {
                       />
                     </Suspense>
                   ) : null}
-                  <details className="soha-application-inline-disclosure">
-                    <summary>环境工作流</summary>
-                    {tab('pipeline').children}
-                    {applicationWorkflowOverview}
-                  </details>
+                  {!focusedService ? (
+                    <details className="soha-application-inline-disclosure">
+                      <summary>环境工作流</summary>
+                      {tab('pipeline').children}
+                      {applicationWorkflowOverview}
+                    </details>
+                  ) : null}
                 </div>
               ),
             },
@@ -3988,19 +3998,25 @@ export function ApplicationDetailPage() {
               {!invalidEnvironment ? tab('services').children : null}
               <Drawer
                 classNames={{
-                  header:
-                    activeTab === 'delivery' && !serviceModalVisible
-                      ? undefined
-                      : 'soha-settings-drawer-header',
+                  header: 'soha-settings-drawer-header',
                 }}
                 className={
                   activeTab === 'delivery' && !serviceModalVisible
-                    ? undefined
+                    ? 'soha-service-delivery-drawer'
                     : 'soha-application-settings-drawer'
                 }
                 title={
                   activeTab === 'delivery' && !serviceModalVisible ? (
-                    '构建与更新'
+                    <div className="soha-settings-drawer-title">
+                      <strong>构建与更新</strong>
+                      <Text
+                        type="secondary"
+                        ellipsis
+                        title={focusedService?.name || application.name}
+                      >
+                        {focusedService?.name || application.name}
+                      </Text>
+                    </div>
                   ) : (
                     <div className="soha-settings-drawer-title">
                       {serviceModalVisible ? (
@@ -4111,7 +4127,7 @@ export function ApplicationDetailPage() {
                           onSaved={(id) => {
                             setServiceModalVisible(false)
                             setEditingService(null)
-                            setFocusedService(id, 'runtime')
+                            setFocusedService(id, 'pods')
                           }}
                         />
                       ) : (

@@ -189,7 +189,7 @@ for (const width of [1440, 390]) {
       return base
     })
     await page.goto(
-      '/applications/retail?tab=services&applicationEnvironmentId=retail-test&serviceId=search',
+      '/applications/retail?tab=services&applicationEnvironmentId=retail-test&serviceId=search&serviceTab=runtime',
     )
     const openSearchRoot = async () => {
       await page.getByText('查看资源关系详情', { exact: true }).click()

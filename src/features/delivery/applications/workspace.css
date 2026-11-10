@@ -470,8 +470,30 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
+  min-height: 20px;
+  line-height: 20px;
   font-size: 12px;
+}
+.soha-service-location .ant-tag {
+  box-sizing: border-box;
+  align-self: center;
+  height: 20px;
+  min-height: 20px;
+  padding-block: 0;
+  margin-block: 0;
+  margin-inline-end: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+.soha-service-location__stat {
+  color: var(--soha-text-secondary);
+  white-space: nowrap;
+}
+.soha-service-location__stat strong {
+  color: var(--soha-text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .soha-service-location > .ant-typography {
   overflow-wrap: anywhere;
@@ -1186,6 +1208,36 @@
   border-radius: var(--soha-radius-panel);
   background: var(--soha-bg-surface);
 }
+.soha-service-state {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+.soha-service-state__workload {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+}
+.soha-service-state__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.soha-service-state__heading {
+  margin-bottom: 12px;
+}
+.soha-service-state__heading h2 {
+  margin: 0;
+  font-size: var(--soha-font-size-section);
+}
+.soha-service-state__heading > .ant-typography {
+  overflow-wrap: anywhere;
+}
 .soha-service-runtime-overview__resources {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -1261,4 +1313,9 @@
   .soha-service-detail-identity h1 {
     font-size: var(--soha-font-size-section);
   }
+}
+
+.soha-service-delivery-drawer .ant-drawer-body {
+  padding: 16px;
+  background: var(--soha-bg-layout);
 }

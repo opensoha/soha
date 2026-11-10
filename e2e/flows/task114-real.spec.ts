@@ -29,7 +29,7 @@ test('Task114 real application resources and explicit CR source access', async (
   ).toBeVisible()
   await expect(page.getByRole('tab', { name: '指标', exact: true })).toBeVisible()
   await page.goto(
-    `${target.baseURL}/applications/${target.fixtures.application.id}?tab=services&applicationEnvironmentId=${env.imported.applicationEnvironmentId}&serviceId=${env.rootServiceId}`,
+    `${target.baseURL}/applications/${target.fixtures.application.id}?tab=services&applicationEnvironmentId=${env.imported.applicationEnvironmentId}&serviceId=${env.rootServiceId}&serviceTab=runtime`,
   )
   await page.getByText('查看资源关系详情', { exact: true }).click()
   const relations = page.getByRole('region', { name: '运行资源关系', exact: true })

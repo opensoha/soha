@@ -199,8 +199,8 @@ for (const width of [1440, 390]) {
     await sourceYaml.getByRole('button', { name: '关闭', exact: true }).click()
     await relations.getByText('资源列表', { exact: true }).click()
     await expect(relations.getByRole('columnheader', { name: '关联依据' })).toBeVisible()
-    for (const label of ['配置与模板', '状态与事件', '发布与工作流', '运行资源']) {
-      if (width === 390 && label === '运行资源') {
+    for (const label of ['配置与模板', '状态', '发布与工作流', '资源关系']) {
+      if (width === 390 && label === '资源关系') {
         await page.locator('.soha-service-detail .ant-tabs-nav-more').hover()
         await page.getByRole('option', { name: label, exact: true }).click()
       } else {

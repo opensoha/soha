@@ -37,8 +37,8 @@ for (const height of [1206, 800]) {
       /^指标$/,
       /^发布与工作流$/,
       /^配置与模板$/,
-      /^状态与事件$/,
-      /^运行资源$/,
+      /^状态$/,
+      /^资源关系$/,
     ]) {
       await page.getByRole('tab', { name }).click()
       await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true')
@@ -64,7 +64,7 @@ for (const height of [1206, 800]) {
     expect(await services.evaluate((el) => el.scrollTop)).toBe(leftScroll)
     await expect(rail.getByRole('button', { name: /添加服务$/ })).toBeInViewport()
     await expect(page.getByRole('heading', { name: '订单 API', exact: true })).toBeInViewport()
-    await page.getByRole('tab', { name: /^运行资源$/ }).click()
+    await page.getByRole('tab', { name: /^资源关系$/ }).click()
     expect(await services.evaluate((el) => el.scrollTop)).toBe(leftScroll)
     await rail.getByRole('button', { name: '服务总览', exact: true }).click()
     await expect.poll(async () => (await rail.boundingBox())!.height).toBeCloseTo(initial.height, 0)

@@ -256,7 +256,7 @@ for (const width of [1440, 390]) {
       path: `../docs/tasks/114-enterprise-delivery-workbench/evidence/m6/root-cr-${width}.png`,
     })
     await drawer.getByRole('button', { name: '生成发布计划', exact: true }).click()
-    const plan = page.getByRole('dialog', { name: '部署配置', exact: true })
+    const plan = page.getByRole('dialog', { name: '发布清单', exact: true })
     await expect(plan).toBeVisible()
     await plan.getByRole('button', { name: /^取\s*消$/ }).click()
     await page.getByRole('button', { name: '配置与发布控制', exact: true }).click()
