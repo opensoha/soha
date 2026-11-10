@@ -1,11 +1,8 @@
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
 import { PodDetailEvents } from './pod-detail-events'
-import {
-  PodContainerSquare,
-  PodDetailOverview,
-  podContainerTerminated,
-} from './pod-detail-overview'
+import { PodContainerSquare, PodDetailOverview } from './pod-detail-overview'
+import { podContainerTerminated } from './container-status'
 import { PodResourceCell } from './pod-resource-cell'
 import { PodDetailStorage } from './pod-detail-storage'
 import { PodContainerDetails } from './pod-container-details'
@@ -35,16 +32,6 @@ import { podQueries } from './queries'
 import { usePodDetailDelete } from './use-pod-detail-delete'
 
 const { Text } = Typography
-
-const PodLogViewer = lazy(async () => {
-  const mod = await import('@/components/pod-log-viewer')
-  return { default: mod.PodLogViewer }
-})
-
-const PodTerminal = lazy(async () => {
-  const mod = await import('@/components/pod-terminal')
-  return { default: mod.PodTerminal }
-})
 
 const ResourceMetricsPanel = lazy(async () => {
   const mod = await import('./pod-detail-metrics')
@@ -91,7 +78,6 @@ export function PodDetailPage() {
   const parsedRange = Number(searchParams.get('range') || 60)
   const metricsRangeMinutes = [15, 60, 360, 1440].includes(parsedRange) ? parsedRange : 60
   const [expanded, setExpanded] = useState<string[]>([])
-  const [terminalConnection, setTerminalConnection] = useState('')
   function setActiveTabKey(key: string) {
     setSearchParams((previous) => {
       const next = new URLSearchParams(previous)
@@ -209,20 +195,13 @@ export function PodDetailPage() {
         visiblePodDetailQueryData?.containers?.find((item) => item.role !== 'init') ??
         visiblePodDetailQueryData?.containers?.[0]
       )?.name || ''
-  const identity = `${clusterId}/${detailNamespace}/${podName}`
-  const connectionKey = `${identity}/${container}/${terminalShell}`
+  const identity = `${clusterId}/${detailNamespace}/${podName}/${visiblePodDetailQueryData?.uid ?? ''}`
   useEffect(() => {
     setExpanded([])
-    setTerminalConnection('')
   }, [identity])
-  useEffect(() => {
-    setTerminalConnection('')
-  }, [activeTabKey, connectionKey])
   const podDetail = visiblePodDetailQueryData
   const selectedContainer = podDetail?.containers?.find((item) => item.name === container)
-  const containerTerminated = Boolean(
-    selectedContainer && podContainerTerminated(selectedContainer),
-  )
+  const containerTerminated = podContainerTerminated(selectedContainer)
   const logsAllowedByPolicy = hasAllowedAction(podDetail?.allowedActions, 'logs')
   const logsDisabled =
     podLogsCapability.isLoading || podLogsCapability.disabled || !logsAllowedByPolicy
@@ -251,10 +230,6 @@ export function PodDetailPage() {
           ? '当前环境或资源范围不允许打开 Pod 终端。'
           : 'Pod terminal access is not allowed in the current environment or resource scope.'
 
-  useEffect(() => {
-    if (terminalDisabled || containerTerminated) setTerminalConnection('')
-  }, [terminalDisabled, containerTerminated])
-
   function openLogSession() {
     if (!clusterId || !detailNamespace || !canViewPodLogs || logsDisabled) return
     openSession({
@@ -263,12 +238,20 @@ export function PodDetailPage() {
       kind: 'logs',
       namespace: detailNamespace,
       podName,
+      podUid: podDetail?.uid,
       streamingDisabledReason: logsStreamingDisabledReason,
     })
   }
 
   function openTerminalSession() {
-    if (!clusterId || !detailNamespace || !canExecPod || terminalDisabled || containerTerminated)
+    if (
+      !clusterId ||
+      !detailNamespace ||
+      !canExecPod ||
+      terminalDisabled ||
+      !container ||
+      containerTerminated
+    )
       return
     openSession({
       clusterId,
@@ -276,6 +259,7 @@ export function PodDetailPage() {
       kind: 'terminal',
       namespace: detailNamespace,
       podName,
+      podUid: podDetail?.uid,
       shell: terminalShell,
     })
   }
@@ -548,36 +532,16 @@ export function PodDetailPage() {
         session.clusterId === clusterId &&
         session.namespace === detailNamespace &&
         session.podName === podName &&
+        session.podUid === podDetail?.uid &&
         session.container === (container || undefined) &&
         (kind === 'logs' || session.shell === terminalShell),
     )
   const logDock = matchingDock('logs')
   const terminalDock = matchingDock('terminal')
-  const dockNotice = (kind: 'logs' | 'terminal', id: string) => (
-    <ManagementState
-      compact
-      title={localeCode === 'zh_CN' ? '已在实时会话栏打开' : 'Open in realtime session dock'}
-      description={
-        localeCode === 'zh_CN'
-          ? '继续使用当前会话，或返回页面查看。'
-          : 'Continue in the current session or return to this page.'
-      }
-      actions={
-        <Space>
-          <Button onClick={() => (kind === 'logs' ? openLogSession() : openTerminalSession())}>
-            {localeCode === 'zh_CN' ? '查看会话' : 'Show session'}
-          </Button>
-          <Button
-            onClick={() => {
-              closeSession(id)
-              setTerminalConnection('')
-            }}
-          >
-            {localeCode === 'zh_CN' ? '返回页面' : 'Return to page'}
-          </Button>
-        </Space>
-      }
-    />
+  const closeDockSession = (id: string) => (
+    <Button size="small" onClick={() => closeSession(id)}>
+      {localeCode === 'zh_CN' ? '关闭会话' : 'Close session'}
+    </Button>
   )
   const logsTab: NonNullable<TabsProps['items']>[number] = {
     key: 'logs',
@@ -601,34 +565,44 @@ export function PodDetailPage() {
           title={localeCode === 'zh_CN' ? '当前无法查看日志' : 'Logs unavailable'}
           description={logsDisabledReason}
         />
-      ) : logDock ? (
-        dockNotice('logs', logDock.id)
       ) : (
-        <Suspense fallback={<Spin size="large" />}>
-          <PodLogViewer
-            clusterId={clusterId}
-            namespace={detailNamespace}
-            podName={podName}
-            container={container || undefined}
-            active={activeTabKey === 'logs'}
-            containerOptions={containerOptions}
-            onContainerChange={setContainer}
-            streamingDisabledReason={logsStreamingDisabledReason}
-            toolbarExtra={
-              <Button icon={<FileTextOutlined />} size="small" onClick={openLogSession}>
-                {localeCode === 'zh_CN' ? '打开日志会话' : 'Open log session'}
-              </Button>
-            }
-            onOpenLogCenter={() => {
-              const query = new URLSearchParams()
-              if (clusterId) query.set('cluster', clusterId)
-              if (detailNamespace) query.set('namespace', detailNamespace)
-              query.append('pod', podName)
-              if (container) query.append('container', container)
-              navigate(`/monitoring-workbench/logs?${query.toString()}`)
-            }}
-          />
-        </Suspense>
+        <Card className="soha-detail-card">
+          <Space wrap>
+            <Select
+              aria-label={localeCode === 'zh_CN' ? '日志容器' : 'Log container'}
+              size="small"
+              style={{ width: 220 }}
+              options={containerOptions}
+              value={container || undefined}
+              onChange={setContainer}
+            />
+            <Button icon={<FileTextOutlined />} onClick={openLogSession}>
+              {logDock
+                ? localeCode === 'zh_CN'
+                  ? '查看会话'
+                  : 'Show session'
+                : localeCode === 'zh_CN'
+                  ? '打开日志会话'
+                  : 'Open log session'}
+            </Button>
+            {logDock && closeDockSession(logDock.id)}
+            <Button
+              onClick={() => {
+                const query = new URLSearchParams()
+                if (clusterId) query.set('cluster', clusterId)
+                if (detailNamespace) query.set('namespace', detailNamespace)
+                query.append('pod', podName)
+                if (container) query.append('container', container)
+                navigate(`/monitoring-workbench/logs?${query.toString()}`)
+              }}
+            >
+              {localeCode === 'zh_CN' ? '在日志中心打开' : 'Open in log center'}
+            </Button>
+            {logsStreamingDisabledReason && (
+              <Text type="secondary">{logsStreamingDisabledReason}</Text>
+            )}
+          </Space>
+        </Card>
       ),
   }
 
@@ -650,10 +624,8 @@ export function PodDetailPage() {
           title={localeCode === 'zh_CN' ? '当前无法连接终端' : 'Terminal unavailable'}
           description={terminalDisabledReason}
         />
-      ) : terminalDock ? (
-        dockNotice('terminal', terminalDock.id)
       ) : (
-        <div className="soha-pod-detail-terminal">
+        <Card className="soha-detail-card">
           <div className="soha-terminal-controls">
             <label className="soha-pod-detail-selector">
               {localeCode === 'zh_CN' ? '容器:' : 'Container:'}
@@ -680,42 +652,19 @@ export function PodDetailPage() {
               icon={<CodeOutlined />}
               size="small"
               onClick={openTerminalSession}
-              disabled={containerTerminated}
+              disabled={!container || containerTerminated}
             >
-              {localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'}
+              {terminalDock
+                ? localeCode === 'zh_CN'
+                  ? '查看会话'
+                  : 'Show session'
+                : localeCode === 'zh_CN'
+                  ? '打开终端会话'
+                  : 'Open terminal session'}
             </Button>
+            {terminalDock && closeDockSession(terminalDock.id)}
           </div>
-          {terminalConnection === connectionKey && !containerTerminated ? (
-            <Suspense fallback={<Spin />}>
-              <PodTerminal
-                clusterId={clusterId}
-                namespace={detailNamespace}
-                podName={podName}
-                container={container || undefined}
-                shell={terminalShell}
-              />
-            </Suspense>
-          ) : (
-            <ManagementState
-              compact
-              title={localeCode === 'zh_CN' ? '连接容器终端' : 'Connect to container terminal'}
-              description={
-                localeCode === 'zh_CN'
-                  ? '选择容器和 Shell 后连接。'
-                  : 'Select a container and shell, then connect.'
-              }
-              actions={
-                <Button
-                  type="primary"
-                  disabled={terminalDisabled || !container || containerTerminated}
-                  onClick={() => setTerminalConnection(connectionKey)}
-                >
-                  {localeCode === 'zh_CN' ? '连接终端' : 'Connect'}
-                </Button>
-              }
-            />
-          )}
-        </div>
+        </Card>
       ),
   }
   const header = (

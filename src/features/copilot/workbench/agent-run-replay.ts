@@ -21,15 +21,19 @@ const EXTERNAL_AGENT_REPLAY_SOURCE = 'agent-run-replay'
 export function isExternalAgentRun(run: WorkbenchAgentRun) {
   const providerKind = run.providerKind.trim().toLowerCase()
   const providerId = run.providerId.trim().toLowerCase()
-  return !isNativeAgentRun(run) && providerKind !== 'internal' && providerId !== 'internal'
+  return !usesRunEventJournal(run) && providerKind !== 'internal' && providerId !== 'internal'
 }
 
-export function isNativeAgentRun(run: WorkbenchAgentRun) {
-  return run.providerKind.trim().toLowerCase() === 'native' || run.executionOwner === 'native'
+export function usesRunEventJournal(run: WorkbenchAgentRun) {
+  // Both current dsh runs and historical Native records expose durable event pages.
+  return (
+    ['native', 'dsh'].includes(run.providerKind.trim().toLowerCase()) ||
+    run.executionOwner === 'native'
+  )
 }
 
 export function isDurableAgentRun(run: WorkbenchAgentRun) {
-  return isNativeAgentRun(run) || isExternalAgentRun(run)
+  return usesRunEventJournal(run) || isExternalAgentRun(run)
 }
 
 export function isAwaitingAgentCancellation(run: WorkbenchAgentRun) {
@@ -45,6 +49,7 @@ export function isRunningExternalAgentRun(run: WorkbenchAgentRun) {
 
 export function isRunningAgentRun(run: WorkbenchAgentRun) {
   return (
+    !isReadOnlyAgentRun(run) &&
     isDurableAgentRun(run) &&
     (isRunningWorkbenchAgentStatus(run.status) || isAwaitingAgentCancellation(run))
   )
@@ -157,7 +162,7 @@ function agentRunStatusReplayEvent(
 export function sortedAgentRunReplayEvents(run: WorkbenchAgentRun, sessionId: string) {
   return [
     agentRunStatusReplayEvent(run, sessionId),
-    ...(isNativeAgentRun(run) ? [] : agentRunWorkbenchEvents(run)),
+    ...(usesRunEventJournal(run) ? [] : agentRunWorkbenchEvents(run)),
   ].sort(
     (left, right) =>
       left.sequence - right.sequence ||
@@ -201,12 +206,17 @@ function agentRunReplayMetadata(run: WorkbenchAgentRun, state: WorkbenchStreamSt
   )
   return {
     ...metadata,
+    ...(run.input?.contextSnapshot ? { contextSnapshot: run.input.contextSnapshot } : {}),
+    ...(run.output?.sessionPatch ? { sessionPatch: run.output.sessionPatch } : {}),
     source: EXTERNAL_AGENT_REPLAY_SOURCE,
     agentRunId: run.id,
     externalRunId: run.externalRunId,
     agentProviderId: run.providerId,
+    ...(isReadOnlyAgentRun(run) ? { executionReadOnly: true } : {}),
     agentPhase: isAwaitingAgentCancellation(run) ? 'cancelling' : run.phase,
-    agentStopReason: run.stopReason,
+    agentStopReason:
+      (typeof run.output?.stopReason === 'string' ? run.output.stopReason : undefined) ||
+      run.stopReason,
     agentStatus: isAwaitingAgentCancellation(run)
       ? agentRunStatusSnapshot(run, state)
       : (metadataAgentStatus(metadata) ?? agentRunStatusSnapshot(run, state)),
@@ -232,6 +242,34 @@ export function agentRunReplayMessage(
     content: agentRunReplayContent(run, state),
     metadata: agentRunReplayMetadata(run, state),
     createdAt: agentRunMessageCreatedAt(run),
-    deliveryStatus: streamBubbleStatus(state),
+    deliveryStatus: isReadOnlyAgentRun(run) ? 'success' : streamBubbleStatus(state),
   }
+}
+
+export function isLegacyAgentRun(run: WorkbenchAgentRun) {
+  return (
+    run.providerKind.trim().toLowerCase() === 'native' ||
+    run.executionOwner === 'native' ||
+    run.output?.executionReadOnly === true ||
+    run.output?.stopReason === 'legacy_reconciliation_required'
+  )
+}
+
+export function isReadOnlyAgentRun(run: WorkbenchAgentRun) {
+  // Core retains every Native identity as historical read-only data, including
+  // records created before explicit reconciliation output markers were added.
+  return isLegacyAgentRun(run)
+}
+
+export function isReadOnlyAgentRunMessage(
+  message: WorkbenchMessage | ConversationMessage,
+  readOnlyRunIds?: ReadonlySet<string>,
+) {
+  return (
+    message.metadata?.executionReadOnly === true ||
+    message.metadata?.agentStopReason === 'legacy_reconciliation_required' ||
+    message.metadata?.agentProviderId === 'native' ||
+    metadataAgentStatus(message.metadata)?.providerKind.trim().toLowerCase() === 'native' ||
+    (readOnlyRunIds?.size ? messageAgentRunRefs(message).some((id) => readOnlyRunIds.has(id)) : false)
+  )
 }

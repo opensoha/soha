@@ -12,51 +12,35 @@
 
 .soha-delivery-overview-panels {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-  align-items: start;
   gap: 16px;
+  align-items: start;
 }
 
-.soha-delivery-release-states {
-  margin-bottom: 20px;
-}
-
-.soha-delivery-overview-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-  color: var(--soha-text-secondary);
-  font-size: var(--soha-font-size-supporting);
-}
-
-.soha-delivery-overview-section-heading h3 {
+.soha-delivery-overview-panel-heading {
   margin: 0;
-  color: var(--soha-text-primary);
-  font-size: var(--soha-font-size);
-  font-weight: 600;
+  font: inherit;
 }
 
-.soha-delivery-overview-record-section + .soha-delivery-overview-record-section {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--soha-border-color);
+.soha-delivery-overview-panels[data-paired='true'] {
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
 }
 
 .soha-delivery-overview-records {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 8px;
+}
+
+.soha-delivery-overview-records[data-active='true'] {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .soha-delivery-overview-record {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
   border: 1px solid var(--soha-border-color);
   border-radius: var(--soha-radius-control);
   color: var(--soha-text-primary);
@@ -76,7 +60,57 @@ a.soha-delivery-overview-record:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.soha-delivery-overview-record-main small {
+.soha-delivery-overview-record-main small,
+.soha-delivery-overview-scope,
+.soha-delivery-overview-metrics dt {
   color: var(--soha-text-secondary);
   font-size: var(--soha-font-size-supporting);
+}
+
+.soha-delivery-overview-records[data-active='true'] .soha-delivery-overview-record-main > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-delivery-overview-records[data-active='true'] .soha-status-tag {
+  flex-shrink: 0;
+}
+
+.soha-delivery-overview-record-main .soha-delivery-overview-stage {
+  color: var(--soha-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-delivery-overview-stage > span {
+  margin-inline-end: 4px;
+  color: var(--soha-text-secondary);
+}
+
+.soha-delivery-overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 100px), 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.soha-delivery-overview-metrics > div + div {
+  padding-inline-start: 12px;
+  border-inline-start: 1px solid var(--soha-border-color);
+}
+
+.soha-delivery-overview-metrics dd {
+  margin: 4px 0 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+@media (max-width: 820px) {
+  .soha-delivery-overview-panels[data-paired='true'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

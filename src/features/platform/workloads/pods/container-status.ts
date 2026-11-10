@@ -1,4 +1,9 @@
+import type { WorkloadContainer } from '@/types'
 import type { PodContainerStatus } from './types'
+
+export function podContainerTerminated(container: Pick<WorkloadContainer, 'state'> | undefined) {
+  return container?.state?.split(':', 1)[0] === 'terminated'
+}
 
 export function containerTone(status: PodContainerStatus) {
   if (status.state === 'running')

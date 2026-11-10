@@ -4,6 +4,13 @@ import { workbenchApi } from './api'
 import { workbenchKeys } from './keys'
 
 export const workbenchQueries = {
+  runtimeProfiles: (owner?: string, enabled = true) =>
+    queryOptions({
+      queryKey: workbenchKeys.runtimeProfiles(owner),
+      queryFn: workbenchApi.runtimeProfiles.list,
+      enabled: Boolean(owner) && enabled,
+      retry: false,
+    }),
   workspaceRuntime: (owner: string, assistantId: string, enabled: boolean) =>
     queryOptions({
       queryKey: workbenchKeys.workspaceRuntime(owner, assistantId),

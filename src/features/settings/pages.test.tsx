@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import type { PermissionSnapshot } from '@/types'
+import { useAuthStore } from '@/stores/auth-store'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App as AntdApp } from 'antd'
 import type { ReactNode } from 'react'
@@ -309,6 +310,7 @@ function setDefaultResponses() {
         },
       ],
     },
+    '/settings/ai/workbench-runtime-assets': [],
     '/settings/ai/skills': {
       skillsRegistry: [
         {
@@ -1060,6 +1062,182 @@ describe('settings ai page rendering', () => {
         defaultEndpoint: 'chat/completions',
       }),
     })
+  })
+
+  it('deep-links to immutable runtime profile history without offering publication to a viewer', async () => {
+    testState.snapshot.permissionKeys = testState.snapshot.permissionKeys.filter(
+      (permission) => permission !== 'settings.ai.update',
+    )
+    const path = '/settings/ai/workbench-runtime-profiles/heya-default'
+    const assetPath = '/settings/ai/workbench-runtime-assets'
+    testState.responses[assetPath] = [
+      {
+        kind: 'mcp',
+        id: 'private-mcp',
+        version: '1',
+        transport: 'stdio',
+        executionPosition: 'personal-docker',
+        enabled: true,
+      },
+    ]
+    testState.responses[path] = [
+      {
+        id: 'heya-default',
+        name: '个人排障',
+        scope: 'heya',
+        revision: 3,
+        enabled: true,
+        assets: [{ kind: 'hook', id: 'tool-audit', version: '1', required: true }],
+      },
+    ]
+    const previous = useAuthStore.getState().user
+    useAuthStore.getState().setUser({
+      userId: 'profile-viewer',
+      userName: 'Profile viewer',
+      email: '',
+      roles: [],
+      teams: [],
+      projects: [],
+      tags: [],
+    })
+    try {
+      const container = await renderWithProviders(
+        <AISettingsPage embedded />,
+        '/ai-workbench/model-settings?runtimeProfile=heya-default',
+      )
+      for (
+        let attempt = 0;
+        attempt < 20 && !container.textContent?.includes('v3 · 个人排障');
+        attempt++
+      ) {
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+      }
+      expect(container.textContent).toContain('v3 · 个人排障')
+      expect(apiGetMock).toHaveBeenCalledWith(path)
+      expect(container.textContent).toContain('tool-audit @ 1 · 必需')
+      expect(apiGetMock).toHaveBeenCalledWith(assetPath)
+      expect(container.textContent).toContain('需绑定个人环境')
+      expect(container.querySelector('button[aria-label="停用 private-mcp @ 1"]')).toBeNull()
+      expect(container.textContent).not.toContain('编辑并发布新版本')
+      expect(apiPutMock).not.toHaveBeenCalled()
+    } finally {
+      await act(async () => roots.pop()?.unmount())
+      await act(async () => {
+        useAuthStore.setState({ user: previous })
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      })
+    }
+  })
+
+  it('limits profile reasoning choices to the effective model and rejects an unsupported saved value', async () => {
+    testState.responses['/copilot/workbench/catalog'] = {
+      defaultPublicModel: 'gpt-public',
+      modelOptions: [{ publicModel: 'gpt-public', reasoningEfforts: ['low'] }],
+    }
+    testState.responses['/settings/ai/workbench-runtime-profiles/chat-default'] = [{
+      id: 'chat-default', name: '排障配置', scope: 'chat', revision: 2, enabled: true, assets: [],
+      modelPreferences: { reasoningEffort: 'high' },
+    }]
+    const previous = useAuthStore.getState().user
+    useAuthStore.getState().setUser({
+      userId: 'profile-editor', userName: 'Profile editor', email: '', roles: [], teams: [], projects: [], tags: [],
+    })
+    try {
+      const container = await renderWithProviders(
+        <AISettingsPage embedded />,
+        '/ai-workbench/model-settings?runtimeProfile=chat-default',
+      )
+      const button = (root: ParentNode, label: string) =>
+        Array.from(root.querySelectorAll('button')).find((item) => item.textContent === label)
+      const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+      for (let attempt = 0; attempt < 20 && !button(container, '编辑并发布新版本'); attempt++)
+        await settle()
+      const edit = button(container, '编辑并发布新版本')
+      expect(edit).toBeTruthy()
+      await act(async () => edit?.click())
+      await settle()
+      const dialog = document.querySelector('[role="dialog"]')!
+      const effort = dialog.querySelector('[id="modelPreferences_reasoningEffort"]')!
+      await act(async () => {
+        effort.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+        effort.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      })
+      await settle()
+      const choices = Array.from(document.querySelectorAll(
+        '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
+      )).map((item) => item.textContent)
+      expect(choices).toEqual(['自动', '轻度'])
+      await act(async () => button(dialog, '发布新版本')?.click())
+      await settle()
+      expect(dialog.textContent).toContain('当前模型未确认支持此推理强度')
+      expect(apiPutMock).not.toHaveBeenCalled()
+    } finally {
+      await act(async () => roots.pop()?.unmount())
+      useAuthStore.setState({ user: previous })
+    }
+  })
+
+  it('probes an exact MCP version and fences retries when cleanup is unconfirmed', async () => {
+    const path = '/settings/ai/workbench-runtime-assets'
+    const asset = { kind: 'mcp', id: 'evidence', version: '1.2', transport: 'http', enabled: false }
+    testState.responses[path] = [asset]
+    apiPutMock.mockImplementationOnce(async () => {
+      const updated = { ...asset, enabled: true }
+      testState.responses[path] = [updated]
+      return { data: updated }
+    })
+    apiPostMock.mockResolvedValueOnce({ data: { status: 'ready', capabilities: ['tool:read'] } })
+    apiPostMock.mockResolvedValueOnce({ data: { status: 'cleanup_unknown', capabilities: [] } })
+
+    const previous = useAuthStore.getState().user
+    useAuthStore.getState().setUser({
+      userId: 'asset-manager',
+      userName: 'Asset manager',
+      email: '',
+      roles: [],
+      teams: [],
+      projects: [],
+      tags: [],
+    })
+    try {
+      const container = await renderWithProviders(
+        <AISettingsPage embedded />,
+        '/ai-workbench/model-settings',
+      )
+      const button = (label: string) =>
+        container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+      const waitFor = async (ready: () => boolean) => {
+        for (let attempt = 0; attempt < 20 && !ready(); attempt++) {
+          await act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+        }
+      }
+      const click = async (label: string) => {
+        const target = button(label)
+        expect(target?.disabled).toBe(false)
+        await act(async () => target?.click())
+      }
+      await waitFor(() => Boolean(button('启用 evidence @ 1.2')))
+      await click('启用 evidence @ 1.2')
+      await waitFor(() =>
+        Boolean(button('停用 evidence @ 1.2') && !button('停用 evidence @ 1.2')?.disabled),
+      )
+      expect(apiPutMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2`, { enabled: true })
+      await click('探测 evidence @ 1.2 · Chat')
+      await waitFor(() => Boolean(container.textContent?.includes('探测就绪')))
+      expect(container.textContent).toContain('tool:read')
+      expect(apiPostMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2/probe`, { scope: 'chat' })
+      await click('探测 evidence @ 1.2 · Heya')
+      await waitFor(() => Boolean(container.textContent?.includes('探测进程清理未确认')))
+      expect(apiPostMock).toHaveBeenCalledWith(`${path}/mcp/evidence/1.2/probe`, { scope: 'heya' })
+      expect(container.textContent).toContain('探测进程清理未确认')
+      expect(button('探测 evidence @ 1.2 · Heya')?.disabled).toBe(true)
+    } finally {
+      await act(async () => roots.pop()?.unmount())
+      await act(async () => {
+        useAuthStore.setState({ user: previous })
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      })
+    }
   })
 
   it('saves skills registry without provider connection payloads', async () => {

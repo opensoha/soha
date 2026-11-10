@@ -31,6 +31,7 @@ const apiGetMock = vi.hoisted(() =>
         data: {
           name: 'prometheus-0',
           namespace: 'monitoring',
+          uid: 'uid-prometheus-0',
           phase: 'Running',
           createdAt: '2026-01-01T00:00:00Z',
           containers: [
@@ -41,6 +42,7 @@ const apiGetMock = vi.hoisted(() =>
               restartCount: 0,
               state: 'running',
             },
+            { name: 'migrate', role: 'init', state: 'terminated:Completed' },
           ],
           conditions: [],
           volumes: [],
@@ -283,7 +285,7 @@ describe('pod detail page lazy boundaries', () => {
     expect(container.querySelector('[data-testid="yaml-editor"]')).not.toBeNull()
   })
 
-  it('loads tab data and heavy runtimes only after their tab is activated', async () => {
+  it('loads tab data and metrics on demand and leaves live runtimes to the dock', async () => {
     const container = await renderDetail()
     const requestedPaths = () => apiGetMock.mock.calls.map(([path]) => String(path))
 
@@ -307,23 +309,19 @@ describe('pod detail page lazy boundaries', () => {
     expect(testState.runtimeLoads).toEqual({ logs: 0, metrics: 1, terminal: 0 })
 
     await clickTab(container, '日志')
-    expect(container.querySelector('[data-testid="logs-panel"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="logs-panel"]')).toBeNull()
+    expect(container.textContent).toContain('打开日志会话')
     expect(container.textContent).toContain('在日志中心打开')
-    expect(testState.runtimeLoads.logs).toBe(1)
+    expect(testState.runtimeLoads.logs).toBe(0)
 
     await clickTab(container, '终端')
     expect(container.querySelector('.soha-terminal-controls')).not.toBeNull()
     expect(container.textContent).toContain('容器:')
     expect(container.textContent).toContain('Shell:')
+    expect(container.textContent).toContain('打开终端会话')
+    expect(container.querySelector('[data-testid="terminal-panel"]')).toBeNull()
     expect(testState.runtimeLoads.terminal).toBe(0)
-    const connect = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('连接终端'),
-    )
-    expect(connect).toBeDefined()
-    await act(async () => connect?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await flushAsyncWork()
-    expect(container.querySelector('[data-testid="terminal-panel"]')).not.toBeNull()
-    expect(testState.runtimeLoads.terminal).toBe(1)
+    expect(testState.openSession).not.toHaveBeenCalled()
 
     await clickTab(container, '事件')
     expect(requestedPaths().some((path) => path.includes('/events?namespace=url-namespace'))).toBe(
@@ -370,6 +368,7 @@ describe('pod detail page lazy boundaries', () => {
       kind: 'logs',
       namespace: 'url-namespace',
       podName: 'prometheus-0',
+      podUid: 'uid-prometheus-0',
       streamingDisabledReason: undefined,
     })
 
@@ -387,7 +386,21 @@ describe('pod detail page lazy boundaries', () => {
       kind: 'terminal',
       namespace: 'url-namespace',
       podName: 'prometheus-0',
+      podUid: 'uid-prometheus-0',
       shell: '/bin/sh',
     })
+    expect(testState.runtimeLoads).toMatchObject({ logs: 0, terminal: 0 })
+  })
+
+  it('blocks terminal launch for a terminated container selected by URL', async () => {
+    const container = await renderDetail(
+      '/workloads/pods/prometheus-0?clusterId=url-cluster&namespace=url-namespace&tab=terminal&container=migrate',
+    )
+    const launch = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '打开终端会话',
+    )
+    expect(launch?.disabled).toBe(true)
+    await act(async () => launch?.click())
+    expect(testState.openSession).not.toHaveBeenCalled()
   })
 })

@@ -10,6 +10,7 @@ it('persists only descriptors and isolates users and workbenches', () => {
     clusterId: 'c',
     namespace: 'ns',
     podName: 'pod',
+    podUid: 'uid-original',
     streamingDisabledReason: 'private runtime hint',
   })!
   store.setState({
@@ -19,6 +20,8 @@ it('persists only descriptors and isolates users and workbenches', () => {
   })
   const saved = localStorage.getItem('soha-live-sessions:v2:["a","platform"]')!
   expect(saved).not.toContain('private runtime hint')
+  expect(saved).toContain('uid-original')
+  expect(normalizeRealtimeSession({ ...session, podUid: 'replacement' })?.id).not.toBe(session.id)
   expect(createSessionDockStore('platform', 'a').getState().sessions[0].podName).toBe('pod')
   expect(createSessionDockStore('platform', 'a').getState().selectedClusterId).toBe('c')
   expect(createSessionDockStore('platform', 'b').getState().sessions).toEqual([])

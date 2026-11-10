@@ -10,6 +10,7 @@ import type {
   RegistryConnectionListEnvelope,
   ProgressiveRolloutStatus,
   ProgressiveRolloutControlInput,
+  ResourceRelationsView,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import type {
   DeliveryDocumentSourceInfo,
@@ -466,11 +467,27 @@ export const deliveryApi = {
           `/application-environments/${segment(id)}/detail`,
         ),
       ),
+    targetRelations: (bindingId: string, targetId: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<ApiResponse<ResourceRelationsView>>(
+          `/application-environments/${segment(bindingId)}/targets/${segment(targetId)}/relations`,
+          { signal },
+        ),
+      ),
+    targetSource: (bindingId: string, targetId: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<ApiResponse<{ content: string }>>(
+          `/application-environments/${segment(bindingId)}/targets/${segment(targetId)}/source`,
+          { signal },
+        ),
+      ),
     targetCandidates: (params: DeliveryTargetCandidateParams) =>
-      api.get<DeliveryTargetCandidatePage>(
+      api.getEnvelope<DeliveryTargetCandidatePage>(
         withQuery('/application-environments/target-candidates', {
           clusterId: params.clusterId.trim(),
           namespace: params.namespace.trim(),
+          workloadKind: params.workloadKind,
+          crdName: params.crdName?.trim(),
           search: params.search?.trim(),
           limit: params.limit,
         }),
@@ -478,7 +495,9 @@ export const deliveryApi = {
     importKubernetesServices: (payload: KubernetesServiceImportInput) =>
       unwrap(
         api.post<ApiResponse<KubernetesServiceImportResult>>(
-          '/application-environments/imports',
+          payload.workloads.some((item) => item.serviceId)
+            ? '/application-environments/imports/mapped'
+            : '/application-environments/imports',
           payload,
         ),
       ),
@@ -493,14 +512,21 @@ export const deliveryApi = {
     importHelmReleases: (payload: HelmReleaseImportInput) =>
       unwrap(
         api.post<ApiResponse<HelmReleaseImportResult>>(
-          '/application-environments/helm-release-imports',
+          payload.releases.some((item) => item.serviceId)
+            ? '/application-environments/helm-release-imports/mapped'
+            : '/application-environments/helm-release-imports',
           payload,
         ),
       ),
     create: (payload: DeliveryRecordInput) =>
       discard(api.post('/application-environments', payload)),
     update: (id: string, payload: DeliveryRecordInput) =>
-      discard(api.put(`/application-environments/${segment(id)}`, payload)),
+      discard(
+        api.put(
+          `/application-environments/${segment(id)}${payload.targets === undefined ? '/configuration' : ''}`,
+          payload,
+        ),
+      ),
     saveWorkflow: (applicationId: string, id: string, payload: ApplicationWorkflowInput) =>
       unwrap(
         api.put<ApiResponse<ApplicationEnvironment>>(

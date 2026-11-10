@@ -1,15 +1,25 @@
 import { Tag, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { workbenchQueries } from '../queries'
-import { isRunningExternalAgentRun } from '../agent-run-replay'
+import { isReadOnlyAgentRun, isRunningExternalAgentRun } from '../agent-run-replay'
 
-export function MessageSpecialist({ id, sessionId }: { id: string; sessionId: string }) {
+export function MessageSpecialist({
+  id,
+  sessionId,
+  readOnly = false,
+}: {
+  id: string
+  sessionId: string
+  readOnly?: boolean
+}) {
   const query = useQuery({
     ...workbenchQueries.agentRuns.session(sessionId),
     refetchInterval: (state) =>
+      !readOnly &&
       state.state.data?.data.some(
         (run) =>
           run.id === id &&
+          !isReadOnlyAgentRun(run) &&
           (isRunningExternalAgentRun(run) ||
             (run.status === 'canceled' && run.output?.cancellationPending === true)),
       )
@@ -31,23 +41,32 @@ export function MessageSpecialist({ id, sessionId }: { id: string; sessionId: st
     failed: '核验失败',
     callback_timeout: '核验超时',
   }
-  const stopping = run.status === 'canceled' && run.output?.cancellationPending === true
+  const historical = readOnly || isReadOnlyAgentRun(run)
+  const stopping =
+    !historical && run.status === 'canceled' && run.output?.cancellationPending === true
   const answer = run.output?.answer ?? run.output?.summary
   return (
     <div>
       <Tag
         color={
-          run.status === 'completed'
-            ? 'success'
-            : isRunningExternalAgentRun(run) || stopping
-              ? 'processing'
-              : 'default'
+          historical
+            ? 'default'
+            : run.status === 'completed'
+              ? 'success'
+              : isRunningExternalAgentRun(run) || stopping
+                ? 'processing'
+                : 'default'
         }
       >
-        {stopping ? '等待停止确认' : (label[run.status] ?? run.status)}
+        {historical
+          ? '旧版专业任务记录'
+          : stopping
+            ? '等待停止确认'
+            : (label[run.status] ?? run.status)}
       </Tag>
       <Typography.Paragraph type="secondary">
-        独立上下文 · 只读权限 · 随主任务取消 · 已调用 {run.toolExecutions?.length ?? 0} 次工具
+        独立上下文 · 只读权限 · {historical ? '' : '随主任务取消 · '}已调用{' '}
+        {run.toolExecutions?.length ?? 0} 次工具
       </Typography.Paragraph>
       {typeof answer === 'string' && answer ? (
         <Typography.Paragraph>{answer}</Typography.Paragraph>

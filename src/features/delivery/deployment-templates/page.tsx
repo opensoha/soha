@@ -1,3 +1,4 @@
+import { TemplateMigrationFields, migrationPolicyInput } from '../template-migration'
 import { lazy, Suspense, useState } from 'react'
 import {
   Alert,
@@ -31,6 +32,7 @@ import type { ServiceDeploymentTemplate, ServiceDeploymentTemplateInput } from '
 import { HelmSourceFields, parseHelmSource } from '../helm-fields'
 import { deploymentTemplateDocument } from '../documents/model'
 import { useUnsavedDocument } from '../documents/use-unsaved-document'
+import { TemplateUpdateEntry } from '../template-updates/entry'
 import { TemplateSourcesButton } from '../template-sources/entry'
 import { DocumentSourcePanel } from '../template-sources/source-panel'
 
@@ -56,6 +58,7 @@ export function deploymentTemplateInput(
     parameterSchema,
     defaults,
     environmentOverrides,
+    migrationPolicy,
     artifacts,
     health,
     enabled,
@@ -68,6 +71,7 @@ export function deploymentTemplateInput(
     parameterSchema,
     defaults,
     environmentOverrides,
+    migrationPolicy,
     artifacts,
     health,
     enabled,
@@ -111,7 +115,8 @@ export function DeploymentTemplatesPage() {
   })
   const [form] = Form.useForm<{ definition: ServiceDeploymentTemplateInput }>()
   const definition = Form.useWatch('definition', { form, preserve: true }) as
-    ServiceDeploymentTemplateInput | undefined
+    | ServiceDeploymentTemplateInput
+    | undefined
   const [editorMode, setEditorMode] = useState('form')
   const [sourceDirty, setSourceDirty] = useState(false)
   const [sourceGeneration, setSourceGeneration] = useState(0)
@@ -163,7 +168,8 @@ export function DeploymentTemplatesPage() {
   const save = async () => {
     if (sourceDirty || sourceReadOnly) return
     await form.validateFields()
-    const input = form.getFieldValue('definition') as ServiceDeploymentTemplateInput
+    const raw = form.getFieldValue('definition') as ServiceDeploymentTemplateInput
+    const input = { ...raw, migrationPolicy: migrationPolicyInput(raw.migrationPolicy) }
     const payload =
       input.source.renderer === 'helm'
         ? { ...input, source: { ...input.source, helm: parseHelmSource(input.source.helm!) } }
@@ -301,6 +307,7 @@ export function DeploymentTemplatesPage() {
               render: (_: unknown, item: ServiceDeploymentTemplate) => (
                 <Space className="soha-row-action-icons" size={2}>
                   <TemplateVersionHistory kind="deployment" templateId={item.id} iconOnly />
+                  <TemplateUpdateEntry kind="deployment" templateId={item.id} iconOnly />
                   {allowed('create') ? (
                     <ManagementIconButton
                       aria-label="复制模板"
@@ -313,7 +320,7 @@ export function DeploymentTemplatesPage() {
                   {allowed('update') && item.publicationState === 'draft' ? (
                     <Popconfirm
                       title="发布此草稿为新版本？"
-                      description="现有服务继续使用已固定的版本。"
+                      description="固定版本保持不变；已显式订阅的应用按各自策略采用。"
                       onConfirm={() =>
                         publish
                           .mutateAsync({ id: item.id, expectedRevision: item.revision })
@@ -442,6 +449,7 @@ export function DeploymentTemplatesPage() {
                 >
                   <Input />
                 </Form.Item>
+                <TemplateMigrationFields path={['definition', 'migrationPolicy']} />
                 <Form.Item name={['definition', 'description']} label="说明">
                   <Input.TextArea rows={2} />
                 </Form.Item>

@@ -135,7 +135,7 @@ body:has(.soha-realtime-session-dock.is-maximized:not([hidden])) .soha-companion
 }
 
 .soha-realtime-session-tab-content {
-  padding: 10px;
+  padding: 8px 10px 10px;
   overflow: hidden;
 }
 
@@ -165,6 +165,7 @@ body:has(.soha-realtime-session-dock.is-maximized:not([hidden])) .soha-companion
 
 .soha-realtime-session-pane > .soha-detail-card.ant-card {
   height: 100%;
+  margin-top: 0;
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -175,11 +176,12 @@ body:has(.soha-realtime-session-dock.is-maximized:not([hidden])) .soha-companion
   height: 100%;
   min-height: 0;
   flex-direction: column;
-  padding: 10px;
+  gap: 8px;
+  padding: 0 10px 10px;
 }
 
 .soha-realtime-session-pane .soha-terminal-toolbar {
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .soha-realtime-session-pane .soha-terminal-shell,
@@ -220,7 +222,7 @@ body:has(.soha-realtime-session-dock.is-maximized:not([hidden])) .soha-companion
   }
 
   .soha-realtime-session-tab-content {
-    padding: 6px;
+    padding: 8px 6px 6px;
   }
 
   .soha-realtime-session-tab-label {

@@ -23,6 +23,13 @@ export const manifestMutations = {
       mutationFn: manifestApi.remove,
       onSuccess: () => queryClient.invalidateQueries({ queryKey: manifestKeys.all }),
     }),
+  saveRevision: (queryClient: QueryClient) =>
+    mutationOptions({
+      mutationKey: [...manifestKeys.all, 'save-revision'],
+      mutationFn: ({ id, expectedUpdatedAt }: { id: string; expectedUpdatedAt: string }) =>
+        manifestApi.saveRevision(id, expectedUpdatedAt),
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: manifestKeys.all }),
+    }),
   publish: (queryClient: QueryClient) =>
     mutationOptions({
       mutationKey: [...manifestKeys.all, 'publish'],

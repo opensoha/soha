@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+import { parseDocument } from 'yaml'
 import { useQueries } from '@tanstack/react-query'
 import { Button } from 'antd'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -64,7 +66,15 @@ function resourceQuery(target: Target) {
     }
 }
 
-export function RelatedResourceYaml({ target }: { target: Target }) {
+export function RelatedResourceYaml({
+  target,
+  expectedUid,
+  fresh = false,
+}: {
+  target: Target
+  expectedUid?: string
+  fresh?: boolean
+}) {
   const permissions = usePermissionSnapshot().data?.data
   const source = resourceQuery(target)
   if (!source)
@@ -73,19 +83,60 @@ export function RelatedResourceYaml({ target }: { target: Target }) {
     return <ManagementState compact kind="no-permission" />
   return (
     <YamlQuery
-      key={`${target.clusterId}/${target.namespace}/${target.kind}/${target.name}`}
+      key={`${target.clusterId}/${target.namespace}/${target.kind}/${target.name}/${expectedUid || ''}/${fresh ? 'fresh' : 'cached'}`}
       options={source.options}
+      target={target}
+      expectedUid={expectedUid}
+      fresh={fresh}
     />
   )
 }
 
 function YamlQuery({
   options,
+  target,
+  expectedUid,
+  fresh,
 }: {
+  target: Target
+  expectedUid?: string
+  fresh: boolean
   options: NonNullable<ReturnType<typeof resourceQuery>>['options']
 }) {
-  const [query] = useQueries({ queries: [options] })
-  if (query.isPending) return <ManagementState compact kind="loading" />
+  const [query] = useQueries({
+    queries: [
+      {
+        ...options,
+        ...(expectedUid || fresh
+          ? { staleTime: 0, gcTime: 0, refetchOnMount: 'always' as const }
+          : {}),
+      },
+    ],
+  })
+  const identityValid = useMemo(() => {
+    if (!expectedUid) return true
+    try {
+      const document = parseDocument(query.data?.content || '')
+      if (document.errors.length) return false
+      const value: unknown = document.toJS({ maxAliasCount: 50 })
+      if (!value || typeof value !== 'object' || !('metadata' in value)) return false
+      const metadata = value.metadata
+      return Boolean(
+        metadata &&
+        typeof metadata === 'object' &&
+        'uid' in metadata &&
+        metadata.uid === expectedUid &&
+        'name' in metadata &&
+        metadata.name === target.name &&
+        'namespace' in metadata &&
+        metadata.namespace === target.namespace,
+      )
+    } catch {
+      return false
+    }
+  }, [expectedUid, query.data?.content, target.name, target.namespace])
+  if (query.isPending || ((expectedUid || fresh) && query.isFetching))
+    return <ManagementState compact kind="loading" />
   if (query.isError)
     return (
       <ManagementState
@@ -93,6 +144,15 @@ function YamlQuery({
         kind="error"
         description={query.error.message}
         actions={<Button onClick={() => void query.refetch()}>重试</Button>}
+      />
+    )
+  if (!identityValid)
+    return (
+      <ManagementState
+        compact
+        kind="error"
+        title="资源已重建或身份无法确认"
+        description="请刷新关系后重新选择，不展示同名新资源的配置。"
       />
     )
   return (

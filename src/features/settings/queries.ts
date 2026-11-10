@@ -39,6 +39,20 @@ export const settingsQueries = {
       enabled,
     }),
   ai: {
+    runtimeAssets: (owner: string, enabled = true) =>
+      queryOptions({
+        queryKey: settingsKeys.ai.runtimeAssets(owner),
+        queryFn: settingsApi.ai.runtimeAssets,
+        enabled: Boolean(owner) && enabled,
+        retry: false,
+      }),
+    runtimeProfileHistory: (owner: string, id: string) =>
+      queryOptions({
+        queryKey: settingsKeys.ai.runtimeProfileHistory(owner, id),
+        queryFn: () => settingsApi.ai.runtimeProfileHistory(id),
+        enabled: Boolean(owner && id),
+        retry: false,
+      }),
     detail: (enabled = true) =>
       queryOptions({
         queryKey: settingsKeys.ai.detail(),

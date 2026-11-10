@@ -692,7 +692,12 @@ export function RuntimeDetailPage({ kind }: { kind: RuntimeKind }) {
 
   return (
     <>
-      <RuntimeDetailContent kind={kind} recordId={recordId} onEvidence={openEvidence} />
+      <RuntimeDetailContent
+        kind={kind}
+        recordId={recordId}
+        onEvidence={openEvidence}
+        initialWorkflowStageKey={search.get('stage') || undefined}
+      />
       <Drawer
         title="执行证据"
         open={kind === 'workflow' && !!selectedKind && !!evidenceId}
@@ -713,11 +718,13 @@ export function RuntimeDetailContent({
   recordId,
   embedded = false,
   onEvidence,
+  initialWorkflowStageKey,
 }: {
   kind: RuntimeKind
   recordId: string
   embedded?: boolean
   onEvidence?: (kind: RuntimeKind, id: string) => void
+  initialWorkflowStageKey?: string
 }) {
   const navigate = useNavigate()
   const { token } = theme.useToken()
@@ -876,6 +883,7 @@ export function RuntimeDetailContent({
         }}
         onBack={() => navigate(runtimeListPath(kind))}
         onEvidence={onEvidence}
+        initialStageKey={initialWorkflowStageKey}
         relatedInfo={relatedInfo}
         artifacts={renderArtifactTimeline(runtimeArtifacts, '该工作流没有返回制品明细。')}
         artifactCount={runtimeDetail?.artifacts?.length}

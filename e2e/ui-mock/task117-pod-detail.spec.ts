@@ -3,12 +3,15 @@ import { stringify } from 'yaml'
 import { baselineResponse } from '../fixtures/baseline-data'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { expectWorkloadDetailFrame } from '../fixtures/workload-detail-geometry'
+import { expectSessionToolbarSpacing } from '../fixtures/session-dock-geometry'
 
 const podName = 'api-7d9-with-a-long-pod-name'
 const path = `/workloads/pods/${podName}?clusterId=cluster-a&namespace=monitoring`
 async function setup(context: BrowserContext, page: Page, sessions = true) {
   const state = {
     terminalTickets: 0,
+    terminalExpectedUid: null as string | null,
+    logReads: 0,
     ranges: [] as string[],
     graphReads: 0,
     detailReads: 0,
@@ -247,7 +250,8 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
           ],
         },
       }
-    if (url.pathname.endsWith(`/pods/${podName}/logs`))
+    if (url.pathname.endsWith(`/pods/${podName}/logs`)) {
+      state.logReads += 1
       return {
         body: {
           data: {
@@ -260,6 +264,7 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
           },
         },
       }
+    }
     if (url.pathname.endsWith(`/pods/${podName}/yaml`)) {
       state.yamlReads += 1
       if (state.yamlFault === 'read')
@@ -433,8 +438,10 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
       }
     }
     if (url.pathname === '/api/v1/auth/stream-ticket' && method === 'POST') {
-      if (request.postDataJSON()?.path?.endsWith('/terminal')) {
+      const target = new URL(request.postDataJSON()?.path || '/', url.origin)
+      if (target.pathname.endsWith('/terminal')) {
         state.terminalTickets += 1
+        state.terminalExpectedUid = target.searchParams.get('expectedUid')
         return { body: { data: { ticket: 'synthetic-ticket', expiresAt: '2099-01-01T00:00:00Z' } } }
       }
       return {
@@ -508,21 +515,32 @@ test('Pod event timeline preserves actual repetition and filters returned events
   verifyBrowserEvidence(evidence)
 })
 
-test('Pod terminal stays disconnected until explicit connect', async ({ context, page }) => {
+test('Pod terminal starts explicitly in the dock and survives a detail tab switch', async ({
+  context,
+  page,
+}) => {
   const { state, evidence } = await setup(context, page)
   await page.goto(`${path}&tab=terminal&container=app`)
-  await expect(page.getByRole('button', { name: '连接终端', exact: true })).toBeVisible()
+  const launch = page.getByRole('button', { name: /打开终端会话$/ })
+  await expect(launch).toBeVisible()
   expect(state.terminalTickets).toBe(0)
-  await page.getByRole('button', { name: '连接终端', exact: true }).click()
+  await launch.click()
   await expect.poll(() => state.terminalTickets).toBe(1)
-  await expect(page.locator('.soha-terminal-shell')).toBeVisible()
-  const terminalHeight = await page
-    .locator('.soha-terminal-shell')
-    .evaluate((el) => el.getBoundingClientRect().height)
+  expect(state.terminalExpectedUid).toBe('pod-uid')
+  const dock = page.getByRole('region', { name: '实时会话', exact: true })
+  const terminal = dock.locator('.soha-terminal-shell')
+  await expect(terminal).toBeVisible()
+  await expectSessionToolbarSpacing(dock)
+  await dock.getByRole('button', { name: '最大化实时会话', exact: true }).click()
+  const terminalHeight = await terminal.evaluate((el) => el.getBoundingClientRect().height)
   expect(terminalHeight).toBeGreaterThan(300)
-  expect(terminalHeight).toBeLessThan(900)
+  expect(terminalHeight).toBeLessThan(1000)
+  await dock.getByRole('button', { name: '收起实时会话', exact: true }).click()
   await page.getByRole('tab', { name: '概览', exact: true }).click()
-  await expect(page.locator('.soha-terminal-shell')).toHaveCount(0)
+  await expect(page.locator('.soha-pod-detail .soha-terminal-shell')).toHaveCount(0)
+  await page.getByRole('button', { name: /实时会话 \(1\)$/ }).click()
+  await expect(terminal).toBeVisible()
+  expect(state.terminalTickets).toBe(1)
   verifyBrowserEvidence(evidence)
 })
 
@@ -542,17 +560,26 @@ test('Pod detail does not expose logs or exec without page permission', async ({
   verifyBrowserEvidence(evidence)
 })
 
-test('Pod logs fill available height and remain bounded during window resize', async ({
+test('Pod logs start explicitly and remain bounded in the dock during window resize', async ({
   context,
   page,
 }) => {
-  const { evidence } = await setup(context, page)
+  const { state, evidence } = await setup(context, page)
   await page.goto(`${path}&tab=logs`)
-  const shell = page.locator('.soha-pod-detail .soha-log-shell')
+  const launch = page.getByRole('button', { name: /打开日志会话$/ })
+  await expect(launch).toBeVisible()
+  expect(state.logReads).toBe(0)
+  await launch.click()
+  const dock = page.getByRole('region', { name: '实时会话', exact: true })
+  const shell = dock.locator('.soha-log-shell')
   await expect(shell).toBeVisible()
+  await expectSessionToolbarSpacing(dock)
+  await dock.getByRole('button', { name: '最大化实时会话', exact: true }).click()
+  await expect.poll(() => state.logReads).toBeGreaterThan(0)
+  await expect(page.locator('.soha-pod-detail .soha-log-shell')).toHaveCount(0)
   const height = () => shell.evaluate((el) => el.getBoundingClientRect().height)
   await expect.poll(height).toBeGreaterThan(400)
-  expect(await height()).toBeLessThan(850)
+  expect(await height()).toBeLessThan(1000)
   const initial = await height()
   await page.setViewportSize({ width: 1440, height: 1400 })
   await expect.poll(height).toBeGreaterThan(initial + 300)
@@ -617,36 +644,41 @@ test('Pod relationships follow the approved owner, scheduling and reference layo
   verifyBrowserEvidence(evidence)
 })
 
-test('Pod terminal requires reconnect after changing container and stops after policy is revoked', async ({
+test('Pod terminal blocks completed containers and requires revalidation after policy is revoked', async ({
   context,
   page,
 }) => {
   const { state, evidence } = await setup(context, page)
   await page.goto(`${path}&tab=terminal&container=app`)
-  await page.getByRole('button', { name: '连接终端', exact: true }).click()
+  const launch = page.getByRole('button', { name: /打开终端会话$/ })
+  await launch.click()
   await expect.poll(() => state.terminalTickets).toBe(1)
+  const dock = page.getByRole('region', { name: '实时会话', exact: true })
+  const terminal = dock.locator('.soha-terminal-shell')
   const header = page.locator('.soha-workload-detail-header')
   const reads = state.detailReads
   await header.getByRole('button', { name: '刷新', exact: true }).click()
   await expect.poll(() => state.detailReads).toBeGreaterThan(reads)
-  await expect(page.locator('.soha-terminal-shell')).toBeVisible()
+  await expect(terminal).toBeVisible()
   expect(state.terminalTickets).toBe(1)
+  await dock.getByRole('button', { name: '收起实时会话', exact: true }).click()
   await page.getByRole('combobox', { name: '选择容器' }).click()
   await page
     .locator('.ant-select-item-option-content:visible')
     .filter({ hasText: /^migrate$/ })
     .click()
-  await expect(page.getByRole('button', { name: '连接终端', exact: true })).toBeDisabled()
-  await expect(page.locator('.soha-terminal-shell')).toHaveCount(0)
+  await expect(launch).toBeDisabled()
+  expect(state.terminalTickets).toBe(1)
   await page.getByRole('combobox', { name: '选择容器' }).click()
   await page.locator('.ant-select-item-option-content:visible').filter({ hasText: /^app$/ }).click()
-  await expect(page.getByRole('button', { name: '连接终端', exact: true })).toBeEnabled()
+  const show = page.getByRole('button', { name: /查看会话$/ })
+  await expect(show).toBeEnabled()
+  await show.click()
+  await expect(terminal).toBeVisible()
   expect(state.terminalTickets).toBe(1)
-  await page.getByRole('button', { name: '连接终端', exact: true }).click()
-  await expect.poll(() => state.terminalTickets).toBe(2)
   state.allowedActions = ['get']
   await header.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(page.locator('.soha-terminal-shell')).toHaveCount(0)
+  await expect(terminal).toHaveCount(0)
   await expect(page.getByRole('tab', { name: '终端', exact: true })).toHaveAttribute(
     'aria-disabled',
     'true',
@@ -655,11 +687,15 @@ test('Pod terminal requires reconnect after changing container and stops after p
     'aria-selected',
     'true',
   )
-  expect(state.terminalTickets).toBe(2)
+  expect(state.terminalTickets).toBe(1)
   state.allowedActions = ['get', 'logs', 'exec']
   await header.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(page.getByRole('button', { name: '连接终端', exact: true })).toBeEnabled()
-  expect(state.terminalTickets).toBe(2)
+  await expect(show).toBeEnabled()
+  await expect(terminal).toHaveCount(0)
+  expect(state.terminalTickets).toBe(1)
+  await dock.getByRole('button', { name: '重新校验并连接', exact: true }).click()
+  await expect.poll(() => state.terminalTickets).toBe(2)
+  await expect(terminal).toBeVisible()
   verifyBrowserEvidence(evidence)
 })
 

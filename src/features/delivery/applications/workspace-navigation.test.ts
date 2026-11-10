@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from 'vitest'
-import { applicationWorkspacePath, serviceRuntimePath } from './workspace-navigation'
+import {
+  applicationEnvironmentSearch,
+  applicationWorkspacePath,
+  serviceRuntimePath,
+} from './workspace-navigation'
 import { environmentRuntimeStatus, workloadRuntimeStatus } from './runtime-status'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import type { ApplicationRuntimeEnvironment, ApplicationRuntimeWorkload } from '../types'
@@ -26,6 +30,19 @@ const environment: ApplicationRuntimeEnvironment = {
 afterEach(() => usePreferencesStore.setState({ applicationShortcuts: {} }))
 
 describe('application workspace context', () => {
+  it('preserves the service and content tab while removing old environment targets', () => {
+    const original = new URLSearchParams(
+      'tab=services&serviceId=api&serviceTab=metrics&applicationEnvironmentId=test&pod=api-1&podCluster=old&tool=terminal&metricPod=api-1&metricCluster=old&metricNamespace=test&metricRange=15&metricUid=pod-uid&metricRoot=root-uid&releaseId=old&settings=application',
+    )
+    const next = applicationEnvironmentSearch(original, 'prod')
+    expect(Object.fromEntries(next)).toEqual({
+      tab: 'services',
+      serviceId: 'api',
+      serviceTab: 'metrics',
+      applicationEnvironmentId: 'prod',
+    })
+    expect(original.get('applicationEnvironmentId')).toBe('test')
+  })
   it('encodes identities and retains environment, service and view in shared links', () => {
     const url = new URL(
       applicationWorkspacePath('app/a', 'services', 'prod + 1', 'service/a', 'build'),

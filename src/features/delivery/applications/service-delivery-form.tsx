@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Alert, App, Button, Card, Descriptions, Space, Typography } from 'antd'
+import { Alert, App, Button, Card, Descriptions, Space } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ManagementState } from '@/components/management-list'
@@ -10,6 +10,7 @@ import { DeliveryTargetEditor } from '../batches/target-editor'
 import { deliveryActionLabels, deliveryStatusLabels } from '../batches/model'
 import { deliveryMutations } from '../mutations'
 import { deliveryQueries } from '../queries'
+import './service-delivery-form.css'
 import type { ApplicationServiceComponent, DeliveryBatchInput, DeliveryTargetInput } from '../types'
 
 export function ServiceDeliveryForm({
@@ -66,8 +67,13 @@ export function ServiceDeliveryForm({
     }
   }
   return (
-    <Space orientation="vertical" size={20} style={{ width: '100%' }}>
-      <Card title={`${service.name} · 构建与更新`} size="small">
+    <Space
+      className="service-delivery-form"
+      orientation="vertical"
+      size={16}
+      style={{ width: '100%' }}
+    >
+      <Card title="交付配置" size="small">
         {canTrigger ? (
           <DeliveryTargetEditor
             key={`${service.id}/${applicationEnvironmentId ?? ''}`}
@@ -194,22 +200,43 @@ export function ServiceDeliveryForm({
             actions={<Button onClick={() => void history.refetch()}>重试</Button>}
           />
         ) : history.data?.length ? (
-          <Space orientation="vertical" style={{ width: '100%' }}>
-            {history.data.map((batch) => (
-              <Space key={batch.id} wrap>
-                <Link to={`/delivery/batches/${encodeURIComponent(batch.id)}`}>
-                  {batch.definition.name}
-                </Link>
-                <StatusTag
-                  value={batch.status === 'partially_completed' ? 'warning' : batch.status}
-                  label={deliveryStatusLabels[batch.status]}
-                />
-                <Typography.Text type="secondary">
-                  {formatDateTime(batch.createdAt)}
-                </Typography.Text>
-              </Space>
-            ))}
-          </Space>
+          <ul className="service-delivery-history" aria-label="最近交付记录">
+            {history.data.map((batch) => {
+              const targets = batch.targets.filter((item) => item.target.serviceId === service.id)
+              const target = targets.length === 1 ? targets[0] : undefined
+              const environments = [
+                ...new Set(targets.map((item) => item.environmentName).filter(Boolean)),
+              ].join('、')
+              const action = target && deliveryActionLabels[target.target.action]
+              const name =
+                batch.definition.name === 'Application delivery'
+                  ? [target?.serviceName || service.name, action].filter(Boolean).join(' · ')
+                  : batch.definition.name
+              return (
+                <li className="service-delivery-history__card" key={batch.id}>
+                  <div className="service-delivery-history__heading">
+                    <Link to={`/delivery/batches/${encodeURIComponent(batch.id)}`}>{name}</Link>
+                    <StatusTag
+                      value={batch.status === 'partially_completed' ? 'warning' : batch.status}
+                      label={deliveryStatusLabels[batch.status]}
+                    />
+                  </div>
+                  <div className="service-delivery-history__meta">
+                    {action ? <span>{action}</span> : null}
+                    {targets.length > 1 ? <span>{targets.length} 个交付目标</span> : null}
+                    {environments ? <span>{environments}</span> : null}
+                    {target?.manifestRevision != null ? (
+                      <span>配置版本 {target.manifestRevision}</span>
+                    ) : null}
+                    {target?.target.releaseBundleId ? (
+                      <span>产物 {target.target.releaseBundleId}</span>
+                    ) : null}
+                    <time dateTime={batch.createdAt}>{formatDateTime(batch.createdAt)}</time>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
         ) : (
           <ManagementState compact title="暂无交付记录" />
         )}

@@ -26,11 +26,13 @@ function buildTerminalWebSocketURL({
   clusterId,
   namespace,
   podName,
+  expectedUid,
   container,
   shell,
 }: {
   clusterId: string
   namespace: string
+  expectedUid?: string
   podName: string
   container?: string
   shell: string
@@ -40,6 +42,7 @@ function buildTerminalWebSocketURL({
     'ws',
   )
   url.searchParams.set('namespace', namespace)
+  if (expectedUid) url.searchParams.set('expectedUid', expectedUid)
   url.searchParams.set('shell', shell)
   if (container) {
     url.searchParams.set('container', container)
@@ -51,15 +54,19 @@ export function PodTerminal({
   clusterId,
   namespace,
   podName,
+  expectedUid,
   container,
   shell = '/bin/sh',
+  beforeConnect,
   toolbarContent,
 }: {
   clusterId?: string | null
   namespace?: string | null
+  expectedUid?: string
   podName: string
   container?: string
   shell?: string
+  beforeConnect?: () => Promise<boolean>
   toolbarContent?: ReactNode
 }) {
   const { t } = useI18n()
@@ -87,10 +94,11 @@ export function PodTerminal({
       clusterId,
       namespace,
       podName,
+      expectedUid,
       container,
       shell,
     })
-  }, [clusterId, container, namespace, podName, shell])
+  }, [clusterId, container, namespace, podName, expectedUid, shell])
 
   const sendResize = useCallback(() => {
     const terminal = terminalRef.current
@@ -113,7 +121,6 @@ export function PodTerminal({
     resizeObserverRef.current?.disconnect()
     resizeObserverRef.current = null
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'input', data: 'exit\n' }))
       socketRef.current.send(JSON.stringify({ type: 'close' }))
     }
     socketRef.current?.close()
@@ -135,6 +142,8 @@ export function PodTerminal({
     if (containerRef.current) {
       containerRef.current.innerHTML = ''
     }
+    if (beforeConnect && !(await beforeConnect())) return
+    if (sessionRef.current !== sessionId || !containerRef.current) return
     setConnectionState('connecting')
     setLastMessage(t('podTerminal.connecting', 'Connecting terminal...'))
 
@@ -234,7 +243,7 @@ export function PodTerminal({
       }, TERMINAL_RESIZE_SETTLE_MS)
     })
     resizeObserverRef.current.observe(containerRef.current)
-  }, [disposeTerminal, sendResize, t, terminalURL])
+  }, [beforeConnect, disposeTerminal, sendResize, t, terminalURL])
 
   useEffect(() => {
     if (!canConnect) return

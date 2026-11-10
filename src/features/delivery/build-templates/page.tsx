@@ -1,3 +1,5 @@
+import { TemplateMigrationFields, migrationPolicyInput } from '../template-migration'
+import type { TemplateMigrationPolicy } from '@opensoha/contracts/gen/ts/sohaapi'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './styles.css'
 import {
@@ -39,6 +41,7 @@ import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
 import { TemplateUsageImpactPanel } from '../template-usage-impact'
 import { TemplatePublicationStatus, TemplateVersionHistory } from '../template-versions'
+import { TemplateUpdateEntry } from '../template-updates/entry'
 import { deliveryMutations } from '../mutations'
 import { deliveryQueries } from '../queries'
 import type { BuildTemplate } from '../types'
@@ -62,6 +65,7 @@ const { Text } = Typography
 type JsonObject = Record<string, unknown>
 
 export interface BuildTemplateFormValues {
+  migrationPolicy?: TemplateMigrationPolicy
   key?: string
   name?: string
   description?: string
@@ -76,6 +80,7 @@ export interface BuildTemplateFormValues {
 }
 
 export interface BuildTemplatePayload {
+  migrationPolicy?: TemplateMigrationPolicy
   key?: string
   name?: string
   description?: string
@@ -253,6 +258,7 @@ function buildTemplateToFormValues(
     originalBuildCommands: template.buildCommands,
     variableSchemaText: JSON.stringify(template.variableSchema ?? {}, null, 2),
     defaultVariablesText: JSON.stringify(template.defaultVariables ?? {}, null, 2),
+    migrationPolicy: template.migrationPolicy,
     variables: extractBuildTemplateVariables(template),
     enabled: template.enabled,
   }
@@ -288,6 +294,7 @@ export function buildBuildTemplatePayloadFromDesigner(
         )
       : parseJSONObject(values.defaultVariablesText, '默认变量'),
     enabled: values.enabled,
+    migrationPolicy: migrationPolicyInput(values.migrationPolicy),
   }
 }
 
@@ -302,6 +309,7 @@ export function buildBuildTemplatePayload(values: BuildTemplateFormValues): Buil
     variableSchema: parseJSONObject(values.variableSchemaText, '变量 Schema'),
     defaultVariables: parseJSONObject(values.defaultVariablesText, '默认变量'),
     enabled: values.enabled,
+    migrationPolicy: migrationPolicyInput(values.migrationPolicy),
   }
 }
 
@@ -707,6 +715,7 @@ export function BuildTemplatesPage() {
           >
             <Input placeholder="Node Docker 标准构建" />
           </Form.Item>
+          <TemplateMigrationFields />
           <Form.Item name="builderKind" label="Builder Kind">
             <Select
               options={[
@@ -964,7 +973,7 @@ export function BuildTemplatesPage() {
         </Button>
         <Popconfirm
           title="发布当前草稿为新版本？"
-          description="已有服务继续使用固定版本；新版本需显式选择。"
+          description="固定版本保持不变；已订阅的应用按采用策略更新后续构建。"
           disabled={locked}
           onConfirm={() => changePublication('publish')}
         >
@@ -989,6 +998,7 @@ export function BuildTemplatesPage() {
           />
         </Popconfirm>
         <TemplateVersionHistory kind="build" templateId={selectedTemplate?.id ?? ''} iconOnly />
+        <TemplateUpdateEntry kind="build" templateId={selectedTemplate?.id ?? ''} iconOnly />
         <ManagementIconButton
           icon={<UndoOutlined />}
           aria-label="取消更改"

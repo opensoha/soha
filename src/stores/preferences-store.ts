@@ -8,6 +8,7 @@ export interface ApplicationListFilters {
   group?: string
   search?: string
   scope?: 'all' | 'favorites' | 'recent'
+  view?: 'cards' | 'list'
 }
 
 interface PreferencesState {

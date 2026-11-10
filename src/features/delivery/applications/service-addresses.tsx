@@ -67,17 +67,24 @@ export function ServiceAddresses({
   applicationId: string
   workload: ApplicationRuntimeWorkload
 }) {
-  // ponytail: one cached runtime read per visible workload; use a batch endpoint for large environments.
-  const query = useQuery(
-    deliveryQueries.workloads.runtime({
-      applicationId,
-      applicationEnvironmentId: workload.applicationEnvironmentId,
-      workloadName: workload.workloadName,
-    }),
-  )
   const permissionQuery = usePermissionSnapshot()
   const snapshot = permissionQuery.data?.data
-  const relations = query.data?.deployment?.relatedResources
+  const runtimeEnabled =
+    hasPermission(snapshot, 'delivery.applications.view') &&
+    workload.workloadKind === 'Deployment' &&
+    (!workload.sourceStatus || ['linked', 'changed'].includes(workload.sourceStatus))
+  // ponytail: one cached runtime read per visible workload; use a batch endpoint for large environments.
+  const query = useQuery(
+    deliveryQueries.workloads.runtime(
+      {
+        applicationId,
+        applicationEnvironmentId: workload.applicationEnvironmentId,
+        workloadName: workload.workloadName,
+      },
+      runtimeEnabled,
+    ),
+  )
+  const relations = runtimeEnabled ? query.data?.deployment?.relatedResources : undefined
   const routes = (relations ?? []).filter(
     (resource) => resource.kind === 'HTTPRoute' || resource.kind === 'GRPCRoute',
   )
@@ -137,6 +144,7 @@ export function ServiceAddresses({
     isRelated('Ingress', ingress.name, ingress.namespace),
   )
   const unavailable = query.isError ? '地址读取失败' : query.isLoading ? '读取中' : undefined
+  if (!runtimeEnabled) return null
   return (
     <dl className="soha-service-addresses" aria-label="服务访问地址">
       <AddressField

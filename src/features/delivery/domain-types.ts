@@ -12,6 +12,10 @@ import type {
 } from '@/types/platform'
 
 type SohaAPISchemas = SohaAPIComponents['schemas']
+export type ResourceRelationsView = SohaAPISchemas['ResourceRelationsView']
+export type ResourceRelationConfig = SohaAPISchemas['ResourceRelationConfig']
+export type ResourceRelationNode = SohaAPISchemas['ResourceRelationNode']
+
 export type DeliveryDocument = SohaAPISchemas['DeliveryDocument']
 export type DeliveryDocumentKind = SohaAPISchemas['DeliveryDocumentKind']
 export type DeliveryDocumentFile = SohaAPISchemas['DeliveryDocumentFile']
@@ -734,6 +738,9 @@ export interface DeliveryPlanConfirmResult {
 }
 
 export interface ApplicationRuntimeWorkload {
+  targetId?: string
+  source?: KubernetesImportSource
+  sourceStatus?: 'linked' | 'changed' | 'replaced' | 'missing' | 'unavailable' | 'forbidden'
   applicationEnvironmentId: string
   clusterId: string
   namespace: string
@@ -851,7 +858,17 @@ export interface ReleaseBoardEntry {
   latestRelease?: ReleaseRecord
 }
 
+export type KubernetesImportSource = SohaAPISchemas['KubernetesImportSource']
+export type KubernetesImportKind =
+  | 'Deployment'
+  | 'StatefulSet'
+  | 'DaemonSet'
+  | 'Job'
+  | 'CronJob'
+  | 'CustomResource'
+
 export interface DeliveryTargetCandidate {
+  source?: KubernetesImportSource
   clusterId: string
   namespace: string
   workloadKind: string
@@ -877,7 +894,11 @@ export interface KubernetesServiceImportInput {
   environmentName: string
   ownershipMode: 'observe_only' | 'managed'
   workloads: Array<{
-    workloadKind: 'Deployment' | 'StatefulSet' | 'DaemonSet'
+    serviceId?: string
+    workloadKind: KubernetesImportKind
+    expectedUid?: string
+    expectedSpecDigest?: string
+    crdName?: string
     workloadName: string
   }>
 }
@@ -929,7 +950,7 @@ export interface HelmReleaseImportInput {
   environmentKey: string
   environmentName: string
   ownershipMode: 'observe_only' | 'managed'
-  releases: Array<{ releaseName: string }>
+  releases: Array<{ releaseName: string; serviceId?: string }>
 }
 
 export interface HelmReleaseImportResult {

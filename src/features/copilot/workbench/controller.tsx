@@ -1,3 +1,6 @@
+import { canonicalAgentProviderId } from './agent-selection'
+import { RuntimeAssemblySummary, RuntimeProfileControl } from './components/runtime-profile'
+import { runtimeAssemblyFromMetadata } from './runtime-profile'
 import { ManagementState } from '@/components/management-list'
 import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
@@ -59,7 +62,9 @@ import {
   isDurableAgentRun,
   isExternalAgentRunReplayMessage,
   isFinalAgentRunMessage,
-  isNativeAgentRun,
+  isReadOnlyAgentRun,
+  isReadOnlyAgentRunMessage,
+  usesRunEventJournal,
   isRunningAgentRun,
   messageAgentRunRefs,
   sortedAgentRunReplayEvents,
@@ -95,6 +100,11 @@ import { SessionReferenceReader } from './components/session-reference-reader'
 import { MobileAssistantNav, WorkbenchPanel, WorkbenchShell } from './components/shell'
 import { StaticArtifactView } from './components/static-artifact'
 import { CHAT_STARTERS } from './composer-commands'
+import {
+  hasMemoryDegradation,
+  memoryEventMetadata,
+  MEMORY_UNAVAILABLE_WARNING,
+} from './memory-feedback'
 import { contextSnapshotSummary } from './context-selection'
 import {
   assistantReactionForMessage,
@@ -107,7 +117,7 @@ import {
   type WorkbenchBubbleStatus,
 } from './conversation'
 import { useChatDraft } from './hooks/use-chat-draft'
-import { useNativeRequestRecovery } from './hooks/use-native-request-recovery'
+import { useRunRequestRecovery } from './hooks/use-run-request-recovery'
 import { useWorkbenchRouteState } from './hooks/use-workbench-route-state'
 import { workbenchKeys } from './keys'
 import {
@@ -166,7 +176,7 @@ import type { AssistantChatTask, WorkbenchMode, WorkbenchSessionScope } from './
 
 const { Paragraph, Text } = Typography
 
-function combineNativeEventPages(
+function combineRunEventPages(
   results: Array<{
     data?: { runId: string; afterSequence: number; page: AgentRunEventPage }
     isError: boolean
@@ -326,14 +336,15 @@ export function AIWorkbenchController() {
   const [analysisCapabilities, setAnalysisCapabilities] = useState<TaskCapability[]>([])
   const analysisMode: WorkbenchMode = analysisCapabilities[0] ?? 'root_cause'
   const [analysisIntent, setAnalysisIntent] = useState<WorkbenchTaskIntent>({})
-  const [analysisAgentProviderId, setAnalysisAgentProviderId] = useState('internal')
+  const [analysisAgentProviderId, setAnalysisAgentProviderId] = useState('dsh')
   const [analysisQuestion, setAnalysisQuestion] = useState('')
-  const [selectedAgentProviderId, setSelectedAgentProviderId] = useState('internal')
+  const [selectedAgentProviderId, setSelectedAgentProviderId] = useState('dsh')
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
   const [selectedAdapterIds, setSelectedAdapterIds] = useState<string[]>([])
   const [disabledToolNames, setDisabledToolNames] = useState<string[]>([])
   const [budgetOverrides, setBudgetOverrides] = useState<Record<string, number>>({})
   const [scopeOverrides, setScopeOverrides] = useState<Partial<WorkbenchSessionScope>>({})
+  const [memoryStreamWarnings, setMemoryStreamWarnings] = useState<Record<string, string>>({})
   const [memoryDraft, setMemoryDraft] = useState<{ fact?: string; sourceRefs?: string[] }>()
   const {
     heldValue,
@@ -388,7 +399,7 @@ export function AIWorkbenchController() {
     ...observabilitySignalQueries.metricCatalog(),
     enabled:
       analysisOpen &&
-      analysisAgentProviderId === 'internal' &&
+      analysisAgentProviderId === 'dsh' &&
       canViewMonitoring &&
       analysisCapabilities.includes('performance'),
   })
@@ -400,7 +411,7 @@ export function AIWorkbenchController() {
     ...observeQueries.operations.runs(),
     enabled:
       analysisOpen &&
-      analysisAgentProviderId === 'internal' &&
+      analysisAgentProviderId === 'dsh' &&
       canViewAI &&
       analysisCapabilities.includes('inspection_review'),
   })
@@ -420,7 +431,7 @@ export function AIWorkbenchController() {
     personal ===
       Boolean(sessionDetailQuery.data.data.metadata?.conversationKind?.startsWith('personal_')),
   )
-  const requestRecovery = useNativeRequestRecovery(
+  const requestRecovery = useRunRequestRecovery(
     owner,
     requestedSessionId,
     canUseChat && matchesWorkspace && !currentStreamPending,
@@ -511,6 +522,34 @@ export function AIWorkbenchController() {
   const visibleSessions = useMemo(() => sessionsQuery.data?.data ?? [], [sessionsQuery.data?.data])
   const currentSession =
     sessionDetailQuery.data?.data ?? visibleSessions.find((item) => item.id === requestedSessionId)
+  const runtimeProfilesQuery = useQuery(
+    workbenchQueries.runtimeProfiles(owner, canUseChat && matchesWorkspace && !conversationDenied && !feedView),
+  )
+  const runtimeProfiles = readableQueryData(runtimeProfilesQuery)?.data
+  const runtimeScope = personal ? 'heya' : 'chat'
+  const runtimeProfileId = currentSession?.metadata?.runtimeProfileId ?? ''
+  const runtimeProfile = runtimeProfiles?.find(
+    (profile) =>
+      profile.enabled && profile.scope === runtimeScope &&
+      profile.id === (runtimeProfileId || `${runtimeScope}-default`),
+  )
+  const runsById = useMemo(
+    () => new Map((agentRunsQuery.data?.data ?? []).map((run) => [run.id, run])),
+    [agentRunsQuery.data?.data],
+  )
+  const renderRuntimeSummary = ({ role, metadata, sessionId }: ConversationMessage) => {
+    const runId = typeof metadata?.agentRunId === 'string' ? metadata.agentRunId : ''
+    if (role !== 'assistant' && !(role === 'system' && runId)) return null
+    const candidate = runsById.get(runId)
+    const run = candidate?.sessionId === sessionId ? candidate : undefined
+    return (
+      <RuntimeAssemblySummary
+        assembly={runtimeAssemblyFromMetadata(metadata?.runtimeAssembly) ?? run?.runtimeAssembly}
+        hookOutcomes={run?.output?.runtimeHooks ?? metadata?.runtimeHooks}
+        toolExecutions={run?.toolExecutions}
+      />
+    )
+  }
   const modelPreferences = modelDraft ?? currentSession?.metadata?.modelPreferences ?? {}
   const isMainChat = ['main', 'personal_main'].includes(
     currentSession?.metadata?.conversationKind || '',
@@ -564,24 +603,53 @@ export function AIWorkbenchController() {
           agentRunTimestamp(left) - agentRunTimestamp(right) || left.id.localeCompare(right.id),
       )
   }, [agentRunsQuery.data?.data, finalAgentRunIds, requestedSessionId])
-  const nativeEventPages = useQueries({
-    queries: runningAgentRuns
-      .filter(isNativeAgentRun)
-      .map((run) =>
-        workbenchQueries.agentRuns.events(
+  const readOnlyAgentRuns = useMemo(
+    () =>
+      (agentRunsQuery.data?.data ?? []).filter(
+        (run) => run.sessionId === requestedSessionId && isReadOnlyAgentRun(run),
+      ),
+    [agentRunsQuery.data?.data, requestedSessionId],
+  )
+  const readOnlyRunIds = useMemo(
+    () => new Set(readOnlyAgentRuns.map((run) => run.id)),
+    [readOnlyAgentRuns],
+  )
+  const replayAgentRuns = useMemo(
+    () =>
+      conversationDenied
+        ? []
+        : [
+            ...runningAgentRuns,
+            ...readOnlyAgentRuns.filter(
+              (run) => !run.parentRunId && !finalAgentRunIds.has(run.id),
+            ),
+          ],
+    [conversationDenied, runningAgentRuns, readOnlyAgentRuns, finalAgentRunIds],
+  )
+  const runEventPages = useQueries({
+    queries: replayAgentRuns
+      .filter(usesRunEventJournal)
+      .map((run) => ({
+        ...workbenchQueries.agentRuns.events(
           run.id,
           externalRunReplayRef.current[run.id]?.afterSequence ?? 0,
         ),
-      ),
-    combine: combineNativeEventPages,
+        ...(readOnlyRunIds.has(run.id) ? { refetchInterval: false } : {}),
+      })),
+    combine: combineRunEventPages,
   })
   const legacyPlatformMessages = useMemo(
     () => serverMessages.filter(isLegacyPlatformContextMessage),
     [serverMessages],
   )
   const messages = useMemo(
-    () => mergeConversationMessages(serverMessages, localMessages, requestedSessionId),
-    [localMessages, requestedSessionId, serverMessages],
+    () =>
+      mergeConversationMessages(serverMessages, localMessages, requestedSessionId).map((item) =>
+        isReadOnlyAgentRunMessage(item, readOnlyRunIds)
+          ? { ...item, metadata: { ...item.metadata, executionReadOnly: true } }
+          : item,
+      ),
+    [localMessages, requestedSessionId, serverMessages, readOnlyRunIds],
   )
   const adapters = useMemo(
     () => catalogQuery.data?.data?.adapters ?? [],
@@ -607,32 +675,25 @@ export function AIWorkbenchController() {
     () => catalogQuery.data?.data?.capabilities ?? [],
     [catalogQuery.data?.data?.capabilities],
   )
-  const defaultAgentProviderId = useMemo(() => {
-    return (
-      agentProviders.find((item) => item.id === 'internal' && item.enabled)?.id ??
-      agentProviders.find((item) => item.default && item.enabled)?.id ??
-      agentProviders.find((item) => item.enabled)?.id ??
-      'internal'
-    )
-  }, [agentProviders])
+  const defaultAgentProviderId = 'dsh'
   const defaultInspectionProfileId = useMemo(() => {
     return analysisProfiles.find((item) => item.enabled && item.mode === 'inspection')?.id
   }, [analysisProfiles])
 
   useEffect(() => {
     if (!requestedSessionId) return
-    if (runningAgentRuns.length === 0 && Object.keys(externalRunReplayRef.current).length === 0) {
+    if (replayAgentRuns.length === 0 && Object.keys(externalRunReplayRef.current).length === 0) {
       return
     }
-    const activeRunIds = new Set(runningAgentRuns.map((run) => run.id))
-    const replayMessages = runningAgentRuns.map((run) => {
+    const replayRunIds = new Set(replayAgentRuns.map((run) => run.id))
+    const replayMessages = replayAgentRuns.map((run) => {
       const replay = externalRunReplayRef.current[run.id] ?? {
         state: createWorkbenchStreamState(),
         seenEventKeys: new Set<string>(),
         afterSequence: 0,
       }
       let state = replay.state
-      const page = nativeEventPages.pages.find(
+      const page = runEventPages.pages.find(
         (item) => item.runId === run.id && item.afterSequence === (replay.afterSequence ?? 0),
       )
       if (page?.page.resyncRequired) {
@@ -660,7 +721,7 @@ export function AIWorkbenchController() {
     })
 
     for (const runId of Object.keys(externalRunReplayRef.current)) {
-      if (!activeRunIds.has(runId)) {
+      if (!replayRunIds.has(runId)) {
         delete externalRunReplayRef.current[runId]
       }
     }
@@ -670,7 +731,7 @@ export function AIWorkbenchController() {
       const next = items.filter((item) => {
         if (!isExternalAgentRunReplayMessage(item)) return true
         const agentRunId = artifactSnapshotText(item.metadata, 'agentRunId', 'agentRuntimeId')
-        const keep = agentRunId ? activeRunIds.has(agentRunId) : false
+        const keep = agentRunId ? replayRunIds.has(agentRunId) : false
         if (!keep) changed = true
         return keep
       })
@@ -698,7 +759,7 @@ export function AIWorkbenchController() {
       }
       return changed ? next : items
     })
-  }, [requestedSessionId, runningAgentRuns, nativeEventPages.pages, queryClient])
+  }, [requestedSessionId, replayAgentRuns, runEventPages.pages, queryClient])
 
   useEffect(() => {
     if (!requestedSessionId) return
@@ -707,6 +768,7 @@ export function AIWorkbenchController() {
         run.sessionId === requestedSessionId &&
         !run.parentRunId &&
         isDurableAgentRun(run) &&
+        !isReadOnlyAgentRun(run) &&
         isTerminalWorkbenchAgentStatus(run.status) &&
         !finalAgentRunIds.has(run.id),
     )
@@ -892,6 +954,29 @@ export function AIWorkbenchController() {
     { label: ['保存会话', 'Save session'], target: (input) => input.sessionId },
   )
 
+  const selectRuntimeProfile = useOperationMutation(
+    {
+      ...workbenchMutations.selectRuntimeProfile(),
+      onSuccess: (response, input) => {
+        queryClient.setQueryData(workbenchKeys.sessions.detail(input.sessionId, owner), response)
+      },
+      onSettled: async (_response, _error, input) => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: workbenchKeys.sessions.detail(input.sessionId, owner) }),
+          queryClient.invalidateQueries({ queryKey: workbenchKeys.sessions.all(personal, owner) }),
+          queryClient.invalidateQueries({ queryKey: workbenchKeys.runtimeProfiles(owner) }),
+        ])
+      },
+    },
+    {
+      label: ['选择运行配置', 'Select runtime profile'],
+      target: (input) => input.sessionId,
+      receipt: () => ({ message: '已保存运行配置选择，下一轮生效。' }),
+    },
+  )
+  const runtimeProfilePending =
+    selectRuntimeProfile.blocked && selectRuntimeProfile.variables?.sessionId === requestedSessionId
+
   const createSessionMutation = useOperationMutation(
     {
       ...workbenchMutations.sessions.create(),
@@ -1040,22 +1125,23 @@ export function AIWorkbenchController() {
     agentProviderId = selectedAgentProviderId || defaultAgentProviderId,
     taskIntent?: WorkbenchTaskIntent,
   ): WorkbenchSendMessageStreamRequest & { assistantTask?: AssistantChatTask } => {
+    agentProviderId = canonicalAgentProviderId(agentProviderId)
     const requestScopeOverrides = scopeOverrideState(scopeOverrides)
     return {
       requestId: crypto.randomUUID(),
       assistantTask,
       content,
       mode,
-      ...(agentProviderId === 'internal'
+      ...(agentProviderId === 'dsh'
         ? { taskIntent: taskIntent ?? { capabilities: mode === 'general' ? [] : [mode] } }
         : {}),
-      ...(mode === 'general' || agentProviderId === 'internal'
+      ...(mode === 'general' || agentProviderId === 'dsh'
         ? {
             contextSelection,
             knowledgeContext: { enabled: knowledgeBaseIds.length > 0, knowledgeBaseIds },
           }
         : {}),
-      ...(agentProviderId === 'internal' ? { modelPreferences } : {}),
+      ...(agentProviderId === 'dsh' ? { modelPreferences } : {}),
       agentProviderId,
       toolset: cleanToolsetPayload({
         enabledAdapterIds: selectedAdapterIds,
@@ -1070,6 +1156,7 @@ export function AIWorkbenchController() {
 
   const sendMessageMutation = useMutation({
     mutationFn: async (payload: WorkbenchStreamSubmission) => {
+      setMemoryStreamWarnings((before) => ({ ...before, [payload.sessionId]: '' }))
       const controller = payload.controller
       const seenEvents = new Set<string>()
       let streamState = createWorkbenchStreamState()
@@ -1081,6 +1168,11 @@ export function AIWorkbenchController() {
           if (seenEvents.has(eventKey)) return
           seenEvents.add(eventKey)
           streamState = reduceWorkbenchStreamState(streamState, event)
+          if (event.type === 'agent.status' && hasMemoryDegradation(memoryEventMetadata(event)))
+            setMemoryStreamWarnings((before) => ({
+              ...before,
+              [payload.sessionId]: event.runId || payload.request.requestId || '',
+            }))
           setLocalMessages((items) =>
             items.map((item) => {
               if (item.id === payload.pendingMessages.user.id) {
@@ -1113,7 +1205,7 @@ export function AIWorkbenchController() {
       if (
         payload.request.requestId &&
         streamState.agentStatus &&
-        streamState.agentStatus.providerKind !== 'native' &&
+        !['native', 'dsh'].includes(streamState.agentStatus.providerKind) &&
         isTerminalWorkbenchAgentStatus(streamState.agentStatus.status)
       )
         requestRecovery.acknowledge(payload.sessionId, payload.request.requestId)
@@ -1169,7 +1261,8 @@ export function AIWorkbenchController() {
               item.metadata?.source === 'agent-runtime-queued'
             ) &&
             (item.id !== payload.pendingMessages.assistant.id ||
-              (!streamState.message.id && streamState.agentStatus?.providerKind !== 'native')),
+              (!streamState.message.id &&
+                !['native', 'dsh'].includes(streamState.agentStatus?.providerKind ?? ''))),
         ),
       )
       if (payload.navigateMode && payload.sessionId === activeSessionRef.current) {
@@ -1186,10 +1279,10 @@ export function AIWorkbenchController() {
     },
     onError: (err: Error, payload) => {
       if (
-        payload.request.agentProviderId === 'internal' &&
+        payload.request.agentProviderId === 'dsh' &&
         payload.request.requestId &&
         err instanceof WorkbenchStreamEventError &&
-        err.code === 'agent_unsupported'
+        (err.code === 'request_not_accepted' || err.code === 'agent_unsupported')
       )
         requestRecovery.acknowledge(payload.sessionId, payload.request.requestId)
       if ((payload.request as { assistantTask?: AssistantChatTask }).assistantTask)
@@ -1259,6 +1352,7 @@ export function AIWorkbenchController() {
   })
 
   const submitWorkbenchStream = (input: WorkbenchStreamRetryInput) => {
+    if (runtimeProfilePending && input.sessionId === requestedSessionId) return
     if (streamAbortRef.current[input.sessionId]) return
     if (
       input.sessionId === requestedSessionId &&
@@ -1266,7 +1360,7 @@ export function AIWorkbenchController() {
     )
       return
     if (
-      input.request.agentProviderId === 'internal' &&
+      input.request.agentProviderId === 'dsh' &&
       !input.request.assistantTask &&
       input.request.requestId
     ) {
@@ -1307,6 +1401,7 @@ export function AIWorkbenchController() {
       currentStreamPending ||
       requestRecovery.pending ||
       requestRecovery.error ||
+      runtimeProfilePending ||
       runningAgentRuns.length > 0
     ) {
       return
@@ -1430,7 +1525,7 @@ export function AIWorkbenchController() {
   useEffect(() => {
     setSelectedAgentProviderId(
       currentSession
-        ? currentSession.metadata?.agentProviderId || 'internal'
+        ? canonicalAgentProviderId(currentSession.metadata?.agentProviderId)
         : defaultAgentProviderId,
     )
   }, [currentSession?.id, currentSession?.metadata?.agentProviderId, defaultAgentProviderId])
@@ -1702,14 +1797,14 @@ export function AIWorkbenchController() {
     analysisCapabilities,
     hasAnalysisParameters,
   )
-  const nativeAnalysis = analysisAgentProviderId === 'internal'
+  const defaultAnalysis = analysisAgentProviderId === 'dsh'
   const analysisCapabilityAllowed = (kind: WorkbenchMode) =>
     (kind === 'root_cause'
       ? canRunRootCause
       : kind === 'inspection_review'
         ? canViewAI
         : canViewMonitoring) &&
-    (!nativeAnalysis || canInvokeGateway)
+    (!defaultAnalysis || canInvokeGateway)
   const analysisSources = (kind: string) =>
     enabledDataSources.filter(
       (source) =>
@@ -1724,7 +1819,7 @@ export function AIWorkbenchController() {
   const completedInspectionRuns = (inspectionRunsQuery.data ?? []).filter(
     (run) => run.completedAt && run.status !== 'running',
   )
-  const analysisInputReason = !nativeAnalysis
+  const analysisInputReason = !defaultAnalysis
     ? ''
     : analysisCapabilities.includes('performance') &&
         (!analysisIntent.metricKey ||
@@ -1900,6 +1995,21 @@ export function AIWorkbenchController() {
   }
 
   const latestContextMessage = [...serverMessages].reverse().find((item) => item.role !== 'user')
+  const memoryTurnStart = messages.map((item) => item.role).lastIndexOf('user')
+  const memoryTurnMessages =
+    memoryTurnStart >= 0 ? messages.slice(memoryTurnStart) : messages.slice(-1)
+  const latestMemoryMessage = [...memoryTurnMessages]
+    .reverse()
+    .find((item) => item.role === 'assistant')
+  const warnedMemoryRun = requestedSessionId ? memoryStreamWarnings[requestedSessionId] : undefined
+  const memoryDegraded = Boolean(
+    (warnedMemoryRun &&
+      (currentStreamPending ||
+        runningAgentRuns.some((run) => run.id === warnedMemoryRun) ||
+        (latestMemoryMessage &&
+          messageAgentRunRefs(latestMemoryMessage).includes(warnedMemoryRun)))) ||
+    memoryTurnMessages.some((item) => hasMemoryDegradation(item.metadata)),
+  )
   const usedContextSummary = contextSnapshotSummary(
     latestContextMessage?.metadata?.contextSnapshot ??
       latestContextMessage?.metadata?.contextEnvelope,
@@ -2044,8 +2154,8 @@ export function AIWorkbenchController() {
         <ReadFeedback query={agentRunsQuery} label="任务运行记录" />
         <ReadFeedback
           query={{
-            ...nativeEventPages,
-            data: nativeEventPages.pages.length ? nativeEventPages.pages : undefined,
+            ...runEventPages,
+            data: runEventPages.pages.length ? runEventPages.pages : undefined,
           }}
           label="任务事件"
         />
@@ -2225,14 +2335,22 @@ export function AIWorkbenchController() {
         }
         alerts={
           <>
+            {memoryDegraded ? (
+              <Alert
+                type="warning"
+                showIcon
+                title="长期记忆暂不可用"
+                description={MEMORY_UNAVAILABLE_WARNING}
+              />
+            ) : null}
             <ReadFeedback query={sessionDetailQuery} label="当前会话" />
             <ReadFeedback query={messagesQuery} label="会话消息" />
             <ReadFeedback query={messageWindowQuery} label="消息窗口" />
             <ReadFeedback query={agentRunsQuery} label="任务运行记录" />
             <ReadFeedback
               query={{
-                ...nativeEventPages,
-                data: nativeEventPages.pages.length ? nativeEventPages.pages : undefined,
+                ...runEventPages,
+                data: runEventPages.pages.length ? runEventPages.pages : undefined,
               }}
               label="任务事件"
             />
@@ -2470,10 +2588,12 @@ export function AIWorkbenchController() {
                           ),
                         footer: (
                           <>
-                            {personal && (
+                            {renderRuntimeSummary(messages[index])}
+                            {personal && item.role !== 'system' && (
                               <AssistantChatResult
                                 metadata={messages[index].metadata}
                                 loading={currentStreamPending}
+                                readOnly={isReadOnlyAgentRunMessage(messages[index])}
                                 onContinue={() => {
                                   updateDraft((draft) => ({
                                     value: draft.value
@@ -2689,13 +2809,14 @@ export function AIWorkbenchController() {
                         onError: () => {
                           if (activeSessionRef.current === currentSession.id)
                             setSelectedAgentProviderId(
-                              currentSession.metadata?.agentProviderId || 'internal',
+                              canonicalAgentProviderId(currentSession.metadata?.agentProviderId),
                             )
                         },
                       },
                     )
                   }}
                   preferences={modelPreferences}
+                  profilePreferences={runtimeProfile?.modelPreferences}
                   onPreferencesChange={(value) => updateDraft({ model: value })}
                   modelOptions={catalogQuery.data?.data?.modelOptions ?? []}
                   defaultPublicModel={catalogQuery.data?.data?.defaultPublicModel}
@@ -2704,7 +2825,7 @@ export function AIWorkbenchController() {
                     (catalogQuery.isError ? '模型目录加载失败' : undefined)
                   }
                   modelSelectionEnabled={
-                    activeMode === 'general' && selectedAgentProviderId === 'internal'
+                    activeMode === 'general' && selectedAgentProviderId === 'dsh'
                   }
                   contextSummary={nextContextSummary}
                   usedContextSummary={usedContextSummary}
@@ -2766,6 +2887,29 @@ export function AIWorkbenchController() {
                   selectedContext={
                     activeMode === 'general' ? (
                       <>
+                        {matchesWorkspace && selectedAgentProviderId === 'dsh' && (
+                          <>
+                            <RuntimeProfileControl
+                              profiles={runtimeProfiles}
+                              scope={runtimeScope}
+                              profileId={runtimeProfileId}
+                              selected={runtimeProfile}
+                              disabled={
+                                !canUseChat || runtimeProfilesQuery.isError || !runtimeProfilesQuery.isSuccess ||
+                                currentStreamPending || runningAgentRuns.length > 0 ||
+                                requestRecovery.pending || Boolean(requestRecovery.error) ||
+                                Boolean(currentSession.metadata?.archivedAt || currentSession.activity) ||
+                                selectRuntimeProfile.blocked
+                              }
+                              loading={runtimeProfilesQuery.isPending || runtimeProfilePending}
+                              onChange={(profileId) =>
+                                selectRuntimeProfile.mutate({ sessionId: currentSession.id, profileId })
+                              }
+                            />
+                            <ReadFeedback label="运行配置" query={runtimeProfilesQuery} />
+                            {selectRuntimeProfile.variables?.sessionId === currentSession.id && selectRuntimeProfile.feedback}
+                          </>
+                        )}
                         {contextSelection.feedItemId ? (
                           <Tag
                             closable
@@ -2820,7 +2964,7 @@ export function AIWorkbenchController() {
                     requestRecovery.pending ||
                     cancelAgentRunsMutation.isPending
                   }
-                  readOnly={requestRecovery.pending || Boolean(requestRecovery.error)}
+                  readOnly={requestRecovery.pending || Boolean(requestRecovery.error) || runtimeProfilePending}
                   disabled={!canUseChat || !currentSession}
                   contextParsing={contextParsing}
                   value={senderValue}
@@ -2960,7 +3104,7 @@ export function AIWorkbenchController() {
               setPanel('history')
             }}
             tasksError={
-              personalTasksQuery.isError || agentRunsQuery.isError || nativeEventPages.isError
+              personalTasksQuery.isError || agentRunsQuery.isError || runEventPages.isError
             }
             onRetryTasks={() => {
               void personalTasksQuery.refetch()
@@ -3775,13 +3919,13 @@ export function AIWorkbenchController() {
                 {agentProviders.find((item) => item.id === analysisAgentProviderId)?.description ||
                   '选择本次分析使用内置分析还是外部 agent runner。'}
               </Text>
-              {!nativeAnalysis ? (
+              {!defaultAnalysis ? (
                 <Text type="secondary">
                   此助手支持单项专业任务；需要组合能力或指定查询参数时请选择内置助手。
                 </Text>
               ) : null}
             </Space>
-            {nativeAnalysis && analysisCapabilities.includes('root_cause') ? (
+            {defaultAnalysis && analysisCapabilities.includes('root_cause') ? (
               <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                 <Text strong>根因分析模板</Text>
                 <Select
@@ -3802,7 +3946,7 @@ export function AIWorkbenchController() {
                 </Text>
               </Space>
             ) : null}
-            {nativeAnalysis && analysisCapabilities.includes('performance') ? (
+            {defaultAnalysis && analysisCapabilities.includes('performance') ? (
               <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                 <Text strong>性能分析参数</Text>
                 <Select
@@ -3845,7 +3989,7 @@ export function AIWorkbenchController() {
                 ) : null}
               </Space>
             ) : null}
-            {nativeAnalysis && analysisCapabilities.includes('trace') ? (
+            {defaultAnalysis && analysisCapabilities.includes('trace') ? (
               <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                 <Text strong>链路分析参数</Text>
                 <Select
@@ -3884,7 +4028,7 @@ export function AIWorkbenchController() {
                 />
               </Space>
             ) : null}
-            {nativeAnalysis && analysisCapabilities.includes('inspection_review') ? (
+            {defaultAnalysis && analysisCapabilities.includes('inspection_review') ? (
               <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                 <Text strong>巡检执行记录</Text>
                 <Select<string[]>
@@ -3982,6 +4126,7 @@ export function AIWorkbenchController() {
 
       {memoryDraft ? (
         <ChatMemory
+          mode={personal ? 'heya' : 'chat'}
           initialFact={memoryDraft.fact}
           sourceRefs={memoryDraft.sourceRefs}
           selected={contextSelection.memoryIds ?? []}

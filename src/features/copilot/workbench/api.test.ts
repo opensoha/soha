@@ -5,6 +5,7 @@ import { webcrypto } from 'node:crypto'
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  put: vi.fn(),
   patch: vi.fn(),
   delete: vi.fn(),
   postResponse: vi.fn(),
@@ -15,6 +16,15 @@ vi.mock('@/services/api-client', () => ({ api: apiMocks }))
 import { workbenchApi } from './api'
 
 describe('workbenchApi', () => {
+  it('selects a profile through its session endpoint and verifies the saved selection', async () => {
+    apiMocks.put.mockResolvedValueOnce({ data: { id: 'session/1', metadata: { runtimeProfileId: 'ops' } } })
+    await workbenchApi.runtimeProfiles.select({ sessionId: 'session/1', profileId: 'ops' })
+    expect(apiMocks.put).toHaveBeenCalledWith('/copilot/sessions/session%2F1/runtime-profile', { profileId: 'ops' })
+    apiMocks.put.mockResolvedValueOnce({ data: { id: 'session/1', metadata: {} } })
+    await workbenchApi.runtimeProfiles.select({ sessionId: 'session/1', profileId: '' })
+    apiMocks.put.mockResolvedValueOnce({ data: { id: 'other', metadata: {} } })
+    await expect(workbenchApi.runtimeProfiles.select({ sessionId: 'session/1', profileId: '' })).rejects.toThrow('不匹配')
+  })
   it('recovers shared workspace state with GET and rejects another assistant', async () => {
     apiMocks.get.mockResolvedValueOnce({ data: { assistantId: 'mine', environmentVersion: 9, latest: { id: 'original' } } })
     await workbenchApi.assistant.workspaceRuntime('mine')
@@ -42,9 +52,9 @@ describe('workbenchApi', () => {
     expect(apiMocks.get).toHaveBeenCalledWith('/copilot/messages/search?q=hello&workspace=heya')
     expect(apiMocks.get).toHaveBeenCalledWith('/copilot/messages/search?q=hello&workspace=chat')
   })
-  it('recovers only by a read and rejects a foreign or non-Native receipt', async () => {
+  it.each(['native', 'dsh'])('recovers %s by read and rejects foreign receipts', async (providerKind) => {
     apiMocks.get.mockResolvedValueOnce({
-      data: { id: 'original', sessionId: 'session / 1', providerKind: 'native' },
+      data: { id: 'original', sessionId: 'session / 1', providerKind },
     })
     await workbenchApi.agentRuns.findRequest('session / 1', 'opaque+key/id')
     expect(apiMocks.get).toHaveBeenCalledExactlyOnceWith(

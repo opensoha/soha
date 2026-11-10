@@ -14,6 +14,7 @@ import { Space } from 'antd'
 import { useMemo, useState } from 'react'
 import { workbenchQueries } from '../workbench/queries'
 import type { WorkbenchAgentRun } from '../workbench/types'
+import { RuntimeAssemblySummary } from '../workbench/components/runtime-profile'
 
 export function AgentRunsPage() {
   const [keyword, setKeyword] = useState('')
@@ -41,6 +42,15 @@ export function AgentRunsPage() {
       key: 'status',
       width: 120,
       render: (value) => <StatusTag value={String(value)} />,
+    },
+    {
+      title: '运行装配',
+      key: 'runtimeAssembly',
+      width: 220,
+      render: (_value, run) =>
+        run.runtimeAssembly || run.output?.runtimeHooks
+          ? <RuntimeAssemblySummary assembly={run.runtimeAssembly} hookOutcomes={run.output?.runtimeHooks} toolExecutions={run.toolExecutions} />
+          : '-',
     },
     {
       title: 'Skills',

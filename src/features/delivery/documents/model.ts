@@ -28,6 +28,7 @@ export function buildTemplateDocument(value: BuildTemplateInput) {
       variableSchema: value.variableSchema,
       defaultVariables: value.defaultVariables,
       enabled: value.enabled,
+      migrationPolicy: value.migrationPolicy,
     },
   }
 }
@@ -35,7 +36,7 @@ export function buildTemplateDocument(value: BuildTemplateInput) {
 export function workflowTemplateDocument(
   value: Pick<
     WorkflowTemplate,
-    'key' | 'name' | 'description' | 'category' | 'definition' | 'enabled'
+    'key' | 'name' | 'description' | 'category' | 'definition' | 'enabled' | 'migrationPolicy'
   >,
 ) {
   return {
@@ -46,6 +47,7 @@ export function workflowTemplateDocument(
       category: value.category || 'release',
       definition: value.definition,
       enabled: value.enabled,
+      migrationPolicy: value.migrationPolicy,
     },
   }
 }
@@ -63,6 +65,7 @@ export function deploymentTemplateDocument(value: ServiceDeploymentTemplateInput
       artifacts: value.artifacts,
       health: value.health,
       enabled: value.enabled,
+      migrationPolicy: value.migrationPolicy,
     },
   }
 }

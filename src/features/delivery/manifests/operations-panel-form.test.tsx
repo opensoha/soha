@@ -48,6 +48,7 @@ vi.mock('@/services/api-client', () => ({
 
 let root: ReturnType<typeof createRoot>
 let container: HTMLDivElement
+let client: QueryClient
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal(
@@ -69,14 +70,21 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 })
 afterEach(async () => {
-  await act(async () => root.unmount())
+  await act(async () => {
+    root.unmount()
+    // Ant Design Form clears validation with a 10 ms debounce. Let the pending
+    // callback finish before Vitest destroys the jsdom window.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  client.clear()
   container.remove()
+  vi.unstubAllGlobals()
 })
 
 it('saves the Kustomize entry and immutable image digest, rejecting an invalid digest', async () => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>

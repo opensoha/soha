@@ -2,6 +2,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -20,9 +21,11 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { Button, Select, Spin, Tabs, Typography } from 'antd'
 import { ManagementState } from '@/components/management-list'
+import { useInlineApiError } from '@/components/request-feedback'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapabilityForCluster } from '../cluster-capabilities'
 import { useI18n } from '@/i18n'
+import { podContainerTerminated } from '../workloads/pods/container-status'
 import { podQueries } from '../workloads/pods/queries'
 import type { RealtimeSession, RealtimeSessionInput } from './types'
 import './session-dock.css'
@@ -40,6 +43,7 @@ const PodTerminal = lazy(async () => {
 })
 
 interface RealtimeSessionDockPanelProps {
+  connectRequests: string[]
   groupByCluster: boolean
   activeClusterId: string | null
   activeSessionKeys: Record<string, string>
@@ -85,10 +89,12 @@ function defaultDockHeight() {
 }
 
 function TerminalSessionContent({
+  beforeConnect,
   onReplaceSession,
   session,
 }: {
   onReplaceSession: RealtimeSessionDockPanelProps['onReplaceSession']
+  beforeConnect: () => Promise<boolean>
   session: RealtimeSession
 }) {
   const { localeCode } = useI18n()
@@ -98,22 +104,18 @@ function TerminalSessionContent({
       session.podName,
     ),
   )
-  const containerOptions = (podDetailQuery.data?.containers ?? []).map(({ name }) => ({
-    label: name,
-    value: name,
-  }))
+  const containerOptions = (podDetailQuery.data?.containers ?? [])
+    .filter((container) => !podContainerTerminated(container))
+    .map(({ name }) => ({ label: name, value: name }))
   const containerLoadError =
     localeCode === 'zh_CN' ? '容器列表加载失败' : 'Failed to load containers'
   const reloadContainersLabel = localeCode === 'zh_CN' ? '重新加载容器' : 'Reload containers'
-  if (session.container && !containerOptions.some(({ value }) => value === session.container)) {
-    containerOptions.unshift({ label: session.container, value: session.container })
-  }
-
   const replaceTerminal = (container: string | undefined, shell: string) => {
     onReplaceSession(session.id, {
       clusterId: session.clusterId,
       container,
       kind: 'terminal',
+      podUid: session.podUid,
       namespace: session.namespace,
       podName: session.podName,
       shell,
@@ -122,6 +124,8 @@ function TerminalSessionContent({
 
   return (
     <PodTerminal
+      expectedUid={session.podUid}
+      beforeConnect={beforeConnect}
       clusterId={session.clusterId}
       namespace={session.namespace}
       podName={session.podName}
@@ -196,11 +200,10 @@ function AuthorizedSessionContent({
 }) {
   const { localeCode } = useI18n()
   const permissions = usePermissionSnapshot()
-  const permitted =
-    hasPermission(
-      permissions.data?.data,
-      session.kind === 'logs' ? 'platform.pods.logs' : 'platform.pods.exec',
-    ) && !permissions.isError
+  const isTerminal = session.kind === 'terminal'
+  const permissionKey = session.kind === 'logs' ? 'platform.pods.logs' : 'platform.pods.exec'
+  const action = session.kind === 'logs' ? 'logs' : 'exec'
+  const permitted = hasPermission(permissions.data?.data, permissionKey) && !permissions.isError
   const capability = useClusterCapabilityForCluster(
     session.kind === 'logs' ? 'pod.logs' : 'pod.exec',
     localeCode,
@@ -211,15 +214,136 @@ function AuthorizedSessionContent({
     session.podName,
   )
   const detail = useQuery({ ...options, enabled: options.enabled && permitted })
+  useInlineApiError(permissions.error)
+  useInlineApiError(detail.error)
+  const [verified, setVerified] = useState(false)
+  const [validationError, setValidationError] = useState('')
+  const { refetch: refetchPermissions } = permissions
+  const { refetch: refetchDetail } = detail
+  const allowed = hasAllowedAction(detail.data?.allowedActions, action)
+  const capabilityBlocked = capability.disabled || (isTerminal && capability.status === 'partial')
+  const terminalCapabilityLost = isTerminal && !capability.isLoading && capabilityBlocked
+  const terminatedContainerError =
+    localeCode === 'zh_CN'
+      ? '当前容器已结束，无法连接终端。'
+      : 'This container has terminated. The terminal cannot connect.'
+  const missingContainerError =
+    localeCode === 'zh_CN'
+      ? '原容器已不存在，请从当前 Pod 重新打开会话。'
+      : 'The saved container no longer exists. Open the current Pod.'
   const containers = detail.data?.containers ?? []
-  const defaultContainer =
-    containers.find(({ role }) => role === 'main')?.name ??
-    containers.find(({ role }) => !role || role === 'sidecar')?.name
+  const selectedContainer = containers.find(({ name }) => name === session.container)
+  const terminalContainerError =
+    isTerminal && detail.isSuccess && session.container
+      ? !selectedContainer
+        ? missingContainerError
+        : podContainerTerminated(selectedContainer)
+          ? terminatedContainerError
+          : ''
+      : ''
+  const accessChanged =
+    !permitted || (detail.isSuccess && (!allowed || detail.data.uid !== session.podUid))
+  if (verified && (accessChanged || terminalCapabilityLost || terminalContainerError)) {
+    // Drop the live engine and require explicit revalidation when its target becomes unavailable.
+    setVerified(false)
+    setValidationError(
+      accessChanged
+        ? localeCode === 'zh_CN'
+          ? '会话权限或 Pod 身份已变化，请重新校验。'
+          : 'Session authorization or Pod identity changed. Revalidate to reconnect.'
+        : terminalContainerError ||
+            capability.reason ||
+            (localeCode === 'zh_CN'
+              ? '当前集群不支持交互终端。'
+              : 'The current cluster does not support interactive terminals.'),
+    )
+  }
+  const validateConnection = useCallback(async () => {
+    setValidationError('')
+    try {
+      if (!session.podUid)
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '旧记录缺少 Pod UID，请从当前 Pod 重新打开会话。'
+            : 'This record has no Pod UID. Open a new session from the current Pod.',
+        )
+      const permission = await refetchPermissions()
+      if (permission.isError || !hasPermission(permission.data?.data, permissionKey)) {
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '当前没有会话访问权限。'
+            : 'Session access is no longer permitted.',
+        )
+      }
+      const pod = await refetchDetail()
+      if (pod.isError || !pod.data)
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '无法重新校验 Pod，请重试。'
+            : 'Unable to revalidate the Pod. Retry to reconnect.',
+        )
+      if (pod.data.uid !== session.podUid)
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? 'Pod 已被替换或无法提供 UID，请从当前 Pod 重新打开会话。'
+            : 'The Pod was replaced or its UID is unavailable. Open the current Pod.',
+        )
+      if (!hasAllowedAction(pod.data.allowedActions, action))
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '当前资源不允许此操作。'
+            : 'This action is not permitted on the current resource.',
+        )
+      const container = pod.data.containers?.find(({ name }) => name === session.container)
+      if (session.container && !container) throw new Error(missingContainerError)
+      if (isTerminal && podContainerTerminated(container)) throw new Error(terminatedContainerError)
+      setVerified(true)
+      return true
+    } catch (error) {
+      setVerified(false)
+      setValidationError(error instanceof Error ? error.message : 'Session validation failed')
+      return false
+    }
+  }, [
+    action,
+    isTerminal,
+    localeCode,
+    missingContainerError,
+    permissionKey,
+    refetchDetail,
+    refetchPermissions,
+    session.container,
+    session.podUid,
+    terminatedContainerError,
+  ])
   useEffect(() => {
-    if (permitted && !detail.isError && !session.container && defaultContainer) {
+    void validateConnection()
+  }, [validateConnection])
+  const defaultCandidates = isTerminal
+    ? containers.filter((container) => !podContainerTerminated(container))
+    : containers
+  const defaultContainer =
+    defaultCandidates.find(({ role }) => role === 'main')?.name ??
+    defaultCandidates.find(({ role }) => !role || role === 'sidecar')?.name
+  useEffect(() => {
+    if (verified && permitted && !detail.isError && !session.container && defaultContainer) {
       onReplaceSession(session.id, { ...session, container: defaultContainer })
     }
-  }, [defaultContainer, detail.isError, onReplaceSession, permitted, session])
+  }, [defaultContainer, detail.isError, onReplaceSession, permitted, session, verified])
+  if (validationError)
+    return (
+      <ManagementState
+        compact
+        kind="error"
+        description={validationError}
+        actions={
+          <Button disabled={terminalCapabilityLost} onClick={() => void validateConnection()}>
+            {localeCode === 'zh_CN' ? '重新校验并连接' : 'Validate and reconnect'}
+          </Button>
+        }
+      />
+    )
+  if (!verified) return <ManagementState compact kind="loading" />
   if (!permitted)
     return <ManagementState compact kind={permissions.isLoading ? 'loading' : 'no-permission'} />
   if (detail.isError)
@@ -235,9 +359,8 @@ function AuthorizedSessionContent({
       />
     )
   if (detail.isPending || capability.isLoading) return <ManagementState compact kind="loading" />
-  if (!hasAllowedAction(detail.data?.allowedActions, session.kind === 'logs' ? 'logs' : 'exec'))
-    return <ManagementState compact kind="no-permission" />
-  if (capability.disabled || (session.kind === 'terminal' && capability.status === 'partial'))
+  if (!allowed) return <ManagementState compact kind="no-permission" />
+  if (capabilityBlocked)
     return <ManagementState compact kind="unsupported" description={capability.reason} />
   if (!session.container)
     return (
@@ -265,6 +388,8 @@ function AuthorizedSessionContent({
         {session.kind === 'logs' ? (
           <PodLogViewer
             active
+            expectedUid={session.podUid}
+            beforeConnect={validateConnection}
             clusterId={session.clusterId}
             namespace={session.namespace}
             podName={session.podName}
@@ -278,7 +403,11 @@ function AuthorizedSessionContent({
             }
           />
         ) : (
-          <TerminalSessionContent session={session} onReplaceSession={onReplaceSession} />
+          <TerminalSessionContent
+            session={session}
+            onReplaceSession={onReplaceSession}
+            beforeConnect={validateConnection}
+          />
         )}
       </Suspense>
     </div>
@@ -286,24 +415,46 @@ function AuthorizedSessionContent({
 }
 
 function SessionContent({
-  active,
+  requested,
   session,
   onReplaceSession,
 }: {
-  active: boolean
+  requested: boolean
   session: RealtimeSession
   onReplaceSession: RealtimeSessionDockPanelProps['onReplaceSession']
 }) {
+  const { localeCode } = useI18n()
   const [started, setStarted] = useState(false)
-  useEffect(() => {
-    if (active) setStarted(true)
-  }, [active])
-  return started ? (
-    <AuthorizedSessionContent session={session} onReplaceSession={onReplaceSession} />
-  ) : null
+  if (started || requested)
+    return <AuthorizedSessionContent session={session} onReplaceSession={onReplaceSession} />
+  return (
+    <ManagementState
+      compact
+      kind="empty"
+      title={
+        localeCode === 'zh_CN' ? '会话已断开，记录已保留' : 'Disconnected · session record retained'
+      }
+      description={
+        localeCode === 'zh_CN'
+          ? '手动重连时将重新校验 Pod UID、容器和权限。'
+          : 'Reconnect to revalidate the Pod UID, container and permissions.'
+      }
+      actions={
+        <Button
+          aria-label={localeCode === 'zh_CN' ? '重新连接' : 'Reconnect'}
+          type="primary"
+          icon={<ReloadOutlined />}
+          onClick={() => setStarted(true)}
+        >
+          {localeCode === 'zh_CN' ? '重新连接' : 'Reconnect'}
+        </Button>
+      }
+    />
+  )
 }
 
 export function RealtimeSessionDockPanel({
+  connectRequests,
   groupByCluster,
   activeClusterId,
   activeSessionKeys,
@@ -530,11 +681,7 @@ export function RealtimeSessionDockPanel({
                     forceRender: true,
                     children: (
                       <SessionContent
-                        active={
-                          visible &&
-                          (!groupByCluster || clusterId === activeClusterId) &&
-                          session.id === activeKey
-                        }
+                        requested={connectRequests.includes(session.id)}
                         session={session}
                         onReplaceSession={onReplaceSession}
                       />

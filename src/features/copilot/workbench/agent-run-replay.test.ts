@@ -1,26 +1,27 @@
+import { isLegacyAgentRun } from './agent-run-replay'
 import { describe, expect, it } from 'vitest'
 import {
   agentRunReplayMessage,
   isFinalAgentRunMessage,
-  isNativeAgentRun,
+  usesRunEventJournal,
   isRunningAgentRun,
 } from './agent-run-replay'
 import { createWorkbenchStreamState } from './stream'
 import type { WorkbenchAgentRun } from './types'
 
-describe('durable Native replay', () => {
+describe.each(['native', 'dsh'])('durable %s replay', (providerKind) => {
   const run: WorkbenchAgentRun = {
     id: 'native',
     sessionId: 'session',
     providerId: 'internal',
-    providerKind: 'native',
+    providerKind,
     capabilityId: 'general',
     status: 'queued',
     queuedAt: '2026-10-08T00:00:00Z',
   }
   it('keeps a queued reply after the user request before a worker starts', () => {
-    expect(isNativeAgentRun(run)).toBe(true)
-    expect(isRunningAgentRun(run)).toBe(true)
+    expect(usesRunEventJournal(run)).toBe(true)
+    expect(isRunningAgentRun(run)).toBe(providerKind !== 'native')
     expect(
       new Date(agentRunReplayMessage(run, createWorkbenchStreamState()).createdAt).getTime(),
     ).toBeGreaterThan(new Date(run.queuedAt!).getTime())
@@ -65,4 +66,13 @@ describe('durable Native replay', () => {
       }),
     ).toBe(true)
   })
+})
+
+it('keeps Native checkpoint history read-only without marking dsh external runs as legacy', () => {
+  expect(
+    isLegacyAgentRun({ providerKind: 'native', executionOwner: 'native' } as WorkbenchAgentRun),
+  ).toBe(true)
+  expect(
+    isLegacyAgentRun({ providerKind: 'dsh', executionOwner: 'external' } as WorkbenchAgentRun),
+  ).toBe(false)
 })

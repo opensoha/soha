@@ -865,6 +865,7 @@ describe('workloads pods page refresh controls', () => {
       kind: 'logs',
       namespace: 'monitoring',
       podName: 'prometheus-0',
+      podUid: 'prometheus-uid',
       streamingDisabledReason: undefined,
     })
     expect(openSessionMock).toHaveBeenNthCalledWith(2, {
@@ -872,6 +873,7 @@ describe('workloads pods page refresh controls', () => {
       kind: 'terminal',
       namespace: 'monitoring',
       podName: 'prometheus-0',
+      podUid: 'prometheus-uid',
       shell: '/bin/sh',
     })
 
@@ -1793,6 +1795,7 @@ describe('workloads pods page refresh controls', () => {
       '/clusters/cluster-a/workloads/pods/demo-pod/detail?namespace=monitoring': {
         name: 'demo-pod',
         namespace: 'monitoring',
+        uid: 'demo-pod-uid',
         phase: 'Running',
         createdAt: '2026-05-07T12:00:00Z',
         containers: [
@@ -1830,6 +1833,23 @@ describe('workloads pods page refresh controls', () => {
     )
     expect(terminalTab).toBeInstanceOf(HTMLElement)
     expect(terminalTab?.getAttribute('aria-disabled')).toBe('true')
+
+    const logsTab = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find(
+      (tab) => tab.textContent?.trim() === '日志',
+    )
+    await act(async () => logsTab?.click())
+    const launch = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '打开日志会话',
+    )
+    expect(launch).toBeDefined()
+    await act(async () => launch?.click())
+    expect(openSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'logs',
+        podUid: 'demo-pod-uid',
+        streamingDisabledReason: logsReason,
+      }),
+    )
 
     const logContainer = await renderWithProviders(
       <PodLogViewer

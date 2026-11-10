@@ -23,6 +23,7 @@ import {
 } from '../docker-delivery-fields'
 import { dockerApi } from '@/features/docker'
 import { deliveryQueries } from '../queries'
+import { TemplateUpdateEntry } from '../template-updates/entry'
 import { manifestQueries } from '../manifests/queries'
 import type { ManifestPackage } from '../manifests/types'
 import type {
@@ -499,6 +500,7 @@ export function useServiceDeployment(
   return {
     form,
     applicationId,
+    serviceId: service?.id,
     values,
     template,
     templatesQuery,
@@ -658,6 +660,7 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
             rules={[{ required: true }]}
           >
             <Select
+              disabled={Boolean(original && !original.detached)}
               loading={templatesQuery.isLoading}
               showSearch={{ optionFilterProp: 'label' }}
               onChange={(id) => {
@@ -683,6 +686,7 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
           </Form.Item>
           <Form.Item name={['deployment', 'version']} label="固定版本" rules={[{ required: true }]}>
             <Select
+              disabled={Boolean(original && !original.detached)}
               loading={versionsQuery.isLoading}
               options={(versionsQuery.data ?? []).map((item) => ({
                 value: item.publishedVersion,
@@ -690,6 +694,20 @@ export function DeploymentTemplateFields({ state }: { state: DeploymentState }) 
               }))}
             />
           </Form.Item>
+          {original && !original.detached ? (
+            <Space orientation="vertical">
+              <Text type="secondary">
+                已关联服务按环境比较并采用新版本，保护其他环境的固定版本。
+              </Text>
+              <TemplateUpdateEntry
+                kind="deployment"
+                templateId={original.templateId}
+                applicationId={state.applicationId}
+                serviceId={state.serviceId}
+                label="按环境采用模板版本"
+              />
+            </Space>
+          ) : null}
           {changed ? (
             <Button
               onClick={() => setDiffOpen(true)}

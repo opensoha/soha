@@ -59,6 +59,9 @@ export function baselineResponse(path: string) {
   if (path === '/api/v1/modules') {
     return { data: [] }
   }
+  if (path === '/api/v1/copilot/workbench/runtime-profiles') {
+    return { items: [] }
+  }
   if (path === '/api/v1/clusters') {
     return {
       data: [

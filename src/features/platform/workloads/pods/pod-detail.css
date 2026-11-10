@@ -157,44 +157,12 @@
   flex-direction: column;
   gap: 16px;
 }
-.soha-pod-detail-terminal {
+.soha-pod-detail .soha-terminal-controls {
   display: flex;
-  flex-direction: column;
-  min-height: 480px;
-  gap: 14px;
-}
-.soha-pod-detail-terminal > .soha-terminal-controls {
-  padding: 12px 16px;
-  background: var(--soha-bg-surface);
-  border: 1px solid var(--soha-border-color);
-  border-radius: var(--soha-radius-panel);
-  display: flex;
-  gap: 16px;
+  align-items: center;
   flex-wrap: wrap;
-}
-.soha-pod-detail.is-tab-terminal .soha-terminal-shell {
-  min-height: 320px;
-  flex: 1;
-}
-.soha-pod-detail.is-tab-terminal .soha-terminal-shell-inner {
-  height: 100%;
-  min-height: 320px;
-}
-.soha-pod-detail.is-tab-terminal .soha-detail-card {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-.soha-pod-detail.is-tab-terminal .soha-detail-card > .ant-card-body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-.soha-pod-detail.is-tab-terminal .soha-pod-detail-terminal {
-  height: max(480px, calc(100dvh - 265px));
-  min-height: 0;
+  gap: 16px;
+  margin-bottom: 0;
 }
 @media (max-width: 1399px) {
   .soha-pod-detail-container-label {
@@ -214,24 +182,6 @@
   .soha-pod-detail-container-label > strong {
     min-width: 0;
   }
-}
-.soha-pod-detail.is-tab-logs .soha-log-card {
-  height: max(480px, calc(100dvh - 265px));
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.soha-pod-detail.is-tab-logs .soha-log-card > .ant-card-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.soha-pod-detail.is-tab-logs .soha-log-shell {
-  flex: 1;
-  min-height: 0;
-  height: auto;
-  max-height: 100%;
 }
 .soha-pod-storage-source,
 .soha-pod-storage-mounts,

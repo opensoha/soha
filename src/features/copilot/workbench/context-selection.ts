@@ -47,7 +47,12 @@ export function contextSnapshotSummary(value: unknown): ContextRow[] {
     .filter(Boolean)
     .join('、')
   const truncations = Array.isArray(snapshot.truncations)
-    ? snapshot.truncations.filter((item) => typeof item === 'string').join('；')
+    ? snapshot.truncations
+        .filter((item) => typeof item === 'string')
+        .map((item) =>
+          item === 'memory_unavailable' ? '长期记忆暂不可用，本次未使用不可用的记忆' : item,
+        )
+        .join('；')
     : ''
   return [
     { label: '来源', value: sources || '没有额外引用资料' },
