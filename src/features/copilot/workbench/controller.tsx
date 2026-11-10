@@ -1677,7 +1677,22 @@ export function AIWorkbenchController() {
         ),
       }
     })
-  const enabledDataSources = dataSources.filter((item) => item.enabled)
+  const supportedDataSourceIds = new Set(
+    dataSources
+      .filter((source) =>
+        adapters.some(
+          (adapter) =>
+            adapter.id === source.mcpAdapter &&
+            (!adapter.sourceKind || adapter.sourceKind === source.sourceKind) &&
+            (!adapter.supportedBackends?.length ||
+              adapter.supportedBackends.includes(source.backendType)),
+        ),
+      )
+      .map((source) => source.id),
+  )
+  const enabledDataSources = dataSources.filter(
+    (item) => item.enabled && supportedDataSourceIds.has(item.id),
+  )
   const enabledAgentProviders = agentProviders.filter((item) => item.enabled)
   const providerOptions = enabledAgentProviders.map((item) => ({
     value: item.id,
@@ -1832,7 +1847,9 @@ export function AIWorkbenchController() {
       ? '请选择可用指标和指标数据源。'
       : analysisCapabilities.includes('trace') &&
           !traceSources.some((source) => source.id === analysisIntent.traceDataSourceId)
-        ? '请选择链路数据源。'
+        ? traceSources.length
+          ? '请选择链路数据源。'
+          : '当前没有可用的链路查询 Provider。'
         : analysisCapabilities.includes('inspection_review') &&
             (!analysisIntent.inspectionRunIds?.length ||
               !analysisIntent.inspectionRunIds.every((id) =>
@@ -1980,7 +1997,7 @@ export function AIWorkbenchController() {
     )
   }
   const applyRecommendedToolset = () => {
-    setSelectedAdapterIds(recommendedAdapterIds(adapters, dataSources))
+    setSelectedAdapterIds(recommendedAdapterIds(adapters, enabledDataSources))
     setSelectedSkillIds(globalSkills.filter((item) => item.enabled).map((item) => item.id))
     setDisabledToolNames([])
     setBudgetOverrides({ timeoutSeconds: 60, maxEvidenceItems: 20 })
@@ -3383,7 +3400,7 @@ export function AIWorkbenchController() {
                   type="info"
                   showIcon
                   title="当前还没有可用的 logs / metrics / traces 数据源"
-                  description="现在展示的是会话范围根节点。配置 Elasticsearch/Loki、Prometheus、Jaeger 之后，根因图会自动扩展成错误链路、日志签名和指标挂件。"
+                  description="现在展示的是会话范围根节点。配置可用的日志、指标或链路查询数据源后，可在分析中纳入对应证据。"
                 />
               ) : null}
               <div className="soha-ai-workbench__graph-layout">
@@ -3691,7 +3708,11 @@ export function AIWorkbenchController() {
                             </Text>
                           </span>
                           <StatusTag
-                            value={item.validationStatus || (item.enabled ? 'enabled' : 'disabled')}
+                            value={
+                              supportedDataSourceIds.has(item.id)
+                                ? item.validationStatus || (item.enabled ? 'enabled' : 'disabled')
+                                : 'unsupported'
+                            }
                           />
                         </div>
                       ))
@@ -3989,7 +4010,7 @@ export function AIWorkbenchController() {
                 ) : null}
               </Space>
             ) : null}
-            {defaultAnalysis && analysisCapabilities.includes('trace') ? (
+            {defaultAnalysis && analysisCapabilities.includes('trace') && traceSources.length > 0 ? (
               <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                 <Text strong>链路分析参数</Text>
                 <Select

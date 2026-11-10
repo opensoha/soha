@@ -9,7 +9,6 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TRACES_BACKEND_OPTIONS } from './ai-settings-model'
 import { AISettingsPage } from './ai/page'
 import { BrandingSettingsPage } from './branding/page'
 import { LoginSettingsPage } from './identity/page'
@@ -1273,7 +1272,52 @@ describe('settings ai page rendering', () => {
     expect(serializedCalls).not.toContain('baseUrl')
   })
 
-  it('offers skywalking as a traces backend option in AI data sources', () => {
-    expect(TRACES_BACKEND_OPTIONS.map((item) => item.value)).toEqual(['jaeger', 'skywalking'])
+  it('offers Loki by default and lets an administrator disable a retired AI data source', async () => {
+    testState.responses['/copilot/data-sources'] = [
+      {
+        id: 'old-traces',
+        name: 'Old traces',
+        sourceKind: 'traces',
+        backendType: 'skywalking',
+        mcpAdapter: 'traces.v1',
+        enabled: true,
+        validationStatus: 'success',
+      },
+    ]
+    const page = await renderWithProviders(
+      <AISettingsPage section="data-sources" />,
+      '/ai-workbench/data-sources',
+    )
+    expect(page.textContent).toContain('后端已退役')
+    expect(page.querySelector('[aria-label="编辑数据源"]')).toBeNull()
+    expect(page.querySelector('[aria-label="校验数据源连接"]')).toBeNull()
+    const disable = page.querySelector<HTMLButtonElement>('[aria-label="停用旧 AI 数据源"]')!
+    await act(async () => disable.click())
+    expect(apiPutMock).not.toHaveBeenCalled()
+    const confirmation = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.replace(/\s/g, '') === '停用')!
+    await act(async () => confirmation.click())
+    expect(apiPutMock).toHaveBeenCalledWith('/copilot/data-sources/old-traces', {
+      name: 'Old traces',
+      sourceKind: 'traces',
+      backendType: 'skywalking',
+      enabled: false,
+    })
+
+    const add = Array.from(page.querySelectorAll('button')).find(
+      (button) => button.textContent?.replace(/\s/g, '') === '新增',
+    )!
+    await act(async () => add.click())
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('Loki Cluster Label')
+    const sourceKind = dialog.querySelector('#sourceKind')!
+    await act(async () => {
+      sourceKind.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      sourceKind.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    const choices = Array.from(document.querySelectorAll(
+      '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
+    )).map((item) => item.textContent)
+    expect(choices).toEqual(['logs', 'metrics', 'platform-native'])
   })
 })

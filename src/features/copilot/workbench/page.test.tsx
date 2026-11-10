@@ -2427,7 +2427,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(streamWorkbenchMessageMock.mock.calls[0]?.[1]).toMatchObject({ mode: 'performance' })
   })
 
-  it('combines performance and trace with independent query parameters for one turn', async () => {
+  it('keeps a retired trace source unavailable without blocking a performance-only task', async () => {
     testState.sessionAdapterIds = ['metrics.v1', 'traces.v1']
     const container = await renderPage('/ai-workbench/chat?session=session-1')
     await openWorkbenchPanel(container, '会话设置')
@@ -2440,12 +2440,14 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     await selectWorkbenchOption('任务能力', '链路分析')
     await selectWorkbenchOption('指标数据源', 'Prometheus')
     await selectWorkbenchOption('性能指标', 'P95 延迟')
-    await selectWorkbenchOption('链路数据源', 'SkyWalking')
     const dialog = document.body.querySelector('[role="dialog"]')!
-    expect(dialog.querySelector<HTMLInputElement>('[aria-label="链路最短耗时"]')?.value).toBe('0')
+    expect(dialog.textContent).toContain('当前没有可用的链路查询 Provider。')
+    expect(dialog.querySelector('[aria-label="链路数据源"]')).toBeNull()
     const start = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
       button.textContent?.includes('开始分析'),
     )!
+    expect(start.disabled).toBe(true)
+    await selectWorkbenchOption('任务能力', '链路分析')
     expect(start.disabled).toBe(false)
     await act(async () => {
       start.click()
@@ -2454,22 +2456,17 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(streamWorkbenchMessageMock.mock.calls[0]?.[1]).toMatchObject({
       agentProviderId: 'dsh',
       taskIntent: {
-        capabilities: ['performance', 'trace'],
+        capabilities: ['performance'],
         performanceDataSourceId: 'ds-1',
         metricKey: 'latency_p95',
-        traceDataSourceId: 'traces-1',
-        minDurationMs: 0,
       },
       contextSelection: {},
       knowledgeContext: { enabled: false, knowledgeBaseIds: [] },
     })
     expect(apiPatchMock).not.toHaveBeenCalled()
-    await submitSenderMessage(container, '继续普通对话')
-    expect(streamWorkbenchMessageMock.mock.calls[1]?.[1]).toMatchObject({
-      mode: 'general',
-      taskIntent: { capabilities: [] },
-    })
-    expect(streamWorkbenchMessageMock.mock.calls[1]?.[1].taskIntent).not.toHaveProperty('metricKey')
+    expect(streamWorkbenchMessageMock.mock.calls[0]?.[1].taskIntent).not.toHaveProperty(
+      'traceDataSourceId',
+    )
   })
 
   it('selects real completed inspection records and gates Native tool execution permission', async () => {

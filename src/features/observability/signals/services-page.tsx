@@ -3,6 +3,7 @@ import { ManagementIconButton, ManagementState } from '@/components/management-l
 import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { useAIPageContext } from '@/features/copilot'
+import { ApiError } from '@/services/api-error'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { EyeOutlined, LineChartOutlined, ReloadOutlined, ShareAltOutlined } from '@ant-design/icons'
@@ -212,6 +213,9 @@ export function ObservabilityServicesPage() {
       {servicesData?.meta.warnings?.map((warning) => (
         <Alert key={warning} title={warning} showIcon type="warning" />
       ))}
+      {services.error instanceof ApiError && services.error.status === 404 ? (
+        <Text type="secondary">请确认服务查询 Provider 和链接指定的数据源仍可用。</Text>
+      ) : null}
       <AdminTable
         enableDensity
         error={services.error}

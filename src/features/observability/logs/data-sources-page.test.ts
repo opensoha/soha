@@ -6,7 +6,7 @@ describe('log data source form model', () => {
     expect(
       buildDataSourceInput({
         name: ' shared logs ',
-        backendType: 'loki',
+        providerKey: 'loki',
         enabled: true,
         endpoint: ' https://logs.example ',
         clusterIds: ['cluster-a'],
@@ -15,7 +15,6 @@ describe('log data source form model', () => {
         maxRangeSeconds: 3600,
         timeoutSeconds: 8,
         bearerToken: ' token-1 ',
-        username: ' ',
         clearCredentialKeys: ['password'],
         labelCluster: 'cluster',
         labelNamespace: 'namespace',
@@ -53,7 +52,6 @@ describe('log data source form model', () => {
     expect(
       buildDataSourceInput({
         name: ' community logs ',
-        backendType: 'provider',
         providerKey: 'community-logs',
         enabled: true,
         endpoint: ' https://provider.example ',
