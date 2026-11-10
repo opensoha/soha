@@ -1,3 +1,4 @@
+import { TemplateMigrationFields, migrationPolicyInput } from '../template-migration'
 import { MutationFeedback, ReadFeedback } from '@/components/request-feedback'
 import { isApiError } from '@/services/api-error'
 import { writeOutcomeUnknown } from '@/utils/query-feedback'
@@ -145,7 +146,12 @@ export function WorkflowTemplateDraftEditor({
           return
         }
       }
-      const payload = { ...values, definition, publish: false }
+      const payload = {
+        ...values,
+        migrationPolicy: migrationPolicyInput(values.migrationPolicy),
+        definition,
+        publish: false,
+      }
       const result = template?.id
         ? await update.mutateAsync({
             id: template.id,
@@ -268,6 +274,7 @@ export function WorkflowTemplateDraftEditor({
             key: template?.key,
             name: template?.name,
             description: template?.description,
+            migrationPolicy: template?.migrationPolicy,
             category: template?.category || 'release',
             enabled: template?.enabled ?? true,
           }}
@@ -287,6 +294,7 @@ export function WorkflowTemplateDraftEditor({
           >
             <Input />
           </Form.Item>
+          <TemplateMigrationFields />
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={2} />
           </Form.Item>

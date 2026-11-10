@@ -507,8 +507,15 @@ export const deliveryMutations = {
     approval: (queryClient: QueryClient) =>
       mutationOptions({
         mutationKey: deliveryMutationKeys.plans('approval'),
-        mutationFn: ({ id, action }: { id: string; action: 'approve' | 'reject' }) =>
-          deliveryApi.plans.approval(id, { action }),
+        mutationFn: ({
+          id,
+          action,
+          comment,
+        }: {
+          id: string
+          action: 'approve' | 'reject'
+          comment?: string
+        }) => deliveryApi.plans.approval(id, { action, comment }),
         onSuccess: () => invalidateRuntimeQueries(queryClient),
       }),
   },

@@ -455,6 +455,7 @@ export function ApplicationForm({
 }
 
 export function ApplicationCenterModals({ state }: { state: ApplicationCenterState }) {
+  const editTargets = Form.useWatch('editTargets', state.bindingForm) ?? false
   const packagesQuery = useQuery(
     manifestQueries.applicationPackages(
       state.selectedApplicationId,
@@ -570,12 +571,16 @@ export function ApplicationCenterModals({ state }: { state: ApplicationCenterSta
               buildPolicy: existing?.buildPolicy,
               releasePolicy: existing?.releasePolicy,
               resourceSelector: existing?.resourceSelector,
-              targets: releaseTargetsFromCandidates(
-                state.targetCandidatesQuery.data?.items ?? [],
-                values.targetKeys as string[] | undefined,
-                existing?.targets,
-                manifestTargets,
-              ),
+              ...(!existing || values.editTargets
+                ? {
+                    targets: releaseTargetsFromCandidates(
+                      state.targetCandidatesQuery.data?.items ?? [],
+                      values.targetKeys as string[] | undefined,
+                      existing?.targets,
+                      manifestTargets,
+                    ),
+                  }
+                : {}),
             }
             if (existing) {
               state.updateBindingMutation.mutate({ id: existing.id, payload })
@@ -616,7 +621,7 @@ export function ApplicationCenterModals({ state }: { state: ApplicationCenterSta
           </Form.Item>
           <Form.Item
             name="clusterId"
-            label="集群"
+            label={state.editingBinding ? '默认集群' : '集群'}
             rules={[{ required: true, message: '请选择集群' }]}
           >
             <Select
@@ -628,13 +633,16 @@ export function ApplicationCenterModals({ state }: { state: ApplicationCenterSta
                 label: item.name,
               }))}
               onChange={() =>
-                state.bindingForm.setFieldsValue({ namespace: undefined, targetKeys: [] })
+                state.bindingForm.setFieldsValue({
+                  namespace: undefined,
+                  ...(!state.editingBinding ? { targetKeys: [] } : {}),
+                })
               }
             />
           </Form.Item>
           <Form.Item
             name="namespace"
-            label="Namespace"
+            label={state.editingBinding ? '默认 Namespace' : 'Namespace'}
             rules={[{ required: true, message: '请选择 Namespace' }]}
           >
             <Select
@@ -646,10 +654,31 @@ export function ApplicationCenterModals({ state }: { state: ApplicationCenterSta
                 value: item.name,
                 label: item.name,
               }))}
-              onChange={() => state.bindingForm.setFieldValue('targetKeys', [])}
+              onChange={() => {
+                if (!state.editingBinding) state.bindingForm.setFieldValue('targetKeys', [])
+              }}
             />
           </Form.Item>
+          {state.editingBinding ? (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                title="默认位置仅用于新增目标"
+                description="修改默认集群或 Namespace 不会移动、删除或解除已有目标。已有服务保留各自的实际部署位置。"
+              />
+              <Form.Item
+                name="editTargets"
+                label="同时调整发布目标"
+                valuePropName="checked"
+                initialValue={false}
+              >
+                <Switch />
+              </Form.Item>
+            </>
+          ) : null}
           <Form.Item
+            hidden={Boolean(state.editingBinding) && !editTargets}
             name="targetKeys"
             label="发布目标"
             tooltip="可选择已有 Workload 或绑定到此环境的资源包；新环境可先保存，再关联资源包。"

@@ -128,6 +128,63 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
+it('blocks an observe-only deployment target in the Workflow Center chooser', async () => {
+  const onSave = vi.fn()
+  const application = await deliveryApi.applications.detail('app-0')
+  vi.mocked(deliveryApi.applications.detail).mockResolvedValue({
+    ...application,
+    bindings: [
+      {
+        applicationEnvironmentId: 'dev',
+        environmentId: 'dev',
+        targetCount: 1,
+        requiresApproval: false,
+        targets: [
+          {
+            id: 'observed',
+            clusterId: 'cluster',
+            namespace: 'test',
+            enabled: true,
+            targetKind: 'kubernetes_workload',
+            executorKind: 'observe_only',
+            workloadKind: 'Deployment',
+            workloadName: 'api',
+            metadata: { serviceId: 'service-0' },
+          },
+        ],
+      },
+    ],
+  })
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={client}>
+        <DeliveryTargetEditor
+          fixed
+          blockObserveOnly
+          target={{
+            id: 'api',
+            applicationId: 'app-0',
+            serviceId: 'service-0',
+            applicationEnvironmentId: 'dev',
+            action: 'build_deploy',
+          }}
+          onClose={onClose}
+          onSave={onSave}
+        />
+      </QueryClientProvider>,
+    )
+  })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30))
+  })
+  expect(document.body.textContent).toContain('此部署目标仅用于观察')
+  const save = [...document.querySelectorAll('button')].find((button) =>
+    button.textContent?.includes('保存目标'),
+  )
+  expect(save?.disabled).toBe(true)
+  expect(onSave).not.toHaveBeenCalled()
+})
+
 it('saves a selected historical Helm revision and clears it when switching back to configuration', async () => {
   const onSave = vi.fn()
   vi.spyOn(deliveryApi.applications, 'list').mockResolvedValue([])

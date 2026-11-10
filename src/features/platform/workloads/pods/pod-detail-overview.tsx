@@ -8,11 +8,9 @@ import { WorkloadOverview, WorkloadOverviewMetadata } from '../shared/workload-o
 import { CheckCircleFilled, WarningOutlined } from '@ant-design/icons'
 import { Card, Collapse, Descriptions, Tooltip, Typography } from 'antd'
 import type { ReactNode } from 'react'
+import { podContainerTerminated } from './container-status'
 
 const { Text } = Typography
-export function podContainerTerminated(item: WorkloadContainer) {
-  return item.state?.split(':', 1)[0] === 'terminated'
-}
 export function podContainerTone(item: WorkloadContainer) {
   const [state, stateReason] = (item.state || '').split(':', 2)
   const reason = item.reason || stateReason || ''

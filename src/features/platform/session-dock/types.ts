@@ -7,6 +7,7 @@ export interface RealtimeSessionInput {
   kind: RealtimeSessionKind
   namespace: string
   podName: string
+  podUid?: string
   shell?: string
   streamingDisabledReason?: string
 }
@@ -22,6 +23,7 @@ export function normalizeRealtimeSession(input: RealtimeSessionInput): RealtimeS
   if (!clusterId || !namespace || !podName) return null
 
   const container = input.container?.trim() || undefined
+  const podUid = input.podUid?.trim() || undefined
   const shell = input.kind === 'terminal' ? input.shell?.trim() || '/bin/sh' : undefined
   const id = JSON.stringify([
     input.kind,
@@ -30,6 +32,7 @@ export function normalizeRealtimeSession(input: RealtimeSessionInput): RealtimeS
     podName,
     container ?? '',
     shell ?? '',
+    ...(podUid ? [podUid] : []),
   ]).replace(/[^a-zA-Z0-9]/gu, (character) => `_${character.codePointAt(0)!.toString(16)}_`)
 
   return {
@@ -39,6 +42,7 @@ export function normalizeRealtimeSession(input: RealtimeSessionInput): RealtimeS
     id,
     namespace,
     podName,
+    podUid,
     shell,
   }
 }

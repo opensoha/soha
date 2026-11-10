@@ -9,6 +9,7 @@ import { readableQueryData, writeOutcomeUnknown } from '@/utils/query-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
+import { TemplateUpdateEntry } from '../template-updates/entry'
 import { deliveryQueries } from '../queries'
 import { deliveryMutations } from '../mutations'
 import type { DeliveryBatch, DeliveryTargetSnapshot } from '../types'
@@ -74,13 +75,19 @@ function DeliveryTargetEvidence({
               </Typography.Text>
             ),
           },
-          { key: 'version', label: '服务版本', children: snapshot.serviceVersion },
+          {
+            key: 'version',
+            label: '服务版本',
+            children: snapshot.templateUpdate ? '按环境固定模板版本' : snapshot.serviceVersion,
+          },
           {
             key: 'template',
             label: '部署模板',
-            children: snapshot.deploymentTemplate
-              ? `${snapshot.deploymentTemplate.templateId} · v${snapshot.deploymentTemplate.version}`
-              : '独立配置',
+            children: snapshot.templateUpdate
+              ? `${snapshot.templateUpdate.templateId} · v${snapshot.templateUpdate.fromVersion} → v${snapshot.templateUpdate.toVersion}`
+              : snapshot.deploymentTemplate
+                ? `${snapshot.deploymentTemplate.templateId} · v${snapshot.deploymentTemplate.version}`
+                : '独立配置',
           },
           {
             key: 'dependencies',
@@ -111,7 +118,12 @@ function DeliveryTargetEvidence({
           {
             title: '阶段',
             dataIndex: 'stage',
-            render: (stage: keyof typeof deliveryStageLabels) => deliveryStageLabels[stage],
+            render: (stage: keyof typeof deliveryStageLabels) =>
+              snapshot.templateUpdate && stage === 'deploy'
+                ? '采用配置'
+                : snapshot.templateUpdate && stage === 'plan'
+                  ? '版本校验与审批'
+                  : deliveryStageLabels[stage],
           },
           {
             title: '状态',
@@ -216,6 +228,13 @@ export function DeliveryBatchDetailPage() {
         }
       />
     )
+  const templateBatch =
+    batch.targets.length > 0 &&
+    batch.targets.every((item) => Boolean(item.target.templateCandidateId))
+  const templateReceipt = templateBatch ? batch.targets[0]?.templateUpdate : undefined
+  const pendingAdoptionIds = batch.targets
+    .filter((item) => targetStageNode(batch, item.target.id, 'deploy')?.status !== 'completed')
+    .flatMap((item) => (item.templateUpdate ? [item.templateUpdate.bindingId] : []))
   return (
     <div className="soha-page">
       <Space wrap style={{ justifyContent: 'space-between', width: '100%' }}>
@@ -229,7 +248,17 @@ export function DeliveryBatchDetailPage() {
             刷新
           </Button>
           {canTrigger && !batch.partialView && isBatchTerminal(batch.status) ? (
-            <Button onClick={() => setRetry(true)}>按参数重跑整个流程</Button>
+            templateReceipt ? (
+              <TemplateUpdateEntry
+                kind={templateReceipt.kind === 'blueprint' ? 'deployment' : templateReceipt.kind}
+                templateId={templateReceipt.templateId}
+                initialVersion={templateReceipt.toVersion}
+                initialTargetIds={pendingAdoptionIds}
+                label="重新比较未完成项"
+              />
+            ) : (
+              <Button onClick={() => setRetry(true)}>按参数重跑整个流程</Button>
+            )
           ) : null}
           {canTrigger && !batch.partialView && !isBatchTerminal(batch.status) ? (
             <Popconfirm
@@ -272,6 +301,14 @@ export function DeliveryBatchDetailPage() {
           cancel.isSuccess ? { message: '停止请求已受理，以交付记录的最终状态为准。' } : undefined
         }
       />
+      {templateBatch ? (
+        <Alert
+          type="info"
+          showIcon
+          title="模板配置采用批次"
+          description="采用成功表示目标环境配置已更新，运行资源和产物仍保持原部署状态；可后续创建部署 Plan 发布。部分失败后重新比较未完成项，已完成项不会重复采用。"
+        />
+      ) : null}
       {batch.partialView ? (
         <Alert type="info" showIcon title="当前仅显示可查看的目标，状态和计数对应这些目标。" />
       ) : null}
@@ -287,13 +324,19 @@ export function DeliveryBatchDetailPage() {
         size="small"
         column={3}
         items={[
-          { key: 'services', label: '服务', children: batch.serviceCount },
+          {
+            key: 'services',
+            label: templateBatch ? '配置绑定' : '服务',
+            children: templateBatch ? batch.targets.length : batch.serviceCount,
+          },
           { key: 'targets', label: '环境目标', children: batch.targetCount },
           { key: 'builds', label: '实际构建', children: batch.buildCount },
           {
             key: 'mode',
             label: '执行方式',
-            children: deliveryModeLabels[batch.definition.mode ?? 'service_serial'],
+            children: templateBatch
+              ? '分批采用配置'
+              : deliveryModeLabels[batch.definition.mode ?? 'service_serial'],
           },
           {
             key: 'stop',
@@ -380,7 +423,9 @@ export function DeliveryBatchDetailPage() {
             render: (_: unknown, snapshot: DeliveryTargetSnapshot) =>
               deliveryTargetActionLabel(snapshot.target),
           },
-          ...Object.entries(deliveryStageLabels).map(([stage, title]) => ({
+          ...Object.entries(
+            templateBatch ? { plan: '版本校验与审批', deploy: '采用配置' } : deliveryStageLabels,
+          ).map(([stage, title]) => ({
             title,
             key: stage,
             width: 140,

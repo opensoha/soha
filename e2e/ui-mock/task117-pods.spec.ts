@@ -79,6 +79,7 @@ async function setup(
     namespaceReads: [] as (string | null)[],
     deletes: 0,
     terminalTickets: 0,
+    terminalExpectedUid: null as string | null,
     terminalRows: [] as number[],
     nodeReads: 0,
   }
@@ -242,8 +243,10 @@ async function setup(
       }
     }
     if (url.pathname === '/api/v1/auth/stream-ticket' && method === 'POST') {
-      if (withSessions && request.postDataJSON()?.path?.endsWith('/terminal')) {
+      const target = new URL(request.postDataJSON()?.path || '/', url.origin)
+      if (withSessions && target.pathname.endsWith('/terminal')) {
         state.terminalTickets += 1
+        state.terminalExpectedUid = target.searchParams.get('expectedUid')
         return {
           body: {
             data: { ticket: 'synthetic-terminal-ticket', expiresAt: '2099-01-01T00:00:00Z' },
@@ -864,6 +867,7 @@ test('maximized session dock fills logs and terminal and keeps resize continuity
   await expect.poll(() => new Set(state.terminalRows).size).toBeGreaterThan(1)
   const maximizedRows = Math.max(...state.terminalRows)
   expect(state.terminalTickets).toBe(1)
+  expect(state.terminalExpectedUid).toBe('pod-uid-0')
   await dock.getByRole('button', { name: '还原实时会话', exact: true }).click()
   await expect(dock).not.toHaveClass(/is-maximized/)
   await expect

@@ -1,24 +1,26 @@
 import { lazy, Suspense, useState } from 'react'
-import { Button, Card, Form, Pagination, Select, Space, Typography } from 'antd'
+import { Button, Card, Dropdown, Pagination, Segmented, Space, Typography } from 'antd'
 import {
+  EllipsisOutlined,
   HistoryOutlined,
+  ImportOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   SettingOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ManagementIconButton,
   ManagementState,
-  ManagementKeywordField,
-  ManagementQueryField,
-  ManagementQueryGrid,
   ManagementRefreshButton,
+  ManagementToolbarSearch,
 } from '@/components/management-list'
+import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useI18n } from '@/i18n'
+import { readableQueryData } from '@/utils/query-feedback'
 import { applicationWorkspacePath } from '../applications/workspace-navigation'
 import { deliveryQueries } from '../queries'
 import { TemplateSourcesButton } from '../template-sources/entry'
@@ -28,6 +30,8 @@ import type {
   WorkflowCatalogEntry,
 } from '../types'
 import { deliveryModeLabels } from '../batches/model'
+import { WorkflowCenterRuns } from './center-runs'
+import { centerRunPhase, mergeCenterRuns } from './center-runs-model'
 import { definitionHistoryPath, ExecutionTrend } from './execution-trend'
 import './styles.css'
 
@@ -52,6 +56,18 @@ function definitionPath(card: WorkflowCatalogEntry, run = false) {
     : path
 }
 
+type WorkflowCenterView = 'active' | 'recent' | 'definitions'
+
+function workflowCenterView(search: URLSearchParams): WorkflowCenterView {
+  const view = search.get('view')
+  if (view === 'active' || view === 'recent' || view === 'definitions') return view
+  return ['workflowId', 'create', 'tab', 'applicationId', 'environmentId'].some((key) =>
+    search.has(key),
+  )
+    ? 'definitions'
+    : 'active'
+}
+
 export function WorkflowCatalog() {
   const [urlSearch, setURLSearch] = useSearchParams()
   const navigate = useNavigate()
@@ -62,7 +78,13 @@ export function WorkflowCatalog() {
   const canViewBuilds = hasPermission(permissions, 'delivery.applications.view')
   const canBuild = canViewBuilds && hasPermission(permissions, 'delivery.builds.trigger')
   const canManage = canViewWorkflows && hasPermission(permissions, 'delivery.workflows.trigger')
+  const canView = canViewBuilds || canViewWorkflows
   const [importing, setImporting] = useState(false)
+  const [selectingTargets, setSelectingTargets] = useState(false)
+  const view = workflowCenterView(urlSearch)
+  const viewingDefinitions = view === 'definitions'
+  const viewingActive = view === 'active'
+  const cursor = urlSearch.get('cursor') || undefined
   const applicationId = urlSearch.get('applicationId') || undefined
   const environmentId = urlSearch.get('environmentId') || undefined
   const search = urlSearch.get('search') || ''
@@ -72,7 +94,11 @@ export function WorkflowCatalog() {
     setURLSearch(
       (current) => {
         const next = new URLSearchParams(current)
-        if (resetPage) next.delete('page')
+        if (resetPage) {
+          next.delete('page')
+          next.delete('cursor')
+          next.delete('item')
+        }
         for (const [key, value] of Object.entries(values)) {
           if (value) next.set(key, value)
           else next.delete(key)
@@ -88,9 +114,49 @@ export function WorkflowCatalog() {
   const catalog = useQuery(
     deliveryQueries.workflowCatalog(
       { applicationId, environmentId, search, offset: (page - 1) * 12, limit: 12 },
-      canViewBuilds || canViewWorkflows,
+      canView && viewingDefinitions,
     ),
   )
+  const running = useQuery(
+    deliveryQueries.executionHistory(
+      { search: search || undefined, status: 'running', limit: 12 },
+      canView && viewingActive,
+    ),
+  )
+  const approvals = useQuery(
+    deliveryQueries.executionHistory(
+      { search: search || undefined, status: 'approval', limit: 12 },
+      canView && viewingActive,
+    ),
+  )
+  const recent = useQuery(
+    deliveryQueries.executionHistory(
+      { search: search || undefined, status: 'all', cursor, limit: 12 },
+      canView && view === 'recent',
+    ),
+  )
+  const runningData = readableQueryData(running)
+  const approvalData = readableQueryData(approvals)
+  const recentData = readableQueryData(recent)
+  const catalogData = readableQueryData(catalog)
+  const rows = viewingActive
+    ? mergeCenterRuns([...(runningData?.items ?? []), ...(approvalData?.items ?? [])], english)
+    : mergeCenterRuns(recentData?.items ?? [], english).filter(
+        (row) => centerRunPhase(row.status) === 'recent',
+      )
+  const runQueries = viewingActive ? [running, approvals] : [recent]
+  const setView = (next: WorkflowCenterView) => updateSearch({ view: next })
+  const newWorkflow = () =>
+    updateSearch(
+      {
+        view: 'definitions',
+        create: 'workflow',
+        workflowId: undefined,
+        templateId: undefined,
+        templateVersion: undefined,
+      },
+      false,
+    )
   const requestedTemplateId = urlSearch.get('templateId') ?? ''
   const requestedVersion = Number(urlSearch.get('templateVersion'))
   const creating = urlSearch.get('create') === 'workflow'
@@ -156,7 +222,7 @@ export function WorkflowCatalog() {
       )
       return
     }
-    updateSearch({ workflowId: card.sourceId, create: undefined }, false)
+    updateSearch({ view: 'definitions', workflowId: card.sourceId, create: undefined }, false)
   }
   if (permissionQuery.isLoading) return <ManagementState kind="loading" />
   if (permissionQuery.isError)
@@ -171,9 +237,18 @@ export function WorkflowCatalog() {
         }
       />
     )
+  if (!canView) return <ManagementState compact kind="no-permission" />
+  const searchLabel = english ? 'Search workflow, execution or service' : '搜索工作流、执行号或服务'
+  const historyPath = (status?: 'running' | 'approval') => {
+    const filters = new URLSearchParams()
+    if (status) filters.set('status', status)
+    if (search) filters.set('search', search)
+    return filters.size ? `/execution-history?${filters}` : '/execution-history'
+  }
+  const visibleQueries = viewingDefinitions ? [catalog] : runQueries
   return (
     <section
-      aria-label={english ? 'All workflows' : '全部工作流'}
+      aria-label={english ? 'Workflow Center' : '工作流中心'}
       className="soha-workflow-catalog"
     >
       {invalidTemplate ? (
@@ -213,114 +288,106 @@ export function WorkflowCatalog() {
       ) : editId && requestedWorkflow.isPending ? (
         <ManagementState compact kind="loading" />
       ) : null}
-      <Form className="soha-management-query-form" layout="horizontal">
-        <ManagementQueryGrid
-          actions={
+      <Card
+        variant="outlined"
+        className="soha-management-query-card"
+        classNames={{ body: 'soha-workflow-catalog__toolbar' }}
+      >
+        <Segmented<WorkflowCenterView>
+          aria-label={english ? 'Workflow view' : '工作流视图'}
+          value={view}
+          options={[
+            { value: 'active', label: english ? 'In progress' : '进行中' },
+            { value: 'recent', label: english ? 'Recent executions' : '最近执行' },
+            { value: 'definitions', label: english ? 'Workflow definitions' : '工作流定义' },
+          ]}
+          onChange={setView}
+        />
+        <div className="soha-workflow-catalog__actions">
+          <ManagementToolbarSearch
+            aria-label={searchLabel}
+            placeholder={searchLabel}
+            maxLength={200}
+            size={264}
+            value={search}
+            onChange={(value) => updateSearch({ search: value })}
+          />
+          <ManagementRefreshButton
+            tooltip={english ? 'Refresh' : '刷新'}
+            aria-label={english ? 'Refresh workflow center' : '刷新工作流中心'}
+            loading={visibleQueries.some((query) => query.isFetching)}
+            onClick={() => visibleQueries.forEach((query) => void query.refetch())}
+          />
+          {canManage ? (
+            <>
+              <TemplateSourcesButton iconOnly />
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'import',
+                      icon: <ImportOutlined />,
+                      label: english ? 'Import file' : '导入文件',
+                    },
+                    {
+                      key: 'new',
+                      icon: <PlusOutlined />,
+                      label: english ? 'New workflow' : '新建工作流',
+                    },
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === 'import') setImporting(true)
+                    else newWorkflow()
+                  },
+                }}
+                trigger={['click']}
+              >
+                <Button icon={<EllipsisOutlined />}>
+                  {english ? 'Manage workflows' : '工作流管理'}
+                </Button>
+              </Dropdown>
+            </>
+          ) : null}
+          {canManage || (canBuild && !viewingDefinitions) ? (
             <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              onClick={() => {
+                if (canManage) setSelectingTargets(true)
+                else setView('definitions')
+              }}
+            >
+              {english ? 'Select services to run' : '选择服务执行'}
+            </Button>
+          ) : null}
+        </div>
+      </Card>
+      {viewingDefinitions ? (
+        <>
+          <ReadFeedback query={catalog} label={english ? 'Workflow definitions' : '工作流定义'} />
+          {catalog.isPending ? (
+            <ManagementState
+              compact
+              kind="loading"
+              title={english ? 'Loading workflows' : '正在读取工作流'}
+            />
+          ) : null}
+          {applicationId || environmentId ? (
+            <Button
+              className="soha-workflow-catalog__clear-scope"
               onClick={() =>
                 updateSearch({
-                  search: undefined,
                   applicationId: undefined,
                   environmentId: undefined,
+                  view: 'definitions',
                 })
               }
             >
-              {english ? 'Reset' : '重置'}
+              {english ? 'Clear linked scope' : '清除链接范围'}
             </Button>
-          }
-        >
-          <ManagementKeywordField
-            inputProps={{ 'aria-label': '搜索工作流' }}
-            value={search}
-            placeholder={english ? 'Search name or application' : '搜索名称或应用'}
-            onChange={(value) => updateSearch({ search: value })}
-          />
-          <ManagementQueryField label={english ? 'Application' : '应用'} width={220}>
-            <Select
-              aria-label="筛选应用"
-              allowClear
-              showSearch={{ optionFilterProp: 'label' }}
-              placeholder={english ? 'All applications' : '全部应用'}
-              value={applicationId}
-              options={catalog.data?.applications ?? []}
-              onChange={(value) => updateSearch({ applicationId: value, environmentId: undefined })}
-            />
-          </ManagementQueryField>
-          <ManagementQueryField label={english ? 'Environment' : '环境'} width={220}>
-            <Select
-              aria-label="筛选环境"
-              allowClear
-              placeholder={english ? 'All environments' : '全部环境'}
-              value={environmentId}
-              options={catalog.data?.environments ?? []}
-              onChange={(value) => updateSearch({ environmentId: value })}
-            />
-          </ManagementQueryField>
-        </ManagementQueryGrid>
-      </Form>
-      <div className="soha-workflow-catalog__toolbar">
-        {canManage ? (
-          <Space wrap className="soha-workflow-catalog__actions">
-            <TemplateSourcesButton />
-            <Button onClick={() => setImporting(true)}>
-              {english ? 'Import file' : '导入文件'}
-            </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() =>
-                updateSearch(
-                  {
-                    create: 'workflow',
-                    workflowId: undefined,
-                    templateId: undefined,
-                    templateVersion: undefined,
-                  },
-                  false,
-                )
-              }
-            >
-              {english ? 'New workflow' : '新建工作流'}
-            </Button>
-          </Space>
-        ) : null}
-        <ManagementRefreshButton
-          tooltip="刷新"
-          aria-label={english ? 'Refresh workflows' : '刷新工作流'}
-          loading={catalog.isFetching}
-          onClick={() => void catalog.refetch()}
-        />
-      </div>
-      <div
-        className="soha-execution-trend__legend"
-        aria-label={english ? 'Execution status legend' : '执行状态图例'}
-      >
-        <span className="soha-execution-trend--success">● {english ? 'Success' : '成功'}</span>
-        <span className="soha-execution-trend--danger">● {english ? 'Failed' : '失败'}</span>
-        <span className="soha-execution-trend--primary">● {english ? 'Running' : '运行中'}</span>
-        <span className="soha-execution-trend--warning">● {english ? 'Approval' : '待审批'}</span>
-        <span className="soha-execution-trend--neutral">● {english ? 'Canceled' : '已取消'}</span>
-        <span>
-          {english
-            ? 'Older → Newer · Unknown durations use equal heights'
-            : '旧 → 新 · 耗时未知时等高展示'}
-        </span>
-      </div>
-      {!canViewBuilds && !canViewWorkflows ? (
-        <ManagementState compact kind="no-permission" />
-      ) : catalog.isPending ? (
-        <ManagementState compact kind="loading" title="正在读取工作流" />
-      ) : catalog.isError ? (
-        <ManagementState
-          compact
-          kind="error"
-          title="工作流加载失败"
-          actions={<Button onClick={() => void catalog.refetch()}>重试</Button>}
-        />
-      ) : (
-        <>
+          ) : null}
           <div className="soha-workflow-catalog__list" role="list">
-            {catalog.data.items.map((card) => {
+            {catalogData?.items.map((card) => {
               const build = card.sourceKind === 'build_source'
               const appNames = [...new Set(card.scopes.map((scope) => scope.applicationName))].join(
                 '、',
@@ -384,17 +451,26 @@ export function WorkflowCatalog() {
               )
             })}
           </div>
-          {!catalog.data.items.length ? (
+          {catalogData && !catalogData.items.length && !catalog.isError ? (
             <ManagementState
               compact
               kind="not-configured"
               title={english ? 'No matching workflows' : '暂无匹配的工作流'}
+              actions={
+                search ? (
+                  <Button onClick={() => updateSearch({ search: undefined })}>
+                    {english ? 'Clear search' : '清除搜索'}
+                  </Button>
+                ) : canManage ? (
+                  <Button onClick={newWorkflow}>{english ? 'New workflow' : '新建工作流'}</Button>
+                ) : undefined
+              }
             />
           ) : null}
-          {catalog.data.total > 12 ? (
+          {catalogData && catalogData.total > 12 ? (
             <Pagination
               current={page}
-              total={catalog.data.total}
+              total={catalogData.total}
               pageSize={12}
               showSizeChanger={false}
               onChange={(value) =>
@@ -402,6 +478,88 @@ export function WorkflowCatalog() {
               }
             />
           ) : null}
+        </>
+      ) : (
+        <>
+          {viewingActive ? (
+            <>
+              <ReadFeedback
+                query={running}
+                label={english ? 'Active executions' : '进行中的执行'}
+              />
+              <ReadFeedback
+                query={approvals}
+                label={english ? 'Pending approvals' : '待审批执行'}
+              />
+            </>
+          ) : (
+            <ReadFeedback query={recent} label={english ? 'Recent executions' : '最近执行'} />
+          )}
+          {rows.length ? (
+            <WorkflowCenterRuns
+              rows={rows}
+              selectedKey={urlSearch.get('item')}
+              active={viewingActive}
+              onSelect={(item) => updateSearch({ item }, false)}
+            />
+          ) : runQueries.some((query) => query.isPending) ? (
+            <ManagementState compact kind="loading" />
+          ) : runQueries.every((query) => !query.isError) ? (
+            <ManagementState
+              compact
+              kind="empty"
+              title={
+                viewingActive
+                  ? english
+                    ? 'No active executions'
+                    : '暂无进行中的执行'
+                  : english
+                    ? 'No ended executions on this page'
+                    : '本页暂无已结束的执行'
+              }
+              actions={
+                <Button onClick={() => setView('definitions')}>
+                  {english ? 'View workflow definitions' : '查看工作流定义'}
+                </Button>
+              }
+            />
+          ) : null}
+          {viewingActive ? (
+            <div className="soha-workflow-center__pagination">
+              {runningData?.nextCursor ? (
+                <Link to={historyPath('running')}>
+                  {english ? 'More active executions' : '更多进行中的执行'}
+                </Link>
+              ) : null}
+              {approvalData?.nextCursor ? (
+                <Link to={historyPath('approval')}>
+                  {english ? 'More pending approvals' : '更多待审批执行'}
+                </Link>
+              ) : null}
+            </div>
+          ) : (
+            <nav
+              className="soha-workflow-center__pagination"
+              aria-label={english ? 'Execution pagination' : '执行记录分页'}
+            >
+              <Link to={historyPath()}>{english ? 'Full execution history' : '全部执行记录'}</Link>
+              {cursor ? (
+                <Button onClick={() => updateSearch({ cursor: undefined, item: undefined }, false)}>
+                  {english ? 'Latest executions' : '最新记录'}
+                </Button>
+              ) : null}
+              {recentData?.nextCursor ? (
+                <Button
+                  disabled={recent.isFetching || recent.isError}
+                  onClick={() =>
+                    updateSearch({ cursor: recentData.nextCursor, item: undefined }, false)
+                  }
+                >
+                  {english ? 'Next' : '下一页'}
+                </Button>
+              ) : null}
+            </nav>
+          )}
         </>
       )}
       {importing ? (
@@ -412,6 +570,11 @@ export function WorkflowCatalog() {
               void catalog.refetch()
             }}
           />
+        </Suspense>
+      ) : null}
+      {selectingTargets && canManage ? (
+        <Suspense fallback={<ManagementState compact kind="loading" />}>
+          <DeliveryBatchEditor selectTargets onClose={() => setSelectingTargets(false)} />
         </Suspense>
       ) : null}
       {editor ? (

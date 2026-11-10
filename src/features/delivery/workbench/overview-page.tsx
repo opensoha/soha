@@ -1,436 +1,464 @@
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  AppstoreOutlined,
-  ArrowRightOutlined,
-  ApartmentOutlined,
-  FieldTimeOutlined,
-  InboxOutlined,
-} from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import { ArrowRightOutlined } from '@ant-design/icons'
+import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { Button, Card } from 'antd'
-import { StatusTag } from '@/components/status-tag'
-import { formatDateTime } from '@/utils/time'
 import { ManagementState } from '@/components/management-list'
-import {
-  OverviewChip,
-  OverviewMetricCard,
-  type OverviewChipItem,
-  type OverviewMetricItem,
-} from '@/components/overview-visuals'
+import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
-import {
-  releaseBoardQualitySignal,
-  summarizeExecutionTaskStatus,
-  summarizeReleaseBoard,
-  summarizeReleaseBundleStatus,
-} from '../delivery-status'
+import { readableQueryData } from '@/utils/query-feedback'
+import { formatDateTime } from '@/utils/time'
+import { deliveryStageLabels, deliveryStatusLabels } from '../batches/model'
+import { isDeliveryReadyStatus, releaseBoardQualitySignal } from '../delivery-status'
 import { deliveryQueries } from '../queries'
-import { executionTaskUpdatedAt, releaseBundleUpdatedAt, sortByLatest } from './shared'
+import type { DeliveryExecutionHistoryEntry, ExecutionTask } from '../domain-types'
 import './overview.css'
+
+const ACTIVE_HISTORY_STATUSES = new Set([
+  'pending',
+  'queued',
+  'running',
+  'waiting_execution',
+  'canceling',
+  'waiting_approval',
+  'pending_approval',
+  'awaiting_approval',
+])
+const APPROVAL_HISTORY_STATUSES = new Set([
+  'waiting_approval',
+  'pending_approval',
+  'awaiting_approval',
+])
+const ACTIVE_TASK_STATUSES = new Set(['queued', 'dispatching', 'running'])
+
+interface OverviewRecord {
+  key: string
+  title: string
+  description?: string
+  stage?: string
+  status: string
+  statusLabel?: string
+  path?: string
+}
+
+function historyRecord(
+  entry: DeliveryExecutionHistoryEntry,
+  names: Map<string, string>,
+): OverviewRecord | undefined {
+  const key = entry.kind + '/' + entry.id
+  if (entry.batch) {
+    const batch = entry.batch
+    const completed = batch.nodes.filter((node) => isDeliveryReadyStatus(node.status)).length
+    const applications = new Set(batch.targets.map(({ target }) => target.applicationId)).size
+    return {
+      key,
+      title: batch.definition.name,
+      description: [
+        `${applications} 个应用 / ${batch.serviceCount} 个服务`,
+        batch.nodes.length ? `${completed}/${batch.nodes.length} 节点完成` : '',
+        batch.partialView ? '仅可见目标' : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      stage: [
+        ...new Set(
+          batch.nodes
+            .filter(
+              (node) =>
+                node.status !== 'pending' &&
+                node.status !== 'queued' &&
+                ACTIVE_HISTORY_STATUSES.has(node.status),
+            )
+            .map(({ stage, name }) =>
+              stage && stage !== 'barrier' ? (deliveryStageLabels[stage] ?? name) : name,
+            )
+            .filter(Boolean),
+        ),
+      ].join(' · '),
+      status: batch.status,
+      path: `/delivery/batches/${encodeURIComponent(batch.id)}`,
+    }
+  }
+  if (entry.application) {
+    const run = entry.application
+    const nodes = run.nodeRuns?.length ? run.nodeRuns : run.steps
+    const current = nodes.find(
+      (node) => node.status !== 'pending' && ACTIVE_HISTORY_STATUSES.has(node.status),
+    )
+    const application =
+      names.get(run.applicationId) ||
+      (typeof run.metadata?.applicationName === 'string'
+        ? run.metadata.applicationName
+        : run.applicationId)
+    return {
+      key,
+      title: run.workflowName,
+      description: [application, run.deploymentName].filter(Boolean).join(' · '),
+      stage: current?.name,
+      status: run.status,
+      path: run.deliveryBatchId
+        ? `/delivery/batches/${encodeURIComponent(run.deliveryBatchId)}`
+        : `/workflows/${encodeURIComponent(run.id)}`,
+    }
+  }
+  if (entry.build) {
+    const build = entry.build
+    return {
+      key,
+      title: names.get(build.applicationId) || build.applicationId,
+      description: ['构建', build.sourceSystem].filter(Boolean).join(' · '),
+      status: build.status,
+      path: `/builds/${encodeURIComponent(build.id)}`,
+    }
+  }
+}
+
+function taskRecord(task: ExecutionTask): OverviewRecord {
+  return {
+    key: task.id,
+    title: task.taskKind,
+    description: [task.providerKind, task.targetKind].filter(Boolean).join(' · '),
+    status: task.status,
+    path: `/delivery/execution-tasks/${encodeURIComponent(task.id)}`,
+  }
+}
+
+function OverviewRecords({
+  records,
+  active = false,
+}: {
+  records: OverviewRecord[]
+  active?: boolean
+}) {
+  return (
+    <div className="soha-delivery-overview-records" data-active={active}>
+      {records.map(({ key, title, description, stage, status, statusLabel, path }) => {
+        const context = [description, active ? undefined : stage].filter(Boolean).join(' · ')
+        const waitingForRunner = status === 'waiting_execution'
+        const content = (
+          <>
+            <span className="soha-delivery-overview-record-main">
+              <strong title={active ? title : undefined}>{title}</strong>
+              {context ? <small>{context}</small> : null}
+              {active && stage ? (
+                <small className="soha-delivery-overview-stage" title={stage}>
+                  <span>当前阶段</span> {stage}
+                </small>
+              ) : null}
+            </span>
+            <StatusTag
+              value={waitingForRunner ? 'checking' : status}
+              label={
+                statusLabel ??
+                (waitingForRunner ? deliveryStatusLabels.waiting_execution : undefined)
+              }
+            />
+          </>
+        )
+        return path ? (
+          <Link className="soha-delivery-overview-record" key={key} to={path}>
+            {content}
+          </Link>
+        ) : (
+          <div className="soha-delivery-overview-record" key={key}>
+            {content}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function QueryState({
+  queries,
+  label,
+}: {
+  queries: Array<Pick<UseQueryResult, 'isLoading' | 'isError' | 'refetch'>>
+  label: string
+}) {
+  const failed = queries.filter((query) => query.isError)
+  if (failed.length) {
+    return (
+      <ManagementState
+        bordered={false}
+        compact
+        kind="error"
+        title={label + '加载失败'}
+        actions={
+          <Button onClick={() => failed.forEach((query) => void query.refetch())}>重试</Button>
+        }
+      />
+    )
+  }
+  return queries.some((query) => query.isLoading) ? (
+    <ManagementState bordered={false} compact kind="loading" />
+  ) : null
+}
+
+function SectionLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <Link to={to}>
+      {children} <ArrowRightOutlined aria-hidden="true" />
+    </Link>
+  )
+}
 
 export function DeliveryOverviewPage() {
   const permissionQuery = usePermissionSnapshot()
   const snapshot = permissionQuery.data?.data
   const canViewApplications = hasPermission(snapshot, 'delivery.applications.view')
+  const canViewServices = hasPermission(snapshot, 'delivery.application-services.view')
   const canViewEnvironments = hasPermission(snapshot, 'delivery.application-environments.view')
   const canViewBoard = hasPermission(snapshot, 'delivery.release-board.view')
   const canViewBundles = hasPermission(snapshot, 'delivery.release-bundles.view')
   const canViewTasks = hasPermission(snapshot, 'delivery.execution-tasks.view')
+  const canViewWorkflows = hasPermission(snapshot, 'delivery.workflows.view')
+  const canViewHistory = canViewWorkflows || canViewApplications
+  const useTaskHistory = !canViewHistory && canViewTasks
 
-  const applicationsQuery = useQuery(deliveryQueries.applications.list(canViewApplications))
-  const environmentsQuery = useQuery(deliveryQueries.environments.list(canViewEnvironments))
-  const boardQuery = useQuery(deliveryQueries.releaseBoard.list({ enabled: canViewBoard }))
-  const bundlesQuery = useQuery(deliveryQueries.releaseBundles.list({ enabled: canViewBundles }))
-  const tasksQuery = useQuery(deliveryQueries.executionTasks.list({ enabled: canViewTasks }))
-
-  const applications = applicationsQuery.data ?? []
-  const environments = environmentsQuery.data ?? []
-  const board = boardQuery.data ?? []
-  const bundles = bundlesQuery.data ?? []
-  const tasks = tasksQuery.data ?? []
-  const boardSummary = summarizeReleaseBoard(board)
-  const bundleSummary = summarizeReleaseBundleStatus(bundles)
-  const taskSummary = summarizeExecutionTaskStatus(tasks)
-  const hasAnyPermission =
-    canViewApplications || canViewEnvironments || canViewBoard || canViewBundles || canViewTasks
-  const contentQueries = [
-    applicationsQuery,
-    environmentsQuery,
-    boardQuery,
-    bundlesQuery,
-    tasksQuery,
-  ]
-  const hasContentQueryError = contentQueries.some((query) => query.isError)
-  const retryFailedContentQueries = () => {
-    contentQueries.forEach((query) => {
-      if (query.isError) void query.refetch()
-    })
-  }
-  const applicationBindingError =
-    (canViewApplications && applicationsQuery.isError) ||
-    (canViewEnvironments && environmentsQuery.isError)
-
-  const overviewStats = [
-    ...(canViewApplications || canViewEnvironments
-      ? [
-          {
-            key: 'applications',
-            label: '应用 / 环境绑定',
-            value: `${canViewApplications && !applicationsQuery.isError ? applications.length : '-'} / ${canViewEnvironments && !environmentsQuery.isError ? environments.length : '-'}`,
-            helper: applicationBindingError
-              ? '应用或环境数据加载失败'
-              : '当前可见应用与运行环境绑定',
-            icon: <AppstoreOutlined />,
-            tone: applicationBindingError ? ('danger' as const) : ('default' as const),
-            path: canViewApplications ? '/applications' : '/application-environments',
-            loading:
-              (canViewApplications && applicationsQuery.isLoading) ||
-              (canViewEnvironments && environmentsQuery.isLoading),
-          },
-        ]
-      : []),
-    ...(canViewBoard
-      ? [
-          {
-            key: 'release-board',
-            label: '发布态势',
-            value: boardQuery.isError ? '-' : boardSummary.total,
-            helper: boardQuery.isError
-              ? '发布态势加载失败'
-              : `目标 ${boardSummary.targets} · 可推广 ${boardSummary.ready}`,
-            icon: <ApartmentOutlined />,
-            tone: boardQuery.isError
-              ? ('danger' as const)
-              : boardSummary.blocked > 0
-                ? ('danger' as const)
-                : boardSummary.running + boardSummary.approval > 0
-                  ? ('warning' as const)
-                  : boardSummary.ready > 0
-                    ? ('success' as const)
-                    : ('default' as const),
-            path: '/release-board',
-            loading: boardQuery.isLoading,
-          },
-        ]
-      : []),
-    ...(canViewBundles
-      ? [
-          {
-            key: 'release-bundles',
-            label: '版本包',
-            value: bundlesQuery.isError ? '-' : bundleSummary.total,
-            helper: bundlesQuery.isError
-              ? '版本包加载失败'
-              : `可验证 ${bundleSummary.ready} · 制品 ${bundleSummary.artifacts}`,
-            icon: <InboxOutlined />,
-            tone: bundlesQuery.isError
-              ? ('danger' as const)
-              : bundleSummary.blocked > 0
-                ? ('danger' as const)
-                : bundleSummary.ready > 0
-                  ? ('success' as const)
-                  : ('default' as const),
-            path: '/delivery/release-bundles',
-            loading: bundlesQuery.isLoading,
-          },
-        ]
-      : []),
-    ...(canViewTasks
-      ? [
-          {
-            key: 'execution-tasks',
-            label: '执行任务',
-            value: tasksQuery.isError ? '-' : taskSummary.total,
-            helper: tasksQuery.isError
-              ? '执行任务加载失败'
-              : `运行中 ${taskSummary.active} · 失败 ${taskSummary.blocked}`,
-            icon: <FieldTimeOutlined />,
-            tone: tasksQuery.isError
-              ? ('danger' as const)
-              : taskSummary.blocked > 0
-                ? ('danger' as const)
-                : taskSummary.active > 0
-                  ? ('warning' as const)
-                  : ('default' as const),
-            path: '/delivery/execution-tasks',
-            loading: tasksQuery.isLoading,
-          },
-        ]
-      : []),
-  ] satisfies Array<OverviewMetricItem & { loading: boolean; path: string }>
-
-  const releaseFlow = [
-    { key: 'ready', label: '可推广', value: boardSummary.ready, tone: 'success' as const },
-    { key: 'running', label: '执行中', value: boardSummary.running, tone: 'warning' as const },
-    { key: 'approval', label: '待审批', value: boardSummary.approval, tone: 'warning' as const },
-    { key: 'blocked', label: '阻塞', value: boardSummary.blocked, tone: 'danger' as const },
-    { key: 'targets', label: '发布目标', value: boardSummary.targets, tone: 'default' as const },
-  ] satisfies OverviewChipItem[]
-  const attentionPriority: Record<string, number> = {
-    blocked: 0,
-    approval: 1,
-    target: 2,
-    validation: 3,
-    pending: 4,
-  }
-  const attention = board
-    .map((entry) => ({ entry, signal: releaseBoardQualitySignal(entry) }))
-    .filter(({ signal }) => signal.value in attentionPriority)
-    .sort((a, b) => attentionPriority[a.signal.value] - attentionPriority[b.signal.value])
-  const recentTasks = sortByLatest(tasks, executionTaskUpdatedAt).slice(0, 4)
-  const recentBundles = sortByLatest(bundles, releaseBundleUpdatedAt).slice(0, 4)
-  const applicationNames = new Map(
-    (canViewApplications && !applicationsQuery.isError ? applications : []).map((application) => [
-      application.id,
-      application.name,
-    ]),
+  const applications = useQuery(deliveryQueries.applications.list(canViewApplications))
+  const visibleApps = canViewApplications ? (readableQueryData(applications) ?? []) : []
+  const services = useQueries({
+    queries:
+      canViewServices && !applications.isError
+        ? visibleApps.map((app) => deliveryQueries.applications.services(app.id))
+        : [],
+  })
+  const environments = useQuery(
+    deliveryQueries.environments.list(canViewEnvironments && !canViewBoard),
+  )
+  const board = useQuery(deliveryQueries.releaseBoard.list({ enabled: canViewBoard }))
+  const bundles = useQuery(
+    deliveryQueries.releaseBundles.list({ enabled: canViewBundles && !canViewApplications }),
+  )
+  const tasks = useQuery(deliveryQueries.executionTasks.list({ enabled: useTaskHistory }))
+  const active = useQuery(
+    deliveryQueries.executionHistory({ status: 'running', limit: 6 }, canViewHistory),
+  )
+  const approval = useQuery(
+    deliveryQueries.executionHistory({ status: 'approval', limit: 6 }, canViewWorkflows),
+  )
+  const recent = useQuery(
+    deliveryQueries.executionHistory({ status: 'all', limit: 24 }, canViewHistory),
   )
 
-  if (permissionQuery.isError) {
-    return (
-      <div className="soha-page soha-overview-page soha-delivery-overview-page">
-        <ManagementState
-          kind="error"
-          actions={
-            <Button
-              onClick={() => {
-                void permissionQuery.refetch()
-              }}
-            >
-              重试
-            </Button>
-          }
-        />
-      </div>
+  const names = new Map(visibleApps.map(({ id, name }) => [id, name]))
+  const visibleTasks = useTaskHistory ? (readableQueryData(tasks) ?? []) : []
+  const activeRecords = canViewHistory
+    ? (readableQueryData(active)?.items ?? []).flatMap((entry) => historyRecord(entry, names) ?? [])
+    : visibleTasks
+        .filter((task) => ACTIVE_TASK_STATUSES.has(task.status))
+        .slice(0, 6)
+        .map(taskRecord)
+  const blocked = canViewBoard
+    ? (readableQueryData(board) ?? []).filter(
+        (entry) => releaseBoardQualitySignal(entry).value === 'blocked',
+      )
+    : []
+  const waitingRecords: OverviewRecord[] = [
+    ...(canViewWorkflows
+      ? (readableQueryData(approval)?.items ?? []).flatMap(
+          (entry) => historyRecord(entry, names) ?? [],
+        )
+      : []),
+    ...blocked.slice(0, 6).map((entry) => ({
+      key: entry.applicationEnvironmentId,
+      title: entry.applicationName,
+      description: entry.environmentName || entry.environmentKey || entry.environmentId,
+      status: 'failed',
+      statusLabel: '阻塞',
+      path: `/delivery/analysis?applicationEnvironmentId=${encodeURIComponent(entry.applicationEnvironmentId)}`,
+    })),
+  ]
+  const ongoingKeys = new Set([...activeRecords, ...waitingRecords].map(({ key }) => key))
+  const recentRecords = canViewHistory
+    ? (readableQueryData(recent)?.items ?? [])
+        .flatMap((entry) => {
+          const record = historyRecord(entry, names)
+          return record &&
+            !ongoingKeys.has(record.key) &&
+            !ACTIVE_HISTORY_STATUSES.has(record.status)
+            ? [
+                {
+                  ...record,
+                  description: [record.description, formatDateTime(entry.createdAt)]
+                    .filter(Boolean)
+                    .join(' · '),
+                },
+              ]
+            : []
+        })
+        .slice(0, 6)
+    : visibleTasks
+        .filter(
+          (task) =>
+            !ACTIVE_TASK_STATUSES.has(task.status) && !APPROVAL_HISTORY_STATUSES.has(task.status),
+        )
+        .sort((a, b) => (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt))
+        .slice(0, 6)
+        .map(taskRecord)
+  const metrics: Array<{ label: string; value: number | undefined }> = []
+  const metricQueries = []
+  if (canViewApplications) {
+    metrics.push({ label: '应用', value: applications.isSuccess ? visibleApps.length : undefined })
+    metricQueries.push(applications)
+    if (canViewServices) {
+      metrics.push({
+        label: '服务',
+        value:
+          applications.isSuccess && services.every((query) => query.isSuccess)
+            ? services.reduce((count, query) => count + (readableQueryData(query)?.length ?? 0), 0)
+            : undefined,
+      })
+      metricQueries.push(...services)
+    }
+  }
+  if (canViewBoard) {
+    const clusters = (board.data ?? []).flatMap((entry) =>
+      (entry.targets ?? []).map((target) => target.clusterId).filter(Boolean),
     )
+    metrics.push({
+      label: '发布目标涉及集群',
+      value: board.isSuccess ? new Set(clusters).size : undefined,
+    })
+    metricQueries.push(board)
+  }
+  if (canViewEnvironments && !canViewBoard) {
+    metrics.push({
+      label: '环境绑定',
+      value: environments.isSuccess ? environments.data.length : undefined,
+    })
+    metricQueries.push(environments)
+  }
+  if (canViewBundles && !canViewApplications) {
+    metrics.push({ label: '版本包', value: bundles.isSuccess ? bundles.data.length : undefined })
+    metricQueries.push(bundles)
   }
 
-  if (permissionQuery.isLoading) {
-    return (
-      <div className="soha-page soha-overview-page soha-delivery-overview-page">
-        <ManagementState kind="loading" />
-      </div>
-    )
-  }
-
-  if (!hasAnyPermission) {
-    return (
-      <div className="soha-page soha-overview-page soha-delivery-overview-page">
-        <ManagementState kind="no-permission" />
-      </div>
-    )
-  }
+  const state = permissionQuery.isError ? (
+    <ManagementState
+      kind="error"
+      actions={<Button onClick={() => void permissionQuery.refetch()}>重试</Button>}
+    />
+  ) : permissionQuery.isLoading ? (
+    <ManagementState kind="loading" />
+  ) : null
+  const showExecutions = canViewHistory || useTaskHistory
+  const showWaiting = canViewWorkflows || canViewBoard
+  const waitingQueries = [...(canViewWorkflows ? [approval] : []), ...(canViewBoard ? [board] : [])]
+  const activeQuery = canViewHistory ? active : tasks
+  const recentQuery = canViewHistory ? recent : tasks
 
   return (
     <div className="soha-page soha-overview-page soha-delivery-overview-page">
       <h1 className="soha-delivery-overview-heading">持续交付总览</h1>
-      {hasContentQueryError ? (
-        <ManagementState
-          bordered={false}
-          compact
-          kind="error"
-          title="部分交付数据加载失败"
-          actions={<Button onClick={retryFailedContentQueries}>重试失败项</Button>}
-        />
-      ) : null}
-      <div className="soha-overview-metric-grid">
-        {overviewStats.map(({ key, path, ...item }) => (
-          <Link
-            aria-label={`查看${String(item.label)}`}
-            className="soha-overview-card-link"
-            key={key}
-            to={path}
-          >
-            <OverviewMetricCard {...item} />
-          </Link>
-        ))}
-      </div>
-
-      <div className="soha-delivery-overview-panels">
-        {canViewBoard ? (
-          <Card
-            className="soha-overview-panel-card"
-            title="发布态势"
-            extra={
-              <Link to="/release-board">
-                工作流中心 <ArrowRightOutlined />
-              </Link>
-            }
-            loading={boardQuery.isLoading}
-          >
-            {boardQuery.isError ? (
-              <ManagementState
-                bordered={false}
-                compact
-                kind="error"
-                title="发布态势加载失败"
-                actions={<Button onClick={() => void boardQuery.refetch()}>重试</Button>}
-              />
-            ) : board.length ? (
-              <>
-                <div className="soha-overview-chip-grid soha-delivery-release-states">
-                  {releaseFlow.map(({ key, ...item }) => (
-                    <OverviewChip key={key} {...item} />
-                  ))}
-                </div>
-                <div className="soha-delivery-overview-section-heading">
-                  <h3>需要跟进的发布</h3>
-                  <span>{attention.length} 个应用环境</span>
-                </div>
-                {attention.length ? (
-                  <div className="soha-delivery-overview-records">
-                    {attention.slice(0, 5).map(({ entry, signal }) => (
-                      <div
-                        className="soha-delivery-overview-record"
-                        key={entry.applicationEnvironmentId}
+      {state ??
+        (!showExecutions && !showWaiting && !metrics.length ? (
+          <ManagementState kind="no-permission" />
+        ) : (
+          <>
+            {showExecutions || showWaiting ? (
+              <div
+                className="soha-delivery-overview-panels"
+                data-paired={showExecutions && showWaiting}
+              >
+                {showExecutions ? (
+                  <Card
+                    size="small"
+                    className="soha-overview-panel-card"
+                    title={<h2 className="soha-delivery-overview-panel-heading">正在运行</h2>}
+                    extra={
+                      <SectionLink
+                        to={
+                          canViewHistory
+                            ? '/release-board?view=active'
+                            : '/delivery/execution-tasks'
+                        }
                       >
-                        <div className="soha-delivery-overview-record-main">
-                          {canViewApplications ? (
-                            <Link to={`/applications/${encodeURIComponent(entry.applicationId)}`}>
-                              {entry.applicationName}
-                            </Link>
-                          ) : (
-                            <strong>{entry.applicationName}</strong>
-                          )}
-                          <small>
-                            {entry.environmentName || entry.environmentKey || entry.environmentId}
-                          </small>
-                        </div>
-                        <StatusTag value={signal.value} label={signal.label} />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <ManagementState
-                    bordered={false}
-                    compact
-                    kind="empty"
-                    title="当前暂无需跟进的发布"
-                    description="已读取的应用环境没有阻塞、待审批或待配置项。"
-                  />
-                )}
-              </>
-            ) : (
-              <ManagementState
-                bordered={false}
-                compact
-                kind="empty"
-                title="暂无发布记录"
-                description="应用绑定运行环境后，可在这里查看发布状态。"
-                actions={
-                  canViewApplications ? (
-                    <Link to="/applications">
-                      查看应用 <ArrowRightOutlined />
-                    </Link>
-                  ) : undefined
+                        查看进行中
+                      </SectionLink>
+                    }
+                  >
+                    <QueryState queries={[activeQuery]} label="运行记录" />
+                    {activeRecords.length ? (
+                      <OverviewRecords records={activeRecords} active />
+                    ) : activeQuery.isSuccess ? (
+                      <ManagementState
+                        bordered={false}
+                        compact
+                        kind="empty"
+                        title="暂无正在运行的记录"
+                      />
+                    ) : null}
+                  </Card>
+                ) : null}
+                {showWaiting ? (
+                  <Card
+                    size="small"
+                    className="soha-overview-panel-card"
+                    title={<h2 className="soha-delivery-overview-panel-heading">待处理</h2>}
+                  >
+                    <QueryState queries={waitingQueries} label="待处理记录" />
+                    {waitingRecords.length ? (
+                      <OverviewRecords records={waitingRecords} />
+                    ) : waitingQueries.every((query) => query.isSuccess) ? (
+                      <ManagementState
+                        bordered={false}
+                        compact
+                        kind="empty"
+                        title="暂无审批或阻塞待处理"
+                      />
+                    ) : null}
+                  </Card>
+                ) : null}
+              </div>
+            ) : null}
+            {showExecutions ? (
+              <Card
+                size="small"
+                className="soha-overview-panel-card"
+                title={<h2 className="soha-delivery-overview-panel-heading">最近执行</h2>}
+                extra={
+                  <SectionLink
+                    to={canViewHistory ? '/release-board?view=recent' : '/delivery/execution-tasks'}
+                  >
+                    查看执行记录
+                  </SectionLink>
                 }
-              />
-            )}
-          </Card>
-        ) : null}
-        {canViewTasks || canViewBundles ? (
-          <Card className="soha-overview-panel-card" title="交付记录">
-            {canViewTasks ? (
-              <section className="soha-delivery-overview-record-section" aria-label="最近执行">
-                <div className="soha-delivery-overview-section-heading">
-                  <h3>最近执行</h3>
-                  <Link to="/delivery/execution-tasks">
-                    全部任务 <ArrowRightOutlined />
-                  </Link>
-                </div>
-                {tasksQuery.isLoading ? (
-                  <ManagementState bordered={false} compact kind="loading" />
-                ) : tasksQuery.isError ? (
-                  <ManagementState
-                    bordered={false}
-                    compact
-                    kind="error"
-                    title="执行任务加载失败"
-                    actions={<Button onClick={() => void tasksQuery.refetch()}>重试</Button>}
-                  />
-                ) : recentTasks.length ? (
-                  <div className="soha-delivery-overview-records">
-                    {recentTasks.map((task) => (
-                      <Link
-                        className="soha-delivery-overview-record"
-                        key={task.id}
-                        to={`/delivery/execution-tasks/${encodeURIComponent(task.id)}`}
-                      >
-                        <div className="soha-delivery-overview-record-main">
-                          <strong>
-                            {applicationNames.get(task.applicationId) || task.applicationId} ·{' '}
-                            {task.taskKind}
-                          </strong>
-                          <small>
-                            {task.providerKind} · {formatDateTime(executionTaskUpdatedAt(task))}
-                          </small>
-                        </div>
-                        <StatusTag value={task.status} />
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
+              >
+                <QueryState queries={[recentQuery]} label="执行记录" />
+                {recentRecords.length ? (
+                  <OverviewRecords records={recentRecords} />
+                ) : recentQuery.isSuccess ? (
                   <ManagementState
                     bordered={false}
                     compact
                     kind="empty"
-                    title="暂无执行任务"
-                    description="执行构建、部署或验证后，这里显示最近的任务。"
+                    title="近期记录中暂无已结束的执行"
                   />
-                )}
-              </section>
+                ) : null}
+              </Card>
             ) : null}
-            {canViewBundles ? (
-              <section className="soha-delivery-overview-record-section" aria-label="最新版本">
-                <div className="soha-delivery-overview-section-heading">
-                  <h3>最新版本</h3>
-                  <Link to="/delivery/release-bundles">
-                    全部版本 <ArrowRightOutlined />
-                  </Link>
-                </div>
-                {bundlesQuery.isLoading ? (
-                  <ManagementState bordered={false} compact kind="loading" />
-                ) : bundlesQuery.isError ? (
-                  <ManagementState
-                    bordered={false}
-                    compact
-                    kind="error"
-                    title="版本包加载失败"
-                    actions={<Button onClick={() => void bundlesQuery.refetch()}>重试</Button>}
-                  />
-                ) : recentBundles.length ? (
-                  <div className="soha-delivery-overview-records">
-                    {recentBundles.map((bundle) => (
-                      <Link
-                        className="soha-delivery-overview-record"
-                        key={bundle.id}
-                        to={`/delivery/release-bundles/${encodeURIComponent(bundle.id)}`}
-                      >
-                        <div className="soha-delivery-overview-record-main">
-                          <strong>{bundle.version}</strong>
-                          <small>
-                            {applicationNames.get(bundle.applicationId) || bundle.applicationId} ·{' '}
-                            {formatDateTime(releaseBundleUpdatedAt(bundle))}
-                          </small>
-                        </div>
-                        <StatusTag value={bundle.status} />
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <ManagementState
-                    bordered={false}
-                    compact
-                    kind="empty"
-                    title="暂无版本包"
-                    description="构建产出的版本包会在这里展示。"
-                  />
-                )}
-              </section>
+            {metrics.length ? (
+              <Card
+                size="small"
+                className="soha-overview-panel-card"
+                title={<h2 className="soha-delivery-overview-panel-heading">数据概览</h2>}
+                extra={<span className="soha-delivery-overview-scope">当前可见记录</span>}
+              >
+                <QueryState queries={metricQueries} label="部分统计" />
+                <dl className="soha-delivery-overview-metrics">
+                  {metrics.map(({ label, value }) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd>{value ?? '—'}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </Card>
             ) : null}
-          </Card>
-        ) : null}
-      </div>
+          </>
+        ))}
     </div>
   )
 }

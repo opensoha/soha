@@ -1,0 +1,177 @@
+.soha-relation-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+.soha-relation-canvas,
+.soha-relation-detail {
+  min-width: 0;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+}
+.soha-relation-canvas__header,
+.soha-relation-detail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+.soha-relation-canvas__header > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.soha-relation-canvas small,
+.soha-relation-group__heading > span,
+.soha-relation-canvas__footer {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-relation-group {
+  padding: 16px;
+}
+.soha-relation-group + .soha-relation-group {
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-relation-group__heading {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.soha-relation-reference-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 12px;
+}
+.soha-relation-levels {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(150px, 1fr);
+  gap: 20px;
+  align-items: center;
+  overflow-x: auto;
+  padding: 4px;
+}
+.soha-relation-level {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.soha-relation-node {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--soha-text-primary);
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-bg-surface);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: border-color var(--soha-motion-duration-fast) var(--soha-motion-ease);
+}
+.soha-relation-node > span {
+  color: var(--soha-primary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-relation-node > small {
+  line-height: 1.5;
+}
+.soha-relation-node[data-role='reference'],
+.soha-relation-node[data-role='manual'],
+.soha-relation-node[data-role='candidate'] {
+  border-style: dashed;
+}
+.soha-relation-node[aria-pressed='true'] {
+  border-color: var(--soha-primary);
+  background: var(--soha-primary-light-default);
+}
+.soha-relation-node:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-relation-canvas__footer {
+  display: flex;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-relation-detail {
+  padding: 0 16px 16px;
+  overflow-wrap: anywhere;
+}
+.soha-relation-detail > header {
+  padding-inline: 0;
+  margin-bottom: 16px;
+}
+.soha-relation-detail__kind {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-relation-detail h3 {
+  margin: 4px 0 16px;
+  font-size: var(--soha-font-size-section);
+}
+.soha-relation-detail dl {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 10px 12px;
+  margin: 0;
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-relation-detail dt {
+  color: var(--soha-text-secondary);
+}
+.soha-relation-detail dd {
+  margin: 0;
+}
+.soha-relation-detail > section {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-relation-detail p {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-relation-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+@media (max-width: 1100px) {
+  .soha-relation-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .soha-relation-levels {
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-relation-group,
+  .soha-relation-canvas__header {
+    padding: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .soha-relation-node {
+    transition: none;
+  }
+}

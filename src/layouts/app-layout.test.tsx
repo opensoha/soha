@@ -939,10 +939,18 @@ describe('app layout workspace navigation', () => {
     expect(container.querySelector('.soha-sider')).toBeNull()
     expect(container.querySelector('.soha-header-sider-toggle')).toBeNull()
     expect(container.querySelector<HTMLElement>('.soha-main')?.style.width).toBe('100%')
+    expect(container.querySelector('.soha-header .soha-application-brand')).toBeNull()
+    expect(
+      container.querySelector(
+        '.soha-application-topbar > .soha-application-brand .soha-sider-brand',
+      ),
+    ).not.toBeNull()
     expect(container.querySelector('.soha-header .soha-application-identity')).not.toBeNull()
     expect(container.querySelector('.soha-header-main [aria-label="应用导航"]')).not.toBeNull()
-    expect(container.querySelector('.soha-header-main [aria-label="切换应用"]')).not.toBeNull()
-    expect(container.querySelector('.soha-header-main [aria-label="应用环境"]')).not.toBeNull()
+    expect(container.querySelector('.soha-header-main [aria-label="切换应用"]')?.tagName).toBe(
+      'BUTTON',
+    )
+    expect(container.querySelector('.soha-header-main [aria-label="应用环境"]')).toBeNull()
     expect(container.querySelector('.soha-header [aria-label="应用设置"]')).toBeNull()
     expect(container.querySelector('.soha-application-back')?.getAttribute('href')).toBe(
       '/applications',

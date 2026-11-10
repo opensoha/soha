@@ -427,6 +427,7 @@ export function getDeploymentHealth(deployment: Deployment) {
 }
 
 export interface Pod {
+  uid?: string
   name: string
   namespace: string
   phase: string

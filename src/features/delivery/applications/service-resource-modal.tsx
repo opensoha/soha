@@ -1,5 +1,6 @@
+import { ImportedSourceBrowser } from './imported-source-browser'
 import { useState } from 'react'
-import { Button, Modal, Pagination } from 'antd'
+import { Button, Modal, Pagination, Tabs } from 'antd'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { ManagementState } from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -22,6 +23,7 @@ export function ServiceResourceModal({
   mode: 'related-resources' | 'resources'
   onClose: () => void
 }) {
+  const imported = workloads.filter((item) => item.targetId && item.source)
   const canView = hasPermission(usePermissionSnapshot().data?.data, 'delivery.applications.view')
   return (
     <Modal
@@ -33,6 +35,30 @@ export function ServiceResourceModal({
     >
       {!canView ? (
         <ManagementState compact kind="no-permission" />
+      ) : imported.length ? (
+        <Tabs
+          destroyOnHidden
+          items={[
+            {
+              key: 'source',
+              label: '集群源配置',
+              children: <ImportedSourceBrowser workloads={imported} />,
+            },
+            {
+              key: 'other',
+              label: mode === 'resources' ? '清单文件' : '关联资源',
+              children:
+                mode === 'resources' ? (
+                  <ManifestBrowser applicationId={applicationId} serviceId={serviceId} />
+                ) : (
+                  <RelatedBrowser
+                    applicationId={applicationId}
+                    workloads={workloads.filter((item) => !item.sourceStatus)}
+                  />
+                ),
+            },
+          ]}
+        />
       ) : mode === 'resources' ? (
         serviceId ? (
           <ManifestBrowser applicationId={applicationId} serviceId={serviceId} />

@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { ManagementState } from '@/components/management-list'
 import { isApiError } from '@/services/api-error'
 import type { GatewayManifest, GatewayTool } from '@/features/copilot'
 import { deliveryQueries } from './queries'
@@ -19,7 +20,7 @@ type GatewayReadinessState = 'available' | 'approval' | 'restricted' | 'unavaila
 export interface DeliveryGatewayReadinessProps {
   capabilities: string[]
   description: string
-  manualPath: string
+  manualPath?: string
   manualTitle: string
   skillId: string
   title: string
@@ -154,6 +155,12 @@ export function DeliveryGatewayReadinessPanel({
   const manifestQuery = useQuery(
     deliveryQueries.gateway.readiness({ skillId, source: 'delivery-workbench' }),
   )
+  if (manifestQuery.isPending) {
+    return (
+      <ManagementState bordered={false} compact kind="loading" title="正在读取 AI Gateway 能力" />
+    )
+  }
+
   const manifest = manifestQuery.data
   const status = summarizeCapabilityStatus(manifest, capabilities)
   const state: GatewayReadinessState = manifestQuery.isError ? 'unavailable' : status.state
@@ -199,13 +206,15 @@ export function DeliveryGatewayReadinessPanel({
                 >
                   能力清单
                 </Button>
-                <Button
-                  size="small"
-                  icon={<ArrowRightOutlined />}
-                  onClick={() => navigate(manualPath)}
-                >
-                  {manualTitle}
-                </Button>
+                {manualPath ? (
+                  <Button
+                    size="small"
+                    icon={<ArrowRightOutlined />}
+                    onClick={() => navigate(manualPath)}
+                  >
+                    {manualTitle}
+                  </Button>
+                ) : null}
               </Space>
             }
           />

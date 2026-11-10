@@ -40,6 +40,7 @@ export function WorkflowExecutionDetail({
   relatedInfo,
   artifacts,
   artifactCount,
+  initialStageKey,
 }: {
   record: WorkflowRun
   applicationName: string
@@ -53,6 +54,7 @@ export function WorkflowExecutionDetail({
   relatedInfo: ReactNode
   artifacts: ReactNode
   artifactCount?: number
+  initialStageKey?: string
 }) {
   const { token } = theme.useToken()
   const { modal } = App.useApp()
@@ -60,7 +62,7 @@ export function WorkflowExecutionDetail({
   const snapshot = usePermissionSnapshot().data?.data
   const approve = useMutation(deliveryMutations.workflows.approve(queryClient))
   const reject = useMutation(deliveryMutations.workflows.reject(queryClient))
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(initialStageKey ?? null)
   const hidden = useDocumentHidden()
   const [confirming, setConfirming] = useState(false)
   const [submitting, setSubmitting] = useState<'approve' | 'reject' | null>(null)
@@ -79,6 +81,10 @@ export function WorkflowExecutionDetail({
   const unknown = writeOutcomeUnknown(approve.error) || writeOutcomeUnknown(reject.error)
   const submittingRequest = useRef(false)
   const actionDisabled = confirming || refreshing || !!refreshError || acknowledged || unknown
+
+  useEffect(() => {
+    setSelectedKey(initialStageKey ?? null)
+  }, [initialStageKey])
 
   useEffect(
     () => () => {
@@ -298,6 +304,14 @@ export function WorkflowExecutionDetail({
       </section>
 
       <Card className="soha-execution-stages-panel" title="执行节点" size="small">
+        {selectedKey && !summary.stages.some((stage) => stage.key === selectedKey) ? (
+          <Alert
+            type="warning"
+            showIcon
+            title="所选节点不在本次执行记录中"
+            description="请从节点列表重新选择；下方保留当前执行节点的已有记录。"
+          />
+        ) : null}
         {summary.stages.length ? (
           <div className="soha-execution-workspace">
             <ol className="soha-execution-nodes" aria-label="本次执行节点">

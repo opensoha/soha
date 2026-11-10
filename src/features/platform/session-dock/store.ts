@@ -17,6 +17,7 @@ const descriptor = z.object({
   clusterId: z.string(),
   namespace: z.string(),
   podName: z.string(),
+  podUid: z.string().min(1).optional(),
   container: z.string().optional(),
   shell: z.string().optional(),
 })

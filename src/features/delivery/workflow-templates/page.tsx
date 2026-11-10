@@ -30,6 +30,7 @@ import { useI18n } from '@/i18n'
 import { deliveryQueries } from '../queries'
 import { deliveryMutations } from '../mutations'
 import { deliveryModeLabels, deliveryStageLabels } from '../batches/model'
+import { TemplateUpdateEntry } from '../template-updates/entry'
 import { TemplatePublicationStatus } from '../template-versions'
 import { TemplateUsageImpactPanel } from '../template-usage-impact'
 import type { DeliveryBatchTemplateDefinition, WorkflowTemplate } from '../types'
@@ -197,6 +198,11 @@ export function WorkflowTemplatesPage() {
       extra={
         <Space>
           <TemplatePublicationStatus template={shown} />
+          <TemplateUpdateEntry
+            kind="workflow"
+            templateId={selected.id}
+            initialVersion={selectedVersion > 0 ? selectedVersion : undefined}
+          />
           {selectedVersion > 0 ? (
             <Button
               type="primary"

@@ -1,0 +1,25 @@
+.manifest-resource-inventory {
+  min-width: 0;
+}
+.manifest-resource-inventory__resource,
+.manifest-resource-inventory__identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.manifest-resource-inventory__identity .ant-typography,
+.manifest-resource-inventory__namespace {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.manifest-resource-inventory__identity {
+  color: var(--soha-text-secondary);
+}
+.manifest-resource-inventory__identity summary {
+  cursor: pointer;
+}
+.manifest-resource-inventory__identity details[open] summary {
+  margin-block-end: 4px;
+}

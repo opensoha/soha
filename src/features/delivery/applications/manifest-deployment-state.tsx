@@ -1,4 +1,5 @@
-import { Alert, Card, Space, Typography } from 'antd'
+import { Alert, Card, Typography } from 'antd'
+import './manifest-deployment-state.css'
 import { Link } from 'react-router-dom'
 import { StatusTag } from '@/components/status-tag'
 import type { ApplicationRuntimeEnvironment } from '../types'
@@ -17,26 +18,45 @@ export function ManifestDeploymentState({
       title="配置与资源状态"
       extra={<StatusTag value={status.tone} label={status.label} />}
     >
-      <Space orientation="vertical" style={{ width: '100%' }}>
-        <Space wrap>
-          <Typography.Text>期望版本 {deployment.spec.desiredRevision}</Typography.Text>
-          <Typography.Text>
-            已应用版本 {deployment.status.appliedRevision || '暂无'}
-          </Typography.Text>
+      <div className="manifest-deployment-state__content">
+        <div className="manifest-deployment-state__summary">
+          <div className="manifest-deployment-state__fact">
+            <Typography.Text type="secondary">期望版本</Typography.Text>
+            <Typography.Text strong>{deployment.spec.desiredRevision}</Typography.Text>
+          </div>
+          <div className="manifest-deployment-state__fact">
+            <Typography.Text type="secondary">已应用版本</Typography.Text>
+            <Typography.Text strong>{deployment.status.appliedRevision || '暂无'}</Typography.Text>
+          </div>
           {deployment.status.lastExecutionTaskId ? (
-            <Link to={`/delivery/execution-tasks/${deployment.status.lastExecutionTaskId}`}>
-              查看执行任务
+            <Link
+              className="manifest-deployment-state__task"
+              to={`/delivery/execution-tasks/${deployment.status.lastExecutionTaskId}`}
+            >
+              查看最近执行任务 →
             </Link>
           ) : null}
-        </Space>
-        <Typography.Text type="secondary" copyable>
-          {deployment.spec.desiredDigest}
-        </Typography.Text>
+        </div>
+        <details className="manifest-deployment-state__digest">
+          <summary>
+            期望配置摘要
+            <span className="manifest-deployment-state__digest-preview">
+              {deployment.spec.desiredDigest
+                ? `${deployment.spec.desiredDigest.slice(0, 12)}…`
+                : '未提供'}
+            </span>
+          </summary>
+          <Typography.Text
+            copyable={{ text: deployment.spec.desiredDigest, tooltips: ['复制完整摘要', '已复制'] }}
+          >
+            {deployment.spec.desiredDigest || '未提供'}
+          </Typography.Text>
+        </details>
         {deployment.status.lastErrorMessage ? (
           <Alert showIcon type="error" title={deployment.status.lastErrorMessage} />
         ) : null}
         <ManifestResourceInventoryTable items={deployment.status.inventory ?? []} />
-      </Space>
+      </div>
     </Card>
   )
 }

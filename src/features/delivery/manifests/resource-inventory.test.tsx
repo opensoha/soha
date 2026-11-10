@@ -36,7 +36,7 @@ it('keeps missing observations distinct from zero and labels Operator synchroniz
     name: 'periodic',
     namespace: 'test',
     resourceGeneration: 3,
-    uid: 'observed-uid',
+    uid: '01234567-89ab-cdef-0123-456789abcdef',
     desiredObjectDigest: 'desired',
     observedObjectDigest: 'observed',
     health: 'healthy',
@@ -46,7 +46,9 @@ it('keeps missing observations distinct from zero and labels Operator synchroniz
     await act(async () => root.render(<ManifestResourceInventoryTable items={[base]} />))
     expect(host.textContent).toContain('未报告 / 3')
     expect(host.textContent).toContain('配置已同步')
-    expect(host.textContent).toContain('observed-uid')
+    expect(host.textContent).toContain(base.uid)
+    expect(host.querySelector('summary')?.textContent).toBe('UID 01234567…cdef')
+    expect(host.querySelector('details')?.open).toBe(false)
     await act(async () =>
       root.render(
         <ManifestResourceInventoryTable

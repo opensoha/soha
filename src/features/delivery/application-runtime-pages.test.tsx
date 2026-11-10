@@ -1051,6 +1051,9 @@ const testState = vi.hoisted(() => ({
         ],
       }
     }
+    if (path.startsWith('/workflows?') && path.includes('applicationEnvironmentId=')) {
+      return { data: [] }
+    }
     if (path === '/workflows?applicationId=app-1') {
       return {
         items: [
@@ -1137,6 +1140,12 @@ vi.mock('@/features/auth/permission-snapshot', () => ({
     data: { data: testState.permissionSnapshot },
     isLoading: false,
   }),
+}))
+
+// AppLayout owns the real session provider; these page tests exercise runtime composition.
+vi.mock('@/features/platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/platform')>()),
+  useRealtimeSessionDock: () => ({ openSession: vi.fn() }),
 }))
 
 vi.mock('@/features/observability', () => ({
@@ -1370,7 +1379,7 @@ async function openSection(container: HTMLElement, text: string) {
     })
     if (name === '工作流')
       await act(async () => {
-        findButton(container, '构建与更新').click()
+        findButton(container, '发布').click()
       })
     return
   }
@@ -1476,7 +1485,10 @@ describe('ApplicationDetailPage workbench', () => {
   })
 
   it('keeps one service pane beneath settings and workflow drawers without application tabs', async () => {
-    const container = await renderWithProviders(<ApplicationDetailPage />)
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?serviceId=svc-api',
+    )
     expect(testState.apiGet).toHaveBeenCalledWith('/applications/app-1/runtime')
     expect(container.querySelector('.soha-application-navigation')).toBeNull()
     expect(container.querySelectorAll('[aria-label="服务列表"] button')).toHaveLength(1)
@@ -1504,8 +1516,11 @@ describe('ApplicationDetailPage workbench', () => {
       ),
     )
     await openSection(container, '工作流')
-    expect(document.querySelector('.ant-drawer-open')?.textContent).toContain('构建与发布工作流')
-    expect(document.body.querySelectorAll('[role="tablist"]')).toHaveLength(0)
+    await vi.waitFor(() =>
+      expect(document.querySelector('.ant-drawer-open')?.textContent).toContain('交付配置'),
+    )
+    expect(document.querySelector('.ant-drawer-open')?.textContent).not.toContain('环境工作流')
+    expect(document.body.querySelectorAll('[role="tablist"]')).toHaveLength(1)
     expect(container.querySelector('.soha-service-console__body')).toBe(pane)
     await openSection(container, '服务')
     expect(container.querySelector('.soha-service-console__body')).toBe(pane)
@@ -1513,9 +1528,10 @@ describe('ApplicationDetailPage workbench', () => {
   }, 15_000)
 
   it('keeps the selected service open and preserves scoped Pods and actions', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
-      '/applications/app-1?tab=services',
+      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=runtime',
     )
     await act(async () => {
       await vi.dynamicImportSettled()
@@ -1528,28 +1544,57 @@ describe('ApplicationDetailPage workbench', () => {
       await vi.dynamicImportSettled()
     })
     expect(container.querySelectorAll('.soha-service-console__body')).toHaveLength(1)
-    expect(
-      container.querySelector('.soha-service-overview .soha-service-overview__status')?.textContent,
-    ).toContain('运行正常')
-    expect(
-      container.querySelector('.soha-service-overview__readiness')?.getAttribute('aria-label'),
-    ).toBe('实例就绪 2 / 2')
-    expect(container.querySelectorAll('.soha-rollout-stages > li')).toHaveLength(3)
+    expect(container.querySelector('.soha-service-detail-identity')?.textContent).toContain(
+      '运行正常',
+    )
+    const header = container.querySelector('header.soha-service-summary')!
+    expect(header.querySelector('[aria-label="服务运行事实"]')).toBeNull()
+    expect(header.querySelector('[role="tablist"]')).not.toBeNull()
+    expect(header.querySelector('[aria-label="返回服务总览"]')).not.toBeNull()
+    expect(container.querySelectorAll('.soha-rollout-stages > li')).toHaveLength(0)
     expect(container.querySelector('.soha-service-summary details')).toBeNull()
     const serviceActions = container.querySelector('.soha-service-actions')
-    expect(serviceActions?.textContent).toContain('构建与更新')
-    expect(serviceActions?.textContent).toContain('资源清单')
+    expect(serviceActions?.textContent).toContain('发布')
+    expect(serviceActions?.querySelector('[aria-label="更多服务操作"]')).not.toBeNull()
     expect(serviceActions?.textContent).not.toContain('编辑服务')
+    expect(container.querySelector('.soha-pod-card')).toBeNull()
+    expect(container.querySelector('[aria-label="工作负载运行关系"]')).not.toBeNull()
+    expect(header.querySelector('.soha-service-pod-count')?.textContent).toBe('1')
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('.soha-service-runtime-overview__resources button')!
+        .click()
+      await vi.dynamicImportSettled()
+    })
     expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
-    expect(container.querySelector('.soha-service-summary')?.textContent).toContain(
+    expect(container.querySelector('[aria-label="工作负载运行关系"]')).toBeNull()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '配置与模板')!
+        .click()
+      await vi.dynamicImportSettled()
+    })
+    expect(container.querySelector('[aria-label="配置与模板"]')?.textContent).toContain(
       'commerce/checkout/api',
     )
-    expect(
-      container.querySelector('.soha-service-summary .soha-service-runtime-summary'),
-    ).not.toBeNull()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '状态')!
+        .click()
+      await vi.dynamicImportSettled()
+    })
+    expect(container.querySelectorAll('.soha-rollout-stages > li')).toHaveLength(3)
+    expect(container.querySelector('.soha-service-state__footer')).toBeNull()
+    expect(container.textContent).not.toContain('查看 Pod 重启与事件')
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '资源关系')!
+        .click()
+      await vi.dynamicImportSettled()
+    })
     expect(container.querySelector('.soha-service-card-list')).toBeNull()
     expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
-      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=pods',
+      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=runtime',
     )
     const selector = container.querySelector('.soha-service-selector')!
     expect(selector.querySelector('[aria-label="新建服务"]')).toBeNull()
@@ -1565,7 +1610,7 @@ describe('ApplicationDetailPage workbench', () => {
       settings: 'application',
       applicationEnvironmentId: 'binding-test',
       serviceId: 'svc-api',
-      serviceTab: 'pods',
+      serviceTab: 'runtime',
     })
     const settings = document.querySelector('.ant-drawer-open')!
     expect(settings.textContent).toContain('应用设置')
@@ -1575,9 +1620,156 @@ describe('ApplicationDetailPage workbench', () => {
       settings.querySelector<HTMLButtonElement>('.ant-drawer-close')!.click()
     })
     expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
-      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=pods',
+      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=runtime',
     )
   })
+
+  it('keeps observed Helm Pods readable without exposing direct workload mutation buttons', async () => {
+    const previousGet = testState.apiGet.getMockImplementation()!
+    testState.apiGet.mockImplementation(async (path: string) => {
+      const result = await previousGet(path)
+      if (path === '/applications/app-1/runtime' && result.data && 'environments' in result.data) {
+        const workload = result.data.environments?.[0]?.workloads?.[0]
+        if (!workload) throw new Error('Expected native workload fixture')
+        Object.assign(workload, {
+          sourceStatus: '',
+          source: {
+            resource: {
+              clusterId: 'cluster-a',
+              namespace: 'checkout-test',
+              apiVersion: 'apps/v1',
+              kind: 'Deployment',
+              name: 'checkout-api',
+              uid: 'helm-owned-uid',
+              scopeMode: 'namespace',
+            },
+            specDigest: 'a'.repeat(64),
+            observedAt: '2026-10-25T00:00:00Z',
+          },
+        })
+      }
+      return result
+    })
+    try {
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api',
+      )
+      await act(async () => {
+        await vi.dynamicImportSettled()
+      })
+      expect(container.querySelector('.soha-service-runtime-actions')).toBeNull()
+      expect(container.querySelector('.soha-service-actions')?.textContent).toContain('发布')
+      for (const label of ['扩缩容', '重启'])
+        expect(
+          Array.from(
+            container.querySelectorAll<HTMLButtonElement>('.soha-service-actions button'),
+          ).find((button) => button.textContent === label)?.disabled,
+        ).toBe(true)
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
+          .find((tab) => tab.textContent?.startsWith('Pods'))!
+          .click()
+        await vi.dynamicImportSettled()
+      })
+      expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
+    } finally {
+      testState.apiGet.mockImplementation(previousGet)
+    }
+  })
+
+  it.each(['pods', 'metrics'])(
+    'keeps native runtime available beside an imported CR in the %s tab',
+    async (serviceTab) => {
+      testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
+      const previousGet = testState.apiGet.getMockImplementation()!
+      testState.apiGet.mockImplementation(async (path: string) => {
+        const result = await previousGet(path)
+        if (
+          path === '/applications/app-1/runtime' &&
+          result.data &&
+          'environments' in result.data
+        ) {
+          const environment = result.data.environments?.[0]
+          if (!environment?.workloads[0]) throw new Error('Expected native workload fixture')
+          Object.assign(environment, {
+            workloads: [
+              ...environment.workloads,
+              Object.assign(
+                {
+                  ...environment.workloads[0],
+                  workloadKind: 'CustomResource',
+                  workloadName: 'cache-root',
+                },
+                {
+                  targetId: 'target-cr',
+                  sourceStatus: 'linked',
+                  healthStatus: 'unknown',
+                  desiredReplicas: 0,
+                  readyReplicas: 0,
+                  updatedReplicas: 0,
+                  availableReplicas: 0,
+                  source: {
+                    resource: {
+                      clusterId: 'cluster-a',
+                      namespace: 'checkout-test',
+                      apiVersion: 'example.com/v1',
+                      kind: 'Widget',
+                      name: 'cache-root',
+                      uid: 'root-uid',
+                    },
+                    crdName: 'widgets.example.com',
+                    plural: 'widgets',
+                    generation: 1,
+                    specDigest: 'a'.repeat(64),
+                    observedAt: '2026-10-21T00:00:00Z',
+                  },
+                },
+              ),
+            ],
+          })
+        }
+        return result
+      })
+      try {
+        const container = await renderWithProviders(
+          <ApplicationDetailPage />,
+          `/applications/app-1?tab=services&serviceId=svc-api&serviceTab=${serviceTab}&applicationEnvironmentId=binding-test`,
+        )
+        await act(async () => {
+          await vi.dynamicImportSettled()
+        })
+        await vi.waitFor(async () => {
+          await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 0))
+          })
+          if (serviceTab === 'pods') {
+            expect(container.querySelector('.soha-service-runtime-overview')).toBeNull()
+            expect(container.querySelector('.soha-pod-card')?.textContent).toContain(
+              'checkout-api-pod',
+            )
+          } else {
+            expect(container.querySelector('[aria-label="当前服务指标"]')?.textContent).toContain(
+              '请选择 Pod 查看指标',
+            )
+            expect(container.textContent).not.toContain('尚无关联 Pod 的指标证据')
+          }
+          expect(
+            testState.apiGet.mock.calls.some(([path]) =>
+              path.includes('/workloads/checkout-api/runtime'),
+            ),
+          ).toBe(true)
+        })
+        expect(
+          testState.apiGet.mock.calls.some(([path]) =>
+            path.includes('/workloads/cache-root/runtime'),
+          ),
+        ).toBe(false)
+      } finally {
+        testState.apiGet.mockImplementation(previousGet)
+      }
+    },
+  )
 
   it('does not silently use the first environment for an invalid shared link', async () => {
     const container = await renderWithProviders(
@@ -1627,13 +1819,23 @@ describe('ApplicationDetailPage workbench', () => {
       '/applications/app-1?tab=services&applicationEnvironmentId=binding-production&serviceId=svc-api',
     )
     expect(container.textContent).toContain('当前环境尚未部署此服务')
-    expect(container.querySelector('[role="tablist"]')).toBeNull()
+    expect(
+      Array.from(container.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent),
+    ).toEqual(['Pods', '指标', '发布与工作流', '配置与模板', '状态', '资源关系'])
     expect(
       Array.from(container.querySelectorAll('[role="tab"]')).some(
         (tab) => tab.textContent === '配置',
       ),
     ).toBe(false)
-    expect(container.querySelector('.soha-service-summary')?.textContent).toContain('负责人 / 团队')
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '配置与模板')!
+        .click()
+      await vi.dynamicImportSettled()
+    })
+    expect(container.querySelector('[aria-label="配置与模板"]')?.textContent).toContain(
+      '负责人 / 团队',
+    )
     expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
       'applicationEnvironmentId=binding-production',
     )
@@ -1905,6 +2107,39 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.querySelector('[data-testid="release-flow-dag-editor"]')).toBeNull()
   })
 
+  it('opens the service overview by default and restores the explicit service deep link', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+    expect(
+      container.querySelector('[aria-label="服务卡片"] [role="listitem"]')?.textContent,
+    ).toContain('Checkout API')
+    expect(container.querySelector('.soha-service-detail')).toBeNull()
+    expect(
+      testState.apiGet.mock.calls.some(([path]) =>
+        path.includes('/workloads/checkout-api/runtime'),
+      ),
+    ).toBe(false)
+    expect(
+      container.querySelector('.soha-service-selector__overview')?.getAttribute('aria-current'),
+    ).toBe('page')
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.soha-service-card__identity')!.click()
+    })
+    expect(container.querySelector('.soha-service-detail h1')?.textContent).toBe('Checkout API')
+    expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
+      'serviceId=svc-api',
+    )
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.soha-service-selector__overview')!.click()
+    })
+    expect(container.querySelector('[aria-label="服务卡片"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="location"]')?.textContent).not.toContain(
+      'serviceId=',
+    )
+    expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
+      'applicationEnvironmentId=binding-test',
+    )
+  })
+
   it('renders service configuration while runtime query is pending', async () => {
     testState.runtimePending = true
     const container = await renderWithProviders(<ApplicationDetailPage />)
@@ -1915,11 +2150,133 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.textContent).not.toContain('未部署')
   })
 
+  it('filters the service rail without replacing the selected service and keeps add-service inside it', async () => {
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?serviceId=svc-api',
+    )
+    const rail = container.querySelector<HTMLElement>('.soha-service-selector')!
+    expect(findButton(rail, '添加服务')).not.toBeNull()
+    const input = rail.querySelector<HTMLInputElement>('[aria-label="搜索服务"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        'not-a-service',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(rail.querySelectorAll('[aria-label="服务列表"] button')).toHaveLength(0)
+    expect(rail.textContent).toContain('没有匹配的服务')
+    expect(container.querySelector('.soha-service-console__body')?.textContent).toContain(
+      'Checkout API',
+    )
+    await act(async () => {
+      findButton(rail, '添加服务').click()
+    })
+    expect(document.querySelector('.soha-application-settings__content')?.textContent).toContain(
+      '服务',
+    )
+  })
+
+  it('opens application search in a separate panel and closes it with Escape', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="切换应用"]')!
+    expect(trigger.tagName).toBe('BUTTON')
+    await act(async () => {
+      trigger.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(
+        document.querySelector('[aria-label="应用切换面板"] button[aria-current="page"]')
+          ?.textContent,
+      ).toContain('Checkout Platform')
+    })
+    const input = document.querySelector<HTMLInputElement>('[aria-label="搜索应用"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        'no-match',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(document.querySelector('[aria-label="应用切换面板"]')?.textContent).toContain(
+      '没有匹配的应用',
+    )
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('requires an explicit Pod in the metrics tab rather than selecting the first runtime row', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?tab=services&serviceId=svc-api&serviceTab=metrics&applicationEnvironmentId=binding-test',
+    )
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+    expect(container.querySelector('[aria-label="当前服务指标"]')?.textContent).toContain(
+      '请选择 Pod 查看指标',
+    )
+    expect(testState.apiGet.mock.calls.some(([path]) => path.includes('/metrics?'))).toBe(false)
+  })
+
+  it('navigates Pod metrics to the dedicated tab and clears the target on environment switch', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
+    testState.runtimeWithProductionEnvironment = true
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?tab=services&serviceId=svc-api&serviceTab=pods&applicationEnvironmentId=binding-test',
+    )
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+    const metrics = container.querySelector<HTMLButtonElement>('button[aria-label^="查看监控 "]')!
+    expect(metrics).not.toBeNull()
+    await act(async () => {
+      metrics.click()
+      await vi.dynamicImportSettled()
+    })
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('指标')
+    expect(container.querySelector('[aria-label="当前服务指标"]')?.textContent).toContain(
+      'checkout-api-pod',
+    )
+    expect(document.querySelector('.ant-drawer-open')).toBeNull()
+    const location = container.querySelector('[data-testid="location"]')!.textContent!
+    expect(location).toContain('serviceTab=metrics')
+    expect(location).toContain('metricPod=checkout-api-pod')
+    expect(new URL(location, 'http://localhost').searchParams.has('tool')).toBe(false)
+    const production = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('[aria-label="选择环境"] button'),
+    ).find((item) => item.textContent?.includes('线上'))!
+    await act(async () => {
+      production.click()
+      await vi.dynamicImportSettled()
+    })
+    const next = new URL(
+      container.querySelector('[data-testid="location"]')!.textContent!,
+      'http://localhost',
+    )
+    expect(next.searchParams.get('serviceTab')).toBe('metrics')
+    expect(next.searchParams.get('serviceId')).toBe('svc-api')
+    expect(next.searchParams.has('metricPod')).toBe(false)
+    expect(container.querySelector('.soha-service-console__body')?.textContent).not.toContain(
+      'checkout-api-pod',
+    )
+  })
+
   it('filters services by the selected environment', async () => {
     testState.runtimeWithProductionEnvironment = true
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
-      '/applications/app-1?tab=services',
+      '/applications/app-1?tab=services&serviceId=svc-api',
     )
 
     expect(container.querySelector('[aria-label="服务列表"] button')).not.toBeNull()
@@ -1927,15 +2284,10 @@ describe('ApplicationDetailPage workbench', () => {
 
     expect(container.querySelectorAll('[aria-label="应用环境"]')).toHaveLength(1)
     expect(container.querySelector('.soha-application-service-environment-grid')).toBeNull()
-    await act(async () => {
-      container
-        .querySelector('[aria-label="应用环境"]')!
-        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-    })
     const productionOption = Array.from(
-      document.querySelectorAll<HTMLElement>('.ant-select-item-option'),
+      container.querySelectorAll<HTMLButtonElement>('[aria-label="选择环境"] button'),
     ).find((item) => item.textContent?.includes('线上'))!
-    expect(productionOption.textContent).toBe('线上 PROD')
+    expect(productionOption.textContent).toContain('生产')
     await act(async () => {
       productionOption.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1956,13 +2308,8 @@ describe('ApplicationDetailPage workbench', () => {
       '/applications/app-1?tab=services',
     )
 
-    await act(async () => {
-      container
-        .querySelector('[aria-label="应用环境"]')!
-        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-    })
     const option = Array.from(
-      document.querySelectorAll<HTMLElement>('.ant-select-item-option'),
+      container.querySelectorAll<HTMLButtonElement>('[aria-label="选择环境"] button'),
     ).find((item) => item.textContent?.includes('不可用环境'))!
     await act(async () => {
       option.click()
@@ -1970,6 +2317,56 @@ describe('ApplicationDetailPage workbench', () => {
     })
     expect(container.textContent).toContain('集群不可用')
     expect(container.querySelector('.soha-rollout-progress')).toBeNull()
+  })
+
+  it('edits environment defaults without replacing or moving existing targets', async () => {
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?tab=services',
+    )
+    await openSection(container, '环境配置')
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[aria-label="编辑绑定"]')!.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const modal = findModal('编辑环境')
+    expect(modal.textContent).toContain('默认位置仅用于新增目标')
+    const input = modal.querySelector<HTMLInputElement>('#namespace')!
+    await act(async () => {
+      input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await vi.waitFor(() =>
+      expect(
+        Array.from(document.querySelectorAll('.ant-select-item-option')).some((item) =>
+          item.textContent?.includes('checkout-staging'),
+        ),
+      ).toBe(true),
+    )
+    await act(async () => {
+      const option = Array.from(
+        document.querySelectorAll<HTMLElement>('.ant-select-item-option'),
+      ).find((item) => item.textContent?.includes('checkout-staging'))!
+      option.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      findButton(modal, '保存').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await vi.waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/application-environments/binding-test/configuration',
+        expect.objectContaining({
+          namespace: 'checkout-staging',
+          expectedUpdatedAt: '2026-05-10T00:00:00Z',
+        }),
+      ),
+    )
+    const payload = vi
+      .mocked(api.put)
+      .mock.calls.find(
+        ([path]) => path === '/application-environments/binding-test/configuration',
+      )![1]
+    expect(payload).not.toHaveProperty('targets')
   })
 
   it('creates an application environment from the service context switcher', async () => {
@@ -2010,17 +2407,20 @@ describe('ApplicationDetailPage workbench', () => {
     expect(
       document.querySelector('[aria-label="设置分区"] [aria-current="page"]')?.textContent,
     ).toContain('服务与构建')
-    expect(document.body.textContent).toContain('服务 → Git 仓库 → 构建定义 → 产物镜像')
-    expect(document.querySelector('.ant-collapse-item-active')?.textContent).toContain(
+    expect(document.querySelector('[aria-label="服务配置列表"]')).not.toBeNull()
+    expect(document.querySelector('[aria-label="服务配置列表"]')?.textContent).toContain(
       'Checkout API',
     )
     expect(document.querySelector('.soha-application-settings__content details')).toBeNull()
     expect(document.querySelector('.soha-application-settings__content')?.textContent).toContain(
-      '共享代码仓库',
+      '代码仓库',
     )
     expect(document.querySelector('.soha-application-settings__content')?.textContent).toContain(
-      '共享构建定义',
+      '构建定义',
     )
+    expect(
+      document.querySelector('.soha-application-settings__content')?.textContent,
+    ).not.toContain('暂无数据')
 
     await act(async () => {
       findButton(container, '新建服务').dispatchEvent(
@@ -2032,7 +2432,8 @@ describe('ApplicationDetailPage workbench', () => {
       '.soha-application-settings__content',
     ) as HTMLElement
     expect(document.querySelectorAll('.ant-drawer-open')).toHaveLength(1)
-    expect(serviceEditor.textContent).toContain('新建服务组件')
+    expect(document.querySelector('.soha-settings-drawer-title')?.textContent).toContain('添加服务')
+    expect(document.querySelector('[aria-label="设置分区"]')?.hasAttribute('hidden')).toBe(true)
     expect(serviceEditor.textContent).toContain('服务来源')
     expect(serviceEditor.textContent).toContain('已有镜像')
     expect(serviceEditor.textContent).toContain('产物与部署')
@@ -2044,6 +2445,11 @@ describe('ApplicationDetailPage workbench', () => {
     await act(async () => {
       findButton(serviceEditor, '取消').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '构建定义')!
+        .click()
     })
     await act(async () => {
       findButton(container, '添加构建').dispatchEvent(
@@ -2087,10 +2493,6 @@ describe('ApplicationDetailPage workbench', () => {
       findButton(editor, '下一步').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    await act(async () => {
-      findButton(editor, '下一步').click()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
     await setInput('containers_0_imageRepository', 'registry.example.com/api')
     await setInput('containers_0_defaultTagTemplate', 'stable')
     await setInput('containers_0_runtimePortsText', '8080, 9090')
@@ -2099,8 +2501,8 @@ describe('ApplicationDetailPage workbench', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     await act(async () => {
-      findButton(editor, '保存服务').click()
-      findButton(editor, '保存服务').click()
+      findButton(editor, '创建服务').click()
+      findButton(editor, '创建服务').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -2126,7 +2528,7 @@ describe('ApplicationDetailPage workbench', () => {
     const location = container.querySelector('[data-testid="location"]')?.textContent || ''
     expect(location).toContain('serviceId=service-created')
     expect(location).toContain('applicationEnvironmentId=binding-test')
-    expect(location).toContain('settings=environment-bindings')
+    expect(location).toContain('serviceTab=pods')
   })
 
   it.each([
@@ -2229,7 +2631,7 @@ describe('ApplicationDetailPage workbench', () => {
           .mockRejectedValueOnce(new ApiError(400, '服务保存被拒绝'))
       }
       await click(findButton(editor, '下一步'))
-      await click(findButton(editor, '保存服务'))
+      await click(findButton(editor, '创建服务'))
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
@@ -2376,7 +2778,6 @@ describe('ApplicationDetailPage workbench', () => {
     await click(editor.querySelector<HTMLInputElement>('input[value="configuration"]')!)
     await click(findButton(editor, '下一步'))
     await click(findButton(editor, '下一步'))
-    await click(findButton(editor, '下一步'))
     await click(findButton(editor, '保存服务'))
     expect(api.put).toHaveBeenCalledTimes(1)
     expect(api.put).toHaveBeenCalledWith(
@@ -2400,7 +2801,7 @@ describe('ApplicationDetailPage workbench', () => {
     })
     const editor = document.querySelector('.soha-application-settings__content') as HTMLElement
     expect(editor.textContent).toContain('沿用现有来源')
-    for (const label of ['下一步', '下一步', '下一步', '保存服务']) {
+    for (const label of ['下一步', '下一步', '保存服务']) {
       await act(async () => {
         findButton(editor, label).click()
         await new Promise((resolve) => setTimeout(resolve, 0))
@@ -2426,6 +2827,11 @@ describe('ApplicationDetailPage workbench', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
     }
+    await click(
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]')).find(
+        (tab) => tab.textContent === '构建定义',
+      )!,
+    )
     await click(document.querySelector<HTMLButtonElement>('[aria-label="编辑构建源"]')!)
     const modal = findModal('编辑构建')
     for (const [id, value] of [
@@ -2522,6 +2928,11 @@ describe('ApplicationDetailPage workbench', () => {
     )
 
     await act(async () => {
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '构建定义')!
+        .click()
+    })
+    await act(async () => {
       findButton(container, '添加构建').dispatchEvent(
         new MouseEvent('click', { bubbles: true, cancelable: true }),
       )
@@ -2592,6 +3003,11 @@ describe('ApplicationDetailPage workbench', () => {
       '/applications/app-1?tab=application',
     )
 
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === '构建定义')!
+        .click()
+    })
     await act(async () => {
       findButton(container, '添加构建').click()
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -2669,16 +3085,70 @@ describe('ApplicationDetailPage workbench', () => {
         <ApplicationDetailPage />,
         '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test',
       )
+      expect(container.textContent).not.toContain('配置与资源状态')
+      await act(async () => {
+        findButton(container, '查看状态')!.click()
+        await vi.dynamicImportSettled()
+      })
+      expect(container.querySelector('[aria-label="状态"]')?.textContent).toContain(
+        '配置与资源状态',
+      )
       expect(container.textContent).toContain(
         phase === 'converged' ? '资源已就绪' : '已应用，等待就绪',
       )
-      expect(container.textContent).toContain('ConfigMap / api-settings')
+      const resource = container.querySelector('.manifest-resource-inventory__resource')
+      expect(resource?.textContent).toContain('api-settings')
+      expect(resource?.textContent).toContain('ConfigMap')
       expect(container.textContent).not.toContain('当前环境尚未部署此服务')
       expect(container.querySelector('[aria-label^="实例就绪"]')).toBeNull()
       expect(container.querySelector('a[href="/delivery/execution-tasks/apply-1"]')).not.toBeNull()
+      for (const label of ['Pods', '指标', '发布与工作流', '配置与模板', '资源关系']) {
+        await act(async () => {
+          Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'))
+            .find((tab) => tab.textContent?.startsWith(label))!
+            .click()
+          await vi.dynamicImportSettled()
+        })
+        expect(container.textContent).not.toContain('配置与资源状态')
+        expect(container.querySelector('a[href="/delivery/execution-tasks/apply-1"]')).toBeNull()
+      }
     },
   )
 
+  it.each(['', '&serviceTab=unknown'])(
+    'defaults the service to Pods for route %s',
+    async (suffix) => {
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test' + suffix,
+      )
+      await act(async () => {
+        await vi.dynamicImportSettled()
+      })
+      expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toMatch(
+        /^Pods/,
+      )
+      expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
+      expect(container.querySelector('.soha-service-runtime-overview')).toBeNull()
+    },
+  )
+  it.each([false, true])(
+    'exposes the manifest release menu only with trigger permission: %s',
+    async (allowed) => {
+      testState.manifestTarget = true
+      if (!allowed)
+        testState.permissionSnapshot.permissionKeys = defaultPermissionKeys.filter(
+          (key) => key !== 'delivery.releases.trigger',
+        )
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test',
+      )
+      const menu = container.querySelector('[aria-label="更多发布方式"]')
+      expect(Boolean(menu)).toBe(allowed)
+      expect(container.querySelector('.soha-service-actions')?.textContent).toContain('发布')
+    },
+  )
   it.each(['completed', 'failed'])(
     'deploys a Manifest without a build and gates confirmation on %s preflight',
     async (status) => {
@@ -2689,17 +3159,33 @@ describe('ApplicationDetailPage workbench', () => {
       testState.detailWithoutWorkflow = true
       testState.detailWithoutImageTagDefaults = true
       testState.permissionSnapshot.permissionKeys = defaultPermissionKeys.filter(
-        (key) => !['delivery.builds.trigger', 'delivery.workflows.trigger'].includes(key),
+        (key) =>
+          ![
+            'delivery.builds.trigger',
+            'delivery.workflows.trigger',
+            ...(status === 'failed' ? ['delivery.builds.view', 'delivery.workflows.view'] : []),
+          ].includes(key),
       )
       const container = await renderWithProviders(
         <ApplicationDetailPage />,
         '/applications/app-1?serviceId=svc-api&applicationEnvironmentId=binding-test',
       )
-      await act(async () => {
-        findButton(container, '部署配置').click()
-        await new Promise((resolve) => setTimeout(resolve, 0))
-      })
-      const modal = findModal('部署配置')
+      if (status === 'completed') {
+        await act(async () => {
+          container.querySelector<HTMLButtonElement>('[aria-label="更多发布方式"]')!.click()
+          await new Promise((resolve) => setTimeout(resolve, 0))
+        })
+        await act(async () => {
+          ;[...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+            .find((item) => item.textContent === '发布清单')!
+            .click()
+        })
+      } else
+        await act(async () => {
+          findButton(container, '发布清单').click()
+        })
+      expect(api.post).not.toHaveBeenCalledWith('/delivery/plans', expect.anything())
+      const modal = findModal('发布清单')
       expect(modal.textContent).not.toContain('构建定义')
       expect(modal.textContent).not.toContain('镜像 Tag')
       await act(async () => {
@@ -2708,7 +3194,7 @@ describe('ApplicationDetailPage workbench', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }))
       })
       await act(async () => {
-        findButton(modal, '部署配置').click()
+        findButton(modal, '发布清单').click()
         await new Promise((resolve) => setTimeout(resolve, 0))
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
@@ -2837,7 +3323,10 @@ describe('ApplicationDetailPage workbench', () => {
     'keeps the application workspace available for %s runtime failures',
     async (runtimeStatus) => {
       testState.runtimeStatus = runtimeStatus
-      const container = await renderWithProviders(<ApplicationDetailPage />)
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api',
+      )
 
       expect(container.querySelector('.soha-service-console')).not.toBeNull()
       expect(container.textContent).toContain('状态读取失败')
@@ -2894,7 +3383,10 @@ describe('ApplicationDetailPage workbench', () => {
 
   it('shows scoped build definitions without workflow or execution permissions', async () => {
     testState.permissionSnapshot.permissionKeys = ['delivery.applications.view']
-    const container = await renderWithProviders(<WorkflowCatalog />)
+    const container = await renderWithProviders(
+      <WorkflowCatalog />,
+      '/applications/app-1?view=definitions',
+    )
     const catalog = container.querySelector('.soha-workflow-catalog')!
 
     expect(catalog.textContent).toContain('API Dockerfile')
@@ -2912,7 +3404,10 @@ describe('ApplicationDetailPage workbench', () => {
   })
 
   it('unifies workflow and build entries and opens the shared build form without executing', async () => {
-    const container = await renderWithProviders(<WorkflowCatalog />)
+    const container = await renderWithProviders(
+      <WorkflowCatalog />,
+      '/applications/app-1?view=definitions',
+    )
     const catalog = container.querySelector('.soha-workflow-catalog')!
     const buildCard = Array.from(catalog.querySelectorAll('[role="listitem"]')).find((item) =>
       item.textContent?.includes('API Dockerfile'),
@@ -2936,10 +3431,17 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
       'buildSourceId=source-api&launch=build',
     )
+    const historyCatalog = await renderWithProviders(
+      <WorkflowCatalog />,
+      '/applications/app-1?view=definitions',
+    )
+    const historyBuild = Array.from(historyCatalog.querySelectorAll('[role="listitem"]')).find(
+      (item) => item.textContent?.includes('API Dockerfile'),
+    )!
     await act(async () => {
-      buildCard.querySelector<HTMLButtonElement>('[aria-label="查看记录"]')!.click()
+      historyBuild.querySelector<HTMLButtonElement>('[aria-label="查看记录"]')!.click()
     })
-    expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
+    expect(historyCatalog.querySelector('[data-testid="location"]')?.textContent).toBe(
       '/execution-history?applicationId=app-1&buildSourceId=source-api',
     )
     expect(api.post).not.toHaveBeenCalled()

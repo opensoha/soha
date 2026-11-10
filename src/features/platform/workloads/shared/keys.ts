@@ -31,11 +31,18 @@ export const workloadKeys = {
     name: string,
     selector?: Record<string, string>,
   ) => [...workloadKeys.detail(kind, scope, name), 'pods', normalizeSelector(selector)] as const,
-  metrics: (kind: WorkloadKind, scope: ScopeKey, name: string, rangeMinutes?: number) =>
+  metrics: (
+    kind: WorkloadKind,
+    scope: ScopeKey,
+    name: string,
+    rangeMinutes?: number,
+    resourceUid?: string,
+  ) =>
     [
       ...workloadKeys.detail(kind, scope, name),
       'metrics',
       ...(rangeMinutes == null ? [] : [{ rangeMinutes }]),
+      ...(resourceUid == null ? [] : [{ resourceUid }]),
     ] as const,
   rolloutStatus: (scope: ScopeKey, name: string) =>
     [...workloadKeys.detail('deployments', scope, name), 'rollout-status'] as const,

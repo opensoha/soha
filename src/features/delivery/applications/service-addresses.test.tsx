@@ -68,7 +68,7 @@ vi.mock('@/services/api-client', () => ({ api: { get: (path: string) => state.ge
 vi.mock('@/features/auth', () => ({
   usePermissionSnapshot: () => ({ data: { data: {} } }),
   hasPermission: (_: unknown, permission: string) =>
-    state.gatewayAllowed &&
+    (permission !== 'platform.network.gateways.view' || state.gatewayAllowed) &&
     (permission !== 'platform.network.grpc-routes.view' || state.grpcAllowed),
 }))
 
@@ -116,14 +116,14 @@ afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
 })
-async function renderAddresses() {
+async function renderAddresses(value: ApplicationRuntimeWorkload = workload) {
   await act(async () =>
     root.render(
       <App>
         <QueryClientProvider
           client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
         >
-          <ServiceAddresses applicationId="application" workload={workload} />
+          <ServiceAddresses applicationId="application" workload={value} />
         </QueryClientProvider>
       </App>,
     ),
@@ -136,6 +136,13 @@ async function renderAddresses() {
 }
 
 describe('service addresses', () => {
+  it('does not use the Deployment endpoint for a custom resource or replaced source', async () => {
+    await renderAddresses({ ...workload, workloadKind: 'CustomResource', sourceStatus: 'linked' })
+    expect(state.get).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('10.43.0.8')
+    await renderAddresses({ ...workload, sourceStatus: 'replaced' })
+    expect(state.get).not.toHaveBeenCalled()
+  })
   it('uses verified workload relations and resolves a shared cross-namespace Gateway once', async () => {
     await renderAddresses()
     expect(container.textContent).toContain('10.43.0.8')

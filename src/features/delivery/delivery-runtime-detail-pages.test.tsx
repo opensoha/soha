@@ -10,7 +10,7 @@ import { act } from 'react'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BuildDetailPage } from './builds/detail-page'
 import { ExecutionTaskDetailPage } from './execution-tasks/detail-page'
@@ -58,7 +58,14 @@ const testState = vi.hoisted(() => ({
     if (path.includes('/workloads/pods/') && path.includes('/detail?'))
       return {
         data: {
-          containers: [{ name: 'checkout-api' }, { name: 'telemetry-sidecar', role: 'init' }],
+          uid: 'checkout-pod-uid',
+          name: 'checkout-api-7d9f6b7c5f-x2k9m',
+          namespace: 'checkout',
+          containers: [
+            { name: 'checkout-api', role: 'main' },
+            { name: 'telemetry-sidecar', role: 'sidecar' },
+            { name: 'prepare', role: 'init' },
+          ],
           allowedActions: ['logs', 'exec'],
         },
       }
@@ -69,7 +76,7 @@ const testState = vi.hoisted(() => ({
         data: {
           content: JSON.stringify({
             kind: 'Pod',
-            metadata: { name, namespace: 'checkout' },
+            metadata: { name, namespace: 'checkout', uid: 'checkout-pod-uid' },
             spec: {
               initContainers: [{ name: 'prepare', image: 'init:1' }],
               ephemeralContainers: [{ name: 'debugger', image: 'debug:1' }],
@@ -450,6 +457,7 @@ const testState = vi.hoisted(() => ({
             : [
                 {
                   name: 'checkout-api-7d9f6b7c5f-x2k9m',
+                  uid: 'checkout-pod-uid',
                   namespace: 'checkout',
                   phase: 'Running',
                   nodeName: 'worker-01',
@@ -468,6 +476,7 @@ const testState = vi.hoisted(() => ({
                     ? [
                         {
                           name: 'checkout-api-new',
+                          uid: 'checkout-new-pod-uid',
                           namespace: 'checkout',
                           phase: 'Running',
                           nodeName: 'worker-02',
@@ -483,6 +492,7 @@ const testState = vi.hoisted(() => ({
                   testState.manyPods
                     ? Array.from({ length: 14 }, (_, i) => ({
                         name: `pod-${i}`,
+                        uid: `pod-uid-${i}`,
                         namespace: 'checkout',
                         phase:
                           i === 0
@@ -925,12 +935,22 @@ describe('delivery runtime detail pages', () => {
     updatedReplicas: 1,
     availableReplicas: 1,
   }
+  function PodWorkspaceHarness({ view }: { view: 'pods' | 'related-resources' }) {
+    const [params] = useSearchParams()
+    return (
+      <ServicePodWorkspace
+        applicationId="app-1"
+        workloads={[ref]}
+        view={params.get('serviceTab') === 'metrics' ? 'metrics' : view}
+      />
+    )
+  }
   const renderPods = (query = '', view: 'pods' | 'related-resources' = 'pods') =>
     renderWithProviders(
       <>
         <ServiceRuntimeSummary applicationId="app-1" workloads={[ref]} />
         <ServiceRuntimeActions applicationId="app-1" workloads={[ref]} />
-        <ServicePodWorkspace applicationId="app-1" workloads={[ref]} view={view} />
+        <PodWorkspaceHarness view={view} />
         <LocationProbe />
       </>,
       base + query,
@@ -949,6 +969,20 @@ describe('delivery runtime detail pages', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
   }
+
+  it.each([
+    { workloadKind: 'CustomResource', sourceStatus: 'linked' as const },
+    { workloadKind: 'Deployment', sourceStatus: 'linked' as const },
+    { workloadKind: 'Deployment', sourceStatus: 'replaced' as const },
+    { workloadKind: 'Job' },
+  ])('does not expose Deployment actions for an observation root: %j', async (source) => {
+    const container = await renderWithProviders(
+      <ServiceRuntimeActions applicationId="app-1" workloads={[{ ...ref, ...source }]} />,
+      base,
+    )
+    expect(container.querySelector('.soha-service-runtime-actions')).toBeNull()
+    expect(testState.apiGet.mock.calls.some(([path]) => path.includes('/workloads/'))).toBe(false)
+  })
 
   it('renders compact Pods directly, without duplicating detail panels', async () => {
     const container = await renderPods()
@@ -980,6 +1014,7 @@ describe('delivery runtime detail pages', () => {
       clusterId: 'cluster-a',
       namespace: 'checkout',
       podName: 'checkout-api-7d9f6b7c5f-x2k9m',
+      podUid: 'checkout-pod-uid',
       container: undefined,
       ...(kind === 'terminal' ? { shell: '/bin/sh' } : {}),
     })
@@ -1012,21 +1047,39 @@ describe('delivery runtime detail pages', () => {
     )
     expect(document.body.textContent).toContain('只读')
   })
-  it('requests metrics only for page-visible Pods and retains the full monitor in a drawer', async () => {
+  it('requests metrics only for visible Pods in the continuous list and opens the full monitor in the metrics tab', async () => {
     testState.manyPods = true
-    const container = await renderPods()
-    expect(container.querySelectorAll('.soha-pod-card')).toHaveLength(10)
+    let observed = 0
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+        observe(target: Element) {
+          this.callback(
+            [{ target, isIntersecting: observed++ < 3 } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+        disconnect() {}
+      },
+    )
+    const container = await renderPods().finally(() => vi.unstubAllGlobals())
+    expect(container.querySelectorAll('.soha-pod-card')).toHaveLength(16)
     expect(testState.apiGet.mock.calls.filter(([path]) => path.includes('/metrics?'))).toHaveLength(
-      10,
+      3,
     )
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('.soha-pod-card-metrics')!.click(),
-    )
+    const monitor = container.querySelector<HTMLButtonElement>('.soha-pod-card-metrics')!
+    const podName = monitor.getAttribute('aria-label')!.replace('查看监控 ', '')
+    await act(async () => monitor.click())
     for (let i = 0; i < 3; i++)
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
     expect(document.querySelector('[data-testid="resource-metrics-panel"]')).not.toBeNull()
+    expect(document.querySelector('.ant-drawer')).toBeNull()
+    const location = container.querySelector('[data-testid="location"]')?.textContent
+    expect(location).toContain('serviceTab=metrics')
+    expect(location).toContain(`metricPod=${podName}`)
   })
   it('uses real metric values and series in the compact monitor preview', async () => {
     testState.configuredMetrics = true
@@ -1107,6 +1160,30 @@ describe('delivery runtime detail pages', () => {
     expect(
       container.querySelector('a[href*="configmaps/checkout-config"]')?.getAttribute('href'),
     ).toContain('/clusters/cluster-a/')
+  })
+  it('keeps the readable workload relationship when it has no Pods and another read fails', async () => {
+    testState.workloadPodsEmpty = true
+    const get = testState.apiGet.getMockImplementation()!
+    testState.apiGet.mockImplementation(async (path: string) => {
+      if (path.endsWith('/workloads/unavailable/runtime')) throw new Error('runtime unavailable')
+      return get(path)
+    })
+    try {
+      const container = await renderWithProviders(
+        <ServicePodWorkspace
+          applicationId="app-1"
+          workloads={[ref, { ...ref, workloadName: 'unavailable' }]}
+          view="runtime"
+        />,
+        base,
+      )
+      expect(container.querySelector('[aria-label="工作负载运行关系"]')?.textContent).toContain(
+        'checkout-config',
+      )
+      expect(container.textContent).toContain('读取失败')
+    } finally {
+      testState.apiGet.mockImplementation(get)
+    }
   })
   it('redirects legacy Pod links into the two-level workspace and preserves the tool', async () => {
     const container = await renderWithProviders(

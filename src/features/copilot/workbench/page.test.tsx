@@ -1178,6 +1178,7 @@ function externalAgentRun(events: WorkbenchStreamEvent[], status = 'running'): W
 
 // Full workbench renders wait for multiple queries and Ant Design effects to settle.
 describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
+  const scrollIntoView = vi.fn<(this: HTMLElement) => void>()
   const originalScrollIntoView = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
     'scrollIntoView',
@@ -1224,11 +1225,11 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     vi.stubGlobal('IntersectionObserver', IntersectionObserverMock)
-    // jsdom has no scrolling layout; message navigation is asserted through its state.
+    // JSDOM has no layout scrolling; keep the real Bubble.List navigation path.
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       writable: true,
-      value: vi.fn(),
+      value: scrollIntoView,
     })
   })
 
@@ -3719,6 +3720,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(createInspectionButton?.getAttribute('title')).toBe('缺少 observe.ai.chat 权限')
   })
   it('searches message content and navigates to an old message without sending', async () => {
+    scrollIntoView.mockClear()
     testState.sessionMode = 'general'
     const container = await renderPage('/ai-workbench/chat?session=session-1')
     await waitForChat(container)
@@ -3749,8 +3751,16 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     })
     await waitForWorkbenchText(container, '正在查看搜索命中的消息')
     await waitForWorkbenchText(container, '飞牛 TV 的安装方法')
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    })
     expect(latestRoute).toContain('message=old-hit')
     expect(container.querySelector('.soha-message-hit mark')?.textContent).toBe('飞牛')
+    expect(
+      scrollIntoView.mock.contexts.some((element) =>
+        element.textContent?.includes('飞牛 TV 的安装方法'),
+      ),
+    ).toBe(true)
     expect(container.querySelector('button')?.textContent).not.toBe('发送')
     expect(apiPostMock.mock.calls.filter(([path]) => path.includes('/messages/stream'))).toEqual([])
     await act(async () => {

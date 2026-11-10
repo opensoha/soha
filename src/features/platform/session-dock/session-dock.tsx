@@ -3,11 +3,13 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useEffect,
   useContext,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
+import { flushSync } from 'react-dom'
 import { useStore } from 'zustand'
 import { createSessionDockStore } from './store'
 import { Badge } from 'antd'
@@ -116,6 +118,31 @@ function SessionDockOwner({
   const [isOpen, setIsOpen] = useState(false)
   const dockOpen = isOpen && openedScope === scopeKey
   const [maximized, setMaximized] = useState(false)
+  const lifecycleKey = JSON.stringify([workbench, scopeKey, visible])
+  const [lifecycle, setLifecycle] = useState(lifecycleKey)
+  const [connectRequests, setConnectRequests] = useState<string[]>([])
+  const [pageSuspended, setPageSuspended] = useState(false)
+  // Reset before committing children: returning to an earlier scope never restores connection intent.
+  if (lifecycle !== lifecycleKey) {
+    setLifecycle(lifecycleKey)
+    setConnectRequests([])
+    setIsOpen(false)
+    setMaximized(false)
+  }
+  useEffect(() => {
+    const suspend = () =>
+      flushSync(() => {
+        setPageSuspended(true)
+        setConnectRequests([])
+      })
+    const resume = () => setPageSuspended(false)
+    window.addEventListener('pagehide', suspend)
+    window.addEventListener('pageshow', resume)
+    return () => {
+      window.removeEventListener('pagehide', suspend)
+      window.removeEventListener('pageshow', resume)
+    }
+  }, [])
 
   const openSession = useCallback(
     (input: RealtimeSessionInput) => {
@@ -130,6 +157,9 @@ function SessionDockOwner({
       })
       setActiveSessionKeys((current) => ({ ...current, [session.clusterId]: session.id }))
       if (workbench === 'delivery') store.setState({ selectedClusterId: session.clusterId })
+      setConnectRequests((current) =>
+        current.includes(session.id) ? current : [...current, session.id],
+      )
       setOpenedScope(scopeKey)
       setIsOpen(true)
     },
@@ -141,6 +171,7 @@ function SessionDockOwner({
       const replacement = normalizeRealtimeSession(input)
       if (!replacement) return
 
+      setConnectRequests((current) => current.map((id) => (id === sessionId ? replacement.id : id)))
       setSessions((current) => {
         const index = current.findIndex((session) => session.id === sessionId)
         if (index < 0) return current
@@ -162,6 +193,7 @@ function SessionDockOwner({
     (sessionId: string) => {
       const closing = sessions.find((session) => session.id === sessionId)
       if (!closing) return
+      setConnectRequests((current) => current.filter((id) => id !== sessionId))
       const remaining = sessions.filter((session) => session.id !== sessionId)
       setSessions(remaining)
       setActiveSessionKeys((current) => {
@@ -253,10 +285,11 @@ function SessionDockOwner({
   return (
     <RealtimeSessionDockContext.Provider value={contextValue}>
       {children}
-      {sessions.length > 0 || dockOpen ? (
+      {visible && !pageSuspended && (sessions.length > 0 || dockOpen) ? (
         <Suspense fallback={null}>
           <RealtimeSessionDockPanel
             key={JSON.stringify([workbench, scopeKey])}
+            connectRequests={connectRequests}
             groupByCluster={workbench === 'platform'}
             activeClusterId={activeClusterId}
             activeSessionKeys={activeSessionKeys}

@@ -17,6 +17,7 @@ export function DeliveryTargetEditor({
   fixed,
   embedded = false,
   pending = false,
+  blockObserveOnly = false,
   onChange,
   onSave,
   onClose,
@@ -25,6 +26,7 @@ export function DeliveryTargetEditor({
   fixed?: boolean
   embedded?: boolean
   pending?: boolean
+  blockObserveOnly?: boolean
   onChange?: () => void
   onSave: (target: DeliveryTargetInput) => void
   onClose: () => void
@@ -63,6 +65,9 @@ export function DeliveryTargetEditor({
   )
   const selectedTarget =
     targets.length === 1 ? targets[0] : targets.find((item) => item.id === releaseTargetId)
+  const observeOnlyTarget = (target?: (typeof targets)[number]) =>
+    target?.executorKind === 'observe_only' || target?.metadata?.ownershipMode === 'observe_only'
+  const observeOnly = blockObserveOnly && action !== 'build' && observeOnlyTarget(selectedTarget)
   const docker =
     selectedTarget?.executorKind === 'docker_compose' ? selectedTarget.docker : undefined
   const helm = selectedTarget?.executorKind === 'helm_sdk' ? selectedTarget.helm : undefined
@@ -99,6 +104,9 @@ export function DeliveryTargetEditor({
       <ReadFeedback query={bundles} label="已验证产物" />
       <ReadFeedback query={repositories} label="源码仓库" />
       <ReadFeedback query={history} label="Helm 历史版本" />
+      {observeOnly ? (
+        <Alert showIcon type="warning" title="此部署目标仅用于观察，请选择可交付的目标。" />
+      ) : null}
       <Form
         form={form}
         layout="vertical"
@@ -110,7 +118,7 @@ export function DeliveryTargetEditor({
           arguments: Object.entries(target.buildArgs ?? {}).map(([key, value]) => ({ key, value })),
         }}
         onFinish={(values) => {
-          if (blocked || pending) return
+          if (blocked || pending || observeOnly) return
           const { arguments: args, helmOperation: _operation, ...input } = values
           onSave({
             ...target,
@@ -216,9 +224,10 @@ export function DeliveryTargetEditor({
               onChange={() => form.setFieldValue('helmRevision', undefined)}
               options={targets.map((item) => ({
                 value: item.id,
+                disabled: blockObserveOnly && observeOnlyTarget(item),
                 label: item.docker
                   ? `Docker · ${item.docker.hostId} / ${item.docker.projectId}`
-                  : `${item.clusterId} / ${item.namespace} / ${item.workloadName || item.id}`,
+                  : `${item.clusterId} / ${item.namespace} / ${item.workloadName || item.id}${blockObserveOnly && observeOnlyTarget(item) ? '（仅观察）' : ''}`,
               }))}
             />
           </Form.Item>
@@ -363,7 +372,7 @@ export function DeliveryTargetEditor({
               type="primary"
               htmlType="submit"
               loading={pending}
-              disabled={blocked || pending}
+              disabled={blocked || pending || observeOnly}
             >
               检查交付参数
             </Button>
@@ -381,7 +390,7 @@ export function DeliveryTargetEditor({
       width={720}
       onCancel={onClose}
       okText="保存目标"
-      okButtonProps={{ disabled: blocked || pending }}
+      okButtonProps={{ disabled: blocked || pending || observeOnly }}
       onOk={() => form.submit()}
     >
       {content}
