@@ -29,6 +29,15 @@ jobs:
           ref: refs/tags/${{ steps.contracts.outputs.ref }}
           path: soha-contracts
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
+          persist-credentials: false
+      - name: Validate pinned dsh schema
+        env:
+          CONTRACTS_REF: ${{ steps.contracts.outputs.ref }}
+        run: |
+          if ! test -s soha-contracts/agent/dsh-runtime.schema.json; then
+            echo "::error::soha-contracts ${CONTRACTS_REF} is missing agent/dsh-runtime.schema.json"
+            exit 1
+          fi
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
@@ -87,3 +96,36 @@ jobs:
       - name: Daemonless Buildpacks runner Docker build
         working-directory: soha-agent
         run: docker build --target buildpacks-daemonless-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:daemonless-test .
+      - name: dsh runtime Docker build
+        working-directory: soha-agent
+        run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile.dsh-runtime -t ghcr.io/opensoha/soha-dsh:test .
+      - name: Smoke test dsh runtime startup
+        run: |
+          set -euo pipefail
+          token_dir="$(mktemp -d)"
+          container=''
+          cleanup() {
+            rm -f -- "${token_dir}/token"
+            rmdir -- "${token_dir}"
+            if [[ -n "${container}" ]]; then docker rm -f "${container}" >/dev/null; fi
+          }
+          trap cleanup EXIT
+          openssl rand -hex 32 > "${token_dir}/token"
+          chmod 0444 "${token_dir}/token"
+          container="$(docker run -d --network none --read-only \
+            --tmpfs /tmp --tmpfs /var/lib/soha-dsh:uid=1000,gid=1000,mode=0700 \
+            --mount "type=bind,src=${token_dir}/token,dst=/run/dsh-token,readonly" \
+            --env SOHA_DSH_SERVICE_TOKEN_FILE=/run/dsh-token \
+            --env SOHA_DSH_GATEWAY_URL=http://127.0.0.1:1/model/v1 \
+            --env SOHA_DSH_CORE_CALLBACK_URL=http://127.0.0.1:1/tools \
+            --health-interval 2s ghcr.io/opensoha/soha-dsh:test)"
+          for _ in {1..30}; do
+            case "$(docker inspect --format '{{.State.Status}} {{.State.Health.Status}}' "${container}")" in
+              'running healthy') exit 0 ;;
+              'running starting') sleep 2 ;;
+              *) break ;;
+            esac
+          done
+          echo '::error::dsh runtime did not become healthy'
+          docker logs "${container}"
+          exit 1

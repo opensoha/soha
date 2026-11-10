@@ -119,6 +119,15 @@ jobs:
           ref: refs/tags/${{ steps.contracts.outputs.ref }}
           path: soha-contracts
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
+          persist-credentials: false
+      - name: Validate pinned dsh schema
+        env:
+          CONTRACTS_REF: ${{ steps.contracts.outputs.ref }}
+        run: |
+          if ! test -s soha-contracts/agent/dsh-runtime.schema.json; then
+            echo "::error::soha-contracts ${CONTRACTS_REF} is missing agent/dsh-runtime.schema.json"
+            exit 1
+          fi
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Login to GHCR
@@ -205,6 +214,30 @@ jobs:
             VERSION=${{ github.event.inputs.version || github.ref_name }}
             COMMIT=${{ github.sha }}
             DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+      - name: Build dsh runtime image
+        id: dsh-image
+        uses: docker/build-push-action@v6
+        with:
+          context: soha-agent
+          file: soha-agent/deploy/Dockerfile.dsh-runtime
+          build-contexts: contracts=./soha-contracts
+          platforms: linux/amd64,linux/arm64
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: ghcr.io/opensoha/soha-dsh:${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || inputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+      - name: Verify published dsh image digest and platforms
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          DSH_IMAGE: ghcr.io/opensoha/soha-dsh:${{ github.ref_name }}
+          DSH_DIGEST: ${{ steps.dsh-image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect --format '{{json .Manifest}}' "${DSH_IMAGE}" |
+            jq -e --arg digest "${DSH_DIGEST}" '
+              .digest == $digest and
+              ([.manifests[].platform | select(.os == "linux") | .architecture] | unique == ["amd64", "arm64"])
+            '
   release-smoke:
     runs-on: ubuntu-latest
     needs:

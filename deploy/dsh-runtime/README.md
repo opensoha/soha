@@ -2,15 +2,23 @@
 
 This image runs the Node service directly, without a Go Agent forwarding hop.
 Node 24.14.0 and dsh SDK/runtime 0.2.2-rc.1 are fixed inputs; npm consumes the committed lock.
-From the Agent repository, build with an explicit schema context:
+Check out the Contracts tag pinned in the Agent `go.mod` in `../soha-contracts`, then
+build from the Agent repository with that checkout as the schema context.
 
 ```sh
 opensoha-verify image -- --build-context contracts=../soha-contracts -f deploy/Dockerfile.dsh-runtime .
 ```
 
 For a retained image use the workspace `build-image` entry with your own tag.
-The image packages only this repository's runtime and the contracts schema; no sibling checkout is needed at runtime.
-The build must be proven on a local/CI Docker builder before release; static checks are insufficient.
+The image packages the Agent runtime and the pinned Contracts schema. CI builds it
+and checks authenticated startup with the built-in health probe. The Agent tag
+workflow builds both `linux/amd64` and `linux/arm64` and publishes
+`ghcr.io/opensoha/soha-dsh:<agent-tag>` on tag refs. It checks that the published
+manifest includes both platforms before creating the GitHub release.
+
+The current Contracts pin, `v0.1.29`, lacks `agent/dsh-runtime.schema.json`.
+The image gate requires a released Contracts tag containing the compatible schema
+and an updated Agent module pin before CI and release can build the image.
 
 Run as UID/GID 1000 with a read-only root filesystem, writable named volume at
 `/var/lib/soha-dsh`, and ephemeral `/tmp`. Mount the same service token file used by
