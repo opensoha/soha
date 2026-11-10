@@ -3,7 +3,7 @@ package observability
 import (
 	"context"
 	"errors"
-	"github.com/stretchr/testify/require"
+	"sort"
 	"testing"
 	"time"
 
@@ -16,6 +16,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 	"github.com/opensoha/soha/internal/platform/telemetry"
+	"github.com/stretchr/testify/require"
 )
 
 type observabilityRoleReader map[string][]string
@@ -33,6 +34,7 @@ func (m *memoryDataSources) ListDataSources(context.Context) ([]domainobservabil
 	for _, item := range m.items {
 		items = append(items, item)
 	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	return items, nil
 }
 
@@ -54,6 +56,16 @@ func (m *memoryDataSources) UpdateDataSource(_ context.Context, id string, input
 	current.Name, current.BackendType, current.Enabled = input.Name, input.BackendType, input.Enabled
 	current.CredentialRef, current.Scope, current.QueryBudget = input.CredentialRef, input.Scope, input.QueryBudget
 	current.RedactionPolicy, current.Config, current.UpdatedAt = input.RedactionPolicy, input.Config, time.Now().UTC()
+	m.items[id] = current
+	return current, nil
+}
+
+func (m *memoryDataSources) DisableDataSource(_ context.Context, id, sourceKind, backendType string) (domainobservability.DataSource, error) {
+	current, ok := m.items[id]
+	if !ok || current.SourceKind != sourceKind || current.BackendType != backendType {
+		return domainobservability.DataSource{}, apperrors.ErrNotFound
+	}
+	current.Enabled = false
 	m.items[id] = current
 	return current, nil
 }
@@ -104,8 +116,8 @@ func TestDataSourceCredentialsStayEncryptedAndCursorIsPrincipalBound(t *testing.
 	service.now = func() time.Time { return now }
 	principal := domainidentity.Principal{UserID: "user-1", Roles: []string{"ops"}}
 	input := sohaapi.ObservabilityDataSourceInput{
-		Name: "shared logs", BackendType: sohaapi.ObservabilityDataSourceBackendTypeElasticsearch, Enabled: true,
-		Config:          sohaapi.ObservabilityLogDataSourceConfig{Endpoint: "https://logs.example", Index: "app-logs"},
+		Name: "shared logs", BackendType: sohaapi.ObservabilityDataSourceBackendTypeLoki, Enabled: true,
+		Config:          sohaapi.ObservabilityLogDataSourceConfig{Endpoint: "https://logs.example"},
 		Credentials:     []sohaapi.SystemIntegrationCredentialInput{{Key: "bearer_token", Value: "top-secret"}},
 		Scope:           &sohaapi.ObservabilityDataSourceScope{ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"team-a"}},
 		RedactionPolicy: &sohaapi.ObservabilityLogRedactionPolicy{DropAttributeKeys: []string{"token"}},
@@ -141,6 +153,82 @@ func TestDataSourceCredentialsStayEncryptedAndCursorIsPrincipalBound(t *testing.
 	other := domainidentity.Principal{UserID: "user-2", Roles: []string{"ops"}}
 	if _, err := service.QueryDurableLogs(context.Background(), other, "cluster-a", query); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("cross-principal cursor error = %v", err)
+	}
+}
+
+func TestRetiredLogDataSourcesCanOnlyBeDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		stored string
+		public sohaapi.ObservabilityDataSourceBackendType
+	}{
+		{stored: "es", public: sohaapi.ObservabilityDataSourceBackendTypeElasticsearch},
+		{stored: "elasticsearch", public: sohaapi.ObservabilityDataSourceBackendTypeElasticsearch},
+		{stored: "clickhouse", public: sohaapi.ObservabilityDataSourceBackendTypeClickHouse},
+	} {
+		t.Run(tc.stored, func(t *testing.T) {
+			ctx := context.Background()
+			principal := domainidentity.Principal{UserID: "user-1", Roles: []string{"ops"}}
+			legacy := domainobservability.DataSource{
+				ID: "legacy", Name: "legacy logs", BackendType: tc.stored, SourceKind: dataSourceKindLogs, Enabled: true,
+				Config: map[string]any{"endpoint": "https://legacy.example"}, ValidationStatus: "success",
+			}
+			store := &memoryDataSources{items: map[string]domainobservability.DataSource{
+				"legacy": legacy,
+				"loki":   {ID: "loki", BackendType: "loki", SourceKind: dataSourceKindLogs, Enabled: true},
+			}}
+			logs := &recordingLogRegistry{}
+			service, err := New(Dependencies{
+				DataSources: store, Logs: logs,
+				Permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"ops": {appaccess.PermObserveLogDataSourcesView, appaccess.PermObserveLogDataSourcesManage}}),
+			})
+			require.NoError(t, err)
+
+			items, err := service.ListDataSources(ctx, principal)
+			require.NoError(t, err)
+			require.Len(t, items, 2)
+			require.Equal(t, tc.public, items[0].BackendType)
+			require.Equal(t, sohaapi.ObservabilityDataSourceValidationStatusFailed, items[0].ValidationStatus)
+			require.Equal(t, "success", store.items[legacy.ID].ValidationStatus)
+
+			input := sohaapi.ObservabilityDataSourceInput{Name: legacy.Name, BackendType: tc.public, Enabled: true}
+			_, err = service.CreateDataSource(ctx, principal, input)
+			require.ErrorIs(t, err, apperrors.ErrInvalidArgument)
+			validated, err := service.ValidateDataSource(ctx, principal, legacy.ID)
+			require.NoError(t, err)
+			require.Equal(t, sohaapi.ObservabilityDataSourceValidationStatusFailed, validated.ValidationStatus)
+			require.Equal(t, "error", store.items[legacy.ID].ValidationStatus)
+			_, err = service.QueryDurableLogs(ctx, principal, "cluster-a", domainresource.LogQuery{
+				DataSourceID: legacy.ID, Selector: &domainresource.LogSourceSelector{Namespace: "team-a"},
+			})
+			require.ErrorIs(t, err, apperrors.ErrClusterUnready)
+			require.Zero(t, logs.calls)
+			selected, provider, err := service.selectDataSource(ctx, "", "cluster-a", "team-a")
+			require.NoError(t, err)
+			require.Equal(t, "loki", selected.ID)
+			require.True(t, provider.definition.BuiltIn)
+
+			legacy = store.items[legacy.ID]
+			legacy.CredentialRef = "existing-credential-reference"
+			store.items[legacy.ID] = legacy
+			input.Enabled = false
+			disabled, err := service.UpdateDataSource(ctx, principal, legacy.ID, input)
+			require.NoError(t, err)
+			require.False(t, disabled.Enabled)
+			require.Equal(t, legacy.Config, store.items[legacy.ID].Config)
+			require.Equal(t, legacy.CredentialRef, store.items[legacy.ID].CredentialRef)
+			require.Equal(t, legacy.LastValidatedAt, store.items[legacy.ID].LastValidatedAt)
+			input.Enabled = true
+			_, err = service.UpdateDataSource(ctx, principal, legacy.ID, input)
+			require.ErrorIs(t, err, apperrors.ErrInvalidArgument)
+			input.Enabled = false
+			input.Credentials = []sohaapi.SystemIntegrationCredentialInput{{Key: "bearer_token", Value: "replacement"}}
+			_, err = service.UpdateDataSource(ctx, principal, legacy.ID, input)
+			require.ErrorIs(t, err, apperrors.ErrInvalidArgument)
+			input.Credentials = nil
+			input.BackendType = sohaapi.ObservabilityDataSourceBackendTypeLoki
+			_, err = service.UpdateDataSource(ctx, principal, legacy.ID, input)
+			require.ErrorIs(t, err, apperrors.ErrInvalidArgument)
+		})
 	}
 }
 
@@ -188,22 +276,22 @@ func TestDurableLogQueryRequiresSelector(t *testing.T) {
 func TestSelectDataSourceHonorsExplicitIDAndScope(t *testing.T) {
 	service := &Service{dataSources: &memoryDataSources{items: map[string]domainobservability.DataSource{
 		"first": {
-			ID: "first", SourceKind: dataSourceKindLogs, Enabled: true,
+			ID: "first", SourceKind: dataSourceKindLogs, BackendType: "loki", Enabled: true,
 		},
 		"requested": {
-			ID: "requested", SourceKind: dataSourceKindLogs, Enabled: true,
+			ID: "requested", SourceKind: dataSourceKindLogs, BackendType: "loki", Enabled: true,
 			Scope: map[string]any{"clusterIds": []string{"cluster-a"}, "namespaces": []string{"team-a"}},
 		},
 	}}}
 
-	item, err := service.selectDataSource(context.Background(), "requested", "cluster-a", "team-a")
+	item, _, err := service.selectDataSource(context.Background(), "requested", "cluster-a", "team-a")
 	if err != nil || item.ID != "requested" {
 		t.Fatalf("selectDataSource() = %#v, %v, want requested", item, err)
 	}
-	if _, err := service.selectDataSource(context.Background(), "requested", "cluster-b", "team-a"); !errors.Is(err, apperrors.ErrClusterUnready) {
+	if _, _, err := service.selectDataSource(context.Background(), "requested", "cluster-b", "team-a"); !errors.Is(err, apperrors.ErrClusterUnready) {
 		t.Fatalf("out-of-scope selectDataSource() error = %v, want cluster unready", err)
 	}
-	if _, err := service.selectDataSource(context.Background(), "missing", "cluster-a", "team-a"); !errors.Is(err, apperrors.ErrClusterUnready) {
+	if _, _, err := service.selectDataSource(context.Background(), "missing", "cluster-a", "team-a"); !errors.Is(err, apperrors.ErrClusterUnready) {
 		t.Fatalf("missing selectDataSource() error = %v, want cluster unready", err)
 	}
 }

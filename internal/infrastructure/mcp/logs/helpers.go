@@ -192,7 +192,7 @@ func paginateRecords(records []Record, query SearchQuery, cursor timestampCursor
 }
 
 func validateHTTPConfig(config map[string]any, backend string) error {
-	endpoint := stringConfig(config, "endpoint", "")
+	endpoint := stringConfig(config, "endpoint")
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return fmt.Errorf("%s endpoint must be an HTTP(S) URL", backend)
@@ -220,10 +220,82 @@ func filterSeverities(records []Record, severities []string) []Record {
 }
 
 func applyProviderHeaders(req *http.Request, config map[string]any) {
-	if bearerToken := stringConfig(config, "bearerToken", ""); bearerToken != "" {
+	if bearerToken := stringConfig(config, "bearerToken"); bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
-	if tenantID := stringConfig(config, "tenantId", ""); tenantID != "" {
+	if tenantID := stringConfig(config, "tenantId"); tenantID != "" {
 		req.Header.Set("X-Scope-OrgID", tenantID)
 	}
+}
+
+func summarizeSignatures(records []Record) []Signature {
+	type aggregate struct {
+		count    int
+		sample   string
+		severity string
+	}
+	buckets := make(map[string]*aggregate)
+	for _, item := range records {
+		signature := normalizeSignature(item.Message)
+		if signature == "" {
+			continue
+		}
+		current := buckets[signature]
+		if current == nil {
+			current = &aggregate{sample: item.Message, severity: item.Severity}
+			buckets[signature] = current
+		}
+		current.count++
+	}
+	signatures := make([]Signature, 0, len(buckets))
+	for signature, current := range buckets {
+		signatures = append(signatures, Signature{
+			Signature: signature,
+			Count:     current.count,
+			Sample:    current.sample,
+			Severity:  current.severity,
+		})
+	}
+	sort.Slice(signatures, func(i, j int) bool {
+		return signatures[i].Count > signatures[j].Count
+	})
+	if len(signatures) > 5 {
+		signatures = signatures[:5]
+	}
+	return signatures
+}
+
+func normalizeSignature(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return ""
+	}
+	lines := strings.Split(message, "\n")
+	signature := strings.TrimSpace(lines[0])
+	if len(signature) > 160 {
+		signature = signature[:160]
+	}
+	return signature
+}
+
+func stringConfig(config map[string]any, key string) string {
+	value, _ := config[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func uniqueStrings(items []string) []string {
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }

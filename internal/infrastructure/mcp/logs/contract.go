@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/opensoha/soha/internal/platform/telemetry"
 )
@@ -27,26 +26,16 @@ type Driver interface {
 }
 
 type Registry struct {
-	mu      sync.RWMutex
 	drivers map[string]Driver
 }
 
 func NewRegistry() *Registry {
-	registry := &Registry{drivers: map[string]Driver{}}
-	for _, driver := range []Driver{newESDriver(), newLokiDriver(), newClickHouseDriver()} {
-		registry.drivers[driver.BackendType()] = driver
-	}
-	return registry
+	driver := newLokiDriver()
+	return &Registry{drivers: map[string]Driver{driver.BackendType(): driver}}
 }
 
 func (r *Registry) Get(backendType string) (Driver, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	backendType = strings.ToLower(strings.TrimSpace(backendType))
-	if backendType == "elasticsearch" {
-		backendType = "es"
-	}
-	driver, ok := r.drivers[backendType]
+	driver, ok := r.drivers[strings.ToLower(strings.TrimSpace(backendType))]
 	return driver, ok
 }
 

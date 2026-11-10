@@ -33,6 +33,7 @@ type DataSourceStore interface {
 	GetDataSource(context.Context, string) (domainobservability.DataSource, error)
 	CreateDataSource(context.Context, domainobservability.DataSource) (domainobservability.DataSource, error)
 	UpdateDataSource(context.Context, string, domainobservability.DataSourceInput) (domainobservability.DataSource, error)
+	DisableDataSource(context.Context, string, string, string) (domainobservability.DataSource, error)
 	UpdateDataSourceValidation(context.Context, string, string, string, time.Time) (domainobservability.DataSource, error)
 }
 
@@ -142,6 +143,9 @@ func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity
 	if current.SourceKind != dataSourceKindLogs {
 		return sohaapi.ObservabilityDataSource{}, fmt.Errorf("%w: log data source not found", apperrors.ErrNotFound)
 	}
+	if isRetiredLogProviderKey(current.BackendType) {
+		return s.disableRetiredDataSource(ctx, principal, current, input)
+	}
 	item, err := s.normalizeInput(ctx, input, current.ID)
 	if err != nil {
 		return sohaapi.ObservabilityDataSource{}, err
@@ -169,6 +173,18 @@ func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity
 	return s.publicDataSource(updated), nil
 }
 
+func (s *Service) disableRetiredDataSource(ctx context.Context, principal domainidentity.Principal, current domainobservability.DataSource, input sohaapi.ObservabilityDataSourceInput) (sohaapi.ObservabilityDataSource, error) {
+	if input.Enabled || dataSourceBackendType(string(input.BackendType)) != dataSourceBackendType(current.BackendType) || len(input.Credentials) > 0 || len(input.ClearCredentialKeys) > 0 {
+		return sohaapi.ObservabilityDataSource{}, fmt.Errorf("%w: retired log data sources can only be disabled", apperrors.ErrInvalidArgument)
+	}
+	updated, err := s.dataSources.DisableDataSource(ctx, current.ID, current.SourceKind, current.BackendType)
+	if err != nil {
+		return sohaapi.ObservabilityDataSource{}, err
+	}
+	s.recordMutation(ctx, principal, updated, "observability.data-source.update", "disabled retired log data source")
+	return s.publicDataSource(updated), nil
+}
+
 func (s *Service) ValidateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string) (sohaapi.ObservabilityDataSource, error) {
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveLogDataSourcesManage, "validate")); err != nil {
 		return sohaapi.ObservabilityDataSource{}, err
@@ -181,13 +197,13 @@ func (s *Service) ValidateDataSource(ctx context.Context, principal domainidenti
 		return sohaapi.ObservabilityDataSource{}, fmt.Errorf("%w: log data source not found", apperrors.ErrNotFound)
 	}
 	checkedAt := s.now().UTC()
-	config, configErr := s.runtimeConfig(item)
-	provider, providerFound, providerErr := s.resolveProvider(ctx, item.BackendType)
-	if configErr == nil && providerErr != nil {
-		configErr = providerErr
-	}
+	provider, providerFound, configErr := s.resolveProvider(ctx, item.BackendType)
 	if configErr == nil && (!providerFound || !supportsLogQuery(provider)) {
 		configErr = fmt.Errorf("provider not found")
+	}
+	var config map[string]any
+	if configErr == nil {
+		config, configErr = s.runtimeConfig(item)
 	}
 	if configErr == nil && provider.definition.BuiltIn {
 		configErr = s.logs.Validate(item.BackendType, config)
@@ -230,14 +246,15 @@ func (s *Service) normalizeInput(ctx context.Context, input sohaapi.Observabilit
 		return domainobservability.DataSourceInput{}, fmt.Errorf("%w: data source name is required", apperrors.ErrInvalidArgument)
 	}
 	backend := strings.ToLower(strings.TrimSpace(string(input.BackendType)))
-	if backend == string(sohaapi.ObservabilityDataSourceBackendTypeProvider) {
+	useBuiltIn := backend != string(sohaapi.ObservabilityDataSourceBackendTypeProvider)
+	if !useBuiltIn {
 		backend = strings.ToLower(strings.TrimSpace(input.ProviderKey))
 	}
 	provider, ok, err := s.resolveProvider(ctx, backend)
 	if err != nil {
 		return domainobservability.DataSourceInput{}, err
 	}
-	if !ok || !supportsLogQuery(provider) {
+	if !ok || !supportsLogQuery(provider) || provider.definition.BuiltIn != useBuiltIn {
 		return domainobservability.DataSourceInput{}, fmt.Errorf("%w: unsupported log provider", apperrors.ErrInvalidArgument)
 	}
 	config := dataSourceConfigMap(input.Config)
@@ -278,27 +295,38 @@ func (s *Service) publicDataSource(item domainobservability.DataSource) sohaapi.
 			credentialKeys = append(credentialKeys, sohaapi.ObservabilityDataSourceCredentialKeys(key))
 		}
 	}
-	status := sohaapi.ObservabilityDataSourceValidationStatusUnknown
-	switch item.ValidationStatus {
-	case "success":
+	status, message := sohaapi.ObservabilityDataSourceValidationStatusUnknown, item.ValidationMessage
+	switch {
+	case isRetiredLogProviderKey(item.BackendType):
+		status, message = sohaapi.ObservabilityDataSourceValidationStatusFailed, "log backend has been retired"
+	case item.ValidationStatus == "success":
 		status = sohaapi.ObservabilityDataSourceValidationStatusHealthy
-	case "error":
+	case item.ValidationStatus == "error":
 		status = sohaapi.ObservabilityDataSourceValidationStatusFailed
 	}
-	backendType, providerKey := item.BackendType, ""
-	switch backendType {
-	case "es":
-		backendType = "elasticsearch"
-	case "loki", "elasticsearch", "clickhouse":
-	default:
-		providerKey, backendType = item.BackendType, string(sohaapi.ObservabilityDataSourceBackendTypeProvider)
+	backendType, providerKey := dataSourceBackendType(item.BackendType), ""
+	if backendType == sohaapi.ObservabilityDataSourceBackendTypeProvider {
+		providerKey = item.BackendType
 	}
 	return sohaapi.ObservabilityDataSource{
-		ID: item.ID, Name: item.Name, BackendType: sohaapi.ObservabilityDataSourceBackendType(backendType), Enabled: item.Enabled,
+		ID: item.ID, Name: item.Name, BackendType: backendType, Enabled: item.Enabled,
 		ProviderKey: providerKey,
 		Scope:       apiScope(item.Scope), QueryBudget: apiBudget(item.QueryBudget), RedactionPolicy: apiRedaction(item.RedactionPolicy),
 		Config: apiConfig(item.Config), CredentialKeys: credentialKeys, ValidationStatus: status,
-		ValidationMessage: item.ValidationMessage, LastValidatedAt: item.LastValidatedAt, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+		ValidationMessage: message, LastValidatedAt: item.LastValidatedAt, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+	}
+}
+
+func dataSourceBackendType(key string) sohaapi.ObservabilityDataSourceBackendType {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "es", "elasticsearch":
+		return sohaapi.ObservabilityDataSourceBackendTypeElasticsearch
+	case "clickhouse":
+		return sohaapi.ObservabilityDataSourceBackendTypeClickHouse
+	case "loki":
+		return sohaapi.ObservabilityDataSourceBackendTypeLoki
+	default:
+		return sohaapi.ObservabilityDataSourceBackendTypeProvider
 	}
 }
 

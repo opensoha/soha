@@ -38,7 +38,7 @@ var defaultAdapters = []Adapter{
 	{
 		ID:                      "logs.v1",
 		SourceKind:              "logs",
-		SupportedBackends:       []string{"es", "loki", "clickhouse"},
+		SupportedBackends:       []string{"loki"},
 		Name:                    "logs.v1",
 		Description:             "Unified structured log analysis contract across multiple log backends",
 		Category:                "observability",
@@ -79,24 +79,6 @@ var defaultAdapters = []Adapter{
 		ToolSchemaSummary: map[string]string{
 			"metrics.range_query":     "scope + metricKey + timeRange",
 			"metrics.anomaly_summary": "scope + timeRange + metricPreset",
-		},
-	},
-	{
-		ID:                      "traces.v1",
-		SourceKind:              "traces",
-		SupportedBackends:       []string{"jaeger", "skywalking"},
-		Name:                    "traces.v1",
-		Description:             "Unified tracing analysis contract across trace backends",
-		Category:                "observability",
-		RequiresConfig:          true,
-		SupportsSessionOverride: true,
-		Scopes:                  []string{"traces:read"},
-		Tools: []domainmcp.Tool{
-			{Name: "traces.find_slow_spans", Description: "Find slow spans and latency hotspots in a scope", SchemaHint: "scope + timeRange + minDuration"},
-		},
-		DefaultBudget: map[string]any{"maxQueries": 6, "timeoutSeconds": 10},
-		ToolSchemaSummary: map[string]string{
-			"traces.find_slow_spans": "scope + timeRange + minDuration",
 		},
 	},
 	{

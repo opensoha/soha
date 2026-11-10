@@ -49,6 +49,11 @@ func (s *Service) GetWorkbenchCatalog(ctx context.Context, principal domainident
 		return domaincopilot.WorkbenchCatalog{}, err
 	}
 	for _, item := range dataSources {
+		if item.RetiredBackend() {
+			item.Enabled = false
+			item.ValidationStatus = "error"
+			item.ValidationMessage = "data source backend has been retired"
+		}
 		catalog.DataSources = append(catalog.DataSources, domaincopilot.WorkbenchDataSource{
 			ID:                item.ID,
 			Name:              item.Name,
@@ -152,6 +157,16 @@ func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity
 		return domaincopilot.DataSource{}, err
 	}
 	input.ID = strings.TrimSpace(dataSourceID)
+	current, err := s.dataSources.GetDataSource(ctx, input.ID)
+	if err != nil {
+		return domaincopilot.DataSource{}, err
+	}
+	if current.RetiredBackend() {
+		if input.Enabled || strings.TrimSpace(input.SourceKind) != current.SourceKind || strings.TrimSpace(input.BackendType) != current.BackendType {
+			return domaincopilot.DataSource{}, fmt.Errorf("%w: retired data sources can only be disabled", aperrors.ErrInvalidArgument)
+		}
+		return s.dataSources.DisableDataSource(ctx, current.ID, current.SourceKind, current.BackendType)
+	}
 	item, err := s.normalizeDataSourceInput(input)
 	if err != nil {
 		return domaincopilot.DataSource{}, err

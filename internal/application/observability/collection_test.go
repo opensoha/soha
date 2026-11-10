@@ -122,6 +122,22 @@ func starterCollectionInput(namespaces ...string) sohaapi.LogCollectionPreflight
 	}
 }
 
+func TestManagedLokiDoesNotAdoptRetiredDataSource(t *testing.T) {
+	const id = "ds:soha-managed:cluster-a"
+	legacy := domainobservability.DataSource{
+		ID: id, SourceKind: dataSourceKindLogs, BackendType: "elasticsearch", Enabled: true,
+		CredentialRef: "legacy-credential-reference", Config: map[string]any{"endpoint": "https://legacy.example"},
+	}
+	store := &memoryDataSources{items: map[string]domainobservability.DataSource{id: legacy}}
+	service := &Service{dataSources: store, now: time.Now}
+
+	_, err := service.ensureManagedLokiDataSource(context.Background(), "cluster-a", collectionPlan{
+		DataSourceID: id, DestinationEndpoint: "http://loki.example",
+	})
+	require.ErrorIs(t, err, apperrors.ErrConflict)
+	require.Equal(t, legacy, store.items[id])
+}
+
 func TestCollectionPreflightEnforcesPodLogScopeAndDeclaresNoKubernetesRBAC(t *testing.T) {
 	now := time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC)
 	authorizer := collectionAuthorizer(func(request domainaccess.Request) domainaccess.Decision {

@@ -105,6 +105,10 @@ func providerKeyForDataSource(item domainobservability.DataSource) string {
 	return key
 }
 
+func isRetiredLogProviderKey(key string) bool {
+	return domainobservability.IsRetiredBackend("logs", key)
+}
+
 func (s *Service) resolveProvider(ctx context.Context, providerKey string) (resolvedProvider, bool, error) {
 	providerKey = strings.ToLower(strings.TrimSpace(providerKey))
 	if providerKey == "es" {
@@ -146,7 +150,8 @@ func (s *Service) providerCatalog(ctx context.Context) ([]resolvedProvider, erro
 		}
 		for _, contribution := range plugin.Manifest.ExtensionPoints.Observability.Providers {
 			key := strings.ToLower(strings.TrimSpace(contribution.ProviderKey))
-			if key == "" {
+			// A plugin must never inherit the credentials of a retired built-in source.
+			if key == "" || isRetiredLogProviderKey(key) || domainobservability.IsRetiredBackend("traces", key) {
 				continue
 			}
 			if _, exists := seen[key]; exists {
@@ -180,12 +185,8 @@ func builtInProviders() []resolvedProvider {
 		}}
 	}
 	return []resolvedProvider{
-		definition("clickhouse", "ClickHouse", []sohaapi.ObservabilityProviderSignal{sohaapi.ObservabilityProviderSignalLogs}, logsQueryCapability, "logs.correlate"),
-		definition("elasticsearch", "Elasticsearch", []sohaapi.ObservabilityProviderSignal{sohaapi.ObservabilityProviderSignalLogs}, logsQueryCapability, "logs.correlate"),
-		definition("jaeger", "Jaeger", []sohaapi.ObservabilityProviderSignal{sohaapi.ObservabilityProviderSignalTraces}, "traces.query"),
 		definition("loki", "Grafana Loki", []sohaapi.ObservabilityProviderSignal{sohaapi.ObservabilityProviderSignalLogs}, logsQueryCapability, "logs.correlate"),
 		definition("prometheus", "Prometheus", []sohaapi.ObservabilityProviderSignal{sohaapi.ObservabilityProviderSignalMetrics}, "metrics.range-query"),
-		definition("skywalking", "Apache SkyWalking", []sohaapi.ObservabilityProviderSignal{sohaapi.ObservabilityProviderSignalTraces}, "traces.query"),
 	}
 }
 
