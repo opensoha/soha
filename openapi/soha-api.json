@@ -131356,7 +131356,7 @@
                 }
               }
             },
-            "description": "OTel-identified services from the configured SkyWalking OAP provider."
+            "description": "OTel-identified services from an executable service catalog provider."
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -131411,7 +131411,7 @@
                 }
               }
             },
-            "description": "Service identity, instances and endpoints from the configured SkyWalking OAP provider."
+            "description": "Service identity, instances and endpoints from an executable service catalog provider."
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -131466,7 +131466,7 @@
                 }
               }
             },
-            "description": "Beta dependency graph for one service from the configured SkyWalking OAP provider."
+            "description": "Beta dependency graph for one service from an executable topology provider."
           },
           "400": {
             "$ref": "#/components/responses/Error"

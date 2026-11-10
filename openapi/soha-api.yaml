@@ -13521,7 +13521,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityTimeToQuery"
       responses:
         "200":
-          description: OTel-identified services from the configured SkyWalking OAP provider.
+          description: OTel-identified services from an executable service catalog provider.
           content:
             application/json:
               schema:
@@ -13548,7 +13548,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityTimeToQuery"
       responses:
         "200":
-          description: Service identity, instances and endpoints from the configured SkyWalking OAP provider.
+          description: Service identity, instances and endpoints from an executable service catalog provider.
           content:
             application/json:
               schema:
@@ -13575,7 +13575,7 @@ paths:
         - $ref: "#/components/parameters/ObservabilityTimeToQuery"
       responses:
         "200":
-          description: Beta dependency graph for one service from the configured SkyWalking OAP provider.
+          description: Beta dependency graph for one service from an executable topology provider.
           content:
             application/json:
               schema:

@@ -54828,7 +54828,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OTel-identified services from the configured SkyWalking OAP provider. */
+            /** @description OTel-identified services from an executable service catalog provider. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -54861,7 +54861,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Service identity, instances and endpoints from the configured SkyWalking OAP provider. */
+            /** @description Service identity, instances and endpoints from an executable service catalog provider. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -54894,7 +54894,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Beta dependency graph for one service from the configured SkyWalking OAP provider. */
+            /** @description Beta dependency graph for one service from an executable topology provider. */
             200: {
                 headers: {
                     [name: string]: unknown;
