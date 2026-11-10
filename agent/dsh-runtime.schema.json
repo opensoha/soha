@@ -1,0 +1,1165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/dsh-runtime.schema.json",
+  "title": "dsh-runtime",
+  "description": "Authenticated Core-to-dsh runtime v1. Runtime transport metadata and bounded journal, not the public user API or a business task queue. See dsh-runtime.README.md for identity, byte limits, lifecycle, and authorization invariants.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Start"
+    },
+    {
+      "$ref": "#/$defs/Receipt"
+    },
+    {
+      "$ref": "#/$defs/Status"
+    },
+    {
+      "$ref": "#/$defs/Event"
+    },
+    {
+      "$ref": "#/$defs/ToolCall"
+    },
+    {
+      "$ref": "#/$defs/ToolResult"
+    },
+    {
+      "$ref": "#/$defs/Control"
+    },
+    {
+      "$ref": "#/$defs/Health"
+    },
+    {
+      "$ref": "#/$defs/AssemblyReport"
+    },
+    {
+      "$ref": "#/$defs/AssemblyDecision"
+    }
+  ],
+  "$defs": {
+    "ID": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "SHA256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "totalTokens"
+      ],
+      "properties": {
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "totalTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "JSONValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "maxLength": 131072
+        },
+        {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/JSONValue"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {
+            "maxLength": 128
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/JSONValue"
+          }
+        }
+      ]
+    },
+    "JSONObject": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "maxLength": 128
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/JSONValue"
+      }
+    },
+    "Tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description",
+        "inputSchema",
+        "readOnly"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "inputSchema": {
+          "$ref": "#/$defs/JSONObject"
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind",
+        "ownerKey",
+        "sessionId",
+        "requestId",
+        "inputHash",
+        "contextRevision",
+        "profile",
+        "model",
+        "prompt",
+        "toolCatalogRevision",
+        "deadline",
+        "maxOutputTokens"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "start"
+        },
+        "ownerKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "sessionId": {
+          "$ref": "#/$defs/ID"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ID"
+        },
+        "inputHash": {
+          "$ref": "#/$defs/SHA256"
+        },
+        "contextRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "profile": {
+          "enum": [
+            "chat",
+            "heya"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 131072
+        },
+        "context": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "content"
+            ],
+            "properties": {
+              "role": {
+                "enum": [
+                  "user",
+                  "assistant"
+                ]
+              },
+              "content": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 131072
+              }
+            }
+          }
+        },
+        "toolCatalogRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/Tool"
+          }
+        },
+        "toolGrant": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "writeOnly": true
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxOutputTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 131072
+        },
+        "assembly": {
+          "$ref": "#/$defs/Assembly"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "profile": {
+                "const": "chat"
+              }
+            },
+            "required": [
+              "profile"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "readOnly": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "readOnly"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "dependentRequired": {
+        "assembly": [
+          "toolGrant"
+        ]
+      }
+    },
+    "Receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind",
+        "submissionId",
+        "inputHash",
+        "status",
+        "sequence"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "receipt"
+        },
+        "submissionId": {
+          "$ref": "#/$defs/ID"
+        },
+        "inputHash": {
+          "$ref": "#/$defs/SHA256"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "running",
+            "waiting_tool",
+            "completed",
+            "failed",
+            "canceled",
+            "unknown"
+          ]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "Status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind",
+        "submissionId",
+        "inputHash",
+        "status",
+        "sequence",
+        "usageKnown"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "status"
+        },
+        "submissionId": {
+          "$ref": "#/$defs/ID"
+        },
+        "inputHash": {
+          "$ref": "#/$defs/SHA256"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "running",
+            "waiting_tool",
+            "completed",
+            "failed",
+            "canceled",
+            "unknown"
+          ]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stopReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "usageKnown": {
+          "type": "boolean"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "assistantText": {
+          "type": "string",
+          "maxLength": 131072
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "usageKnown": {
+                "const": true
+              }
+            },
+            "required": [
+              "usageKnown"
+            ]
+          },
+          "then": {
+            "required": [
+              "usage"
+            ],
+            "properties": {
+              "usage": {
+                "$ref": "#/$defs/Usage"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "usage": false
+            }
+          }
+        }
+      ]
+    },
+    "EventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "delta": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "assistantText": {
+          "type": "string",
+          "maxLength": 131072
+        },
+        "callId": {
+          "$ref": "#/$defs/ID"
+        },
+        "toolName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "running",
+            "waiting_tool",
+            "completed",
+            "failed",
+            "canceled",
+            "unknown"
+          ]
+        },
+        "stopReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "usageKnown": {
+          "type": "boolean"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "outcome": {
+          "enum": [
+            "completed",
+            "denied",
+            "failed",
+            "canceled",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "Event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind",
+        "sequence",
+        "type",
+        "data"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "event"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "type": {
+          "enum": [
+            "accepted",
+            "started",
+            "message_delta",
+            "tool_started",
+            "tool_completed",
+            "completed",
+            "failed",
+            "canceled",
+            "unknown",
+            "hook_observed"
+          ]
+        },
+        "data": {
+          "$ref": "#/$defs/EventData"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "message_delta"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "delta"
+                ],
+                "properties": {
+                  "delta": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "hook_observed"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "callId",
+                  "toolName",
+                  "outcome"
+                ],
+                "properties": {
+                  "callId": true,
+                  "toolName": true,
+                  "outcome": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ToolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind",
+        "callId",
+        "toolCatalogRevision",
+        "toolName",
+        "inputHash",
+        "input"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "tool_call"
+        },
+        "callId": {
+          "$ref": "#/$defs/ID"
+        },
+        "toolCatalogRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "toolName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "inputHash": {
+          "$ref": "#/$defs/SHA256"
+        },
+        "input": {
+          "$ref": "#/$defs/JSONObject"
+        }
+      }
+    },
+    "ToolResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind",
+        "callId",
+        "inputHash",
+        "status"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "tool_result"
+        },
+        "callId": {
+          "$ref": "#/$defs/ID"
+        },
+        "inputHash": {
+          "$ref": "#/$defs/SHA256"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "denied",
+            "failed",
+            "unknown"
+          ]
+        },
+        "output": {
+          "$ref": "#/$defs/JSONValue"
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "receiptId": {
+          "$ref": "#/$defs/ID"
+        }
+      }
+    },
+    "Control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "cancel"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "Health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "kind",
+        "ready",
+        "protocolVersion",
+        "runtimeVersion",
+        "capabilities"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "kind": {
+          "const": "health"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "protocolVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runtimeVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "EventPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "nextSequence",
+        "hasMore"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/Event"
+          }
+        },
+        "nextSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AssemblyAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "required"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "mcp",
+            "skill",
+            "hook"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AssemblyAssetStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "version",
+        "status"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "mcp",
+            "skill",
+            "hook"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "status": {
+          "enum": [
+            "loaded",
+            "unavailable"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ID"
+          }
+        }
+      }
+    },
+    "Assembly": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "revision",
+        "assets"
+      ],
+      "properties": {
+        "profileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/AssemblyAsset"
+          }
+        }
+      }
+    },
+    "AssemblyReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind",
+        "profileId",
+        "revision",
+        "assets"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "assembly_report"
+        },
+        "profileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/AssemblyAssetStatus"
+          }
+        },
+        "nativeTools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/NativePluginTool"
+          }
+        }
+      }
+    },
+    "AssemblyDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "runId",
+        "attempt",
+        "fence",
+        "kind",
+        "profileId",
+        "revision",
+        "assets",
+        "status"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "opensoha.dev/dsh-runtime/v1"
+        },
+        "runId": {
+          "$ref": "#/$defs/ID"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "fence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "const": "assembly_decision"
+        },
+        "profileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/AssemblyAssetStatus"
+          }
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "degraded",
+            "rejected"
+          ]
+        },
+        "nativeTools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/NativePluginTool"
+          }
+        }
+      }
+    },
+    "NativePluginTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "assetId",
+        "version",
+        "name",
+        "description",
+        "inputSchema"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "mcp",
+            "skill"
+          ]
+        },
+        "assetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(mcp|skill)_[a-zA-Z0-9_-]+$"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "inputSchema": {
+          "$ref": "#/$defs/JSONObject"
+        }
+      }
+    }
+  }
+}

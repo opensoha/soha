@@ -99,18 +99,57 @@ func (e AIEnvironmentTemplateInputIsolationMode) Valid() bool {
 	}
 }
 
+// Defines values for AIMemoryPolicyMode.
+const (
+	AIMemoryPolicyModeChat AIMemoryPolicyMode = "chat"
+	AIMemoryPolicyModeHeya AIMemoryPolicyMode = "heya"
+)
+
+// Valid indicates whether the value is a known member of the AIMemoryPolicyMode enum.
+func (e AIMemoryPolicyMode) Valid() bool {
+	switch e {
+	case AIMemoryPolicyModeChat:
+		return true
+	case AIMemoryPolicyModeHeya:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AIMemoryPolicyInputConsentMode.
 const (
-	AIMemoryPolicyInputConsentModeDisabled AIMemoryPolicyInputConsentMode = "disabled"
-	AIMemoryPolicyInputConsentModeExplicit AIMemoryPolicyInputConsentMode = "explicit"
+	AIMemoryPolicyInputConsentModeAutomatic AIMemoryPolicyInputConsentMode = "automatic"
+	AIMemoryPolicyInputConsentModeDisabled  AIMemoryPolicyInputConsentMode = "disabled"
+	AIMemoryPolicyInputConsentModeExplicit  AIMemoryPolicyInputConsentMode = "explicit"
 )
 
 // Valid indicates whether the value is a known member of the AIMemoryPolicyInputConsentMode enum.
 func (e AIMemoryPolicyInputConsentMode) Valid() bool {
 	switch e {
+	case AIMemoryPolicyInputConsentModeAutomatic:
+		return true
 	case AIMemoryPolicyInputConsentModeDisabled:
 		return true
 	case AIMemoryPolicyInputConsentModeExplicit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIMemoryPolicyInputMode.
+const (
+	AIMemoryPolicyInputModeChat AIMemoryPolicyInputMode = "chat"
+	AIMemoryPolicyInputModeHeya AIMemoryPolicyInputMode = "heya"
+)
+
+// Valid indicates whether the value is a known member of the AIMemoryPolicyInputMode enum.
+func (e AIMemoryPolicyInputMode) Valid() bool {
+	switch e {
+	case AIMemoryPolicyInputModeChat:
+		return true
+	case AIMemoryPolicyInputModeHeya:
 		return true
 	default:
 		return false
@@ -129,6 +168,36 @@ func (e AIMemoryRecordSourceType) Valid() bool {
 	case CuratedExtractor:
 		return true
 	case ExplicitUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIMemoryRecordSyncStatus.
+const (
+	AIMemoryRecordSyncStatusDeletePending AIMemoryRecordSyncStatus = "delete_pending"
+	AIMemoryRecordSyncStatusDeleted       AIMemoryRecordSyncStatus = "deleted"
+	AIMemoryRecordSyncStatusDisabled      AIMemoryRecordSyncStatus = "disabled"
+	AIMemoryRecordSyncStatusError         AIMemoryRecordSyncStatus = "error"
+	AIMemoryRecordSyncStatusPending       AIMemoryRecordSyncStatus = "pending"
+	AIMemoryRecordSyncStatusSynced        AIMemoryRecordSyncStatus = "synced"
+)
+
+// Valid indicates whether the value is a known member of the AIMemoryRecordSyncStatus enum.
+func (e AIMemoryRecordSyncStatus) Valid() bool {
+	switch e {
+	case AIMemoryRecordSyncStatusDeletePending:
+		return true
+	case AIMemoryRecordSyncStatusDeleted:
+		return true
+	case AIMemoryRecordSyncStatusDisabled:
+		return true
+	case AIMemoryRecordSyncStatusError:
+		return true
+	case AIMemoryRecordSyncStatusPending:
+		return true
+	case AIMemoryRecordSyncStatusSynced:
 		return true
 	default:
 		return false
@@ -270,6 +339,7 @@ const (
 	AgentRunCallbackWorkbenchAgentStatusEventProviderKindAzureOpenai      AgentRunCallbackWorkbenchAgentStatusEventProviderKind = "azure-openai"
 	AgentRunCallbackWorkbenchAgentStatusEventProviderKindCohere           AgentRunCallbackWorkbenchAgentStatusEventProviderKind = "cohere"
 	AgentRunCallbackWorkbenchAgentStatusEventProviderKindDeepseek         AgentRunCallbackWorkbenchAgentStatusEventProviderKind = "deepseek"
+	AgentRunCallbackWorkbenchAgentStatusEventProviderKindDsh              AgentRunCallbackWorkbenchAgentStatusEventProviderKind = "dsh"
 	AgentRunCallbackWorkbenchAgentStatusEventProviderKindGemini           AgentRunCallbackWorkbenchAgentStatusEventProviderKind = "gemini"
 	AgentRunCallbackWorkbenchAgentStatusEventProviderKindGeneral          AgentRunCallbackWorkbenchAgentStatusEventProviderKind = "general"
 	AgentRunCallbackWorkbenchAgentStatusEventProviderKindHermes           AgentRunCallbackWorkbenchAgentStatusEventProviderKind = "hermes"
@@ -291,6 +361,8 @@ func (e AgentRunCallbackWorkbenchAgentStatusEventProviderKind) Valid() bool {
 	case AgentRunCallbackWorkbenchAgentStatusEventProviderKindCohere:
 		return true
 	case AgentRunCallbackWorkbenchAgentStatusEventProviderKindDeepseek:
+		return true
+	case AgentRunCallbackWorkbenchAgentStatusEventProviderKindDsh:
 		return true
 	case AgentRunCallbackWorkbenchAgentStatusEventProviderKindGemini:
 		return true
@@ -11804,19 +11876,19 @@ func (e RuntimeConfigValueType) Valid() bool {
 
 // Defines values for RuntimeNetworkUsageScope.
 const (
-	NetworkNamespace RuntimeNetworkUsageScope = "network_namespace"
-	Process          RuntimeNetworkUsageScope = "process"
-	Unavailable      RuntimeNetworkUsageScope = "unavailable"
+	RuntimeNetworkUsageScopeNetworkNamespace RuntimeNetworkUsageScope = "network_namespace"
+	RuntimeNetworkUsageScopeProcess          RuntimeNetworkUsageScope = "process"
+	RuntimeNetworkUsageScopeUnavailable      RuntimeNetworkUsageScope = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeNetworkUsageScope enum.
 func (e RuntimeNetworkUsageScope) Valid() bool {
 	switch e {
-	case NetworkNamespace:
+	case RuntimeNetworkUsageScopeNetworkNamespace:
 		return true
-	case Process:
+	case RuntimeNetworkUsageScopeProcess:
 		return true
-	case Unavailable:
+	case RuntimeNetworkUsageScopeUnavailable:
 		return true
 	default:
 		return false
@@ -12969,6 +13041,7 @@ const (
 	WorkbenchAgentStatusEventProviderKindAzureOpenai      WorkbenchAgentStatusEventProviderKind = "azure-openai"
 	WorkbenchAgentStatusEventProviderKindCohere           WorkbenchAgentStatusEventProviderKind = "cohere"
 	WorkbenchAgentStatusEventProviderKindDeepseek         WorkbenchAgentStatusEventProviderKind = "deepseek"
+	WorkbenchAgentStatusEventProviderKindDsh              WorkbenchAgentStatusEventProviderKind = "dsh"
 	WorkbenchAgentStatusEventProviderKindGemini           WorkbenchAgentStatusEventProviderKind = "gemini"
 	WorkbenchAgentStatusEventProviderKindGeneral          WorkbenchAgentStatusEventProviderKind = "general"
 	WorkbenchAgentStatusEventProviderKindHermes           WorkbenchAgentStatusEventProviderKind = "hermes"
@@ -12991,6 +13064,8 @@ func (e WorkbenchAgentStatusEventProviderKind) Valid() bool {
 	case WorkbenchAgentStatusEventProviderKindCohere:
 		return true
 	case WorkbenchAgentStatusEventProviderKindDeepseek:
+		return true
+	case WorkbenchAgentStatusEventProviderKindDsh:
 		return true
 	case WorkbenchAgentStatusEventProviderKindGemini:
 		return true
@@ -13254,6 +13329,45 @@ func (e WorkbenchLaunchContextSourceWorkbench) Valid() bool {
 	}
 }
 
+// Defines values for WorkbenchManagedRuntimeAssetKind.
+const (
+	WorkbenchManagedRuntimeAssetKindHook  WorkbenchManagedRuntimeAssetKind = "hook"
+	WorkbenchManagedRuntimeAssetKindMCP   WorkbenchManagedRuntimeAssetKind = "mcp"
+	WorkbenchManagedRuntimeAssetKindSkill WorkbenchManagedRuntimeAssetKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchManagedRuntimeAssetKind enum.
+func (e WorkbenchManagedRuntimeAssetKind) Valid() bool {
+	switch e {
+	case WorkbenchManagedRuntimeAssetKindHook:
+		return true
+	case WorkbenchManagedRuntimeAssetKindMCP:
+		return true
+	case WorkbenchManagedRuntimeAssetKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchManagedRuntimeAssetTransport.
+const (
+	HTTP  WorkbenchManagedRuntimeAssetTransport = "http"
+	Stdio WorkbenchManagedRuntimeAssetTransport = "stdio"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchManagedRuntimeAssetTransport enum.
+func (e WorkbenchManagedRuntimeAssetTransport) Valid() bool {
+	switch e {
+	case HTTP:
+		return true
+	case Stdio:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkbenchMessageRole.
 const (
 	WorkbenchMessageRoleAssistant WorkbenchMessageRole = "assistant"
@@ -13395,6 +13509,147 @@ func (e WorkbenchModelPreferencesReasoningEffort) Valid() bool {
 	case WorkbenchModelPreferencesReasoningEffortLow:
 		return true
 	case WorkbenchModelPreferencesReasoningEffortMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchRuntimeAssemblyStatus.
+const (
+	WorkbenchRuntimeAssemblyStatusConfirmed WorkbenchRuntimeAssemblyStatus = "confirmed"
+	WorkbenchRuntimeAssemblyStatusDegraded  WorkbenchRuntimeAssemblyStatus = "degraded"
+	WorkbenchRuntimeAssemblyStatusPreparing WorkbenchRuntimeAssemblyStatus = "preparing"
+	WorkbenchRuntimeAssemblyStatusRejected  WorkbenchRuntimeAssemblyStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchRuntimeAssemblyStatus enum.
+func (e WorkbenchRuntimeAssemblyStatus) Valid() bool {
+	switch e {
+	case WorkbenchRuntimeAssemblyStatusConfirmed:
+		return true
+	case WorkbenchRuntimeAssemblyStatusDegraded:
+		return true
+	case WorkbenchRuntimeAssemblyStatusPreparing:
+		return true
+	case WorkbenchRuntimeAssemblyStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchRuntimeAssetReferenceKind.
+const (
+	WorkbenchRuntimeAssetReferenceKindHook  WorkbenchRuntimeAssetReferenceKind = "hook"
+	WorkbenchRuntimeAssetReferenceKindMCP   WorkbenchRuntimeAssetReferenceKind = "mcp"
+	WorkbenchRuntimeAssetReferenceKindSkill WorkbenchRuntimeAssetReferenceKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchRuntimeAssetReferenceKind enum.
+func (e WorkbenchRuntimeAssetReferenceKind) Valid() bool {
+	switch e {
+	case WorkbenchRuntimeAssetReferenceKindHook:
+		return true
+	case WorkbenchRuntimeAssetReferenceKindMCP:
+		return true
+	case WorkbenchRuntimeAssetReferenceKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchRuntimeAssetStatusKind.
+const (
+	WorkbenchRuntimeAssetStatusKindHook  WorkbenchRuntimeAssetStatusKind = "hook"
+	WorkbenchRuntimeAssetStatusKindMCP   WorkbenchRuntimeAssetStatusKind = "mcp"
+	WorkbenchRuntimeAssetStatusKindSkill WorkbenchRuntimeAssetStatusKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchRuntimeAssetStatusKind enum.
+func (e WorkbenchRuntimeAssetStatusKind) Valid() bool {
+	switch e {
+	case WorkbenchRuntimeAssetStatusKindHook:
+		return true
+	case WorkbenchRuntimeAssetStatusKindMCP:
+		return true
+	case WorkbenchRuntimeAssetStatusKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchRuntimeAssetStatusStatus.
+const (
+	WorkbenchRuntimeAssetStatusStatusLoaded      WorkbenchRuntimeAssetStatusStatus = "loaded"
+	WorkbenchRuntimeAssetStatusStatusUnavailable WorkbenchRuntimeAssetStatusStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchRuntimeAssetStatusStatus enum.
+func (e WorkbenchRuntimeAssetStatusStatus) Valid() bool {
+	switch e {
+	case WorkbenchRuntimeAssetStatusStatusLoaded:
+		return true
+	case WorkbenchRuntimeAssetStatusStatusUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchRuntimeMCPProbeEnvelopeDataCapabilities.
+const (
+	WorkbenchRuntimeMCPProbeEnvelopeDataCapabilitiesResources WorkbenchRuntimeMCPProbeEnvelopeDataCapabilities = "resources"
+	WorkbenchRuntimeMCPProbeEnvelopeDataCapabilitiesTools     WorkbenchRuntimeMCPProbeEnvelopeDataCapabilities = "tools"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchRuntimeMCPProbeEnvelopeDataCapabilities enum.
+func (e WorkbenchRuntimeMCPProbeEnvelopeDataCapabilities) Valid() bool {
+	switch e {
+	case WorkbenchRuntimeMCPProbeEnvelopeDataCapabilitiesResources:
+		return true
+	case WorkbenchRuntimeMCPProbeEnvelopeDataCapabilitiesTools:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchRuntimeMCPProbeEnvelopeDataStatus.
+const (
+	WorkbenchMCPProbeCleanupUnknown WorkbenchRuntimeMCPProbeEnvelopeDataStatus = "cleanup_unknown"
+	WorkbenchMCPProbeReady          WorkbenchRuntimeMCPProbeEnvelopeDataStatus = "ready"
+	WorkbenchMCPProbeUnavailable    WorkbenchRuntimeMCPProbeEnvelopeDataStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchRuntimeMCPProbeEnvelopeDataStatus enum.
+func (e WorkbenchRuntimeMCPProbeEnvelopeDataStatus) Valid() bool {
+	switch e {
+	case WorkbenchMCPProbeCleanupUnknown:
+		return true
+	case WorkbenchMCPProbeReady:
+		return true
+	case WorkbenchMCPProbeUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchRuntimeScope.
+const (
+	WorkbenchRuntimeScopeChat WorkbenchRuntimeScope = "chat"
+	WorkbenchRuntimeScopeHeya WorkbenchRuntimeScope = "heya"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchRuntimeScope enum.
+func (e WorkbenchRuntimeScope) Valid() bool {
+	switch e {
+	case WorkbenchRuntimeScopeChat:
+		return true
+	case WorkbenchRuntimeScopeHeya:
 		return true
 	default:
 		return false
@@ -14954,16 +15209,16 @@ func (e ListComputeTasksParamsSortOrder) Valid() bool {
 
 // Defines values for SearchWorkbenchMessagesParamsWorkspace.
 const (
-	Chat SearchWorkbenchMessagesParamsWorkspace = "chat"
-	Heya SearchWorkbenchMessagesParamsWorkspace = "heya"
+	SearchWorkbenchMessagesParamsWorkspaceChat SearchWorkbenchMessagesParamsWorkspace = "chat"
+	SearchWorkbenchMessagesParamsWorkspaceHeya SearchWorkbenchMessagesParamsWorkspace = "heya"
 )
 
 // Valid indicates whether the value is a known member of the SearchWorkbenchMessagesParamsWorkspace enum.
 func (e SearchWorkbenchMessagesParamsWorkspace) Valid() bool {
 	switch e {
-	case Chat:
+	case SearchWorkbenchMessagesParamsWorkspaceChat:
 		return true
-	case Heya:
+	case SearchWorkbenchMessagesParamsWorkspaceHeya:
 		return true
 	default:
 		return false
@@ -15090,6 +15345,27 @@ func (e GetOriginalDockerProjectDeploymentParamsAction) Valid() bool {
 	case GetOriginalDockerProjectDeploymentParamsActionStart:
 		return true
 	case GetOriginalDockerProjectDeploymentParamsActionStop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetWorkbenchRuntimeAssetEnabledParamsKind.
+const (
+	SetWorkbenchRuntimeAssetEnabledParamsKindHook  SetWorkbenchRuntimeAssetEnabledParamsKind = "hook"
+	SetWorkbenchRuntimeAssetEnabledParamsKindMCP   SetWorkbenchRuntimeAssetEnabledParamsKind = "mcp"
+	SetWorkbenchRuntimeAssetEnabledParamsKindSkill SetWorkbenchRuntimeAssetEnabledParamsKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the SetWorkbenchRuntimeAssetEnabledParamsKind enum.
+func (e SetWorkbenchRuntimeAssetEnabledParamsKind) Valid() bool {
+	switch e {
+	case SetWorkbenchRuntimeAssetEnabledParamsKindHook:
+		return true
+	case SetWorkbenchRuntimeAssetEnabledParamsKindMCP:
+		return true
+	case SetWorkbenchRuntimeAssetEnabledParamsKindSkill:
 		return true
 	default:
 		return false
@@ -15335,11 +15611,26 @@ type AIMemoryPolicy struct {
 	ID                string `json:"id"`
 
 	// MaximumTTL Go time.Duration encoded as nanoseconds.
-	MaximumTTL        int64    `json:"maximumTtl"`
-	MinimumConfidence float32  `json:"minimumConfidence"`
-	OwnerTypes        []string `json:"ownerTypes"`
-	Version           string   `json:"version"`
+	MaximumTTL        int64   `json:"maximumTtl"`
+	MinimumConfidence float32 `json:"minimumConfidence"`
+
+	// Mode Server-bound mode scope; absent means legacy global policy, not a client-selected identity.
+	Mode AIMemoryPolicyMode `json:"mode,omitempty"`
+
+	// OwnerID Server-bound current owner; omitted on legacy global policies. Client values never grant access.
+	OwnerID    string   `json:"ownerId,omitempty"`
+	OwnerTypes []string `json:"ownerTypes"`
+
+	// ReadEnabled Memory recall consent; inherits enabled when absent.
+	ReadEnabled *bool  `json:"readEnabled,omitempty"`
+	Version     string `json:"version"`
+
+	// WriteEnabled Memory write consent; inherits enabled when absent.
+	WriteEnabled *bool `json:"writeEnabled,omitempty"`
 }
+
+// AIMemoryPolicyMode Server-bound mode scope; absent means legacy global policy, not a client-selected identity.
+type AIMemoryPolicyMode string
 
 // AIMemoryPolicyEnvelope defines model for AIMemoryPolicyEnvelope.
 type AIMemoryPolicyEnvelope struct {
@@ -15348,14 +15639,27 @@ type AIMemoryPolicyEnvelope struct {
 
 // AIMemoryPolicyInput defines model for AIMemoryPolicyInput.
 type AIMemoryPolicyInput struct {
+	// ConsentMode Automatic requires explicit user opt-in and mode=heya; the server rejects automatic for chat or legacy global scope.
 	ConsentMode AIMemoryPolicyInputConsentMode `json:"consentMode"`
 	ID          string                         `json:"id"`
-	Name        string                         `json:"name"`
-	TTLDays     int                            `json:"ttlDays"`
+
+	// Mode Requested mode scope, bound and authorized by the server. New policies default to private chat when absent; only an existing legacy global policy ID may preserve global scope under its original authorization.
+	Mode AIMemoryPolicyInputMode `json:"mode,omitempty"`
+	Name string                  `json:"name"`
+
+	// ReadEnabled Memory recall consent; inherits the stored enabled value when absent.
+	ReadEnabled *bool `json:"readEnabled,omitempty"`
+	TTLDays     int   `json:"ttlDays"`
+
+	// WriteEnabled Memory write consent; inherits the stored enabled value when absent.
+	WriteEnabled *bool `json:"writeEnabled,omitempty"`
 }
 
-// AIMemoryPolicyInputConsentMode defines model for AIMemoryPolicyInput.ConsentMode.
+// AIMemoryPolicyInputConsentMode Automatic requires explicit user opt-in and mode=heya; the server rejects automatic for chat or legacy global scope.
 type AIMemoryPolicyInputConsentMode string
+
+// AIMemoryPolicyInputMode Requested mode scope, bound and authorized by the server. New policies default to private chat when absent; only an existing legacy global policy ID may preserve global scope under its original authorization.
+type AIMemoryPolicyInputMode string
 
 // AIMemoryPolicyListEnvelope defines model for AIMemoryPolicyListEnvelope.
 type AIMemoryPolicyListEnvelope struct {
@@ -15374,17 +15678,32 @@ type AIMemoryRecord struct {
 	OwnerType     string     `json:"ownerType"`
 	PolicyID      string     `json:"policyId,omitempty"`
 	PolicyVersion string     `json:"policyVersion"`
-	ScopeHash     string     `json:"scopeHash"`
+
+	// QuarantineReason Safe server-owned reason code; excludes errors, addresses and fact contents. Client overrides are ignored.
+	QuarantineReason string `json:"quarantineReason,omitempty"`
+
+	// Quarantined Server-owned quarantine projection; absent or false means normal. Quarantined records retain their actual status and have syncStatus disabled. Client overrides are ignored.
+	Quarantined bool   `json:"quarantined,omitempty"`
+	ScopeHash   string `json:"scopeHash"`
+
+	// SourceHashes Server-generated source receipt URI to lowercase SHA256 of the authorized source content. Ignore client-supplied hashes; recompute from current authorized source bytes.
+	SourceHashes map[string]string `json:"sourceHashes,omitempty"`
 
 	// SourceRefs Source receipts. Workbench model context supports soha://session/<sessionId>/message/<messageId> and rechecks current ownership and source access. Unsupported historical references remain stored but are withheld from model context.
 	SourceRefs []string                 `json:"sourceRefs"`
 	SourceType AIMemoryRecordSourceType `json:"sourceType"`
 	Status     string                   `json:"status"`
+
+	// SyncStatus Server-owned synchronization state; omitted on legacy records. Delete success hides the fact immediately while backend deletion may remain pending.
+	SyncStatus AIMemoryRecordSyncStatus `json:"syncStatus,omitempty"`
 	ValidFrom  time.Time                `json:"validFrom"`
 }
 
 // AIMemoryRecordSourceType defines model for AIMemoryRecord.SourceType.
 type AIMemoryRecordSourceType string
+
+// AIMemoryRecordSyncStatus Server-owned synchronization state; omitted on legacy records. Delete success hides the fact immediately while backend deletion may remain pending.
+type AIMemoryRecordSyncStatus string
 
 // AIMemoryRecordEnvelope defines model for AIMemoryRecordEnvelope.
 type AIMemoryRecordEnvelope struct {
@@ -15787,9 +16106,11 @@ type AgentRun struct {
 	Output         map[string]any         `json:"output,omitempty"`
 
 	// ParentRunID Parent run for a single read-only specialist delegation; absent on root runs.
-	ParentRunID          string            `json:"parentRunId,omitempty"`
-	Phase                string            `json:"phase,omitempty"`
-	ProviderID           string            `json:"providerId"`
+	ParentRunID string `json:"parentRunId,omitempty"`
+	Phase       string `json:"phase,omitempty"`
+	ProviderID  string `json:"providerId"`
+
+	// ProviderKind Provider kind; dsh uses executionOwner=external and durable native-request recovery.
 	ProviderKind         string            `json:"providerKind"`
 	Scope                map[string]any    `json:"scope,omitempty"`
 	SecretLease          *SecretLeaseGrant `json:"secretLease,omitempty"`
@@ -35944,25 +36265,28 @@ type WorkbenchAgentRun struct {
 	Output           map[string]any                  `json:"output,omitempty"`
 
 	// ParentRunID Parent run for a single read-only specialist delegation; absent on root runs.
-	ParentRunID    string                       `json:"parentRunId,omitempty"`
-	Phase          string                       `json:"phase,omitempty"`
-	ProviderID     string                       `json:"providerId"`
-	ProviderKind   string                       `json:"providerKind"`
-	QueuedAt       time.Time                    `json:"queuedAt"`
-	RootCauseRunID string                       `json:"rootCauseRunId,omitempty"`
-	Scope          *WorkbenchSessionScope       `json:"scope,omitempty"`
-	SessionID      string                       `json:"sessionId,omitempty"`
-	SkillBindings  []WorkbenchAgentSkillBinding `json:"skillBindings,omitempty"`
-	SkillIDs       []string                     `json:"skillIds,omitempty"`
-	StartedAt      *time.Time                   `json:"startedAt,omitempty"`
-	Status         string                       `json:"status"`
-	StopReason     string                       `json:"stopReason,omitempty"`
-	TimeoutSeconds int                          `json:"timeoutSeconds"`
-	ToolBindings   []WorkbenchAgentToolBinding  `json:"toolBindings,omitempty"`
-	ToolExecutions []WorkbenchToolExecution     `json:"toolExecutions,omitempty"`
-	Toolset        *WorkbenchSessionToolset     `json:"toolset,omitempty"`
-	UpdatedAt      time.Time                    `json:"updatedAt"`
-	UsageKnown     bool                         `json:"usageKnown,omitempty"`
+	ParentRunID string `json:"parentRunId,omitempty"`
+	Phase       string `json:"phase,omitempty"`
+	ProviderID  string `json:"providerId"`
+
+	// ProviderKind Provider kind; dsh uses executionOwner=external and durable native-request recovery.
+	ProviderKind    string                       `json:"providerKind"`
+	QueuedAt        time.Time                    `json:"queuedAt"`
+	RootCauseRunID  string                       `json:"rootCauseRunId,omitempty"`
+	RuntimeAssembly *WorkbenchRuntimeAssembly    `json:"runtimeAssembly,omitempty"`
+	Scope           *WorkbenchSessionScope       `json:"scope,omitempty"`
+	SessionID       string                       `json:"sessionId,omitempty"`
+	SkillBindings   []WorkbenchAgentSkillBinding `json:"skillBindings,omitempty"`
+	SkillIDs        []string                     `json:"skillIds,omitempty"`
+	StartedAt       *time.Time                   `json:"startedAt,omitempty"`
+	Status          string                       `json:"status"`
+	StopReason      string                       `json:"stopReason,omitempty"`
+	TimeoutSeconds  int                          `json:"timeoutSeconds"`
+	ToolBindings    []WorkbenchAgentToolBinding  `json:"toolBindings,omitempty"`
+	ToolExecutions  []WorkbenchToolExecution     `json:"toolExecutions,omitempty"`
+	Toolset         *WorkbenchSessionToolset     `json:"toolset,omitempty"`
+	UpdatedAt       time.Time                    `json:"updatedAt"`
+	UsageKnown      bool                         `json:"usageKnown,omitempty"`
 }
 
 // WorkbenchAgentRunExecutionOwner defines model for WorkbenchAgentRun.ExecutionOwner.
@@ -36556,6 +36880,32 @@ type WorkbenchMainSessionRequest struct {
 	AgentProviderID string `json:"agentProviderId,omitempty"`
 }
 
+// WorkbenchManagedRuntimeAsset defines model for WorkbenchManagedRuntimeAsset.
+type WorkbenchManagedRuntimeAsset struct {
+	Enabled           bool                                  `json:"enabled"`
+	ExecutionPosition string                                `json:"executionPosition,omitempty"`
+	ID                WorkbenchRuntimeProfileID             `json:"id"`
+	Kind              WorkbenchManagedRuntimeAssetKind      `json:"kind"`
+	Transport         WorkbenchManagedRuntimeAssetTransport `json:"transport,omitempty"`
+	Version           string                                `json:"version"`
+}
+
+// WorkbenchManagedRuntimeAssetKind defines model for WorkbenchManagedRuntimeAsset.Kind.
+type WorkbenchManagedRuntimeAssetKind string
+
+// WorkbenchManagedRuntimeAssetTransport defines model for WorkbenchManagedRuntimeAsset.Transport.
+type WorkbenchManagedRuntimeAssetTransport string
+
+// WorkbenchManagedRuntimeAssetEnvelope defines model for WorkbenchManagedRuntimeAssetEnvelope.
+type WorkbenchManagedRuntimeAssetEnvelope struct {
+	Data WorkbenchManagedRuntimeAsset `json:"data"`
+}
+
+// WorkbenchManagedRuntimeAssetListEnvelope defines model for WorkbenchManagedRuntimeAssetListEnvelope.
+type WorkbenchManagedRuntimeAssetListEnvelope struct {
+	Items []WorkbenchManagedRuntimeAsset `json:"items"`
+}
+
 // WorkbenchMessage defines model for WorkbenchMessage.
 type WorkbenchMessage struct {
 	Content   string    `json:"content"`
@@ -36776,6 +37126,113 @@ type WorkbenchRunRef struct {
 	Status    string     `json:"status,omitempty"`
 }
 
+// WorkbenchRuntimeAssembly defines model for WorkbenchRuntimeAssembly.
+type WorkbenchRuntimeAssembly struct {
+	Assets    []WorkbenchRuntimeAssetStatus  `json:"assets"`
+	ProfileID WorkbenchRuntimeProfileID      `json:"profileId"`
+	Revision  int64                          `json:"revision"`
+	Status    WorkbenchRuntimeAssemblyStatus `json:"status"`
+}
+
+// WorkbenchRuntimeAssemblyStatus defines model for WorkbenchRuntimeAssembly.Status.
+type WorkbenchRuntimeAssemblyStatus string
+
+// WorkbenchRuntimeAssetEnablement defines model for WorkbenchRuntimeAssetEnablement.
+type WorkbenchRuntimeAssetEnablement struct {
+	Enabled bool `json:"enabled"`
+}
+
+// WorkbenchRuntimeAssetReference defines model for WorkbenchRuntimeAssetReference.
+type WorkbenchRuntimeAssetReference struct {
+	ID       WorkbenchRuntimeProfileID          `json:"id"`
+	Kind     WorkbenchRuntimeAssetReferenceKind `json:"kind"`
+	Required bool                               `json:"required"`
+	Version  string                             `json:"version"`
+}
+
+// WorkbenchRuntimeAssetReferenceKind defines model for WorkbenchRuntimeAssetReference.Kind.
+type WorkbenchRuntimeAssetReferenceKind string
+
+// WorkbenchRuntimeAssetStatus defines model for WorkbenchRuntimeAssetStatus.
+type WorkbenchRuntimeAssetStatus struct {
+	Capabilities []string                          `json:"capabilities,omitempty"`
+	Code         string                            `json:"code,omitempty"`
+	ID           WorkbenchRuntimeProfileID         `json:"id"`
+	Kind         WorkbenchRuntimeAssetStatusKind   `json:"kind"`
+	Status       WorkbenchRuntimeAssetStatusStatus `json:"status"`
+	Version      string                            `json:"version"`
+}
+
+// WorkbenchRuntimeAssetStatusKind defines model for WorkbenchRuntimeAssetStatus.Kind.
+type WorkbenchRuntimeAssetStatusKind string
+
+// WorkbenchRuntimeAssetStatusStatus defines model for WorkbenchRuntimeAssetStatus.Status.
+type WorkbenchRuntimeAssetStatusStatus string
+
+// WorkbenchRuntimeMCPProbeEnvelope defines model for WorkbenchRuntimeMCPProbeEnvelope.
+type WorkbenchRuntimeMCPProbeEnvelope struct {
+	Data struct {
+		Capabilities []WorkbenchRuntimeMCPProbeEnvelopeDataCapabilities `json:"capabilities"`
+		Status       WorkbenchRuntimeMCPProbeEnvelopeDataStatus         `json:"status"`
+	} `json:"data"`
+}
+
+// WorkbenchRuntimeMCPProbeEnvelopeDataCapabilities defines model for WorkbenchRuntimeMCPProbeEnvelope.Data.Capabilities.
+type WorkbenchRuntimeMCPProbeEnvelopeDataCapabilities string
+
+// WorkbenchRuntimeMCPProbeEnvelopeDataStatus defines model for WorkbenchRuntimeMCPProbeEnvelope.Data.Status.
+type WorkbenchRuntimeMCPProbeEnvelopeDataStatus string
+
+// WorkbenchRuntimeMCPProbeRequest defines model for WorkbenchRuntimeMCPProbeRequest.
+type WorkbenchRuntimeMCPProbeRequest struct {
+	Scope WorkbenchRuntimeScope `json:"scope"`
+}
+
+// WorkbenchRuntimeProfile defines model for WorkbenchRuntimeProfile.
+type WorkbenchRuntimeProfile struct {
+	Assets           []WorkbenchRuntimeAssetReference `json:"assets"`
+	Enabled          bool                             `json:"enabled"`
+	ID               WorkbenchRuntimeProfileID        `json:"id"`
+	MaxOutputTokens  int                              `json:"maxOutputTokens,omitempty"`
+	ModelPreferences *WorkbenchModelPreferences       `json:"modelPreferences,omitempty"`
+	Name             string                           `json:"name"`
+	Revision         int64                            `json:"revision"`
+	Scope            WorkbenchRuntimeScope            `json:"scope"`
+}
+
+// WorkbenchRuntimeProfileEnvelope defines model for WorkbenchRuntimeProfileEnvelope.
+type WorkbenchRuntimeProfileEnvelope struct {
+	Data WorkbenchRuntimeProfile `json:"data"`
+}
+
+// WorkbenchRuntimeProfileID defines model for WorkbenchRuntimeProfileID.
+type WorkbenchRuntimeProfileID = string
+
+// WorkbenchRuntimeProfileListEnvelope defines model for WorkbenchRuntimeProfileListEnvelope.
+type WorkbenchRuntimeProfileListEnvelope struct {
+	Items []WorkbenchRuntimeProfile `json:"items"`
+}
+
+// WorkbenchRuntimeProfileSelection defines model for WorkbenchRuntimeProfileSelection.
+type WorkbenchRuntimeProfileSelection struct {
+	// ProfileID Empty selects the scope default. Chat and Heya selections are validated independently.
+	ProfileID string `json:"profileId"`
+}
+
+// WorkbenchRuntimeProfileUpdate defines model for WorkbenchRuntimeProfileUpdate.
+type WorkbenchRuntimeProfileUpdate struct {
+	Assets           []WorkbenchRuntimeAssetReference `json:"assets"`
+	Enabled          bool                             `json:"enabled"`
+	ExpectedRevision int64                            `json:"expectedRevision"`
+	MaxOutputTokens  int                              `json:"maxOutputTokens,omitempty"`
+	ModelPreferences *WorkbenchModelPreferences       `json:"modelPreferences,omitempty"`
+	Name             string                           `json:"name"`
+	Scope            WorkbenchRuntimeScope            `json:"scope"`
+}
+
+// WorkbenchRuntimeScope defines model for WorkbenchRuntimeScope.
+type WorkbenchRuntimeScope string
+
 // WorkbenchSelectionContext defines model for WorkbenchSelectionContext.
 type WorkbenchSelectionContext struct {
 	Kind               WorkbenchSelectionContextKind `json:"kind"`
@@ -36793,6 +37250,7 @@ type WorkbenchSendMessageRequest struct {
 
 // WorkbenchSendMessageStreamRequest defines model for WorkbenchSendMessageStreamRequest.
 type WorkbenchSendMessageStreamRequest struct {
+	// AgentProviderID The canonical default provider ID is dsh; internal and native remain accepted aliases.
 	AgentProviderID string `json:"agentProviderId,omitempty"`
 
 	// AssistantTask An explicit, owner-scoped assistant appearance task executed through chat. Images are bounded inline avatar assets, never arbitrary remote URLs. The instruction remains in content. No account identity or resource permissions change. Undo references a successful profile reply in the same owned session and rejects stale replacements.
@@ -36813,7 +37271,7 @@ type WorkbenchSendMessageStreamRequest struct {
 	// PinnedContext May contain branchReference with kind session, sessionId and fixed messageIds; source ownership and availability are rechecked on every use.
 	PinnedContext map[string]any `json:"pinnedContext,omitempty"`
 
-	// RequestID Stable client turn identifier of at most 128 Unicode code points. Native turns deduplicate by user, session and key and reject changed input; assistant appearance tasks have separate reuse checks. Synchronous and external provider paths do not guarantee deduplication. Preserve the original key after an uncertain response; a missing Native lookup is not proof that submission cannot commit later.
+	// RequestID Stable client turn identifier of at most 128 Unicode code points. Native and dsh turns deduplicate by user, session and key and reject changed input; dsh reports providerKind=dsh and executionOwner=external. Assistant appearance tasks have separate reuse checks. Other synchronous and external provider paths do not guarantee deduplication. Preserve the original key after an uncertain response; a missing native-request lookup is not proof that submission cannot commit later.
 	RequestID        string                     `json:"requestId,omitempty"`
 	ScopeOverrides   AnyValue                   `json:"scopeOverrides,omitempty"`
 	SelectionContext *WorkbenchSelectionContext `json:"selectionContext,omitempty"`
@@ -36874,13 +37332,14 @@ type WorkbenchSessionMetadata struct {
 	ModelPreferences *WorkbenchModelPreferences               `json:"modelPreferences,omitempty"`
 
 	// PinnedContext May contain branchReference with kind session, sessionId and fixed messageIds; source ownership and availability are rechecked on every use.
-	PinnedContext map[string]any           `json:"pinnedContext,omitempty"`
-	Scope         *WorkbenchSessionScope   `json:"scope,omitempty"`
-	Source        string                   `json:"source,omitempty"`
-	Status        string                   `json:"status,omitempty"`
-	Summary       string                   `json:"summary,omitempty"`
-	Tags          []string                 `json:"tags,omitempty"`
-	Toolset       *WorkbenchSessionToolset `json:"toolset,omitempty"`
+	PinnedContext    map[string]any            `json:"pinnedContext,omitempty"`
+	RuntimeProfileID WorkbenchRuntimeProfileID `json:"runtimeProfileId,omitempty"`
+	Scope            *WorkbenchSessionScope    `json:"scope,omitempty"`
+	Source           string                    `json:"source,omitempty"`
+	Status           string                    `json:"status,omitempty"`
+	Summary          string                    `json:"summary,omitempty"`
+	Tags             []string                  `json:"tags,omitempty"`
+	Toolset          *WorkbenchSessionToolset  `json:"toolset,omitempty"`
 }
 
 // WorkbenchSessionMetadataConversationKind Server-owned chat role. Older sessions without a role remain side chats. Main chats cannot be archived or deleted through the ordinary session operations.
@@ -38336,6 +38795,9 @@ type ListKnowledgeConnectorsParams struct {
 type ListAIMemoryRecordsParams struct {
 	OwnerType string `form:"ownerType,omitempty" json:"ownerType,omitempty"`
 	OwnerID   string `form:"ownerId,omitempty" json:"ownerId,omitempty"`
+
+	// IncludeDeleted Include only the current user's own tombstones; false by default.
+	IncludeDeleted bool `form:"includeDeleted,omitempty" json:"includeDeleted,omitempty"`
 }
 
 // ListAlertEventRecordsParams defines parameters for ListAlertEventRecords.
@@ -40263,6 +40725,9 @@ type ListSecretsParams struct {
 	ScopeID   string          `form:"scopeId,omitempty" json:"scopeId,omitempty"`
 }
 
+// SetWorkbenchRuntimeAssetEnabledParamsKind defines parameters for SetWorkbenchRuntimeAssetEnabled.
+type SetWorkbenchRuntimeAssetEnabledParamsKind string
+
 // ListSoftwarePackagesParams defines parameters for ListSoftwarePackages.
 type ListSoftwarePackagesParams struct {
 	Platform             string `form:"platform,omitempty" json:"platform,omitempty"`
@@ -41087,6 +41552,9 @@ type SendWorkbenchSessionMessageJSONRequestBody = WorkbenchSendMessageRequest
 // StreamWorkbenchSessionMessageJSONRequestBody defines body for StreamWorkbenchSessionMessage for application/json ContentType.
 type StreamWorkbenchSessionMessageJSONRequestBody = WorkbenchSendMessageStreamRequest
 
+// SelectWorkbenchRuntimeProfileJSONRequestBody defines body for SelectWorkbenchRuntimeProfile for application/json ContentType.
+type SelectWorkbenchRuntimeProfileJSONRequestBody = WorkbenchRuntimeProfileSelection
+
 // CreateDeliveryBatchJSONRequestBody defines body for CreateDeliveryBatch for application/json ContentType.
 type CreateDeliveryBatchJSONRequestBody = DeliveryBatchInput
 
@@ -41662,6 +42130,15 @@ type UpdateAISkillsRegistryJSONRequestBody = UpdateAISkillsRequest
 
 // UpdateAIWorkbenchModelSettingsJSONRequestBody defines body for UpdateAIWorkbenchModelSettings for application/json ContentType.
 type UpdateAIWorkbenchModelSettingsJSONRequestBody = UpdateAIWorkbenchModelRequest
+
+// ProbeWorkbenchRuntimeMCPJSONRequestBody defines body for ProbeWorkbenchRuntimeMCP for application/json ContentType.
+type ProbeWorkbenchRuntimeMCPJSONRequestBody = WorkbenchRuntimeMCPProbeRequest
+
+// SetWorkbenchRuntimeAssetEnabledJSONRequestBody defines body for SetWorkbenchRuntimeAssetEnabled for application/json ContentType.
+type SetWorkbenchRuntimeAssetEnabledJSONRequestBody = WorkbenchRuntimeAssetEnablement
+
+// PublishWorkbenchRuntimeProfileJSONRequestBody defines body for PublishWorkbenchRuntimeProfile for application/json ContentType.
+type PublishWorkbenchRuntimeProfileJSONRequestBody = WorkbenchRuntimeProfileUpdate
 
 // UpdateBrandingSettingsJSONRequestBody defines body for UpdateBrandingSettings for application/json ContentType.
 type UpdateBrandingSettingsJSONRequestBody = UpdateBrandingSettingsRequest
@@ -50121,13 +50598,13 @@ const Confirming DeliveryPlanStatus = "confirming"
 const Confirmed DeliveryPlanStatus = "confirmed"
 
 // Retained for Go SDK source compatibility.
-const RuntimeNetworkUsageScopeNetworkNamespace RuntimeNetworkUsageScope = "network_namespace"
+const NetworkNamespace RuntimeNetworkUsageScope = "network_namespace"
 
 // Retained for Go SDK source compatibility.
-const RuntimeNetworkUsageScopeProcess RuntimeNetworkUsageScope = "process"
+const Process RuntimeNetworkUsageScope = "process"
 
 // Retained for Go SDK source compatibility.
-const RuntimeNetworkUsageScopeUnavailable RuntimeNetworkUsageScope = "unavailable"
+const Unavailable RuntimeNetworkUsageScope = "unavailable"
 
 // Retained for Go SDK source compatibility.
 const Accepted WorkflowRequestReceiptSubmissionStatus = "accepted"

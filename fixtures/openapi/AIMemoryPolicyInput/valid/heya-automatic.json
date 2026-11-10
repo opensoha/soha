@@ -1,0 +1,9 @@
+{
+  "id": "user-memory",
+  "name": "My memory",
+  "consentMode": "automatic",
+  "ttlDays": 30,
+  "mode": "heya",
+  "readEnabled": true,
+  "writeEnabled": false
+}

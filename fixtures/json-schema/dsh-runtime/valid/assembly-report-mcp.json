@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "opensoha.dev/dsh-runtime/v1",
+  "runId": "run-123",
+  "attempt": 1,
+  "fence": 7,
+  "kind": "assembly_report",
+  "profileId": "chat-default",
+  "revision": 1,
+  "assets": [
+    {
+      "kind": "mcp",
+      "id": "diagnostics",
+      "version": "1",
+      "status": "loaded",
+      "capabilities": [
+        "mcp_diagnostics_probe"
+      ]
+    }
+  ],
+  "nativeTools": [
+    {
+      "kind": "mcp",
+      "assetId": "diagnostics",
+      "version": "1",
+      "name": "mcp_diagnostics_probe",
+      "description": "Read diagnostics",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

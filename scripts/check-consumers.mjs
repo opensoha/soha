@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,22 +21,7 @@ const consumers = [
     name: "soha-web",
     path: "soha-web",
     kind: "npm",
-    commands: [
-      ["npm", ["ci"]],
-      [
-        "npm",
-        [
-          "install",
-          "--no-save",
-          "--ignore-scripts",
-          "--no-audit",
-          "--no-fund",
-          "--prefer-offline",
-          contractsTarballPlaceholder,
-        ],
-      ],
-      ["npm", ["run", "build"]],
-    ],
+    commands: npmCommands(),
   },
   {
     name: "soha-cli",
@@ -47,11 +33,7 @@ const consumers = [
     name: "soha-app",
     path: "soha-app/frontend",
     kind: "npm",
-    commands: [
-      ["npm", ["ci"]],
-      ["npm", ["install", "--no-save", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", contractsTarballPlaceholder]],
-      ["npm", ["run", "build"]],
-    ],
+    commands: npmCommands(),
   },
   {
     name: "soha-agent",
@@ -88,72 +70,80 @@ if (unknown.length > 0) {
 
 let checked = 0;
 let skipped = 0;
+let failed = 0;
+const contractsRevision = revision(contractsRoot);
 const results = [];
 for (const target of targets) {
-  const consumer = declaredSDK ? { ...target, commands: target.commands.filter(([, values]) => !values.includes(contractsTarballPlaceholder)) } : target;
-  const dir = resolve(consumerRoot, consumer.path);
-  if (!existsSync(dir)) {
-    const message = `consumer ${consumer.name} not found at ${dir}`;
-    if (requireAll || selected.includes(consumer.name)) {
-      throw new Error(message);
-    }
-    console.warn(`warning: ${message}; skipping`);
-    results.push({
-      consumer: consumer.name,
-      commands: consumer.commands,
-      path: dir,
-      reason: "missing checkout",
-      status: "skipped",
-    });
-    skipped += 1;
-    continue;
-  }
-
-  if (dryRun) {
-    console.log(`[dry-run] ${consumer.name}: ${dir}`);
-    for (const [command, commandArgs] of consumer.commands) {
-      console.log(`[dry-run]   ${command} ${commandArgs.join(" ")}`);
-    }
-    results.push({
-      consumer: consumer.name,
-      commands: consumer.commands,
-      path: dir,
-      status: "dry-run",
-    });
-    checked += 1;
-    continue;
-  }
-
-  console.log(`checking consumer ${consumer.name} in ${dir}`);
-  const env = consumer.kind === "go" ? (declaredSDK ? { ...process.env, GOWORK: "off", GOFLAGS: "-mod=readonly" } : await goWorkspaceEnv(dir)) : process.env;
-  if (declaredSDK && consumer.kind === "go") verifyDeclaredGoSDK(dir, env);
-  const packageDir = consumer.kind === "npm" && !declaredSDK ? await packContracts() : undefined;
+  let env = process.env;
+  let packageDir;
+  let manifests;
+  let entry;
   try {
+    const consumer = declaredSDK ? { ...target, commands: target.commands.filter(([, values]) => !values.includes(contractsTarballPlaceholder)) } : target;
+    const dir = resolve(consumerRoot, consumer.path);
+    if (!existsSync(dir)) {
+      const message = `consumer ${consumer.name} not found at ${dir}`;
+      if (requireAll || selected.includes(consumer.name)) {
+        throw new Error(message);
+      }
+      console.warn(`warning: ${message}; skipping`);
+      results.push({
+        consumer: consumer.name,
+        commands: consumer.commands,
+        path: dir,
+        reason: "missing checkout",
+        status: "skipped",
+      });
+      skipped += 1;
+      continue;
+    }
+
+    entry = { consumer: consumer.name, path: dir, commands: consumer.commands, revision: revision(dir) };
+    if (dryRun) {
+      console.log(`[dry-run] ${consumer.name}: ${dir}`);
+      for (const [command, commandArgs] of consumer.commands) {
+        console.log(`[dry-run]   ${command} ${commandArgs.join(" ")}`);
+      }
+      results.push({
+        ...entry,
+        status: "dry-run",
+      });
+      checked += 1;
+      continue;
+    }
+
+    console.log(`checking consumer ${consumer.name} in ${dir}`);
+    env = consumer.kind === "go" ? (declaredSDK ? { ...process.env, GOWORK: "off", GOFLAGS: "-mod=readonly" } : await goWorkspaceEnv(dir)) : process.env;
+    if (declaredSDK && consumer.kind === "go") verifyDeclaredGoSDK(dir, env);
+    packageDir = consumer.kind === "npm" && !declaredSDK ? await packContracts() : undefined;
+    if (packageDir) manifests = ["package.json", "package-lock.json"].map((name) => ({ path: join(dir, name), contents: readFileSync(join(dir, name)) }));
     for (const [command, commandArgs] of consumer.commands) {
       const resolvedArgs = commandArgs.map((arg) =>
         arg === contractsTarballPlaceholder ? contractsTarball(packageDir) : arg,
       );
       run(command, resolvedArgs, dir, env);
     }
+    results.push({
+      ...entry,
+      status: "passed",
+    });
+    checked += 1;
+  } catch (error) {
+    console.error(error.message);
+    results.push({ ...entry, consumer: target.name, status: "failed", reason: error.message });
+    failed += 1;
   } finally {
-    if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1" && !declaredSDK && env !== process.env && env.GOWORK) {
-      await rm(dirname(env.GOWORK), { recursive: true, force: true });
-    }
-    if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1" && packageDir) {
-      await rm(packageDir, { recursive: true, force: true });
+    if (manifests) for (const file of manifests) writeFileSync(file.path, file.contents);
+    if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1") {
+      if (env !== process.env && env.GOWORK && env.GOWORK !== "off") await rm(dirname(env.GOWORK), { recursive: true, force: true });
+      if (packageDir) await rm(packageDir, { recursive: true, force: true });
     }
   }
-  results.push({
-    consumer: consumer.name,
-    commands: consumer.commands,
-    path: dir,
-    status: "passed",
-  });
-  checked += 1;
 }
 
 if (requireAll && checked !== targets.length) {
-  throw new Error(`consumer matrix checked ${checked}/${targets.length} required consumer(s)`);
+  console.error(`consumer matrix checked ${checked}/${targets.length} required consumer(s)`);
+  process.exitCode = 1;
 }
 
 console.log(`consumer matrix complete: checked ${checked}, skipped ${skipped}, root ${consumerRoot}`);
@@ -168,18 +158,47 @@ if (outputPath) {
         schemaVersion: 1,
         dependencyMode: declaredSDK ? "declared" : "candidate-source",
         contractsVersion: packageVersion(),
+        contractsRevision,
         contractsRoot,
         consumerRoot,
         requireAll,
         dryRun,
         checked,
         skipped,
+        failed,
         results,
       },
       null,
       2,
     )}\n`,
   );
+}
+
+if (failed) process.exitCode = 1;
+
+function npmCommands() {
+  return [
+    ["npm", ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund", contractsTarballPlaceholder]],
+    ["npm", ["ci"]],
+    ["npm", ["run", "build"]],
+  ];
+}
+
+// Include uncommitted source: a HEAD alone does not identify a candidate worktree.
+function revision(dir) {
+  const head = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" });
+  if (head.status !== 0) return null;
+  const root = spawnSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).stdout.trim();
+  const git = (args) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+  const tracked = git(["diff", "HEAD", "--name-only", "-z"]);
+  const untracked = git(["ls-files", "--others", "--exclude-standard", "-z"]);
+  if (tracked.status !== 0 || untracked.status !== 0) throw new Error(`cannot identify candidate source at ${dir}`);
+  const paths = tracked.stdout + untracked.stdout;
+  const files = [...new Set(paths.split("\0").filter(Boolean))].sort().map((path) => {
+    const file = join(root, path);
+    return { path, sha256: existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : null };
+  });
+  return { head: head.stdout.trim(), files, sourceHash: createHash("sha256").update(JSON.stringify({ head: head.stdout.trim(), files })).digest("hex") };
 }
 
 function selectedConsumers(argv) {
@@ -227,21 +246,18 @@ function contractsTarball(packageDir) {
 }
 
 async function goWorkspaceEnv(consumerDir) {
-	consumerDir = realpathSync(consumerDir);
+  consumerDir = realpathSync(consumerDir);
   const workDir = await mkdtemp(join(tmpdir(), "opensoha-consumer-work-"));
   const goWork = join(workDir, "go.work");
-  run("go", ["work", "init", consumerDir], workDir, process.env);
-  const env = {
-    ...process.env,
-    GOWORK: goWork,
-  };
-  run(
-    "go",
-    ["work", "edit", `-replace=github.com/opensoha/soha-contracts=${contractsRoot}`],
-    workDir,
-    env,
-  );
-  return env;
+  const env = { ...process.env, GOWORK: goWork };
+  try {
+    run("go", ["work", "init", consumerDir], workDir, { ...process.env, GOWORK: "off" });
+    run("go", ["work", "edit", `-replace=github.com/opensoha/soha-contracts=${contractsRoot}`], workDir, env);
+    return env;
+  } catch (error) {
+    if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1") await rm(workDir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function run(command, args, cwd, env) {
@@ -261,11 +277,11 @@ function run(command, args, cwd, env) {
 
 function verifyDeclaredGoSDK(dir, env) {
   const result = spawnSync("go", ["list", "-m", "-json", "github.com/opensoha/soha-contracts"], { cwd: dir, env, encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`cannot resolve declared contracts module for ${basename(dir)}`);
+  if (result.status !== 0) throw new Error(`cannot resolve declared contracts module for ${basename(dir)}: ${result.stderr ?? result.error?.message ?? ""}`);
   const module = JSON.parse(result.stdout);
   if (module.Replace || !module.Version) throw new Error(`declared contracts module must have a version and checksum without replacement: ${basename(dir)}`);
   const downloaded = spawnSync("go", ["mod", "download", "-json", "github.com/opensoha/soha-contracts"], { cwd: dir, env, encoding: "utf8" });
-  if (downloaded.status !== 0) throw new Error(`cannot download declared contracts module for ${basename(dir)}`);
+  if (downloaded.status !== 0) throw new Error(`cannot download declared contracts module for ${basename(dir)}: ${downloaded.stderr ?? downloaded.error?.message ?? ""}`);
   const resolved = JSON.parse(downloaded.stdout);
   if (!resolved.Sum || resolved.Version !== module.Version || (module.Sum && resolved.Sum !== module.Sum)) throw new Error("declared SDK checksum/version mismatch");
   console.log(`declared SDK: ${resolved.Version} ${resolved.Sum}; GOWORK=off, readonly modules`);

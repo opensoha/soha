@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "opensoha.dev/dsh-runtime/v1",
+  "runId": "run-123",
+  "attempt": 1,
+  "fence": 7,
+  "kind": "tool_result",
+  "callId": "call-123",
+  "inputHash": "a2e21f6d15b9e4af49deed48036d99ec5305e5b6771a9a045a8ab5c7c2a8f22e",
+  "status": "denied",
+  "output": {
+    "summary": "Resolved"
+  },
+  "receiptId": "tool-receipt-123",
+  "errorCode": "permission_denied"
+}
