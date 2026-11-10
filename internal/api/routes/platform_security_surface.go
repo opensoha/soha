@@ -556,6 +556,8 @@ func copilotSessionMutationSecuritySurface(method, path string) (nonPlatformMuta
 		return nonPlatformMutationEntry("CopilotSession", "analyze", appaccess.PermObserveAIChatUse, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions") && strings.Contains(path, "/messages"):
 		return nonPlatformMutationEntry("CopilotMessage", "create", appaccess.PermObserveAIChatUse, false), true
+	case method == "PUT" && path == "/api/v1/copilot/sessions/:sessionID/runtime-profile":
+		return nonPlatformMutationEntry("WorkbenchRuntimeProfile", "select", appaccess.PermObserveAIChatUse, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions"):
 		return nonPlatformMutationEntry("CopilotSession", nonPlatformMutationAction(method, path), appaccess.PermObserveAIChatUse, false), true
 	}
@@ -723,6 +725,12 @@ func settingsMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		return nonPlatformMutationEntry("IdentitySettings", "update", appaccess.PermSettingsIdentityManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/ai/skills"):
 		return nonPlatformMutationEntry("AISkillSettings", nonPlatformMutationAction(method, path), appaccess.PermAIGatewaySkillsManage, false), true
+	case method == "PUT" && path == "/api/v1/settings/ai/workbench-runtime-profiles/:profileId":
+		return nonPlatformMutationEntry("WorkbenchRuntimeProfile", "publish", appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update"), false), true
+	case method == "PUT" && path == "/api/v1/settings/ai/workbench-runtime-assets/:kind/:assetId/:version":
+		return nonPlatformMutationEntry("WorkbenchRuntimeAsset", "update", appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update"), false), true
+	case method == "POST" && path == "/api/v1/settings/ai/workbench-runtime-assets/mcp/:assetId/:version/probe":
+		return nonPlatformMutationEntry("WorkbenchRuntimeAsset", "probe", appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update"), false), true
 	case strings.HasPrefix(path, "/api/v1/settings/ai"):
 		return nonPlatformMutationEntry("AISettings", nonPlatformMutationAction(method, path), appaccess.PermSettingsAIManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/branding"):
