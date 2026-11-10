@@ -25,7 +25,8 @@
     "release:artifacts": "node scripts/prepare-release-artifacts.mjs",
     "release:verify": "node scripts/prepare-release-artifacts.mjs --verify",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test scripts/check-consumer-dependency-mode.checks.mjs && npm run check:version-sync && npm run check:generated && npm run validate && npm run lint:openapi && npm run check:openapi-breaking && npm run check:openapi-loose-boundaries && npm run check:json-schema-compat && npm run typecheck && go test ./..."
+    "test": "node --test scripts/check-consumer-dependency-mode.checks.mjs && npm run check:version-sync && npm run check:generated && npm run validate && npm run lint:openapi && npm run check:openapi-breaking && npm run check:openapi-loose-boundaries && npm run check:json-schema-compat && npm run typecheck && go test ./...",
+    "validate:dsh-runtime": "node scripts/validate-dsh-runtime.mjs"
   },
   "exports": {
     "./delivery/document.schema.json": "./delivery/document.schema.json",
@@ -110,7 +111,8 @@
     "./runner/docker-container-identity.schema.json": "./runner/docker-container-identity.schema.json",
     "./runner/docker-runtime-read.schema.json": "./runner/docker-runtime-read.schema.json",
     "./runner/docker-runtime-read-result.schema.json": "./runner/docker-runtime-read-result.schema.json",
-    "./endpointcontrol/protocol.schema.json": "./endpointcontrol/protocol.schema.json"
+    "./endpointcontrol/protocol.schema.json": "./endpointcontrol/protocol.schema.json",
+    "./agent/dsh-runtime.schema.json": "./agent/dsh-runtime.schema.json"
   },
   "files": [
     "delivery",

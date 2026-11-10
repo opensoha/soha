@@ -721,6 +721,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/ai/workbench-runtime-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listWorkbenchRuntimeAssets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ai/workbench-runtime-assets/{kind}/{assetId}/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setWorkbenchRuntimeAssetEnabled"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ai/workbench-runtime-assets/mcp/{assetId}/{version}/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["probeWorkbenchRuntimeMCP"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ai/workbench-runtime-profiles/{profileId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileId: components["schemas"]["WorkbenchRuntimeProfileID"];
+            };
+            cookie?: never;
+        };
+        get: operations["listWorkbenchRuntimeProfileRevisions"];
+        put: operations["publishWorkbenchRuntimeProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/ai/skills": {
         parameters: {
             query?: never;
@@ -4370,7 +4436,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read the original Native run by the current user's session and client request ID after a lost creation response. This never creates or resumes a run. A 404 is only absence at the time of the read and does not prove that an in-flight submission cannot commit later. */
+        /**
+         * @deprecated
+         * @description Read the original Native or dsh run by the current user's session and client request ID after a lost creation response. This never creates or resumes a run. A 404 is only absence at the time of the read and does not prove that an in-flight submission cannot commit later.
+         */
         get: operations["findNativeRequest"];
         put?: never;
         post?: never;
@@ -4387,7 +4456,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read durable Native events owned by the current user. Reconnection only reads; it never resubmits a run or action. */
+        /** @description Read durable Native or dsh events owned by the current user. Reconnection only reads; it never resubmits a run or action. */
         get: operations["listAgentRunEvents"];
         put?: never;
         post?: never;
@@ -4406,7 +4475,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Resume the same paused Native run after current authorization and waiting-object checks. Unknown write outcomes cannot be replayed by this operation. */
+        /** @description Resume the same paused Native or dsh run after current authorization and waiting-object checks. Unknown write outcomes cannot be replayed by this operation. */
         post: operations["resumeAgentRun"];
         delete?: never;
         options?: never;
@@ -4471,6 +4540,38 @@ export interface paths {
         };
         get: operations["getWorkbenchCatalog"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/workbench/runtime-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listWorkbenchRuntimeProfiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/copilot/sessions/{sessionID}/runtime-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["selectWorkbenchRuntimeProfile"];
         post?: never;
         delete?: never;
         options?: never;
@@ -10476,6 +10577,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description List currently authorized active records. includeDeleted=true additionally includes only the current user's own tombstones for synchronization feedback; it never widens owner or source access. */
         get: operations["listAIMemoryRecords"];
         put?: never;
         post: operations["putAIMemoryRecord"];
@@ -17631,13 +17733,36 @@ export interface components {
             minimumConfidence: number;
             explicitWriteOnly: boolean;
             enabled: boolean;
+            /** @description Server-bound current owner; omitted on legacy global policies. Client values never grant access. */
+            readonly ownerId?: string;
+            /**
+             * @description Server-bound mode scope; absent means legacy global policy, not a client-selected identity.
+             * @enum {string}
+             */
+            mode?: "chat" | "heya";
+            /** @description Memory recall consent; inherits enabled when absent. */
+            readEnabled?: boolean;
+            /** @description Memory write consent; inherits enabled when absent. */
+            writeEnabled?: boolean;
         };
         AIMemoryPolicyInput: {
             id: string;
             name: string;
-            /** @enum {string} */
-            consentMode: "explicit" | "disabled";
+            /**
+             * @description Automatic requires explicit user opt-in and mode=heya; the server rejects automatic for chat or legacy global scope.
+             * @enum {string}
+             */
+            consentMode: "explicit" | "disabled" | "automatic";
             ttlDays: number;
+            /**
+             * @description Requested mode scope, bound and authorized by the server. New policies default to private chat when absent; only an existing legacy global policy ID may preserve global scope under its original authorization.
+             * @enum {string}
+             */
+            mode?: "chat" | "heya";
+            /** @description Memory recall consent; inherits the stored enabled value when absent. */
+            readEnabled?: boolean;
+            /** @description Memory write consent; inherits the stored enabled value when absent. */
+            writeEnabled?: boolean;
         };
         AIMemoryRecord: {
             policyId?: string;
@@ -17650,6 +17775,19 @@ export interface components {
             sourceType: "explicit_user" | "curated_extractor";
             /** @description Source receipts. Workbench model context supports soha://session/<sessionId>/message/<messageId> and rechecks current ownership and source access. Unsupported historical references remain stored but are withheld from model context. */
             sourceRefs: string[];
+            /**
+             * @description Server-owned synchronization state; omitted on legacy records. Delete success hides the fact immediately while backend deletion may remain pending.
+             * @enum {string}
+             */
+            readonly syncStatus?: "pending" | "synced" | "delete_pending" | "deleted" | "error" | "disabled";
+            /** @description Server-owned quarantine projection; absent or false means normal. Quarantined records retain their actual status and have syncStatus disabled. Client overrides are ignored. */
+            readonly quarantined?: boolean;
+            /** @description Safe server-owned reason code; excludes errors, addresses and fact contents. Client overrides are ignored. */
+            readonly quarantineReason?: string;
+            /** @description Server-generated source receipt URI to lowercase SHA256 of the authorized source content. Ignore client-supplied hashes; recompute from current authorized source bytes. */
+            readonly sourceHashes?: {
+                [key: string]: string;
+            };
             confidence: number;
             /** Format: date-time */
             validFrom: string;
@@ -18588,6 +18726,94 @@ export interface components {
             /** Format: int64 */
             contextWindowTokens?: number;
         };
+        WorkbenchRuntimeProfileID: string;
+        /** @enum {string} */
+        WorkbenchRuntimeScope: "chat" | "heya";
+        WorkbenchRuntimeAssetReference: {
+            /** @enum {string} */
+            kind: "mcp" | "skill" | "hook";
+            id: components["schemas"]["WorkbenchRuntimeProfileID"];
+            version: string;
+            required: boolean;
+        };
+        WorkbenchManagedRuntimeAsset: {
+            /** @enum {string} */
+            kind: "mcp" | "skill" | "hook";
+            id: components["schemas"]["WorkbenchRuntimeProfileID"];
+            version: string;
+            enabled: boolean;
+            /** @enum {string} */
+            transport?: "http" | "stdio";
+            executionPosition?: string;
+        };
+        WorkbenchManagedRuntimeAssetEnvelope: {
+            data: components["schemas"]["WorkbenchManagedRuntimeAsset"];
+        };
+        WorkbenchManagedRuntimeAssetListEnvelope: {
+            items: components["schemas"]["WorkbenchManagedRuntimeAsset"][];
+        };
+        WorkbenchRuntimeAssetEnablement: {
+            enabled: boolean;
+        };
+        WorkbenchRuntimeMCPProbeRequest: {
+            scope: components["schemas"]["WorkbenchRuntimeScope"];
+        };
+        WorkbenchRuntimeMCPProbeEnvelope: {
+            data: {
+                /** @enum {string} */
+                status: "ready" | "unavailable" | "cleanup_unknown";
+                capabilities: ("tools" | "resources")[];
+            };
+        };
+        WorkbenchRuntimeProfile: {
+            id: components["schemas"]["WorkbenchRuntimeProfileID"];
+            /** Format: int64 */
+            revision: number;
+            name: string;
+            scope: components["schemas"]["WorkbenchRuntimeScope"];
+            enabled: boolean;
+            assets: components["schemas"]["WorkbenchRuntimeAssetReference"][];
+            modelPreferences?: components["schemas"]["WorkbenchModelPreferences"];
+            maxOutputTokens?: number;
+        };
+        WorkbenchRuntimeProfileUpdate: {
+            /** Format: int64 */
+            expectedRevision: number;
+            name: string;
+            scope: components["schemas"]["WorkbenchRuntimeScope"];
+            enabled: boolean;
+            assets: components["schemas"]["WorkbenchRuntimeAssetReference"][];
+            modelPreferences?: components["schemas"]["WorkbenchModelPreferences"];
+            maxOutputTokens?: number;
+        };
+        WorkbenchRuntimeProfileSelection: {
+            /** @description Empty selects the scope default. Chat and Heya selections are validated independently. */
+            profileId: string;
+        };
+        WorkbenchRuntimeProfileEnvelope: {
+            data: components["schemas"]["WorkbenchRuntimeProfile"];
+        };
+        WorkbenchRuntimeProfileListEnvelope: {
+            items: components["schemas"]["WorkbenchRuntimeProfile"][];
+        };
+        WorkbenchRuntimeAssetStatus: {
+            /** @enum {string} */
+            kind: "mcp" | "skill" | "hook";
+            id: components["schemas"]["WorkbenchRuntimeProfileID"];
+            version: string;
+            /** @enum {string} */
+            status: "loaded" | "unavailable";
+            code?: string;
+            capabilities?: string[];
+        };
+        WorkbenchRuntimeAssembly: {
+            profileId: components["schemas"]["WorkbenchRuntimeProfileID"];
+            /** Format: int64 */
+            revision: number;
+            /** @enum {string} */
+            status: "preparing" | "confirmed" | "degraded" | "rejected";
+            assets: components["schemas"]["WorkbenchRuntimeAssetStatus"][];
+        };
         WorkbenchSessionMetadata: {
             /**
              * @description Server-owned chat role. Older sessions without a role remain side chats. Main chats cannot be archived or deleted through the ordinary session operations.
@@ -18595,6 +18821,7 @@ export interface components {
              */
             readonly conversationKind?: "main" | "side" | "personal_main" | "personal_side";
             modelPreferences?: components["schemas"]["WorkbenchModelPreferences"];
+            runtimeProfileId?: components["schemas"]["WorkbenchRuntimeProfileID"];
             /** @enum {string} */
             mode?: "general" | "root_cause" | "performance" | "trace" | "inspection_review";
             status?: string;
@@ -19358,6 +19585,7 @@ export interface components {
             chat?: components["schemas"]["AgentChatInput"];
             id: string;
             providerId: string;
+            /** @description Provider kind; dsh uses executionOwner=external and durable native-request recovery. */
             providerKind: string;
             capabilityId: string;
             skillIds?: string[];
@@ -19371,6 +19599,7 @@ export interface components {
             stopReason?: string;
             eventSequence?: number;
             usageKnown?: boolean;
+            runtimeAssembly?: components["schemas"]["WorkbenchRuntimeAssembly"];
             scope?: components["schemas"]["WorkbenchSessionScope"];
             toolset?: components["schemas"]["WorkbenchSessionToolset"];
             toolBindings?: components["schemas"]["WorkbenchAgentToolBinding"][];
@@ -19624,7 +19853,7 @@ export interface components {
             messageId?: string;
         };
         WorkbenchSendMessageStreamRequest: {
-            /** @description Stable client turn identifier of at most 128 Unicode code points. Native turns deduplicate by user, session and key and reject changed input; assistant appearance tasks have separate reuse checks. Synchronous and external provider paths do not guarantee deduplication. Preserve the original key after an uncertain response; a missing Native lookup is not proof that submission cannot commit later. */
+            /** @description Stable client turn identifier of at most 128 Unicode code points. Native and dsh turns deduplicate by user, session and key and reject changed input; dsh reports providerKind=dsh and executionOwner=external. Assistant appearance tasks have separate reuse checks. Other synchronous and external provider paths do not guarantee deduplication. Preserve the original key after an uncertain response; a missing native-request lookup is not proof that submission cannot commit later. */
             requestId?: string;
             taskIntent?: components["schemas"]["WorkbenchTaskIntent"];
             assistantTask?: components["schemas"]["WorkbenchAssistantTask"];
@@ -19637,6 +19866,7 @@ export interface components {
             modelPreferences?: components["schemas"]["WorkbenchModelPreferences"];
             content: string;
             mode?: string;
+            /** @description The canonical default provider ID is dsh; internal and native remain accepted aliases. */
             agentProviderId?: string;
             toolset?: components["schemas"]["AnyValue"];
             scopeOverrides?: components["schemas"]["AnyValue"];
@@ -19856,7 +20086,7 @@ export interface components {
             type: "agent.status";
             providerId: string;
             /** @enum {string} */
-            providerKind: "internal" | "native" | "hermes" | "openclaw" | "general" | "openai" | "anthropic" | "openai-compatible" | "deepseek" | "qwen" | "openrouter" | "azure-openai" | "gemini" | "cohere";
+            providerKind: "internal" | "native" | "dsh" | "hermes" | "openclaw" | "general" | "openai" | "anthropic" | "openai-compatible" | "deepseek" | "qwen" | "openrouter" | "azure-openai" | "gemini" | "cohere";
             /** @enum {string} */
             status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
         };
@@ -19944,7 +20174,7 @@ export interface components {
             type: "agent.status";
             providerId?: string;
             /** @enum {string} */
-            providerKind?: "internal" | "hermes" | "openclaw" | "general" | "openai" | "anthropic" | "openai-compatible" | "deepseek" | "qwen" | "openrouter" | "azure-openai" | "gemini" | "cohere";
+            providerKind?: "internal" | "dsh" | "hermes" | "openclaw" | "general" | "openai" | "anthropic" | "openai-compatible" | "deepseek" | "qwen" | "openrouter" | "azure-openai" | "gemini" | "cohere";
             /** @enum {string} */
             status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
         };
@@ -24934,6 +25164,7 @@ export interface components {
             chat?: components["schemas"]["AgentChatInput"];
             id: string;
             providerId: string;
+            /** @description Provider kind; dsh uses executionOwner=external and durable native-request recovery. */
             providerKind: string;
             capabilityId: string;
             skillIds?: string[];
@@ -34349,6 +34580,22 @@ export type WorkbenchRunRef = components['schemas']['WorkbenchRunRef'];
 export type WorkbenchModelPreferences = components['schemas']['WorkbenchModelPreferences'];
 export type WorkbenchModelOption = components['schemas']['WorkbenchModelOption'];
 export type WorkbenchContextUsage = components['schemas']['WorkbenchContextUsage'];
+export type WorkbenchRuntimeProfileID = components['schemas']['WorkbenchRuntimeProfileID'];
+export type WorkbenchRuntimeScope = components['schemas']['WorkbenchRuntimeScope'];
+export type WorkbenchRuntimeAssetReference = components['schemas']['WorkbenchRuntimeAssetReference'];
+export type WorkbenchManagedRuntimeAsset = components['schemas']['WorkbenchManagedRuntimeAsset'];
+export type WorkbenchManagedRuntimeAssetEnvelope = components['schemas']['WorkbenchManagedRuntimeAssetEnvelope'];
+export type WorkbenchManagedRuntimeAssetListEnvelope = components['schemas']['WorkbenchManagedRuntimeAssetListEnvelope'];
+export type WorkbenchRuntimeAssetEnablement = components['schemas']['WorkbenchRuntimeAssetEnablement'];
+export type WorkbenchRuntimeMCPProbeRequest = components['schemas']['WorkbenchRuntimeMCPProbeRequest'];
+export type WorkbenchRuntimeMCPProbeEnvelope = components['schemas']['WorkbenchRuntimeMCPProbeEnvelope'];
+export type WorkbenchRuntimeProfile = components['schemas']['WorkbenchRuntimeProfile'];
+export type WorkbenchRuntimeProfileUpdate = components['schemas']['WorkbenchRuntimeProfileUpdate'];
+export type WorkbenchRuntimeProfileSelection = components['schemas']['WorkbenchRuntimeProfileSelection'];
+export type WorkbenchRuntimeProfileEnvelope = components['schemas']['WorkbenchRuntimeProfileEnvelope'];
+export type WorkbenchRuntimeProfileListEnvelope = components['schemas']['WorkbenchRuntimeProfileListEnvelope'];
+export type WorkbenchRuntimeAssetStatus = components['schemas']['WorkbenchRuntimeAssetStatus'];
+export type WorkbenchRuntimeAssembly = components['schemas']['WorkbenchRuntimeAssembly'];
 export type WorkbenchSessionMetadata = components['schemas']['WorkbenchSessionMetadata'];
 export type WorkbenchSession = components['schemas']['WorkbenchSession'];
 export type PersonalAgentAccess = components['schemas']['PersonalAgentAccess'];
@@ -37663,6 +37910,143 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+        };
+    };
+    listWorkbenchRuntimeAssets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registered asset versions and their effective enablement. Does not expose connection configuration or credentials. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkbenchManagedRuntimeAssetListEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    setWorkbenchRuntimeAssetEnabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "mcp" | "skill" | "hook";
+                assetId: components["schemas"]["WorkbenchRuntimeProfileID"];
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkbenchRuntimeAssetEnablement"];
+            };
+        };
+        responses: {
+            /** @description Updated exact-version enablement. Immutable profile revisions and run snapshots retain their original references. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkbenchManagedRuntimeAssetEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    probeWorkbenchRuntimeMCP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assetId: components["schemas"]["WorkbenchRuntimeProfileID"];
+                version: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkbenchRuntimeMCPProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded discovery without invoking any tool. Personal Docker stdio requires an active Heya run and cannot be tested by this probe. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkbenchRuntimeMCPProbeEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listWorkbenchRuntimeProfileRevisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileId: components["schemas"]["WorkbenchRuntimeProfileID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable published revisions of the managed profile, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkbenchRuntimeProfileListEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+        };
+    };
+    publishWorkbenchRuntimeProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profileId: components["schemas"]["WorkbenchRuntimeProfileID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkbenchRuntimeProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description New immutable revision. Re-publishing an earlier configuration creates a new revision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkbenchRuntimeProfileEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     getAISkillsRegistry: {
@@ -45315,7 +45699,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The original authorized Native run, including its current state. */
+            /** @description The original authorized Native or dsh run, including its current state; dsh reports providerKind=dsh and executionOwner=external. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -45479,6 +45863,56 @@ export interface operations {
                 };
             };
             403: components["responses"]["Error"];
+        };
+    };
+    listWorkbenchRuntimeProfiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current enabled profile revisions available to the caller. Heya profiles require Heya access. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkbenchRuntimeProfileListEnvelope"];
+                };
+            };
+            403: components["responses"]["Error"];
+        };
+    };
+    selectWorkbenchRuntimeProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkbenchRuntimeProfileSelection"];
+            };
+        };
+        responses: {
+            /** @description Updated owned session. The selection applies to subsequent runs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkbenchSessionEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     listWorkbenchAgentProviders: {
@@ -57372,6 +57806,8 @@ export interface operations {
             query?: {
                 ownerType?: string;
                 ownerId?: string;
+                /** @description Include only the current user's own tombstones; false by default. */
+                includeDeleted?: boolean;
             };
             header?: never;
             path?: never;
@@ -57379,7 +57815,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Active long-term memory records. */
+            /** @description Authorized active records and, when requested, own tombstones. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -57431,7 +57867,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Memory record deleted. */
+            /** @description Memory fact hidden immediately; backend deletion may continue asynchronously. Read own tombstones with includeDeleted=true to observe syncStatus. */
             204: {
                 headers: {
                     [name: string]: unknown;

@@ -14,6 +14,10 @@
     "maximumTtlSeconds": { "type": "integer", "minimum": 1, "maximum": 31536000 },
     "minimumConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "explicitWriteOnly": { "type": "boolean" },
-    "enabled": { "type": "boolean" }
+    "enabled": { "type": "boolean" },
+    "ownerId": { "type": "string", "readOnly": true, "description": "Server-bound owner; omitted for legacy global policies." },
+    "mode": { "type": "string", "enum": ["chat", "heya"], "description": "Server-bound mode; absent means legacy global policy." },
+    "readEnabled": { "type": "boolean", "description": "Inherits enabled when absent." },
+    "writeEnabled": { "type": "boolean", "description": "Inherits enabled when absent." }
   }
 }

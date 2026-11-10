@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "opensoha.dev/dsh-runtime/v1",
+  "runId": "run-123",
+  "attempt": 1,
+  "fence": 7,
+  "kind": "status",
+  "submissionId": "submission-123",
+  "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "completed",
+  "sequence": 4,
+  "usageKnown": true,
+  "usage": {
+    "inputTokens": 8,
+    "outputTokens": 4,
+    "totalTokens": 12
+  },
+  "assistantText": "The incident is resolved.",
+  "toolGrant": "secret"
+}

@@ -153,7 +153,7 @@
             "providerId": { "type": "string" },
             "providerKind": {
               "type": "string",
-              "enum": ["internal", "hermes", "openclaw", "general", "openai", "anthropic", "openai-compatible", "deepseek", "qwen", "openrouter", "azure-openai", "gemini", "cohere"]
+              "enum": ["internal", "dsh", "hermes", "openclaw", "general", "openai", "anthropic", "openai-compatible", "deepseek", "qwen", "openrouter", "azure-openai", "gemini", "cohere"]
             },
             "status": {
               "type": "string",
@@ -370,7 +370,7 @@
             "providerId": { "type": "string" },
             "providerKind": {
               "type": "string",
-              "enum": ["internal", "hermes", "openclaw", "general", "openai", "anthropic", "openai-compatible", "deepseek", "qwen", "openrouter", "azure-openai", "gemini", "cohere"]
+              "enum": ["internal", "dsh", "hermes", "openclaw", "general", "openai", "anthropic", "openai-compatible", "deepseek", "qwen", "openrouter", "azure-openai", "gemini", "cohere"]
             },
             "status": {
               "type": "string",

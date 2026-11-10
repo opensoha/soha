@@ -8,6 +8,7 @@ const root = new URL("..", import.meta.url);
 const openapiPath = "openapi/soha-api.yaml";
 
 const requiredJsonSchemas = [
+  { file: "agent/dsh-runtime.schema.json", fixtureDir: "fixtures/json-schema/dsh-runtime" },
   { file: "runner/docker-project-identity.schema.json", fixtureDir: "fixtures/json-schema/docker-project-identity" },
   { file: "runner/docker-container-identity.schema.json", fixtureDir: "fixtures/json-schema/docker-container-identity" },
   { file: "runner/docker-runtime-read.schema.json", fixtureDir: "fixtures/json-schema/docker-runtime-read" },

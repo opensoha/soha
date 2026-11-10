@@ -197,14 +197,29 @@ npm run check:consumers -- --consumer soha-skills --require-all
 ```
 
 Go consumers run in a temporary `go.work` that replaces the contracts module
-with this checkout. `soha-web` and `soha-app/frontend` run `npm ci`, install a packed copy of this
-checkout without changing their dependency manifests or lockfiles, and build
-against that package. The App pin represents its recorded committed source;
-local uncommitted Native adaptations need separate worktree evidence and a new
-reviewed pin after they are committed.
+with this checkout. For npm consumers, the checker packs this checkout, temporarily
+resolves the SDK tarball into `package.json` and `package-lock.json` with
+`npm install --package-lock-only --ignore-scripts`, then runs `npm ci` and the
+consumer build. Both files are restored byte-for-byte on success or failure.
+Run against an exclusively owned staging checkout or reserve dependency installation
+and builds in the selected worktrees for the duration of the check. Installation
+changes `node_modules` and builds produce the consumer's normal output.
 
-Use `--dry-run` to inspect the discovered commands without executing consumer
-builds.
+`SOHA_CONSUMER_ROOT` selects an explicit sibling checkout group, including local
+candidate worktrees with uncommitted source. For example:
+
+```sh
+SOHA_CONSUMER_ROOT=/path/to/candidate-group npm run check:consumers -- --require-all --out /path/to/evidence/candidate-consumers.json
+```
+
+Reports identify the contracts and consumer HEADs plus SHA-256 hashes of modified,
+staged, deleted and untracked source files; failures are recorded and return a
+nonzero exit status after the selected matrix finishes. The source hashes identify
+worktree contents, not a release artifact. Keep the candidate stable throughout the
+run. `--dry-run` inspects discovery and commands without running consumer builds.
+`--declared` separately checks the consumer's original SDK dependency without
+source substitution. Neither candidate worktree checks nor declared checks change
+the fixed revision selection in CI or prove that unpublished packages are released.
 
 ## Compatibility Policy
 

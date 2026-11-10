@@ -2657,6 +2657,7 @@
             "type": "string"
           },
           "providerKind": {
+            "description": "Provider kind; dsh uses executionOwner=external and durable native-request recovery.",
             "type": "string"
           },
           "scope": {
@@ -2785,6 +2786,7 @@
               "providerKind": {
                 "enum": [
                   "internal",
+                  "dsh",
                   "hermes",
                   "openclaw",
                   "general",
@@ -4390,6 +4392,19 @@
             "minimum": 0,
             "type": "number"
           },
+          "mode": {
+            "description": "Server-bound mode scope; absent means legacy global policy, not a client-selected identity.",
+            "enum": [
+              "chat",
+              "heya"
+            ],
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Server-bound current owner; omitted on legacy global policies. Client values never grant access.",
+            "readOnly": true,
+            "type": "string"
+          },
           "ownerTypes": {
             "items": {
               "type": "string"
@@ -4397,9 +4412,19 @@
             "maxItems": 8,
             "type": "array"
           },
+          "readEnabled": {
+            "description": "Memory recall consent; inherits enabled when absent.",
+            "type": "boolean",
+            "x-go-type-skip-optional-pointer": false
+          },
           "version": {
             "minLength": 1,
             "type": "string"
+          },
+          "writeEnabled": {
+            "description": "Memory write consent; inherits enabled when absent.",
+            "type": "boolean",
+            "x-go-type-skip-optional-pointer": false
           }
         },
         "required": [
@@ -4430,9 +4455,11 @@
         "additionalProperties": false,
         "properties": {
           "consentMode": {
+            "description": "Automatic requires explicit user opt-in and mode=heya; the server rejects automatic for chat or legacy global scope.",
             "enum": [
               "explicit",
-              "disabled"
+              "disabled",
+              "automatic"
             ],
             "type": "string"
           },
@@ -4440,14 +4467,32 @@
             "minLength": 1,
             "type": "string"
           },
+          "mode": {
+            "description": "Requested mode scope, bound and authorized by the server. New policies default to private chat when absent; only an existing legacy global policy ID may preserve global scope under its original authorization.",
+            "enum": [
+              "chat",
+              "heya"
+            ],
+            "type": "string"
+          },
           "name": {
             "minLength": 1,
             "type": "string"
+          },
+          "readEnabled": {
+            "description": "Memory recall consent; inherits the stored enabled value when absent.",
+            "type": "boolean",
+            "x-go-type-skip-optional-pointer": false
           },
           "ttlDays": {
             "maximum": 3650,
             "minimum": 1,
             "type": "integer"
+          },
+          "writeEnabled": {
+            "description": "Memory write consent; inherits the stored enabled value when absent.",
+            "type": "boolean",
+            "x-go-type-skip-optional-pointer": false
           }
         },
         "required": [
@@ -4515,8 +4560,28 @@
           "policyVersion": {
             "type": "string"
           },
+          "quarantined": {
+            "description": "Server-owned quarantine projection; absent or false means normal. Quarantined records retain their actual status and have syncStatus disabled. Client overrides are ignored.",
+            "readOnly": true,
+            "type": "boolean"
+          },
+          "quarantineReason": {
+            "description": "Safe server-owned reason code; excludes errors, addresses and fact contents. Client overrides are ignored.",
+            "maxLength": 128,
+            "readOnly": true,
+            "type": "string"
+          },
           "scopeHash": {
             "type": "string"
+          },
+          "sourceHashes": {
+            "additionalProperties": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "description": "Server-generated source receipt URI to lowercase SHA256 of the authorized source content. Ignore client-supplied hashes; recompute from current authorized source bytes.",
+            "readOnly": true,
+            "type": "object"
           },
           "sourceRefs": {
             "description": "Source receipts. Workbench model context supports soha://session/<sessionId>/message/<messageId> and rechecks current ownership and source access. Unsupported historical references remain stored but are withheld from model context.",
@@ -4534,6 +4599,19 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          },
+          "syncStatus": {
+            "description": "Server-owned synchronization state; omitted on legacy records. Delete success hides the fact immediately while backend deletion may remain pending.",
+            "enum": [
+              "pending",
+              "synced",
+              "delete_pending",
+              "deleted",
+              "error",
+              "disabled"
+            ],
+            "readOnly": true,
             "type": "string"
           },
           "validFrom": {
@@ -72196,6 +72274,7 @@
             "type": "string"
           },
           "providerKind": {
+            "description": "Provider kind; dsh uses executionOwner=external and durable native-request recovery.",
             "type": "string"
           },
           "queuedAt": {
@@ -72204,6 +72283,9 @@
           },
           "rootCauseRunId": {
             "type": "string"
+          },
+          "runtimeAssembly": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeAssembly"
           },
           "scope": {
             "$ref": "#/components/schemas/WorkbenchSessionScope"
@@ -72352,6 +72434,7 @@
                 "enum": [
                   "internal",
                   "native",
+                  "dsh",
                   "hermes",
                   "openclaw",
                   "general",
@@ -74086,6 +74169,75 @@
         },
         "type": "object"
       },
+      "WorkbenchManagedRuntimeAsset": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "executionPosition": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
+          },
+          "kind": {
+            "enum": [
+              "mcp",
+              "skill",
+              "hook"
+            ],
+            "type": "string"
+          },
+          "transport": {
+            "enum": [
+              "http",
+              "stdio"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "version",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "WorkbenchManagedRuntimeAssetEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkbenchManagedRuntimeAsset"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "WorkbenchManagedRuntimeAssetListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkbenchManagedRuntimeAsset"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "WorkbenchMessage": {
         "additionalProperties": false,
         "properties": {
@@ -74728,6 +74880,328 @@
         ],
         "type": "object"
       },
+      "WorkbenchRuntimeAssembly": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/WorkbenchRuntimeAssetStatus"
+            },
+            "type": "array"
+          },
+          "profileId": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "preparing",
+              "confirmed",
+              "degraded",
+              "rejected"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "profileId",
+          "revision",
+          "status",
+          "assets"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeAssetEnablement": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeAssetReference": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
+          },
+          "kind": {
+            "enum": [
+              "mcp",
+              "skill",
+              "hook"
+            ],
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "version",
+          "required"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeAssetStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
+          },
+          "kind": {
+            "enum": [
+              "mcp",
+              "skill",
+              "hook"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "loaded",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "version",
+          "status"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeMCPProbeEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "capabilities": {
+                "items": {
+                  "enum": [
+                    "tools",
+                    "resources"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "enum": [
+                  "ready",
+                  "unavailable",
+                  "cleanup_unknown"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                  "WorkbenchMCPProbeReady",
+                  "WorkbenchMCPProbeUnavailable",
+                  "WorkbenchMCPProbeCleanupUnknown"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "capabilities"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeMCPProbeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeScope"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/WorkbenchRuntimeAssetReference"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
+          },
+          "maxOutputTokens": {
+            "maximum": 4096,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "modelPreferences": {
+            "$ref": "#/components/schemas/WorkbenchModelPreferences"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeScope"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "name",
+          "scope",
+          "enabled",
+          "assets"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeProfileEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeProfile"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeProfileID": {
+        "maxLength": 48,
+        "minLength": 1,
+        "pattern": "^[a-z0-9][a-z0-9-]*$",
+        "type": "string"
+      },
+      "WorkbenchRuntimeProfileListEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkbenchRuntimeProfile"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeProfileSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "profileId": {
+            "description": "Empty selects the scope default. Chat and Heya selections are validated independently.",
+            "maxLength": 48,
+            "pattern": "^([a-z0-9][a-z0-9-]*)?$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profileId"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeProfileUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/WorkbenchRuntimeAssetReference"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxOutputTokens": {
+            "maximum": 4096,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "modelPreferences": {
+            "$ref": "#/components/schemas/WorkbenchModelPreferences"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeScope"
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "name",
+          "scope",
+          "enabled",
+          "assets"
+        ],
+        "type": "object"
+      },
+      "WorkbenchRuntimeScope": {
+        "enum": [
+          "chat",
+          "heya"
+        ],
+        "type": "string"
+      },
       "WorkbenchSelectionContext": {
         "additionalProperties": false,
         "properties": {
@@ -74772,6 +75246,7 @@
         "additionalProperties": false,
         "properties": {
           "agentProviderId": {
+            "description": "The canonical default provider ID is dsh; internal and native remain accepted aliases.",
             "type": "string"
           },
           "assistantTask": {
@@ -74824,7 +75299,7 @@
             "type": "object"
           },
           "requestId": {
-            "description": "Stable client turn identifier of at most 128 Unicode code points. Native turns deduplicate by user, session and key and reject changed input; assistant appearance tasks have separate reuse checks. Synchronous and external provider paths do not guarantee deduplication. Preserve the original key after an uncertain response; a missing Native lookup is not proof that submission cannot commit later.",
+            "description": "Stable client turn identifier of at most 128 Unicode code points. Native and dsh turns deduplicate by user, session and key and reject changed input; dsh reports providerKind=dsh and executionOwner=external. Assistant appearance tasks have separate reuse checks. Other synchronous and external provider paths do not guarantee deduplication. Preserve the original key after an uncertain response; a missing native-request lookup is not proof that submission cannot commit later.",
             "maxLength": 128,
             "minLength": 1,
             "type": "string"
@@ -75015,6 +75490,9 @@
             "additionalProperties": {},
             "description": "May contain branchReference with kind session, sessionId and fixed messageIds; source ownership and availability are rechecked on every use.",
             "type": "object"
+          },
+          "runtimeProfileId": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
           },
           "scope": {
             "$ref": "#/components/schemas/WorkbenchSessionScope"
@@ -75943,7 +76421,12 @@
               "unknown",
               "rejected"
             ],
-            "type": "string"
+            "type": "string",
+            "x-enum-varnames": [
+              "WorkflowRequestReceiptSubmissionStatusAccepted",
+              "WorkflowRequestReceiptSubmissionStatusUnknown",
+              "WorkflowRequestReceiptSubmissionStatusRejected"
+            ]
           }
         },
         "required": [
@@ -84118,6 +84601,7 @@
     },
     "/ai/memory": {
       "get": {
+        "description": "List currently authorized active records. includeDeleted=true additionally includes only the current user's own tombstones for synchronization feedback; it never widens owner or source access.",
         "operationId": "listAIMemoryRecords",
         "parameters": [
           {
@@ -84134,6 +84618,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Include only the current user's own tombstones; false by default.",
+            "in": "query",
+            "name": "includeDeleted",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -84145,7 +84638,7 @@
                 }
               }
             },
-            "description": "Active long-term memory records."
+            "description": "Authorized active records and, when requested, own tombstones."
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -84209,7 +84702,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Memory record deleted."
+            "description": "Memory fact hidden immediately; backend deletion may continue asynchronously. Read own tombstones with includeDeleted=true to observe syncStatus."
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -99705,7 +100198,7 @@
     },
     "/copilot/agent-runs/{runID}/events": {
       "get": {
-        "description": "Read durable Native events owned by the current user. Reconnection only reads; it never resubmits a run or action.",
+        "description": "Read durable Native or dsh events owned by the current user. Reconnection only reads; it never resubmits a run or action.",
         "operationId": "listAgentRunEvents",
         "parameters": [
           {
@@ -99752,7 +100245,7 @@
     },
     "/copilot/agent-runs/{runID}/resume": {
       "post": {
-        "description": "Resume the same paused Native run after current authorization and waiting-object checks. Unknown write outcomes cannot be replayed by this operation.",
+        "description": "Resume the same paused Native or dsh run after current authorization and waiting-object checks. Unknown write outcomes cannot be replayed by this operation.",
         "operationId": "resumeAgentRun",
         "parameters": [
           {
@@ -102457,7 +102950,8 @@
     },
     "/copilot/sessions/{sessionID}/native-request": {
       "get": {
-        "description": "Read the original Native run by the current user's session and client request ID after a lost creation response. This never creates or resumes a run. A 404 is only absence at the time of the read and does not prove that an in-flight submission cannot commit later.",
+        "deprecated": true,
+        "description": "Read the original Native or dsh run by the current user's session and client request ID after a lost creation response. This never creates or resumes a run. A 404 is only absence at the time of the read and does not prove that an in-flight submission cannot commit later.",
         "operationId": "findNativeRequest",
         "parameters": [
           {
@@ -102483,7 +102977,56 @@
                 }
               }
             },
-            "description": "The original authorized Native run, including its current state."
+            "description": "The original authorized Native or dsh run, including its current state; dsh reports providerKind=dsh and executionOwner=external."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "AI Workbench"
+        ]
+      }
+    },
+    "/copilot/sessions/{sessionID}/runtime-profile": {
+      "put": {
+        "operationId": "selectWorkbenchRuntimeProfile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkbenchRuntimeProfileSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchSessionEnvelope"
+                }
+              }
+            },
+            "description": "Updated owned session. The selection applies to subsequent runs."
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -102550,6 +103093,29 @@
               }
             },
             "description": "Catalog of governed Workbench adapters, sources, profiles, skills, and agent capabilities."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "AI Workbench"
+        ]
+      }
+    },
+    "/copilot/workbench/runtime-profiles": {
+      "get": {
+        "operationId": "listWorkbenchRuntimeProfiles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchRuntimeProfileListEnvelope"
+                }
+              }
+            },
+            "description": "Current enabled profile revisions available to the caller. Heya profiles require Heya access."
           },
           "403": {
             "$ref": "#/components/responses/Error"
@@ -123973,6 +124539,239 @@
           "Settings"
         ],
         "x-soha-implementation-status": "implemented"
+      }
+    },
+    "/settings/ai/workbench-runtime-assets": {
+      "get": {
+        "operationId": "listWorkbenchRuntimeAssets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchManagedRuntimeAssetListEnvelope"
+                }
+              }
+            },
+            "description": "Registered asset versions and their effective enablement. Does not expose connection configuration or credentials."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Settings"
+        ]
+      }
+    },
+    "/settings/ai/workbench-runtime-assets/{kind}/{assetId}/{version}": {
+      "put": {
+        "operationId": "setWorkbenchRuntimeAssetEnabled",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "mcp",
+                "skill",
+                "hook"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "assetId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkbenchRuntimeAssetEnablement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchManagedRuntimeAssetEnvelope"
+                }
+              }
+            },
+            "description": "Updated exact-version enablement. Immutable profile revisions and run snapshots retain their original references."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Settings"
+        ]
+      }
+    },
+    "/settings/ai/workbench-runtime-assets/mcp/{assetId}/{version}/probe": {
+      "post": {
+        "operationId": "probeWorkbenchRuntimeMCP",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assetId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkbenchRuntimeMCPProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchRuntimeMCPProbeEnvelope"
+                }
+              }
+            },
+            "description": "Bounded discovery without invoking any tool. Personal Docker stdio requires an active Heya run and cannot be tested by this probe."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Settings"
+        ]
+      }
+    },
+    "/settings/ai/workbench-runtime-profiles/{profileId}": {
+      "get": {
+        "operationId": "listWorkbenchRuntimeProfileRevisions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchRuntimeProfileListEnvelope"
+                }
+              }
+            },
+            "description": "Immutable published revisions of the managed profile, newest first."
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Settings"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "profileId",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/WorkbenchRuntimeProfileID"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "publishWorkbenchRuntimeProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkbenchRuntimeProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchRuntimeProfileEnvelope"
+                }
+              }
+            },
+            "description": "New immutable revision. Re-publishing an earlier configuration creates a new revision."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Settings"
+        ]
       }
     },
     "/settings/branding": {

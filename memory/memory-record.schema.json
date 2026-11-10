@@ -20,6 +20,10 @@
     "policyVersion": { "type": "string", "minLength": 1 },
     "status": { "enum": ["active", "expired", "deleted"] },
     "createdAt": { "type": "string", "format": "date-time" },
-    "deletedAt": { "type": "string", "format": "date-time" }
+    "deletedAt": { "type": "string", "format": "date-time" },
+    "syncStatus": { "type": "string", "readOnly": true, "enum": ["pending", "synced", "delete_pending", "deleted", "error", "disabled"], "description": "Server-owned synchronization state; omitted on legacy records." },
+    "quarantined": { "type": "boolean", "readOnly": true, "description": "Server-owned quarantine projection; absent or false means normal. Quarantined records retain their actual status and have syncStatus disabled. Client overrides are ignored." },
+    "quarantineReason": { "type": "string", "maxLength": 128, "readOnly": true, "description": "Safe server-owned reason code; excludes errors, addresses and fact contents. Client overrides are ignored." },
+    "sourceHashes": { "type": "object", "readOnly": true, "description": "Server-generated source receipt URI to lowercase SHA256 of authorized source content; never trust client hashes.", "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
   }
 }
