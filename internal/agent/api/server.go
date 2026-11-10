@@ -28,6 +28,7 @@ type Server struct {
 	volumeReader          *dockerruntime.VolumeReader
 	nativeTerminals       *nativePodTerminals
 	nativeDockerTerminals *nativePodTerminals
+	personalMCPStdio      *nativePodTerminals
 	sshSessions           *sshSessions
 	httpServer            *http.Server
 	personalEnvironment   *environment.DockerExecutor
@@ -79,7 +80,8 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 	volumeReader := registerDockerRuntimeRoutes(router, cfg, logger, actions)
 	nativeDockerTerminals := registerNativeDockerTerminalRoutes(router, cfg, actions)
 	registerOutpostRoutes(router, cfg, runtime)
-	personalEnvironment := registerPersonalEnvironmentRoutes(router, cfg, logger, actions)
+	personalMCPStdio := newNativePodTerminals()
+	personalEnvironment := registerPersonalEnvironmentRoutes(router, cfg, logger, actions, personalMCPStdio)
 
 	httpLogger.Info("agent server configured",
 		zap.String("event", "agent.server.configured"),
@@ -93,7 +95,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 	)
 
 	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
-	return &Server{volumeReader: volumeReader, nativeTerminals: nativeTerminals, nativeDockerTerminals: nativeDockerTerminals, sshSessions: sshSessions, personalEnvironment: personalEnvironment, cleanupContext: cleanupContext, cleanupCancel: cleanupCancel, logger: logger, httpServer: &http.Server{
+	return &Server{volumeReader: volumeReader, nativeTerminals: nativeTerminals, nativeDockerTerminals: nativeDockerTerminals, personalMCPStdio: personalMCPStdio, sshSessions: sshSessions, personalEnvironment: personalEnvironment, cleanupContext: cleanupContext, cleanupCancel: cleanupCancel, logger: logger, httpServer: &http.Server{
 		Addr:              cfg.HTTP.Addr,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -190,6 +192,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if s.nativeDockerTerminals != nil {
 		terminalErr = errors.Join(terminalErr, s.nativeDockerTerminals.shutdown(ctx))
+	}
+	if s.personalMCPStdio != nil {
+		terminalErr = errors.Join(terminalErr, s.personalMCPStdio.shutdown(ctx))
 	}
 	return errors.Join(terminalErr, s.httpServer.Shutdown(ctx))
 }

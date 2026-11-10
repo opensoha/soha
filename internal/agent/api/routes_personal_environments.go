@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func registerPersonalEnvironmentRoutes(router *gin.Engine, cfg cfgpkg.Config, logger *zap.Logger, actions actionPolicy) *environment.DockerExecutor {
+func registerPersonalEnvironmentRoutes(router *gin.Engine, cfg cfgpkg.Config, logger *zap.Logger, actions actionPolicy, streams *nativePodTerminals) *environment.DockerExecutor {
 	if !cfg.PersonalEnvironment.Enabled {
 		return nil
 	}
@@ -26,6 +26,7 @@ func registerPersonalEnvironmentRoutes(router *gin.Engine, cfg cfgpkg.Config, lo
 	group.Use(authRequiredAnyMiddleware(cfg.Auth.BearerToken))
 	registerPersonalEnvironmentPreflight(group, executor, actions)
 	registerPersonalEnvironmentExport(group, executor, actions)
+	registerPersonalMCPStdio(group, actions, streams, cfg.PersonalEnvironment.MCPStdioAssets, executor.ReservePersonalMCPStdio)
 	group.POST("", func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
 		decoder := json.NewDecoder(c.Request.Body)
