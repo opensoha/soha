@@ -289,6 +289,11 @@ Compose uses the tracked `configs/config.example.yaml` by default. To reuse a
 private `configs/config.yaml`, set `SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`
 in the shell or Compose environment file. Relative paths resolve from `deploy/`.
 
+For new Chat and Heya on a dsh-capable Core build, deploy the matching dsh image
+and enable protected checkpoint storage. Follow the [runtime deployment and cutover
+guide](deploy/dsh-hindsight/README.md) before upgrading an existing installation.
+Core readiness checks PostgreSQL. Verify Chat and Heya separately before opening traffic.
+
 The network runtimes are opt-in in Compose because their mTLS private keys must
 not be committed. Place `tls.crt`, `tls.key`, and `ca.crt` in separate server
 and client-identity directories, keep private files at mode `0440` or `0600`,

@@ -1,9 +1,9 @@
 # 可选 dsh / Hindsight 部署（B3）
 
-本目录默认关闭，详细参数、安全边界与 Core 启动配置见[完整说明](README.md)
-和 `core.env.example`。接入前先应用 Core 迁移至 0145。新生产 Chat/Heya 固定使用 dsh；
-禁用或不可用时明确返回 unavailable，绝不回退 Native。升级前须用原运行时排空 Native 在途任务，
-本候选不会恢复已删除的旧循环。B4 维护工具已实现，业务数据迁移尚未执行；部署模板不等于端到端验收通过。
+两个运行时默认关闭。此 Core 版本的新 Chat 和 Heya 依赖 dsh，Hindsight 可选。
+已有安装先用原运行时排空 Native 在途任务、备份 PostgreSQL 并完成下文的离线切换。
+Hindsight 切换前应用 Core 迁移至 0145，启用 Task124 运行配置与托管资产前应用至 0147。
+详细参数与安全边界见 [完整说明](README.md) 和 `core.env.example`。
 
 - dsh 固定 Node 24.14.0、SDK/runtime 0.2.2-rc.1，镜像见 Agent deploy/Dockerfile.dsh-runtime。
 - Hindsight 固定 1.2.0/source 34a1386/index sha256:19d0c08f3df79acac29384826419a1ca158129e81ec527cdcbd8c97ff4ef76da。
@@ -11,7 +11,8 @@
 - Node 生产模式 `SOHA_DSH_MODEL_AUTH_MODE=core`，无需 PAT，模型固定虚拟名 `soha-workbench`；由 Core 选择用户实际路由。配置 `DSH_CORE_BASE_URL` 后派生 `/api/v1/copilot/dsh/model/v1` 与 `/api/v1/copilot/dsh/tools`，不得指向 Agent 集群代理路径。Core/Node 共享同一服务 token。
 - Hindsight 仍须显式指定 Gateway OpenAI-compatible URL、LLM/embedding 模型和向量维度，PAT/服务 token/数据库 URL 使用只读密钥文件；不提供公有 provider 默认值。
 - `HINDSIGHT_EMBEDDING_GATEWAY_URL` 可单独指定向量入口，空值沿用 `HINDSIGHT_GATEWAY_URL`。本次完整资格组合均走 `/api/v1/ai-gateway/llm/qwen/v1`：抽取模型 `Qwen/Qwen3-30B-A3B-Instruct-2507`，向量模型 `Qwen/Qwen3-Embedding-0.6B`、1024 维。Hindsight 协议 provider 仍为 `openai`，`qwen` 是 Gateway 路线类型；也可显式选独立 OpenAI 抽取入口。启动脚本通过官方 extra-body 设置请求 float 向量，输入保持原始文本；PAT 仅授权所选模型/provider。
-- Core 的 dsh/Hindsight ENABLED 默认 false；现有 Core 容器仅挂载对应服务 token。私有隔离 HTTP 链路须显式开启 dsh ALLOW_INSECURE_HTTP；namespace 必须稳定且由服务端持有。
+- 启用 dsh 时使用配套 Core/dsh 镜像，设置 `SOHA_DSH_RUNTIME_ENABLED=true`。所有 Core worker 均可读取加密检查点后，设置 `SOHA_SECURITY_PROTECTED_DURABLE_STORAGE=true` 并沿用安装的有效凭据加密密钥。停用 dsh 时，仍需恢复加密检查点的安装应保留该开关和原密钥。
+- Core 容器只挂载所启用运行时的服务 token。容器间使用可达的私有地址，隔离网络内使用 HTTP 时显式开启 dsh ALLOW_INSECURE_HTTP。Hindsight namespace 必须稳定且由服务端持有。
 - 上游 API 默认无 Bearer 保护；gateway.py 校验服务 token，仅放行 Core adapter 所需 raw API。原始 API 绑定共享网络命名空间的 loopback，不发布管理 API；reflect/config/model 覆写被拒绝。
 - start.py 禁用自动 consolidation 和下载，使用 rrf，不启动额外 worker/UI；部署网络仍须限制出站仅到私有 Gateway/独立数据库。已有 bank 覆写与派生计划的数据库不能直接接入。
 - 模型与反思单次请求超时均为 95 秒，官方模型重试限定一次；固定 provider 对 HTTP400/429 和 JSON 解析错误也会重试一次，不会放宽格式校验及 Soha 来源检查。这只重试模型请求，不重提未知结果的 retain operation；Core 继续对账原操作并维持删除依赖屏障。
@@ -22,9 +23,15 @@
 - 所有容器非 root、只读根文件系统，不挂 Docker socket/宿主工作区；dsh 单写者独立持久卷，Hindsight 持久数据在独立数据库。
 
 在 Core 仓执行 `opensoha-verify run -- docker compose -f deploy/dsh-hindsight/compose.yaml --profile dsh --profile hindsight config --quiet` 可离线校验配置。
-只有在真实镜像、密钥、独立 DB、Gateway 和 B3 前置全部验证后，才按英文说明显式启用 profiles。
-当前机器无可用本机 Docker daemon。用户已授权 remote 数据库 Docker 主机的隔离检查，dsh 原生 amd64 镜像真实构建通过，临时镜像/builder 已清理，已有服务与卷保留；该授权不等于部署本服务。
-固定 Hindsight 容器启动、只读文件系统/UID、镜像健康和完整部署验收，仍须与原生 slim 包/独立 PostgreSQL/Gateway 资格区分，后者结果以任务实际证据为准。渲染或单测通过不代表上线或业务数据迁移完成。
+两个 profile 可独立启用。启用 Hindsight 前须另行验证独立数据库和 Gateway。
+只启用 dsh 时使用 `--profile dsh up --wait --wait-timeout 180`，由镜像执行带认证的健康检查。
+Core `/readyz` 只检查 PostgreSQL，开放流量前应确认一条已认证的 Chat 和一条具备资格的 Heya 请求都完成并留下对应 Run。
+Task124 发布默认配置前还要核对 dsh 的 `runtime-assembly-v1` 和一份已审核的测试配置。
+轮换共享服务 token 时先暂停准入并排空受影响 Run，同时更新两端，重建对应运行时容器并重启全部 Core 副本。
+保留 journal 卷和数据库，复验通过后再恢复准入。
+用目标镜像摘要、架构、UID、只读根文件系统和挂载验证容器启动。
+Hindsight 还要检查保护 API 与独立 PostgreSQL、Gateway 的实际连通。
+分别记录离线渲染、容器启动和业务数据迁移验收。
 
 
 ### 离线升级工具

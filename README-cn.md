@@ -279,6 +279,10 @@ Compose 默认使用仓库中的 `configs/config.example.yaml`。如需沿用私
 `configs/config.yaml`，请在 shell 或 Compose 环境文件中设置
 `SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`。相对路径以 `deploy/` 为基准。
 
+使用支持 dsh 的 Core 运行新 Chat 和 Heya 时，部署配套的 dsh 镜像并启用受保护的检查点存储。
+已有安装升级前请按 [运行时部署与切换说明](deploy/dsh-hindsight/README-cn.md) 执行。
+Core readiness 只检查 PostgreSQL，开放流量前分别验证 Chat 和 Heya。
+
 网络运行时在 Compose 中通过 profile 显式开启，因为 mTLS 私钥不能提交到仓库。
 分别准备包含 `tls.crt`、`tls.key` 和 `ca.crt` 的服务端与客户端身份目录，将私钥权限设为 `0440` 或 `0600`，然后启动：
 

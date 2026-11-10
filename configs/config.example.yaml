@@ -303,7 +303,7 @@ dsh_runtime:
   timeout: 30s
   allow_insecure_http: false
 
-# Hindsight requires database migrations 0143 and 0144 before enabling.
+# Apply Core migrations through 0145 before Hindsight cutover.
 # Before an existing installation cuts over, run runtime-upgrade dry-run;
 # legacy active runs must be drained or explicitly quarantined, never replayed.
 hindsight:

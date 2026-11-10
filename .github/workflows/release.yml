@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       web_ref:
-        description: "soha-web release tag to embed"
+        description: "soha-web release tag to embed (must match the Core tag for a tagged release)"
         required: true
-        default: "v0.1.12"
       contracts_ref:
         description: "Optional assertion of the contracts version pinned in go.mod"
         required: false
@@ -27,7 +26,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      WEB_REF: ${{ inputs.web_ref || 'v0.1.12' }}
+      WEB_REF: ${{ inputs.web_ref || github.ref_name }}
       CONTRACTS_REF: ${{ inputs.contracts_ref }}
       WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
@@ -45,8 +44,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: soha
         run: |
-          grep -F "newTag: ${GITHUB_REF_NAME}" deploy/kustomization.yaml
-          grep -F "image: ghcr.io/opensoha/soha:${GITHUB_REF_NAME}" deploy/deployment.yaml
+          set -euo pipefail
+          if [ "${WEB_REF}" != "${GITHUB_REF_NAME}" ]; then
+            echo "The Web release tag must match the Core release tag." >&2
+            exit 1
+          fi
+          grep -Fx -A 1 '  - name: ghcr.io/opensoha/soha' deploy/kustomization.yaml | grep -Fx "    newTag: ${GITHUB_REF_NAME}"
+          grep -Fx "          image: ghcr.io/opensoha/soha:${GITHUB_REF_NAME}" deploy/deployment.yaml
       - name: Resolve runtime version
         working-directory: soha
         run: |

@@ -1,17 +1,17 @@
 # Optional dsh / Hindsight deployment assets (B3)
 
-Both services and Core enablement default to off. Apply Core migrations through
-**0145** before enabling these backends. New production Chat/Heya uses dsh exclusively;
-disabled/unavailable dsh produces an explicit unavailable result, never Native
-fallback. Drain existing Native work with its prior runtime before upgrading;
-this candidate cannot resume the removed Native loop. B4 maintenance tooling is
-implemented, but no business-data migration has been performed. Rendered deployment
-assets do not prove bootstrap acceptance.
+Both services and Core enablement default to off. Core can run without these
+services. New Chat and Heya require dsh on this Core build, and Hindsight is
+optional. Before upgrading an installation with Chat or Heya, drain existing Native
+work using the prior runtime, back up PostgreSQL and complete the offline cutover
+below. Apply Core migrations through **0145** before Hindsight cutover, and through
+**0147** before using Task124 runtime profiles and managed assets.
 
 ## Inputs and rendering
 
-Build the dsh image using Agent `deploy/Dockerfile.dsh-runtime` with the explicit
-contracts build context. Supply your validated image as `DSH_IMAGE` and set
+Use a validated Core and dsh image pair. Build the dsh image using Agent
+`deploy/Dockerfile.dsh-runtime` with the Contracts schema from the same reviewed
+version used to build Core. Supply the validated dsh image as `DSH_IMAGE` and set
 `DSH_CORE_BASE_URL` to a private Core origin reachable from the Node container.
 Compose derives `/api/v1/copilot/dsh/model/v1` and `/api/v1/copilot/dsh/tools`.
 Node uses `SOHA_DSH_MODEL_AUTH_MODE=core` and the virtual model `soha-workbench`;
@@ -53,8 +53,8 @@ or mount is needed. `catalog.example.json` is diagnostic-only, for explicit
 # From the Core repository; render is offline and does not start services.
 opensoha-verify run -- docker compose -f deploy/dsh-hindsight/compose.yaml config --quiet
 opensoha-verify run -- docker compose -f deploy/dsh-hindsight/compose.yaml --profile dsh --profile hindsight config --quiet
-# Only after configuring all files and proving images/bootstrap prerequisites:
-docker compose -p my-soha-runtimes -f deploy/dsh-hindsight/compose.yaml --profile dsh --profile hindsight up -d
+# After configuring the dsh inputs and verifying the image:
+docker compose -p my-soha-runtimes -f deploy/dsh-hindsight/compose.yaml --profile dsh up --wait --wait-timeout 180
 ```
 
 Use a distinct Compose project name. This standalone file never joins or replaces
@@ -64,12 +64,14 @@ for remote Core connections; do not change bindings to public wildcard addresses
 
 ## Core startup wiring
 
-`core.env.example` lists every startup-only setting, with enablement disabled.
-For a Core process running on the host, its backend addresses are the Compose
-loopback ports. Set enabled flags after applying migrations through 0145 and copy the env entries
-into the existing Core service configuration. Containerized Core must instead use
-an explicitly allocated private shared network/TLS endpoint; container loopback is
-not the host and published host-loopback ports are not a container service network.
+`core.env.example` lists the startup settings with both backends disabled. Set
+`SOHA_DSH_RUNTIME_ENABLED=true` and `SOHA_SECURITY_PROTECTED_DURABLE_STORAGE=true`
+after all Core workers can read encrypted checkpoints. Use the installation's
+active credential encryption key from its existing secret configuration. Preserve
+that key and protected storage while encrypted checkpoints still need recovery,
+including when dsh is disabled. If Core runs on the host, use the Compose loopback
+ports. For containerized Core, use an explicitly allocated private shared network
+or TLS endpoint reachable from its container. Configure Hindsight separately.
 
 Mount the dsh service-token file read-only at `/run/soha-dsh/service-token` and the
 Hindsight service-token file at `/run/soha-hindsight/service-token` in the existing
@@ -81,13 +83,18 @@ Core container. For Docker, the corresponding arguments are:
 --mount type=bind,src=/YOUR_SECRETS/hindsight-service-token,dst=/run/soha-hindsight/service-token,readonly
 ```
 
-These are secret-file mounts, not host workspace mounts. Preserve the existing
-Core image, DB configuration and other arguments. UID 10001 must be able to read
+Keep the existing DB configuration and other arguments. UID 10001 must be able to read
 these files. Core receives only service tokens; the Hindsight database credential
 and model PAT stay with the Hindsight API. `ALLOW_INSECURE_HTTP=true` is an explicit
 opt-in for the isolated private Core→dsh link; use HTTPS and false otherwise.
 The Hindsight `INSTANCE_NAMESPACE` is stable, unique and server-owned; changing it
 changes bank mapping. Timeouts default to 15s (Hindsight maximum 30s).
+
+The dsh image health check verifies authenticated runtime readiness. Core
+`/readyz` checks PostgreSQL. Before directing user traffic to the candidate,
+verify that a new authenticated Chat and an eligible Heya request each complete
+and that the corresponding Run is recorded. For Task124 verify
+`runtime-assembly-v1` and one approved test profile before publishing a default.
 
 ## Hindsight protection
 
@@ -166,17 +173,17 @@ For stale dsh `writer.lock`, first prove the prior writer dead and reconcile rec
 
 Helm instructions are in soha-helm `charts/soha/OPTIONAL-RUNTIMES.md`. Kubernetes
 ConfigMaps consume these reviewed deployment scripts; no sibling source is required
-inside running containers. Restart the optional workloads after external Secret or
-ConfigMap rotation. No automatic rollout checksum can track externally owned content.
+inside running containers. For shared dsh or Hindsight service-token rotation,
+pause new work and drain the affected runs, update both sides, and recreate the
+corresponding runtime services and restart all Core replicas using the new token.
+Keep the journal volume and database attached. Repeat the authenticated health and
+request checks before reopening admission. Changes to runtime-only Secrets or
+ConfigMaps require restarting the consumers of those files.
 
-The host has no usable local Docker daemon. The user authorized isolated checks on
-the remote database Docker host; the native amd64 dsh image build passed and its
-temporary image/builder were removed without touching existing services or volumes.
-This does not authorize deployment onto that host. Pinned Hindsight container
-startup, read-only filesystem/UID permissions, image health and full deployment
-acceptance remain separate from native slim-package/isolated PostgreSQL/Gateway
-qualification. Use the task's exact evidence for the latter; Compose/Helm rendering
-and unit tests do not prove live deployment or a business-data migration.
+Verify container startup with the target image digest, architecture, UID,
+read-only filesystem and mounts. For Hindsight, check the protected API against
+its independent PostgreSQL and Gateway. Keep these checks separate from offline
+Compose/Helm renders and from business-data migration acceptance.
 
 Upstream [configuration](https://github.com/vectorize-io/hindsight/blob/34a138684a899b6ec34175f7a2b633860466d289/hindsight-api-slim/hindsight_api/config.py)
 and [image layout](https://github.com/vectorize-io/hindsight/blob/34a138684a899b6ec34175f7a2b633860466d289/docker/standalone/Dockerfile)
