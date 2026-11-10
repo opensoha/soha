@@ -18,17 +18,28 @@ vi.mock('@tanstack/react-query', async (importOriginal) => ({
           data: [
             {
               name: 'Main logs',
-              backendType: 'clickhouse',
-              providerKey: 'clickhouse',
-              config: { endpoint: 'https://logs.example.com', table: 'app_logs' },
+              backendType: 'loki',
+              config: { endpoint: 'https://logs.example.com', tenantId: 'prod' },
               scope: { clusterIds: ['prod'] },
               queryBudget: { maxEntries: 200, maxRangeSeconds: 3600, timeoutSeconds: 12 },
               redactionPolicy: { dropAttributeKeys: ['secret'] },
-              credentialKeys: ['password'],
+              credentialKeys: ['bearer_token'],
               enabled: true,
               id: 'logs-main',
               validationMessage: 'backend query timed out',
               validationStatus: 'failed',
+            },
+            {
+              name: 'Retired logs',
+              backendType: 'clickhouse',
+              config: { endpoint: 'https://retired.example.com', table: 'old_logs' },
+              scope: {},
+              queryBudget: { maxEntries: 100, maxRangeSeconds: 3600, timeoutSeconds: 10 },
+              redactionPolicy: {},
+              credentialKeys: ['password'],
+              enabled: true,
+              id: 'logs-retired',
+              validationStatus: 'healthy',
             },
           ],
           isError: false,
@@ -37,9 +48,25 @@ vi.mock('@tanstack/react-query', async (importOriginal) => ({
       : {
           data: [
             {
+              providerKey: 'loki',
+              displayName: 'Grafana Loki',
+              builtIn: true,
+              status: 'supported',
+              signals: ['logs'],
+              capabilities: ['logs.query'],
+            },
+            {
               providerKey: 'clickhouse',
               displayName: 'ClickHouse',
               builtIn: true,
+              status: 'supported',
+              signals: ['logs'],
+              capabilities: ['logs.query'],
+            },
+            {
+              providerKey: 'community-logs',
+              displayName: 'Community Logs',
+              builtIn: false,
               status: 'supported',
               signals: ['logs'],
               capabilities: ['logs.query'],
@@ -68,17 +95,21 @@ vi.mock('@/features/auth', () => ({
 }))
 vi.mock('@/components/status-tag', () => ({
   BooleanTag: ({ trueLabel }: { trueLabel: string }) => <span>{trueLabel}</span>,
-  StatusTag: ({ value }: { value?: string }) => <span>{value}</span>,
+  StatusTag: ({ value, label }: { value?: string; label?: string }) => <span>{label ?? value}</span>,
 }))
 vi.mock('@/components/admin-table', () => ({
   AdminTable: ({ columns, dataSource, headerExtra }: any) => {
     const column = columns.find((item: any) => item.key === 'status')
+    const actions = columns.find((item: any) => item.key === 'actions')
     return (
       <div>
         {headerExtra}
-        {columns.find((item: any) => item.key === 'actions').render(undefined, dataSource[0], 0)}
-        {column.title}
-        {column.render(undefined, dataSource[0], 0)}
+        {dataSource.map((item: { id: string }, index: number) => (
+          <div key={item.id} data-row={item.id}>
+            {actions.render(undefined, item, index)}
+            {column.render(undefined, item, index)}
+          </div>
+        ))}
       </div>
     )
   },
@@ -133,6 +164,17 @@ describe('LogDataSourcesPage validation evidence', () => {
         ),
       )
       await clickButton('新建数据源')
+      const provider = document.querySelector('#providerKey')!
+      await act(async () => {
+        provider.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+        provider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      })
+      const choices = Array.from(
+        document.querySelectorAll(
+          '.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content',
+        ),
+      ).map((item) => item.textContent)
+      expect(choices).toEqual(['Grafana Loki', 'Community Logs'])
       await clickButton('下一步')
       expect(visibleStep()?.textContent).toContain('Endpoint')
       expect(mutation.mutate).not.toHaveBeenCalled()
@@ -147,22 +189,22 @@ describe('LogDataSourcesPage validation evidence', () => {
       await clickButton('下一步')
       expect(visibleStep()?.textContent).toContain('每页最大行数')
       await clickButton('上一步')
-      expect((document.querySelector('input[id="table"]') as HTMLInputElement).value).toBe(
-        'app_logs',
+      expect((document.querySelector('input[id="tenantId"]') as HTMLInputElement).value).toBe(
+        'prod',
       )
       await clickButton('下一步')
       await clickButton('下一步')
-      expect(visibleStep()?.textContent).toContain('Password')
+      expect(visibleStep()?.textContent).toContain('Bearer Token')
       await clickButton('保存')
       expect(mutation.mutate).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'logs-main',
           input: expect.objectContaining({
             name: 'Main logs',
-            backendType: 'clickhouse',
+            backendType: 'loki',
             config: expect.objectContaining({
-              table: 'app_logs',
               endpoint: 'https://logs.example.com',
+              tenantId: 'prod',
             }),
             scope: { clusterIds: ['prod'], namespaces: undefined },
             queryBudget: { maxEntries: 200, maxRangeSeconds: 3600, timeoutSeconds: 12 },
@@ -177,21 +219,49 @@ describe('LogDataSourcesPage validation evidence', () => {
     }
   })
 
-  it('shows the backend validation failure reason beside status', async () => {
+  it('shows validation failures and only offers disabling a retired source', async () => {
+    mutation.mutate.mockClear()
     const container = document.createElement('div')
+    document.body.appendChild(container)
     const root = createRoot(container)
 
-    await act(async () =>
-      root.render(
-        <AntdApp>
-          <LogDataSourcesPage />
-        </AntdApp>,
-      ),
-    )
+    try {
+      await act(async () =>
+        root.render(
+          <AntdApp>
+            <LogDataSourcesPage />
+          </AntdApp>,
+        ),
+      )
 
-    expect(container.textContent).toContain('failed')
-    expect(container.textContent).toContain('backend query timed out')
+      expect(container.textContent).toContain('failed')
+      expect(container.textContent).toContain('backend query timed out')
+      const retiredRow = container.querySelector('[data-row="logs-retired"]')
+      expect(retiredRow?.textContent).toContain('后端已退役')
+      expect(retiredRow?.querySelectorAll('button')).toHaveLength(1)
 
-    await act(async () => root.unmount())
+      await clickButton('停用旧日志数据源')
+      expect(mutation.mutate).not.toHaveBeenCalled()
+      await clickButton('停用')
+      expect(mutation.mutate).toHaveBeenCalledWith(
+        {
+          id: 'logs-retired',
+          input: {
+            name: 'Retired logs',
+            backendType: 'clickhouse',
+            providerKey: undefined,
+            scope: {},
+            queryBudget: { maxEntries: 100, maxRangeSeconds: 3600, timeoutSeconds: 10 },
+            redactionPolicy: {},
+            config: { endpoint: 'https://retired.example.com', table: 'old_logs' },
+            enabled: false,
+          },
+        },
+        undefined,
+      )
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+    }
   })
 })

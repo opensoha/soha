@@ -4,11 +4,6 @@ import type {
   WorkbenchAgentRun,
 } from '@/features/copilot'
 
-export const TRACES_BACKEND_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'jaeger', label: 'jaeger' },
-  { value: 'skywalking', label: 'skywalking' },
-]
-
 export type AgentRuntimeState =
   | 'connected'
   | 'disabled'
@@ -231,6 +226,20 @@ export interface DataSource {
   lastValidatedAt?: string
 }
 
+export const AI_DATA_SOURCE_BACKENDS = new Map([
+  ['logs', 'loki'],
+  ['metrics', 'prometheus'],
+  ['platform-native', 'platform'],
+])
+
+export function isRetiredAIDataSource(source: Pick<DataSource, 'sourceKind' | 'backendType'>) {
+  return (
+    (source.sourceKind === 'logs' &&
+      ['es', 'elasticsearch', 'clickhouse'].includes(source.backendType)) ||
+    (source.sourceKind === 'traces' && ['jaeger', 'skywalking'].includes(source.backendType))
+  )
+}
+
 export interface AnalysisProfile {
   id: string
   name: string
@@ -259,7 +268,7 @@ export function buildDataSourceFormValues(item?: DataSource | null) {
     id: item?.id,
     name: item?.name ?? '',
     sourceKind: item?.sourceKind ?? 'logs',
-    backendType: item?.backendType ?? 'es',
+    backendType: item?.backendType ?? 'loki',
     enabled: item?.enabled ?? true,
     credentialRef: item?.credentialRef ?? '',
     mcpAdapter: item?.mcpAdapter ?? 'logs.v1',
@@ -278,18 +287,7 @@ export function buildDataSourceFormValues(item?: DataSource | null) {
       : [],
     redactionTruncateLongLines: Boolean(item?.redactionPolicy?.truncateLongLines ?? true),
     configEndpoint: String(item?.config?.endpoint ?? ''),
-    configIndex: String(item?.config?.index ?? ''),
-    configTable: String(item?.config?.table ?? ''),
-    configUsername: String(item?.config?.username ?? ''),
-    configPassword: String(item?.config?.password ?? ''),
     configBearerToken: String(item?.config?.bearerToken ?? ''),
-    configTimestampField: String(item?.config?.timestampField ?? '@timestamp'),
-    configMessageField: String(item?.config?.messageField ?? 'message'),
-    configSeverityField: String(item?.config?.severityField ?? 'level'),
-    configServiceField: String(item?.config?.serviceField ?? 'service'),
-    configWorkloadField: String(item?.config?.workloadField ?? 'workload'),
-    configNamespaceField: String(item?.config?.namespaceField ?? 'namespace'),
-    configClusterField: String(item?.config?.clusterField ?? 'cluster'),
     lokiLabelCluster: String(
       (item?.config?.labelKeys as Record<string, unknown> | undefined)?.cluster ?? 'cluster',
     ),
@@ -310,22 +308,11 @@ export function buildDataSourceFormValues(item?: DataSource | null) {
 
 export function buildDataSourcePayload(values: Record<string, unknown>) {
   const sourceKind = String(values.sourceKind ?? 'logs')
-  const backendType = String(values.backendType ?? 'es')
+  const backendType = String(values.backendType ?? 'loki')
   const config: Record<string, unknown> = {
     endpoint: values.configEndpoint || undefined,
-    timestampField: values.configTimestampField || undefined,
-    messageField: values.configMessageField || undefined,
-    severityField: values.configSeverityField || undefined,
-    serviceField: values.configServiceField || undefined,
-    workloadField: values.configWorkloadField || undefined,
-    namespaceField: values.configNamespaceField || undefined,
-    clusterField: values.configClusterField || undefined,
-    username: values.configUsername || undefined,
-    password: values.configPassword || undefined,
-    bearerToken: values.configBearerToken || undefined,
+    bearerToken: backendType !== 'platform' ? values.configBearerToken || undefined : undefined,
   }
-  if (backendType === 'es') config.index = values.configIndex || undefined
-  if (backendType === 'clickhouse') config.table = values.configTable || undefined
   if (backendType === 'loki') {
     config.labelKeys = {
       cluster: values.lokiLabelCluster || 'cluster',

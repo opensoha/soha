@@ -7,6 +7,7 @@ import {
 import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag } from '@/components/status-tag'
 import { useAIPageContext } from '@/features/copilot'
+import { ApiError } from '@/services/api-error'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
@@ -224,6 +225,9 @@ export function ObservabilityTracesPage({ embedded = false }: { embedded?: boole
         </ManagementQueryField>
       </SignalQueryForm>
       <ReadFeedback label="链路查询" query={traces} />
+      {traces.error instanceof ApiError && traces.error.status === 404 ? (
+        <Text type="secondary">请确认链路查询 Provider 和链接指定的数据源仍可用。</Text>
+      ) : null}
       {request ? (
         <Text type="secondary">
           查询范围：
@@ -238,7 +242,15 @@ export function ObservabilityTracesPage({ embedded = false }: { embedded?: boole
           · {formatDateTime(request.timeFrom)} — {formatDateTime(request.timeTo)}
         </Text>
       ) : null}
-      <SignalState error={null} idle={!request} loading={traces.isFetching && !result} />
+      {request ? (
+        <SignalState error={null} idle={false} loading={traces.isFetching && !result} />
+      ) : (
+        <ManagementState
+          bordered={false}
+          compact
+          description="设置范围后开始查询。OpenTelemetry 负责采集与导出，链路查询需要可用的查询 Provider。"
+        />
+      )}
       {result ? (
         <AdminTable
           enableDensity

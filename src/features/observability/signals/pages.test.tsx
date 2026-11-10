@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { ApiError } from '@/services/api-error'
 import { act } from 'react'
 import { App as AntdApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -156,6 +157,36 @@ describe('observability signal evidence links', () => {
     )
     expect(context).not.toHaveProperty('dataSourceId')
     expect(context).not.toHaveProperty('sourceRoute')
+  })
+
+  it('explains the query Provider requirement before submitting a trace query', async () => {
+    await renderPage(<ObservabilityTracesPage />, '/monitoring-workbench/traces')
+
+    expect(container.textContent).toContain('OpenTelemetry 负责采集与导出')
+    expect(container.textContent).toContain('链路查询需要可用的查询 Provider')
+    expect(apiMocks.queryTraces).not.toHaveBeenCalled()
+  })
+
+  it('surfaces unavailable trace queries from a legacy evidence link', async () => {
+    apiMocks.queryTraces.mockRejectedValue(new ApiError(404, '未找到对应资源', { code: 'not_found' }))
+    await renderPage(
+      <ObservabilityTracesPage />,
+      '/monitoring-workbench/traces?dataSourceId=jaeger-main&traceId=trace-1&from=2026-08-30T00%3A00%3A00Z&to=2026-08-30T00%3A15%3A00Z',
+    )
+
+    expect(apiMocks.queryTraces).toHaveBeenCalledWith(
+      expect.objectContaining({ dataSourceId: 'jaeger-main', traceId: 'trace-1' }),
+    )
+    expect(container.textContent).toContain('未找到对应资源')
+    expect(container.textContent).toContain('请确认链路查询 Provider')
+    expect(container.textContent).not.toContain('当前范围暂无链路')
+  })
+
+  it('explains the Provider requirement when the service list cannot resolve a source', async () => {
+    apiMocks.listServices.mockRejectedValue(new ApiError(404, '未找到对应资源', { code: 'not_found' }))
+    await renderPage(<ObservabilityServicesPage />, '/monitoring-workbench/services')
+
+    expect(container.textContent).toContain('请确认服务查询 Provider')
   })
 
   it('runs a metric evidence link against its exact datasource and absolute window', async () => {

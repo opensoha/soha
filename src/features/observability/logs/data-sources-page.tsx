@@ -12,10 +12,14 @@ import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { queryAccessDenied, readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
-import { EditOutlined, ExperimentOutlined, PlusOutlined } from '@ant-design/icons'
+import {
+  EditOutlined,
+  ExperimentOutlined,
+  PlusOutlined,
+  PoweroffOutlined,
+} from '@ant-design/icons'
 import type {
   ObservabilityDataSource,
-  ObservabilityDataSourceBackendType,
   ObservabilityDataSourceInput,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -26,6 +30,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Popconfirm,
   Select,
   Space,
   Switch,
@@ -40,7 +45,6 @@ import { observabilityLogQueries } from './queries'
 import './styles.css'
 
 const { Text } = Typography
-const builtinProviderKeys = ['loki', 'elasticsearch', 'clickhouse'] as const
 const labelDefaults = {
   labelCluster: 'cluster',
   labelNamespace: 'namespace',
@@ -53,13 +57,10 @@ const labelDefaults = {
 
 interface DataSourceFormValues {
   name: string
-  backendType: ObservabilityDataSourceBackendType
-  providerKey?: string
+  providerKey: string
   enabled: boolean
   endpoint: string
   tenantId?: string
-  index?: string
-  table?: string
   clusterIds?: string[]
   namespaces?: string[]
   maxEntries: number
@@ -67,8 +68,6 @@ interface DataSourceFormValues {
   timeoutSeconds: number
   dropAttributeKeys?: string[]
   bearerToken?: string
-  username?: string
-  password?: string
   credentials?: Array<{ key?: string; value?: string }>
   configuration?: Array<{ key?: string; value?: string }>
   clearCredentialKeys?: string[]
@@ -79,15 +78,6 @@ interface DataSourceFormValues {
   labelSeverity?: string
   labelPod?: string
   labelContainer?: string
-  timestampField?: string
-  messageField?: string
-  severityField?: string
-  serviceField?: string
-  workloadField?: string
-  namespaceField?: string
-  clusterField?: string
-  podField?: string
-  containerField?: string
 }
 
 function clean(value?: string) {
@@ -98,13 +88,10 @@ function formValues(item?: ObservabilityDataSource): DataSourceFormValues {
   const labels = item?.config.labelKeys
   return {
     name: item?.name ?? '',
-    backendType: item?.backendType ?? 'loki',
     providerKey: item?.providerKey ?? item?.backendType ?? 'loki',
     enabled: item?.enabled ?? true,
     endpoint: item?.config.endpoint ?? '',
     tenantId: item?.config.tenantId,
-    index: item?.config.index ?? 'logs-*',
-    table: item?.config.table ?? 'logs',
     clusterIds: item?.scope.clusterIds,
     namespaces: item?.scope.namespaces,
     maxEntries: item?.queryBudget.maxEntries ?? 1000,
@@ -119,43 +106,18 @@ function formValues(item?: ObservabilityDataSource): DataSourceFormValues {
     labelSeverity: labels?.severity ?? labelDefaults.labelSeverity,
     labelPod: labels?.pod ?? labelDefaults.labelPod,
     labelContainer: labels?.container ?? labelDefaults.labelContainer,
-    timestampField: item?.config.timestampField,
-    messageField: item?.config.messageField,
-    severityField: item?.config.severityField,
-    serviceField: item?.config.serviceField,
-    workloadField: item?.config.workloadField,
-    namespaceField: item?.config.namespaceField,
-    clusterField: item?.config.clusterField,
-    podField: item?.config.podField,
-    containerField: item?.config.containerField,
     configuration: item?.config.configuration,
   }
 }
 
 export function buildDataSourceInput(values: DataSourceFormValues): ObservabilityDataSourceInput {
-  const providerKey = values.providerKey ?? values.backendType
-  const builtIn = builtinProviderKeys.includes(providerKey as (typeof builtinProviderKeys)[number])
-  const backendType = (builtIn ? providerKey : 'provider') as ObservabilityDataSourceBackendType
-  const config: ObservabilityDataSourceInput['config'] = { endpoint: values.endpoint.trim() }
-  const optionalConfig = {
+  const { providerKey } = values
+  const builtIn = providerKey === 'loki'
+  const config: ObservabilityDataSourceInput['config'] = {
+    endpoint: values.endpoint.trim(),
     tenantId: clean(values.tenantId),
-    index: providerKey === 'elasticsearch' ? clean(values.index) : undefined,
-    table: providerKey === 'clickhouse' ? clean(values.table) : undefined,
-    timestampField: clean(values.timestampField),
-    messageField: clean(values.messageField),
-    severityField: clean(values.severityField),
-    serviceField: clean(values.serviceField),
-    workloadField: clean(values.workloadField),
-    namespaceField: clean(values.namespaceField),
-    clusterField: clean(values.clusterField),
-    podField: clean(values.podField),
-    containerField: clean(values.containerField),
   }
-  Object.assign(
-    config,
-    Object.fromEntries(Object.entries(optionalConfig).filter(([, value]) => value !== undefined)),
-  )
-  if (providerKey === 'loki') {
+  if (builtIn) {
     config.labelKeys = {
       cluster: clean(values.labelCluster),
       namespace: clean(values.labelNamespace),
@@ -165,19 +127,14 @@ export function buildDataSourceInput(values: DataSourceFormValues): Observabilit
       pod: clean(values.labelPod),
       container: clean(values.labelContainer),
     }
-  }
-  if (!builtIn) {
+  } else {
     config.configuration = values.configuration
       ?.map((item) => ({ key: item.key?.trim() ?? '', value: item.value?.trim() ?? '' }))
       .filter((item) => item.key && item.value)
   }
   const credentials = (
     builtIn
-      ? [
-          { key: 'bearer_token', value: clean(values.bearerToken) },
-          { key: 'username', value: clean(values.username) },
-          { key: 'password', value: clean(values.password) },
-        ]
+      ? [{ key: 'bearer_token', value: clean(values.bearerToken) }]
       : (values.credentials ?? []).map((item) => ({
           key: item.key?.trim() ?? '',
           value: item.value?.trim() || undefined,
@@ -185,7 +142,7 @@ export function buildDataSourceInput(values: DataSourceFormValues): Observabilit
   ).filter((item): item is { key: string; value: string } => Boolean(item.key && item.value))
   return {
     name: values.name.trim(),
-    backendType,
+    backendType: builtIn ? 'loki' : 'provider',
     providerKey: builtIn ? undefined : providerKey,
     enabled: values.enabled,
     scope: { clusterIds: values.clusterIds, namespaces: values.namespaces },
@@ -199,6 +156,10 @@ export function buildDataSourceInput(values: DataSourceFormValues): Observabilit
     credentials,
     clearCredentialKeys: values.clearCredentialKeys,
   }
+}
+
+function isRetiredLogSource(item: ObservabilityDataSource) {
+  return item.backendType === 'elasticsearch' || item.backendType === 'clickhouse'
 }
 
 export function LogDataSourcesPage() {
@@ -255,6 +216,7 @@ export function LogDataSourcesPage() {
   }, [denied, createMutation.error, updateMutation.error, form])
   const providers = (readableQueryData(providersQuery) ?? []).filter(
     (provider) =>
+      (!provider.builtIn || provider.providerKey === 'loki') &&
       provider.status !== 'unsupported' &&
       provider.signals.includes('logs') &&
       provider.capabilities.includes('logs.query'),
@@ -263,8 +225,7 @@ export function LogDataSourcesPage() {
     value: provider.providerKey,
     label: provider.displayName,
   }))
-  const selectedProvider = providers.find((provider) => provider.providerKey === providerKey)
-  const builtIn = selectedProvider?.builtIn ?? builtinProviderKeys.includes(providerKey as never)
+  const builtIn = providerKey === 'loki'
 
   function openEditor(item?: ObservabilityDataSource) {
     if (writeBlocked) return
@@ -288,7 +249,7 @@ export function LogDataSourcesPage() {
   }
 
   function submit(values: DataSourceFormValues) {
-    if (blocked) return
+    if (blocked || !providers.some((provider) => provider.providerKey === values.providerKey)) return
     const input = buildDataSourceInput(values)
     if (editing) {
       updateMutation.mutate(
@@ -308,6 +269,22 @@ export function LogDataSourcesPage() {
     })
   }
 
+  function disableRetiredSource(item: ObservabilityDataSource) {
+    const { name, backendType, providerKey, scope, queryBudget, redactionPolicy, config } = item
+    updateMutation.mutate({
+      id: item.id,
+      input: {
+        name,
+        backendType,
+        providerKey,
+        scope,
+        queryBudget,
+        redactionPolicy,
+        config,
+        enabled: false,
+      },
+    })
+  }
   const columns: TableColumnsType<ObservabilityDataSource> = [
     {
       title: '数据源',
@@ -346,10 +323,16 @@ export function LogDataSourcesPage() {
       render: (_, item) => (
         <Space orientation="vertical" size={2}>
           <Space size={4} wrap>
-            <StatusTag value={item.validationStatus} />
+            {isRetiredLogSource(item) ? (
+              <StatusTag value="unsupported" label="后端已退役" />
+            ) : (
+              <StatusTag value={item.validationStatus} />
+            )}
             <BooleanTag value={item.enabled} trueLabel="启用" falseLabel="停用" />
           </Space>
-          {item.validationStatus !== 'healthy' && item.validationMessage ? (
+          {!isRetiredLogSource(item) &&
+          item.validationStatus !== 'healthy' &&
+          item.validationMessage ? (
             <Text className="text-xs" type="secondary">
               {item.validationMessage}
             </Text>
@@ -374,25 +357,46 @@ export function LogDataSourcesPage() {
       key: 'actions',
       fixed: 'right',
       width: 104,
-      render: (_, item) => (
-        <Space size={2}>
-          <ManagementIconButton
-            aria-label="验证日志数据源"
-            disabled={!canValidate || validateMutation.blocked || denied}
-            icon={<ExperimentOutlined />}
-            loading={validateMutation.isPending && validateMutation.variables === item.id}
-            tooltip="验证连接"
-            onClick={() => validateMutation.mutate(item.id)}
-          />
-          <ManagementIconButton
-            aria-label="编辑日志数据源"
-            disabled={!canUpdate || writeBlocked}
-            icon={<EditOutlined />}
-            tooltip="编辑"
-            onClick={() => openEditor(item)}
-          />
-        </Space>
-      ),
+      render: (_, item) => {
+        if (isRetiredLogSource(item)) {
+          if (!canUpdate || !item.enabled) return '-'
+          return (
+            <Popconfirm
+              title={`停用日志数据源 ${item.name}？`}
+              okText="停用"
+              cancelText="取消"
+              disabled={writeBlocked}
+              onConfirm={() => disableRetiredSource(item)}
+            >
+              <ManagementIconButton
+                aria-label="停用旧日志数据源"
+                disabled={writeBlocked}
+                icon={<PoweroffOutlined />}
+                tooltip="停用"
+              />
+            </Popconfirm>
+          )
+        }
+        return (
+          <Space size={2}>
+            <ManagementIconButton
+              aria-label="验证日志数据源"
+              disabled={!canValidate || validateMutation.blocked || denied}
+              icon={<ExperimentOutlined />}
+              loading={validateMutation.isPending && validateMutation.variables === item.id}
+              tooltip="验证连接"
+              onClick={() => validateMutation.mutate(item.id)}
+            />
+            <ManagementIconButton
+              aria-label="编辑日志数据源"
+              disabled={!canUpdate || writeBlocked}
+              icon={<EditOutlined />}
+              tooltip="编辑"
+              onClick={() => openEditor(item)}
+            />
+          </Space>
+        )
+      },
     },
   ]
 
@@ -465,16 +469,7 @@ export function LogDataSourcesPage() {
           steps={[
             {
               title: '连接与 Provider',
-              fieldNames: [
-                'name',
-                'providerKey',
-                'endpoint',
-                ...(providerKey === 'elasticsearch'
-                  ? ['index']
-                  : providerKey === 'clickhouse'
-                    ? ['table']
-                    : []),
-              ],
+              fieldNames: ['name', 'providerKey', 'endpoint'],
               children: (
                 <div className="soha-observability-form-grid">
                   <Form.Item
@@ -484,7 +479,19 @@ export function LogDataSourcesPage() {
                   >
                     <Input />
                   </Form.Item>
-                  <Form.Item label="Provider" name="providerKey" rules={[{ required: true }]}>
+                  <Form.Item
+                    label="Provider"
+                    name="providerKey"
+                    rules={[
+                      {
+                        required: true,
+                        validator: (_, value: string) =>
+                          providers.some((provider) => provider.providerKey === value)
+                            ? Promise.resolve()
+                            : Promise.reject(new Error('请选择可用的日志 Provider')),
+                      },
+                    ]}
+                  >
                     <Select
                       loading={providersQuery.isLoading}
                       options={providerOptions}
@@ -501,24 +508,6 @@ export function LogDataSourcesPage() {
                   <Form.Item label="Tenant ID" name="tenantId">
                     <Input />
                   </Form.Item>
-                  {providerKey === 'elasticsearch' ? (
-                    <Form.Item
-                      label="Index"
-                      name="index"
-                      rules={[{ required: true, whitespace: true }]}
-                    >
-                      <Input />
-                    </Form.Item>
-                  ) : null}
-                  {providerKey === 'clickhouse' ? (
-                    <Form.Item
-                      label="Table"
-                      name="table"
-                      rules={[{ required: true, whitespace: true }]}
-                    >
-                      <Input />
-                    </Form.Item>
-                  ) : null}
                   <Form.Item label="启用" name="enabled" valuePropName="checked">
                     <Switch />
                   </Form.Item>
@@ -572,16 +561,6 @@ export function LogDataSourcesPage() {
                       <Form.Item label="Bearer Token" name="bearerToken">
                         <Input.Password autoComplete="new-password" placeholder="留空保持不变" />
                       </Form.Item>
-                    ) : null}
-                    {providerKey === 'clickhouse' ? (
-                      <>
-                        <Form.Item label="Username" name="username">
-                          <Input autoComplete="off" placeholder="留空保持不变" />
-                        </Form.Item>
-                        <Form.Item label="Password" name="password">
-                          <Input.Password autoComplete="new-password" placeholder="留空保持不变" />
-                        </Form.Item>
-                      </>
                     ) : null}
                     {!builtIn ? (
                       <>
@@ -649,40 +628,22 @@ export function LogDataSourcesPage() {
                       items={[
                         {
                           key: 'mapping',
-                          label: providerKey === 'loki' ? '标签映射' : '字段映射',
+                          label: '标签映射',
                           children: (
                             <div className="soha-observability-form-grid">
-                              {providerKey === 'loki'
-                                ? [
-                                    ['labelCluster', 'Cluster'],
-                                    ['labelNamespace', 'Namespace'],
-                                    ['labelService', 'Service'],
-                                    ['labelWorkload', 'Workload'],
-                                    ['labelSeverity', 'Severity'],
-                                    ['labelPod', 'Pod'],
-                                    ['labelContainer', 'Container'],
-                                  ].map(([name, label]) => (
-                                    <Form.Item key={name} label={label} name={name}>
-                                      <Input />
-                                    </Form.Item>
-                                  ))
-                                : builtIn
-                                  ? [
-                                      ['timestampField', 'Timestamp'],
-                                      ['messageField', 'Message'],
-                                      ['severityField', 'Severity'],
-                                      ['serviceField', 'Service'],
-                                      ['workloadField', 'Workload'],
-                                      ['namespaceField', 'Namespace'],
-                                      ['clusterField', 'Cluster'],
-                                      ['podField', 'Pod'],
-                                      ['containerField', 'Container'],
-                                    ].map(([name, label]) => (
-                                      <Form.Item key={name} label={label} name={name}>
-                                        <Input placeholder="使用后端默认字段" />
-                                      </Form.Item>
-                                    ))
-                                  : null}
+                              {[
+                                ['labelCluster', 'Cluster'],
+                                ['labelNamespace', 'Namespace'],
+                                ['labelService', 'Service'],
+                                ['labelWorkload', 'Workload'],
+                                ['labelSeverity', 'Severity'],
+                                ['labelPod', 'Pod'],
+                                ['labelContainer', 'Container'],
+                              ].map(([name, label]) => (
+                                <Form.Item key={name} label={label} name={name}>
+                                  <Input />
+                                </Form.Item>
+                              ))}
                             </div>
                           ),
                         },

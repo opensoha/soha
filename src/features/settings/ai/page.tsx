@@ -31,6 +31,7 @@ import {
   FolderOpenOutlined,
   LinkOutlined,
   PlusOutlined,
+  PoweroffOutlined,
   SaveOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -65,12 +66,13 @@ import type {
   DataSource,
 } from '../ai-settings-model'
 import {
+  AI_DATA_SOURCE_BACKENDS,
   buildDataSourceFormValues,
   buildDataSourcePayload,
   buildProfileFormValues,
   buildProfilePayload,
+  isRetiredAIDataSource,
   PLAYBOOK_OPTIONS,
-  TRACES_BACKEND_OPTIONS,
 } from '../ai-settings-model'
 import { settingsMutations } from '../mutations'
 import { normalizeWorkbenchModelSettings, settingsQueries } from '../queries'
@@ -108,8 +110,8 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
   const [skillsRegistryDraft, setSkillsRegistryDraft] = useState<AISkillSetting[]>([])
   const [skillsDirty, setSkillsDirty] = useState(false)
   const [skillsFilter, setSkillsFilter] = useState('')
+  const [dataSourceForm] = Form.useForm()
   const [dataSourceSourceKind, setDataSourceSourceKind] = useState('logs')
-  const [dataSourceBackendType, setDataSourceBackendType] = useState('es')
   const canViewAISettings = hasPermission(
     readableQueryData(permissionSnapshotQuery)?.data,
     'settings.ai.view',
@@ -169,18 +171,6 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
   const setSelectedCompanionPluginId = usePreferencesStore(
     (state) => state.setSelectedCompanionPluginId,
   )
-
-  useEffect(() => {
-    if (dataSourceModalVisible && editingDataSource) {
-      setDataSourceSourceKind(editingDataSource.sourceKind)
-      setDataSourceBackendType(editingDataSource.backendType)
-      return
-    }
-    if (dataSourceModalVisible && !editingDataSource) {
-      setDataSourceSourceKind('logs')
-      setDataSourceBackendType('es')
-    }
-  }, [dataSourceModalVisible, editingDataSource])
 
   const settingsQuery = useQuery(settingsQueries.ai.detail(canViewAISettings && showModel))
   const data = settingsQuery.isEnabled ? readableQueryData(settingsQuery) : undefined
@@ -318,7 +308,6 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
         onSuccess: () => {
           setDataSourceModalVisible(false)
           setEditingDataSource(null)
-          setDataSourceBackendType('es')
         },
       },
     )
@@ -416,21 +405,13 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
   const dataSources = readableQueryData(dataSourcesQuery) ?? []
   const profiles = readableQueryData(profilesQuery) ?? []
   const capabilityOptions = readableQueryData(capabilitiesQuery) ?? []
+  const dataSourceBackendType = AI_DATA_SOURCE_BACKENDS.get(dataSourceSourceKind)
   const filteredCapabilityOptions = capabilityOptions.filter(
-    (item) => item.sourceKind === dataSourceSourceKind,
+    (item) =>
+      item.sourceKind === dataSourceSourceKind &&
+      (!item.supportedBackends?.length ||
+        (dataSourceBackendType && item.supportedBackends.includes(dataSourceBackendType))),
   )
-  const backendOptions =
-    dataSourceSourceKind === 'logs'
-      ? [
-          { value: 'es', label: 'es' },
-          { value: 'loki', label: 'loki' },
-          { value: 'clickhouse', label: 'clickhouse' },
-        ]
-      : dataSourceSourceKind === 'metrics'
-        ? [{ value: 'prometheus', label: 'prometheus' }]
-        : dataSourceSourceKind === 'traces'
-          ? TRACES_BACKEND_OPTIONS
-          : [{ value: 'platform', label: 'platform' }]
 
   const dataSourceColumns: TableColumnsType<DataSource> = [
     { title: '名称', dataIndex: 'name' },
@@ -444,6 +425,9 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
       title: '校验状态',
       dataIndex: 'validationStatus',
       render: (value: string | undefined, record: DataSource) => {
+        if (isRetiredAIDataSource(record)) {
+          return <StatusTag value="unsupported" label="后端已退役" />
+        }
         const isPending =
           validateDataSourceMutation.isPending && validateDataSourceMutation.variables === record.id
         if (isPending) return <StatusTag value="checking" label="校验中" />
@@ -476,8 +460,35 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      render: (_: unknown, record: DataSource) =>
-        canValidateDataSources || canUpdateDataSources ? (
+      render: (_: unknown, record: DataSource) => {
+        if (isRetiredAIDataSource(record)) {
+          if (!canUpdateDataSources || !record.enabled) return '-'
+          return (
+            <Popconfirm
+              title={`停用 AI 数据源 ${record.name}？`}
+              okText="停用"
+              cancelText="取消"
+              disabled={blocked}
+              onConfirm={() => {
+                const { name, sourceKind, backendType } = record
+                dataSourceMutation.mutate({
+                  id: record.id,
+                  values: { name, sourceKind, backendType, enabled: false },
+                })
+              }}
+            >
+              <ManagementIconButton
+                aria-label="停用旧 AI 数据源"
+                disabled={blocked}
+                icon={<PoweroffOutlined />}
+                size="small"
+                tooltip="停用"
+              />
+            </Popconfirm>
+          )
+        }
+        if (AI_DATA_SOURCE_BACKENDS.get(record.sourceKind) !== record.backendType) return '-'
+        return canValidateDataSources || canUpdateDataSources ? (
           <Space className="soha-row-action-icons">
             {canValidateDataSources ? (
               <ManagementIconButton
@@ -503,7 +514,6 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
                 onClick={() => {
                   setEditingDataSource(record)
                   setDataSourceSourceKind(record.sourceKind)
-                  setDataSourceBackendType(record.backendType)
                   dataSourceMutation.reset()
                   setDataSourceModalVisible(true)
                 }}
@@ -512,7 +522,8 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
           </Space>
         ) : (
           '-'
-        ),
+        )
+      },
     },
   ]
 
@@ -1008,7 +1019,6 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
                   onClick={() => {
                     setEditingDataSource(null)
                     setDataSourceSourceKind('logs')
-                    setDataSourceBackendType('es')
                     dataSourceMutation.reset()
                     setDataSourceModalVisible(true)
                   }}
@@ -1204,17 +1214,19 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
             setDataSourceModalVisible(false)
             setEditingDataSource(null)
             setDataSourceSourceKind('logs')
-            setDataSourceBackendType('es')
           }}
           destroyOnHidden
         >
           {dataSourceMutation.feedback}
           <Form
+            clearOnDestroy
             disabled={blocked}
+            form={dataSourceForm}
             {...DEFAULT_FORM_LAYOUT}
             initialValues={buildDataSourceFormValues(editingDataSource)}
             onFinish={(values) => {
               if (editingDataSource ? !canUpdateDataSources : !canCreateDataSources) return
+              if (AI_DATA_SOURCE_BACKENDS.get(values.sourceKind) !== values.backendType) return
               saveDataSource({
                 id: editingDataSource?.id,
                 values: values as Record<string, unknown>,
@@ -1233,31 +1245,23 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
             </Form.Item>
             <Form.Item name="sourceKind" label="源类型">
               <Select
-                options={[
-                  { value: 'logs', label: 'logs' },
-                  { value: 'metrics', label: 'metrics' },
-                  { value: 'traces', label: 'traces' },
-                  { value: 'platform-native', label: 'platform-native' },
-                ]}
-                onChange={(value) => {
-                  const next = String(value)
-                  setDataSourceSourceKind(next)
-                  setDataSourceBackendType(
-                    next === 'logs'
-                      ? 'es'
-                      : next === 'metrics'
-                        ? 'prometheus'
-                        : next === 'traces'
-                          ? 'jaeger'
-                          : 'platform',
-                  )
+                options={[...AI_DATA_SOURCE_BACKENDS.keys()].map((value) => ({ value, label: value }))}
+                onChange={(value: string) => {
+                  setDataSourceSourceKind(value)
+                  dataSourceForm.setFieldsValue({
+                    backendType: AI_DATA_SOURCE_BACKENDS.get(value),
+                    mcpAdapter: `${value}.v1`,
+                  })
                 }}
               />
             </Form.Item>
             <Form.Item name="backendType" label="后端类型">
               <Select
-                options={backendOptions}
-                onChange={(value) => setDataSourceBackendType(String(value))}
+                options={
+                  dataSourceBackendType
+                    ? [{ value: dataSourceBackendType, label: dataSourceBackendType }]
+                    : []
+                }
               />
             </Form.Item>
             <Form.Item name="mcpAdapter" label="能力层">
@@ -1313,15 +1317,6 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
               title="3. 后端连接"
               description="这里只展示当前后端类型需要的关键字段，避免无关配置干扰。"
             />
-            {dataSourceBackendType === 'skywalking' ? (
-              <Alert
-                type="info"
-                showIcon
-                style={{ marginBottom: 16 }}
-                title="SkyWalking 作为 trace 查询后端"
-                description="OpenTelemetry 是采集/导出标准，不是直接查询 backend。这里的 traces backend 请选择 Jaeger 或 SkyWalking，并填它们各自的查询入口。"
-              />
-            ) : null}
             <Form.Item
               name="configEndpoint"
               label="Endpoint"
@@ -1329,72 +1324,9 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
             >
               <Input />
             </Form.Item>
-            {dataSourceBackendType === 'es' ? (
-              <Form.Item
-                name="configIndex"
-                label="ES Index"
-                rules={[{ required: true, message: '请输入 ES Index' }]}
-              >
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceBackendType === 'clickhouse' ? (
-              <Form.Item
-                name="configTable"
-                label="CK Table"
-                rules={[{ required: true, message: '请输入 CK Table' }]}
-              >
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceBackendType === 'clickhouse' ? (
-              <Form.Item name="configUsername" label="Username">
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceBackendType === 'clickhouse' ? (
-              <Form.Item name="configPassword" label="Password">
-                <Input.Password />
-              </Form.Item>
-            ) : null}
-            {dataSourceBackendType !== 'clickhouse' && dataSourceBackendType !== 'platform' ? (
+            {dataSourceBackendType !== 'platform' ? (
               <Form.Item name="configBearerToken" label="Bearer Token">
                 <Input.Password />
-              </Form.Item>
-            ) : null}
-            {dataSourceSourceKind === 'logs' ? (
-              <Form.Item name="configTimestampField" label="Timestamp Field">
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceSourceKind === 'logs' ? (
-              <Form.Item name="configMessageField" label="Message Field">
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceSourceKind === 'logs' ? (
-              <Form.Item name="configSeverityField" label="Severity Field">
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceSourceKind === 'logs' ? (
-              <Form.Item name="configServiceField" label="Service Field">
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceSourceKind === 'logs' ? (
-              <Form.Item name="configWorkloadField" label="Workload Field">
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceSourceKind === 'logs' ? (
-              <Form.Item name="configNamespaceField" label="Namespace Field">
-                <Input />
-              </Form.Item>
-            ) : null}
-            {dataSourceSourceKind === 'logs' ? (
-              <Form.Item name="configClusterField" label="Cluster Field">
-                <Input />
               </Form.Item>
             ) : null}
             {dataSourceBackendType === 'loki' ? (
@@ -1452,7 +1384,6 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
                   setDataSourceModalVisible(false)
                   setEditingDataSource(null)
                   setDataSourceSourceKind('logs')
-                  setDataSourceBackendType('es')
                 }}
               >
                 取消
@@ -1521,7 +1452,9 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
                 mode="multiple"
                 options={dataSources.map((item) => ({
                   value: item.id,
-                  label: `${item.name} (${item.sourceKind}/${item.backendType})`,
+                  label: `${item.name} (${item.sourceKind}/${item.backendType})${isRetiredAIDataSource(item) ? ' · 后端已退役' : ''}`,
+                  disabled:
+                    isRetiredAIDataSource(item) && !editingProfile?.enabledSources?.includes(item.id),
                 }))}
               />
             </Form.Item>
