@@ -30,6 +30,9 @@ func (c *Client) ExecuteManifestTask(ctx context.Context, payload sohaapi.Manife
 	if c == nil || c.dynamic == nil || c.discovery == nil {
 		return sohaapi.ManifestExecutionTaskResult{}, fmt.Errorf("manifest Kubernetes runtime is unavailable")
 	}
+	if err := validateRootManifestPayload(payload); err != nil {
+		return sohaapi.ManifestExecutionTaskResult{}, err
+	}
 	resources, err := restmapper.GetAPIGroupResources(c.discovery)
 	if err != nil {
 		return sohaapi.ManifestExecutionTaskResult{}, fmt.Errorf("discover Kubernetes resources: %w", err)
@@ -66,10 +69,10 @@ func (c *Client) preflightManifest(ctx context.Context, mapper manifestRESTMappe
 	}
 	ready := len(diagnostics) == 0
 	return sohaapi.ManifestExecutionTaskResult{
-		Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation,
+		InitializationPlanID: payload.InitializationPlanID, Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation,
 		RenderedDigest: payload.RenderedDigest, Stale: false, Diagnostics: diagnostics,
 		Inventory: []sohaapi.ManifestResourceInventory{},
-		Preflight: &sohaapi.ManifestPreflightResult{Ready: ready, Capability: "available", RenderedDigest: payload.RenderedDigest, ResourceCount: len(payload.Documents), Diagnostics: diagnostics},
+		Preflight: &sohaapi.ManifestPreflightResult{InitializationPlanID: payload.InitializationPlanID, Ready: ready, Capability: "available", RenderedDigest: payload.RenderedDigest, ResourceCount: len(payload.Documents), Diagnostics: diagnostics},
 	}, nil
 }
 
@@ -87,7 +90,7 @@ func (c *Client) applyManifest(ctx context.Context, mapper manifestRESTMapper, p
 		}
 		inventory = append(inventory, manifestInventory(payload, document, desired, live))
 	}
-	result := sohaapi.ManifestExecutionTaskResult{Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation, RenderedDigest: payload.RenderedDigest, Stale: false, Diagnostics: diagnostics, Inventory: inventory}
+	result := sohaapi.ManifestExecutionTaskResult{InitializationPlanID: payload.InitializationPlanID, Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation, RenderedDigest: payload.RenderedDigest, Stale: false, Diagnostics: diagnostics, Inventory: inventory}
 	if len(diagnostics) > 0 {
 		return result, fmt.Errorf("manifest apply failed for %d resource(s)", len(diagnostics))
 	}
@@ -125,6 +128,12 @@ func (c *Client) observeManifest(ctx context.Context, mapper manifestRESTMapper,
 		}
 		queryCtx, cancel := context.WithTimeout(ctx, manifestTaskTimeout)
 		live, getErr := manifestResource(c.dynamic, mapping, document.Namespace).Get(queryCtx, document.Name, metav1.GetOptions{})
+		if getErr == nil && payload.RootResource != nil && string(live.GetUID()) != payload.RootResource.UID {
+			getErr = fmt.Errorf("root CR identity changed")
+		}
+		if getErr == nil {
+			getErr = validateInitialObservation(payload, document, live)
+		}
 		cancel()
 		if getErr != nil {
 			diagnostics = append(diagnostics, manifestDiagnostic("observe", document, getErr))
@@ -135,9 +144,15 @@ func (c *Client) observeManifest(ctx context.Context, mapper manifestRESTMapper,
 		if getErr != nil {
 			diagnostics = append(diagnostics, manifestDiagnostic("observe", document, getErr))
 		}
+		if payload.RootResource != nil {
+			item.Health = "unknown"
+		}
 		inventory = append(inventory, item)
 		fields := diffManifestFields(desired.Object, live.Object, "")
 		if len(fields) > 0 {
+			if payload.RootResource != nil {
+				fields = []manifestDriftField{{Path: "/spec", DesiredValue: "[restricted]", ObservedValue: "[restricted]"}}
+			}
 			driftResources = append(driftResources, manifestDriftResource{APIVersion: document.APIVersion, Kind: document.Kind, Namespace: document.Namespace, Name: document.Name, Fields: fields})
 		}
 		if string(payload.Action) == "adopt" {
@@ -147,7 +162,7 @@ func (c *Client) observeManifest(ctx context.Context, mapper manifestRESTMapper,
 		}
 	}
 	result := sohaapi.ManifestExecutionTaskResult{
-		Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation,
+		InitializationPlanID: payload.InitializationPlanID, Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation,
 		RenderedDigest: payload.RenderedDigest, Stale: false, Diagnostics: diagnostics, Inventory: inventory,
 		Drift: buildManifestDriftReport(driftResources), AdoptedFiles: adoptedFiles,
 	}
@@ -169,7 +184,14 @@ func (c *Client) patchManifestDocument(ctx context.Context, mapper manifestRESTM
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, manifestTaskTimeout)
 	defer cancel()
-	live, err := resourceruntime.ApplyManifest(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, options)
+	var live *unstructured.Unstructured
+	if payload.InitializationPlanID != "" {
+		live, err = createInitializedManifest(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, options)
+	} else if payload.RootResource != nil {
+		live, err = resourceruntime.ApplyRootCR(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, *payload.RootResource, options)
+	} else {
+		live, err = resourceruntime.ApplyManifest(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, options)
+	}
 	return live, desired, err
 }
 
@@ -236,6 +258,9 @@ func manifestInventory(payload sohaapi.ManifestExecutionTaskPayload, document so
 		ResourceVersion: live.GetResourceVersion(), DesiredObjectDigest: document.ContentDigest,
 		ObservedObjectDigest: observedDigest, Health: manifestHealth(live), LastObservedAt: time.Now().UTC(),
 		ResourceGeneration: live.GetGeneration(), Finalizers: live.GetFinalizers(),
+	}
+	if payload.RootResource != nil {
+		item.Health = "unknown"
 	}
 	if generation, found, err := unstructured.NestedInt64(live.Object, "status", "observedGeneration"); err == nil && found && generation >= 0 {
 		item.ObservedResourceGeneration = &generation
@@ -383,4 +408,37 @@ func firstManifestString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func validateRootManifestPayload(payload sohaapi.ManifestExecutionTaskPayload) error {
+	if err := resourceruntime.ValidateManifestInitialization(payload); err != nil {
+		return err
+	}
+	if payload.RootResource == nil {
+		return nil
+	}
+	if len(payload.Documents) != 1 || len(payload.GitOpsDocuments) > 0 || payload.RolloutControl != nil || payload.ForceConflicts {
+		return fmt.Errorf("invalid root CR task boundary")
+	}
+	if payload.Action != "apply" && payload.Action != "preflight" && payload.Action != "observe" {
+		return fmt.Errorf("unsupported root CR task action")
+	}
+	var object map[string]any
+	if err := json.Unmarshal([]byte(payload.Documents[0].Content), &object); err != nil {
+		return err
+	}
+	return contractresource.ValidateRootCRDocument(object, *payload.RootResource)
+}
+
+func validateInitialObservation(payload sohaapi.ManifestExecutionTaskPayload, document sohaapi.ManifestRenderedDocument, live *unstructured.Unstructured) error {
+	if payload.InitializationPlanID != "" {
+		expected := ""
+		for _, original := range payload.Inventory {
+			if original.APIVersion == document.APIVersion && original.Kind == document.Kind && original.Namespace == document.Namespace && original.Name == document.Name {
+				expected = original.UID
+			}
+		}
+		return resourceruntime.ValidateInitializedUID(live, expected)
+	}
+	return nil
 }

@@ -7,7 +7,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
+func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer, expectedUID string) error {
+	if err := c.CheckPodUID(ctx, namespace, name, expectedUID); err != nil {
+		return err
+	}
 	options := &corev1.PodLogOptions{
 		Container: container,
 		Follow:    true,

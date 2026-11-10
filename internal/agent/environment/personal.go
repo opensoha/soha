@@ -19,10 +19,7 @@ func (e *DockerExecutor) PersonalOperation(ctx context.Context, request contract
 	}
 	ctx, cancel := context.WithTimeout(ctx, defaultOperationTimeout)
 	defer cancel()
-	l := request.Lease
-	lease := Lease{ID: l.ID, RunID: l.RunID, OwnerID: l.OwnerID, ScopeHash: l.ScopeHash, Mode: l.Mode,
-		IssuedAt: l.IssuedAt, ExpiresAt: l.ExpiresAt,
-		Quota: Quota{DiskBytes: l.Quota.DiskBytes, MemoryBytes: l.Quota.MemoryBytes, CPUUnits: l.Quota.CPUUnits, MaxProcesses: l.Quota.MaxProcesses, NetworkEgress: l.Quota.NetworkEgress}}
+	lease := personalDockerLease(request.Lease)
 	result := contractenv.Result{SchemaVersion: contractenv.ResultVersion, LeaseID: lease.ID, RunID: lease.RunID, TaskID: request.TaskID}
 	handle, found, err := e.personalHandle(ctx, lease)
 	if err != nil {
@@ -94,6 +91,12 @@ func (e *DockerExecutor) PersonalOperation(ctx context.Context, request contract
 		State: result.State, ObservedAt: result.ObservedAt, ArtifactRefs: refs,
 		ResourceUsage: contractenv.Usage{DiskBytes: usage.DiskBytes, MemoryBytes: usage.MemoryBytes, CPUTimeNanos: usage.CPUTimeNanos, Processes: usage.Processes}}
 	return result, nil
+}
+
+func personalDockerLease(l contractenv.Lease) Lease {
+	return Lease{ID: l.ID, RunID: l.RunID, OwnerID: l.OwnerID, ScopeHash: l.ScopeHash, Mode: l.Mode,
+		IssuedAt: l.IssuedAt, ExpiresAt: l.ExpiresAt,
+		Quota: Quota{DiskBytes: l.Quota.DiskBytes, MemoryBytes: l.Quota.MemoryBytes, CPUUnits: l.Quota.CPUUnits, MaxProcesses: l.Quota.MaxProcesses, NetworkEgress: l.Quota.NetworkEgress}}
 }
 
 func (e *DockerExecutor) personalHandle(ctx context.Context, lease Lease) (Handle, bool, error) {

@@ -60,9 +60,10 @@ func validateDockerRuntime(cfg DockerRuntimeConfig) error {
 }
 
 type PersonalEnvironmentConfig struct {
-	Enabled          bool   `mapstructure:"enabled"`
-	Image            string `mapstructure:"image"`
-	QuotaHelperImage string `mapstructure:"quota_helper_image"`
+	Enabled          bool                          `mapstructure:"enabled"`
+	Image            string                        `mapstructure:"image"`
+	QuotaHelperImage string                        `mapstructure:"quota_helper_image"`
+	MCPStdioAssets   map[MCPStdioAssetRef][]string `mapstructure:"-"`
 }
 
 type AppConfig struct {
@@ -215,6 +216,13 @@ func Load() (Config, error) {
 	}
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
+	}
+	if cfg.PersonalEnvironment.Enabled {
+		assets, err := loadMCPStdioAssets(os.Getenv("SOHA_AGENT_MCP_STDIO_FILE"))
+		if err != nil {
+			return Config{}, fmt.Errorf("load SOHA_AGENT_MCP_STDIO_FILE: %w", err)
+		}
+		cfg.PersonalEnvironment.MCPStdioAssets = assets
 	}
 	return cfg, nil
 }

@@ -228,3 +228,9 @@ This repository is licensed under the Apache License 2.0. See
 ### Combined Task115 and Task117 development
 
 The local integration uses the workspace's combined Contracts checkout. The declared Contracts version `v0.1.29` supplies the published Task117 SDK. Task115 Docker runtime and terminal packages are available in the combined workspace source. Standalone Go and Docker builds require a published Contracts version that includes both sets of APIs.
+
+### Pod session identity
+
+Pod list/detail responses include `uid`. For UID-bound sessions, forward the original identity as `expectedUid` to `/api/v1/platform/workloads/pods/:name/uid-bound/logs`, `/uid-bound/logs/stream` or `/uid-bound/terminal`, alongside namespace and container. These routes require a live UID match before opening the Kubernetes subresource. Keep the older routes for existing clients. A Core using the bound routes must reject an unsupported route without retrying on the older routes. Logs and exec retain normal Agent authentication, action policy and Kubernetes RBAC. Kubernetes log and exec APIs do not provide an atomic UID precondition.
+
+Terminal clients must read frames so ping/pong can run. A peer without pong is disconnected after 45 seconds; writes have finite deadlines. Closing the socket or sending `{ "type": "close" }` cancels the upstream; disconnect never requires an `exit` command. Only resource descriptors belong in persistent browser storage, never tickets, input or output.

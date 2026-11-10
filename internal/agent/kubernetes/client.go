@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,13 +48,14 @@ import (
 )
 
 type Client struct {
-	cfg            cfgpkg.KubernetesConfig
-	typed          kubernetes.Interface
-	dynamic        dynamic.Interface
-	discovery      discovery.DiscoveryInterface
-	metadata       metadata.Interface
-	restConfig     *rest.Config
-	resourceEvents *resourceEventStream
+	cfg                        cfgpkg.KubernetesConfig
+	typed                      kubernetes.Interface
+	dynamic                    dynamic.Interface
+	discovery                  discovery.DiscoveryInterface
+	metadata                   metadata.Interface
+	restConfig                 *rest.Config
+	resourceEvents             *resourceEventStream
+	executionClaimCapabilities []string
 }
 
 func New(cfg cfgpkg.KubernetesConfig) (*Client, error) {
@@ -82,9 +84,15 @@ func New(cfg cfgpkg.KubernetesConfig) (*Client, error) {
 	return client, nil
 }
 
+// SetExecutionClaimCapabilities records the runner's enabled task capabilities before serving requests.
+func (c *Client) SetExecutionClaimCapabilities(capabilities []string) {
+	c.executionClaimCapabilities = slices.Clone(capabilities)
+}
+
 func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 	summary := domaincluster.Summary{
 		Capabilities: []string{
+			contractresource.RelationSnapshotFeature,
 			contractresource.NetworkTopologySnapshotFeature,
 			contractresource.NetworkTopologyNamedRootFeature,
 			contractresource.NetworkTopologyGatewayL4Feature,
@@ -117,6 +125,7 @@ func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 		"manifest.preflight", "manifest.ssa", "manifest.observe", contractruntime.ManifestAgentCapability,
 		"logs.runtime.snapshot", "logs.runtime.stream", "logs.runtime.aggregate",
 	)
+	capabilities = append(capabilities, c.executionClaimCapabilities...)
 	for _, group := range groups.Groups {
 		if strings.TrimSpace(group.Name) == "" {
 			continue
@@ -220,7 +229,10 @@ func (c *Client) GetPodDetail(ctx context.Context, namespace, name string) (doma
 	return c.buildPodDetail(queryCtx, *item), nil
 }
 
-func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
+	if err := c.CheckPodUID(ctx, namespace, name, expectedUID); err != nil {
+		return domainresource.PodLogsView{}, err
+	}
 	queryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	options := &corev1.PodLogOptions{Container: container, Previous: previous}
