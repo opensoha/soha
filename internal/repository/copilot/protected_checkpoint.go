@@ -21,7 +21,7 @@ func (r *Repository) encodeNativeCheckpoint(run domaincopilot.AgentRun, raw json
 		return nil, protectedpayload.ErrUnavailable
 	}
 	if r.storageKeys.Active().ID() == "" {
-		if nativeCheckpointRequiresSealing(raw) {
+		if run.ProviderKind == "dsh" || nativeCheckpointRequiresSealing(raw) {
 			return nil, protectedpayload.ErrUnavailable
 		}
 		return raw, nil
@@ -38,7 +38,7 @@ func (r *Repository) decodeNativeCheckpoint(run domaincopilot.AgentRun, raw json
 	}
 	// Older Native checkpoints could not admit these capabilities. Never trust
 	// an unsealed protected call just because this process has an active key.
-	if nativeCheckpointRequiresSealing(raw) {
+	if (run.ProviderKind == "dsh" && len(raw) > 2) || nativeCheckpointRequiresSealing(raw) {
 		return nil, protectedpayload.ErrUnavailable
 	}
 	return raw, nil

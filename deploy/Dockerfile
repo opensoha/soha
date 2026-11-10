@@ -31,7 +31,8 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o /out/soha ./cmd/server && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/network-control ./cmd/network-control && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ingest ./cmd/ingest && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-adapter ./cmd/radius-adapter
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-adapter ./cmd/radius-adapter && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/runtime-upgrade ./cmd/runtime-upgrade
 
 FROM go-source AS network-gateway-build
 ARG TARGETOS=linux
@@ -132,6 +133,7 @@ WORKDIR /app
 COPY --from=go-build /out/soha /app/soha
 COPY --from=go-build /out/network-control /app/network-control
 COPY --from=go-build /out/ingest /app/ingest
+COPY --from=go-build /out/runtime-upgrade /app/runtime-upgrade
 COPY configs/config.example.yaml /app/configs/config.yaml
 COPY migrations /app/migrations
 COPY deploy/entrypoint.sh /app/entrypoint.sh

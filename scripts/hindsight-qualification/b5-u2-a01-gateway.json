@@ -1,0 +1,54 @@
+{
+  "attempt": "Task123/B5/U2/A01",
+  "status": "PREFLIGHT_PASS",
+  "full_hindsight_real_gateway": "NOT_RUN",
+  "derived_memory_delete": "NOT_RUN",
+  "script_sha256": "13ab3fc70581d14ab5d0a6e7d6798aae48d899a0412fa38271a395428e3bd9d4",
+  "normal_cli_session_exit": 0,
+  "route_inventory_http": 200,
+  "enabled_routes": [
+    {
+      "publicModel": "gpt-6.1-sol",
+      "upstreamModel": "gpt-6.1-sol",
+      "providerKind": "openai"
+    },
+    {
+      "publicModel": "gpt-6-luna",
+      "upstreamModel": "gpt-6-luna",
+      "providerKind": "openai"
+    }
+  ],
+  "embedding_route": "NOT_CONFIGURED_FOR_PROBE",
+  "action_key": "Task123/gateway-qualification/hindsight-u2/1",
+  "token_name": "task123-hq-b5-u2-a01-435c2f7476ca4a40ba8644b859945829",
+  "cleanup_requires_followup": false,
+  "credential": {
+    "create_http": 201,
+    "expires_at": "2026-11-08T13:27:17.187529+00:00",
+    "allowed_models": [
+      "gpt-6-luna"
+    ],
+    "type": "PAT",
+    "permission_keys": [
+      "ai.gateway.relay.invoke"
+    ],
+    "id": "f3c9dfc8-e907-47e2-9bf0-6d2aa05a7cb3"
+  },
+  "chat": {
+    "http": 200,
+    "usage_present": true,
+    "usage": {
+      "prompt_tokens": 138,
+      "completion_tokens": 65,
+      "total_tokens": 203
+    },
+    "finish_reason": "stop",
+    "structured_extraction": "PASS",
+    "fact_count": 1
+  },
+  "revocation": {
+    "id": "f3c9dfc8-e907-47e2-9bf0-6d2aa05a7cb3",
+    "http": 200,
+    "confirmed": true
+  }
+}

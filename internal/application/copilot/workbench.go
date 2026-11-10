@@ -27,8 +27,8 @@ func normalizeSessionMode(mode string) string {
 
 func normalizeAgentProviderID(providerID string) string {
 	providerID = strings.TrimSpace(providerID)
-	if providerID == "" {
-		return "internal"
+	if providerID == "" || providerID == "internal" || providerID == "native" {
+		return agentProviderInternal
 	}
 	return providerID
 }
@@ -66,6 +66,9 @@ func sessionMetadataMap(metadata domaincopilot.SessionMetadata) map[string]any {
 		"source":           metadata.Source,
 		"knowledgeContext": metadata.KnowledgeContext,
 	}
+	if metadata.RuntimeProfileID != "" {
+		result["runtimeProfileId"] = metadata.RuntimeProfileID
+	}
 	if metadata.ArchivedAt != "" {
 		result["archivedAt"] = metadata.ArchivedAt
 	}
@@ -78,6 +81,7 @@ func parseSessionMetadata(input map[string]any) domaincopilot.SessionMetadata {
 		return metadata
 	}
 	decodeStructuredValue(input["modelPreferences"], &metadata.ModelPreferences)
+	metadata.RuntimeProfileID = stringValue(input["runtimeProfileId"])
 	metadata.ConversationKind = stringValue(input["conversationKind"])
 	metadata.Mode = stringValue(input["mode"])
 	metadata.Status = stringValue(input["status"])

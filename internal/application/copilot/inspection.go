@@ -47,12 +47,9 @@ func (s *Service) Start(ctx context.Context) {
 	go func() {
 		var workers sync.WaitGroup
 		workers.Add(3)
-		if s.validateNativeRuntime(s.runtime) == nil {
+		if s.dshRuntime != nil {
 			workers.Add(1)
-			go func() {
-				defer workers.Done()
-				s.runNativeWorker(runCtx)
-			}()
+			go func() { defer workers.Done(); s.runDSHWorker(runCtx) }()
 		}
 		go func() {
 			defer workers.Done()

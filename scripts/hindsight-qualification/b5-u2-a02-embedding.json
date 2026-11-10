@@ -1,0 +1,59 @@
+{
+  "attempt": "Task123/B5/U2/A01",
+  "status": "FAIL",
+  "full_hindsight_real_gateway": "NOT_RUN",
+  "derived_memory_delete": "NOT_RUN",
+  "script_sha256": "94b5234edf164511d99f2fbc633671f55c06e874584502ee97ccf38ebc83f70a",
+  "normal_cli_session_exit": 0,
+  "route_inventory_http": 200,
+  "enabled_routes": [
+    {
+      "publicModel": "gpt-6.1-sol",
+      "upstreamModel": "gpt-6.1-sol",
+      "providerKind": "openai"
+    },
+    {
+      "publicModel": "gpt-6-luna",
+      "upstreamModel": "gpt-6-luna",
+      "providerKind": "openai"
+    }
+  ],
+  "embedding_route": "gpt-6-luna",
+  "upstream_inventory_http": 200,
+  "upstream_discovery": [],
+  "action_key": "Task123/gateway-qualification/hindsight-u2/2",
+  "token_name": "task123-hq-b5-u2-a02-5629d025c84e45179a2effb851f664bb",
+  "cleanup_requires_followup": false,
+  "credential": {
+    "create_http": 201,
+    "expires_at": "2026-11-08T13:29:06.065917+00:00",
+    "allowed_models": [
+      "gpt-6-luna"
+    ],
+    "type": "PAT",
+    "permission_keys": [
+      "ai.gateway.relay.invoke"
+    ],
+    "id": "8f0ff57e-db12-4519-bcd8-7ec5bcb3d8c1"
+  },
+  "chat": {
+    "structured_extraction": "NOT_RUN",
+    "reason": "reuse intent1; no repeated paid chat"
+  },
+  "relay_models": {
+    "http": 200,
+    "models": [
+      "gpt-6-luna"
+    ]
+  },
+  "embeddings": {
+    "http": 502,
+    "error_type": "cluster_unavailable",
+    "error_code": "cluster_unavailable"
+  },
+  "revocation": {
+    "id": "8f0ff57e-db12-4519-bcd8-7ec5bcb3d8c1",
+    "http": 200,
+    "confirmed": true
+  }
+}

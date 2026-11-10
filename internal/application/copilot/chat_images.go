@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -11,6 +12,8 @@ import (
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
+
+const maxChatImageDataURLBytes = 700_000
 
 func (s *Service) validateChatImageInput(input domain.WorkbenchSendMessageInput, metadata domain.SessionMetadata) error {
 	if err := validateChatImages(input.ContextSelection); err != nil {
@@ -34,7 +37,7 @@ func validateChatImages(selection *domain.ContextSelection) error {
 		if strings.TrimSpace(image.ID) == "" || len(image.ID) > 128 || strings.TrimSpace(image.Name) == "" || utf8.RuneCountInString(image.Name) > 256 || image.DataURL == "" {
 			return fmt.Errorf("%w: invalid chat image", apperrors.ErrInvalidArgument)
 		}
-		if _, err := validatePersonalAvatar(image.DataURL, 700000, true); err != nil {
+		if _, err := validatePersonalAvatar(image.DataURL, maxChatImageDataURLBytes, true); err != nil {
 			return fmt.Errorf("%w: invalid chat image bytes or dimensions", err)
 		}
 	}
@@ -42,6 +45,14 @@ func validateChatImages(selection *domain.ContextSelection) error {
 }
 
 func chatUserMetadata(metadata map[string]any, selection *domain.ContextSelection) map[string]any {
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	// Only the server-validated selection can mint this persisted consent receipt.
+	delete(metadata, "_sohaExplicitMemoryIds")
+	if selection != nil && len(selection.MemoryIDs) > 0 {
+		metadata["_sohaExplicitMemoryIds"] = slices.Clone(selection.MemoryIDs)
+	}
 	if selection != nil && len(selection.Images) > 0 {
 		metadata["images"] = selection.Images
 	}

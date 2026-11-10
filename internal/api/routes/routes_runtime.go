@@ -196,6 +196,7 @@ func registerCopilotRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 
 	protected.GET("/copilot/insights", deps.Copilot.ListInsights)
 	protected.GET("/copilot/workbench/catalog", deps.Copilot.GetWorkbenchCatalog)
+	protected.GET("/copilot/workbench/runtime-profiles", deps.Copilot.ListRuntimeProfiles)
 	protected.GET("/copilot/agent-providers", deps.Copilot.ListAgentProviders)
 	protected.GET("/copilot/agent-runs", deps.Copilot.ListAgentRuns)
 	protected.POST("/copilot/agent-runs/:runID/cancel", deps.Copilot.CancelAgentRun)
@@ -223,6 +224,7 @@ func registerCopilotRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 	protected.POST("/copilot/sessions", deps.Copilot.CreateSession)
 	protected.POST("/copilot/sessions/main", deps.Copilot.EnsureMainSession)
 	protected.PATCH("/copilot/sessions/:sessionID", deps.Copilot.UpdateSession)
+	protected.PUT("/copilot/sessions/:sessionID/runtime-profile", deps.Copilot.SelectSessionRuntimeProfile)
 	protected.DELETE("/copilot/sessions/:sessionID", deps.Copilot.DeleteSession)
 	protected.GET("/copilot/sessions/:sessionID/messages", deps.Copilot.ListMessages)
 	protected.POST("/copilot/sessions/:sessionID/messages", deps.Copilot.SendMessage)

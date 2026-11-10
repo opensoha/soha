@@ -58,6 +58,14 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	if deps.SystemIntegrations != nil {
 		v1.GET("/system-integrations/oauth/gitlab/callback", deps.SystemIntegrations.CompleteGitLabOAuth)
 	}
+	if deps.DSHRuntime != nil {
+		v1.POST("/copilot/dsh/model/v1/chat/completions", deps.DSHRuntime.Model)
+		v1.POST("/copilot/dsh/tools", deps.DSHRuntime.Tool)
+		v1.GET("/copilot/dsh/personal-stdio", deps.DSHRuntime.PersonalStdio)
+		v1.POST("/copilot/dsh/assembly", deps.DSHRuntime.Assembly)
+		v1.POST("/copilot/dsh/plugin-tools/authorize", deps.DSHRuntime.AuthorizePluginTool)
+		v1.POST("/copilot/dsh/plugin-tools/settle", deps.DSHRuntime.SettlePluginTool)
+	}
 	registerProviderProtocolRoutes(v1, deps)
 	if deps.DirectorySync != nil {
 		v1.GET("/integrations/directory/:connectionID/events", deps.DirectorySync.VerifyEventEndpoint)

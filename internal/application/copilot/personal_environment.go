@@ -35,17 +35,18 @@ type PersonalEnvironmentStore interface {
 
 // Optional at startup. No personal environment is inferred from provider health.
 type PersonalEnvironmentDependencies struct {
-	Store       PersonalEnvironmentStore
-	Policy      func(context.Context, string) (domain.PersonalEnvironmentPolicy, error)
-	Templates   func(context.Context) ([]domain.PersonalEnvironmentPolicy, error)
-	Preflight   func(context.Context, domainidentity.Principal, string, contractenv.Quota) error
-	Authorize   func(context.Context, domainidentity.Principal, string) error
-	Invoke      func(context.Context, domainidentity.Principal, string, contractenv.Request) (contractenv.Result, error)
-	InvokeVM    func(context.Context, domainidentity.Principal, domain.PersonalEnvironmentRecord, guest.RuntimeOperation) (guest.RuntimeResult, error)
-	RecoverVM   func(context.Context, domainidentity.Principal, domain.PersonalEnvironmentRecord) (domain.PersonalEnvironmentRecord, error)
-	Export      func(context.Context, domainidentity.Principal, string, contractenv.Request, io.Writer) (contractenv.ExportResult, error)
-	ObserveVM   func(context.Context, domainidentity.Principal, domain.PersonalVMPolicy) (domain.PersonalVMIdentity, error)
-	Transaction func(context.Context, func(context.Context) error) error
+	Store        PersonalEnvironmentStore
+	Policy       func(context.Context, string) (domain.PersonalEnvironmentPolicy, error)
+	Templates    func(context.Context) ([]domain.PersonalEnvironmentPolicy, error)
+	Preflight    func(context.Context, domainidentity.Principal, string, contractenv.Quota) error
+	Authorize    func(context.Context, domainidentity.Principal, string) error
+	Invoke       func(context.Context, domainidentity.Principal, string, contractenv.Request) (contractenv.Result, error)
+	InvokeVM     func(context.Context, domainidentity.Principal, domain.PersonalEnvironmentRecord, guest.RuntimeOperation) (guest.RuntimeResult, error)
+	RecoverVM    func(context.Context, domainidentity.Principal, domain.PersonalEnvironmentRecord) (domain.PersonalEnvironmentRecord, error)
+	Export       func(context.Context, domainidentity.Principal, string, contractenv.Request, io.Writer) (contractenv.ExportResult, error)
+	ObserveVM    func(context.Context, domainidentity.Principal, domain.PersonalVMPolicy) (domain.PersonalVMIdentity, error)
+	Transaction  func(context.Context, func(context.Context) error) error
+	OpenMCPStdio func(context.Context, domainidentity.Principal, string, contractenv.PersonalMCPStdioRequest) (DSHPersonalStdioPeer, error)
 }
 
 func (s *Service) ListPersonalEnvironmentTemplates(ctx context.Context, principal domainidentity.Principal) ([]domain.PersonalEnvironmentTemplate, error) {
@@ -161,6 +162,19 @@ func (s *Service) ChangePersonalEnvironment(ctx context.Context, principal domai
 	}
 	view, _, err := s.dispatchPersonalEnvironment(ctx, principal, action, item, request)
 	return view, err
+}
+
+func (s *Service) recordStoppedPersonalStdio(ctx context.Context, principal domainidentity.Principal, item domain.PersonalEnvironmentRecord) error {
+	// The authenticated stream is bound to this lease and its original version.
+	applyPersonalEnvironmentReceipt(&item, contractenv.Result{State: "missing", ObservedAt: time.Now().UTC()}, nil)
+	commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	completed, err := s.personalEnvironment.Store.CompletePersonalEnvironment(commitCtx, item)
+	if err != nil {
+		return err
+	}
+	s.auditPersonalEnvironment(commitCtx, principal, completed, "mcp_stdio_cleanup", completed.State)
+	return nil
 }
 
 func (s *Service) dispatchPersonalEnvironment(ctx context.Context, principal domainidentity.Principal, action string, item domain.PersonalEnvironmentRecord, request contractenv.Request) (domain.PersonalEnvironment, contractenv.Result, error) {

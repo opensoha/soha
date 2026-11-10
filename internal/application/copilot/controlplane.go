@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
@@ -456,6 +457,12 @@ func (s *Service) addWorkbenchModels(ctx context.Context, principal domainidenti
 	if reader == nil {
 		catalog.ModelOptionsError = "模型目录不可用"
 		return
+	}
+	if catalog.DefaultPublicModel == "" && settings.DefaultRouteID != "" {
+		option, err := reader.ResolveWorkbenchModelOption(ctx, principal, appaigateway.WorkbenchRelayRequest{RouteID: settings.DefaultRouteID, Endpoint: settings.DefaultEndpoint})
+		if err == nil {
+			catalog.DefaultPublicModel = option.PublicModel
+		}
 	}
 	models, err := reader.ListWorkbenchModels(ctx, principal, settings.DefaultEndpoint)
 	if err != nil {

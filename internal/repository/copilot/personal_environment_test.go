@@ -66,6 +66,7 @@ func TestPersonalEnvironmentWithPostgres(t *testing.T) {
 		{"data_export_unknown_receipt", testPersonalDataExportUnknownReceipt},
 		{"data_export_local_abort", testPersonalDataExportLocalAbort},
 		{"frozen_binding_sleep_wake", testPersonalEnvironmentFrozenBindingSleepWake},
+		{"reconcile_lost_stdio_receipt_then_wake", testPersonalEnvironmentReconcileLostStdioReceipt},
 		{"binding_identity_fence", testPersonalBindingIdentityFence},
 		{"unsupported_backend", testPersonalBindingUnsupportedBackend},
 		{"unknown_no_replay", testPersonalEnvironmentUnknownNoReplay},
@@ -334,6 +335,28 @@ func testPersonalEnvironmentFrozenBindingSleepWake(t *testing.T, f *personalEnvi
 	assertPersonalEnvironmentWakeGeneration(t, item, reawakened)
 }
 
+func testPersonalEnvironmentReconcileLostStdioReceipt(t *testing.T, f *personalEnvironmentFixture) {
+	const owner = "lost-stdio-receipt"
+	initial := f.wake(t, owner)
+	original := f.calls[len(f.calls)-1].Lease
+	before, probes := len(f.calls), f.preflightCalls
+	f.receiptState = "missing"
+	missing, err := f.service.ChangePersonalEnvironment(f.ctx, f.actor(owner), "reconcile", "", "en-US")
+	f.receiptState = "active"
+	if err != nil || missing.State != "missing" || !missing.DataInitialized {
+		t.Fatalf("reconcile did not confirm the original container was gone while retaining data: %+v %v", missing, err)
+	}
+	awake := f.wake(t, owner)
+	if len(f.calls) != before+2 || f.preflightCalls != probes {
+		t.Fatalf("wake sent unexpected provider calls: %+v", f.calls[before:])
+	}
+	inspect, acquire := f.calls[before], f.calls[before+1]
+	if inspect.Action != "inspect" || !reflect.DeepEqual(inspect.Lease, original) || acquire.Action != "acquire" || acquire.CreateData || acquire.Lease.ID == original.ID {
+		t.Fatalf("reconcile and wake did not inspect the original lease and acquire a fresh lease over existing data: %+v %+v", inspect, acquire)
+	}
+	assertPersonalEnvironmentWakeGeneration(t, initial, awake)
+}
+
 func testPersonalEnvironmentUnknownNoReplay(t *testing.T, f *personalEnvironmentFixture) {
 	f.providerError = context.DeadlineExceeded
 	_, err := f.service.ChangePersonalEnvironment(f.ctx, f.actor("unknown"), "wake", "personal", "en-US")
@@ -433,6 +456,11 @@ func testPersonalEnvironmentLateReceiptFence(t *testing.T, f *personalEnvironmen
 		t.Fatalf("late local abort undid a newer reservation: %v", err)
 	}
 	next.State = "missing"
+	wrongLease := next
+	wrongLease.Lease.ID = uuid.NewString()
+	if _, err := f.repo.CompletePersonalEnvironment(f.ctx, wrongLease); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("receipt committed against a different lease: %v", err)
+	}
 	if _, err := f.repo.CompletePersonalEnvironment(f.ctx, next); err != nil {
 		t.Fatal(err)
 	}

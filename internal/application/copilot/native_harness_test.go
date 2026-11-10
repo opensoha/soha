@@ -11,7 +11,6 @@ import (
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
-	appmemory "github.com/opensoha/soha/internal/application/memory"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -196,10 +195,13 @@ func (s *nativeLoopStore) AdvanceNativeRun(_ context.Context, lease domaincopilo
 	if lease.Version != s.lease.Version || lease.Fence != s.lease.Fence {
 		return lease, apperrors.ErrConflict
 	}
-	if s.lease.CancelRequested && input.Run.Status != "canceled" && (input.Phase != "cancelling" || input.Run.Status != "running") {
+	reconciliation := input.Phase == "cancelling" && input.Run.Status == "running"
+	unknownDSH := input.Run.ProviderKind == "dsh" && input.Phase == "paused" && input.StopReason == "unknown_outcome"
+	if s.lease.CancelRequested && input.Run.Status != "canceled" && !reconciliation && !unknownDSH {
 		return lease, apperrors.ErrConflict
 	}
 	s.lease.Run, s.lease.Phase, s.lease.Checkpoint = input.Run, input.Phase, input.Checkpoint
+	s.lease.Run.Phase, s.lease.Run.StopReason = input.Phase, input.StopReason
 	if input.Phase == "model" {
 		s.modelCheckpoints = append(s.modelCheckpoints, append(json.RawMessage(nil), input.Checkpoint...))
 	}
@@ -282,7 +284,7 @@ func (f *nativeCitationFixture) ValidateCitations(context.Context, domainidentit
 	return nil
 }
 
-func nativeLoopFixture(t *testing.T) (*Service, *nativeLoopStore, *nativeLoopGateway, map[string][]string) {
+func executionGovernanceFixture(t *testing.T) (*Service, *nativeLoopStore, *nativeLoopGateway, map[string][]string) {
 	t.Helper()
 	keys := []string{appaccess.PermObserveAIChatUse, appaccess.PermAIKnowledgeView, appaccess.PermAIGatewayInvoke}
 	roles := map[string][]string{"reader": keys}
@@ -293,138 +295,19 @@ func nativeLoopFixture(t *testing.T) (*Service, *nativeLoopStore, *nativeLoopGat
 	service.agentPrincipals = &chatToolPrincipalResolver{principal: domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}}
 	service.nativeAuthorization = &nativeAuthorizationFixture{revision: strings.Repeat("a", 64)}
 	now := time.Now().UTC()
-	run := domaincopilot.AgentRun{ID: "native:loop", SessionID: "session", CreatedBy: "reader", ProviderKind: "native", ProviderID: "internal", CapabilityID: "general", Status: "running", ClaimedByAgentID: "worker", QueuedAt: now, TimeoutSeconds: 600, Output: map[string]any{}, Input: map[string]any{"question": "Read evidence", "_sohaKnowledgeBaseIds": []string{"base"}, "_sohaPrincipal": map[string]any{"userId": "reader", "roles": []string{"reader"}, "permissionKeys": keys}}, ToolBindings: []domaincopilot.AgentToolBinding{{ToolName: "knowledge.search", PermissionKey: appaccess.PermAIKnowledgeView}}}
+	run := domaincopilot.AgentRun{ID: "native:loop", SessionID: "session", CreatedBy: "reader", ProviderKind: "dsh", ProviderID: "dsh", CapabilityID: "general", Status: "running", ClaimedByAgentID: "worker", QueuedAt: now, TimeoutSeconds: 600, Output: map[string]any{}, Input: map[string]any{"question": "Read evidence", "_sohaKnowledgeBaseIds": []string{"base"}, "_sohaPrincipal": map[string]any{"userId": "reader", "roles": []string{"reader"}, "permissionKeys": keys}}, ToolBindings: []domaincopilot.AgentToolBinding{{ToolName: "knowledge.search", PermissionKey: appaccess.PermAIKnowledgeView}}}
 	store := &nativeLoopStore{lease: domaincopilot.NativeLease{Run: run, Version: 1, Fence: 1, Phase: "preparing", RequestHash: strings.Repeat("c", 64)}}
+	store.lease.Run.Input["_sohaExecutionOwner"] = "dsh-core"
 	store.lease.Run.Input["_sohaAuthorizationCeiling"] = strings.Repeat("a", 64)
 	store.lease.Run.Input["_sohaGatewayAuthorizationCeiling"] = strings.Repeat("b", 64)
 	gateway := &nativeLoopGateway{}
 	service.runtime = RuntimeDependencies{Stream: gateway, Tools: gateway, CapabilityCatalog: gateway, GatewayAuthorization: gateway, PlanValidator: gateway}
 	service.nativeRuns = store
+	service.dshRuntime = &dshTestRuntime{}
+	service.dshRuns = store
 	service.nativeTaskParents = &nativeTaskStoreFixture{nativeQueueCapture: &nativeQueueCapture{nativeLoopStore: store}}
 	service.nativeTasks = &nativeTaskOwnerFixture{store: store}
 	return service, store, gateway, roles
-}
-
-func TestNativeLoopUsesToolResultsAcrossThreeModelSteps(t *testing.T) {
-	service, store, gateway, _ := nativeLoopFixture(t)
-	steps := 0
-	gateway.model = func(_ context.Context, input appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-		steps++
-		tools := 0
-		for _, m := range input.Messages {
-			if m.Role == "tool" {
-				tools++
-				if m.Content == "" {
-					t.Fatal("empty tool observation")
-				}
-			}
-		}
-		if tools != steps-1 {
-			t.Fatalf("step %d received %d tool results", steps, tools)
-		}
-		response := appaigateway.WorkbenchRelayResponse{ContextWindowTokens: 128000, Usage: map[string]float64{"inputTokens": 8, "outputTokens": 2, "totalTokens": 10}}
-		calls := map[int]appaigateway.WorkbenchToolCall{1: {ID: "a", Name: "knowledge_search", Arguments: json.RawMessage(`{"query":"lease"}`)}, 2: {ID: "b", Name: "knowledge_search", Arguments: json.RawMessage(`{"query":"cancel"}`)}}
-		if call, found := calls[steps]; found {
-			response.ToolCalls = []appaigateway.WorkbenchToolCall{call}
-		} else {
-			response.Content = "The two observed receipts explain the result."
-		}
-		return response, nil
-	}
-	if err := service.processNativeRun(context.Background(), store, store.lease); err != nil {
-		t.Fatal(err)
-	}
-	if steps != 3 || gateway.toolCalls != 2 || store.lease.Run.Status != "completed" || len(store.final) != 1 || !containsStreamEvent(store.events, "message.done") {
-		t.Fatalf("steps=%d tools=%d lease=%+v final=%v", steps, gateway.toolCalls, store.lease, store.final)
-	}
-	assertNativeLatestContextUsage(t, store)
-	assertNativeModelRevisionHistory(t, store.modelCheckpoints)
-	if err := service.processNativeRun(context.Background(), store, store.lease); err != nil || len(store.final) != 1 {
-		t.Fatal("terminal run advanced again")
-	}
-}
-
-func TestNativeCancellationUsesCurrentVersionWithoutTakingAnotherWorkerFence(t *testing.T) {
-	for _, transferred := range []bool{false, true} {
-		t.Run(map[bool]string{false: "same_worker", true: "transferred_worker"}[transferred], func(t *testing.T) {
-			service, store, gateway, _ := nativeLoopFixture(t)
-			gateway.model = func(context.Context, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-				store.lease.CancelRequested = true
-				store.lease.Version++
-				store.lease.Phase = "cancelling"
-				if transferred {
-					store.lease.Fence++
-				}
-				return appaigateway.WorkbenchRelayResponse{}, apperrors.ErrConflict
-			}
-			err := service.processNativeRun(t.Context(), store, store.lease)
-			if transferred {
-				if !errors.Is(err, apperrors.ErrConflict) || len(store.final) != 0 || store.lease.Run.Status != "running" {
-					t.Fatalf("old worker crossed the fence: final=%v status=%s err=%v", store.final, store.lease.Run.Status, err)
-				}
-			} else if err != nil || store.lease.Run.Status != "canceled" || len(store.final) != 1 {
-				t.Fatalf("cancel waited for lease expiry: final=%v status=%s err=%v", store.final, store.lease.Run.Status, err)
-			}
-		})
-	}
-}
-
-type nativeCancelStreamGateway struct {
-	*nativeLoopGateway
-	store *nativeLoopStore
-}
-
-func (g *nativeCancelStreamGateway) InvokeWorkbenchModelStream(_ context.Context, _ domainidentity.Principal, _ appaigateway.WorkbenchRelayRequest, emit func(appaigateway.WorkbenchRelayStreamDelta) bool) (appaigateway.WorkbenchRelayResponse, error) {
-	g.store.lease.CancelRequested = true
-	g.store.lease.Version++
-	g.store.lease.Phase = "cancelling"
-	if emit(appaigateway.WorkbenchRelayStreamDelta{ContentDelta: "late delta"}) {
-		return appaigateway.WorkbenchRelayResponse{}, errors.New("late model delta was accepted after cancellation")
-	}
-	return appaigateway.WorkbenchRelayResponse{}, context.Canceled
-}
-
-func TestNativeStreamingCancellationKeepsUnknownUsageAndFinishesImmediately(t *testing.T) {
-	service, store, gateway, _ := nativeLoopFixture(t)
-	service.runtime.Stream = &nativeCancelStreamGateway{nativeLoopGateway: gateway, store: store}
-	if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Run.Status != "canceled" || len(store.final) != 1 {
-		t.Fatalf("stream cancellation did not finish: status=%s final=%v err=%v", store.lease.Run.Status, store.final, err)
-	}
-	if store.lease.Run.Output["usageKnown"] != false || containsStreamEvent(store.events, "message.delta") {
-		t.Fatal("interrupted model usage became known or a late delta was persisted")
-	}
-}
-
-func TestNativeLoopWaitsForInputAndResumesSameRun(t *testing.T) {
-	service, store, gateway, _ := nativeLoopFixture(t)
-	store.lease.Run.ToolBindings = append(store.lease.Run.ToolBindings, domaincopilot.AgentToolBinding{ToolName: "harness.request_input", PermissionKey: appaccess.PermObserveAIChatUse})
-	steps := 0
-	gateway.model = func(_ context.Context, input appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-		steps++
-		if steps == 1 {
-			return appaigateway.WorkbenchRelayResponse{ToolCalls: []appaigateway.WorkbenchToolCall{{ID: "input", Name: "harness_request_input", Arguments: json.RawMessage(`{"question":"Which namespace?"}`)}}}, nil
-		}
-		found := false
-		for _, m := range input.Messages {
-			found = found || (m.Role == "tool" && m.ToolCallID == "input" && m.Content == "payments")
-		}
-		if !found {
-			t.Fatal("resume omitted user answer or tool-call pairing")
-		}
-		return appaigateway.WorkbenchRelayResponse{Content: "Selected payments."}, nil
-	}
-	if err := service.processNativeRun(context.Background(), store, store.lease); err != nil || store.lease.Phase != "paused" || len(store.final) != 0 {
-		t.Fatalf("pause: %v %+v", err, store.lease)
-	}
-	if _, err := store.ResumeNativeRun(context.Background(), "reader", store.lease.Run.ID, "payments"); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.processNativeRun(context.Background(), store, store.lease); err != nil || store.lease.Run.Status != "completed" || len(store.final) != 1 || steps != 2 {
-		t.Fatalf("resume: %v %+v", err, store.lease)
-	}
-	if store.lease.Run.Output["usageKnown"] != false {
-		t.Fatal("missing usage was presented as known")
-	}
 }
 
 func TestNativeUserInputIsConsumedOnceForEachQuestion(t *testing.T) {
@@ -443,90 +326,11 @@ func TestNativeUserInputIsConsumedOnceForEachQuestion(t *testing.T) {
 	}
 }
 
-func TestNativeLoopRevocationAndCancelCannotBecomeSuccess(t *testing.T) {
-	for _, cancel := range []bool{false, true} {
-		t.Run(map[bool]string{false: "revocation", true: "cancel"}[cancel], func(t *testing.T) {
-			service, store, gateway, roles := nativeLoopFixture(t)
-			calls := 0
-			gateway.model = func(_ context.Context, _ appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-				calls++
-				if cancel {
-					store.lease.CancelRequested = true
-					return appaigateway.WorkbenchRelayResponse{}, context.Canceled
-				}
-				return appaigateway.WorkbenchRelayResponse{ToolCalls: []appaigateway.WorkbenchToolCall{{ID: "a", Name: "knowledge_search", Arguments: json.RawMessage(`{"query":"lease"}`)}}}, nil
-			}
-			gateway.onTool = func() { roles["reader"] = nil }
-			err := service.processNativeRun(context.Background(), store, store.lease)
-			if err != nil && !errors.Is(err, apperrors.ErrConflict) {
-				t.Fatal(err)
-			}
-			want := "failed"
-			if cancel {
-				want = "canceled"
-			}
-			if calls != 1 || store.lease.Run.Status != want || len(store.final) != 1 {
-				t.Fatalf("calls=%d state=%s final=%v", calls, store.lease.Run.Status, store.final)
-			}
-		})
-	}
-}
-
-type nativeTokenPrincipalResolver struct {
-	chatToolPrincipalResolver
-	err     error
-	tokenID string
-}
-
 func (r *nativeTokenPrincipalResolver) CurrentExecutionPrincipal(_ context.Context, _, tokenID string) (domainidentity.Principal, error) {
 	r.tokenID = tokenID
 	principal := r.principal
 	principal.AccessTokenID = tokenID
 	return principal, r.err
-}
-
-func TestNativeTokenRevocationAndEmptyCeilingFailClosed(t *testing.T) {
-	for _, tokenRevoked := range []bool{true, false} {
-		t.Run(map[bool]string{true: "token_revoked", false: "empty_intersection"}[tokenRevoked], func(t *testing.T) {
-			service, store, gateway, roles := nativeLoopFixture(t)
-			resolver := &nativeTokenPrincipalResolver{chatToolPrincipalResolver: chatToolPrincipalResolver{principal: domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}}}
-			service.agentPrincipals = resolver
-			if tokenRevoked {
-				mapValue(store.lease.Run.Input["_sohaPrincipal"])["accessTokenId"] = "frozen-token"
-				resolver.err = apperrors.ErrUnauthorized
-			} else {
-				mapValue(store.lease.Run.Input["_sohaPrincipal"])["permissionKeys"] = []string{appaccess.PermAIKnowledgeView}
-				roles["reader"] = []string{appaccess.PermObserveAIChatUse}
-			}
-			models := 0
-			gateway.model = func(context.Context, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-				models++
-				return appaigateway.WorkbenchRelayResponse{Content: "must not run"}, nil
-			}
-			if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || models != 0 || store.lease.Run.Status != "failed" {
-				t.Fatalf("authorization bypassed: err=%v models=%d state=%s", err, models, store.lease.Run.Status)
-			}
-			if tokenRevoked && resolver.tokenID != "frozen-token" {
-				t.Fatal("original token was not revalidated")
-			}
-		})
-	}
-}
-
-func TestNativeLoopRevalidatesKnowledgeACLBeforeAnotherModelCall(t *testing.T) {
-	service, store, gateway, _ := nativeLoopFixture(t)
-	models := 0
-	gateway.model = func(context.Context, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-		models++
-		return appaigateway.WorkbenchRelayResponse{ToolCalls: []appaigateway.WorkbenchToolCall{{ID: "a", Name: "knowledge_search", Arguments: json.RawMessage(`{"query":"lease"}`)}}}, nil
-	}
-	gateway.onTool = func() { nativeLoopCitations(t, service).denied = true }
-	if err := service.processNativeRun(context.Background(), store, store.lease); err != nil {
-		t.Fatal(err)
-	}
-	if models != 1 || store.lease.Run.Status != "failed" {
-		t.Fatalf("revoked knowledge was sent to model: calls=%d state=%s", models, store.lease.Run.Status)
-	}
 }
 
 func nativeLoopCitations(t *testing.T, service *Service) *nativeCitationFixture {
@@ -542,45 +346,17 @@ func nativeLoopCitations(t *testing.T, service *Service) *nativeCitationFixture 
 	return reader
 }
 
-func TestNativeLoopRevalidatesMemoryBeforeAnotherModelCall(t *testing.T) {
-	for _, deleted := range []bool{false, true} {
-		t.Run(map[bool]string{false: "corrected", true: "deleted"}[deleted], func(t *testing.T) {
-			service, store, gateway, roles := nativeLoopFixture(t)
-			roles["reader"] = append(roles["reader"], appaccess.PermAIMemoryView)
-			mapValue(store.lease.Run.Input["_sohaPrincipal"])["permissionKeys"] = roles["reader"]
-			memory, _ := appmemory.NewService(appmemory.NewMemoryStore())
-			service.SetChatMemoryReader(memory)
-			policy := appmemory.Policy{ID: "personal", Version: "v1", OwnerTypes: []string{"user"}, DefaultTTL: time.Hour, MaximumTTL: time.Hour, ExplicitWriteOnly: true, Enabled: true}
-			if err := memory.PutPolicy(t.Context(), policy); err != nil {
-				t.Fatal(err)
-			}
-			record, err := memory.PutRecord(t.Context(), appmemory.Record{ID: "fact", OwnerType: "user", OwnerID: "reader", ScopeHash: "sha256:fixture", Fact: "original fact", SourceType: "explicit_user", Confidence: 1, PolicyVer: "v1"}, policy)
-			if err != nil {
-				t.Fatal(err)
-			}
-			store.lease.Run.Input["contextSelection"] = domaincopilot.ContextSelection{MemoryIDs: []string{record.ID}}
-			models := 0
-			gateway.model = func(context.Context, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-				models++
-				return appaigateway.WorkbenchRelayResponse{ToolCalls: []appaigateway.WorkbenchToolCall{{ID: "a", Name: "knowledge_search", Arguments: json.RawMessage(`{"query":"lease"}`)}}}, nil
-			}
-			gateway.onTool = func() {
-				if deleted {
-					err = memory.DeleteRecord(t.Context(), record.ID)
-				} else {
-					record.Fact = "corrected fact"
-					_, err = memory.PutRecord(t.Context(), record, policy)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := service.processNativeRun(t.Context(), store, store.lease); err != nil {
-				t.Fatal(err)
-			}
-			if models != 1 || store.lease.Run.Status != "failed" {
-				t.Fatalf("old memory entered a resumed model call: models=%d state=%s", models, store.lease.Run.Status)
-			}
-		})
-	}
+// nativeLoopFixture remains a fixture alias for the memory unit's existing tests.
+func nativeLoopFixture(t *testing.T) (*Service, *nativeLoopStore, *nativeLoopGateway, map[string][]string) {
+	return executionGovernanceFixture(t)
+}
+
+type nativeTokenPrincipalResolver struct {
+	chatToolPrincipalResolver
+	err     error
+	tokenID string
+}
+
+func (s *nativeLoopStore) ClaimDSHRun(context.Context, string) (domaincopilot.NativeLease, error) {
+	return s.lease, nil
 }

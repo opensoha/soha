@@ -1,0 +1,53 @@
+{
+  "attempt": "Task123/B5/U2/A01",
+  "status": "INVENTORY_ONLY",
+  "full_hindsight_real_gateway": "NOT_RUN",
+  "derived_memory_delete": "NOT_RUN",
+  "script_sha256": "3333a687b7707a556870b4d3ef5e4923804f59f8185e23ca7d5a32bfd2cd7179",
+  "normal_cli_session_exit": 0,
+  "route_inventory_http": 200,
+  "enabled_routes": [
+    {
+      "publicModel": "gpt-6.1-sol",
+      "upstreamModel": "gpt-6.1-sol",
+      "providerKind": "openai"
+    },
+    {
+      "publicModel": "gpt-6-luna",
+      "upstreamModel": "gpt-6-luna",
+      "providerKind": "openai"
+    }
+  ],
+  "embedding_route": "NOT_CONFIGURED_FOR_PROBE",
+  "upstream_inventory_http": 200,
+  "upstream_discovery": [
+    {
+      "id": "87b9ffc7-1f33-40ce-a83b-e640e02a6393",
+      "http": 200,
+      "status": "success",
+      "httpStatus": 200,
+      "modelCount": 19,
+      "models": [
+        "codex-auto-review",
+        "gpt-5.2",
+        "gpt-5.3-codex-spark",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.6",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6",
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-image-1",
+        "gpt-image-1.5",
+        "gpt-image-2",
+        "gpt-image-2.5-flare",
+        "gpt-image-2.5-sunburst"
+      ]
+    }
+  ]
+}

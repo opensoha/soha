@@ -779,10 +779,13 @@ func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentit
 
 func (s *Service) CurrentPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {
 	user, err := s.accounts.GetByID(ctx, userID)
+	if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+		return domainidentity.Principal{}, err
+	}
 	if err != nil || user.Status != "active" {
 		return domainidentity.Principal{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
 	}
-	return s.loadPrincipal(ctx, userID)
+	return s.principalForUser(ctx, user)
 }
 
 func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.Principal) (domainidentity.UserProfile, error) {
@@ -1346,6 +1349,11 @@ func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainident
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
 	}
+	return s.principalForUser(ctx, user)
+}
+
+func (s *Service) principalForUser(ctx context.Context, user domainidentity.User) (domainidentity.Principal, error) {
+	userID := user.ID
 	roles, err := s.authorization.ListRoles(ctx, userID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("list user roles: %w", err)

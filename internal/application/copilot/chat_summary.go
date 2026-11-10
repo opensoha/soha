@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 	"maps"
+	"slices"
 	"strings"
 
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
@@ -22,6 +23,19 @@ func (s *Service) currentChatSummary(ctx context.Context, principal domainidenti
 	lineage := []domainknowledge.Citation{}
 	if _, _, _, err := s.readChatSessionReference(ctx, principal, domaincopilot.ContextReference{Kind: "session", SessionID: sessionID, MessageIDs: ids}, &lineage); err != nil {
 		return "", nil, "session.summary:source_unavailable"
+	}
+	if slices.ContainsFunc(lineage, func(c domainknowledge.Citation) bool { return strings.HasPrefix(c.URI, "memory:") }) {
+		session, err := s.ownedSession(ctx, principal, sessionID)
+		if err != nil {
+			return "", nil, "session.summary:source_unavailable"
+		}
+		mode := "chat"
+		if isPersonalSession(session) {
+			mode = "heya"
+		}
+		if err := s.ValidateChatMemoryScopeForTurn(ctx, principal, &domaincopilot.ContextEnvelope{SessionID: sessionID, Citations: lineage}, mode, "", ids); err != nil {
+			return "", nil, "session.summary:memory_scope_unavailable"
+		}
 	}
 	text := []rune(redaction.Text(metadata.Summary))
 	if len(text) > 4000 {

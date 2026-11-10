@@ -28,7 +28,7 @@ func (r *Repository) ReserveNativeToolCall(ctx context.Context, lease domaincopi
 			return err
 		}
 		deadline := row.QueuedAt.Add(time.Duration(row.TimeoutSeconds) * time.Second)
-		if row.CreatedBy != lease.Run.CreatedBy || row.SessionID != lease.Run.SessionID || row.NativeRequestHash != lease.RequestHash || row.NativeVersion != lease.Version || row.NativeFence != lease.Fence || row.ClaimedByAgentID != lease.Run.ClaimedByAgentID || row.NativeLeaseUntil == nil || !row.NativeLeaseUntil.After(time.Now()) || nativeTaskStopReason(row, deadline) != "" {
+		if row.CreatedBy != lease.Run.CreatedBy || row.SessionID != lease.Run.SessionID || row.NativeRequestHash != lease.RequestHash || row.NativeVersion != lease.Version || row.NativeFence != lease.Fence || row.ClaimedByAgentID != lease.Run.ClaimedByAgentID || nativeTaskStopReason(row, deadline) != "" {
 			return fmt.Errorf("%w: Native reservation lease changed", apperrors.ErrConflict)
 		}
 		result := tx.Raw(`UPDATE ai_native_tool_budget SET work_calls=work_calls+1,work_limit=LEAST(work_limit,?),updated_at=now()

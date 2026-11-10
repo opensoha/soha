@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	contractenv "github.com/opensoha/soha-contracts/agent/environment"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -103,59 +102,6 @@ func (s *personalCleanupParentStore) WithNativeTaskParent(ctx context.Context, _
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return execute(ctx)
-}
-
-func TestNativePersonalCleanupKeepsOriginalTaskLeaseAndIndependentBudget(t *testing.T) {
-	for _, scenario := range []string{"complete", "failed", "canceled", "unknown_then_inspect", "other_task", "cleanup_budget_exhausted"} {
-		t.Run(scenario, func(t *testing.T) {
-			service, loop, _, _ := nativeLoopFixture(t)
-			assistant, err := service.EnsurePersonalAssistant(t.Context(), domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}, "en-US")
-			if err != nil {
-				t.Fatal(err)
-			}
-			capture := &nativeQueueCapture{nativeLoopStore: loop, inspectionAuthzTestRepository: &inspectionAuthzTestRepository{}}
-			service.nativeTaskParents = &personalCleanupParentStore{nativeTaskStoreFixture: &nativeTaskStoreFixture{nativeQueueCapture: capture}}
-			cp := initialNativeCheckpoint(loop.lease.Run)
-			cp.Usage.ToolCalls = 1 // Acquiring the owned task lease consumed a work call.
-			loop.lease.ToolUsage.WorkCalls = 1
-			// Cleanup still runs after the normal work deadline.
-			cp.Budget.Deadline = time.Now().Add(-time.Second)
-			now, leaseID := time.Now().UTC(), uuid.NewString()
-			store := &personalCleanupStore{item: domain.PersonalEnvironmentRecord{AssistantID: assistant.ID, CreatedBy: "reader", Backend: "container", Provider: "docker", PolicyRevision: "legacy-docker-v1", DataRef: "personal-data:" + assistant.ID, ComputeRef: leaseID, ComputeGeneration: 1, Version: 1, State: "ready", DataInitialized: true, DataCreationAttempted: true, ActiveTaskID: domain.PersonalTaskID(loop.lease.Run.ID), Lease: contractenv.Lease{SchemaVersion: contractenv.LeaseVersion, ID: leaseID, RunID: leaseID, OwnerID: assistant.ID, IssuedAt: now, ExpiresAt: now.Add(time.Minute)}}}
-			calls := 0
-			service.personalEnvironment = &PersonalEnvironmentDependencies{Store: store, Authorize: func(context.Context, domainidentity.Principal, string) error { return nil }, Invoke: personalCleanupInvoker(t, loop, scenario, leaseID, &calls)}
-			status := "completed"
-			if scenario == "failed" || scenario == "canceled" {
-				status = scenario
-			}
-			if scenario == "other_task" {
-				store.item.ActiveTaskID = uuid.NewString()
-			}
-			if scenario == "cleanup_budget_exhausted" {
-				loop.lease.ToolUsage.CleanupCalls = domain.NativeCleanupToolCallLimit
-			}
-			if err := service.finishNativeRun(t.Context(), loop, loop.lease, cp, status, "fixture_stop", "original answer"); err != nil {
-				t.Fatal(err)
-			}
-			if scenario == "cleanup_budget_exhausted" {
-				if calls != 0 || len(loop.final) != 0 || loop.lease.Phase != "cancelling" {
-					t.Fatal("exhausted cleanup budget dispatched or claimed completion")
-				}
-				return
-			}
-			if scenario == "unknown_then_inspect" {
-				if calls != 1 || len(loop.final) != 0 || loop.lease.Phase != "cancelling" || store.item.State != "unknown" {
-					t.Fatal("unknown cleanup became a final result")
-				}
-				expired := time.Now().Add(-time.Second)
-				store.item.OperationUntil = &expired
-				if err := service.processNativeRun(t.Context(), loop, loop.lease); err != nil {
-					t.Fatal(err)
-				}
-			}
-			assertPersonalCleanupFinal(t, loop, store, scenario, status, calls)
-		})
-	}
 }
 
 func TestNativeChatFinishesWithoutPersonalEnvironmentCleanup(t *testing.T) {

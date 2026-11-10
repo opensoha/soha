@@ -262,6 +262,13 @@ func registerSettingsRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.PUT("/settings/identity/providers", deps.Settings.UpdateLoginProvidersSettings)
 	protected.GET("/settings/ai", deps.Settings.GetAISettings)
 	protected.PUT("/settings/ai/workbench-model", deps.Settings.UpdateAIWorkbenchModelSettings)
+	if deps.Copilot != nil {
+		protected.GET("/settings/ai/workbench-runtime-profiles/:profileId", deps.Copilot.ListRuntimeProfileRevisions)
+		protected.PUT("/settings/ai/workbench-runtime-profiles/:profileId", deps.Copilot.PublishRuntimeProfile)
+		protected.GET("/settings/ai/workbench-runtime-assets", deps.Copilot.ListRuntimeAssets)
+		protected.PUT("/settings/ai/workbench-runtime-assets/:kind/:assetId/:version", deps.Copilot.SetRuntimeAssetEnabled)
+		protected.POST("/settings/ai/workbench-runtime-assets/mcp/:assetId/:version/probe", deps.Copilot.ProbeRuntimeMCP)
+	}
 	protected.GET("/settings/ai/skills", deps.Settings.GetAISkills)
 	protected.PUT("/settings/ai/skills", deps.Settings.UpdateAISkills)
 	protected.GET("/settings/branding", deps.Settings.GetBrandingSettings)

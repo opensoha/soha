@@ -395,8 +395,29 @@ type WorkbenchModelOption struct {
 	ContextWindowTokens int64
 }
 
+// ResolveWorkbenchModelOption resolves the same route and fallback capabilities
+// used by execution, without sending a provider request.
+func (s *Service) ResolveWorkbenchModelOption(ctx context.Context, principal domainidentity.Principal, input WorkbenchRelayRequest) (WorkbenchModelOption, error) {
+	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermObserveAIChatUse, appaccess.PermSettingsAIView, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
+		return WorkbenchModelOption{}, err
+	}
+	if !s.relayConfig.Enabled || s.llmRelayRepository() == nil {
+		return WorkbenchModelOption{}, apperrors.ErrServiceUnavailable
+	}
+	model, route, err := s.resolveWorkbenchRelayModel(ctx, input)
+	if err != nil {
+		return WorkbenchModelOption{}, err
+	}
+	endpoint := normalizeWorkbenchRelayEndpoint(input.Endpoint)
+	_, selections, err := s.workbenchRelaySelections(ctx, principal, model, route, endpoint)
+	if err != nil {
+		return WorkbenchModelOption{}, err
+	}
+	return WorkbenchModelOption{PublicModel: model, ReasoningEfforts: workbenchReasoningEfforts(endpoint, selections), ContextWindowTokens: workbenchCatalogContextWindow(selections)}, nil
+}
+
 func (s *Service) ListWorkbenchModels(ctx context.Context, principal domainidentity.Principal, endpoint string) ([]WorkbenchModelOption, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermObserveAIChatUse); err != nil {
+	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermObserveAIChatUse, appaccess.PermSettingsAIView); err != nil {
 		return nil, err
 	}
 	if !s.relayConfig.Enabled || s.llmRelayRepository() == nil {

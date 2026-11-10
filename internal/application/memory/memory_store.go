@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"github.com/opensoha/soha/internal/platform/apperrors"
-	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -22,7 +21,7 @@ func NewMemoryStore() *MemoryStore {
 func (s *MemoryStore) PutRecord(_ context.Context, record Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if existing, ok := s.records[record.ID]; ok && (existing.OwnerType != record.OwnerType || existing.OwnerID != record.OwnerID) {
+	if existing, ok := s.records[record.ID]; ok && (existing.OwnerType != record.OwnerType || existing.OwnerID != record.OwnerID || existing.ScopeHash != record.ScopeHash || existing.Status == "deleted") {
 		return apperrors.ErrAccessDenied
 	}
 	s.records[record.ID] = cloneRecord(record)
@@ -69,7 +68,7 @@ func (s *MemoryStore) DeleteRecord(_ context.Context, id string, now time.Time) 
 func (s *MemoryStore) PutPolicy(_ context.Context, policy Policy) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	policy.OwnerTypes = slices.Clone(policy.OwnerTypes)
+	policy = clonePolicy(policy)
 	s.policies[policy.ID+":"+policy.Version] = policy
 	return nil
 }
@@ -81,8 +80,8 @@ func (s *MemoryStore) GetPolicy(_ context.Context, id, version string) (Policy, 
 	if !ok {
 		return Policy{}, ErrNotFound
 	}
-	policy.OwnerTypes = slices.Clone(policy.OwnerTypes)
-	return policy, nil
+	policy = clonePolicy(policy)
+	return clonePolicy(policy), nil
 }
 
 func (s *MemoryStore) ListPolicies(context.Context) ([]Policy, error) {
@@ -90,9 +89,25 @@ func (s *MemoryStore) ListPolicies(context.Context) ([]Policy, error) {
 	defer s.mu.RUnlock()
 	items := make([]Policy, 0, len(s.policies))
 	for _, policy := range s.policies {
-		policy.OwnerTypes = slices.Clone(policy.OwnerTypes)
+		policy = clonePolicy(policy)
 		items = append(items, policy)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID+items[i].Version < items[j].ID+items[j].Version })
 	return items, nil
+}
+
+func (s *MemoryStore) ListRecordStates(ctx context.Context, ownerType, owner string, now time.Time, includeDeleted bool) ([]Record, error) {
+	if !includeDeleted {
+		return s.ListRecords(ctx, ownerType, owner, now)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []Record{}
+	for _, r := range s.records {
+		if r.OwnerType == ownerType && r.OwnerID == owner {
+			out = append(out, cloneRecord(r))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
 }

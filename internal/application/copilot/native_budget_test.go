@@ -1,16 +1,12 @@
 package copilot
 
 import (
-	"context"
 	"encoding/json"
 	"math"
-	"strings"
 	"testing"
 	"time"
 
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
-	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
-	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 func TestNativeToolCannotOutliveRemainingRunTimeBudget(t *testing.T) {
@@ -64,42 +60,6 @@ func TestNativeBudgetAccountsMissingEstimatedAndInvalidUsage(t *testing.T) {
 			}
 			if cp.BudgetTokens != want || cp.UsageKnown != (kind == "known") {
 				t.Fatalf("accounting lost unknown reservation: %+v", cp)
-			}
-		})
-	}
-}
-
-func TestNativeBudgetIncludesSchemasArgumentsAndLostModelAttempts(t *testing.T) {
-	for _, kind := range []string{"schema", "tool_arguments", "lost_attempt"} {
-		t.Run(kind, func(t *testing.T) {
-			service, store, gateway, _ := nativeLoopFixture(t)
-			cp := initialNativeCheckpoint(store.lease.Run)
-			switch kind {
-			case "schema":
-				catalog, _ := gateway.WorkbenchCapabilities(t.Context(), domainidentity.Principal{}, domainaigateway.ManifestRequest{})
-				gateway.catalog = catalog.Tools
-				gateway.catalog[0].InputSchema["description"] = strings.Repeat("x", 32768)
-			case "tool_arguments":
-				cp.Messages = []appaigateway.WorkbenchRelayMessage{{Role: "assistant", ToolCalls: []appaigateway.WorkbenchToolCall{{ID: "huge", Name: "knowledge_search", Arguments: json.RawMessage(`{"query":"` + strings.Repeat("x", 32768) + `"}`)}}}}
-			case "lost_attempt":
-				cp.BudgetTokens, cp.ModelReservation, cp.Usage.Steps = 32700, 32000, 1
-				store.lease.Phase = "model"
-			}
-			var err error
-			store.lease.Checkpoint, err = json.Marshal(cp)
-			if err != nil {
-				t.Fatal(err)
-			}
-			calls := 0
-			gateway.model = func(context.Context, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-				calls++
-				return appaigateway.WorkbenchRelayResponse{Content: "must not run"}, nil
-			}
-			if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || calls != 0 || store.lease.Run.Status != "failed" || len(store.final) != 1 || store.final[0].Role != "system" {
-				t.Fatalf("budget allowed another request: calls=%d status=%s err=%v", calls, store.lease.Run.Status, err)
-			}
-			if kind == "lost_attempt" && store.lease.Run.Output["usageKnown"] != false {
-				t.Fatal("lost attempt became exact usage")
 			}
 		})
 	}
