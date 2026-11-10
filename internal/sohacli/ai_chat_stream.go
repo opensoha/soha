@@ -133,7 +133,7 @@ func (c APIClient) receiveAIChat(ctx context.Context, session string, input soha
 }
 
 func aiStreamUnknownError() error {
-	return fmt.Errorf("AI stream outcome unknown; do not resend automatically; preserve the original session and request ID, inspect native-request or session messages")
+	return fmt.Errorf("AI stream outcome unknown; do not resend automatically; preserve the original session and request ID, inspect request or session messages")
 }
 
 func (c APIClient) openAIChatStream(ctx context.Context, session string, input sohaapi.WorkbenchSendMessageStreamRequest) (*http.Response, string, error) {

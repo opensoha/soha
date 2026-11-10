@@ -471,3 +471,5 @@ flag, and `130` for interrupted execution.
 
 This repository is licensed under the Apache License 2.0. See
 [LICENSE](./LICENSE) for the full license text.
+
+For AI chat recovery, use `soha ai chat request SESSION --request-id ID` to inspect the original request. `native-request` remains a compatible alias. If a stream outcome is unknown, retain the original identifiers and inspect the request, run events, and session messages; do not resend automatically. Recovery decisions and historical Native reconciliation remain server-authoritative.
