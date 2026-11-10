@@ -34,11 +34,11 @@ func runAIChat(ctx context.Context, args []string, rt Runtime) error {
 	if len(args) > 1 && args[0] == "messages" && args[1] == "stream" {
 		return runAIChatStream(ctx, args[2:], rt)
 	}
-	if len(args) > 0 && args[0] == "native-request" {
+	if len(args) > 0 && (args[0] == "request" || args[0] == "native-request") {
 		return runAIWorkbench(ctx, "native-request", "get", args[1:], rt)
 	}
 	if len(args) < 2 || args[0] != "sessions" && args[0] != "messages" {
-		return usageError{message: "ai chat requires sessions <list|main|create|get>, messages <list|window|stream>, or native-request SESSION"}
+		return usageError{message: "ai chat requires sessions <list|main|create|get>, messages <list|window|stream>, or request SESSION (native-request remains an alias)"}
 	}
 	return runAIWorkbench(ctx, "chat-"+args[0], args[1], args[2:], rt)
 }
@@ -75,12 +75,12 @@ func parseAIWorkbenchOptions(area, action string, args []string, rt Runtime) (*f
 	fs.StringVar(&opt.file, "input", "", "typed JSON file, or - for stdin")
 	fs.StringVar(&opt.inline, "input-json", "", "typed JSON request")
 	fs.StringVar(&opt.session, "session-id", "", "restrict run list to one owned session")
-	fs.StringVar(&opt.requestID, "request-id", "", "original Native turn request ID; never resubmits a message")
+	fs.StringVar(&opt.requestID, "request-id", "", "original turn request ID; never resubmits a message")
 	fs.StringVar(&opt.around, "around", "", "window around an owned message ID")
 	fs.StringVar(&opt.before, "before", "", "window before an owned message ID")
 	fs.StringVar(&opt.after, "after", "", "window after an owned message ID")
 	fs.IntVar(&opt.limit, "limit", 40, "message window size, from 3 to 100")
-	fs.IntVar(&opt.sequence, "after-sequence", 0, "Native event cursor, at least 0")
+	fs.IntVar(&opt.sequence, "after-sequence", 0, "durable event cursor, at least 0")
 	fs.BoolVar(&opt.yes, "yes", false, "confirm this action; server permissions still apply")
 	err := fs.Parse(rest)
 	return fs, opt, append(leading, fs.Args()...), err
