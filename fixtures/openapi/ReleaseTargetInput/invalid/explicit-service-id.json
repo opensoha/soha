@@ -1,0 +1,8 @@
+{
+  "serviceId": {},
+  "clusterId": "test-b",
+  "namespace": "orders",
+  "workloadKind": "Deployment",
+  "workloadName": "api",
+  "enabled": false
+}

@@ -245,6 +245,8 @@ const (
   // oapi-codegen changes enum prefixes when another schema introduces the same
   // value. Preserve both published spellings without redeclaring generated ones.
   for (const [typeName, values] of [
+    ["IdentityProviderUserMetadataProtocol", [["OIDC", "oidc"], ["Proxy", "proxy"], ["Saml", "saml"]]],
+    ["PersonalEnvironmentTemplateMode", [["ObserveOnly", "observe-only"], ["RestrictedWrite", "restricted-write"]]],
     ["PersonalGuestRuntimeInputKind", [["Browser", "browser"], ["Docker", "docker"], ["Execute", "execute"], ["FileRead", "file_read"], ["FileWrite", "file_write"]]],
     ["ExportDeliveryDocumentParamsFormat", [["JSON", "json"], ["Yaml", "yaml"]]],
     ["DeliveryDraftServiceServiceKind", [["ExternalService", "external_service"], ["HelmRelease", "helm_release"], ["Job", "job"], ["KubernetesWorkload", "kubernetes_workload"]]],
@@ -257,6 +259,9 @@ const (
     // Rejected already belongs to the published PersonalAgentAccessDecisionStatus.
     ["WorkflowRequestReceiptSubmissionStatus", [["Accepted", "accepted"], ["Unknown", "unknown"]]],
     ["WorkbenchAgentStatusEventStatus", [["Cancelled", "cancelled"], ["Failed", "failed"], ["Queued", "queued"], ["Running", "running"], ["Succeeded", "succeeded"]]],
+    ["SearchWorkbenchMessagesParamsWorkspace", [["Chat", "chat"], ["Heya", "heya"]]],
+    ["WorkbenchAgentRunExecutionOwner", [["External", "external"], ["Native", "native"]]],
+    ["ExecuteKubernetesWorkloadActionConditionalParamsAction", [["Restart", "restart"], ["Rollback", "rollback"], ["Scale", "scale"]]],
   ]) {
     for (const [suffix, value] of values) {
       for (const name of [suffix, `${typeName}${suffix}`]) {
@@ -334,6 +339,19 @@ function applyGoCompatibility(spec) {
   // A positive stopped-process proof must carry explicit known zero. Keep the
   // existing int64 SDK field while preventing omitempty from erasing that zero.
   schemas.NetworkProxyDeploymentRuntimeAck.properties.activeConnections["x-omitempty"] = false;
+
+  // Keep Rejected available for the published PersonalAgentAccessDecisionStatus.
+  schemas.WorkflowRequestReceipt.properties.submissionStatus["x-enum-varnames"] = [
+    "WorkflowRequestReceiptSubmissionStatusAccepted",
+    "WorkflowRequestReceiptSubmissionStatusUnknown",
+    "WorkflowRequestReceiptSubmissionStatusRejected",
+  ];
+
+  // Keep Unavailable available for the published RuntimeNetworkUsageScope.
+  schemas.WorkbenchRuntimeAssetStatus.properties.status["x-enum-varnames"] = [
+    "WorkbenchRuntimeAssetStatusStatusLoaded",
+    "WorkbenchRuntimeAssetStatusStatusUnavailable",
+  ];
 
   // Keep the published full-input request-body alias and its string Content.
   // Partial HTTP updates have a separate schema used explicitly by new consumers.

@@ -1,0 +1,61 @@
+{
+  "id": "reference-a",
+  "revision": 3,
+  "state": "active",
+  "sourceIdentityRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "currentSourceRevision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "preview": {
+    "applicationId": "app",
+    "serviceId": "svc-api",
+    "consumer": {
+      "applicationEnvironmentId": "test-a",
+      "environmentId": "env-a",
+      "environmentKey": "test-a",
+      "tier": "test",
+      "stageLevel": 20,
+      "isProduction": false,
+      "updatedAt": "2026-10-26T08:00:00Z"
+    },
+    "source": {
+      "applicationEnvironmentId": "test-b",
+      "environmentId": "env-b",
+      "environmentKey": "test-b",
+      "tier": "test",
+      "stageLevel": 20,
+      "isProduction": false,
+      "updatedAt": "2026-10-26T08:01:00Z"
+    },
+    "sourceRevision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "targets": [
+      {
+        "targetId": "target-b",
+        "clusterId": "c-b",
+        "namespace": "backend",
+        "workloadKind": "CustomResource",
+        "workloadName": "api-db",
+        "ownershipMode": "observe_only",
+        "resources": [
+          {
+            "resource": {
+              "clusterId": "c-b",
+              "namespace": "backend",
+              "apiVersion": "databases.example.com/v1",
+              "kind": "Database",
+              "name": "api-db",
+              "scopeMode": "namespace",
+              "uid": "cr-uid"
+            },
+            "specDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "crdName": "databases.databases.example.com",
+            "plural": "databases"
+          }
+        ]
+      }
+    ],
+    "currentLocalTargetIds": [],
+    "observedAt": "2026-10-26T08:02:00Z"
+  },
+  "createdAt": "2026-11-04T08:00:00Z",
+  "updatedAt": "2026-11-04T08:00:00Z",
+  "consumerSnapshot": []
+}

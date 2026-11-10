@@ -12,6 +12,7 @@ const requiredJsonSchemas = [
   { file: "network/radius-password-verifier.schema.json", fixtureDir: "fixtures/json-schema/radius-password-verifier" },
   { file: "network/proxy-adapter.schema.json", fixtureDir: "fixtures/json-schema/proxy-adapter" },
   { file: "network/proxy-runtime.schema.json", fixtureDir: "fixtures/json-schema/proxy-runtime" },
+  { file: "agent/dsh-runtime.schema.json", fixtureDir: "fixtures/json-schema/dsh-runtime" },
   { file: "runner/docker-project-identity.schema.json", fixtureDir: "fixtures/json-schema/docker-project-identity" },
   { file: "runner/docker-container-identity.schema.json", fixtureDir: "fixtures/json-schema/docker-container-identity" },
   { file: "runner/docker-runtime-read.schema.json", fixtureDir: "fixtures/json-schema/docker-runtime-read" },
@@ -129,6 +130,16 @@ const requiredOpenapiFixtureSchemas = [
   "DockerRuntimeReadResult",
   "DockerRuntimeReadEnvelope",
 
+  "EnvironmentServiceReferenceInput",
+  "EnvironmentServiceReferenceDeleteInput",
+  "EnvironmentServiceReference",
+  "EnvironmentServiceReferenceEnvelope",
+  "EnvironmentServiceReferenceSummary",
+  "EnvironmentServiceReferencePage",
+  "EnvironmentServiceReferenceResolvedTarget",
+  "EnvironmentServiceReferenceConsumer",
+  "EnvironmentServiceReferenceConsumerPage",
+  "DeliveryPlanServiceReferenceImpact",
   "TemplateUpdatePreviewInput",
   "TemplateUpdatePolicyInput",
   "TemplateMigrationPolicy",
@@ -616,6 +627,14 @@ function validateOpenapiStructure(openapi, permissionDefinitions) {
       }
       validateCapabilityExtension(operation, `${method.toUpperCase()} ${path}`, capabilityNames, riskLevels, permissionDefinitions);
       validateKubernetesOperationPermissions(operation, `${method.toUpperCase()} ${path}`, path, permissionDefinitions);
+      if (operation.operationId === "claimExecutionTask") {
+        for (const status of ["200", "202"]) {
+          const schema = operation.responses[status]?.headers?.["X-Soha-Manifest-Admission-Version"]?.schema;
+          if (schema?.type !== "string" || JSON.stringify(schema.enum) !== '["1"]') {
+            throw new Error(`claimExecutionTask ${status} must describe Manifest admission confirmation`);
+          }
+        }
+      }
       if (["claimExecutionTask", "claimDockerOperation"].includes(operation.operationId)) {
         for (const status of ["202", "204"]) {
           if (!operation.responses[status]) {

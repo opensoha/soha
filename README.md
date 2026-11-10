@@ -197,14 +197,46 @@ npm run check:consumers -- --consumer soha-skills --require-all
 ```
 
 Go consumers run in a temporary `go.work` that replaces the contracts module
-with this checkout. `soha-web` and `soha-app/frontend` run `npm ci`, install a packed copy of this
-checkout without changing their dependency manifests or lockfiles, and build
-against that package. The App pin represents its recorded committed source;
-local uncommitted Native adaptations need separate worktree evidence and a new
-reviewed pin after they are committed.
+with this checkout. For npm consumers, the checker packs this checkout, temporarily
+resolves the SDK tarball into `package.json` and `package-lock.json` with
+`npm install --package-lock-only --ignore-scripts`, then runs `npm ci` and the
+consumer build. Both files are restored byte-for-byte on success or failure.
+Run against an exclusively owned staging checkout or reserve dependency installation
+and builds in the selected worktrees for the duration of the check. Installation
+changes `node_modules` and builds produce the consumer's normal output.
 
-Use `--dry-run` to inspect the discovered commands without executing consumer
-builds.
+`SOHA_CONSUMER_ROOT` selects an explicit sibling checkout group, including local
+candidate worktrees with uncommitted source. For example:
+
+```sh
+SOHA_CONSUMER_ROOT=/path/to/candidate-group npm run check:consumers -- --require-all --out /path/to/evidence/candidate-consumers.json
+```
+
+Reports identify the contracts and consumer HEADs plus SHA-256 hashes of modified,
+staged, deleted and untracked source files; failures are recorded and return a
+nonzero exit status after the selected matrix finishes. The source hashes identify
+worktree contents, not a release artifact. Keep the candidate stable throughout the
+run. `--dry-run` inspects discovery and commands without running consumer builds.
+`--declared` separately checks the consumer's original SDK dependency without
+source substitution. Neither candidate worktree checks nor declared checks change
+the fixed revision selection in CI or prove that unpublished packages are released.
+
+## Execution task callback credentials
+
+`ExecutionTask.callbackToken` is a callback capability, not ordinary task-view data.
+Normal task list/get and application, environment, runtime and release-board read
+views return the fixed non-secret string `[redacted]` when a callback is configured.
+This preserves the existing SDK string shape and configured-callback presence
+signal; the marker cannot be submitted as a callback credential. Historical empty
+values remain empty. Only authenticated runner claim/status paths return the real
+credential needed by that runner. Internal execution and callback validation keep
+the original value; task-view or configuration-secret read permission does not
+grant it.
+
+This documents the security projection within the existing v0.1.26 field shape.
+It adds no schema fields or SDK types and does not change the runner protocol.
+Clients must obtain runner credentials through the authorized runner flow rather
+than copying them from a user-facing task read.
 
 ## Compatibility Policy
 
@@ -296,6 +328,9 @@ rendered manifests plus hooks to 2 MiB and values to 1 MiB, and are never logged
 ### Controller-aware Agent execution
 
 Manifest tasks emitted by the controller-aware Core use `manifest_agent_v3.<clusterId>` and require the Agent summary capability `manifest.execution.v3`. New Agents also accept legacy `manifest_agent.<clusterId>` and `manifest_agent_v2.<clusterId>` tasks using the protected executor. Old Agents cannot claim the new provider kind; capability checks alone are not a substitute for this claim boundary during rolling upgrades.
+
+Plan-bound Manifest tasks additionally use `manifest_delivery_v1.<existingProvider>` and require `manifest.delivery-admission.v1`. Core validates the durable private operation and current Plan authority on every claim, then supplies `X-Soha-Manifest-Admission-Version: 1` in that claim response. Agent runners must reject a protected task without that exact response confirmation, including when polling an older Core with general runner credentials. A payload or a later task read is not admission proof. Direct providers remain local-only; protected Agent providers require the cluster Agent token. No fallback to an older provider is permitted. Known old application Plan tasks with `fieldManager` beginning `opensoha-manifest/` or a nonempty `initializationPlanId` are rejected on legacy providers, even with a header. These markers only deny execution; they never reconstruct or authorize Plan identity. Existing initialization and root-CR identity rules still apply to the underlying provider. These wire additions use existing SDK task and HTTP client APIs and remain source-compatible with SDK v0.1.26.
+
 
 Native YAML/CR writes and workload restart, scale, rollback and image changes use the existing request/response bodies under `/api/v1/platform/ownership-v2`, with the original route suffix. This endpoint family guarantees live external-owner checks for Operator, Argo CD, and Argo Rollouts resources and optimistic identity fencing; ownership conflicts return HTTP 409. Core must not fall back to older mutations after 404/405. Reads retain their existing routes.
 

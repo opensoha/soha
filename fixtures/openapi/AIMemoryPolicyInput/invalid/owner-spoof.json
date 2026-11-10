@@ -1,0 +1,10 @@
+{
+  "id": "user-memory",
+  "name": "My memory",
+  "consentMode": "explicit",
+  "ttlDays": 30,
+  "mode": "chat",
+  "readEnabled": true,
+  "writeEnabled": false,
+  "ownerId": "another-user"
+}

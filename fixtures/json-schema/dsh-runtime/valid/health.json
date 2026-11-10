@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "opensoha.dev/dsh-runtime/v1",
+  "kind": "health",
+  "ready": true,
+  "protocolVersion": "opensoha.dev/dsh-runtime/v1",
+  "runtimeVersion": "0.2.2-rc.1",
+  "capabilities": [
+    "cancel",
+    "bounded-tools"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "user-memory",
+  "version": "v1",
+  "ownerTypes": [
+    "user"
+  ],
+  "minimumConfidence": 0.9,
+  "explicitWriteOnly": true,
+  "enabled": true,
+  "ownerId": "user-1",
+  "mode": "other",
+  "readEnabled": true,
+  "writeEnabled": false,
+  "defaultTtl": 86400000000000,
+  "maximumTtl": 604800000000000
+}

@@ -1,0 +1,7 @@
+{
+  "expectedCandidateId": "candidate-a",
+  "expectedCandidateRevision": 2,
+  "expectedSourceUpdatedAt": "2026-11-04T08:01:00Z",
+  "expectedSourceRevision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "expectedRevision": 0
+}
