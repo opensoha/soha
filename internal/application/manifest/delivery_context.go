@@ -20,6 +20,12 @@ type deliveryContextReader interface {
 	CurrentManifestDeliveryContext(context.Context, domainidentity.Principal, string, string, string) (domainmanifest.DeliveryContext, error)
 }
 
+// Observation plans retain current read authorization and approval without
+// requiring publication impact to remain current after unrelated service changes.
+type deliveryObservationPlanReader interface {
+	GetConfirmedDeliveryObservationPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlan, error)
+}
+
 type operationTaskReader interface {
 	GetOperationTask(context.Context, string) (domainmanifest.OperationRun, error)
 }
@@ -147,14 +153,16 @@ func (s *DeclarativeService) validateManifestTaskAdmission(ctx context.Context, 
 	if err := s.validateCurrentDeliveryContext(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID, *operation.DeliveryContext); err != nil {
 		return task, err
 	}
-	impact, ok := s.delivery.(interface {
-		ValidateDeliveryPlanServiceReferenceImpact(context.Context, domainidentity.Principal, string) error
-	})
-	if !ok {
-		return task, apperrors.ErrUnsupportedOperation
-	}
-	if err := impact.ValidateDeliveryPlanServiceReferenceImpact(ctx, principal, operation.DeliveryContext.PlanID); err != nil {
-		return task, err
+	if payload.Action != domainmanifest.TaskActionObserve {
+		impact, ok := s.delivery.(interface {
+			ValidateDeliveryPlanServiceReferenceImpact(context.Context, domainidentity.Principal, string) error
+		})
+		if !ok {
+			return task, apperrors.ErrUnsupportedOperation
+		}
+		if err := impact.ValidateDeliveryPlanServiceReferenceImpact(ctx, principal, operation.DeliveryContext.PlanID); err != nil {
+			return task, err
+		}
 	}
 	if payload.Action != domainmanifest.TaskActionPreflight {
 		err = s.validatePlannedManifestOperation(ctx, principal, task, payload, *operation.DeliveryContext)
@@ -247,7 +255,11 @@ func (s *DeclarativeService) validatePlannedManifestOperation(ctx context.Contex
 	var plan domaindelivery.DeliveryPlan
 	var err error
 	if payload.Action == domainmanifest.TaskActionObserve {
-		plan, err = s.delivery.GetConfirmedDeliveryPlan(ctx, principal, control.PlanID)
+		reader, ok := s.delivery.(deliveryObservationPlanReader)
+		if !ok || reflect.ValueOf(reader).Kind() == reflect.Pointer && reflect.ValueOf(reader).IsNil() {
+			return apperrors.ErrUnsupportedOperation
+		}
+		plan, err = reader.GetConfirmedDeliveryObservationPlan(ctx, principal, control.PlanID)
 	} else {
 		plan, err = s.delivery.GetExecutingDeliveryPlan(ctx, principal, control.PlanID)
 	}

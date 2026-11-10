@@ -1409,17 +1409,28 @@ func (s *Service) GetExecutingDeliveryPlan(ctx context.Context, p domainidentity
 }
 
 // GetConfirmedDeliveryPlan is used by native controls of an existing execution.
-// It retains the plan reader's application/environment authorization.
+// Publication impact must still be current for these write controls.
 func (s *Service) GetConfirmedDeliveryPlan(ctx context.Context, principal domainidentity.Principal, planID string) (domaindelivery.DeliveryPlan, error) {
+	plan, err := s.GetConfirmedDeliveryObservationPlan(ctx, principal, planID)
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	if err := s.validateServiceReferenceImpact(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	return plan, nil
+}
+
+// GetConfirmedDeliveryObservationPlan permits read-only observation of an existing
+// execution. It retains current application/environment authorization and approval;
+// publication impact is checked separately by callers that authorize writes.
+func (s *Service) GetConfirmedDeliveryObservationPlan(ctx context.Context, principal domainidentity.Principal, planID string) (domaindelivery.DeliveryPlan, error) {
 	plan, err := s.GetDeliveryPlan(ctx, principal, planID)
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
 	if plan.Status != domaindelivery.DeliveryPlanStatusConfirmed || plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
 		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: execution requires its confirmed approved delivery plan", apperrors.ErrConflict)
-	}
-	if err := s.validateServiceReferenceImpact(ctx, principal, plan); err != nil {
-		return domaindelivery.DeliveryPlan{}, err
 	}
 	return plan, nil
 }

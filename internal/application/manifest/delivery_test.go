@@ -122,6 +122,10 @@ func (r *snapshotRepository) GetConfirmedDeliveryPlan(ctx context.Context, p dom
 	return r.GetExecutingDeliveryPlan(ctx, p, id)
 }
 
+func (r *snapshotRepository) GetConfirmedDeliveryObservationPlan(ctx context.Context, p domainidentity.Principal, id string) (domaindelivery.DeliveryPlan, error) {
+	return r.GetExecutingDeliveryPlan(ctx, p, id)
+}
+
 func (r *snapshotRepository) GetExecutionTask(ctx context.Context, _ domainidentity.Principal, id string) (domaindelivery.ExecutionTask, error) {
 	return r.GetExecutionTaskInternal(ctx, id)
 }
