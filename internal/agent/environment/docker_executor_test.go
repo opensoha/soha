@@ -288,7 +288,7 @@ func TestDockerCommandReservationFencesSeparateAgentsAndLostAttempts(t *testing.
 	if err != nil || claimed.ID == "" {
 		t.Fatalf("command admission failed: %+v %v", claimed, err)
 	}
-	if _, err := second.acquireCommandFence(ctx, handle); err == nil || fixture.parent.ID != handle.ID || fixture.fence.ID != claimed.ID {
+	if _, err := second.acquireCommandFence(ctx, handle); !errors.Is(err, ErrEnvironmentCommandBusy) || fixture.parent.ID != handle.ID || fixture.fence.ID != claimed.ID {
 		t.Fatal("another Agent overlapped or cancelled the active command")
 	}
 	fixture.fence.Labels[dockerEnvironmentLabel+".deadline"] = time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)

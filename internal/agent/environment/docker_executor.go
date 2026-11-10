@@ -29,6 +29,7 @@ var digestImagePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9./:_-]*@sha25
 var scopeDigestPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 var dockerContainerIDPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var dockerEnvironmentNamePattern = regexp.MustCompile(`^soha-env-[a-z0-9-]{1,64}$`)
+var ErrEnvironmentCommandBusy = errors.New("environment command is already active")
 
 type dockerEnvironmentRecord struct {
 	ID     string            `json:"id"`
@@ -398,6 +399,8 @@ func (e *DockerExecutor) acquireCommandFence(ctx context.Context, parent Handle)
 	if !ok || !deadline.After(time.Now()) {
 		return fence, errors.New("environment command deadline is unavailable")
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultOperationTimeout)
+	defer cancel()
 	_, createErr := e.run(ctx, "create", "--name", name, "--label", dockerEnvironmentLabel+"=personal-docker-command-v1",
 		"--label", dockerEnvironmentLabel+".ref="+parent.Ref, "--label", dockerEnvironmentLabel+".parent="+parent.ID,
 		"--label", dockerEnvironmentLabel+".call="+fence.CallID, "--label", dockerEnvironmentLabel+".deadline="+deadline.UTC().Format(time.RFC3339Nano),
@@ -412,12 +415,15 @@ func (e *DockerExecutor) acquireCommandFence(ctx context.Context, parent Handle)
 	}
 	if labels[dockerEnvironmentLabel+".call"] != fence.CallID {
 		expiresAt, err := time.Parse(time.RFC3339Nano, labels[dockerEnvironmentLabel+".deadline"])
-		if err == nil && !expiresAt.After(time.Now()) {
+		if err != nil {
+			return fence, errors.New("environment command deadline is invalid")
+		}
+		if !expiresAt.After(time.Now()) {
 			// A crashed attempt may have written data. Terminate the original task;
 			// never silently steal its reservation and replay the command.
 			return fence, errors.Join(errors.New("environment command outcome is unknown"), e.Stop(ctx, parent))
 		}
-		return fence, errors.New("environment command is already active")
+		return fence, ErrEnvironmentCommandBusy
 	}
 	fence.ID = record.ID
 	if createErr != nil {
