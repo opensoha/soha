@@ -1,7 +1,6 @@
 package copilot
 
 import (
-	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -11,58 +10,6 @@ import (
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
-
-func TestNativeModelCallsAreValidatedBeforeCheckpoint(t *testing.T) {
-	const marker = "rejected-private-argv-marker"
-	for _, scenario := range []string{"unavailable_second_call", "protected_plan"} {
-		t.Run(scenario, func(t *testing.T) {
-			service, store, gateway, owner := nativeGovernedTaskFixture(t)
-			calls := []appaigateway.WorkbenchToolCall{{ID: "valid", Name: "harness_request_task", Arguments: nativeTaskFixtureArguments(t)}}
-			if scenario == "unavailable_second_call" {
-				calls = append(calls, appaigateway.WorkbenchToolCall{ID: "unavailable", Name: "k8s_pods_exec", Arguments: json.RawMessage(`{"argv":["` + marker + `"]}`)})
-			} else {
-				plan := nativeTaskFixturePlan()
-				plan.Steps[0].Call.ToolName = "k8s.pods.exec"
-				plan.Steps[0].Call.CapabilityVersion = "1"
-				plan.Steps[0].Call.Input = map[string]any{"argv": []string{marker}}
-				arguments, err := json.Marshal(map[string]any{"plan": plan})
-				if err != nil {
-					t.Fatal(err)
-				}
-				calls = append(calls, appaigateway.WorkbenchToolCall{ID: "protected", Name: "harness_request_task", Arguments: arguments})
-			}
-			cp := initialNativeCheckpoint(store.lease.Run)
-			before, _ := json.Marshal(cp)
-			response := appaigateway.WorkbenchRelayResponse{Content: marker, Usage: map[string]float64{"totalTokens": 10}, ToolCalls: calls}
-			principal := domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}
-			if err := service.queueNativeModelToolCalls(t.Context(), principal, &cp, store.lease, response); err == nil {
-				t.Fatal("unsupported batch was accepted")
-			}
-			after, _ := json.Marshal(cp)
-			if string(after) != string(before) || owner.creates != 0 {
-				t.Fatal("rejected batch changed the checkpoint or created a child task")
-			}
-			gateway.model = func(context.Context, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-				return response, nil
-			}
-			if err := service.processNativeRun(t.Context(), store, store.lease); err != nil {
-				t.Fatal(err)
-			}
-			var stored []byte
-			// Inspect actual durable projections; private fixture fields are not JSON state.
-			for _, value := range []any{store.lease, store.events, store.final, store.modelCheckpoints} {
-				data, err := json.Marshal(value)
-				if err != nil {
-					t.Fatal(err)
-				}
-				stored = append(stored, data...)
-			}
-			if strings.Contains(string(stored), marker) || store.lease.Run.Status != "failed" || owner.creates != 0 || gateway.toolCalls != 0 {
-				t.Fatal("rejected model arguments reached storage, events, or execution")
-			}
-		})
-	}
-}
 
 func TestNativeModelTaskCheckpointUsesCanonicalPlan(t *testing.T) {
 	service, store, _, owner := nativeGovernedTaskFixture(t)

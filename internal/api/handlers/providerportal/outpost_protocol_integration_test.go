@@ -132,7 +132,7 @@ func startSSOTestAgent(t *testing.T, binary, directory, config, agentToken, cont
 	for name, value := range map[string]string{"agent.yaml": config, "agent-token": agentToken, "control-token": controlToken} {
 		ssoNoError(t, os.WriteFile(filepath.Join(directory, name), []byte(value), 0600))
 	}
-	command := exec.Command(binary) // #nosec G204 -- test runner explicitly supplies a locally built Agent binary.
+	command := exec.Command(binary) // #nosec G204 G702 -- test runner explicitly supplies a locally built Agent binary.
 	// The Agent's durable floor belongs to this test, never the source checkout.
 	command.Dir = directory
 	logPath := filepath.Join(directory, "agent.log")
@@ -172,7 +172,7 @@ func checkSSOOutpost(t *testing.T, client *http.Client, agentURL, token, cookie,
 	request.Header.Set("X-Forwarded-Method", "GET")
 	request.Header.Set("X-Soha-User-ID", "forged-user")
 	if cookie != "" {
-		request.AddCookie(&http.Cookie{Name: "soha_proxy_session", Value: cookie})
+		request.AddCookie(&http.Cookie{Name: "soha_proxy_session", Value: cookie}) // #nosec G124 -- Request cookie only; browser response flags are tested separately.
 	}
 	_, headers := ssoHTTP(t, client, request, status)
 	return headers

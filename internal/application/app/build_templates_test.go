@@ -4,6 +4,7 @@ import (
 	"context"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domainupdate "github.com/opensoha/soha/internal/domain/templateupdate"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"testing"
 )
@@ -42,7 +43,11 @@ func TestBuildTemplateSavePinsAndPreservesVersions(t *testing.T) {
 		t.Fatal("legacy save upgraded existing source")
 	}
 	input.BuildSources[0].Config["buildTemplateVersion"] = 2
-	if err := service.pinBuildTemplates(context.Background(), &input, current); err != nil {
+	if err := service.pinBuildTemplates(context.Background(), &input, current); err == nil {
+		t.Fatal("direct save bypassed the frozen configuration Plan")
+	}
+	approved := domainupdate.WithAdoption(context.Background(), "build", current.ID, "plan-1")
+	if err := service.pinBuildTemplates(approved, &input, current); err != nil {
 		t.Fatal(err)
 	}
 	if input.BuildSources[0].Config["buildTemplateVersion"] != int64(2) {

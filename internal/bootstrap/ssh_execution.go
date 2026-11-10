@@ -7,6 +7,7 @@ import (
 	delivery "github.com/opensoha/soha/internal/domain/delivery"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
 )
 
@@ -52,4 +53,14 @@ func newVMSSHOptions(cfg cfgpkg.Config, infra *infrastructure, repos *repositori
 			return infra.agentRegistry.ClientFor(connection)
 		}},
 	}
+}
+
+func (h sshExecutionHydrator) ValidateExecutionTaskRetry(ctx context.Context, task delivery.ExecutionTask) error {
+	if validator, ok := h.delivery.(appexecution.ExecutionTaskRetryValidator); ok {
+		return validator.ValidateExecutionTaskRetry(ctx, task)
+	}
+	if delivery.RequiresManifestAdmission(task) {
+		return apperrors.ErrUnsupportedOperation
+	}
+	return nil
 }

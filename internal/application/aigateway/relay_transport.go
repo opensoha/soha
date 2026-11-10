@@ -221,11 +221,12 @@ func (s *Service) relayHTTPOptions(req LLMRelayHTTPRequest, selection relaySelec
 		return relayport.HTTPOptions{}, fmt.Errorf("%w: relay upstream API key decrypt failed", apperrors.ErrInvalidArgument)
 	}
 	opts := relayport.HTTPOptions{
-		APIKey: apiKey, Timeout: s.relayConfig.DefaultTimeout, FirstByteTimeout: s.relayConfig.FirstByteTimeout,
-		IdleTimeout: s.relayConfig.StreamIdleTimeout,
+		APIKey: apiKey, Timeout: s.relayConfig.DefaultTimeout,
 	}
 	if stream {
 		opts.Timeout = s.relayConfig.StreamTimeout
+		opts.FirstByteTimeout = s.relayConfig.FirstByteTimeout
+		opts.IdleTimeout = s.relayConfig.StreamIdleTimeout
 		opts.StartStream = func(resp *http.Response) io.Writer {
 			relayport.CopyResponseHeaders(writer.Header(), resp.Header, relayport.ResponseContentType(req.Endpoint))
 			writeRelayRouteTraceHeaders(writer.Header(), req, selection, publicModel, true, resp.StatusCode, cacheStatus)

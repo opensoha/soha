@@ -30,6 +30,10 @@ type manifestConfigurationRuntime interface {
 // ValidateDeliveryTarget checks saved references without resolving source refs,
 // rendering manifests, contacting a runner, or creating any execution records.
 func (s *Service) ValidateDeliveryTarget(ctx context.Context, principal domainidentity.Principal, target domainworkflow.DeliveryTargetInput) error {
+	if target.TemplateCandidateID != "" {
+		_, err := s.freezeTemplateAdoption(ctx, principal, target)
+		return err
+	}
 	app, service, err := s.deliveryTargetService(ctx, principal, target)
 	if err != nil {
 		return err
@@ -77,6 +81,9 @@ func hasDeliveryReleaseTarget(binding domaincatalog.ApplicationEnvironment, serv
 }
 
 func (s *Service) FreezeDeliveryTarget(ctx context.Context, principal domainidentity.Principal, target domainworkflow.DeliveryTargetInput) (domainworkflow.DeliveryTargetSnapshot, error) {
+	if target.TemplateCandidateID != "" {
+		return s.freezeTemplateAdoption(ctx, principal, target)
+	}
 	if target.HelmRevision < 0 || target.HelmRevision > 0 && (target.Action != "config_update" || target.ReleaseBundleID != "") {
 		return domainworkflow.DeliveryTargetSnapshot{}, fmt.Errorf("%w: Helm rollback requires config_update without an artifact override", apperrors.ErrInvalidArgument)
 	}

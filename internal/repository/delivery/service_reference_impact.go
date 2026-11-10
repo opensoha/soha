@@ -1,0 +1,69 @@
+package delivery
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	dd "github.com/opensoha/soha/internal/domain/delivery"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
+)
+
+func (r *Repository) CreateDeliveryPlanWithServiceReferenceImpact(ctx context.Context, input dd.DeliveryPlanInput, actor string, snapshot dd.ServiceReferencePlanImpact) (dd.DeliveryPlan, error) {
+	var plan dd.DeliveryPlan
+	if snapshot.Version != dd.ServiceReferencePlanImpactVersion {
+		return plan, apperrors.ErrConflict
+	}
+	err := dbtx.Within(ctx, r.db, func(txctx context.Context) error {
+		var err error
+		plan, err = r.CreateDeliveryPlan(txctx, input, actor)
+		if err != nil {
+			return err
+		}
+		snapshot.PlanID = plan.ID
+		raw, err := json.Marshal(snapshot)
+		if err != nil {
+			return err
+		}
+		// Batch retries may encounter a previously created Plan. Never replace its evidence.
+		result := dbtx.DB(txctx, r.db).Exec(`INSERT INTO delivery_plan_service_reference_impacts(plan_id,snapshot) VALUES (?,?::jsonb) ON CONFLICT (plan_id) DO NOTHING`, plan.ID, string(raw))
+		if result.Error != nil {
+			return fmt.Errorf("save Plan reference impact: %w", result.Error)
+		}
+		saved, err := r.GetDeliveryPlanServiceReferenceSnapshot(txctx, plan.ID)
+		if err != nil {
+			return err
+		}
+		if saved.Version != snapshot.Version || saved.Revision != snapshot.Revision || saved.DatabaseRevision != snapshot.DatabaseRevision {
+			return apperrors.ErrConflict
+		}
+		return nil
+	})
+	return plan, err
+}
+
+func (r *Repository) GetDeliveryPlanServiceReferenceSnapshot(ctx context.Context, planID string) (dd.ServiceReferencePlanImpact, error) {
+	var raw []byte
+	var snapshot dd.ServiceReferencePlanImpact
+	row := dbtx.DB(ctx, r.db).Raw(`SELECT snapshot FROM delivery_plan_service_reference_impacts WHERE plan_id=?`, planID).Row()
+	if err := row.Scan(&raw); err != nil {
+		return snapshot, normalizeServiceReferenceImpactError(err)
+	}
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return snapshot, fmt.Errorf("decode Plan reference impact: %w", err)
+	}
+	if (snapshot.Version != 1 && snapshot.Version != dd.ServiceReferencePlanImpactVersion) || snapshot.PlanID != planID || snapshot.Consumers == nil || snapshot.SourceRevisions == nil {
+		return snapshot, apperrors.ErrConflict
+	}
+	return snapshot, nil
+}
+
+func normalizeServiceReferenceImpactError(err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return apperrors.ErrNotFound
+	}
+	return err
+}

@@ -50,6 +50,13 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser, c
 		}
 	}
 	return func(c *gin.Context) {
+		// These exact internal callbacks authenticate their service credential in the
+		// owning handler, independently from user sessions and PATs.
+		if isDSHServiceCallback(c.Request, basePath) {
+			c.Next()
+			return
+		}
+
 		token, validHeader := accessTokenFromRequest(c)
 		if !validHeader {
 			_ = c.Error(errors.New("request contains multiple authorization headers"))
@@ -92,7 +99,11 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser, c
 				c.Abort()
 				return
 			}
-			principal, accessCtx, err := streamParser.ParseStreamTicket(c.Request.Context(), ticket, c.Request.URL.Path)
+			requestTarget := c.Request.URL.Path
+			if c.Request.URL.Query().Has("expectedUid") {
+				requestTarget = c.Request.URL.RequestURI()
+			}
+			principal, accessCtx, err := streamParser.ParseStreamTicket(c.Request.Context(), ticket, requestTarget)
 			if err != nil {
 				_ = c.Error(err)
 				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid stream ticket")
@@ -119,6 +130,21 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser, c
 			c.Set(principalKey, principal)
 		}
 		c.Next()
+	}
+}
+
+func isDSHServiceCallback(r *http.Request, basePath string) bool {
+	if r.Method == http.MethodGet {
+		return r.URL.Path == basePath+"/copilot/dsh/personal-stdio"
+	}
+	if r.Method != http.MethodPost {
+		return false
+	}
+	switch strings.TrimPrefix(r.URL.Path, basePath) {
+	case "/copilot/dsh/model/v1/chat/completions", "/copilot/dsh/tools", "/copilot/dsh/assembly", "/copilot/dsh/plugin-tools/authorize", "/copilot/dsh/plugin-tools/settle":
+		return strings.HasPrefix(r.URL.Path, basePath+"/")
+	default:
+		return false
 	}
 }
 

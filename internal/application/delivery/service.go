@@ -104,7 +104,19 @@ type HelmImportTargetReader interface {
 	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
 }
 
+type KubernetesImportSourceReader interface {
+	GetImportSource(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceSourceSnapshot, error)
+	AuthorizeImportManagement(context.Context, domainidentity.Principal, string, string, string) error
+}
+
+type KubernetesImportExtendedReader interface {
+	ListJobs(context.Context, domainidentity.Principal, string, string) ([]domainresource.JobView, error)
+	ListCronJobs(context.Context, domainidentity.Principal, string, string) ([]domainresource.CronJobView, error)
+	ListCRDResources(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.CustomResourceView, error)
+}
+
 type KubernetesImportRepository interface {
+	ResolveImportDestination(context.Context, string, string) (domaindelivery.ImportDestination, error)
 	ImportKubernetesServices(context.Context, domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error)
 	ImportHelmReleases(context.Context, domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error)
 }
@@ -128,27 +140,30 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	applications      ApplicationReader
-	catalog           CatalogReader
-	builds            BuildReader
-	workflows         WorkflowReader
-	releases          ReleaseReader
-	repository        domaindelivery.Repository
-	importRepository  KubernetesImportRepository
-	execution         ExecutionController
-	targets           TargetReader
-	importTargets     KubernetesImportTargetReader
-	helmImportTargets HelmImportTargetReader
-	permissions       *appaccess.PermissionResolver
-	audit             AuditRecorder
-	operations        OperationRecorder
-	governance        *deliverygovernance.Service
-	logs              LogRuntime
-	logTickets        LogStreamTicketIssuer
-	manifestPackages  ManifestPackageWriter
-	manifestDelivery  ManifestDelivery
-	docker            DockerDelivery
-	helm              HelmDeliveryDependencies
+	executionPrincipals ExecutionPrincipalReader
+	templateUpdates     TemplateUpdates
+	applications        ApplicationReader
+	catalog             CatalogReader
+	builds              BuildReader
+	workflows           WorkflowReader
+	releases            ReleaseReader
+	repository          domaindelivery.Repository
+	importRepository    KubernetesImportRepository
+	execution           ExecutionController
+	targets             TargetReader
+	importTargets       KubernetesImportTargetReader
+	helmImportTargets   HelmImportTargetReader
+	permissions         *appaccess.PermissionResolver
+	audit               AuditRecorder
+	operations          OperationRecorder
+	governance          *deliverygovernance.Service
+	logs                LogRuntime
+	logTickets          LogStreamTicketIssuer
+	manifestPackages    ManifestPackageWriter
+	manifestDelivery    ManifestDelivery
+	referenceManifests  ServiceReferenceManifestConfigurationReader
+	docker              DockerDelivery
+	helm                HelmDeliveryDependencies
 }
 
 func uniqueStrings(values []string) []string {
@@ -360,16 +375,17 @@ func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, princ
 	if err != nil {
 		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
 	}
-	var selected *domaindelivery.ApplicationRuntimeWorkload
-	for _, item := range workloads {
-		if item.WorkloadName == strings.TrimSpace(workloadName) {
-			copyItem := item
-			selected = &copyItem
-			break
+	selected, err := selectRuntimeWorkload(workloads, strings.TrimSpace(workloadName))
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	if selected.SourceStatus != "" {
+		if selected.SourceStatus != "linked" && selected.SourceStatus != "changed" {
+			return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: linked workload identity is unavailable", apperrors.ErrConflict)
 		}
 	}
-	if selected == nil {
-		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: workload not found", apperrors.ErrNotFound)
+	if selected.WorkloadKind != "Deployment" {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: use the linked source resource view", apperrors.ErrUnsupportedOperation)
 	}
 	var (
 		deployment domainresource.DeploymentDetailView
@@ -396,6 +412,9 @@ func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, princ
 		if err != nil {
 			return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
 		}
+	}
+	if err := s.verifyImportedRuntimeIdentity(ctx, principal, *selected); err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
 	}
 	return domaindelivery.ApplicationWorkloadRuntimeDetail{
 		Application: app,
@@ -477,7 +496,7 @@ func (s *Service) ListReleaseBoard(ctx context.Context, principal domainidentity
 		}
 		bundles, _ := s.repository.ListReleaseBundles(ctx, domaindelivery.ReleaseBundleFilter{ApplicationID: app.ID, Limit: 20})
 		tasks, _ := s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: app.ID, Limit: 20})
-		tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
+		tasks = domaindelivery.PublicExecutionTasks(domaindelivery.WithOperationStates(tasks, time.Now().UTC()))
 		builds, _ := s.builds.List(ctx, principal, domainbuild.Filter{ApplicationID: app.ID, Limit: 20})
 		workflows, _ := s.workflows.List(ctx, principal, app.ID, "", 20)
 		releases, _ := s.releases.List(ctx, principal, domainrelease.Filter{ApplicationID: app.ID, Limit: 20})
@@ -578,24 +597,34 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string) (domaindelivery.ExecutionTask, error) {
+	task, _, err := s.getExecutionTaskView(ctx, principal, taskID)
+	return task, err
+}
+
+func (s *Service) getExecutionTaskView(ctx context.Context, principal domainidentity.Principal, taskID string) (domaindelivery.ExecutionTask, bool, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
-		return domaindelivery.ExecutionTask{}, err
+		return domaindelivery.ExecutionTask{}, false, err
 	}
 	task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
-		return domaindelivery.ExecutionTask{}, err
+		return domaindelivery.ExecutionTask{}, false, err
 	}
 	if err := s.authorizeRuntimeScope(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
-		return domaindelivery.ExecutionTask{}, err
+		return domaindelivery.ExecutionTask{}, false, err
 	}
 	if task.TaskKind == "vm_ssh_command" {
-		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
+		return domaindelivery.ExecutionTask{}, false, apperrors.ErrUnsupportedOperation
+	}
+	task = domaindelivery.PublicExecutionTask(task)
+	if domaindelivery.SensitiveExecutionTask(task) && appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPlatformConfigurationSecretDataView) != nil {
+		return domaindelivery.WithOperationState(task, time.Now().UTC()), false, nil
 	}
 	artifacts, artifactErr := s.repository.ListExecutionArtifacts(ctx, task.ID)
 	if artifactErr == nil && len(artifacts) > 0 {
 		task.Artifacts = artifacts
 	}
-	return domaindelivery.WithOperationState(domaindelivery.PublicExecutionTask(task), time.Now().UTC()), nil
+	task.OperationState = domaindelivery.BuildOperationState(task, time.Now().UTC())
+	return task, true, nil
 }
 
 func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentity.Principal, taskID string, limit int) ([]domaindelivery.ExecutionLog, error) {
@@ -612,6 +641,11 @@ func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentit
 	}
 	if err := s.authorizeRuntimeScope(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
 		return nil, err
+	}
+	if domaindelivery.SensitiveExecutionTask(task) {
+		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPlatformConfigurationSecretDataView); err != nil {
+			return nil, err
+		}
 	}
 	return s.repository.ListExecutionLogs(ctx, taskID, limit)
 }
@@ -813,15 +847,18 @@ func (s *Service) GetReleaseBundleRuntimeDetail(ctx context.Context, principal d
 }
 
 func (s *Service) GetExecutionTaskRuntimeDetail(ctx context.Context, principal domainidentity.Principal, taskID string) (domaindelivery.RuntimeObjectDetail, error) {
-	task, err := s.GetExecutionTask(ctx, principal, strings.TrimSpace(taskID))
+	task, canReadDiagnostics, err := s.getExecutionTaskView(ctx, principal, taskID)
 	if err != nil {
 		return domaindelivery.RuntimeObjectDetail{}, err
 	}
 	artifacts := task.Artifacts
-	if len(artifacts) == 0 {
-		artifacts = s.artifactsForRuntimeObject(ctx, domaindelivery.ArtifactFilter{ExecutionTaskID: task.ID, Limit: 500})
+	var logs []domaindelivery.ExecutionLog
+	if canReadDiagnostics {
+		if len(artifacts) == 0 {
+			artifacts = s.artifactsForRuntimeObject(ctx, domaindelivery.ArtifactFilter{ExecutionTaskID: task.ID, Limit: 500})
+		}
+		logs, _ = s.repository.ListExecutionLogs(ctx, task.ID, 50)
 	}
-	logs, _ := s.repository.ListExecutionLogs(ctx, task.ID, 50)
 	return s.buildRuntimeObjectDetail(ctx, principal, "execution_task", task.ID, task.ApplicationID, task.ApplicationEnvironmentID, task, mergeMaps(task.Payload, task.Result), artifacts, map[string]any{
 		"taskKind":       task.TaskKind,
 		"providerKind":   task.ProviderKind,
@@ -1061,6 +1098,12 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 		return domaindelivery.DeliveryPlan{}, err
 	}
 	action := normalizeApplicationDeliveryAction(input.Action)
+	if input.TemplateCandidateID != "" {
+		if action != domaindelivery.ApplicationDeliveryActionDeploy {
+			return domaindelivery.DeliveryPlan{}, apperrors.ErrInvalidArgument
+		}
+		return s.createTemplateAdoptionPlan(ctx, principal, input)
+	}
 	app, err := s.applications.Get(ctx, principal, strings.TrimSpace(input.ApplicationID))
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
@@ -1099,6 +1142,7 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 	planInput.Impact = deliveryPlanImpact(app, binding, environment, firstTarget(targets), planInput)
 	planInput.RollbackStrategy = deliveryPlanRollbackStrategy(action, binding)
 	planInput.ID = firstNonEmpty(strings.TrimSpace(planInput.ID), uuid.NewString())
+	ctx, _ = domainmanifest.WithPreparedOperations(ctx)
 	planInput.ManifestSnapshots, err = s.prepareManifestDelivery(ctx, principal, app.ID, binding.ID, targets, planInput)
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
@@ -1115,7 +1159,12 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 		planInput.ReleaseBundleID = planInput.HelmSnapshots[0].ReleaseBundleID
 		planInput.Impact["helmRevision"] = planInput.HelmRevision
 	}
-	plan, err := s.repository.CreateDeliveryPlan(ctx, planInput, principal.UserID)
+	freezePlanMigration(&planInput)
+	return s.createPreparedDeliveryPlan(ctx, principal, planInput)
+}
+
+func (s *Service) createPreparedDeliveryPlan(ctx context.Context, principal domainidentity.Principal, planInput domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error) {
+	plan, err := s.createPlanWithServiceReferenceImpact(ctx, principal, planInput)
 	if err == nil {
 		err = s.ensureHelmPreflights(ctx, principal, plan)
 	}
@@ -1136,6 +1185,9 @@ func (s *Service) GetDeliveryPlan(ctx context.Context, principal domainidentity.
 	if err := s.authorizeRuntimeScope(ctx, principal, plan.ApplicationID, plan.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
+	if err := s.authorizeRootPlanRead(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
 	return plan, nil
 }
 
@@ -1144,23 +1196,40 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	if err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
+	if err := s.authorizeRootPlanRead(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlanConfirmResult{}, err
+	}
+
 	if err := s.authorizeRuntimeScope(ctx, principal, plan.ApplicationID, plan.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
 	if err := requireBatchPlanWorker(ctx, plan); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
+	if plan.TemplateCandidateID != "" {
+		return s.confirmTemplateAdoptionPlan(ctx, principal, plan)
+	}
+	return s.confirmRuntimeDeliveryPlan(ctx, principal, plan)
+}
+
+func (s *Service) confirmRuntimeDeliveryPlan(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlanConfirmResult, error) {
 	if plan.Source == domainworkflow.ScopeDeliveryBatch && plan.Status == domaindelivery.DeliveryPlanStatusConfirmed {
 		return domaindelivery.DeliveryPlanConfirmResult{Plan: plan}, nil
 	}
 	if err := s.authorizeApplicationDeliveryAction(ctx, principal, plan.ApplicationEnvironmentID, plan.Action); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
+	if result, recovered, err := s.recoverLegacyHelmPlanConfirmation(ctx, principal, plan); recovered || err != nil {
+		return result, err
+	}
 	if result, recovered, err := s.recoverHelmPlanConfirmation(ctx, plan); recovered || err != nil {
 		return result, err
 	}
 	if result, recovered, err := s.recoverDockerPlanConfirmation(ctx, principal, plan); recovered || err != nil {
 		return result, err
+	}
+	if err := s.validateServiceReferenceImpact(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
 	if err := validateDeliveryPlanConfirmStatus(plan); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
@@ -1182,11 +1251,17 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	now := time.Now().UTC()
 	plan.Status = domaindelivery.DeliveryPlanStatusConfirming
 	plan.UpdatedAt = now
-	plan, err = s.repository.UpdateDeliveryPlan(ctx, plan)
+	var updated domaindelivery.DeliveryPlan
+	err := s.withValidatedServiceReferenceImpact(ctx, principal, plan, func(lockctx context.Context) error {
+		var updateErr error
+		updated, updateErr = s.repository.UpdateDeliveryPlan(lockctx, plan)
+		return updateErr
+	})
 	if err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
-	result, err := s.TriggerApplicationDeliveryAction(ctx, principal, plan.ApplicationID, deliveryActionInputFromPlan(plan))
+	plan = updated
+	result, err := s.TriggerApplicationDeliveryAction(context.WithValue(ctx, referenceExecutionPlanKey{}, plan), principal, plan.ApplicationID, deliveryActionInputFromPlan(plan))
 	if err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, s.restoreDeliveryPlanConfirmFailure(ctx, plan, err)
 	}
@@ -1274,10 +1349,28 @@ func (s *Service) DecideDeliveryPlanApproval(ctx context.Context, principal doma
 	default:
 		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: approval action must be approved or rejected", apperrors.ErrInvalidArgument)
 	}
+	if action == "approved" && planHasMigration(plan) && strings.TrimSpace(input.Comment) == "" {
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: 迁移变更批准前必须填写审批意见，核对迁移指引与恢复方案", apperrors.ErrInvalidArgument)
+	}
+	if action == "approved" {
+		if err := s.validateManifestApprovalControl(ctx, principal, plan); err != nil {
+			return domaindelivery.DeliveryPlan{}, err
+		}
+	}
 	plan.Status = domaindelivery.DeliveryPlanStatusDraft
 	plan.UpdatedAt = time.Now().UTC()
 	plan.Impact = deliveryPlanApprovalImpact(plan, principal, action, input.Comment)
-	updated, err := s.repository.UpdateDeliveryPlan(ctx, plan)
+	var updated domaindelivery.DeliveryPlan
+	apply := func(lockctx context.Context) error {
+		var updateErr error
+		updated, updateErr = s.repository.UpdateDeliveryPlan(lockctx, plan)
+		return updateErr
+	}
+	if action == "approved" {
+		err = s.withValidatedServiceReferenceImpact(ctx, principal, plan, apply)
+	} else {
+		err = apply(ctx)
+	}
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
@@ -1305,9 +1398,41 @@ func deliveryPlanApprovalGranted(plan domaindelivery.DeliveryPlan) bool {
 	return strings.EqualFold(strings.TrimSpace(fmt.Sprint(decision["status"])), "approved")
 }
 
+// GetExecutingDeliveryPlan permits the confirmation-to-dispatch window without bypassing approval.
+func (s *Service) GetExecutingDeliveryPlan(ctx context.Context, p domainidentity.Principal, id string) (domaindelivery.DeliveryPlan, error) {
+	plan, err := s.GetDeliveryPlan(ctx, p, id)
+	if err != nil {
+		return plan, err
+	}
+	if (plan.Status != domaindelivery.DeliveryPlanStatusConfirming && plan.Status != domaindelivery.DeliveryPlanStatusConfirmed) || (plan.RequiresApproval && !deliveryPlanApprovalGranted(plan)) {
+		return domaindelivery.DeliveryPlan{}, apperrors.ErrConflict
+	}
+	if err := s.authorizeApplicationDeliveryAction(ctx, p, plan.ApplicationEnvironmentID, plan.Action); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	if err := s.validateServiceReferenceImpact(ctx, p, plan); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	return plan, nil
+}
+
 // GetConfirmedDeliveryPlan is used by native controls of an existing execution.
-// It retains the plan reader's application/environment authorization.
+// Publication impact must still be current for these write controls.
 func (s *Service) GetConfirmedDeliveryPlan(ctx context.Context, principal domainidentity.Principal, planID string) (domaindelivery.DeliveryPlan, error) {
+	plan, err := s.GetConfirmedDeliveryObservationPlan(ctx, principal, planID)
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	if err := s.validateServiceReferenceImpact(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	return plan, nil
+}
+
+// GetConfirmedDeliveryObservationPlan permits read-only observation of an existing
+// execution. It retains current application/environment authorization and approval;
+// publication impact is checked separately by callers that authorize writes.
+func (s *Service) GetConfirmedDeliveryObservationPlan(ctx context.Context, principal domainidentity.Principal, planID string) (domaindelivery.DeliveryPlan, error) {
 	plan, err := s.GetDeliveryPlan(ctx, principal, planID)
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
@@ -1319,6 +1444,15 @@ func (s *Service) GetConfirmedDeliveryPlan(ctx context.Context, principal domain
 }
 
 func (s *Service) authorizeDeliveryPlanApprover(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) error {
+	if plan.TemplateCandidateID != "" {
+		if s.templateUpdates == nil {
+			return apperrors.ErrConflict
+		}
+		return s.templateUpdates.AuthorizeApproval(ctx, principal, plan.TemplateCandidateID)
+	}
+	if err := s.authorizeRootPlanRead(ctx, principal, plan); err != nil {
+		return err
+	}
 	binding, err := s.catalog.AuthorizeApplicationEnvironmentPermission(ctx, principal, plan.ApplicationEnvironmentID, appaccess.PermDeliveryApplicationEnvApprove)
 	if err != nil {
 		return err
@@ -1385,6 +1519,9 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
 	}
 	if err := s.authorizeApplicationDeliveryAction(ctx, principal, binding.ID, action); err != nil {
+		return domaindelivery.ApplicationDeliveryActionResult{}, err
+	}
+	if err := s.validateReferenceTrigger(ctx, principal, app.ID, binding.ID); err != nil {
 		return domaindelivery.ApplicationDeliveryActionResult{}, err
 	}
 	result := domaindelivery.ApplicationDeliveryActionResult{
@@ -2193,7 +2330,7 @@ func (s *Service) deliveryBlueprintRuntimeSummary(ctx context.Context, principal
 			}
 		}
 		if tasks, err := s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: app.ID, Limit: 20}); err == nil {
-			tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
+			tasks = domaindelivery.PublicExecutionTasks(domaindelivery.WithOperationStates(tasks, time.Now().UTC()))
 			for _, task := range tasks {
 				if !deliveryTaskMatchesUsageBindings(task, bindings) && !deliveryTaskMatchesBuildSources(task, sources) {
 					continue
@@ -2805,7 +2942,7 @@ func (s *Service) loadDeliveryContext(ctx context.Context, principal domainident
 			return nil, nil, nil, nil, nil, nil, nil, err
 		}
 	}
-	tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
+	tasks = domaindelivery.PublicExecutionTasks(domaindelivery.WithOperationStates(tasks, time.Now().UTC()))
 	return bindings, environments, bundles, tasks, builds, workflows, releases, nil
 }
 
@@ -3045,10 +3182,19 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 ) ([]domaindelivery.ApplicationRuntimeWorkload, error) {
 	workloads := make([]domaindelivery.ApplicationRuntimeWorkload, 0)
 	seen := make(map[string]struct{})
+	imported := s.importedRuntimeWorkloads(ctx, principal, binding)
 	for _, target := range binding.Targets {
 		clusterID := strings.TrimSpace(target.ClusterID)
 		namespace := strings.TrimSpace(target.Namespace)
 		if clusterID == "" || namespace == "" {
+			continue
+		}
+		if metadataString(target.Metadata, "importSource") == "helm" || target.Helm != nil {
+			workloads = append(workloads, s.helmRuntimeWorkloads(ctx, principal, binding.ID, target)...)
+			continue
+		}
+		if metadataString(target.Metadata, "importSource") == "kubernetes" {
+			workloads = append(workloads, imported[target.ID])
 			continue
 		}
 		items, err := s.targets.ListDeployments(ctx, principal, clusterID, namespace)

@@ -197,6 +197,46 @@ func deliveryCheckTargets(count int) []domainworkflow.DeliveryTargetInput {
 	return targets
 }
 
+func TestDeliveryRunStatusUsesTemplateAdoptionTerminalStage(t *testing.T) {
+	adopt := domainworkflow.DeliveryTargetInput{ID: "adopt", ApplicationID: "app", Action: "config_update", TemplateCandidateID: "candidate"}
+	native := domainworkflow.DeliveryTargetInput{ID: "native", ApplicationID: "app", Action: "config_update"}
+	for _, test := range []struct {
+		name    string
+		targets []domainworkflow.DeliveryTargetInput
+		states  map[string]string
+		want    string
+	}{
+		{name: "configuration adoption completes without health", targets: []domainworkflow.DeliveryTargetInput{adopt}, want: "completed"},
+		{name: "failed adoption stays failed", targets: []domainworkflow.DeliveryTargetInput{adopt}, states: map[string]string{"adopt:deploy": "failed"}, want: "failed"},
+		{name: "approval still blocks", targets: []domainworkflow.DeliveryTargetInput{adopt}, states: map[string]string{"adopt:deploy": "waiting_approval"}, want: workflowStatusWaitingApproval},
+		{name: "mixed success and failure", targets: []domainworkflow.DeliveryTargetInput{adopt, native}, states: map[string]string{"native:health": "failed"}, want: "partially_completed"},
+		{name: "runtime update still needs health", targets: []domainworkflow.DeliveryTargetInput{native}, states: map[string]string{"native:health": "pending"}, want: "running"},
+		{name: "mixed complete", targets: []domainworkflow.DeliveryTargetInput{adopt, native}, want: "completed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			batch := domainworkflow.DeliveryBatch{}
+			for _, target := range test.targets {
+				batch.Targets = append(batch.Targets, domainworkflow.DeliveryTargetSnapshot{Target: target})
+			}
+			definition, err := compileDeliveryDAG(domainworkflow.DeliveryWorkflowDefinition{Mode: domainworkflow.DeliveryModeSerial}, batch.Targets)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := &dagRunState{definition: definition, nodeRuns: map[string]domainworkflow.NodeRun{}}
+			for _, node := range definition.Nodes {
+				status := test.states[node.ID]
+				if status == "" {
+					status = "completed"
+				}
+				state.nodeRuns[node.ID] = domainworkflow.NodeRun{NodeID: node.ID, Status: status}
+			}
+			if got := deliveryRunStatus(batch, state); got != test.want {
+				t.Fatalf("batch status = %q, want %q; nodes: %+v", got, test.want, state.nodeRuns)
+			}
+		})
+	}
+}
+
 func TestDeliveryExecutorSerialTenTargetsAndRecoveryKeepOneTask(t *testing.T) {
 	service, repo, runtime := newDeliveryExecutorCheck(t, domainworkflow.DeliveryWorkflowDefinition{Name: "serial", Targets: deliveryCheckTargets(10)})
 	runtime.states["service1:build"] = "waiting_execution"

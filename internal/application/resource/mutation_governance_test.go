@@ -27,7 +27,7 @@ func TestPodOperationsProduceGovernanceEvidence(t *testing.T) {
 	if _, err := service.Workloads().ExecPod(t.Context(), principal, "direct-cluster", "platform", "api-0", "api", "sensitive command", 30); err != nil {
 		t.Fatalf("ExecPod() error = %v", err)
 	}
-	if err := service.Workloads().StreamPodTerminal(t.Context(), principal, "direct-cluster", "platform", "api-0", "api", "/bin/sh", bytes.NewReader(nil), &bytes.Buffer{}, &bytes.Buffer{}, nil); err != nil {
+	if err := service.Workloads().StreamPodTerminal(t.Context(), principal, "direct-cluster", "platform", "api-0", "api", "/bin/sh", bytes.NewReader(nil), &bytes.Buffer{}, &bytes.Buffer{}, nil, ""); err != nil {
 		t.Fatalf("StreamPodTerminal() error = %v", err)
 	}
 

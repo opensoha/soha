@@ -208,6 +208,7 @@ func batchRuntimeCheck(t *testing.T) (*Service, *batchRuntimeRepository, *batchR
 	catalog := &stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "env", ApplicationID: "app", EnvironmentID: "global-env", ReleasePolicy: domaincatalog.ReleasePolicy{RequiresApproval: true}, BuildPolicy: domaincatalog.BuildPolicy{RefValue: "release", BuildArgs: map[string]any{"MODE": "release"}}, Targets: []domaincatalog.ReleaseTarget{{ID: "target", ExecutorKind: "manifest_ssa", ConfigRef: "manifest-binding", ClusterID: "cluster", Namespace: "test", Enabled: true, Metadata: map[string]any{"serviceId": "svc"}}}}}, envs: []domaincatalog.Environment{{ID: "global-env", Enabled: true}}}
 	service := New(stubApplicationReader{app: domainapp.App{ID: "app", Name: "App"}, services: []domainapp.Service{{ID: "svc", ApplicationID: "app", Name: "API", Version: 1, BuildSourceID: "source", Containers: []domainapp.ServiceContainer{{Name: "api", ImageRepository: "registry.example/api"}}}}}, catalog, builder, stubWorkflowReader{}, stubReleaseReader{}, repo, batchRuntimeExecution{repo: repo}, nil, deliveryActionPermissions(appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryBuildsTrigger, appaccess.PermDeliveryReleasesTrigger, appaccess.PermDeliveryApplicationEnvApprove))
 	service.SetManifestDelivery(manifest)
+	service.SetServiceReferenceManifestConfigurationReader(stubRepository{})
 	governance, err := deliverygovernance.New(repo, batchGovernanceAudit{})
 	if err != nil {
 		t.Fatal(err)

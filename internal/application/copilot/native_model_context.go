@@ -69,6 +69,9 @@ func recordNativeModelContext(cp *nativeCheckpoint, request appaigateway.Workben
 		Deadline: cp.Budget.Deadline, Snapshot: snapshot,
 	}
 	for index, message := range request.Messages {
+		if len(message.Images) != 0 {
+			cp.ModelContext.ReservationBasis = "serialized_text_bytes_plus_message_overhead_and_image_estimate"
+		}
 		encoded, err := json.Marshal(message)
 		if err != nil {
 			return fmt.Errorf("hash Native context message: %w", err)

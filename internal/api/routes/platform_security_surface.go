@@ -231,6 +231,16 @@ func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		// permission against the original task's application/environment scope.
 		return nonPlatformMutationSecuritySurfaceEntry{ResourceKind: "ExecutionTask", Action: "control", PermissionKey: "delivery.execution-tasks.<action>", DynamicPermission: true, ScopeRequired: true}, true
 	}
+	if strings.HasPrefix(path, "/api/v1/delivery/template-updates/") {
+		permission, action := appaccess.PermDeliveryApplicationsView, "preview"
+		if strings.HasSuffix(path, "/batches") {
+			permission, action = appaccess.PermDeliveryWorkflowsTrigger, "adopt"
+		}
+		if strings.HasSuffix(path, "/policies") {
+			permission, action = appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), "update"
+		}
+		return nonPlatformMutationSecuritySurfaceEntry{ResourceKind: "TemplateAdoption", Action: action, PermissionKey: permission, DynamicPermission: true, ScopeRequired: true}, true
+	}
 	if strings.HasPrefix(path, "/api/v1/delivery/triggers") && !strings.HasSuffix(path, "/webhook") {
 		permission := appaccess.PermDeliveryTriggersCreate
 		if method == "PUT" {
@@ -297,6 +307,12 @@ func (r deliveryMutationRule) matches(method, path string) bool {
 }
 
 var deliveryMutationRules = []deliveryMutationRule{
+	{method: "PUT", prefix: "/api/v1/application-environments/", contains: "/service-references/", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
+	{method: "DELETE", prefix: "/api/v1/application-environments/", contains: "/service-references/", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
+
+	{method: "PUT", prefix: "/api/v1/application-environments/", contains: "/service-reference-candidates/", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
+	{method: "DELETE", prefix: "/api/v1/application-environments/", contains: "/service-reference-candidates/", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/application-environments/", suffix: "/service-reference-previews", resourceKind: "ApplicationEnvironment", action: "view", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
 	{method: "POST", prefix: "/api/v1/applications/", suffix: "/deployment-template-preview", resourceKind: "Application", action: "view", permission: appaccess.PermDeliveryApplicationsView, scopeRequired: true},
 	{method: "POST", prefix: "/api/v1/deployment-templates/", suffix: "/publish", resourceKind: "DeploymentTemplate", action: "publish", permission: appaccess.PermDeliveryDeploymentTemplatesUpdate},
 	{method: "POST", prefix: "/api/v1/deployment-templates", resourceKind: "DeploymentTemplate", action: "create", permission: appaccess.PermDeliveryDeploymentTemplatesCreate},
@@ -504,9 +520,10 @@ func copilotConfigurationMutationSecuritySurface(method, path string) (nonPlatfo
 	case strings.HasPrefix(path, "/api/v1/copilot/data-sources"):
 		action := nonPlatformMutationAction(method, path)
 		permission := appaccess.PermAIDataSourcesUpdate
-		if action == "create" {
+		switch action {
+		case "create":
 			permission = appaccess.PermAIDataSourcesCreate
-		} else if action == "validate" {
+		case "validate":
 			permission = appaccess.PermAIDataSourcesValidate
 		}
 		return nonPlatformMutationEntry("CopilotDataSource", action, permission, false), true
@@ -548,6 +565,8 @@ func copilotSessionMutationSecuritySurface(method, path string) (nonPlatformMuta
 		return nonPlatformMutationEntry("CopilotSession", "analyze", appaccess.PermObserveAIChatUse, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions") && strings.Contains(path, "/messages"):
 		return nonPlatformMutationEntry("CopilotMessage", "create", appaccess.PermObserveAIChatUse, false), true
+	case method == "PUT" && path == "/api/v1/copilot/sessions/:sessionID/runtime-profile":
+		return nonPlatformMutationEntry("WorkbenchRuntimeProfile", "select", appaccess.PermObserveAIChatUse, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions"):
 		return nonPlatformMutationEntry("CopilotSession", nonPlatformMutationAction(method, path), appaccess.PermObserveAIChatUse, false), true
 	}
@@ -715,6 +734,12 @@ func settingsMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		return nonPlatformMutationEntry("IdentitySettings", "update", appaccess.PermSettingsIdentityManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/ai/skills"):
 		return nonPlatformMutationEntry("AISkillSettings", nonPlatformMutationAction(method, path), appaccess.PermAIGatewaySkillsManage, false), true
+	case method == "PUT" && path == "/api/v1/settings/ai/workbench-runtime-profiles/:profileId":
+		return nonPlatformMutationEntry("WorkbenchRuntimeProfile", "publish", appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update"), false), true
+	case method == "PUT" && path == "/api/v1/settings/ai/workbench-runtime-assets/:kind/:assetId/:version":
+		return nonPlatformMutationEntry("WorkbenchRuntimeAsset", "update", appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update"), false), true
+	case method == "POST" && path == "/api/v1/settings/ai/workbench-runtime-assets/mcp/:assetId/:version/probe":
+		return nonPlatformMutationEntry("WorkbenchRuntimeAsset", "probe", appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update"), false), true
 	case strings.HasPrefix(path, "/api/v1/settings/ai"):
 		return nonPlatformMutationEntry("AISettings", nonPlatformMutationAction(method, path), appaccess.PermSettingsAIManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/branding"):

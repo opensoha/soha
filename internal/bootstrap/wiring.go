@@ -69,6 +69,7 @@ import (
 	appsettings "github.com/opensoha/soha/internal/application/settings"
 	appsoftware "github.com/opensoha/soha/internal/application/software"
 	appsystemintegration "github.com/opensoha/soha/internal/application/systemintegration"
+	apptemplateupdate "github.com/opensoha/soha/internal/application/templateupdate"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	appworkflow "github.com/opensoha/soha/internal/application/workflow"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
@@ -159,6 +160,7 @@ import (
 	settingsrepo "github.com/opensoha/soha/internal/repository/settings"
 	softwarerepo "github.com/opensoha/soha/internal/repository/software"
 	systemintegrationrepo "github.com/opensoha/soha/internal/repository/systemintegration"
+	templateupdaterepo "github.com/opensoha/soha/internal/repository/templateupdate"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
 	virtualizationrepo "github.com/opensoha/soha/internal/repository/virtualization"
 	workflowrepo "github.com/opensoha/soha/internal/repository/workflow"
@@ -753,13 +755,14 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		contentDLPService:              contentSecurity.content,
 		companionService:               companionService,
 		pluginExtensions:               deliveryCore.pluginExtensions,
-		outpostLifecycle:               deliveryCore.outpostLifecycle, outpostExecutor: deliveryCore.outpostExecutor,
-		identityProviderService:      deliveryCore.identityProvider,
-		providerPortalService:        deliveryCore.providerPortal,
-		applicationOnboardingService: appproviderportal.NewOnboarding(repos.providerPortalRepository, deliveryCore.providerPortal, deliveryCore.identityProvider),
-		directorySyncService:         directorySyncService,
-		directoryConnections:         directoryConnections,
-		directorySyncConnectors:      directorySyncConnectors,
+		outpostLifecycle:               deliveryCore.outpostLifecycle,
+		outpostExecutor:                deliveryCore.outpostExecutor,
+		identityProviderService:        deliveryCore.identityProvider,
+		providerPortalService:          deliveryCore.providerPortal,
+		applicationOnboardingService:   appproviderportal.NewOnboarding(repos.providerPortalRepository, deliveryCore.providerPortal, deliveryCore.identityProvider),
+		directorySyncService:           directorySyncService,
+		directoryConnections:           directoryConnections,
+		directorySyncConnectors:        directorySyncConnectors,
 	}, nil
 }
 
@@ -904,9 +907,6 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 	outpostLifecycle, outpostExecutor, err := newOutpostRuntimeServices(cfg, infra, permissions, audit, executionService)
 	if err != nil {
 		return nil, fmt.Errorf("build Outpost lifecycle services: %w", err)
-	}
-	if cfg.Modules.Delivery.Enabled {
-		executionService.Start(infra.lifecycleCtx)
 	}
 	releases := apprelease.New(
 		repos.releaseRepository, repos.applicationRepository, repos.catalogRepository, repos.clusterRepository, executionService, access, permissions,
@@ -1112,6 +1112,17 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 				return dbtx.Within(ctx, infra.databaseStore.DB(), apply)
 			},
 			Authorize: core.clusterService.ValidatePersonalExecutionAccess,
+			OpenMCPStdio: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.PersonalMCPStdioRequest) (appcopilot.DSHPersonalStdioPeer, error) {
+				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
+				if err != nil {
+					return nil, err
+				}
+				client, err := infra.agentRegistry.ClientFor(connection)
+				if err != nil {
+					return nil, err
+				}
+				return client.OpenPersonalMCPStdio(ctx, request)
+			},
 			Preflight: func(ctx context.Context, principal domainidentity.Principal, nodeID string, quota contractenv.Quota) error {
 				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
 				if err != nil {
@@ -1164,6 +1175,8 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		NativeTaskParents:   repos.copilotRepository,
 	},
 		appcopilot.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), mcptracesinfra.DefaultRegistry()),
+		appcopilot.WithRuntimeProfiles(repos.copilotRepository),
+		appcopilot.WithRuntimeAssets(repos.copilotRepository),
 	)
 	copilotService.SetMCPRegistry(infra.mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
@@ -1243,6 +1256,8 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)
 	deliveryService.SetRecorders(core.auditService, core.operationService)
+	deliveryService.SetServiceReferenceManifestConfigurationReader(repos.manifestRepository)
+	deliveryService.SetExecutionPrincipalReader(core.identityService)
 	deliveryService.SetDockerDelivery(dockerService)
 	deliveryService.SetLogRuntime(core.resourceService.Logs(), core.identityService)
 	if governanceService, governanceErr := appdeliverygovernance.New(repos.deliveryRepository, core.auditService); governanceErr == nil {
@@ -1425,9 +1440,6 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	if err := delivery.copilotService.ValidateRuntimeDependencies(); err != nil {
 		return nil, fmt.Errorf("validate Copilot runtime: %w", err)
 	}
-	if core.runtimeConfigService.ModuleEnabled("ai") {
-		delivery.copilotService.Start(ctx)
-	}
 	aiGatewayService.StartRelayHealthChecks(ctx)
 	return &gatewayServices{
 		aiGatewayService: aiGatewayService,
@@ -1451,7 +1463,11 @@ func newHandlers(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, 
 	if err != nil {
 		return nil, fmt.Errorf("build platform handler: %w", err)
 	}
-	return &handlerSet{deps: newRouteDependencies(cfg, infra, repos, core, delivery, gateway, platform)}, nil
+	deps, err := newRouteDependencies(cfg, infra, repos, core, delivery, gateway, platform)
+	if err != nil {
+		return nil, err
+	}
+	return &handlerSet{deps: deps}, nil
 }
 
 func newPlatformResourceServices(service *appresource.Service) apiHandlers.ResourceServices {
@@ -1485,10 +1501,47 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 
 }
 
-func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices, platform *apiHandlers.PlatformHandler) apiRoutes.Dependencies {
+func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices, platform *apiHandlers.PlatformHandler) (apiRoutes.Dependencies, error) {
 	directorySyncHandler := directorysynchandler.New(repos.directorySyncRepository, core.directorySyncService, core.directorySyncConnectors, core.directoryConnections)
 	directorySyncHandler.SetRecorders(core.auditService, core.operationService)
 	directorySyncHandler.SetPermissionResolver(core.permissionResolver)
+	deliveryRoutes, err := newDeliveryRouteServices(cfg, infra, repos, core, delivery)
+	if err != nil {
+		return apiRoutes.Dependencies{}, err
+	}
+	if err := deliveryRoutes.startWorkers(cfg.Modules.Delivery.Enabled, infra.lifecycleCtx); err != nil {
+		return apiRoutes.Dependencies{}, err
+	}
+	dependencies := apiRoutes.Dependencies{
+		TemplateUpdates:     apiHandlers.NewTemplateUpdateHandler(deliveryRoutes.templateUpdates),
+		DeliveryDocuments:   apiHandlers.NewDeliveryDocumentHandler(deliveryRoutes.deliveryDocuments),
+		TemplateSources:     apiHandlers.NewTemplateSourceHandler(deliveryRoutes.templateSources),
+		DeliveryTriggers:    apiHandlers.NewDeliveryTriggerHandler(deliveryRoutes.deliveryTriggers),
+		Manifests:           apiHandlers.NewManifestHandler(deliveryRoutes.manifestService),
+		ManifestSources:     apiHandlers.NewManifestSourceHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestBindings:    apiHandlers.NewManifestBindingHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestDeployments: apiHandlers.NewManifestDeploymentHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestIntents:     apiHandlers.NewManifestIntentHandler(deliveryRoutes.manifestDeclarativeService),
+		DirectorySync:       directorySyncHandler,
+	}
+	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
+	wirePlatformRouteHandlers(&dependencies, cfg, infra, core, delivery, platform)
+	return dependencies, nil
+}
+
+// deliveryRouteServices holds the bound delivery owners before any of their
+// workers start.
+type deliveryRouteServices struct {
+	manifestService            *appmanifest.Service
+	manifestDeclarativeService *appmanifest.DeclarativeService
+	deliveryDocuments          *appcatalog.DocumentService
+	templateSources            *appcatalog.TemplateSourceService
+	deliveryTriggers           *appdeliverytrigger.Service
+	templateUpdates            *apptemplateupdate.Service
+	workers                    deliveryWorkers
+}
+
+func newDeliveryRouteServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices) (deliveryRouteServices, error) {
 	manifestService := appmanifest.New(
 		repos.manifestRepository,
 		core.applicationService,
@@ -1506,7 +1559,11 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	core.buildService.SetExternalPipeline(core.systemIntegrationService, core.registryService)
 	core.executionService.SetExternalPipeline(core.systemIntegrationService, core.registryService)
 	manifestDeclarativeService := appmanifest.NewDeclarative(manifestService, repos.manifestRepository, appmanifest.DeclarativeRuntimeDependencies{
-		Delivery: delivery.deliveryService,
+		TemplateMigrations:  core.catalogService,
+		RootResources:       core.resourceService.Runtime(),
+		ImportedRoots:       repos.manifestRepository,
+		ExecutionPrincipals: core.identityService,
+		Delivery:            delivery.deliveryService,
 		Agents: func(connection domaincluster.Connection) (appmanifest.ManifestRuntime, error) {
 			return manifestruntimeinfra.NewAgent(infra.agentRegistry, connection)
 		},
@@ -1528,154 +1585,167 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	core.executionService.AddExecutionTaskSink(delivery.virtualizationService)
 	delivery.workflowService.SetDeliveryRuntime(delivery.deliveryService, core.identityService)
 	core.executionService.AddExecutionTaskSink(manifestDeclarativeService)
-	if cfg.Modules.Delivery.Enabled {
-		manifestDeclarativeService.Start(infra.lifecycleCtx)
-		delivery.deliveryService.StartHelmDelivery(infra.lifecycleCtx)
-		delivery.workflowService.Start(infra.lifecycleCtx)
-	}
 	deliveryDocuments := appcatalog.NewDocuments(core.catalogService, delivery.workflowService, core.applicationService, repos.catalogRepository)
 	templateSources := appcatalog.NewTemplateSources(deliveryDocuments, repos.catalogRepository, repos.catalogRepository, deliveryGit)
 	deliveryTriggers := appdeliverytrigger.New(deliverytriggerrepo.New(infra.databaseStore.DB(), cfg.Security.CredentialEncryptionKeys), core.identityService, templateSources, delivery.workflowService, core.applicationService, deliveryGit, core.permissionResolver, core.auditService, core.operationService)
-	if cfg.Modules.Delivery.Enabled {
-		deliveryTriggers.Start(infra.lifecycleCtx)
+	templateUpdates, err := apptemplateupdate.New(apptemplateupdate.Dependencies{Repository: templateupdaterepo.New(infra.databaseStore.DB()), Applications: core.applicationService, Environments: core.catalogService, Deployment: core.catalogService, Build: core.catalogService, Workflow: core.catalogService, Manifests: manifestDeclarativeService, Batches: delivery.workflowService, Baselines: delivery.deliveryService, Principals: core.identityService})
+	if err != nil {
+		return deliveryRouteServices{}, err
 	}
-	return apiRoutes.Dependencies{
-		System:           apiHandlers.NewSystemHandler(infra.databaseStore, infra.runtimeMetrics),
-		Platform:         platform,
-		AgentConnections: apiHandlers.NewAgentConnectionHandler(core.clusterService, infra.agentRegistry),
-		Announcements:    apiHandlers.NewAnnouncementHandlerWithServices(core.announcementService, core.announcementService),
-		Menu:             apiHandlers.NewMenuHandler(core.menuService),
-		Module:           apiHandlers.NewModuleHandler(core.moduleService),
-		ModuleState:      core.runtimeConfigService,
-		Monitoring: apiHandlers.NewMonitoringHandler(apiHandlers.MonitoringDependencies{
-			Alerts: core.monitoringService, Channels: core.monitoringService, Routes: core.monitoringService,
-			Silences: core.monitoringService, DeliveryLogs: core.monitoringService, Webhooks: core.monitoringService,
-			Integrations: core.monitoringService, Rules: core.monitoringService, Events: core.monitoringService,
-			HealingRuns: core.monitoringService, NotificationPolicies: core.monitoringService,
-			NotificationTemplates: core.monitoringService, HealingPolicies: core.monitoringService,
-			OnCallSchedules: core.monitoringService, OnCallRotations: core.monitoringService,
-			OnCallEscalations: core.monitoringService, OnCallAssignments: core.monitoringService,
-			OnCallRuntime: core.monitoringService,
-		}),
-		Observability:       apiHandlers.NewObservabilityHandler(core.observabilityService, core.monitoringService),
-		DeploymentTemplates: apiHandlers.NewDeploymentTemplateHandler(core.catalogService, core.catalogService),
-		DeliveryDocuments:   apiHandlers.NewDeliveryDocumentHandler(deliveryDocuments),
-		TemplateSources:     apiHandlers.NewTemplateSourceHandler(templateSources),
-		DeliveryTriggers:    apiHandlers.NewDeliveryTriggerHandler(deliveryTriggers),
-		TemplateVersions:    apiHandlers.NewTemplateVersionHandler(core.catalogService, core.catalogService),
-		Catalog: apiHandlers.NewCatalogHandlerWithServices(
-			core.catalogService, core.catalogService, core.catalogService,
-		),
-		Delivery:            newDeliveryHandler(delivery.deliveryService, cfg.Runtime.ExecutionRunnerKeys, core.clusterService),
-		Manifests:           apiHandlers.NewManifestHandler(manifestService),
-		ManifestSources:     apiHandlers.NewManifestSourceHandler(manifestDeclarativeService),
-		ManifestBindings:    apiHandlers.NewManifestBindingHandler(manifestDeclarativeService),
-		ManifestDeployments: apiHandlers.NewManifestDeploymentHandler(manifestDeclarativeService),
-		ManifestIntents:     apiHandlers.NewManifestIntentHandler(manifestDeclarativeService),
-		Applications: apiHandlers.NewApplicationHandlerWithServices(
-			core.applicationService, core.applicationService, core.applicationService,
-		),
-		Builds:          apiHandlers.NewBuildHandler(core.buildService),
-		Workflows:       apiHandlers.NewWorkflowHandler(delivery.workflowService),
-		DeliveryBatches: apiHandlers.NewDeliveryBatchHandler(delivery.workflowService),
-		Registries:      apiHandlers.NewRegistryHandler(core.registryService),
-		Releases:        apiHandlers.NewReleaseHandler(core.releaseService),
-		Copilot: apiHandlers.NewCopilotHandlerWithServices(apiHandlers.CopilotServices{
-			PersonalAgent:     delivery.copilotService,
-			PersonalAssistant: delivery.copilotService,
-			Search:            delivery.copilotService, Feed: delivery.copilotService,
-			PersonalEnvironment: delivery.copilotService,
-			Sessions:            delivery.copilotService, Messages: delivery.copilotService,
-			Streams: delivery.copilotService, Workbench: delivery.copilotService,
-			DataSources: delivery.copilotService, AnalysisProfiles: delivery.copilotService,
-			Automation: delivery.copilotService, RootCause: delivery.copilotService,
-			AgentRuns: delivery.copilotService, InspectionTasks: delivery.copilotService,
-			InspectionRuns: delivery.copilotService,
-		}, cfg.Runtime.ExecutionRunnerKeys),
-		Knowledge:    apiHandlers.NewKnowledgeHandler(delivery.knowledgeService, delivery.contextBuilder),
-		Evaluation:   apiHandlers.NewEvaluationHandler(delivery.evaluationService, core.permissionResolver),
-		AIAdvanced:   apiHandlers.NewAIAdvancedHandler(delivery.advancedEvaluationService, delivery.evaluationService, delivery.memoryService, delivery.knowledgeGraphService, delivery.multiAgentService, delivery.knowledgeService, core.permissionResolver, cfg.Modules.AI.FeatureFlags()).WithChatFeedback(delivery.copilotService),
-		AIProduction: apiHandlers.NewAIProductionHandler(delivery.aiProductionService, core.permissionResolver, cfg.Modules.AI.FeatureFlags()),
-		AgentProviders: apiHandlers.NewAgentProviderHandler(
-			delivery.agentProviderService,
-			cfg.Runtime.ExecutionRunnerKeys,
-		),
-		AIGateway: apiHandlers.NewAIGatewayHandlerWithServices(apiHandlers.AIGatewayServices{
-			Plans: gateway.aiGatewayService, Tasks: delivery.workflowService,
-			Capabilities: gateway.aiGatewayService, PersonalTokens: gateway.aiGatewayService,
-			ServiceAccounts: gateway.aiGatewayService, Clients: gateway.aiGatewayService,
-			ToolGrants: gateway.aiGatewayService, AccessPolicies: gateway.aiGatewayService,
-			Governance: gateway.aiGatewayService, Audit: gateway.aiGatewayService,
-			Approvals: gateway.aiGatewayService, Upstreams: gateway.aiGatewayService,
-			ModelRoutes: gateway.aiGatewayService, RelayObservability: gateway.aiGatewayService,
-			Relay: gateway.aiGatewayService,
-		}),
-		Plugins: apiHandlers.NewPluginHandlerWithServices(
-			core.pluginService, core.pluginService, core.pluginService, core.pluginService,
-		),
-		Software:                   apiHandlers.NewSoftwareHandler(core.softwareService),
-		ManagedContentDestinations: apiHandlers.NewManagedContentDestinationsHandler(core.managedContent),
-		ManagedContentTransfers:    apiHandlers.NewManagedContentTransfersHandler(core.managedContent),
-		ManagedContentWorkflow:     apiHandlers.NewManagedContentWorkflowHandler(core.managedContent),
-		ContentDLP:                 apiHandlers.NewContentDLPHandler(core.contentDLPService),
-		EndpointControls:           apiHandlers.NewEndpointControlsHandler(core.endpointControls),
-		ContentDLPWorkflow:         apiHandlers.NewContentDLPWorkflowHandler(core.contentDLPService),
-		Companion:                  apiHandlers.NewCompanionHandler(core.companionService),
-		Compute:                    apiHandlers.NewComputeHandler(delivery.computeService),
-		Virtualization:             newVirtualizationHandler(delivery.virtualizationService),
-		Docker:                     newDockerHandler(delivery.dockerService, delivery.dockerTerminals, cfg.Runtime.ExecutionRunnerKeys),
-		NetworkAccess: apiHandlers.NewNetworkAccessHandler(apiHandlers.NetworkAccessServices{
-			Device: core.networkAccessService, Site: core.networkAccessService, Space: core.networkAccessService,
-			Resource: core.networkAccessService, Gateway: core.networkAccessService, MihomoProfile: core.networkAccessService,
-			NASBinding: core.networkAccessService, SiteProfileBinding: core.networkAccessService, Session: core.networkAccessService,
-			Policy: core.networkAccessService, PolicyEvaluation: core.networkAccessService, Workload: core.networkAccessService,
-		}, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery),
-		NetworkEndpointResponse: apiHandlers.NewNetworkEndpointResponseHandler(core.networkEndpointResponseService, core.networkEndpointResponseService, core.networkEndpointResponseService),
-		NetworkProxy:            apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement, core.networkProxyManagement),
-		ProxyCommands:           apiHandlers.NewNetworkProxyCommandsHandler(core.networkProxyManagement),
-		ProxySources:            apiHandlers.NewProxyPublicationSourcesHandler(core.proxyWorkspace.sources),
-		ProxyRules:              apiHandlers.NewProxyPublicationRulesHandler(core.proxyWorkspace.rules, core.proxyWorkspace.sources),
-		ProxyBundles:            apiHandlers.NewProxyPublicationBundlesHandler(core.proxyWorkspace.bundles),
-		ProxyDeployment:         apiHandlers.NewProxyDeploymentHandler(core.proxyWorkspace.deployment, core.proxyWorkspace.executor),
-		RadiusDeployment:        radiushandler.New(core.radiusDeployment.management, nil),
-		RadiusExecutor:          radiushandler.NewExecutor(core.radiusDeployment.executor),
-		NetworkVPN:              apiHandlers.NewNetworkVPNHandler(core.networkVPNService),
-		Access: accesshandler.New(accesshandler.Services{
-			Users: core.accessConsoleService, Catalog: core.accessConsoleService,
-			Roles: core.accessConsoleService, Teams: core.accessConsoleService, Policies: core.accessConsoleService,
-		}),
-		DirectorySync: directorySyncHandler,
-		ScopeGrants:   accesshandler.NewScopeGrantHandler(core.scopeGrantService),
-		Settings:      newSettingsHandler(core.settingsService, core.permissionResolver),
-		RuntimeConfig: apiHandlers.NewRuntimeConfigHandler(
-			core.runtimeConfigService,
-			runtimeinfo.NewCollector(infra.runtimeMetrics),
-		),
-		SystemIntegrations: apiHandlers.NewSystemIntegrationHandler(core.systemIntegrationService),
-		Secrets:            apiHandlers.NewSecretHandlerWithRunnerKeys(core.secretService, cfg.Runtime.ExecutionRunnerKeys),
-		Auth:               newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth),
-		MFA:                apiHandlers.NewMFAHandler(core.identityMFAService),
-		OutpostLifecycle:   outpostruntimehandler.New(core.outpostLifecycle, core.outpostExecutor),
-		ProviderPortal: providerportalhandler.New(providerportalhandler.Services{
-			PortalReader:           core.providerPortalService,
-			PortalInteractor:       core.providerPortalService,
-			BrowserHandoffs:        core.identityService,
-			Applications:           core.providerPortalService,
-			ApplicationOnboarding:  core.applicationOnboardingService,
-			Policies:               core.providerPortalService,
-			Providers:              core.identityProviderService,
-			Outposts:               core.identityProviderService,
-			OIDCClients:            core.identityProviderService,
-			OIDC:                   core.identityProviderService,
-			OIDCLogout:             core.identityProviderService,
-			SAML:                   core.identityProviderService,
-			Proxy:                  core.identityProviderService,
-			OutpostRuntime:         core.identityProviderService,
-			OutpostContractRuntime: core.identityProviderService,
-			AccessURL:              core.runtimeConfigService,
-		}),
-		Authn: core.identityService,
+	delivery.deliveryService.SetTemplateUpdates(templateUpdates)
+	return deliveryRouteServices{
+		manifestService: manifestService, manifestDeclarativeService: manifestDeclarativeService,
+		deliveryDocuments: deliveryDocuments, templateSources: templateSources,
+		deliveryTriggers: deliveryTriggers, templateUpdates: templateUpdates,
+		workers: deliveryWorkers{
+			execution: core.executionService,
+			manifests: manifestDeclarativeService, helms: delivery.deliveryService,
+			workflows: delivery.workflowService, triggers: deliveryTriggers, updates: templateUpdates,
+		},
+	}, nil
+}
+
+func (services deliveryRouteServices) startWorkers(enabled bool, ctx context.Context) error {
+	if enabled {
+		if err := services.workers.start(ctx); err != nil {
+			return fmt.Errorf("start delivery workers: %w", err)
+		}
 	}
+	return nil
+}
+
+func wireAIRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.Config, core *coreServices, delivery *deliveryServices, gateway *gatewayServices) {
+	dependencies.Copilot = apiHandlers.NewCopilotHandlerWithServices(apiHandlers.CopilotServices{
+		PersonalAgent:     delivery.copilotService,
+		PersonalAssistant: delivery.copilotService,
+		Search:            delivery.copilotService, Feed: delivery.copilotService,
+		PersonalEnvironment: delivery.copilotService,
+		Sessions:            delivery.copilotService, Messages: delivery.copilotService,
+		Streams: delivery.copilotService, Workbench: delivery.copilotService,
+		DataSources: delivery.copilotService, AnalysisProfiles: delivery.copilotService,
+		Automation: delivery.copilotService, RootCause: delivery.copilotService,
+		AgentRuns: delivery.copilotService, InspectionTasks: delivery.copilotService,
+		InspectionRuns:  delivery.copilotService,
+		RuntimeProfiles: delivery.copilotService,
+		RuntimeAssets:   delivery.copilotService,
+	}, cfg.Runtime.ExecutionRunnerKeys)
+	dependencies.Knowledge = apiHandlers.NewKnowledgeHandler(delivery.knowledgeService, delivery.contextBuilder)
+	dependencies.Evaluation = apiHandlers.NewEvaluationHandler(delivery.evaluationService, core.permissionResolver)
+	dependencies.AIAdvanced = apiHandlers.NewAIAdvancedHandler(delivery.advancedEvaluationService, delivery.evaluationService, delivery.memoryService, delivery.knowledgeGraphService, delivery.multiAgentService, delivery.knowledgeService, core.permissionResolver, cfg.Modules.AI.FeatureFlags()).WithChatFeedback(delivery.copilotService)
+	dependencies.AIProduction = apiHandlers.NewAIProductionHandler(delivery.aiProductionService, core.permissionResolver, cfg.Modules.AI.FeatureFlags())
+	dependencies.AgentProviders = apiHandlers.NewAgentProviderHandler(
+		delivery.agentProviderService,
+		cfg.Runtime.ExecutionRunnerKeys,
+	)
+	dependencies.AIGateway = apiHandlers.NewAIGatewayHandlerWithServices(apiHandlers.AIGatewayServices{
+		Plans: gateway.aiGatewayService, Tasks: delivery.workflowService,
+		Capabilities: gateway.aiGatewayService, PersonalTokens: gateway.aiGatewayService,
+		ServiceAccounts: gateway.aiGatewayService, Clients: gateway.aiGatewayService,
+		ToolGrants: gateway.aiGatewayService, AccessPolicies: gateway.aiGatewayService,
+		Governance: gateway.aiGatewayService, Audit: gateway.aiGatewayService,
+		Approvals: gateway.aiGatewayService, Upstreams: gateway.aiGatewayService,
+		ModelRoutes: gateway.aiGatewayService, RelayObservability: gateway.aiGatewayService,
+		Relay: gateway.aiGatewayService,
+	})
+}
+
+func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.Config, infra *infrastructure, core *coreServices, delivery *deliveryServices, platform *apiHandlers.PlatformHandler) {
+	dependencies.System = apiHandlers.NewSystemHandler(infra.databaseStore, infra.runtimeMetrics)
+	dependencies.Platform = platform
+	dependencies.AgentConnections = apiHandlers.NewAgentConnectionHandler(core.clusterService, infra.agentRegistry)
+	dependencies.Announcements = apiHandlers.NewAnnouncementHandlerWithServices(core.announcementService, core.announcementService)
+	dependencies.Menu = apiHandlers.NewMenuHandler(core.menuService)
+	dependencies.Module = apiHandlers.NewModuleHandler(core.moduleService)
+	dependencies.ModuleState = core.runtimeConfigService
+	dependencies.Monitoring = apiHandlers.NewMonitoringHandler(apiHandlers.MonitoringDependencies{
+		Alerts: core.monitoringService, Channels: core.monitoringService, Routes: core.monitoringService,
+		Silences: core.monitoringService, DeliveryLogs: core.monitoringService, Webhooks: core.monitoringService,
+		Integrations: core.monitoringService, Rules: core.monitoringService, Events: core.monitoringService,
+		HealingRuns: core.monitoringService, NotificationPolicies: core.monitoringService,
+		NotificationTemplates: core.monitoringService, HealingPolicies: core.monitoringService,
+		OnCallSchedules: core.monitoringService, OnCallRotations: core.monitoringService,
+		OnCallEscalations: core.monitoringService, OnCallAssignments: core.monitoringService,
+		OnCallRuntime: core.monitoringService,
+	})
+	dependencies.Observability = apiHandlers.NewObservabilityHandler(core.observabilityService, core.monitoringService)
+	dependencies.DeploymentTemplates = apiHandlers.NewDeploymentTemplateHandler(core.catalogService, core.catalogService)
+	dependencies.TemplateVersions = apiHandlers.NewTemplateVersionHandler(core.catalogService, core.catalogService)
+	dependencies.Catalog = apiHandlers.NewCatalogHandlerWithServices(
+		core.catalogService, core.catalogService, core.catalogService,
+	)
+	dependencies.Delivery = newDeliveryHandler(delivery.deliveryService, cfg.Runtime.ExecutionRunnerKeys, core.clusterService)
+	dependencies.Applications = apiHandlers.NewApplicationHandlerWithServices(
+		core.applicationService, core.applicationService, core.applicationService,
+	)
+	dependencies.Builds = apiHandlers.NewBuildHandler(core.buildService)
+	dependencies.Workflows = apiHandlers.NewWorkflowHandler(delivery.workflowService)
+	dependencies.DeliveryBatches = apiHandlers.NewDeliveryBatchHandler(delivery.workflowService)
+	dependencies.Registries = apiHandlers.NewRegistryHandler(core.registryService)
+	dependencies.Releases = apiHandlers.NewReleaseHandler(core.releaseService)
+	dependencies.Plugins = apiHandlers.NewPluginHandlerWithServices(
+		core.pluginService, core.pluginService, core.pluginService, core.pluginService,
+	)
+	dependencies.Software = apiHandlers.NewSoftwareHandler(core.softwareService)
+	dependencies.ManagedContentDestinations = apiHandlers.NewManagedContentDestinationsHandler(core.managedContent)
+	dependencies.ManagedContentTransfers = apiHandlers.NewManagedContentTransfersHandler(core.managedContent)
+	dependencies.ManagedContentWorkflow = apiHandlers.NewManagedContentWorkflowHandler(core.managedContent)
+	dependencies.ContentDLP = apiHandlers.NewContentDLPHandler(core.contentDLPService)
+	dependencies.EndpointControls = apiHandlers.NewEndpointControlsHandler(core.endpointControls)
+	dependencies.ContentDLPWorkflow = apiHandlers.NewContentDLPWorkflowHandler(core.contentDLPService)
+	dependencies.Companion = apiHandlers.NewCompanionHandler(core.companionService)
+	dependencies.Compute = apiHandlers.NewComputeHandler(delivery.computeService)
+	dependencies.Virtualization = newVirtualizationHandler(delivery.virtualizationService)
+	dependencies.Docker = newDockerHandler(delivery.dockerService, delivery.dockerTerminals, cfg.Runtime.ExecutionRunnerKeys)
+	dependencies.NetworkAccess = apiHandlers.NewNetworkAccessHandler(apiHandlers.NetworkAccessServices{
+		Device: core.networkAccessService, Site: core.networkAccessService, Space: core.networkAccessService,
+		Resource: core.networkAccessService, Gateway: core.networkAccessService, MihomoProfile: core.networkAccessService,
+		NASBinding: core.networkAccessService, SiteProfileBinding: core.networkAccessService, Session: core.networkAccessService,
+		Policy: core.networkAccessService, PolicyEvaluation: core.networkAccessService, Workload: core.networkAccessService,
+	}, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery)
+	dependencies.NetworkEndpointResponse = apiHandlers.NewNetworkEndpointResponseHandler(core.networkEndpointResponseService, core.networkEndpointResponseService, core.networkEndpointResponseService)
+	dependencies.NetworkProxy = apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement, core.networkProxyManagement)
+	dependencies.ProxyCommands = apiHandlers.NewNetworkProxyCommandsHandler(core.networkProxyManagement)
+	dependencies.ProxySources = apiHandlers.NewProxyPublicationSourcesHandler(core.proxyWorkspace.sources)
+	dependencies.ProxyRules = apiHandlers.NewProxyPublicationRulesHandler(core.proxyWorkspace.rules, core.proxyWorkspace.sources)
+	dependencies.ProxyBundles = apiHandlers.NewProxyPublicationBundlesHandler(core.proxyWorkspace.bundles)
+	dependencies.ProxyDeployment = apiHandlers.NewProxyDeploymentHandler(core.proxyWorkspace.deployment, core.proxyWorkspace.executor)
+	dependencies.RadiusDeployment = radiushandler.New(core.radiusDeployment.management, nil)
+	dependencies.RadiusExecutor = radiushandler.NewExecutor(core.radiusDeployment.executor)
+	dependencies.NetworkVPN = apiHandlers.NewNetworkVPNHandler(core.networkVPNService)
+	dependencies.Access = accesshandler.New(accesshandler.Services{
+		Users: core.accessConsoleService, Catalog: core.accessConsoleService,
+		Roles: core.accessConsoleService, Teams: core.accessConsoleService, Policies: core.accessConsoleService,
+	})
+	dependencies.ScopeGrants = accesshandler.NewScopeGrantHandler(core.scopeGrantService)
+	dependencies.Settings = newSettingsHandler(core.settingsService, core.permissionResolver)
+	dependencies.RuntimeConfig = apiHandlers.NewRuntimeConfigHandler(
+		core.runtimeConfigService,
+		runtimeinfo.NewCollector(infra.runtimeMetrics),
+	)
+	dependencies.SystemIntegrations = apiHandlers.NewSystemIntegrationHandler(core.systemIntegrationService)
+	dependencies.Secrets = apiHandlers.NewSecretHandlerWithRunnerKeys(core.secretService, cfg.Runtime.ExecutionRunnerKeys)
+	dependencies.Auth = newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth)
+	dependencies.MFA = apiHandlers.NewMFAHandler(core.identityMFAService)
+	dependencies.OutpostLifecycle = outpostruntimehandler.New(core.outpostLifecycle, core.outpostExecutor)
+	dependencies.ProviderPortal = providerportalhandler.New(providerportalhandler.Services{
+		PortalReader:           core.providerPortalService,
+		PortalInteractor:       core.providerPortalService,
+		BrowserHandoffs:        core.identityService,
+		Applications:           core.providerPortalService,
+		ApplicationOnboarding:  core.applicationOnboardingService,
+		Policies:               core.providerPortalService,
+		Providers:              core.identityProviderService,
+		Outposts:               core.identityProviderService,
+		OIDCClients:            core.identityProviderService,
+		OIDC:                   core.identityProviderService,
+		OIDCLogout:             core.identityProviderService,
+		SAML:                   core.identityProviderService,
+		Proxy:                  core.identityProviderService,
+		OutpostRuntime:         core.identityProviderService,
+		OutpostContractRuntime: core.identityProviderService,
+		AccessURL:              core.runtimeConfigService,
+	})
+	dependencies.Authn = core.identityService
 }
 
 func newDeliveryHandler(service *appdelivery.Service, keys keyring.Ring, agents apiHandlers.DeliveryAgentAuthenticator) *apiHandlers.DeliveryHandler {

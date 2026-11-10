@@ -338,7 +338,7 @@ func (c *Client) GetPodDetail(ctx context.Context, namespace, name string) (doma
 	return payload.Data, nil
 }
 
-func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
 	var payload struct {
 		Data domainresource.PodLogsView `json:"data"`
 	}
@@ -356,7 +356,7 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container stri
 	if previous {
 		values.Set("previous", "true")
 	}
-	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/logs?%s", url.PathEscape(name), values.Encode())
+	path := podSessionPath(name, "logs", expectedUID, values)
 	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
 		return domainresource.PodLogsView{}, err
 	}
@@ -384,7 +384,7 @@ func (c *Client) GetPodYAML(ctx context.Context, namespace, name string) (domain
 	return payload.Data, nil
 }
 
-func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
+func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer, expectedUID string) error {
 	values := url.Values{}
 	values.Set("namespace", namespace)
 	if container != "" {
@@ -396,7 +396,7 @@ func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container s
 	if sinceSeconds > 0 {
 		values.Set("sinceSeconds", fmt.Sprintf("%d", sinceSeconds))
 	}
-	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/logs/stream?%s", url.PathEscape(name), values.Encode())
+	path := podSessionPath(name, "logs/stream", expectedUID, values)
 	stream, err := c.openStream(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return err
@@ -451,7 +451,7 @@ func (c *Client) ExecPod(ctx context.Context, namespace, name, container, comman
 	return payload.Data, nil
 }
 
-func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue) error {
+func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue, expectedUID string) error {
 	values := url.Values{}
 	values.Set("namespace", namespace)
 	if container != "" {
@@ -460,7 +460,7 @@ func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, contain
 	if shell != "" {
 		values.Set("shell", shell)
 	}
-	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/terminal?%s", url.PathEscape(name), values.Encode())
+	path := podSessionPath(name, "terminal", expectedUID, values)
 	endpoint, err := c.websocketEndpoint(path)
 	if err != nil {
 		return err
@@ -474,6 +474,11 @@ func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, contain
 		if resp != nil {
 			if resp.Body != nil {
 				_ = resp.Body.Close()
+			}
+			if expectedUID != "" {
+				if responseErr := agentResponseError(path, resp); responseErr != nil {
+					return responseErr
+				}
 			}
 			return fmt.Errorf("agent terminal websocket failed with status %d", resp.StatusCode)
 		}
@@ -496,6 +501,30 @@ func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, contain
 		_ = writeAgentTerminalMessage(conn, &writeMu, terminalMessage{Type: "close"})
 		return ctx.Err()
 	}
+}
+
+const podSessionPathPrefix = "/api/v1/platform/workloads/pods/"
+
+func podSessionPath(name, session, expectedUID string, values url.Values) string {
+	if expectedUID != "" {
+		values.Set("expectedUid", expectedUID)
+		session = "uid-bound/" + session
+	}
+	return podSessionPathPrefix + url.PathEscape(name) + "/" + session + "?" + values.Encode()
+}
+
+func isUIDBoundPodSessionPath(path string) bool {
+	return strings.HasPrefix(path, podSessionPathPrefix) && strings.Contains(path, "/uid-bound/")
+}
+
+func uidBoundPodSessionResponseError(resp *http.Response) error {
+	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		return fmt.Errorf("%w: Agent redirected a UID-bound Pod session", apperrors.ErrUnsupportedOperation)
+	}
+	if resp.StatusCode == http.StatusMethodNotAllowed || (resp.StatusCode == http.StatusNotFound && !strings.Contains(resp.Header.Get("Content-Type"), "application/json")) {
+		return fmt.Errorf("%w: upgrade the Agent to support UID-bound Pod sessions", apperrors.ErrUnsupportedOperation)
+	}
+	return nil
 }
 
 func (c *Client) readAgentTerminalMessages(ctx context.Context, conn *websocket.Conn, stdout, stderr io.Writer, errCh chan<- error) {
@@ -568,6 +597,9 @@ func (c *Client) forwardAgentTerminalResizes(ctx context.Context, conn *websocke
 func writeAgentTerminalMessage(conn *websocket.Conn, writeMu *sync.Mutex, message terminalMessage) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
 	return conn.WriteJSON(message)
 }
 
@@ -1738,7 +1770,7 @@ func (c *Client) SubscribeResourceEvents(ctx context.Context, namespace string, 
 	events := make(chan domainresource.ResourceStreamEvent, 64)
 	go func() {
 		defer close(events)
-		defer stream.Close()
+		defer func() { _ = stream.Close() }()
 		decoder := json.NewDecoder(stream)
 		for {
 			var event domainresource.ResourceStreamEvent
@@ -2030,7 +2062,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 
 	httpClient := c.httpClient
 	observedMutation := path == observedWorkloadDeletePath || strings.HasPrefix(path, observedResourceYAMLPath) || helmValuesConditionalPath(path)
-	if resourceGraphNoRedirect(method, path) || observedMutation {
+	if resourceGraphNoRedirect(method, path) || observedMutation || isUIDBoundPodSessionPath(path) {
 		probeClient := *httpClient
 		probeClient.CheckRedirect = func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -2081,6 +2113,11 @@ func agentRequestError(path string, resp *http.Response, observedMutation bool) 
 }
 
 func agentResponseError(path string, resp *http.Response) error {
+	if isUIDBoundPodSessionPath(path) {
+		if err := uidBoundPodSessionResponseError(resp); err != nil {
+			return err
+		}
+	}
 	if helmValuesConditionalPath(path) && (resp.StatusCode == http.StatusMethodNotAllowed ||
 		(resp.StatusCode == http.StatusNotFound && !strings.Contains(resp.Header.Get("Content-Type"), "application/json"))) {
 		return fmt.Errorf("%w: upgrade the Agent to support conditional Helm values updates", apperrors.ErrUnsupportedOperation)
@@ -2175,9 +2212,19 @@ func (c *Client) openStream(ctx context.Context, method, path string, body any) 
 	}
 	streamClient := *c.httpClient
 	streamClient.Timeout = 0
+	guardedSession := isUIDBoundPodSessionPath(path)
+	if guardedSession {
+		streamClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	}
 	resp, err := streamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute agent stream request: %w", err)
+	}
+	if guardedSession {
+		if err := agentResponseError(path, resp); err != nil {
+			_ = resp.Body.Close()
+			return nil, err
+		}
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		_ = resp.Body.Close()

@@ -28,8 +28,109 @@ class EvidenceTests(unittest.TestCase):
     def raw(self, events):
         return "\n".join(json.dumps(e) for e in events)
 
+    def test_root_cr_scope_rejects_missing_and_skipped_control_fences(self):
+        scope=evidence.MANIFEST_ROOT_SCOPE
+        names=[scope['parent'],*[scope['parent']+'/'+child for child in scope['children']]]
+        events=[dict(Action=action,Package=scope['package'],Test=name) for name in names for action in ('run','pass')]+[dict(Action='pass',Package=scope['package'])]
+        self.assertEqual(evidence.validate(self.raw(events),**scope)['children'],6)
+        for invalid in (events[:2]+events[4:],[{**e,'Action':'skip'} if e.get('Test')==names[-1] else e for e in events],events+[dict(Action='output',Package=scope['package'],Output='ok (cached)')]):
+            with self.assertRaises(ValueError):evidence.validate(self.raw(invalid),**scope)
+
+    def test_template_adoption_scope_requires_atomicity_and_fencing(self):
+        scope=evidence.TEMPLATE_ADOPTION_SCOPE
+        names=[scope["parent"],*[scope["parent"]+"/"+child for child in scope["children"]]]
+        events=[dict(Action=action,Package=scope["package"],Test=name) for name in names for action in ("run","pass")]+[dict(Action="pass",Package=scope["package"])]
+        self.assertEqual(evidence.validate(self.raw(events),**scope)["children"],3)
+        for invalid in (events[:2]+events[4:],[{**e,"Action":"skip"} if e.get("Test")==names[-1] else e for e in events],events+[dict(Action="output",Package=scope["package"],Output="ok (cached)")]):
+            with self.assertRaises(ValueError):evidence.validate(self.raw(invalid),**scope)
+
+    def test_service_reference_candidates_require_every_cas_and_lifecycle_case(self):
+        scope = evidence.SERVICE_REFERENCE_CANDIDATES_SCOPE
+        names = [scope["parent"], *[scope["parent"] + "/" + child for child in scope["children"]]]
+        events = [dict(Action=action, Package=scope["package"], Test=name)
+                  for name in names for action in ("run", "pass")]
+        events.append(dict(Action="pass", Package=scope["package"]))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)["children"], 18)
+        for name in names:
+            for invalid in ([event for event in events if event.get("Test") != name],
+                            [{**event, "Action": "skip"} if event.get("Test") == name else event for event in events]):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    evidence.validate(self.raw(invalid), **scope)
+        for invalid in (events + [dict(Action="output", Package=scope["package"], Output="ok (cached)")],
+                        events[:-1]):
+            with self.assertRaises(ValueError):
+                evidence.validate(self.raw(invalid), **scope)
+
+    def test_service_references_require_both_parents_and_every_leaf(self):
+        scopes = evidence.SERVICE_REFERENCES_SCOPES
+        self.assertIn("missing_snapshot_fails_closed", scopes[1]["children"])
+        self.assertEqual([len(scope["children"]) for scope in scopes], [12, 8])
+        names = [(scope["package"], name) for scope in scopes
+                 for name in [scope["parent"], *[scope["parent"] + "/" + child for child in scope["children"]]]]
+        events = [dict(Action=action, Package=package, Test=name)
+                  for package, name in names for action in ("run", "pass")]
+        events.append(dict(Action="pass", Package=scopes[0]["package"]))
+        self.assertEqual(evidence.validate_service_references(self.raw(events))["result"], "PASS")
+        for package, name in names:
+            for invalid in ([event for event in events if event.get("Test") != name],
+                            [{**event, "Action": "skip"} if event.get("Test") == name else event for event in events],
+                            [{**event, "Action": "run"} if event.get("Test") == name else event for event in events]):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    evidence.validate_service_references(self.raw(invalid))
+        invalids = (events[:-1], [], events + [dict(Action="output", Package=scopes[0]["package"], Output="ok (cached)")],
+                    events + [dict(Action="skip", Package=scopes[0]["package"], Test=scopes[1]["parent"] + "/extra")],
+                    events + [dict(Action="fail", Package=scopes[0]["package"])])
+        for invalid in invalids:
+            with self.assertRaises(ValueError):
+                evidence.validate_service_references(self.raw(invalid))
+        with self.assertRaises(ValueError):
+            evidence.validate_service_references(self.raw(events), 1)
+
+    def test_template_adoption_recovery_requires_all_durable_outcomes(self):
+        scope = evidence.TEMPLATE_ADOPTION_RECOVERY_SCOPE
+        names = [scope["parent"], *[scope["parent"] + "/" + child for child in scope["children"]]]
+        events = [dict(Action=action, Package=scope["package"], Test=name)
+                  for name in names for action in ("run", "pass")]
+        events.append(dict(Action="pass", Package=scope["package"]))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)["children"], 9)
+        for name in names:
+            for invalid in ([event for event in events if event.get("Test") != name],
+                            [{**event, "Action": "skip"} if event.get("Test") == name else event for event in events],
+                            [{**event, "Action": "run"} if event.get("Test") == name else event for event in events]):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    evidence.validate(self.raw(invalid), **scope)
+        with self.assertRaises(ValueError):
+            evidence.validate(self.raw(events), 1, **scope)
+        with self.assertRaises(ValueError):
+            evidence.validate(self.raw(events + [dict(Action="output", Package=scope["package"], Output="ok (cached)")]), **scope)
+
+    def test_manifest_control_requires_every_atomic_and_compatibility_case(self):
+        scope = evidence.MANIFEST_CONTROL_SCOPE
+        names = [scope["parent"], *[scope["parent"] + "/" + child for child in scope["children"]]]
+        events = [dict(Action=action, Package=scope["package"], Test=name)
+                  for name in names for action in ("run", "pass")]
+        events.append(dict(Action="pass", Package=scope["package"]))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)["children"], 5)
+        for name in names:
+            for invalid in ([event for event in events if event.get("Test") != name],
+                            [{**event, "Action": "skip"} if event.get("Test") == name else event for event in events]):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    evidence.validate(self.raw(invalid), **scope)
+        for invalid in (events[:-1], events + [dict(Action="output", Package=scope["package"], Output="ok (cached)")],
+                        [{**event, "Package": "wrong"} for event in events]):
+            with self.assertRaises(ValueError):
+                evidence.validate(self.raw(invalid), **scope)
+
     def test_all_required_tests_pass(self):
         self.assertEqual(evidence.validate(self.raw(self.events()))["children"], 16)
+
+    def test_migration_scopes_require_declaration_and_success_evidence(self):
+        for scope in (evidence.TEMPLATE_MIGRATION_SCOPE, evidence.MANIFEST_MIGRATION_SCOPE, evidence.INITIALIZATION_SCOPE):
+            names=[scope["parent"],*[scope["parent"]+"/"+child for child in scope["children"]]]
+            events=[dict(Action=action,Package=scope["package"],Test=name) for name in names for action in ("run","pass")]+[dict(Action="pass",Package=scope["package"])]
+            self.assertEqual(evidence.validate(self.raw(events),**scope)["result"],"PASS")
+            for invalid in (events[:2]+events[4:],[{**event,"Action":"skip"} if event.get("Test")==names[-1] else event for event in events],events+[dict(Action="output",Package=scope["package"],Output="ok (cached)")]):
+                with self.assertRaises(ValueError): evidence.validate(self.raw(invalid),**scope)
 
     def test_main_chat_scope_requires_a_real_uncached_run(self):
         package = "github.com/opensoha/soha/internal/repository/copilot"
@@ -89,6 +190,31 @@ class EvidenceTests(unittest.TestCase):
         for raw, code in (("", 0), ("{broken", 0), ("[]", 0), (self.raw(self.events()), 1), (self.raw([self.events()[-1]]), 0)):
             with self.subTest(raw=raw[:20], code=code), self.assertRaises(ValueError):
                 evidence.validate(raw, code)
+
+    def test_kubernetes_import_scope_rejects_missing_or_skipped_identity_checks(self):
+        scope = evidence.KUBERNETES_IMPORT_SCOPE
+        names = [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 14)
+        required_new = {'explicit_service_across_environments', 'explicit_service_invalid_rollback', 'import_fences_default_edit_cas', 'helm_explicit_service_mapping', 'service_creation_identity_matches_persistence'}
+        self.assertTrue(required_new.issubset(scope['children']))
+        for child in required_new:
+            full_name = scope['parent'] + '/' + child
+            for invalid in ([e for e in events if e.get('Test') != full_name], [{**e, 'Action': 'skip'} if e.get('Test') == full_name else e for e in events]):
+                with self.subTest(child=child), self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+        for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
+    def test_relation_rules_scope_rejects_missing_skipped_or_cached_results(self):
+        scope = evidence.RELATION_RULES_SCOPE
+        names = [scope['parent'], scope['parent'] + '/' + scope['children'][0]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 1)
+        invalids = [events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], events + [dict(Action='output', Package=scope['package'], Output='ok (cached)')]]
+        for invalid in invalids:
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
 
     def test_child_skip_fail_missing_or_incomplete(self):
         for action in ("skip", "fail", "run"):

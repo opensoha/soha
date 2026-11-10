@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/url"
 	"strings"
@@ -115,11 +116,11 @@ func (*captureOAuthProvider) AuthorizationURL(_ OAuthProviderConfig, state strin
 }
 func (p *captureOAuthProvider) Exchange(context.Context, OAuthProviderConfig, string) (OAuthToken, error) {
 	p.exchanged = true
-	return OAuthToken{AccessToken: "oauth-access", RefreshToken: "oauth-refresh", ExpiresIn: 3600}, nil
+	return OAuthToken{AccessToken: "oauth-access", RefreshToken: "oauth-refresh", ExpiresIn: 3600}, nil // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 }
 func (p *captureOAuthProvider) Refresh(context.Context, OAuthProviderConfig, string) (OAuthToken, error) {
 	p.refreshed = true
-	return OAuthToken{AccessToken: "oauth-access-refreshed", RefreshToken: "oauth-refresh-next", ExpiresIn: 3600}, nil
+	return OAuthToken{AccessToken: "oauth-access-refreshed", RefreshToken: "oauth-refresh-next", ExpiresIn: 3600}, nil // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 }
 
 func newMemoryIntegrationRepository() *memoryIntegrationRepository {
@@ -196,9 +197,7 @@ func TestCreateEncryptsCredentialsAndNeverReturnsSecret(t *testing.T) {
 		Configuration: []sohaapi.SystemIntegrationConfigurationField{{Key: "base_url", Value: "https://gitlab.example/api/v4"}},
 		Credentials:   []sohaapi.SystemIntegrationCredentialInput{{Key: "token", Value: "raw-secret-token"}},
 	})
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
+	require.NoError(t, err, "Create() error = %v", err)
 	stored := repo.credentials[item.ID]["token"]
 	if !secretcrypto.Encrypted(stored) || strings.Contains(stored, "raw-secret-token") {
 		t.Fatalf("stored credential is not encrypted: %q", stored)
@@ -211,9 +210,7 @@ func TestCreateEncryptsCredentialsAndNeverReturnsSecret(t *testing.T) {
 		t.Fatalf("credential keys = %#v", item.CredentialKeys)
 	}
 	resolved, err := service.ResolveSourceCredentials(t.Context(), item.ID)
-	if err != nil {
-		t.Fatalf("ResolveSourceCredentials() error = %v", err)
-	}
+	require.NoError(t, err, "ResolveSourceCredentials() error = %v", err)
 	if resolved["token"] != "raw-secret-token" {
 		t.Fatalf("resolved credential = %q, want decrypted token", resolved["token"])
 	}
@@ -237,9 +234,7 @@ func TestCreateS3StorageIntegrationValidatesAndEncryptsCredentials(t *testing.T)
 		},
 	}
 	item, err := service.Create(t.Context(), adminPrincipal(), request)
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
+	require.NoError(t, err, "Create() error = %v", err)
 	if item.Category != sohaapi.SystemIntegrationCategory(domain.CategoryStorage) || item.ProviderType != domain.ProviderS3 {
 		t.Fatalf("unexpected storage integration: %#v", item)
 	}
@@ -329,9 +324,7 @@ func TestS3StorageConnectionUsesRegisteredTesterWithDecryptedCredentials(t *test
 		t.Fatal(err)
 	}
 	result, err := service.Test(t.Context(), adminPrincipal(), item.ID)
-	if err != nil {
-		t.Fatalf("Test() error = %v", err)
-	}
+	require.NoError(t, err, "Test() error = %v", err)
 	if !tester.called || result.Status != sohaapi.SystemIntegrationTestStatusSucceeded {
 		t.Fatalf("unexpected test result: called=%v result=%#v", tester.called, result)
 	}
@@ -392,17 +385,13 @@ func TestGitLabOAuthAuthorizationPersistsEncryptedTokensAndRefreshes(t *testing.
 		},
 		Credentials: []sohaapi.SystemIntegrationCredentialInput{{Key: "client_secret", Value: "application-secret"}},
 	})
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
+	require.NoError(t, err, "Create() error = %v", err)
 	if connections, err := service.ListSourceConnections(t.Context(), adminPrincipal()); err != nil || len(connections) != 0 {
 		t.Fatalf("connection should remain unavailable before OAuth, items=%#v err=%v", connections, err)
 	}
 
 	authorization, err := service.BeginOAuth(t.Context(), adminPrincipal(), item.ID)
-	if err != nil {
-		t.Fatalf("BeginOAuth() error = %v", err)
-	}
+	require.NoError(t, err, "BeginOAuth() error = %v", err)
 	authorizationURL, _ := url.Parse(authorization.AuthorizationURL)
 	state := authorizationURL.Query().Get("state")
 	if state == "" || strings.Contains(authorization.AuthorizationURL, "application-secret") {
@@ -416,12 +405,11 @@ func TestGitLabOAuthAuthorizationPersistsEncryptedTokensAndRefreshes(t *testing.
 		t.Fatalf("tampered OAuth state error = %v", err)
 	}
 	redirectURL, err := service.CompleteOAuth(t.Context(), OAuthCallbackInput{Code: "code", State: state})
-	if err != nil {
-		t.Fatalf("CompleteOAuth() error = %v", err)
-	}
+	require.NoError(t, err, "CompleteOAuth() error = %v", err)
 	if !provider.exchanged || redirectURL != "https://app.example/settings/source-control/"+item.ID+"?oauth=success" {
 		t.Fatalf("oauth completion = exchanged %v redirect %q", provider.exchanged, redirectURL)
 	}
+	// #nosec G101 -- Synthetic OAuth responses used only to prove encrypted persistence.
 	for key, want := range map[string]string{"access_token": "oauth-access", "refresh_token": "oauth-refresh"} {
 		stored := repo.credentials[item.ID][key]
 		plain, decryptErr := secretcrypto.DecryptStringWithKeyring(testKeyring(t), stored)
@@ -440,9 +428,7 @@ func TestGitLabOAuthAuthorizationPersistsEncryptedTokensAndRefreshes(t *testing.
 		t.Fatal(err)
 	}
 	_, refreshed, err := service.refreshOAuthCredentials(t.Context(), updated, credentials)
-	if err != nil {
-		t.Fatalf("refreshOAuthCredentials() error = %v", err)
-	}
+	require.NoError(t, err, "refreshOAuthCredentials() error = %v", err)
 	if !provider.refreshed || refreshed["access_token"] != "oauth-access-refreshed" {
 		t.Fatalf("oauth refresh = called %v credentials %#v", provider.refreshed, refreshed)
 	}

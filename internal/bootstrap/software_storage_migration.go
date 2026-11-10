@@ -31,6 +31,7 @@ func checkLegacySoftwareStorage(paths []string) error {
 			continue
 		}
 		seen[indexPath] = struct{}{}
+		// #nosec G703 -- Read-only probe of administrator-configured legacy storage; it never reads or writes file contents.
 		if _, err := os.Stat(indexPath); err == nil {
 			return fmt.Errorf("legacy software packages detected at %s; export and re-upload them to S3-compatible storage before upgrading", indexPath)
 		} else if !errors.Is(err, os.ErrNotExist) {

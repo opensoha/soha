@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -100,7 +99,12 @@ func verifyOIDCClientIDToken(t *testing.T, f *ssoProtocolFixture, discovery doma
 			if err != nil {
 				return nil, err
 			}
-			return &ecdsa.PublicKey{Curve: elliptic.P256(), X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}, nil
+			if len(x) != 32 || len(y) != 32 {
+				return nil, fmt.Errorf("invalid P-256 JWKS coordinate size")
+			}
+			point := append([]byte{4}, x...)
+			point = append(point, y...)
+			return ecdsa.ParseUncompressedPublicKey(elliptic.P256(), point)
 		}
 		return nil, fmt.Errorf("JWKS signing key missing")
 	}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithIssuer(discovery.Issuer), jwt.WithAudience(audience), jwt.WithExpirationRequired())
@@ -134,7 +138,7 @@ func verifyOIDCClientFlow(t *testing.T, f *ssoProtocolFixture, callbackURL strin
 	authorize := func(session string) string {
 		t.Helper()
 		req, _ := http.NewRequest("GET", discovery.AuthorizationEndpoint+"?"+values.Encode(), nil)
-		req.AddCookie(&http.Cookie{Name: "test-platform-session", Value: f.login(t, session)})
+		req.AddCookie(&http.Cookie{Name: "test-platform-session", Value: f.login(t, session)}) // #nosec G124 -- Request cookie only; browser response flags are tested separately.
 		_, headers := ssoHTTP(t, f.client, req, http.StatusFound)
 		target, err := url.Parse(headers.Get("Location"))
 		ssoCheck(t, err == nil && strings.HasPrefix(target.String(), callbackURL+"/callback?") && target.Query().Get("error") == "", "authorization callback rejected: %v", err)
@@ -187,7 +191,7 @@ func verifyOIDCClientFlow(t *testing.T, f *ssoProtocolFixture, callbackURL strin
 	challenge := values.Get("code_challenge")
 	values.Del("code_challenge")
 	badRequest, _ = http.NewRequest("GET", discovery.AuthorizationEndpoint+"?"+values.Encode(), nil)
-	badRequest.AddCookie(&http.Cookie{Name: "test-platform-session", Value: f.login(t, kind+"-pkce")})
+	badRequest.AddCookie(&http.Cookie{Name: "test-platform-session", Value: f.login(t, kind+"-pkce")}) // #nosec G124 -- Request cookie only; browser response flags are tested separately.
 	_, missingPKCEHeaders := ssoHTTP(t, f.client, badRequest, http.StatusFound)
 	missingPKCE, err := url.Parse(missingPKCEHeaders.Get("Location"))
 	ssoCheck(t, err == nil && missingPKCE.Query().Get("error") == "invalid_request" && missingPKCE.Query().Get("code") == "", "missing PKCE did not return a registered error callback: %v", err)

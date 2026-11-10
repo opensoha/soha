@@ -10,7 +10,7 @@ import (
 func TestAgentOptionsPreserveDirectDefaultAndRejectUnsafeGrants(t *testing.T) {
 	for _, input := range []domaincluster.RegisterInput{
 		{PrometheusTransport: "fallback"},
-		{PrometheusBaseURL: "https://user:pass@example.com"},
+		{PrometheusBaseURL: "https://user:pass@example.com"}, // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		{AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{APIGroup: "*", Resources: []string{"widgets"}, Verbs: []string{"get"}}}},
 		{AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{APIGroup: "example.io", Resources: []string{"*"}, Verbs: []string{"get"}}}},
 		{AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{APIGroup: "example.io", Resources: []string{"widgets"}, Verbs: []string{"*"}}}},

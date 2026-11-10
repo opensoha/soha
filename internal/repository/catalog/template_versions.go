@@ -97,6 +97,10 @@ func (r *Repository) saveBuildTemplate(ctx context.Context, id string, input dom
 		if err != nil {
 			return err
 		}
+		item.MigrationPolicy, err = migrationPolicyOnSave(tx, "build_templates", item.ID, create, item.MigrationPolicy)
+		if err != nil {
+			return err
+		}
 		item.Revision, item.CreatedAt = head.Revision, head.CreatedAt
 		item.PublishedVersion, item.PublicationState = templateSaveState(head, input.Publish)
 		commands, err := json.Marshal(item.BuildCommands)
@@ -117,8 +121,13 @@ func (r *Repository) saveBuildTemplate(ctx context.Context, id string, input dom
 				return err
 			}
 		}
+		policy, err := json.Marshal(item.MigrationPolicy)
+		if err != nil {
+			return err
+		}
 		values := map[string]any{
-			"template_key": item.Key, "name": item.Name, "description": nullableString(item.Description),
+			"migration_policy": string(policy),
+			"template_key":     item.Key, "name": item.Name, "description": nullableString(item.Description),
 			"builder_kind": item.BuilderKind, "dockerfile_template": nullableString(item.DockerfileTemplate),
 			"build_commands": string(commands), "variable_schema": string(schema), "default_variables": string(variables),
 			"enabled": item.Enabled, "updated_at": item.UpdatedAt, "revision": item.Revision,
@@ -140,6 +149,10 @@ func (r *Repository) saveWorkflowTemplate(ctx context.Context, id string, input 
 		if err != nil {
 			return err
 		}
+		item.MigrationPolicy, err = migrationPolicyOnSave(tx, "workflow_templates", item.ID, create, item.MigrationPolicy)
+		if err != nil {
+			return err
+		}
 		item.Revision, item.CreatedAt = head.Revision, head.CreatedAt
 		item.PublishedVersion, item.PublicationState = templateSaveState(head, input.Publish)
 		definition, err := json.Marshal(item.Definition)
@@ -152,8 +165,13 @@ func (r *Repository) saveWorkflowTemplate(ctx context.Context, id string, input 
 				return err
 			}
 		}
+		policy, err := json.Marshal(item.MigrationPolicy)
+		if err != nil {
+			return err
+		}
 		values := map[string]any{
-			"template_key": item.Key, "name": item.Name, "description": nullableString(item.Description),
+			"migration_policy": string(policy),
+			"template_key":     item.Key, "name": item.Name, "description": nullableString(item.Description),
 			"category": nullableString(item.Category), "definition": string(definition), "enabled": item.Enabled,
 			"updated_at": item.UpdatedAt, "revision": item.Revision, "published_version": item.PublishedVersion,
 			"publication_state": item.PublicationState, "content_digest": item.ContentDigest,
@@ -252,7 +270,7 @@ func (r *Repository) PublishBuildTemplate(ctx context.Context, id string, expect
 	return r.UpdateBuildTemplate(deliverysource.ForPublication(ctx, "BuildTemplate", id), id, domaincatalog.BuildTemplateInput{
 		ExpectedRevision: &expected, Key: item.Key, Name: item.Name, Description: item.Description,
 		BuilderKind: item.BuilderKind, DockerfileTemplate: item.DockerfileTemplate, BuildCommands: item.BuildCommands,
-		VariableSchema: item.VariableSchema, DefaultVariables: item.DefaultVariables, Enabled: item.Enabled,
+		VariableSchema: item.VariableSchema, DefaultVariables: item.DefaultVariables, MigrationPolicy: item.MigrationPolicy, Enabled: item.Enabled,
 	})
 }
 
@@ -266,7 +284,7 @@ func (r *Repository) PublishWorkflowTemplate(ctx context.Context, id string, exp
 	}
 	return r.UpdateWorkflowTemplate(deliverysource.ForPublication(ctx, "WorkflowTemplate", id), id, domaincatalog.WorkflowTemplateInput{
 		ExpectedRevision: &expected, Key: item.Key, Name: item.Name, Description: item.Description,
-		Category: item.Category, Definition: item.Definition, Enabled: item.Enabled,
+		Category: item.Category, Definition: item.Definition, MigrationPolicy: item.MigrationPolicy, Enabled: item.Enabled,
 	})
 }
 

@@ -177,9 +177,9 @@ func (r *Repository) CompletePersonalEnvironment(ctx context.Context, item domai
  operation_id=CASE WHEN ? IN ('unknown','deletion_unknown') THEN operation_id ELSE '' END,
  operation_until=CASE WHEN ? IN ('unknown','deletion_unknown') THEN operation_until ELSE NULL END
  ,active_task_id=CASE WHEN ? IN ('sleeping','missing','expired','deleted') OR (backend='vm' AND ?='') THEN '' ELSE active_task_id END
- WHERE assistant_id=? AND created_by=? AND version=? AND operation_id=?
+ WHERE assistant_id=? AND created_by=? AND version=? AND operation_id=? AND lease->>'id'=?
  AND backend=? AND provider=? AND policy_revision=? AND data_ref=? AND compute_generation=? AND compute_ref=?
- RETURNING `+personalEnvironmentColumns, item.State, item.DataInitialized, string(usage), item.ObservedAt, item.State, item.State, item.State, item.ActiveTaskID, item.AssistantID, item.CreatedBy, item.Version, item.OperationID, item.Backend, item.Provider, item.PolicyRevision, item.DataRef, item.ComputeGeneration, item.ComputeRef).Row()
+ RETURNING `+personalEnvironmentColumns, item.State, item.DataInitialized, string(usage), item.ObservedAt, item.State, item.State, item.State, item.ActiveTaskID, item.AssistantID, item.CreatedBy, item.Version, item.OperationID, item.Lease.ID, item.Backend, item.Provider, item.PolicyRevision, item.DataRef, item.ComputeGeneration, item.ComputeRef).Row()
 	result, err := scanPersonalEnvironment(row)
 	if errors.Is(err, apperrors.ErrNotFound) {
 		return result, apperrors.ErrConflict

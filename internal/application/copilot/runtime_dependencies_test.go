@@ -19,6 +19,10 @@ func (*runtimeModelCatalogFixture) ListWorkbenchModels(context.Context, domainid
 	return nil, nil
 }
 
+func (*runtimeModelCatalogFixture) ResolveWorkbenchModelOption(context.Context, domainidentity.Principal, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchModelOption, error) {
+	return appaigateway.WorkbenchModelOption{}, nil
+}
+
 func runtimeAssemblyFixture() (Dependencies, RuntimeDependencies) {
 	gateway := &nativeLoopGateway{}
 	runs := &nativeLoopStore{}
@@ -161,8 +165,9 @@ func TestPlainChatRuntimeStartsAndInvokesModel(t *testing.T) {
 			t.Errorf("stop plain chat: %v", err)
 		}
 	}()
-	reply := service.generateReply(t.Context(), domainidentity.Principal{}, "session", "general", nil, "en-US", domaincopilot.WorkbenchModelPreferences{})
-	if reply.Content != "hello" || model.request.PublicModel != "test-model" {
-		t.Fatalf("unexpected reply or request: %+v %+v", reply, model.request)
+	_, err := service.sendMessageWithSessionConfig(t.Context(), domainidentity.Principal{}, domaincopilot.Session{ID: "session"}, domaincopilot.SessionMetadata{}, "hello", "en-US")
+	if !errors.Is(err, apperrors.ErrUnsupportedOperation) || model.request.PublicModel != "" {
+		t.Fatalf("missing dsh must not invoke direct model: %v %+v", err, model.request)
 	}
+
 }

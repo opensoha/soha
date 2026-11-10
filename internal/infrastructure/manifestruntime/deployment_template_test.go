@@ -13,6 +13,28 @@ import (
 	sigyaml "sigs.k8s.io/yaml"
 )
 
+func TestJSONDeploymentTemplateRemainsValidAfterSubstitution(t *testing.T) {
+	source := domaincatalog.DeploymentTemplateSource{Renderer: "raw_yaml", Files: []domainmanifest.File{{Path: "config.yaml", Content: `{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"${{ system.serviceKey }}","namespace":"${{ system.namespace }}"},"data":{"message":"${{ parameters.message }}"}}`}}}
+	message := "value\n---\nkind: Secret"
+	renderer := NewRenderer()
+	result, err := renderer.RenderDeploymentTemplate(t.Context(), source, map[string]any{"message": message}, map[string]string{"serviceKey": "api", "namespace": "test"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources, err := renderer.Render(t.Context(), domainmanifest.Package{Renderer: "raw_yaml"}, domainmanifest.EnvironmentBinding{Namespace: "test"}, result.Files, 1)
+	if err != nil || len(resources.Documents) != 1 {
+		t.Fatalf("rendered flow YAML must remain one document: %v", err)
+	}
+	var object map[string]any
+	if err := sigyaml.Unmarshal([]byte(resources.Documents[0].Content), &object); err != nil {
+		t.Fatal(err)
+	}
+	data, ok := object["data"].(map[string]any)
+	if !ok || data["message"] != message {
+		t.Fatal("template value was interpreted as YAML syntax")
+	}
+}
+
 func TestDeploymentTemplateReplacesValuesWithoutYAMLInjection(t *testing.T) {
 	source := domaincatalog.DeploymentTemplateSource{Renderer: "raw_yaml", Files: []domainmanifest.File{{Path: "config.yaml", Content: `apiVersion: v1
 kind: ConfigMap

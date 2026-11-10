@@ -24,6 +24,7 @@ type WorkbenchApprovalReader interface {
 
 type WorkbenchModelCatalog interface {
 	ListWorkbenchModels(context.Context, domainidentity.Principal, string) ([]appaigateway.WorkbenchModelOption, error)
+	ResolveWorkbenchModelOption(context.Context, domainidentity.Principal, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchModelOption, error)
 }
 
 type WorkbenchCapabilityCatalog interface {

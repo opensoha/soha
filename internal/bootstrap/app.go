@@ -39,6 +39,17 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
+	optionalRuntimes, err := configureOptionalRuntimes(cfg, repos, delivery)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	initialized := false
+	defer func() {
+		if !initialized {
+			_ = optionalRuntimes.Close(context.Background())
+		}
+	}()
 	handlers, err := newHandlers(cfg, infra, repos, core, delivery, gateway)
 	if err != nil {
 		infra.cancel()
@@ -50,6 +61,7 @@ func New(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 	handlers.deps.CLIAuth = cliAuth
+	handlers.deps.DSHRuntime = optionalRuntimes.callback
 	guestServer, guestPreparation, err := newPersonalGuestServer(cfg.PersonalGuest, core, delivery, repos)
 	if err != nil {
 		infra.cancel()
@@ -57,6 +69,7 @@ func New(ctx context.Context) (*App, error) {
 	}
 	handlers.deps.PersonalGuestPreparation = apiHandlers.NewPersonalGuestPreparationHandler(guestPreparation)
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
+	startPrivateExecutionMonitors(infra.lifecycleCtx, cfg.Runtime, core.executionService)
 	core.runtimeConfigService.Start(infra.lifecycleCtx, 0)
 	startCLIAuthCleanup(infra.lifecycleCtx, core.identityService, infra.logger)
 	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podExecutionRepository, infra.logger, "platform.pod.execution.cleanup.failed")
@@ -70,7 +83,14 @@ func New(ctx context.Context) (*App, error) {
 		infra.logger.Named("network-endpoint-response").Warn("endpoint notification delivery failed", zap.Error(err))
 	})
 
+	if core.runtimeConfigService.ModuleEnabled("ai") {
+		delivery.copilotService.Start(infra.lifecycleCtx)
+	}
+	optionalRuntimes.Start(infra.lifecycleCtx, infra.logger)
+	initialized = true
 	return &App{
+		OptionalRuntimes:      optionalRuntimes,
+		CopilotService:        delivery.copilotService,
 		PodTerminals:          core.resourceService.PodTerminals(),
 		DockerTerminals:       delivery.dockerTerminals,
 		Config:                cfg,

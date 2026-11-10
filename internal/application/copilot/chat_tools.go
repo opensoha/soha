@@ -91,7 +91,7 @@ func (s *Service) executeChatAgentTool(ctx context.Context, run domaincopilot.Ag
 		return nil, err
 	}
 	version := ""
-	if run.ProviderKind == "native" {
+	if run.ProviderKind == "native" || run.ProviderKind == "dsh" {
 		version = stringValue(binding.Config["capabilityVersion"])
 		ctx = appaigateway.WithNativeWorkbenchInvocation(ctx)
 	}

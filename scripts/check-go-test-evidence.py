@@ -63,6 +63,77 @@ PROTECTED_STORAGE_SCOPE = {
                  "native_missing_key_and_corruption_rejected", "native_personal_cleanup_lookup_is_read_only_and_task_bound"],
 }
 
+KUBERNETES_IMPORT_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/delivery",
+    "parent": "TestKubernetesImportIdentityWithPostgres",
+    "children": ["create_and_idempotent", "uid_replacement_rollback", "ownership_mode_no_upgrade",
+                 "preserves_service_metadata", "destination_race_rollback", "cross_namespace_identity",
+                 "native_ownership_conflict", "crd_identity_and_shared_reference", "legacy_missing_uid_conflict",
+                 "explicit_service_across_environments", "explicit_service_invalid_rollback", "import_fences_default_edit_cas", "helm_explicit_service_mapping", "service_creation_identity_matches_persistence"],
+}
+
+
+RELATION_RULES_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/catalog",
+    "parent": "TestTemplateVersionsWithPostgres",
+    "children": ["relation-rules-persistence-and-cas"],
+}
+
+
+MANIFEST_ROOT_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/manifest","parent":"TestDeliverySnapshotWithPostgres","children":["root-cr-publication-control", *["root-cr-publication-control/"+name for name in ["valid","withdrawn","uid-replaced","baseline-changed","binding-changed"]]]}
+
+TEMPLATE_ADOPTION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/templateupdate","parent":"TestTemplateAdoptionWithPostgres","children":["atomic_receipt_and_environment_isolation","stale_and_canceled_worker","policy_cas_and_private_identity"]}
+
+INITIALIZATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/delivery","parent":"TestInitializationHistoryWithPostgres","children":["absent","preflight-only","same-plan","same-plan-failed","same-plan-replayed","failed-write","canceled-zero-attempt","cross-owner-version","helm-release-history","admission-rechecks-failed-physical-target","legacy-direct-workers-cannot-claim-initialization"]}
+TEMPLATE_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/catalog","parent":"TestTemplateVersionsWithPostgres","children":["migration-declarations-preserve-legacy-writers"]}
+MANIFEST_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/manifest","parent":"TestDeliverySnapshotWithPostgres","children":["migration-baseline-is-success-only",*["migration-baseline-is-success-only/"+name for name in ["verified","desired-only","stale-generation","failed","digest-mismatch","malformed-identity"]]]}
+
+MANIFEST_CONTROL_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/manifest",
+    "parent": "TestDeliverySnapshotWithPostgres",
+    "children": ["publication-operation-context", *["publication-operation-context/" + child for child in
+                 ("roundtrip_and_idempotency", "atomic_rollback", "schema_and_task_uniqueness", "legacy_standalone")]],
+}
+
+SERVICE_REFERENCE_CANDIDATES_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/delivery",
+    "parent": "TestServiceReferenceCandidatesWithPostgres",
+    "children": ["save_restore_no_runtime_changes", "update_and_stale_cas", "delete_recreate_aba",
+                 "context_drift", *["context_drift/" + name for name in
+                    ("consumer_binding", "source_binding", "service_version_without_timestamp",
+                     "source_target_without_timestamp", "environment_classification")],
+                 "reauthorization_rollback", "concurrent_create", "concurrent_update",
+                 "source_deleted_candidate_cleanup", "binding_lock_serializes_source_mutation",
+                 "consumer_binding_cascade", "application_cascade_unrelated_preserved",
+                 "cancellation_no_partial_write", "metadata_pagination_without_source"],
+}
+
+
+# Each scope must independently prove its parent and every mandatory descendant.
+TEMPLATE_ADOPTION_RECOVERY_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/application/delivery",
+    "parent": "TestTemplateAdoptionRecoveryWithPostgres",
+    "children": ["known_rollback_releases_source_guard", "ambiguous_failure_preserves_source_guard", "committed_receipt_not_rolled_back",
+                 "production_adapter_recovery_fence", "production_adapter_recovery_fence/valid_owned_claim",
+                 "production_adapter_recovery_fence/canceled_worker", "production_adapter_recovery_fence/lost_lease",
+                 "production_adapter_recovery_fence/newer_claim", "production_adapter_recovery_fence/confirmed_receipt"],
+}
+
+SERVICE_REFERENCES_SCOPES = [
+    {"package": "github.com/opensoha/soha/internal/repository/delivery", "parent": "TestServiceReferencesPostgres",
+     "children": ["ActivationAndRestart", "CASAndABA", "SourceLifecycle", "ConsumerSlotAndDirectSource",
+                  "BusyPublication", "ConcurrentActivation", "ConsumerCleanup", "Pagination",
+                  "TransactionRollback", "BoundCompleteSet", "RebindVsDetachCAS", "ActivationVsSourceMutation"]},
+    {"package": "github.com/opensoha/soha/internal/repository/delivery", "parent": "TestServiceReferenceImpactsPostgres",
+     "children": ["explicit_empty_snapshot_roundtrip", "missing_snapshot_fails_closed", "atomic_plan_snapshot_rollback",
+                  "persisted_snapshot_not_replaced", "application_scope_serializes_capture", "plan_delete_cascades_snapshot",
+                  "prepared_preflight_atomic_claim_barrier", "prepared_preflight_rollback_has_no_orphan"]},
+]
+
+
+def validate_service_references(raw, exit_code=0):
+    return {"result": "PASS", "scopes": [validate(raw, exit_code, **scope) for scope in SERVICE_REFERENCES_SCOPES]}
+
 
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
@@ -98,6 +169,15 @@ if __name__ == "__main__":
     parser.add_argument("--protected-storage", action="store_true")
     parser.add_argument("--docker-configuration-mutations", action="store_true")
     parser.add_argument("--docker-runtime-identity", action="store_true")
+    parser.add_argument("--kubernetes-import", action="store_true")
+    parser.add_argument("--service-reference-candidates", action="store_true")
+    parser.add_argument("--service-references", action="store_true")
+    parser.add_argument("--relation-rules", action="store_true")
+    parser.add_argument("--template-adoption", action="store_true")
+    parser.add_argument("--template-adoption-recovery", action="store_true")
+    parser.add_argument("--template-migration", action="store_true")
+    parser.add_argument("--manifest-migration", action="store_true")
+    parser.add_argument("--manifest-control", action="store_true")
     args = parser.parse_args()
     try:
         scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": "TestMainSessionWithPostgres", "children": ["personal_assistant_identity"]} if args.main_chat else {}
@@ -111,6 +191,25 @@ if __name__ == "__main__":
             scope = DOCKER_CONFIGURATION_SCOPE
         if args.docker_runtime_identity:
             scope = DOCKER_RUNTIME_IDENTITY_SCOPE
-        print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
+        if args.kubernetes_import:
+            scope = KUBERNETES_IMPORT_SCOPE
+        if args.service_reference_candidates:
+            scope = SERVICE_REFERENCE_CANDIDATES_SCOPE
+        if args.relation_rules:
+            scope = RELATION_RULES_SCOPE
+        if args.template_adoption:
+            scope = TEMPLATE_ADOPTION_SCOPE
+        if args.template_adoption_recovery:
+            scope = TEMPLATE_ADOPTION_RECOVERY_SCOPE
+        if args.template_migration:
+            scope = TEMPLATE_MIGRATION_SCOPE
+        if args.manifest_migration:
+            scope = MANIFEST_MIGRATION_SCOPE
+        if args.manifest_control:
+            scope = MANIFEST_CONTROL_SCOPE
+        if args.service_references:
+            print(json.dumps(validate_service_references(args.log.read_text(), args.exit_code)))
+        else:
+            print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
     except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")

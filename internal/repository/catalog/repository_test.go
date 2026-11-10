@@ -45,6 +45,7 @@ func TestNormalizeApplicationEnvironmentInputPreservesEnvironmentDefaults(t *tes
 func TestSaveApplicationWorkflowCommitsTemplateAndBindingTogether(t *testing.T) {
 	repo, mock := newCatalogRepository(t)
 	mock.ExpectBegin()
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WithArgs("service-references:app-1").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`SELECT workflow_template_id, workflow_template_version FROM application_environments`).
 		WithArgs("binding-1", "app-1").
 		WillReturnRows(sqlmock.NewRows([]string{"workflow_template_id", "workflow_template_version"}).AddRow(nil, int64(0)))
@@ -77,6 +78,7 @@ func TestSaveApplicationWorkflowCommitsTemplateAndBindingTogether(t *testing.T) 
 func TestSaveApplicationWorkflowRollsBackWhenBindingFails(t *testing.T) {
 	repo, mock := newCatalogRepository(t)
 	mock.ExpectBegin()
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WithArgs("service-references:app-1").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`SELECT workflow_template_id, workflow_template_version FROM application_environments`).
 		WithArgs("binding-1", "app-1").
 		WillReturnRows(sqlmock.NewRows([]string{"workflow_template_id", "workflow_template_version"}).AddRow(nil, int64(0)))

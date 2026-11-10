@@ -570,7 +570,7 @@ func (s *Service) ParseStreamTicket(ctx context.Context, ticket, requestPath str
 	} else if err := json.Unmarshal(rawPayload, &payload); err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("decode stream ticket payload: %w", err)
 	}
-	if payload.UserID == "" || payload.SessionID == "" || normalizeStreamTicketPath(payload.Path) != path {
+	if payload.UserID == "" || payload.SessionID == "" || normalizeStreamTicketPath(payload.Path) != streamTicketRequestTarget(payload.Path, path) {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket does not match request", apperrors.ErrUnauthorized)
 	}
 	session, err := s.sessions.GetAuthSessionByID(ctx, payload.SessionID)
@@ -779,10 +779,13 @@ func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentit
 
 func (s *Service) CurrentPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {
 	user, err := s.accounts.GetByID(ctx, userID)
+	if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+		return domainidentity.Principal{}, err
+	}
 	if err != nil || user.Status != "active" {
 		return domainidentity.Principal{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
 	}
-	return s.loadPrincipal(ctx, userID)
+	return s.principalForUser(ctx, user)
 }
 
 func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.Principal) (domainidentity.UserProfile, error) {
@@ -1346,6 +1349,11 @@ func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainident
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
 	}
+	return s.principalForUser(ctx, user)
+}
+
+func (s *Service) principalForUser(ctx context.Context, user domainidentity.User) (domainidentity.Principal, error) {
+	userID := user.ID
 	roles, err := s.authorization.ListRoles(ctx, userID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("list user roles: %w", err)
@@ -2593,24 +2601,53 @@ func timePointerValue(value *time.Time) time.Time {
 	return *value
 }
 
-func normalizeStreamTicketPath(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
+func streamTicketRequestTarget(savedPath, requestPath string) string {
+	saved, _ := url.Parse(savedPath)
+	if saved != nil && !saved.Query().Has("expectedUid") {
+		request, err := url.Parse(requestPath)
+		if err == nil {
+			return normalizeStreamTicketPath(request.Path)
+		}
 	}
-	if parsed, err := url.Parse(value); err == nil && parsed.Path != "" {
-		value = parsed.Path
-	}
-	if !strings.HasPrefix(value, "/") {
-		value = "/" + value
-	}
-	return strings.TrimRight(value, "/")
+	return requestPath
 }
 
-func isAllowedStreamTicketPath(path string) bool {
-	path = normalizeStreamTicketPath(path)
+func normalizeStreamTicketPath(value string) string {
+	value = strings.TrimSpace(value)
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Path == "" {
+		return ""
+	}
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return ""
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if !query.Has("expectedUid") {
+		return path
+	}
+	target := url.Values{}
+	for _, key := range []string{"expectedUid", "namespace", "container", "shell"} {
+		if values := query[key]; len(values) > 0 {
+			if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
+				return ""
+			}
+			target.Set(key, values[0])
+		}
+	}
+	return path + "?" + target.Encode()
+}
+
+func isAllowedStreamTicketPath(target string) bool {
+	parsed, err := url.Parse(normalizeStreamTicketPath(target))
+	if err != nil {
+		return false
+	}
 	for _, pattern := range streamTicketPaths {
-		if pattern.MatchString(path) {
+		if pattern.MatchString(parsed.Path) {
 			return true
 		}
 	}

@@ -310,7 +310,7 @@ func (s *stubPlatformResourceService) ListPods(_ context.Context, principal doma
 	return []domainresource.PodView{{Name: "api-0", Namespace: namespace, Phase: "Running"}}, nil
 }
 
-func (s *stubPlatformResourceService) GetPodLogs(_ context.Context, _ domainidentity.Principal, _, namespace, podName, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (s *stubPlatformResourceService) GetPodLogs(_ context.Context, _ domainidentity.Principal, _, namespace, podName, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
 	s.podLogsNamespace = namespace
 	s.podLogsContainer = container
 	s.podLogsTailLines = tailLines

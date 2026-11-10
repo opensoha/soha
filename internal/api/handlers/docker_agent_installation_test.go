@@ -16,7 +16,7 @@ import (
 )
 
 func TestDockerHostAgentEnrollmentResponseIsNotCacheable(t *testing.T) {
-	service := &stubDockerHostInstallationService{credentials: sohaapi.DockerHostAgentCredentials{
+	service := &stubDockerHostInstallationService{credentials: sohaapi.DockerHostAgentCredentials{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		HostID: "host-1", OperationID: "operation-1", AgentID: "host-1",
 		AgentBearerToken: "agent-token-32-characters-minimum", RuntimeBearerToken: "runtime-token-32-characters-minimum", IssuedAt: time.Now().UTC(),
 	}}

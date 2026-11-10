@@ -105,7 +105,7 @@ func nativeTaskInput(run domaincopilot.AgentRun, plan domainaigateway.Capability
 	for i := range plan.Steps {
 		step := &plan.Steps[i]
 		tool, found := tools[step.Call.ToolName]
-		if !found || !nativeTaskCapability(tool) || tool.Version != step.Call.CapabilityVersion {
+		if !found || !nativeTaskCapability(tool) || tool.Version != step.Call.CapabilityVersion || (run.Input["_sohaReadOnlyTasks"] == true && !nativeReadCapability(tool)) {
 			return domainaigateway.CapabilityTaskInput{}, apperrors.ErrAccessDenied
 		}
 		if step.Call.Input == nil {

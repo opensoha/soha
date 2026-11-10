@@ -63,6 +63,10 @@ type Service struct {
 	pipelineImages     BuildImageVerifier
 }
 
+type ExecutionTaskRetryValidator interface {
+	ValidateExecutionTaskRetry(context.Context, domaindelivery.ExecutionTask) error
+}
+
 type ExecutionTaskHydrator interface {
 	HydrateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
 }
@@ -183,7 +187,8 @@ func (s *Service) AddExecutionTaskSink(sink ExecutionTaskSink) {
 
 func (s *Service) GetExecutionTaskInternal(ctx context.Context, taskID string) (domaindelivery.ExecutionTask, error) {
 	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
-	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
+	task.OperationState = domaindelivery.BuildOperationState(task, time.Now().UTC())
+	return task, err
 }
 
 type BuildPlan struct {
@@ -220,9 +225,9 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 		}
 		task.SecretLease, err = s.secretLeases.IssueLease(ctx, task.SecretPrincipal, task.SecretRefs, task.SecretTarget, "execution_task", task.ID, strings.TrimSpace(agentID))
 	}
-	if err == nil && s.payloadHydrator != nil {
+	if err == nil {
 		var hydrated domaindelivery.ExecutionTask
-		hydrated, err = s.payloadHydrator.HydrateExecutionTask(ctx, task)
+		hydrated, err = s.hydrateExecutionClaim(ctx, task)
 		if err != nil {
 			failure := map[string]any{"error": "execution authorization or frozen preparation is no longer available", "helm": map[string]any{"stopped": true}}
 			if task.TaskKind == "vm_ssh_command" {
@@ -235,7 +240,8 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 		}
 		task = hydrated
 	}
-	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
+	task.OperationState = domaindelivery.BuildOperationState(task, time.Now().UTC())
+	return task, err
 }
 
 func (s *Service) ListReleaseBundles(ctx context.Context, principal domainidentity.Principal, filter domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
@@ -257,10 +263,10 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 		return nil, err
 	}
 	items, err := s.repo.ListExecutionTasks(ctx, filter)
-	filtered := items[:0]
+	filtered := make([]domaindelivery.ExecutionTask, 0, len(items))
 	for _, item := range items {
 		if item.TaskKind != "vm_ssh_command" {
-			filtered = append(filtered, item)
+			filtered = append(filtered, domaindelivery.PublicExecutionTask(item))
 		}
 	}
 	items = filtered
@@ -275,6 +281,8 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 	if err == nil && task.TaskKind == "vm_ssh_command" {
 		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
 	}
+	// View permission does not grant the runner's callback capability.
+	task = domaindelivery.PublicExecutionTask(task)
 	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
@@ -400,6 +408,9 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	if domaindelivery.IsPrivateRuntimeTask(task) {
 		return domaindelivery.ExecutionTask{}, apperrors.ErrAccessDenied
 	}
+	if domaindelivery.IsInitializationWrite(task) {
+		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: 首次发布结果不明，请核对原始创建回执与资源状态，禁止重放初始化", apperrors.ErrConflict)
+	}
 	if task.TaskKind == "vm_ssh_command" {
 		return task, apperrors.ErrUnsupportedOperation
 	}
@@ -408,6 +419,13 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	}
 	if !isRetryableTaskStatus(task.Status) {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: task %s cannot be retried from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
+	}
+	if validator, ok := s.payloadHydrator.(ExecutionTaskRetryValidator); ok {
+		if err := validator.ValidateExecutionTaskRetry(ctx, task); err != nil {
+			return domaindelivery.ExecutionTask{}, err
+		}
+	} else if domaindelivery.RequiresManifestAdmission(task) || strings.HasPrefix(task.TaskKind, "helm_") {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
 	}
 	now := time.Now().UTC()
 	reason := strings.TrimSpace(input.Reason)

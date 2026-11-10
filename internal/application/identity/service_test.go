@@ -936,7 +936,7 @@ func TestChangeCurrentPasswordCountsCharacters(t *testing.T) {
 	err = newTestServiceWithUserStore(repo).ChangeCurrentPassword(
 		context.Background(),
 		domainidentity.Principal{UserID: "u1"},
-		domainidentity.PasswordChange{CurrentPassword: "current-password", NewPassword: "密码密码密码密"},
+		domainidentity.PasswordChange{CurrentPassword: "current-password", NewPassword: "密码密码密码密"}, // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	)
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("ChangeCurrentPassword() error = %v, want ErrInvalidArgument", err)

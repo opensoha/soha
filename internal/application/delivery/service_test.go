@@ -3,6 +3,7 @@ package delivery
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -68,6 +69,8 @@ func waitForConcurrentReads(t *testing.T, gate *concurrentReadGate, labels ...st
 }
 
 type stubApplicationReader struct {
+	importScopeErr     error
+	importScopeID      *string
 	app                domainapp.App
 	apps               []domainapp.App
 	services           []domainapp.Service
@@ -144,6 +147,8 @@ func (s stubApplicationReader) UpdateService(_ context.Context, _ domainidentity
 }
 
 type stubCatalogReader struct {
+	importScopeErr    error
+	importScopeID     *string
 	bindings          []domaincatalog.ApplicationEnvironment
 	envs              []domaincatalog.Environment
 	getErrByBindingID map[string]error
@@ -348,15 +353,21 @@ func (s stubReleaseReader) Trigger(_ context.Context, _ domainidentity.Principal
 }
 
 type stubTargetReader struct {
-	deployments       map[string][]domainresource.DeploymentView
-	deploymentDetails map[string]domainresource.DeploymentDetailView
-	statefulSets      map[string][]domainresource.StatefulSetView
-	daemonSets        map[string][]domainresource.DaemonSetView
-	services          map[string][]domainresource.ServiceView
-	ingresses         map[string][]domainresource.IngressView
-	hpas              map[string][]domainresource.HorizontalPodAutoscalerView
-	helmReleases      map[string][]domainresource.HelmReleaseView
-	detailReadGate    *concurrentReadGate
+	importSources       map[string]domainresource.ResourceSourceSnapshot
+	importSourceErr     error
+	importManagementErr error
+	jobs                map[string][]domainresource.JobView
+	cronJobs            map[string][]domainresource.CronJobView
+	customResources     map[string][]domainresource.CustomResourceView
+	deployments         map[string][]domainresource.DeploymentView
+	deploymentDetails   map[string]domainresource.DeploymentDetailView
+	statefulSets        map[string][]domainresource.StatefulSetView
+	daemonSets          map[string][]domainresource.DaemonSetView
+	services            map[string][]domainresource.ServiceView
+	ingresses           map[string][]domainresource.IngressView
+	hpas                map[string][]domainresource.HorizontalPodAutoscalerView
+	helmReleases        map[string][]domainresource.HelmReleaseView
+	detailReadGate      *concurrentReadGate
 }
 
 func (s stubTargetReader) ListHelmReleases(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.HelmReleaseView, error) {
@@ -509,6 +520,7 @@ func TestExecutionRecordsFilterApplicationEnvironmentsOutsidePrincipalScope(t *t
 }
 
 type stubRepository struct {
+	importDestination   domaindelivery.ImportDestination
 	blueprint           domaindelivery.DeliveryBlueprint
 	bundles             []domaindelivery.ReleaseBundle
 	tasks               []domaindelivery.ExecutionTask
@@ -732,11 +744,12 @@ func (r *draftRepository) UpdateDeliveryDraft(_ context.Context, draft domaindel
 
 type planRepository struct {
 	stubRepository
-	plan        domaindelivery.DeliveryPlan
-	createInput *domaindelivery.DeliveryPlanInput
-	createCount int
-	updateCount int
-	updateErr   error
+	referenceSnapshots map[string]domaindelivery.ServiceReferencePlanImpact
+	plan               domaindelivery.DeliveryPlan
+	createInput        *domaindelivery.DeliveryPlanInput
+	createCount        int
+	updateCount        int
+	updateErr          error
 }
 
 func (r *planRepository) CreateDeliveryPlan(_ context.Context, input domaindelivery.DeliveryPlanInput, createdBy string) (domaindelivery.DeliveryPlan, error) {
@@ -755,6 +768,7 @@ func (r *planRepository) CreateDeliveryPlan(_ context.Context, input domaindeliv
 		ApplicationEnvironmentID: input.ApplicationEnvironmentID,
 		EnvironmentKey:           input.EnvironmentKey,
 		Action:                   input.Action,
+		TemplateCandidateID:      input.TemplateCandidateID,
 		TargetID:                 input.TargetID,
 		TargetSummary:            input.TargetSummary,
 		BuildSourceID:            input.BuildSourceID,
@@ -1381,7 +1395,7 @@ func TestCreateDeliveryPlanRecordsRiskWithoutTriggeringAction(t *testing.T) {
 		},
 		stubCatalogReader{
 			envs: []domaincatalog.Environment{
-				{ID: "env-prod", Key: "prod", Name: "Production", IsProduction: true, RequiresApproval: true},
+				{ID: "env-prod", Key: "prod", Name: "Production", IsProduction: true, RequiresApproval: true, Enabled: true},
 			},
 			bindings: []domaincatalog.ApplicationEnvironment{
 				{
@@ -1460,7 +1474,7 @@ func TestConfirmDeliveryPlanTriggersExistingAction(t *testing.T) {
 				BuildSources:  []domainapp.BuildSource{{ID: "source-1", Name: "Repo Dockerfile", IsDefault: true, DefaultTag: "candidate"}},
 			},
 		},
-		stubCatalogReader{
+		stubCatalogReader{envs: []domaincatalog.Environment{{ID: "env-dev", Enabled: true}},
 			bindings: []domaincatalog.ApplicationEnvironment{
 				{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev", EnvironmentKey: "dev", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}},
 			},
@@ -1474,6 +1488,7 @@ func TestConfirmDeliveryPlanTriggersExistingAction(t *testing.T) {
 		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger),
 	)
 
+	seedPlanReferenceSnapshot(t, service, repo)
 	result, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), "plan-1")
 	if err != nil {
 		t.Fatalf("ConfirmDeliveryPlan returned error: %v", err)
@@ -1518,7 +1533,7 @@ func TestConfirmedPlanReaderRequiresCurrentApprovalAndScope(t *testing.T) {
 	for _, scenario := range []string{"approved", "no approval required", "unapproved", "revoked", "draft", "scope denied"} {
 		t.Run(scenario, func(t *testing.T) {
 			repo := &planRepository{plan: domaindelivery.DeliveryPlan{ID: "plan", ApplicationID: "app-1", ApplicationEnvironmentID: "binding-1", Status: domaindelivery.DeliveryPlanStatusConfirmed, RequiresApproval: true, Impact: map[string]any{"approval": []any{map[string]any{"status": "approved"}}}}}
-			catalog := stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1"}}}
+			catalog := stubCatalogReader{envs: []domaincatalog.Environment{{ID: "env-dev", Enabled: true}}, bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev"}}}
 			switch scenario {
 			case "no approval required":
 				repo.plan.RequiresApproval = false
@@ -1534,9 +1549,14 @@ func TestConfirmedPlanReaderRequiresCurrentApprovalAndScope(t *testing.T) {
 			case "draft":
 				repo.plan.Status = domaindelivery.DeliveryPlanStatusDraft
 			case "scope denied":
-				catalog.getErrByBindingID = map[string]error{"binding-1": apperrors.ErrAccessDenied}
+				// Revoke scope after freezing the valid baseline below.
 			}
 			service := New(stubApplicationReader{app: domainapp.App{ID: "app-1"}}, catalog, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil, deliveryActionPermissions(appaccess.PermDeliveryApplicationsView))
+			seedPlanReferenceSnapshot(t, service, repo)
+			if scenario == "scope denied" {
+				catalog.getErrByBindingID = map[string]error{"binding-1": apperrors.ErrAccessDenied}
+				service.catalog = catalog
+			}
 			_, err := service.GetConfirmedDeliveryPlan(t.Context(), deliveryActionPrincipal(), "plan")
 			if scenario == "approved" || scenario == "no approval required" {
 				if err != nil {
@@ -1566,11 +1586,12 @@ func TestDeliveryPlanApprovalBlocksExecutionUntilApproved(t *testing.T) {
 	}}
 	service := New(
 		stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "Payments API", Key: "payments-api", DefaultBranch: "main", BuildSources: []domainapp.BuildSource{{ID: "source-1", IsDefault: true}}}},
-		stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-prod", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}}}},
+		stubCatalogReader{envs: []domaincatalog.Environment{{ID: "env-prod", Enabled: true}}, bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-prod", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}}}},
 		stubBuildReader{triggerCount: &buildCount}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
 		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger, appaccess.PermDeliveryApplicationEnvApprove),
 	)
 
+	seedPlanReferenceSnapshot(t, service, repo)
 	result, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), repo.plan.ID)
 	if err != nil {
 		t.Fatalf("ConfirmDeliveryPlan request approval returned error: %v", err)
@@ -1654,7 +1675,7 @@ func TestConfirmDeliveryPlanStopsWhenClaimUpdateFails(t *testing.T) {
 				BuildSources:  []domainapp.BuildSource{{ID: "source-1", Name: "Repo Dockerfile", IsDefault: true, DefaultTag: "candidate"}},
 			},
 		},
-		stubCatalogReader{
+		stubCatalogReader{envs: []domaincatalog.Environment{{ID: "env-dev", Enabled: true}},
 			bindings: []domaincatalog.ApplicationEnvironment{
 				{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev", EnvironmentKey: "dev", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}},
 			},
@@ -1668,6 +1689,7 @@ func TestConfirmDeliveryPlanStopsWhenClaimUpdateFails(t *testing.T) {
 		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger),
 	)
 
+	seedPlanReferenceSnapshot(t, service, repo)
 	if _, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), "plan-1"); err == nil {
 		t.Fatal("ConfirmDeliveryPlan returned nil error, want claim update failure")
 	}
@@ -1706,6 +1728,7 @@ func TestConfirmDeliveryPlanRestoresDraftStatusWhenTriggerFails(t *testing.T) {
 		},
 	}
 	catalogReader := stubCatalogReader{
+		envs: []domaincatalog.Environment{{ID: "env-dev", Enabled: true}},
 		bindings: []domaincatalog.ApplicationEnvironment{
 			{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev", EnvironmentKey: "dev", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}},
 		},
@@ -1722,6 +1745,7 @@ func TestConfirmDeliveryPlanRestoresDraftStatusWhenTriggerFails(t *testing.T) {
 		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger),
 	)
 
+	seedPlanReferenceSnapshot(t, failingService, repo)
 	if _, err := failingService.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), "plan-1"); !errors.Is(err, triggerErr) {
 		t.Fatalf("ConfirmDeliveryPlan error = %v, want trigger error", err)
 	}
@@ -2576,4 +2600,60 @@ func (r *draftRepository) CreateDeliveryDraftIdempotent(ctx context.Context, inp
 		r.creationKey = input.IdempotencyKey
 	}
 	return draft, err
+}
+
+func (s stubApplicationReader) AuthorizeServiceImport(_ context.Context, _ domainidentity.Principal, id string, _ domainapp.UpsertInput, _ []domainapp.ServiceInput) error {
+	if s.importScopeID != nil {
+		*s.importScopeID = id
+	}
+	return s.importScopeErr
+}
+func (s stubCatalogReader) AuthorizeImportBinding(_ context.Context, _ domainidentity.Principal, _, _, id string) error {
+	if s.importScopeID != nil {
+		*s.importScopeID = id
+	}
+	return s.importScopeErr
+}
+func (s stubRepository) ResolveImportDestination(context.Context, string, string) (domaindelivery.ImportDestination, error) {
+	return s.importDestination, nil
+}
+func (s stubTargetReader) GetImportSource(_ context.Context, _ domainidentity.Principal, clusterID, namespace, kind, name, crd string) (domainresource.ResourceSourceSnapshot, error) {
+	if s.importSourceErr != nil {
+		return domainresource.ResourceSourceSnapshot{}, s.importSourceErr
+	}
+	if source, ok := s.importSources[kind+"/"+name]; ok {
+		return source, nil
+	}
+	exists := false
+	key := clusterID + "/" + namespace
+	switch kind {
+	case "Deployment":
+		for _, row := range s.deployments[key] {
+			exists = exists || row.Name == name
+		}
+	case "StatefulSet":
+		for _, row := range s.statefulSets[key] {
+			exists = exists || row.Name == name
+		}
+	case "DaemonSet":
+		for _, row := range s.daemonSets[key] {
+			exists = exists || row.Name == name
+		}
+	}
+	if !exists {
+		return domainresource.ResourceSourceSnapshot{}, apperrors.ErrNotFound
+	}
+	return domainresource.ResourceSourceSnapshot{Resource: domainresource.ResourceRef{ClusterID: clusterID, Namespace: namespace, APIVersion: "apps/v1", Kind: kind, Name: name, UID: "uid-" + name}, SpecDigest: strings.Repeat("a", 64)}, nil
+}
+func (s stubTargetReader) AuthorizeImportManagement(context.Context, domainidentity.Principal, string, string, string) error {
+	return s.importManagementErr
+}
+func (s stubTargetReader) ListJobs(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.JobView, error) {
+	return s.jobs[clusterID+"/"+namespace], nil
+}
+func (s stubTargetReader) ListCronJobs(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.CronJobView, error) {
+	return s.cronJobs[clusterID+"/"+namespace], nil
+}
+func (s stubTargetReader) ListCRDResources(_ context.Context, _ domainidentity.Principal, clusterID, crd, namespace string) ([]domainresource.CustomResourceView, error) {
+	return s.customResources[clusterID+"/"+namespace+"/"+crd], nil
 }

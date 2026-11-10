@@ -12,6 +12,7 @@ import (
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	repodelivery "github.com/opensoha/soha/internal/repository/delivery"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
@@ -119,6 +120,14 @@ func insertDeployment(tx *gorm.DB, item domainmanifest.Deployment) error {
 }
 
 func lockDeliverySnapshot(tx *gorm.DB, snapshot domainmanifest.DeliverySnapshot) error {
+	if snapshot.RootResource != nil {
+		var targetID string
+		err := tx.Raw(`SELECT id FROM release_targets WHERE id=? AND application_environment_id=? AND config_ref=? AND executor_kind='manifest_ssa' AND workload_kind='CustomResource' AND enabled=TRUE AND cluster_id=? AND namespace=? AND workload_name=? AND metadata->>'importSource'='kubernetes' AND metadata->>'ownershipMode'='managed' AND ((metadata->>'resourceSource')::jsonb #>> '{resource,uid}')=? AND (metadata->>'rootCRGeneration')::bigint=? FOR SHARE`, snapshot.TargetID, snapshot.ApplicationEnvironmentID, snapshot.BindingID, snapshot.ClusterID, snapshot.Namespace, snapshot.RootResource.Name, snapshot.RootResource.UID, snapshot.RootResource.Generation).Row().Scan(&targetID)
+		if err != nil {
+			return fmt.Errorf("%w: root CR publication control changed", apperrors.ErrConflict)
+		}
+	}
+
 	var id string
 	err := tx.Raw(`
 		SELECT binding.id FROM manifest_bindings binding
@@ -160,9 +169,16 @@ func (r *Repository) GetDeploymentByBinding(ctx context.Context, bindingID strin
 }
 
 func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest.OperationRun, task domaindelivery.ExecutionTask) (string, bool, error) {
+	if (run.DeliveryContext != nil) != domaindelivery.RequiresManifestAdmission(task) {
+		return "", false, fmt.Errorf("%w: Manifest task provider and private context must agree", apperrors.ErrInvalidArgument)
+	}
+	admissionJSON, err := encodeDeliveryContext(run.DeliveryContext)
+	if err != nil {
+		return "", false, err
+	}
 	created := false
 	var taskID string
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if _, ok := domainworkflow.NodeExecutionFrom(ctx); ok {
 			if err := repoworkflow.LockDeliveryNode(ctx, tx, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
 				return err
@@ -171,12 +187,13 @@ func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "manifest-operation:"+run.IdempotencyKey).Error; err != nil {
 			return err
 		}
-		err := tx.Raw(`SELECT execution_task_id FROM manifest_operation_runs WHERE idempotency_key = ?`, run.IdempotencyKey).Row().Scan(&taskID)
+		var previousContext sql.NullString
+		err := tx.Raw(`SELECT execution_task_id, delivery_context::text FROM manifest_operation_runs WHERE idempotency_key = ?`, run.IdempotencyKey).Row().Scan(&taskID, &previousContext)
 		if err == nil {
 			if node, ok := domainworkflow.NodeExecutionFrom(ctx); ok && node.ResourceID("task") != taskID {
 				return fmt.Errorf("%w: manifest operation belongs to another delivery node", apperrors.ErrConflict)
 			}
-			return nil
+			return sameDeliveryContext(previousContext, run.DeliveryContext)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -192,10 +209,10 @@ func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest
 		if err := tx.Exec(`
 			INSERT INTO manifest_operation_runs (
 				id, package_id, binding_id, deployment_id, generation, action,
-				idempotency_key, execution_task_id, created_at
-			) VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)
+				idempotency_key, execution_task_id, created_at, delivery_context
+			) VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, '')::jsonb)
 		`, run.ID, run.PackageID, run.BindingID, run.DeploymentID, run.Generation,
-			run.Action, run.IdempotencyKey, taskID, run.CreatedAt).Error; err != nil {
+			run.Action, run.IdempotencyKey, taskID, run.CreatedAt, admissionJSON).Error; err != nil {
 			return err
 		}
 		created = true
@@ -208,6 +225,10 @@ func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest
 }
 
 func (r *Repository) UpdateDeploymentStatus(ctx context.Context, deploymentID string, generation int64, status domainmanifest.DeploymentStatus) error {
+	appliedTemplate, err := json.Marshal(status.AppliedTemplate)
+	if err != nil {
+		return err
+	}
 	drift, err := json.Marshal(status.Drift)
 	if err != nil {
 		return fmt.Errorf("encode manifest drift report: %w", err)
@@ -221,13 +242,13 @@ func (r *Repository) UpdateDeploymentStatus(ctx context.Context, deploymentID st
 			SET observed_generation = ?, applied_revision = NULLIF(?, 0), applied_digest = ?,
 				last_known_good_revision = NULLIF(?, 0), phase = ?, last_reconciled_at = ?,
 				last_execution_task_id = NULLIF(?, ''), drift = ?::jsonb,
-				last_error_code = ?, last_error_message = ?
+				last_error_code = ?, last_error_message = ?, applied_template = ?::jsonb
 			FROM manifest_deployments deployment
 			WHERE status.deployment_id = deployment.id AND deployment.id = ? AND deployment.generation = ?
 		`, status.ObservedGeneration, status.AppliedRevision, status.AppliedDigest,
 			status.LastKnownGoodRevision, status.Phase, status.LastReconciledAt,
 			status.LastExecutionTaskID, string(drift), status.LastErrorCode,
-			status.LastErrorMessage, deploymentID, generation)
+			status.LastErrorMessage, string(appliedTemplate), deploymentID, generation)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -314,7 +335,7 @@ func (r *Repository) ListContinuousDeployments(ctx context.Context, limit int) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ids := make([]string, 0)
 	for rows.Next() {
 		var id string
@@ -339,19 +360,29 @@ func (r *Repository) ApplyAdoptedFiles(ctx context.Context, deploymentID string,
 	if err != nil {
 		return err
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		var packageID string
+		if err := tx.Raw(`SELECT package_id FROM manifest_deployments WHERE id = ?`, deploymentID).Row().Scan(&packageID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return apperrors.ErrConflict
+			}
+			return err
+		}
+		if err := lockPackageConfiguration(tx, packageID, ""); err != nil {
+			return err
+		}
+		result := tx.Exec(`
 		UPDATE manifest_packages package
 		SET files = ?::jsonb, status = 'draft', updated_by = ?, updated_at = CURRENT_TIMESTAMP
 		FROM manifest_deployments deployment
 		WHERE deployment.package_id = package.id AND deployment.id = ? AND deployment.generation = ?
-	`, string(encoded), firstNonEmpty(actor, "system:manifest-adopt"), deploymentID, generation)
-	if result.Error != nil {
+		  AND package.id = ?
+	`, string(encoded), firstNonEmpty(actor, "system:manifest-adopt"), deploymentID, generation, packageID)
+		if result.Error == nil && result.RowsAffected == 0 {
+			return apperrors.ErrConflict
+		}
 		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return apperrors.ErrConflict
-	}
-	return nil
+	})
 }
 
 func firstNonEmpty(values ...string) string {

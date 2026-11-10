@@ -3,6 +3,9 @@ package resource
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,7 +36,7 @@ func TestAgentStreamPodLogsDelegatesToAgent(t *testing.T) {
 		Audit:       noopResourceAuditRecorder{},
 	})
 	var out bytes.Buffer
-	err := service.Workloads().StreamPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 1_000_000, 5, &out)
+	err := service.Workloads().StreamPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 1_000_000, 5, &out, "")
 	if err != nil {
 		t.Fatalf("StreamPodLogs() error = %v", err)
 	}
@@ -60,7 +63,7 @@ func TestAgentGetPodLogsCapsTailLines(t *testing.T) {
 		Authorizer:  allowAllResourceAuthorizer{},
 		Audit:       noopResourceAuditRecorder{},
 	})
-	if _, err := service.Workloads().GetPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 1_000_000, 0, false); err != nil {
+	if _, err := service.Workloads().GetPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 1_000_000, 0, false, ""); err != nil {
 		t.Fatalf("GetPodLogs() error = %v", err)
 	}
 }
@@ -103,11 +106,32 @@ func TestAgentStreamPodTerminalDelegatesToAgent(t *testing.T) {
 	})
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := service.Workloads().StreamPodTerminal(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", "/bin/sh", strings.NewReader("whoami\n"), &stdout, &stderr, nil)
+	err := service.Workloads().StreamPodTerminal(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", "/bin/sh", strings.NewReader("whoami\n"), &stdout, &stderr, nil, "")
 	if err != nil {
 		t.Fatalf("StreamPodTerminal() error = %v", err)
 	}
 	if stdout.String() != "root\n" || stderr.String() != "" {
 		t.Fatalf("stdout=%q stderr=%q, want agent terminal output", stdout.String(), stderr.String())
+	}
+}
+
+func TestAgentPodSessionRejectsMissingOrReplacementUID(t *testing.T) {
+	for _, uid := range []string{"", "replacement"} {
+		t.Run(uid, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "/detail") {
+					t.Errorf("unexpected subresource request: %s", r.URL.Path)
+					w.WriteHeader(500)
+					return
+				}
+				_, _ = fmt.Fprintf(w, `{"data":{"uid":%q}}`, uid)
+			}))
+			defer server.Close()
+			service := New(Dependencies{Agents: testAgentClients(agentinfra.NewRegistry(0)), Connections: stubConnectionResolver{connection: agentConnection(server.URL)}, Authorizer: allowAllResourceAuthorizer{}, Audit: noopResourceAuditRecorder{}})
+			err := service.Workloads().StreamPodLogs(t.Context(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "test", "api-0", "main", 10, 0, &bytes.Buffer{}, "original")
+			if !errors.Is(err, apperrors.ErrConflict) {
+				t.Fatalf("error = %v", err)
+			}
+		})
 	}
 }

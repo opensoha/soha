@@ -1110,7 +1110,7 @@ func TestProviderFromInputValidatesReverseProxyConfiguration(t *testing.T) {
 func TestServiceProviderResponsesRedactSecretReferences(t *testing.T) {
 	ctx := context.Background()
 	repo := newMemoryRepo(t)
-	repo.provider.SecretRefs = map[string]any{
+	repo.provider.SecretRefs = map[string]any{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		"CLIENT_SECRET": "soha://secrets/oidc-client",
 	}
 	service := New(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, "test-encryption-key-32-bytes-long")
@@ -1148,7 +1148,7 @@ func TestProviderFromInputValidatesSecretReferences(t *testing.T) {
 		Name:          "OIDC",
 		Type:          domainprovider.ProviderTypeOIDC,
 		Status:        domainprovider.ProviderStatusEnabled,
-		SecretRefs:    map[string]any{"clientSecret": "plain-text-secret"},
+		SecretRefs:    map[string]any{"clientSecret": "plain-text-secret"}, // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	}
 
 	_, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now())

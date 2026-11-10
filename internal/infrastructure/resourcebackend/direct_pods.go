@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/yaml"
 )
@@ -107,9 +108,12 @@ func (d *Direct) deletePod(ctx context.Context, clusterID, namespace, name, expe
 	return pods.Delete(queryCtx, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &item.UID, ResourceVersion: &item.ResourceVersion}})
 }
 
-func (d *Direct) GetPodLogs(ctx context.Context, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (d *Direct) GetPodLogs(ctx context.Context, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
+		return domainresource.PodLogsView{}, err
+	}
+	if err := checkPodUID(ctx, bundle.Typed.CoreV1().Pods(namespace), name, expectedUID); err != nil {
 		return domainresource.PodLogsView{}, err
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
@@ -137,9 +141,12 @@ func (d *Direct) GetPodLogs(ctx context.Context, clusterID, namespace, name, con
 	}, nil
 }
 
-func (d *Direct) StreamPodLogs(ctx context.Context, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
+func (d *Direct) StreamPodLogs(ctx context.Context, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer, expectedUID string) error {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
+		return err
+	}
+	if err := checkPodUID(ctx, bundle.Typed.CoreV1().Pods(namespace), name, expectedUID); err != nil {
 		return err
 	}
 	options := &corev1.PodLogOptions{Container: container, Follow: true}
@@ -191,9 +198,12 @@ func (d *Direct) ExecPod(ctx context.Context, clusterID, namespace, name, contai
 	}, nil
 }
 
-func (d *Direct) StreamPodTerminal(ctx context.Context, clusterID, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue) error {
+func (d *Direct) StreamPodTerminal(ctx context.Context, clusterID, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue, expectedUID string) error {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
+		return err
+	}
+	if err := checkPodUID(ctx, bundle.Typed.CoreV1().Pods(namespace), name, expectedUID); err != nil {
 		return err
 	}
 	request := bundle.Typed.CoreV1().RESTClient().Post().Resource("pods").Name(name).Namespace(namespace).SubResource("exec")
@@ -746,3 +756,20 @@ func sortedSet(items map[string]struct{}) []string {
 }
 
 var _ appresource.DirectPods = (*Direct)(nil)
+
+// The Kubernetes log/exec subresources have no atomic UID precondition.
+func checkPodUID(ctx context.Context, pods typedcorev1.PodInterface, name, expectedUID string) error {
+	if expectedUID == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	pod, err := pods.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if string(pod.UID) != expectedUID {
+		return fmt.Errorf("%w: Pod identity changed; open the current Pod", apperrors.ErrConflict)
+	}
+	return nil
+}

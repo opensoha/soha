@@ -73,6 +73,7 @@ type SessionMetadata struct {
 	// RequestContext is transient and must never become a session preference.
 	RequestContext   *ContextSelection         `json:"-"`
 	ModelPreferences WorkbenchModelPreferences `json:"modelPreferences,omitempty"`
+	RuntimeProfileID string                    `json:"runtimeProfileId,omitempty"`
 	Mode             string                    `json:"mode,omitempty"`
 	Status           string                    `json:"status,omitempty"`
 	AgentProviderID  string                    `json:"agentProviderId,omitempty"`

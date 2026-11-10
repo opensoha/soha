@@ -3,6 +3,7 @@ package resourcebackend
 import (
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strings"
 
@@ -92,20 +93,9 @@ func (d *Direct) BuildWorkloadSnapshot(sourceYAML string, request domainresource
 	template.Spec.RestartPolicy = corev1.RestartPolicy(request.RestartPolicy)
 	cleanPodTemplateMetadata(&template.ObjectMeta)
 
-	jobSpec := batchv1.JobSpec{Template: *template}
-	if request.Parallelism > 0 {
-		value := int32(request.Parallelism)
-		jobSpec.Parallelism = &value
-	}
-	if request.Completions > 0 {
-		value := int32(request.Completions)
-		jobSpec.Completions = &value
-	}
-	backoffLimit := int32(request.BackoffLimit)
-	jobSpec.BackoffLimit = &backoffLimit
-	if request.ActiveDeadlineSeconds > 0 {
-		value := int64(request.ActiveDeadlineSeconds)
-		jobSpec.ActiveDeadlineSeconds = &value
+	jobSpec, err := snapshotJobSpec(*template, request)
+	if err != nil {
+		return domainresource.WorkloadSnapshot{}, err
 	}
 
 	metadata := metav1.ObjectMeta{
@@ -154,6 +144,40 @@ func (d *Direct) BuildWorkloadSnapshot(sourceYAML string, request domainresource
 		Content: string(content), SourceUID: string(uid), SelectedContainer: selected,
 		Containers: containers, Warnings: warnings,
 	}, nil
+}
+
+func snapshotJobSpec(template corev1.PodTemplateSpec, request domainresource.WorkloadSnapshotRequest) (batchv1.JobSpec, error) {
+	parallelism, err := snapshotJobCounter(request.Parallelism)
+	if err != nil {
+		return batchv1.JobSpec{}, err
+	}
+	completions, err := snapshotJobCounter(request.Completions)
+	if err != nil {
+		return batchv1.JobSpec{}, err
+	}
+	backoffLimit, err := snapshotJobCounter(request.BackoffLimit)
+	if err != nil {
+		return batchv1.JobSpec{}, err
+	}
+	spec := batchv1.JobSpec{Template: template, BackoffLimit: &backoffLimit}
+	if parallelism > 0 {
+		spec.Parallelism = &parallelism
+	}
+	if completions > 0 {
+		spec.Completions = &completions
+	}
+	if request.ActiveDeadlineSeconds > 0 {
+		value := int64(request.ActiveDeadlineSeconds)
+		spec.ActiveDeadlineSeconds = &value
+	}
+	return spec, nil
+}
+
+func snapshotJobCounter(value int) (int32, error) {
+	if value < 0 || value > math.MaxInt32 {
+		return 0, fmt.Errorf("%w: job counters must fit a nonnegative Kubernetes int32", apperrors.ErrInvalidArgument)
+	}
+	return int32(value), nil
 }
 
 func projectWorkloadSnapshotTemplate(source *corev1.PodTemplateSpec, container corev1.Container, inheritance []domainresource.WorkloadSnapshotInheritance) *corev1.PodTemplateSpec {

@@ -102,7 +102,7 @@ type CatalogService interface {
 type PodResourceReader interface {
 	ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error)
 	GetPodDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PodDetailView, error)
-	GetPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
+	GetPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, bool, string) (domainresource.PodLogsView, error)
 }
 
 type DeploymentResourceReader interface {

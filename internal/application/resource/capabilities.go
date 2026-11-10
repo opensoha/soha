@@ -127,6 +127,7 @@ type PortForwards struct {
 // Runtime composes the capabilities used by workflow, delivery, Copilot, and
 // AI gateway runtime inspection without exposing the complete root service.
 type Runtime struct {
+	generic         *GenericResources
 	customResources *CustomResources
 	*Workloads
 	*Configuration
@@ -286,6 +287,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 	network.customResources = service.customResources
 	genericResources.customResources = service.customResources
 	service.runtime = &Runtime{
+		generic:         service.genericResources,
 		customResources: service.customResources,
 		Workloads:       workloads, Configuration: service.configuration, Network: network, Storage: service.storage,
 		Helm: service.helm, Inventory: inventory, Events: service.events,

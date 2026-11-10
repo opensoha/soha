@@ -177,10 +177,16 @@ func TestHelmClaimConfidentialInputsRequireClusterCredentials(t *testing.T) {
 		providers, want []string
 		duplicate       bool
 	}{
-		{name: "general credential", token: "runner-token", providers: []string{"helm_direct", "helm_agent.one", "ci_agent_runner"}, want: []string{"ci_agent_runner"}},
-		{name: "cluster credential", token: "cluster-token", providers: []string{"helm_direct", "helm_agent.one", "helm_agent.two", "manifest_agent.one", "manifest_agent_v3.one", "manifest_agent_v3.two", "ci_agent_runner"}, want: []string{"helm_agent.one", "manifest_agent.one", "manifest_agent_v3.one"}},
+		{name: "general credential", token: "runner-token", providers: []string{"helm_direct", "helm_agent.one", "helm_initialize_v1.one", "manifest_initialize_v1.one", "ci_agent_runner"}, want: []string{"ci_agent_runner"}},
+		{name: "cluster credential", token: "cluster-token", providers: []string{"helm_direct", "helm_agent.one", "helm_agent.two", "manifest_agent.one", "manifest_agent_v3.one", "manifest_agent_v3.two", "manifest_root_cr_v1.one", "manifest_root_cr_v1.two", "helm_initialize_v1.one", "helm_initialize_v1.two", "manifest_initialize_v1.one", "manifest_initialize_v1.two", "ci_agent_runner"}, want: []string{"helm_agent.one", "manifest_agent.one", "manifest_agent_v3.one", "manifest_root_cr_v1.one", "helm_initialize_v1.one", "manifest_initialize_v1.one"}},
+		{name: "guarded general credential", token: "runner-token", providers: []string{"manifest_delivery_v1.manifest_agent_v3.one", "manifest_delivery_v1.manifest_root_cr_v1.one", "manifest_delivery_v1.manifest_initialize_v1.one"}},
+		{name: "guarded cluster credential", token: "cluster-token", providers: []string{"manifest_delivery_v1.manifest_agent_v3.one", "manifest_delivery_v1.manifest_root_cr_v1.one", "manifest_delivery_v1.manifest_initialize_v1.one", "manifest_delivery_v1.manifest_agent_v3.two"}, want: []string{"manifest_delivery_v1.manifest_agent_v3.one", "manifest_delivery_v1.manifest_root_cr_v1.one", "manifest_delivery_v1.manifest_initialize_v1.one"}},
+		{name: "guarded direct forbidden", token: "cluster-token", providers: []string{"manifest_delivery_v1.manifest_direct", "manifest_delivery_v1.manifest_direct_initialize_v1"}},
+		{name: "guarded unknown forbidden", token: "runner-token", providers: []string{"manifest_delivery_v1.other", "manifest_delivery_v1.manifest_delivery_v1.manifest_agent_v3.one"}},
 		{name: "wrong credential", token: "wrong", providers: []string{"helm_agent.one"}},
 		{name: "direct forbidden", token: "runner-token", providers: []string{"helm_direct"}},
+		{name: "initialization direct forbidden for general runner", token: "runner-token", providers: []string{"manifest_direct_initialize_v1", "helm_direct_initialize_v1"}},
+		{name: "initialization direct forbidden for cluster runner", token: "cluster-token", providers: []string{"manifest_direct_initialize_v1", "helm_direct_initialize_v1"}},
 		{name: "duplicate authorization", token: "cluster-token", providers: []string{"helm_agent.one"}, duplicate: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {

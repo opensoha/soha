@@ -30,6 +30,8 @@ const (
 )
 
 type Config struct {
+	DSHRuntime         DSHRuntimeConfig         `mapstructure:"dsh_runtime"`
+	Hindsight          HindsightConfig          `mapstructure:"hindsight"`
 	App                AppConfig                `mapstructure:"app"`
 	HTTP               HTTPConfig               `mapstructure:"http"`
 	Logger             LoggerConfig             `mapstructure:"logger"`
@@ -470,6 +472,8 @@ func (c Config) Validate() error {
 
 func (c Config) staticProblems() []string {
 	problems := make([]string, 0)
+	problems = append(problems, c.DSHRuntime.problems()...)
+	problems = append(problems, c.Hindsight.problems()...)
 	var logLevel zapcore.Level
 	if err := logLevel.UnmarshalText([]byte(strings.ToLower(strings.TrimSpace(c.Logger.Level)))); err != nil {
 		problems = append(problems, fmt.Sprintf("logger.level %q is invalid", c.Logger.Level))
@@ -789,6 +793,16 @@ var configDefaults = []struct {
 	key   string
 	value any
 }{
+	{"dsh_runtime.enabled", false},
+	{"dsh_runtime.base_url", ""},
+	{"dsh_runtime.service_token_file", ""},
+	{"dsh_runtime.timeout", "30s"},
+	{"dsh_runtime.allow_insecure_http", false},
+	{"hindsight.enabled", false},
+	{"hindsight.base_url", ""},
+	{"hindsight.token_file", ""},
+	{"hindsight.instance_namespace", ""},
+	{"hindsight.timeout", "15s"},
 	{"app.name", "soha"},
 	{"http.addr", ":8080"},
 	{"http.access_url", ""},

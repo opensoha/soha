@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"time"
 
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
@@ -53,16 +54,17 @@ type DeploymentTemplateHealth struct {
 }
 
 type DeploymentTemplateSpec struct {
-	Key                  string                   `json:"key"`
-	Name                 string                   `json:"name"`
-	Description          string                   `json:"description,omitempty"`
-	Source               DeploymentTemplateSource `json:"source"`
-	ParameterSchema      ParameterSchema          `json:"parameterSchema"`
-	Defaults             map[string]any           `json:"defaults"`
-	EnvironmentOverrides []string                 `json:"environmentOverrides,omitempty"`
-	Artifacts            map[string]string        `json:"artifacts,omitempty"`
-	Health               DeploymentTemplateHealth `json:"health"`
-	Enabled              bool                     `json:"enabled"`
+	MigrationPolicy      *sohaapi.TemplateMigrationPolicy `json:"migrationPolicy,omitempty"`
+	Key                  string                           `json:"key"`
+	Name                 string                           `json:"name"`
+	Description          string                           `json:"description,omitempty"`
+	Source               DeploymentTemplateSource         `json:"source"`
+	ParameterSchema      ParameterSchema                  `json:"parameterSchema"`
+	Defaults             map[string]any                   `json:"defaults"`
+	EnvironmentOverrides []string                         `json:"environmentOverrides,omitempty"`
+	Artifacts            map[string]string                `json:"artifacts,omitempty"`
+	Health               DeploymentTemplateHealth         `json:"health"`
+	Enabled              bool                             `json:"enabled"`
 }
 
 type DeploymentTemplateInput struct {

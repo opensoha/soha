@@ -243,7 +243,7 @@ func (*stubDirectPods) GetPodDetail(context.Context, string, string, string) (do
 	return domainresource.PodDetailView{}, nil
 }
 
-func (*stubDirectPods) GetPodLogs(context.Context, string, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error) {
+func (*stubDirectPods) GetPodLogs(context.Context, string, string, string, string, int64, int64, bool, string) (domainresource.PodLogsView, error) {
 	return domainresource.PodLogsView{}, nil
 }
 
@@ -255,7 +255,7 @@ func (*stubDirectPods) DeletePod(context.Context, string, string, string) error 
 	return nil
 }
 
-func (*stubDirectPods) StreamPodLogs(context.Context, string, string, string, string, int64, int64, io.Writer) error {
+func (*stubDirectPods) StreamPodLogs(context.Context, string, string, string, string, int64, int64, io.Writer, string) error {
 	return nil
 }
 
@@ -263,7 +263,7 @@ func (*stubDirectPods) ExecPod(context.Context, string, string, string, string, 
 	return domainresource.PodExecView{}, nil
 }
 
-func (*stubDirectPods) StreamPodTerminal(context.Context, string, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue) error {
+func (*stubDirectPods) StreamPodTerminal(context.Context, string, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue, string) error {
 	return nil
 }
 

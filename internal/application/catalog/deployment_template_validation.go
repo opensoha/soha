@@ -23,6 +23,9 @@ var (
 )
 
 func normalizeDeploymentTemplate(input *domaincatalog.DeploymentTemplateSpec) error {
+	if err := domaincatalog.ValidateMigrationPolicy(input.MigrationPolicy); err != nil {
+		return err
+	}
 	input.Key, input.Name = strings.TrimSpace(input.Key), strings.TrimSpace(input.Name)
 	if !deploymentTemplateKeyPattern.MatchString(input.Key) || len(input.Key) > 128 || input.Name == "" || len(input.Name) > 200 || len(input.Description) > 4096 {
 		return fmt.Errorf("%w: invalid template key, name or description", apperrors.ErrInvalidArgument)

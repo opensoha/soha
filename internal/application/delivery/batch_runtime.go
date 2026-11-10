@@ -41,7 +41,7 @@ func (s *Service) ExecuteDeliveryStage(ctx context.Context, principal domainiden
 	default:
 		err = fmt.Errorf("%w: unsupported delivery stage", apperrors.ErrInvalidArgument)
 	}
-	if errors.Is(err, apperrors.ErrInvalidArgument) || errors.Is(err, apperrors.ErrAccessDenied) || errors.Is(err, apperrors.ErrNotFound) {
+	if errors.Is(err, apperrors.ErrInvalidArgument) || errors.Is(err, apperrors.ErrAccessDenied) || errors.Is(err, apperrors.ErrNotFound) || snapshot.Target.TemplateCandidateID != "" && errors.Is(err, apperrors.ErrConflict) {
 		node.Status, node.Summary = "failed", err.Error()
 		return node, nil
 	}

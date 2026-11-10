@@ -133,12 +133,12 @@ func TestPrivateDurableStorageWithPostgres(t *testing.T) {
 		privateDurableStorageWithPostgresPhase1(t, &store, &ctx, &keys, &workflows, &now, &owner, &err, &workflowRun)
 	})
 	t.Run("workflow_revision_cas_retains_sealed_state", func(t *testing.T) { privateDurableStorageWithPostgresPhase2(t, &store, &ctx, &workflows, &workflowRun) })
-	run := domain.AgentRun{ID: "agent:" + uuid.NewString(), ProviderID: "internal", ProviderKind: "native", CapabilityID: "general", SessionID: session.ID, CreatedBy: owner, Status: "queued", Input: map[string]any{}, Output: map[string]any{}, CallbackToken: uuid.NewString(), TimeoutSeconds: 600, QueuedAt: now, CreatedAt: now, UpdatedAt: now}
+	run := domain.AgentRun{ID: "agent:" + uuid.NewString(), ProviderID: "dsh", ProviderKind: "dsh", CapabilityID: "general", SessionID: session.ID, CreatedBy: owner, Status: "queued", Input: map[string]any{"_sohaExecutionOwner": "dsh-core"}, Output: map[string]any{}, CallbackToken: uuid.NewString(), TimeoutSeconds: 600, QueuedAt: now, CreatedAt: now, UpdatedAt: now}
 	_, err = repo.CreateNativeRun(ctx, run, domain.Message{ID: run.ID + ":request", SessionID: session.ID, Role: "user", Content: "Synthetic private test", Metadata: map[string]any{}, CreatedAt: now}, "original-native", "request-hash")
 	if err != nil {
 		t.Fatal(err)
 	}
-	lease, err := repo.ClaimNativeRun(ctx, "private-test-worker")
+	lease, err := repo.ClaimDSHRun(ctx, "dsh-core:private-test-worker")
 	if err != nil || lease.Run.ID != run.ID {
 		t.Fatal("native claim failed", err)
 	}
@@ -232,7 +232,7 @@ func privateDurableStorageWithPostgresPhase4(t *testing.T, sharedStore **db.Stor
 	if err != nil {
 		t.Fatal(err)
 	}
-	copyLease, err := (*sharedRepo).ClaimNativeRun((*sharedCtx), "projection-worker")
+	copyLease, err := (*sharedRepo).ClaimDSHRun((*sharedCtx), "dsh-core:projection-worker")
 	if err != nil || copyLease.Run.ID != copyRun.ID {
 		t.Fatal("projection claim failed", err)
 	}

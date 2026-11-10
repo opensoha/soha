@@ -34,10 +34,12 @@ const (
 )
 
 type Dependencies struct {
+	DSHRuntime                 *apiHandlers.DSHRuntimeHandler
 	RadiusDeployment           *radiushandler.Handler
 	RadiusExecutor             *radiushandler.ExecutorHandler
 	OutpostLifecycle           *outpostruntimehandler.Handler
 	CLIAuth                    *apiHandlers.CLIAuthHandler
+	TemplateUpdates            *apiHandlers.TemplateUpdateHandler
 	ManagedContentDestinations *apiHandlers.ManagedContentDestinationsHandler
 	ManagedContentTransfers    *apiHandlers.ManagedContentTransfersHandler
 	ManagedContentWorkflow     *apiHandlers.ManagedContentWorkflowHandler

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/opensoha/soha/internal/platform/dbtx"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -116,15 +117,22 @@ func (r *Repository) GetOrCreateMainSession(ctx context.Context, session domainc
 }
 
 func (r *Repository) UpdateSession(ctx context.Context, createdBy, sessionID string, session domaincopilot.Session) (domaincopilot.Session, error) {
+	// The selection is owned by SelectSessionRuntimeProfile, including when the caller holds stale metadata.
+	if _, present := session.Metadata["runtimeProfileId"]; present {
+		session.Metadata = maps.Clone(session.Metadata)
+		delete(session.Metadata, "runtimeProfileId")
+	}
 	metadata, err := json.Marshal(session.Metadata)
 	if err != nil {
 		return domaincopilot.Session{}, fmt.Errorf("marshal ai session metadata: %w", err)
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE ai_sessions
-		SET title = ?, metadata = ?, updated_at = ?
+		SET title = ?, metadata = CASE WHEN metadata::jsonb->'runtimeProfileId' IS NULL THEN ?::json
+			ELSE jsonb_set(COALESCE(NULLIF(?::jsonb, 'null'::jsonb), '{}'::jsonb), '{runtimeProfileId}', metadata::jsonb->'runtimeProfileId')::json END,
+		updated_at = ?
 		WHERE created_by = ? AND id = ? AND deleted_at IS NULL
-	`, session.Title, string(metadata), session.UpdatedAt, createdBy, sessionID)
+	`, session.Title, string(metadata), string(metadata), session.UpdatedAt, createdBy, sessionID)
 	if result.Error != nil {
 		return domaincopilot.Session{}, fmt.Errorf("update ai session: %w", result.Error)
 	}
@@ -727,7 +735,7 @@ func (r *Repository) ListAgentRuns(ctx context.Context, filter domaincopilot.Age
 		args = append(args, value)
 	}
 	if filter.NativeRequestID != "" {
-		clauses = append(clauses, "native_request_id = ? AND provider_kind = 'native'")
+		clauses = append(clauses, "native_request_id = ? AND provider_kind IN ('native','dsh')")
 		args = append(args, filter.NativeRequestID)
 	}
 	if filter.PersonalSessionsOnly {
@@ -905,7 +913,7 @@ func (r *Repository) ClaimAgentRun(ctx context.Context, input domaincopilot.Agen
 	now := time.Now().UTC()
 	var claimed domaincopilot.AgentRun
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		clauses := []string{"status = ?", "provider_kind <> 'native'"}
+		clauses := []string{"status = ?", "provider_kind NOT IN ('native','dsh')"}
 		args := []any{domaincopilot.AgentRunStatusQueued}
 		if values := compactStringValues(input.ProviderIDs); len(values) > 0 {
 			clauses = append(clauses, fmt.Sprintf("provider_id IN (%s)", placeholders(len(values))))
@@ -970,6 +978,9 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 }
 
 func (r *Repository) updateAgentRunCallback(ctx context.Context, current domaincopilot.AgentRun, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	if current.ProviderKind == "dsh" || agentRunExecutionReadOnly(current) {
+		return domaincopilot.AgentRun{}, fmt.Errorf("%w: run requires Core-owned execution or is read-only", apperrors.ErrAccessDenied)
+	}
 	input = domaincopilot.SanitizeAgentRunCallbackInput(input)
 	if strings.TrimSpace(current.CallbackToken) == "" || strings.TrimSpace(current.CallbackToken) != strings.TrimSpace(input.CallbackToken) {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: invalid ai agent callback token", apperrors.ErrAccessDenied)
@@ -1711,11 +1722,13 @@ func scanRootCauseRunRow(row *sql.Row, runID string) (domaincopilot.RootCauseRun
 	return scanRootCause(row, runID)
 }
 
+const agentRunColumns = `id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,
+			tool_executions, analysis_artifacts, callback_token, secret_refs, secret_principal, secret_target, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,
+			queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at`
+
 func agentRunSelect() string {
 	return `
-		SELECT id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,
-			tool_executions, analysis_artifacts, callback_token, secret_refs, secret_principal, secret_target, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,
-			queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at
+		SELECT ` + agentRunColumns + `
 		FROM ai_agent_runs
 	`
 }
@@ -1781,7 +1794,7 @@ func scanAgentRun(rows *sql.Rows) (domaincopilot.AgentRun, error) {
 	return domaincopilot.NativeRunProjection(item), nil
 }
 
-func scanAgentRunRow(row *sql.Row, runID string) (domaincopilot.AgentRun, error) {
+func scanAgentRunRow(row *sql.Row, runID string, extra ...any) (domaincopilot.AgentRun, error) {
 	var item domaincopilot.AgentRun
 	var skillIDs []byte
 	var sessionID sql.NullString
@@ -1803,7 +1816,7 @@ func scanAgentRunRow(row *sql.Row, runID string) (domaincopilot.AgentRun, error)
 	var startedAt sql.NullTime
 	var lastHeartbeatAt sql.NullTime
 	var completedAt sql.NullTime
-	if err := row.Scan(
+	columns := []any{
 		&item.ID,
 		&item.ProviderID,
 		&item.ProviderKind,
@@ -1835,7 +1848,8 @@ func scanAgentRunRow(row *sql.Row, runID string) (domaincopilot.AgentRun, error)
 		&completedAt,
 		&item.CreatedAt,
 		&item.UpdatedAt,
-	); err != nil {
+	}
+	if err := row.Scan(append(columns, extra...)...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaincopilot.AgentRun{}, copilotNotFound("ai agent run", runID)
 		}

@@ -99,7 +99,7 @@ func (w *Workloads) DeletePodWithExpectedUID(ctx context.Context, principal doma
 	return nil
 }
 
-func (w *Workloads) GetPodLogs(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (w *Workloads) GetPodLogs(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
 	s := w
 	tailLines = min(tailLines, podLogMaxTailLines)
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionLogs)
@@ -111,7 +111,7 @@ func (w *Workloads) GetPodLogs(ctx context.Context, principal domainidentity.Pri
 	if err != nil {
 		return domainresource.PodLogsView{}, err
 	}
-	item, err := route.GetPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, previous)
+	item, err := route.GetPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, previous, expectedUID)
 	if err != nil {
 		return domainresource.PodLogsView{}, route.RuntimeError(err)
 	}
@@ -119,7 +119,7 @@ func (w *Workloads) GetPodLogs(ctx context.Context, principal domainidentity.Pri
 	return item, nil
 }
 
-func (w *Workloads) StreamPodLogs(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
+func (w *Workloads) StreamPodLogs(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer, expectedUID string) error {
 	s := w
 	tailLines = min(tailLines, podLogMaxTailLines)
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionLogs)
@@ -132,7 +132,7 @@ func (w *Workloads) StreamPodLogs(ctx context.Context, principal domainidentity.
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionLogs), "failure", err.Error())
 		return err
 	}
-	if err := route.StreamPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, stdout); err != nil {
+	if err := route.StreamPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, stdout, expectedUID); err != nil {
 		_ = s.recordAudit(ctx, principal, route.AuditClusterID(), namespace, "Pod", name, string(domainaccess.ActionLogs), "failure", err.Error())
 		return route.RuntimeError(err)
 	}
@@ -171,7 +171,7 @@ func (w *Workloads) ExecPod(ctx context.Context, principal domainidentity.Princi
 	return item, nil
 }
 
-func (w *Workloads) StreamPodTerminal(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue) error {
+func (w *Workloads) StreamPodTerminal(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue, expectedUID string) error {
 	s := w
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionExec)
 	if err != nil {
@@ -182,7 +182,7 @@ func (w *Workloads) StreamPodTerminal(ctx context.Context, principal domainident
 	route, routeErr := s.routePods(connection, clusterID)
 	if routeErr != nil {
 		err = routeErr
-	} else if err = route.StreamPodTerminal(ctx, namespace, name, container, shell, stdin, stdout, stderr, sizeQueue); err != nil {
+	} else if err = route.StreamPodTerminal(ctx, namespace, name, container, shell, stdin, stdout, stderr, sizeQueue, expectedUID); err != nil {
 		err = route.RuntimeError(err)
 	}
 

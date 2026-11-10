@@ -123,6 +123,9 @@ jobs:
           sh deploy/network-test/generate-eap-test-pki_test.sh
           sh deploy/network-test/eapol-test_test.sh
           docker compose -f deploy/docker-compose.yaml --profile network-access --profile network-test config --quiet
+      - name: Validate optional runtime Compose profiles
+        working-directory: soha
+        run: docker compose -f deploy/dsh-hindsight/compose.yaml --profile dsh --profile hindsight config --quiet
       - name: Docker build
         working-directory: soha
         run: |
@@ -140,5 +143,6 @@ jobs:
           test -x /app/soha &&
           test -x /app/network-control &&
           test -x /app/ingest &&
+          test -x /app/runtime-upgrade &&
           mkdir -p "$SOHA_PLUGINS_COMPANION_STORAGE_DIR" &&
           touch "$SOHA_PLUGINS_COMPANION_STORAGE_DIR/.writable"'

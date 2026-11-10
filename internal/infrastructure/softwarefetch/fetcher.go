@@ -68,12 +68,12 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (appsoftware.RemoteF
 		return appsoftware.RemoteFile{}, unavailableURL()
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		response.Body.Close()
+		_ = response.Body.Close()
 		cancel()
 		return appsoftware.RemoteFile{}, unavailableURL()
 	}
 	if response.ContentLength > f.maxBytes {
-		response.Body.Close()
+		_ = response.Body.Close()
 		cancel()
 		return appsoftware.RemoteFile{}, fmt.Errorf("%w: installer exceeds the upload limit", apperrors.ErrInvalidArgument)
 	}

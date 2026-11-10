@@ -45,11 +45,6 @@ func newRadiusDeploymentServices(cfg config.Config, infra *infrastructure, p *ap
 		return nil, err
 	}
 	e.AddExecutionTaskSink(s)
-	ids := []string{}
-	for _, c := range creds {
-		ids = append(ids, c.ExecutorID)
-	}
-	e.StartRadiusDeployment(infra.lifecycleCtx, ids)
 	return &radiusDeploymentServices{s, x}, nil
 }
 func radiusExecutorCredentials(cfg config.Config) ([]app.ExecutorCredential, error) {

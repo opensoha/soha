@@ -22,6 +22,7 @@ func (testRoleReader) ListRolePermissions(context.Context) (map[string][]string,
 	return map[string][]string{
 		"editor": {appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationsUpdate},
 		"admin": {
+			appaccess.PermPlatformConfigurationSecretDataView,
 			appaccess.PermDeliveryApplicationsView,
 			appaccess.PermDeliveryApplicationsUpdate,
 			appaccess.PermDeliveryApplicationsDelete,

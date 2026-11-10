@@ -1,0 +1,14 @@
+Waiting for another local verification to finish
+test_active_upstream_discovery_without_credentials_or_inference (test_gateway_preflight.PreflightTests.test_active_upstream_discovery_without_credentials_or_inference) ... ok
+test_embedding_only_never_repeats_chat (test_gateway_preflight.PreflightTests.test_embedding_only_never_repeats_chat) ... ok
+test_inventory_has_no_mutation_or_relay (test_gateway_preflight.PreflightTests.test_inventory_has_no_mutation_or_relay) ... ok
+test_lost_create_is_reconciled_without_replay (test_gateway_preflight.PreflightTests.test_lost_create_is_reconciled_without_replay) ... ok
+test_missing_embedding_route_creates_nothing (test_gateway_preflight.PreflightTests.test_missing_embedding_route_creates_nothing) ... ok
+test_nonlocal_profiles_rejected (test_gateway_preflight.PreflightTests.test_nonlocal_profiles_rejected) ... ok
+test_success_and_relay_failure_both_revoke (test_gateway_preflight.PreflightTests.test_success_and_relay_failure_both_revoke) ... ok
+test_unknown_create_without_observed_token_requires_followup (test_gateway_preflight.PreflightTests.test_unknown_create_without_observed_token_requires_followup) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.001s
+
+OK

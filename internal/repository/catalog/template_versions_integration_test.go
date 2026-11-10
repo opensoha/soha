@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
@@ -18,6 +19,7 @@ import (
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	apprepo "github.com/opensoha/soha/internal/repository/application"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 )
 
@@ -28,10 +30,10 @@ func TestTemplateVersionsWithPostgres(t *testing.T) {
 	}
 	port, err := strconv.Atoi(portText)
 	requireTemplateNoError(t, err)
-	store, err := dbstore.New(config.DatabaseConfig{
+	store, err := dbstore.New(testpostgres.Configure(t, config.DatabaseConfig{
 		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable",
 		MaxOpenConns: 6, MaxIdleConns: 4, ConnMaxLifetime: time.Minute,
-	}, zap.NewNop())
+	}), zap.NewNop())
 	requireTemplateNoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -39,8 +41,10 @@ func TestTemplateVersionsWithPostgres(t *testing.T) {
 	requireTemplateNoError(t, store.MigrateFromFile(ctx, filepath.Join("..", "..", "..", "migrations", "postgres")))
 	repo := New(store.DB())
 	t.Run("immutable-build-and-concurrent-publish", func(t *testing.T) { verifyBuildTemplateVersions(t, ctx, repo) })
+	t.Run("migration-declarations-preserve-legacy-writers", func(t *testing.T) { verifyMigrationDeclarations(t, ctx, repo) })
 	t.Run("deployment-template-and-service-cas", func(t *testing.T) { verifyDeploymentTemplateVersions(t, ctx, repo) })
 	t.Run("binding-keeps-published-workflow", func(t *testing.T) { verifyWorkflowTemplateBinding(t, ctx, repo) })
+	t.Run("relation-rules-persistence-and-cas", func(t *testing.T) { verifyRelationRulesPersistence(t, ctx, repo) })
 	t.Run("service-deployment-configuration", func(t *testing.T) { verifyServiceDeploymentConfiguration(t, ctx, repo) })
 	t.Run("docker-target-without-cluster", func(t *testing.T) { verifyDockerTargetPersistence(t, ctx, repo) })
 	t.Run("workflow-catalog-legacy-build-sources", func(t *testing.T) { verifyWorkflowCatalogLegacySources(t, ctx, repo) })
@@ -49,12 +53,90 @@ func TestTemplateVersionsWithPostgres(t *testing.T) {
 	t.Run("migrates-existing-templates-and-bindings", func(t *testing.T) { verifyLegacyTemplateMigration(t, ctx, store, port) })
 }
 
+func verifyMigrationDeclarations(t *testing.T, ctx context.Context, repo *Repository) {
+	t.Helper()
+	policy := &sohaapi.TemplateMigrationPolicy{Sequential: true, Irreversible: true, Guide: "备份后逐版迁移；只允许前向恢复"}
+	buildInput := domaincatalog.BuildTemplateInput{Key: uuid.NewString(), Name: "Migration build", Enabled: true, BuildCommands: []string{"echo build"}, MigrationPolicy: policy}
+	build, err := repo.CreateBuildTemplate(ctx, buildInput)
+	requireTemplateNoError(t, err)
+	buildInput.ExpectedRevision, buildInput.MigrationPolicy = &build.Revision, nil
+	nextBuild, err := repo.UpdateBuildTemplate(ctx, build.ID, buildInput)
+	requireTemplateNoError(t, err)
+	oldBuild, err := repo.GetBuildTemplateVersion(ctx, build.ID, 1)
+	requireTemplateNoError(t, err)
+	if nextBuild.MigrationPolicy == nil || oldBuild.MigrationPolicy == nil || nextBuild.MigrationPolicy.Guide != policy.Guide {
+		t.Fatal("old build writer erased declaration")
+	}
+	buildInput.ExpectedRevision, buildInput.MigrationPolicy = &nextBuild.Revision, &sohaapi.TemplateMigrationPolicy{}
+	cleared, err := repo.UpdateBuildTemplate(ctx, build.ID, buildInput)
+	requireTemplateNoError(t, err)
+	oldBuild, err = repo.GetBuildTemplateVersion(ctx, build.ID, 2)
+	requireTemplateNoError(t, err)
+	if cleared.MigrationPolicy == nil || cleared.MigrationPolicy.Sequential || !oldBuild.MigrationPolicy.Sequential {
+		t.Fatal("future clear changed immutable boundary")
+	}
+	workflowInput := domaincatalog.WorkflowTemplateInput{Key: uuid.NewString(), Name: "Migration workflow", Enabled: true, Definition: map[string]any{"mode": "release_dag"}, MigrationPolicy: policy}
+	workflow, err := repo.CreateWorkflowTemplate(ctx, workflowInput)
+	requireTemplateNoError(t, err)
+	workflowInput.ExpectedRevision, workflowInput.MigrationPolicy = &workflow.Revision, nil
+	workflow, err = repo.UpdateWorkflowTemplate(ctx, workflow.ID, workflowInput)
+	requireTemplateNoError(t, err)
+	oldWorkflow, err := repo.GetWorkflowTemplateVersion(ctx, workflow.ID, 1)
+	requireTemplateNoError(t, err)
+	if workflow.MigrationPolicy == nil || oldWorkflow.MigrationPolicy == nil || !oldWorkflow.MigrationPolicy.Irreversible {
+		t.Fatal("workflow declaration lost")
+	}
+	deploymentInput := domaincatalog.DeploymentTemplateInput{DeploymentTemplateSpec: domaincatalog.DeploymentTemplateSpec{Key: uuid.NewString(), Name: "Migration deployment", Enabled: true, MigrationPolicy: policy, ParameterSchema: domaincatalog.ParameterSchema{Type: "object"}, Source: domaincatalog.DeploymentTemplateSource{Renderer: "raw_yaml", Files: []domainmanifest.File{{Path: "config.yaml", Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: migration\n"}}}, Health: domaincatalog.DeploymentTemplateHealth{Mode: "configuration_only", TimeoutSeconds: 60}}}
+	draft, err := repo.SaveDeploymentTemplate(ctx, "", deploymentInput)
+	requireTemplateNoError(t, err)
+	published, err := repo.PublishDeploymentTemplate(ctx, draft.ID, draft.Revision)
+	requireTemplateNoError(t, err)
+	deploymentInput.ExpectedRevision, deploymentInput.MigrationPolicy = &published.Revision, nil
+	draft, err = repo.SaveDeploymentTemplate(ctx, draft.ID, deploymentInput)
+	requireTemplateNoError(t, err)
+	oldDeployment, err := repo.GetDeploymentTemplateVersion(ctx, draft.ID, 1)
+	requireTemplateNoError(t, err)
+	if draft.MigrationPolicy == nil || oldDeployment.MigrationPolicy == nil || oldDeployment.MigrationPolicy.Guide != policy.Guide {
+		t.Fatal("deployment declaration lost")
+	}
+	verifyServiceMigrationAdmission(t, ctx, repo, oldDeployment)
+	buildInput.ExpectedRevision, buildInput.MigrationPolicy = &cleared.Revision, &sohaapi.TemplateMigrationPolicy{Sequential: true, Guide: " "}
+	if _, err = repo.UpdateBuildTemplate(ctx, build.ID, buildInput); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("invalid policy persisted: %v", err)
+	}
+}
+
+func verifyServiceMigrationAdmission(t *testing.T, ctx context.Context, repo *Repository, template domaincatalog.DeploymentTemplate) {
+	t.Helper()
+	apps := apprepo.New(repo.db)
+	id := uuid.NewString()
+	app, err := apps.Create(ctx, domainapp.UpsertInput{ID: id, Key: id, Name: "Migration source admission", Enabled: true})
+	requireTemplateNoError(t, err)
+	service, err := apps.CreateService(ctx, app.ID, domainapp.ServiceInput{Key: "api", Name: "API", Enabled: true, DeploymentTemplate: &domaincatalog.DeploymentTemplateBinding{TemplateID: template.ID, Version: 1, Parameters: map[string]any{}}})
+	requireTemplateNoError(t, err)
+	required, err := repo.ServiceTemplateMigrationRequired(ctx, app.ID, service.ID)
+	requireTemplateNoError(t, err)
+	if !required {
+		t.Fatal("source admission lost historical migration declaration")
+	}
+	if _, err = repo.ServiceTemplateMigrationRequired(ctx, "other-app", service.ID); err == nil {
+		t.Fatal("cross-application service identity accepted")
+	}
+	plain, err := apps.CreateService(ctx, app.ID, domainapp.ServiceInput{Key: "plain", Name: "Plain", Enabled: true})
+	requireTemplateNoError(t, err)
+	required, err = repo.ServiceTemplateMigrationRequired(ctx, app.ID, plain.ID)
+	requireTemplateNoError(t, err)
+	if required {
+		t.Fatal("legacy service without declarations was blocked")
+	}
+}
+
 func verifyLegacyTemplateMigration(t *testing.T, ctx context.Context, admin *dbstore.Store, port int) {
 	t.Helper()
 	name := "template_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	requireTemplateNoError(t, admin.Exec(ctx, `CREATE DATABASE `+name))
 	t.Cleanup(func() { _ = admin.Exec(context.Background(), `DROP DATABASE `+name+` WITH (FORCE)`) })
-	store, err := dbstore.New(config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: name, User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 2, MaxIdleConns: 1}, zap.NewNop())
+	store, err := dbstore.New(testpostgres.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: name, User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 2, MaxIdleConns: 1}), zap.NewNop())
 	requireTemplateNoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	migrationDir := filepath.Join("..", "..", "..", "migrations", "postgres")
@@ -66,6 +148,7 @@ func verifyLegacyTemplateMigration(t *testing.T, ctx context.Context, admin *dbs
 			// #nosec G304 -- ReadDir supplies filenames from the fixed repository migration directory.
 			content, readErr := os.ReadFile(filepath.Join(migrationDir, file.Name()))
 			requireTemplateNoError(t, readErr)
+			// #nosec G703 -- Migration basename comes from os.ReadDir of repository migrations and destination is a test-owned temporary directory.
 			requireTemplateNoError(t, os.WriteFile(filepath.Join(stagedMigrations, file.Name()), content, 0o600))
 		}
 	}
@@ -82,6 +165,7 @@ INSERT INTO application_build_sources (id, application_id, source_name, source_t
 			// #nosec G304 -- ReadDir supplies filenames from the fixed repository migration directory.
 			content, readErr := os.ReadFile(filepath.Join(migrationDir, file.Name()))
 			requireTemplateNoError(t, readErr)
+			// #nosec G703 -- Migration basename comes from os.ReadDir of repository migrations and destination is a test-owned temporary directory.
 			requireTemplateNoError(t, os.WriteFile(filepath.Join(stagedMigrations, file.Name()), content, 0o600))
 		}
 	}

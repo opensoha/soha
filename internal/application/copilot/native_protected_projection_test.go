@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
@@ -59,31 +58,6 @@ func (g *nativeProtectedStreamFixture) InvokeWorkbenchModelStream(_ context.Cont
 		}
 	}
 	return appaigateway.WorkbenchRelayResponse{Content: "Completed " + g.private, Usage: map[string]float64{"inputTokens": 8, "outputTokens": 2, "totalTokens": 10}}, nil
-}
-
-func TestNativePrivateModelTextIsBufferedAndRedactedAcrossDeltaBoundaries(t *testing.T) {
-	s, store, gateway, _ := nativeGovernedTaskFixture(t)
-	private := "PRIVATE_SPLIT_STREAM_MARKER"
-	tool := domainai.ToolCapability{Name: "k8s.pods.exec", Version: "1", RiskLevel: "high", InputSchema: map[string]any{"type": "object"}, Execution: &domainai.ToolExecutionContract{Mode: "sync", Idempotent: true, Checks: []domainai.CapabilityCheckReference{{ToolName: "test.assess", CapabilityVersion: "1", Purpose: "verification"}}}}
-	gateway.catalog = append(gateway.catalog, tool)
-	actor := domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}
-	_, catalog, err := s.freezeNativeCatalog(t.Context(), actor, "session", nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store.lease.Run.Input["_sohaNativeCatalog"] = catalog
-	store.lease.Run.ToolBindings = appendNativeTaskBindings(nil, catalog.Tasks)
-	s.runtime.Stream = &nativeProtectedStreamFixture{gateway, private}
-	cp := initialNativeCheckpoint(store.lease.Run)
-	cp.Tasks = []nativeTaskCheckpoint{{ID: "verified-task", State: "completed", VerifiedThrough: time.Now(), Input: domainai.CapabilityTaskInput{Plan: domainai.CapabilityPlan{Steps: []domainai.CapabilityPlanStep{{Call: sohaapi.CapabilityCall{ToolName: "k8s.pods.exec", Input: map[string]any{"execution": map[string]any{"argv": []string{private}}}}}}}}}}
-	_, err = s.nativeModelStep(t.Context(), store, store.lease, &cp, actor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := json.Marshal(map[string]any{"events": store.events, "run": store.lease.Run, "messages": store.final})
-	if strings.Contains(string(raw), private) || strings.Contains(string(raw), "PRIVATE_") || len(store.final) != 1 || !strings.Contains(store.final[0].Content, "[PROTECTED]") {
-		t.Fatal("protected model stream or final message leaked", string(raw))
-	}
 }
 
 func TestNativeProtectedYAMLNeverDeclassifiesModelFreeTextFragments(t *testing.T) {

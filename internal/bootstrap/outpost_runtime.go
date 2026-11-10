@@ -48,12 +48,5 @@ func newOutpostRuntimeServices(cfg cfgpkg.Config, infra *infrastructure, permiss
 		return nil, nil, err
 	}
 	execution.AddExecutionTaskSink(service)
-	if len(slots) > 0 && len(credentials) > 0 {
-		executorIDs := make([]string, 0, len(credentials))
-		for _, credential := range credentials {
-			executorIDs = append(executorIDs, credential.ExecutorID)
-		}
-		execution.StartOutpostRuntime(infra.lifecycleCtx, executorIDs)
-	}
 	return service, executor, nil
 }

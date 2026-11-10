@@ -13,3 +13,11 @@ func PublicExecutionTask(task ExecutionTask) ExecutionTask {
 	}
 	return task
 }
+
+func PublicExecutionTasks(tasks []ExecutionTask) []ExecutionTask {
+	views := make([]ExecutionTask, len(tasks))
+	for i, task := range tasks {
+		views[i] = PublicExecutionTask(task)
+	}
+	return views
+}

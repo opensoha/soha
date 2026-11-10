@@ -114,7 +114,7 @@ See the published docs for current public architecture and API behavior.
 
 | Layer | Stack |
 | --- | --- |
-| Backend | Go 1.27.2, Gin, PostgreSQL, Kubernetes `client-go` |
+| Backend | Go 1.27.3, Gin, PostgreSQL, Kubernetes `client-go` |
 | Frontend | React 18, TypeScript 5, Vite 6, React Router 6, TanStack Query 5, Zustand 5, Ant Design 6, Tailwind CSS 4 |
 | Docs | Next.js 16 and Nextra 4 in the sibling `soha-docs` repository |
 | Packaging | Docker, Docker Compose, raw Kubernetes YAML; Helm charts live in `soha-helm` |
@@ -137,7 +137,7 @@ See the published docs for current public architecture and API behavior.
 
 ### Requirements
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Node.js 20+
 - Docker and Docker Compose only when running the local container stack
 - PostgreSQL 18.4 with pgvector 0.8.5 when using an external database
@@ -288,6 +288,11 @@ docker compose -f deploy/docker-compose.yaml up -d --build
 Compose uses the tracked `configs/config.example.yaml` by default. To reuse a
 private `configs/config.yaml`, set `SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`
 in the shell or Compose environment file. Relative paths resolve from `deploy/`.
+
+For new Chat and Heya on a dsh-capable Core build, deploy the matching dsh image
+and enable protected checkpoint storage. Follow the [runtime deployment and cutover
+guide](deploy/dsh-hindsight/README.md) before upgrading an existing installation.
+Core readiness checks PostgreSQL. Verify Chat and Heya separately before opening traffic.
 
 The network runtimes are opt-in in Compose because their mTLS private keys must
 not be committed. Place `tls.crt`, `tls.key`, and `ca.crt` in separate server

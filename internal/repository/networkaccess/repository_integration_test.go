@@ -51,6 +51,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
+		// #nosec G703 -- Migration basename comes from the fixed repository fixture list and destination is a test-owned temporary directory.
 		if err := os.WriteFile(filepath.Join(migrationDir, name), contents, 0o600); err != nil {
 			t.Fatalf("stage %s: %v", name, err)
 		}

@@ -35,7 +35,8 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-runtime ./cmd/radius-runtime && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-runtime-executor ./cmd/radius-runtime-executor && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/outpost-runtime-executor ./cmd/outpost-runtime-executor && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/proxy-runtime-executor ./cmd/proxy-runtime-executor
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/proxy-runtime-executor ./cmd/proxy-runtime-executor && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/runtime-upgrade ./cmd/runtime-upgrade
 
 FROM go-source AS network-gateway-build
 ARG TARGETOS=linux
@@ -142,6 +143,7 @@ COPY --from=go-build /out/ingest /app/ingest
 COPY --from=go-build /out/outpost-runtime-executor /app/outpost-runtime-executor
 COPY --from=go-build /out/proxy-runtime-executor /app/proxy-runtime-executor
 COPY --from=go-build /out/radius-runtime-executor /app/radius-runtime-executor
+COPY --from=go-build /out/runtime-upgrade /app/runtime-upgrade
 COPY configs/config.example.yaml /app/configs/config.yaml
 COPY migrations /app/migrations
 COPY deploy/entrypoint.sh /app/entrypoint.sh

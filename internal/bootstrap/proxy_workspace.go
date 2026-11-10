@@ -87,13 +87,6 @@ func newProxyWorkspaceServices(cfg cfgpkg.Config, infra *infrastructure, repos *
 	}
 	management.SetProbeProfiles(proxyInstalledProbes(cfg.Runtime.ProxyProbeProfiles))
 	execution.AddExecutionTaskSink(lifecycle)
-	if len(slots) > 0 && len(credentials) > 0 {
-		ids := make([]string, 0, len(credentials))
-		for _, credential := range credentials {
-			ids = append(ids, credential.ExecutorID)
-		}
-		execution.StartProxyDeployment(infra.lifecycleCtx, ids)
-	}
 	return &proxyWorkspaceServices{sources: sources, rules: rules, bundles: bundles, deployment: lifecycle, executor: executor}, nil
 }
 

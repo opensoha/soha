@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	cr "github.com/opensoha/soha-contracts/resource"
@@ -84,7 +85,11 @@ func TestDrainNodeSubmitsEvictionForManagedPod(t *testing.T) {
 			Spec: corev1.PodSpec{NodeName: "node-a"},
 		},
 	)
-	client.Discovery().(*fakediscovery.FakeDiscovery).Resources = []*metav1.APIResourceList{{
+	discovery, ok := client.Discovery().(*fakediscovery.FakeDiscovery)
+	if !ok {
+		t.Fatal("expected fake discovery client")
+	}
+	discovery.Resources = []*metav1.APIResourceList{{
 		GroupVersion: "v1",
 		APIResources: []metav1.APIResource{{Name: "pods/eviction", Kind: "Eviction", Group: policyv1.GroupName, Version: policyv1.SchemeGroupVersion.Version}},
 	}}
@@ -93,7 +98,10 @@ func TestDrainNodeSubmitsEvictionForManagedPod(t *testing.T) {
 		if !ok || createAction.GetSubresource() != "eviction" {
 			return false, nil, nil
 		}
-		eviction := createAction.GetObject().(*policyv1.Eviction)
+		eviction, ok := createAction.GetObject().(*policyv1.Eviction)
+		if !ok {
+			t.Fatalf("unexpected eviction object: %T", createAction.GetObject())
+		}
 		if err := client.Tracker().Delete(corev1.SchemeGroupVersion.WithResource("pods"), eviction.Namespace, eviction.Name); err != nil {
 			return true, nil, err
 		}
@@ -119,28 +127,35 @@ func TestDrainNodeSubmitsEvictionForManagedPod(t *testing.T) {
 }
 
 func TestDrainPDBTimeoutReturnsSafeReasonAndRetainsCordon(t *testing.T) {
-	controller := true
-	client := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node"}}, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team", OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "app", Controller: &controller}}}, Spec: corev1.PodSpec{NodeName: "node"}})
-	client.Discovery().(*fakediscovery.FakeDiscovery).Resources = []*metav1.APIResourceList{{GroupVersion: "v1", APIResources: []metav1.APIResource{{Name: "pods/eviction", Kind: "Eviction", Group: "policy", Version: "v1"}}}}
-	client.PrependReactor("create", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
-		blocked := apierrors.NewTooManyRequests("private provider message", 1)
-		blocked.ErrStatus.Details = &metav1.StatusDetails{Causes: []metav1.StatusCause{{Type: policyv1.DisruptionBudgetCause}}}
-		return true, nil, blocked
+	// Keep preparation time from consuming the deadline before the fake PDB rejection.
+	synctest.Test(t, func(t *testing.T) {
+		controller := true
+		client := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node"}}, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team", OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "app", Controller: &controller}}}, Spec: corev1.PodSpec{NodeName: "node"}})
+		discovery, ok := client.Discovery().(*fakediscovery.FakeDiscovery)
+		if !ok {
+			t.Fatalf("discovery client = %T, want FakeDiscovery", client.Discovery())
+		}
+		discovery.Resources = []*metav1.APIResourceList{{GroupVersion: "v1", APIResources: []metav1.APIResource{{Name: "pods/eviction", Kind: "Eviction", Group: "policy", Version: "v1"}}}}
+		client.PrependReactor("create", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+			blocked := apierrors.NewTooManyRequests("private provider message", 1)
+			blocked.ErrStatus.Details = &metav1.StatusDetails{Causes: []metav1.StatusCause{{Type: policyv1.DisruptionBudgetCause}}}
+			return true, nil, blocked
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		err := drainNode(ctx, client, "node", domainresource.NodeDrainInput{TimeoutSeconds: 30})
+		var failure *cr.NodeDrainError
+		if !errors.As(err, &failure) || failure.Code != "node_drain_pdb_blocked" {
+			t.Fatalf("lost PDB reason: %v", err)
+		}
+		node, _ := client.CoreV1().Nodes().Get(context.Background(), "node", metav1.GetOptions{})
+		if !node.Spec.Unschedulable {
+			t.Fatal("failed drain must retain cordon")
+		}
+		if _, err := client.CoreV1().Pods("team").Get(context.Background(), "app", metav1.GetOptions{}); err != nil {
+			t.Fatal("PDB-protected pod changed")
+		}
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	err := drainNode(ctx, client, "node", domainresource.NodeDrainInput{TimeoutSeconds: 30})
-	var failure *cr.NodeDrainError
-	if !errors.As(err, &failure) || failure.Code != "node_drain_pdb_blocked" {
-		t.Fatalf("lost PDB reason: %v", err)
-	}
-	node, _ := client.CoreV1().Nodes().Get(context.Background(), "node", metav1.GetOptions{})
-	if !node.Spec.Unschedulable {
-		t.Fatal("failed drain must retain cordon")
-	}
-	if _, err := client.CoreV1().Pods("team").Get(context.Background(), "app", metav1.GetOptions{}); err != nil {
-		t.Fatal("PDB-protected pod changed")
-	}
 }
 
 func TestBuildNodeViewIncludesSchedulability(t *testing.T) {

@@ -50,7 +50,7 @@ func (s *Store) Install(ctx context.Context, descriptor domaincompanion.PackageD
 	defer func() { _ = os.RemoveAll(stage) }()
 
 	archivePath := filepath.Join(stage, "package")
-	archive, err := os.OpenFile(archivePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	archive, err := os.OpenFile(archivePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- Fixed filename within an owner-only MkdirTemp stage.
 	if err != nil {
 		return "", fmt.Errorf("create companion package stage: %w", err)
 	}
@@ -96,6 +96,10 @@ func (s *Store) Install(ctx context.Context, descriptor domaincompanion.PackageD
 		return "", fmt.Errorf("%w: companion entry asset is not declared", apperrors.ErrInvalidArgument)
 	}
 
+	return s.publish(payload, digest)
+}
+
+func (s *Store) publish(payload, digest string) (string, error) {
 	hexDigest := strings.TrimPrefix(digest, "sha256:")
 	finalPath := filepath.Join(s.root, "sha256", hexDigest)
 	if _, err := os.Stat(finalPath); err == nil {
@@ -182,10 +186,15 @@ func extractZip(ctx context.Context, archivePath, target string, assets map[stri
 		if !ok || seen[name] {
 			return fmt.Errorf("%w: companion archive contains undeclared or duplicate asset", apperrors.ErrInvalidArgument)
 		}
-		expanded += int64(entry.UncompressedSize64)
-		if expanded > maxExpandedBytes || int64(entry.UncompressedSize64) != asset.SizeBytes {
+		size := entry.UncompressedSize64
+		if size > uint64(maxExpandedBytes) {
 			return fmt.Errorf("%w: companion asset size mismatch", apperrors.ErrInvalidArgument)
 		}
+		assetBytes := int64(size)
+		if assetBytes > maxExpandedBytes-expanded || assetBytes != asset.SizeBytes {
+			return fmt.Errorf("%w: companion asset size mismatch", apperrors.ErrInvalidArgument)
+		}
+		expanded += assetBytes
 		source, err := entry.Open()
 		if err != nil {
 			return err
@@ -201,7 +210,7 @@ func extractZip(ctx context.Context, archivePath, target string, assets map[stri
 }
 
 func extractTar(ctx context.Context, archivePath, target string, assets map[string]domaincompanion.Asset, compressed bool) error {
-	file, err := os.Open(archivePath)
+	file, err := os.Open(archivePath) // #nosec G304 -- Only called with the fixed package file in a private staging directory.
 	if err != nil {
 		return err
 	}
@@ -241,17 +250,17 @@ func extractTar(ctx context.Context, archivePath, target string, assets map[stri
 		if header.Typeflag == tar.TypeDir {
 			continue
 		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+		if header.Typeflag != tar.TypeReg {
 			return fmt.Errorf("%w: companion archive links and special files are not allowed", apperrors.ErrInvalidArgument)
 		}
 		asset, ok := assets[name]
 		if !ok || seen[name] || header.Size != asset.SizeBytes {
 			return fmt.Errorf("%w: companion archive contains undeclared, duplicate, or invalid asset", apperrors.ErrInvalidArgument)
 		}
-		expanded += header.Size
-		if expanded > maxExpandedBytes {
+		if header.Size < 0 || header.Size > maxExpandedBytes-expanded {
 			return fmt.Errorf("%w: companion archive exceeds expanded size limit", apperrors.ErrInvalidArgument)
 		}
+		expanded += header.Size
 		if err := writeAsset(target, name, asset, io.LimitReader(tarReader, header.Size)); err != nil {
 			return err
 		}
@@ -265,7 +274,7 @@ func writeAsset(target, name string, asset domaincompanion.Asset, source io.Read
 	if err := os.MkdirAll(filepath.Dir(destination), 0o750); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	file, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- Names passed safeAssetPath; archives cannot create links in the private stage.
 	if err != nil {
 		return err
 	}
@@ -290,7 +299,7 @@ func writeAsset(target, name string, asset domaincompanion.Asset, source io.Read
 }
 
 func validateSVG(filePath string) error {
-	file, err := os.Open(filePath)
+	file, err := os.Open(filePath) // #nosec G304 -- Reads only the verified asset just created in the private staging directory.
 	if err != nil {
 		return err
 	}

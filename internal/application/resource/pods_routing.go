@@ -14,14 +14,14 @@ type podReadRoute interface {
 	ListPods(context.Context, string) ([]domainresource.PodView, string, error)
 	ListPodsBySelector(context.Context, string, map[string]string) ([]domainresource.PodView, error)
 	GetPodDetail(context.Context, string, string) (domainresource.PodDetailView, error)
-	GetPodLogs(context.Context, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
+	GetPodLogs(context.Context, string, string, string, int64, int64, bool, string) (domainresource.PodLogsView, error)
 	GetPodYAML(context.Context, string, string) (domainresource.ResourceYAMLView, error)
 }
 
 type podInteractiveRoute interface {
-	StreamPodLogs(context.Context, string, string, string, int64, int64, io.Writer) error
+	StreamPodLogs(context.Context, string, string, string, int64, int64, io.Writer, string) error
 	ExecPod(context.Context, string, string, string, string, int64) (domainresource.PodExecView, error)
-	StreamPodTerminal(context.Context, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue) error
+	StreamPodTerminal(context.Context, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue, string) error
 }
 
 type podMutationRoute interface {
@@ -66,20 +66,29 @@ func (r agentPodRoute) DeletePod(ctx context.Context, namespace, name, expectedU
 	return true, deleteObservedAgentWorkload(ctx, r.client, namespace, "Pod", name, expectedUID)
 }
 
-func (r agentPodRoute) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
-	return r.client.GetPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, previous)
+func (r agentPodRoute) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
+	if err := r.checkPodUID(ctx, namespace, name, expectedUID); err != nil {
+		return domainresource.PodLogsView{}, err
+	}
+	return r.client.GetPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, previous, expectedUID)
 }
 
-func (r agentPodRoute) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
-	return r.client.StreamPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, stdout)
+func (r agentPodRoute) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer, expectedUID string) error {
+	if err := r.checkPodUID(ctx, namespace, name, expectedUID); err != nil {
+		return err
+	}
+	return r.client.StreamPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, stdout, expectedUID)
 }
 
 func (r agentPodRoute) ExecPod(ctx context.Context, namespace, name, container, command string, timeoutSeconds int64) (domainresource.PodExecView, error) {
 	return r.client.ExecPod(ctx, namespace, name, container, command, timeoutSeconds)
 }
 
-func (r agentPodRoute) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue) error {
-	return r.client.StreamPodTerminal(ctx, namespace, name, container, shell, stdin, stdout, stderr, sizeQueue)
+func (r agentPodRoute) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue, expectedUID string) error {
+	if err := r.checkPodUID(ctx, namespace, name, expectedUID); err != nil {
+		return err
+	}
+	return r.client.StreamPodTerminal(ctx, namespace, name, container, shell, stdin, stdout, stderr, sizeQueue, expectedUID)
 }
 
 func (r agentPodRoute) GetPodYAML(ctx context.Context, namespace, name string) (domainresource.ResourceYAMLView, error) {
@@ -137,20 +146,20 @@ func (r directPodRoute) DeletePod(ctx context.Context, namespace, name, expected
 	return true, backend.DeletePodWithExpectedUID(ctx, r.clusterID, namespace, name, expectedUID)
 }
 
-func (r directPodRoute) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
-	return r.backend.GetPodLogs(ctx, r.clusterID, namespace, name, container, tailLines, sinceSeconds, previous)
+func (r directPodRoute) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
+	return r.backend.GetPodLogs(ctx, r.clusterID, namespace, name, container, tailLines, sinceSeconds, previous, expectedUID)
 }
 
-func (r directPodRoute) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
-	return r.backend.StreamPodLogs(ctx, r.clusterID, namespace, name, container, tailLines, sinceSeconds, stdout)
+func (r directPodRoute) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer, expectedUID string) error {
+	return r.backend.StreamPodLogs(ctx, r.clusterID, namespace, name, container, tailLines, sinceSeconds, stdout, expectedUID)
 }
 
 func (r directPodRoute) ExecPod(ctx context.Context, namespace, name, container, command string, timeoutSeconds int64) (domainresource.PodExecView, error) {
 	return r.backend.ExecPod(ctx, r.clusterID, namespace, name, container, command, timeoutSeconds)
 }
 
-func (r directPodRoute) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue) error {
-	return r.backend.StreamPodTerminal(ctx, r.clusterID, namespace, name, container, shell, stdin, stdout, stderr, sizeQueue)
+func (r directPodRoute) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue, expectedUID string) error {
+	return r.backend.StreamPodTerminal(ctx, r.clusterID, namespace, name, container, shell, stdin, stdout, stderr, sizeQueue, expectedUID)
 }
 
 func (r directPodRoute) GetPodYAML(ctx context.Context, namespace, name string) (domainresource.ResourceYAMLView, error) {
@@ -187,4 +196,18 @@ func (w *Workloads) routePods(connection domaincluster.Connection, clusterID str
 
 func (w *Workloads) routePodDeletion(connection domaincluster.Connection, clusterID string) (podRoute, error) {
 	return w.routePods(connection, clusterID)
+}
+
+func (r agentPodRoute) checkPodUID(ctx context.Context, namespace, name, expectedUID string) error {
+	if expectedUID == "" {
+		return nil
+	}
+	pod, err := r.client.GetPodDetail(ctx, namespace, name)
+	if err != nil {
+		return err
+	}
+	if pod.UID != expectedUID {
+		return fmt.Errorf("%w: Pod UID changed or is unavailable; open the current Pod", apperrors.ErrConflict)
+	}
+	return nil
 }

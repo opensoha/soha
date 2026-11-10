@@ -64,6 +64,7 @@ func TestGitOpsDirectWithKubernetes(t *testing.T) {
 	resources, err := restmapper.GetAPIGroupResources(discoveryClient)
 	require(err)
 	mapper := restmapper.NewDiscoveryRESTMapper(resources)
+	// #nosec G703 -- Explicit opt-in test harness state file; no request-controlled filename.
 	data, err := os.ReadFile(os.Getenv("SOHA_ARGOCD_TEST_STATE"))
 	require(err)
 	var state struct {
