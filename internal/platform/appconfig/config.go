@@ -10,6 +10,7 @@ import (
 
 // Auth contains the authentication settings consumed by the identity application service.
 type Auth struct {
+	CLI               CLIAuth           `mapstructure:"cli"`
 	EnableDevAuth     bool              `mapstructure:"enable_dev_auth"`
 	LoginVerification LoginVerification `mapstructure:"login_verification"`
 	DevPrincipal      DevPrincipal      `mapstructure:"dev_principal"`
@@ -103,16 +104,17 @@ type Modules struct {
 }
 
 type Cluster struct {
-	ID                     string            `mapstructure:"id"`
-	Name                   string            `mapstructure:"name"`
-	Kubeconfig             string            `mapstructure:"kubeconfig"`
-	KubeconfigData         string            `mapstructure:"kubeconfig_data"`
-	Context                string            `mapstructure:"context"`
-	Region                 string            `mapstructure:"region"`
-	Environment            string            `mapstructure:"environment"`
-	Labels                 map[string]string `mapstructure:"labels"`
-	PrometheusURL          string            `mapstructure:"prometheus_url"`
-	PrometheusBearerToken  string            `mapstructure:"prometheus_bearer_token"`
-	PrometheusClusterLabel string            `mapstructure:"prometheus_cluster_label"`
-	GrafanaBaseURL         string            `mapstructure:"grafana_base_url"`
+	ID                          string            `mapstructure:"id"`
+	Name                        string            `mapstructure:"name"`
+	Kubeconfig                  string            `mapstructure:"kubeconfig"`
+	KubeconfigData              string            `mapstructure:"kubeconfig_data"`
+	Context                     string            `mapstructure:"context"`
+	Region                      string            `mapstructure:"region"`
+	Environment                 string            `mapstructure:"environment"`
+	Labels                      map[string]string `mapstructure:"labels"`
+	PrometheusURL               string            `mapstructure:"prometheus_url"`
+	PrometheusBearerToken       string            `mapstructure:"prometheus_bearer_token"`
+	PrometheusClusterLabel      string            `mapstructure:"prometheus_cluster_label"`
+	PrometheusClusterLabelValue string            `mapstructure:"prometheus_cluster_label_value"`
+	GrafanaBaseURL              string            `mapstructure:"grafana_base_url"`
 }

@@ -56,6 +56,16 @@ func (h *configMapResourceHandler) ListConfigMapReferences(c *gin.Context) {
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+func (h *secretResourceHandler) GetSecretCertificate(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetSecretCertificate(c.Request.Context(), principal, c.Param("clusterID"), c.Query("namespace"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *secretResourceHandler) GetSecretDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")

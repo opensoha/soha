@@ -7,6 +7,19 @@ import (
 	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 )
 
+func TestResourceMonitoringMenusRequireWorkbenchNodeAndExactView(t *testing.T) {
+	for _, view := range []string{"overview", "cpu", "memory", "conntrack", "pods"} {
+		item := domainmenu.Record{ID: "resource-monitoring-" + view, Path: "/resource-monitoring/" + view}
+		permission := "platform.resource-monitoring." + view + ".view"
+		if isVisibleByPermissions(item, []string{appaccess.PermWorkbenchPlatformView, permission}) || isVisibleByPermissions(item, []string{appaccess.PermPlatformNodesView, permission}) {
+			t.Fatal("monitoring menu omitted a prerequisite")
+		}
+		if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchPlatformView, appaccess.PermPlatformNodesView, permission}) {
+			t.Fatal("authorized monitoring menu hidden")
+		}
+	}
+}
+
 func TestApplicationLoginRecordsRequireAuditAndInternalWorkbenchPermissions(t *testing.T) {
 	item := domainmenu.Record{ID: "identity-login-records", Path: "/identity/login-records"}
 	for _, auditPermission := range []string{appaccess.PermIdentityAuditView, appaccess.PermSystemAuditView} {
@@ -489,10 +502,13 @@ func TestNetworkAccessLeafMenusRequireTheirOwnViewPermission(t *testing.T) {
 		path       string
 		permission string
 	}{
+		{id: "network-access-content-transfers", path: "/network-access/content-transfers", permission: "network_access.content_transfers.view"},
 		{id: "network-access-devices", path: "/network-access/devices", permission: appaccess.PermNetworkAccessEndpointDevicesView},
 		{id: "network-access-sites", path: "/network-access/sites", permission: appaccess.PermNetworkAccessSitesView},
 		{id: "network-access-user-admission", path: "/network-access/user-admission", permission: appaccess.PermNetworkAccessSitesView},
 		{id: "network-access-settings", path: "/network-access/settings", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-endpoint-response", path: "/network-access/endpoint-response", permission: "network_access.endpoint_response_policies.view"},
+		{id: "network-access-endpoint-response", path: "/network-access/endpoint-response", permission: "network_access.endpoint_response_events.maintenance"},
 		{id: "network-access-ssids", path: "/network-access/ssids", permission: appaccess.PermNetworkAccessSitesView},
 		{id: "network-access-wifi", path: "/network-access/wifi", permission: appaccess.PermNetworkAccessSitesView},
 		{id: "network-access-wired", path: "/network-access/wired", permission: appaccess.PermNetworkAccessSitesView},

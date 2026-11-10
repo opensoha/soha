@@ -103,19 +103,97 @@ class QualityLabGuards(unittest.TestCase):
         good = {'result': 'PASS', 'runId': 'run', 'mode': 'e2e-direct', 'sources': {},
                 'environment': {'disposable': True, 'containerId': 'core', 'imageDigest': 'image'},
                 'tests': [{'result': 'passed'}] * 4}
-        cases = [None, {'result': 'FAIL'}, {**good, 'tests': []},
-                 {**good, 'tests': [{'result': 'skipped'}] * 4}, {**good, 'runId': 'other'}]
         with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'ROOT', Path(directory)), patch.object(lab, 'LAB', Path(directory) / 'private'):
-            output = Path(directory) / 'soha-web/test-results/run-manifest.json'
-            output.parent.mkdir(parents=True)
-            for manifest in cases:
-                output.write_text(json.dumps(good))  # stale PASS must be discarded
-                def execute(*args, **kwargs):
-                    if manifest is not None:
-                        output.write_text(json.dumps(manifest))
-                    return SimpleNamespace(returncode=0)
-                with patch.object(lab.subprocess, 'run', side_effect=execute), self.assertRaises(RuntimeError):
-                    lab.test(state, 'direct', 'readonly', False)
+            legacy = Path(directory) / 'soha-web/test-results/run-manifest.json'
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text(json.dumps(good))  # stale PASS must be ignored and preserved
+            for flow in [False, True]:
+                count = 2 if flow else 4
+                good['tests'] = [{'result': 'passed'}] * count
+                cases = [None, {'result': 'FAIL'}, {'tests': []},
+                         {'tests': [{'result': 'skipped'}] * count}, {'tests': [{'result': 'failed'}] * count},
+                         {'tests': [{'result': 'passed'}] * (count + 1)}, {'runId': 'other'},
+                         {'mode': 'e2e-agent'}, {'environment': {}}, {'sources': {'core': 'other'}},
+                         {'taskId': None}, {'taskId': 'other'}, {'executionId': None}, {'executionId': 'old'}]
+                for override in cases:
+                    def execute(*args, **kwargs):
+                        env = kwargs['env']
+                        output = legacy.parent / 'tasks' / env['SOHA_E2E_TASK_ID'] / env['SOHA_E2E_EXECUTION_ID'] / 'run-manifest.json'
+                        if override is not None:
+                            output.parent.mkdir(parents=True)
+                            output.write_text(json.dumps({**good, 'taskId': env['SOHA_E2E_TASK_ID'],
+                                                          'executionId': env['SOHA_E2E_EXECUTION_ID'], **override}))
+                        return SimpleNamespace(returncode=0)
+                    with self.subTest(flow=flow, override=override), patch.object(lab.subprocess, 'run', side_effect=execute):
+                        with self.assertRaises(RuntimeError):
+                            lab.test(state, 'direct', 'readonly', flow)
+            self.assertEqual(json.loads(legacy.read_text())['tests'], [{'result': 'passed'}] * 4)
+
+    def test_each_invocation_uses_its_own_manifest_and_preserves_existing_reports(self):
+        run_id = '../lab/含 空格/' + 'x' * 80
+        state = {'runId': run_id, 'coreId': 'core', 'coreImage': 'image', 'sources': {'core': 'sha'},
+                 'accounts': {'direct-readonly': {'username': 'test'}}, 'secrets': {'readonly': 'synthetic'}}
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'ROOT', Path(directory)), patch.object(lab, 'LAB', Path(directory) / 'private'):
+            results = Path(directory) / 'soha-web/test-results'
+            legacy = results / 'run-manifest.json'
+            unrelated = results / 'tasks/another-task/another-execution/run-manifest.json'
+            for path in [legacy, unrelated]:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('existing report')
+            outputs = []
+            manifests = []
+
+            def execute(*args, **kwargs):
+                env = kwargs['env']
+                task_id, execution_id = env['SOHA_E2E_TASK_ID'], env['SOHA_E2E_EXECUTION_ID']
+                for value in [task_id, execution_id]:
+                    self.assertRegex(value, r'^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
+                self.assertEqual(args[0], ['npm', 'run', 'test:api:real'])
+                self.assertEqual(env['SOHA_E2E_MUTATIONS'], '0')
+                output = results / 'tasks' / task_id / execution_id / 'run-manifest.json'
+                self.assertFalse(output.exists())
+                output.parent.mkdir(parents=True)
+                manifest = {'result': 'PASS', 'runId': run_id, 'taskId': task_id, 'executionId': execution_id,
+                            'mode': 'e2e-direct', 'sources': state['sources'],
+                            'environment': {'disposable': True, 'containerId': 'core', 'imageDigest': 'image'},
+                            'tests': [{'result': 'passed'}] * 4}
+                output.write_text(json.dumps(manifest))
+                outputs.append(output)
+                manifests.append(manifest)
+                return SimpleNamespace(returncode=0)
+
+            with patch.dict(lab.ENV, SOHA_E2E_TASK_ID='../inherited', SOHA_E2E_EXECUTION_ID='old'), patch.object(lab.subprocess, 'run', side_effect=execute):
+                lab.test(state, 'direct', 'readonly', False)
+                lab.test(state, 'direct', 'readonly', False)
+            self.assertNotEqual(outputs[0], outputs[1])
+            self.assertEqual(manifests[0]['taskId'], manifests[1]['taskId'])
+            for path, manifest in zip(outputs, manifests):
+                self.assertEqual(json.loads(path.read_text()), manifest)
+            for path in [legacy, unrelated]:
+                self.assertEqual(path.read_text(), 'existing report')
+
+    def test_flow_manifest_still_requires_two_passed_tests_and_zero_exit(self):
+        state = {'runId': 'run', 'coreId': 'core', 'coreImage': 'image', 'sources': {},
+                 'accounts': {'agent-writer': {'username': 'test'}}, 'secrets': {'writer': 'synthetic'}}
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'ROOT', Path(directory)), patch.object(lab, 'LAB', Path(directory) / 'private'):
+            def execute(*args, **kwargs):
+                env = kwargs['env']
+                self.assertEqual(args[0], ['npm', 'run', 'test:flow:real'])
+                self.assertEqual(env['SOHA_E2E_MUTATIONS'], '1')
+                output = Path(directory) / 'soha-web/test-results/tasks' / env['SOHA_E2E_TASK_ID'] / env['SOHA_E2E_EXECUTION_ID'] / 'run-manifest.json'
+                output.parent.mkdir(parents=True)
+                output.write_text(json.dumps({'result': 'PASS', 'runId': 'run', 'mode': 'e2e-agent', 'sources': {},
+                                              'taskId': env['SOHA_E2E_TASK_ID'], 'executionId': env['SOHA_E2E_EXECUTION_ID'],
+                                              'environment': {'disposable': True, 'containerId': 'core', 'imageDigest': 'image'},
+                                              'tests': [{'result': 'passed'}] * 2}))
+                return SimpleNamespace(returncode=exit_code)
+
+            with patch.object(lab.subprocess, 'run', side_effect=execute):
+                exit_code = 0
+                lab.test(state, 'agent', 'writer', True)
+                exit_code = 1
+                with self.assertRaisesRegex(RuntimeError, 'test failed \\(1\\)'):
+                    lab.test(state, 'agent', 'writer', True)
 
     def test_private_runtime_files_never_enter_build_snapshot_even_if_unignored(self):
         with tempfile.TemporaryDirectory() as directory:

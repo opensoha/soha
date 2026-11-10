@@ -10,7 +10,6 @@ import (
 	"time"
 
 	contractenv "github.com/opensoha/soha-contracts/agent/environment"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
@@ -29,12 +28,15 @@ import (
 	appcluster "github.com/opensoha/soha/internal/application/cluster"
 	appcompanion "github.com/opensoha/soha/internal/application/companion"
 	appcompute "github.com/opensoha/soha/internal/application/compute"
+	appcontentdlp "github.com/opensoha/soha/internal/application/contentdlp"
+	appcontenttransfer "github.com/opensoha/soha/internal/application/contenttransfer"
 	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	appdelivery "github.com/opensoha/soha/internal/application/delivery"
 	appdeliverygovernance "github.com/opensoha/soha/internal/application/deliverygovernance"
 	appdeliverytrigger "github.com/opensoha/soha/internal/application/deliverytrigger"
 	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
 	appdocker "github.com/opensoha/soha/internal/application/docker"
+	appendpointcontrol "github.com/opensoha/soha/internal/application/endpointcontrol"
 	appevent "github.com/opensoha/soha/internal/application/event"
 	appexecution "github.com/opensoha/soha/internal/application/execution"
 	appidentity "github.com/opensoha/soha/internal/application/identity"
@@ -64,6 +66,7 @@ import (
 	appsettings "github.com/opensoha/soha/internal/application/settings"
 	appsoftware "github.com/opensoha/soha/internal/application/software"
 	appsystemintegration "github.com/opensoha/soha/internal/application/systemintegration"
+	apptemplateupdate "github.com/opensoha/soha/internal/application/templateupdate"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	appworkflow "github.com/opensoha/soha/internal/application/workflow"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
@@ -71,6 +74,7 @@ import (
 	directorysyncdomain "github.com/opensoha/soha/internal/domain/directorysync"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
+	"github.com/opensoha/soha/internal/infrastructure/aigatewayrelay"
 	companionartifactinfra "github.com/opensoha/soha/internal/infrastructure/companionartifact"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
@@ -117,12 +121,14 @@ import (
 	catalogrepo "github.com/opensoha/soha/internal/repository/catalog"
 	clusterrepo "github.com/opensoha/soha/internal/repository/cluster"
 	companionrepo "github.com/opensoha/soha/internal/repository/companion"
+	conditionalmutationrepo "github.com/opensoha/soha/internal/repository/conditionalmutation"
 	copilotrepo "github.com/opensoha/soha/internal/repository/copilot"
 	dashboardrepo "github.com/opensoha/soha/internal/repository/dashboard"
 	deliveryrepo "github.com/opensoha/soha/internal/repository/delivery"
 	deliverytriggerrepo "github.com/opensoha/soha/internal/repository/deliverytrigger"
 	directorysyncrepo "github.com/opensoha/soha/internal/repository/directorysync"
 	dockerrepo "github.com/opensoha/soha/internal/repository/docker"
+	dockerterminalrepo "github.com/opensoha/soha/internal/repository/dockerterminal"
 	eventrepo "github.com/opensoha/soha/internal/repository/eventstream"
 	identitymfarepo "github.com/opensoha/soha/internal/repository/identitymfa"
 	identityproviderrepo "github.com/opensoha/soha/internal/repository/identityprovider"
@@ -137,6 +143,8 @@ import (
 	networkruntimerepo "github.com/opensoha/soha/internal/repository/networkruntime"
 	operationrepo "github.com/opensoha/soha/internal/repository/operationlog"
 	pluginrepo "github.com/opensoha/soha/internal/repository/plugin"
+	podexecutionrepo "github.com/opensoha/soha/internal/repository/podexecution"
+	podterminalrepo "github.com/opensoha/soha/internal/repository/podterminal"
 	policyrepo "github.com/opensoha/soha/internal/repository/policy"
 	portforwardrepo "github.com/opensoha/soha/internal/repository/portforward"
 	providerportalrepo "github.com/opensoha/soha/internal/repository/providerportal"
@@ -149,6 +157,7 @@ import (
 	settingsrepo "github.com/opensoha/soha/internal/repository/settings"
 	softwarerepo "github.com/opensoha/soha/internal/repository/software"
 	systemintegrationrepo "github.com/opensoha/soha/internal/repository/systemintegration"
+	templateupdaterepo "github.com/opensoha/soha/internal/repository/templateupdate"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
 	virtualizationrepo "github.com/opensoha/soha/internal/repository/virtualization"
 	workflowrepo "github.com/opensoha/soha/internal/repository/workflow"
@@ -169,99 +178,108 @@ type infrastructure struct {
 }
 
 type repositories struct {
-	auditRepository             *auditrepo.Repository
-	announcementRepository      *announcementrepo.Repository
-	eventRepository             *eventrepo.Repository
-	menuRepository              *menurepo.Repository
-	operationRepository         *operationrepo.Repository
-	alertRepository             *alertrepo.Repository
-	applicationRepository       *applicationrepo.Repository
-	buildRepository             *buildrepo.Repository
-	catalogRepository           *catalogrepo.Repository
-	workflowRepository          *workflowrepo.Repository
-	deliveryRepository          *deliveryrepo.Repository
-	manifestRepository          *manifestrepo.Repository
-	registryRepository          *registryrepo.Repository
-	releaseRepository           *releaserepo.Repository
-	copilotRepository           *copilotrepo.Repository
-	dashboardRepository         *dashboardrepo.Repository
-	identityRepository          *userrepo.Repository
-	settingsRepository          *settingsrepo.Repository
-	scopeGrantRepository        *scopegrantrepo.Repository
-	policyRepository            *policyrepo.Repository
-	clusterRepository           *clusterrepo.Repository
-	virtualizationRepository    *virtualizationrepo.Repository
-	dockerRepository            *dockerrepo.Repository
-	aiGatewayRepository         *aigatewayrepo.Repository
-	pluginRepository            *pluginrepo.Repository
-	companionRepository         *companionrepo.Repository
-	identityProviderRepository  *identityproviderrepo.Repository
-	identityMFARepository       *identitymfarepo.Repository
-	knowledgeRepository         *knowledgerepo.Repository
-	agentHarnessRepository      *agentharnessrepo.Repository
-	aiProductionRepository      *aiproductionrepo.Repository
-	evaluationRepository        *aievalrepo.Repository
-	memoryRepository            *memoryrepo.Repository
-	knowledgeGraphRepository    *knowledgegraphrepo.Repository
-	multiAgentRepository        *multiagentrepo.Repository
-	providerPortalRepository    *providerportalrepo.Repository
-	portForwardRepository       *portforwardrepo.Repository
-	resourceCreationRepository  *resourcecreationrepo.Repository
-	directorySyncRepository     *directorysyncrepo.Repository
-	runtimeConfigRepository     *runtimeconfigrepo.Repository
-	systemIntegrationRepository *systemintegrationrepo.Repository
-	secretRepository            *secretrepo.Repository
-	networkAccessRepository     *networkaccessrepo.Repository
-	networkRuntimeRepository    *networkruntimerepo.Repository
-	networkProxyRepository      *networkproxyrepo.Repository
+	auditRepository               *auditrepo.Repository
+	announcementRepository        *announcementrepo.Repository
+	eventRepository               *eventrepo.Repository
+	menuRepository                *menurepo.Repository
+	operationRepository           *operationrepo.Repository
+	alertRepository               *alertrepo.Repository
+	applicationRepository         *applicationrepo.Repository
+	buildRepository               *buildrepo.Repository
+	catalogRepository             *catalogrepo.Repository
+	workflowRepository            *workflowrepo.Repository
+	deliveryRepository            *deliveryrepo.Repository
+	manifestRepository            *manifestrepo.Repository
+	registryRepository            *registryrepo.Repository
+	releaseRepository             *releaserepo.Repository
+	copilotRepository             *copilotrepo.Repository
+	dashboardRepository           *dashboardrepo.Repository
+	identityRepository            *userrepo.Repository
+	settingsRepository            *settingsrepo.Repository
+	scopeGrantRepository          *scopegrantrepo.Repository
+	policyRepository              *policyrepo.Repository
+	clusterRepository             *clusterrepo.Repository
+	virtualizationRepository      *virtualizationrepo.Repository
+	dockerRepository              *dockerrepo.Repository
+	aiGatewayRepository           *aigatewayrepo.Repository
+	pluginRepository              *pluginrepo.Repository
+	companionRepository           *companionrepo.Repository
+	identityProviderRepository    *identityproviderrepo.Repository
+	identityMFARepository         *identitymfarepo.Repository
+	knowledgeRepository           *knowledgerepo.Repository
+	agentHarnessRepository        *agentharnessrepo.Repository
+	aiProductionRepository        *aiproductionrepo.Repository
+	evaluationRepository          *aievalrepo.Repository
+	memoryRepository              *memoryrepo.Repository
+	knowledgeGraphRepository      *knowledgegraphrepo.Repository
+	multiAgentRepository          *multiagentrepo.Repository
+	providerPortalRepository      *providerportalrepo.Repository
+	portForwardRepository         *portforwardrepo.Repository
+	resourceCreationRepository    *resourcecreationrepo.Repository
+	podExecutionRepository        *podexecutionrepo.Repository
+	conditionalMutationRepository *conditionalmutationrepo.Repository
+	podTerminalRepository         *podterminalrepo.Repository
+	dockerTerminalRepository      *dockerterminalrepo.Repository
+	directorySyncRepository       *directorysyncrepo.Repository
+	runtimeConfigRepository       *runtimeconfigrepo.Repository
+	systemIntegrationRepository   *systemintegrationrepo.Repository
+	secretRepository              *secretrepo.Repository
+	networkAccessRepository       *networkaccessrepo.Repository
+	networkRuntimeRepository      *networkruntimerepo.Repository
+	networkProxyRepository        *networkproxyrepo.Repository
 }
 
 type coreServices struct {
-	permissionResolver           *appaccess.PermissionResolver
-	auditService                 *appaudit.Service
-	operationService             *appoperation.Service
-	announcementService          *appannouncement.Service
-	menuService                  *appmenu.Service
-	moduleService                *appmodule.Service
-	settingsService              *appsettings.Service
-	runtimeConfigService         *appruntimeconfig.Service
-	identityService              *appidentity.Service
-	policyEngine                 *policy.Engine
-	accessService                *appaccess.Service
-	accessCatalogService         *appaccess.CatalogService
-	accessManagementService      *appaccess.ManagementService
-	accessConsoleService         *appaccess.ConsoleService
-	systemIntegrationService     *appsystemintegration.Service
-	secretService                *appsecret.Service
-	networkAccessService         *appnetworkaccess.Service
-	networkVPNService            *appnetworkaccess.VPNService
-	networkEnrollmentService     *appnetworkaccess.EnrollmentService
-	networkAccessGrantService    *appnetworkaccess.AccessGrantService
-	networkIngestQuery           apiHandlers.NetworkTelemetryService
-	networkProxyManagement       *appnetworkproxy.Management
-	clusterService               *appcluster.Service
-	resourceService              *appresource.Service
-	eventService                 *appevent.Service
-	monitoringService            *appmonitoring.Service
-	observabilityService         *appobservability.Service
-	applicationService           *appregistry.Service
-	executionService             *appexecution.Service
-	buildService                 *appbuild.Service
-	catalogService               *appcatalog.Service
-	scopeGrantService            *appscopegrant.Service
-	registryService              *appregistryconn.Service
-	releaseService               *apprelease.Service
-	integrationService           *appintegration.Service
-	pluginService                *appplugin.Service
-	softwareService              *appsoftware.Service
-	companionService             *appcompanion.Service
-	identityProviderService      *appidentityprovider.Service
-	identityMFAService           *appmfa.Service
-	providerPortalService        *appproviderportal.Service
-	applicationOnboardingService *appproviderportal.OnboardingService
-	directorySyncService         *appdirectorysync.Service
-	directorySyncConnectors      *directorysynchandler.Registry
-	pluginExtensions             *appplugin.ExtensionRegistry
+	managedContent                 *appcontenttransfer.Service
+	endpointControls               *appendpointcontrol.Service
+	permissionResolver             *appaccess.PermissionResolver
+	auditService                   *appaudit.Service
+	operationService               *appoperation.Service
+	announcementService            *appannouncement.Service
+	menuService                    *appmenu.Service
+	moduleService                  *appmodule.Service
+	settingsService                *appsettings.Service
+	runtimeConfigService           *appruntimeconfig.Service
+	identityService                *appidentity.Service
+	policyEngine                   *policy.Engine
+	accessService                  *appaccess.Service
+	accessCatalogService           *appaccess.CatalogService
+	accessManagementService        *appaccess.ManagementService
+	accessConsoleService           *appaccess.ConsoleService
+	systemIntegrationService       *appsystemintegration.Service
+	secretService                  *appsecret.Service
+	networkAccessService           *appnetworkaccess.Service
+	networkEndpointResponseService *appnetworkaccess.EndpointResponseService
+	networkVPNService              *appnetworkaccess.VPNService
+	networkEnrollmentService       *appnetworkaccess.EnrollmentService
+	networkAccessGrantService      *appnetworkaccess.AccessGrantService
+	networkIngestQuery             apiHandlers.NetworkTelemetryService
+	networkProxyManagement         *appnetworkproxy.Management
+	clusterService                 *appcluster.Service
+	resourceService                *appresource.Service
+	eventService                   *appevent.Service
+	monitoringService              *appmonitoring.Service
+	observabilityService           *appobservability.Service
+	applicationService             *appregistry.Service
+	executionService               *appexecution.Service
+	buildService                   *appbuild.Service
+	catalogService                 *appcatalog.Service
+	scopeGrantService              *appscopegrant.Service
+	registryService                *appregistryconn.Service
+	releaseService                 *apprelease.Service
+	integrationService             *appintegration.Service
+	pluginService                  *appplugin.Service
+	softwareService                *appsoftware.Service
+	contentDLPService              *appcontentdlp.Service
+	companionService               *appcompanion.Service
+	identityProviderService        *appidentityprovider.Service
+	identityMFAService             *appmfa.Service
+	providerPortalService          *appproviderportal.Service
+	applicationOnboardingService   *appproviderportal.OnboardingService
+	directorySyncService           *appdirectorysync.Service
+	directoryConnections           *appdirectorysync.ConnectionService
+	directorySyncConnectors        *directorysynchandler.Registry
+	pluginExtensions               *appplugin.ExtensionRegistry
 }
 
 type deliveryServices struct {
@@ -269,6 +287,7 @@ type deliveryServices struct {
 	computeService            *appcompute.Service
 	virtualizationService     *appvirtualization.Service
 	dockerService             *appdocker.Service
+	dockerTerminals           *appdocker.NativeTerminals
 	copilotService            *appcopilot.Service
 	knowledgeService          *appknowledge.Service
 	contextBuilder            *appcopilot.ContextBuilder
@@ -403,51 +422,55 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 	alertRepository := alertrepo.New(db)
 	alertRepository.SetUpsertBatchSize(cfg.Runtime.AlertUpsertBatchSize)
 	return &repositories{
-		auditRepository:             auditrepo.New(db),
-		announcementRepository:      announcementrepo.New(db),
-		eventRepository:             eventrepo.New(db),
-		menuRepository:              menurepo.New(db),
-		operationRepository:         operationrepo.New(db),
-		alertRepository:             alertRepository,
-		applicationRepository:       applicationrepo.New(db),
-		buildRepository:             buildrepo.New(db),
-		catalogRepository:           catalogrepo.New(db),
-		workflowRepository:          workflowrepo.New(db),
-		deliveryRepository:          deliveryrepo.New(db),
-		manifestRepository:          manifestrepo.New(db),
-		registryRepository:          registryrepo.New(db),
-		releaseRepository:           releaserepo.New(db),
-		copilotRepository:           copilotrepo.New(db),
-		dashboardRepository:         dashboardrepo.New(db),
-		identityRepository:          userrepo.New(db),
-		settingsRepository:          settingsrepo.New(db),
-		scopeGrantRepository:        scopegrantrepo.New(db),
-		policyRepository:            policyrepo.New(db),
-		clusterRepository:           clusterrepo.New(db),
-		virtualizationRepository:    virtualizationrepo.New(db),
-		dockerRepository:            dockerrepo.New(db),
-		aiGatewayRepository:         aigatewayrepo.New(db),
-		pluginRepository:            pluginrepo.New(db),
-		companionRepository:         companionrepo.New(db),
-		identityProviderRepository:  identityproviderrepo.New(db),
-		identityMFARepository:       identitymfarepo.New(db),
-		knowledgeRepository:         knowledgerepo.New(db),
-		agentHarnessRepository:      agentharnessrepo.New(db),
-		aiProductionRepository:      aiproductionrepo.New(db),
-		evaluationRepository:        aievalrepo.New(db),
-		memoryRepository:            memoryrepo.New(db),
-		knowledgeGraphRepository:    knowledgegraphrepo.New(db),
-		multiAgentRepository:        multiagentrepo.New(db),
-		providerPortalRepository:    providerportalrepo.New(db),
-		portForwardRepository:       portforwardrepo.New(db),
-		resourceCreationRepository:  resourcecreationrepo.New(db),
-		directorySyncRepository:     directorysyncrepo.New(db, cfg.Security.CredentialEncryptionKeys),
-		runtimeConfigRepository:     runtimeconfigrepo.New(db),
-		systemIntegrationRepository: systemintegrationrepo.New(db),
-		secretRepository:            secretrepo.New(db),
-		networkAccessRepository:     networkaccessrepo.New(db),
-		networkRuntimeRepository:    networkruntimerepo.New(db),
-		networkProxyRepository:      networkproxyrepo.New(db),
+		auditRepository:               auditrepo.New(db),
+		announcementRepository:        announcementrepo.New(db),
+		eventRepository:               eventrepo.New(db),
+		menuRepository:                menurepo.New(db),
+		operationRepository:           operationrepo.New(db),
+		alertRepository:               alertRepository,
+		applicationRepository:         applicationrepo.New(db),
+		buildRepository:               buildrepo.New(db),
+		catalogRepository:             catalogrepo.New(db),
+		workflowRepository:            workflowrepo.New(db, durableStorageKeys(cfg)),
+		deliveryRepository:            deliveryrepo.New(db),
+		manifestRepository:            manifestrepo.New(db),
+		registryRepository:            registryrepo.New(db),
+		releaseRepository:             releaserepo.New(db),
+		copilotRepository:             copilotrepo.New(db, durableStorageKeys(cfg)),
+		dashboardRepository:           dashboardrepo.New(db),
+		identityRepository:            userrepo.New(db),
+		settingsRepository:            settingsrepo.New(db),
+		scopeGrantRepository:          scopegrantrepo.New(db),
+		policyRepository:              policyrepo.New(db),
+		clusterRepository:             clusterrepo.New(db),
+		virtualizationRepository:      virtualizationrepo.New(db, virtualizationrepo.WithWorkerPoolValidation(k8sinfra.ValidateWorkerPoolKubernetesSpec)),
+		dockerRepository:              dockerrepo.New(db),
+		aiGatewayRepository:           aigatewayrepo.New(db),
+		pluginRepository:              pluginrepo.New(db),
+		companionRepository:           companionrepo.New(db),
+		identityProviderRepository:    identityproviderrepo.New(db),
+		identityMFARepository:         identitymfarepo.New(db),
+		knowledgeRepository:           knowledgerepo.New(db),
+		agentHarnessRepository:        agentharnessrepo.New(db),
+		aiProductionRepository:        aiproductionrepo.New(db),
+		evaluationRepository:          aievalrepo.New(db),
+		memoryRepository:              memoryrepo.New(db),
+		knowledgeGraphRepository:      knowledgegraphrepo.New(db),
+		multiAgentRepository:          multiagentrepo.New(db),
+		providerPortalRepository:      providerportalrepo.New(db),
+		portForwardRepository:         portforwardrepo.New(db),
+		resourceCreationRepository:    resourcecreationrepo.New(db),
+		podExecutionRepository:        podexecutionrepo.New(db, cfg.Security.CredentialEncryptionKeys),
+		conditionalMutationRepository: conditionalmutationrepo.New(db, cfg.Security.CredentialEncryptionKeys),
+		podTerminalRepository:         podterminalrepo.New(db, cfg.Security.CredentialEncryptionKeys),
+		dockerTerminalRepository:      dockerterminalrepo.New(db, cfg.Security.CredentialEncryptionKeys),
+		directorySyncRepository:       directorysyncrepo.New(db, cfg.Security.CredentialEncryptionKeys),
+		runtimeConfigRepository:       runtimeconfigrepo.New(db),
+		systemIntegrationRepository:   systemintegrationrepo.New(db),
+		secretRepository:              secretrepo.New(db),
+		networkAccessRepository:       networkaccessrepo.New(db),
+		networkRuntimeRepository:      networkruntimerepo.New(db, appnetworkaccess.VPNGovernancePolicy{}),
+		networkProxyRepository:        networkproxyrepo.New(db),
 	}
 }
 
@@ -543,7 +566,8 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		TeamBindings: repos.identityRepository, Identities: repos.identityRepository,
 		Sessions: repos.identityRepository, SessionAdmin: repos.identityRepository,
 		EphemeralTokens: repos.identityRepository,
-		Audit:           auditService, Operations: operationService, Settings: settingsService,
+		CLIState:        repos.identityRepository, CLISessions: repos.identityRepository, CLIMFA: repos.identityMFARepository, CLIReceiptKeys: cfg.Security.CredentialEncryptionKeys,
+		Audit: auditService, Operations: operationService, Settings: settingsService,
 		SAML:        samlLoginRuntime,
 		Permissions: permissionResolver, Gateway: repos.aiGatewayRepository,
 	})
@@ -571,7 +595,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	accessCatalogService := appaccess.NewCatalog(repos.identityRepository, repos.policyRepository, accessService, menuService, permissionResolver)
 	accessManagementService := appaccess.NewManagement(repos.identityRepository, repos.policyRepository, permissionResolver, auditService, operationService)
 	accessConsoleService := appaccess.NewConsole(accessCatalogService, accessManagementService)
-	networkAccessService, err := appnetworkaccess.New(repos.networkAccessRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
+	networkAccessService, err := appnetworkaccess.New(repos.networkAccessRepository, permissionResolver, accessService, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
 	if err != nil {
 		infra.cancel()
 		return nil, fmt.Errorf("build network access service: %w", err)
@@ -591,24 +615,19 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		infra.cancel()
 		return nil, fmt.Errorf("build managed VPN service: %w", err)
 	}
-	networkIngestQuery, err := buildNetworkIngestQuery(cfg)
+	networkIngestQuery, networkProxyManagement, err := newNetworkProxyServices(cfg, repos, permissionResolver, accessService, auditService, operationService)
 	if err != nil {
 		infra.cancel()
 		return nil, err
-	}
-	var proxyTrafficReader appnetworkproxy.TrafficReader
-	if reader, ok := networkIngestQuery.(appnetworkproxy.TrafficReader); ok {
-		proxyTrafficReader = reader
-	}
-	networkProxyManagement, err := appnetworkproxy.NewManagement(repos.networkProxyRepository, proxyTrafficReader, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
-	if err != nil {
-		infra.cancel()
-		return nil, fmt.Errorf("build proxy management service: %w", err)
 	}
 	if metrics, ok := networkIngestQuery.(appnetworkaccess.VPNMetricsReader); ok {
 		networkVPNService.SetVPNMetricsReader(metrics)
 	}
 	directorySyncService := appdirectorysync.New(repos.directorySyncRepository, directorysyncrepo.NewDatabaseProjector(infra.databaseStore.DB()))
+	directoryConnections, err := appdirectorysync.NewConnectionService(repos.directorySyncRepository, directorySyncConnectors, permissionResolver, auditService, operationService)
+	if err != nil {
+		return nil, fmt.Errorf("build directory connection service: %w", err)
+	}
 	directoryScheduler := appdirectorysync.NewScheduler(repos.directorySyncRepository, directorySyncService, func(_ context.Context, connection directorysyncdomain.Connection) (appdirectorysync.Connector, error) {
 		return directorySyncConnectors.Connector(connection.ProviderType)
 	})
@@ -616,10 +635,15 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	directoryScheduler.SetInstrumentation(infra.runtimeMetrics)
 	go directoryScheduler.Start(infra.lifecycleCtx)
 
-	platformCore, err := newPlatformCoreServices(ctx, cfg, infra, repos, permissionResolver, auditService, operationService, accessService, identityService, runtimeConfigService)
+	platformCore, err := newPlatformCoreServices(ctx, cfg, infra, repos, permissionResolver, auditService, operationService, accessService, identityService, identityService, runtimeConfigService)
 	if err != nil {
 		infra.cancel()
 		return nil, err
+	}
+	networkEndpointResponseService, err := appnetworkaccess.NewEndpointResponseService(networkAccessService, repos.networkAccessRepository, platformCore.monitoring)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build endpoint response service: %w", err)
 	}
 
 	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService, secretService, platformCore.resources.Helm())
@@ -667,52 +691,63 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		},
 	}})
 
+	contentSecurity, err := newContentSecurityServices(infra, repos, accessService, permissionResolver, systemIntegrationService, secretService, identityMFAService)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+
 	return &coreServices{
-		permissionResolver:           permissionResolver,
-		auditService:                 auditService,
-		operationService:             operationService,
-		announcementService:          announcementService,
-		menuService:                  menuService,
-		moduleService:                moduleService,
-		settingsService:              settingsService,
-		runtimeConfigService:         runtimeConfigService,
-		identityService:              identityService,
-		identityMFAService:           identityMFAService,
-		policyEngine:                 policyEngine,
-		accessService:                accessService,
-		accessCatalogService:         accessCatalogService,
-		accessManagementService:      accessManagementService,
-		accessConsoleService:         accessConsoleService,
-		systemIntegrationService:     systemIntegrationService,
-		secretService:                secretService,
-		networkAccessService:         networkAccessService,
-		networkVPNService:            networkVPNService,
-		networkEnrollmentService:     networkEnrollmentService,
-		networkAccessGrantService:    networkAccessGrantService,
-		networkIngestQuery:           networkIngestQuery,
-		networkProxyManagement:       networkProxyManagement,
-		clusterService:               platformCore.cluster,
-		resourceService:              platformCore.resources,
-		eventService:                 platformCore.events,
-		monitoringService:            platformCore.monitoring,
-		observabilityService:         platformCore.observability,
-		applicationService:           deliveryCore.applications,
-		executionService:             deliveryCore.execution,
-		buildService:                 deliveryCore.builds,
-		catalogService:               deliveryCore.catalog,
-		scopeGrantService:            deliveryCore.scopeGrants,
-		registryService:              deliveryCore.registries,
-		releaseService:               deliveryCore.releases,
-		integrationService:           deliveryCore.integration,
-		pluginService:                deliveryCore.plugins,
-		softwareService:              softwareService,
-		companionService:             companionService,
-		pluginExtensions:             deliveryCore.pluginExtensions,
-		identityProviderService:      deliveryCore.identityProvider,
-		providerPortalService:        deliveryCore.providerPortal,
-		applicationOnboardingService: appproviderportal.NewOnboarding(repos.providerPortalRepository, deliveryCore.providerPortal, deliveryCore.identityProvider),
-		directorySyncService:         directorySyncService,
-		directorySyncConnectors:      directorySyncConnectors,
+		endpointControls:               contentSecurity.endpoint,
+		managedContent:                 contentSecurity.managed,
+		permissionResolver:             permissionResolver,
+		auditService:                   auditService,
+		operationService:               operationService,
+		announcementService:            announcementService,
+		menuService:                    menuService,
+		moduleService:                  moduleService,
+		settingsService:                settingsService,
+		runtimeConfigService:           runtimeConfigService,
+		identityService:                identityService,
+		identityMFAService:             identityMFAService,
+		policyEngine:                   policyEngine,
+		accessService:                  accessService,
+		accessCatalogService:           accessCatalogService,
+		accessManagementService:        accessManagementService,
+		accessConsoleService:           accessConsoleService,
+		systemIntegrationService:       systemIntegrationService,
+		secretService:                  secretService,
+		networkAccessService:           networkAccessService,
+		networkEndpointResponseService: networkEndpointResponseService,
+		networkVPNService:              networkVPNService,
+		networkEnrollmentService:       networkEnrollmentService,
+		networkAccessGrantService:      networkAccessGrantService,
+		networkIngestQuery:             networkIngestQuery,
+		networkProxyManagement:         networkProxyManagement,
+		clusterService:                 platformCore.cluster,
+		resourceService:                platformCore.resources,
+		eventService:                   platformCore.events,
+		monitoringService:              platformCore.monitoring,
+		observabilityService:           platformCore.observability,
+		applicationService:             deliveryCore.applications,
+		executionService:               deliveryCore.execution,
+		buildService:                   deliveryCore.builds,
+		catalogService:                 deliveryCore.catalog,
+		scopeGrantService:              deliveryCore.scopeGrants,
+		registryService:                deliveryCore.registries,
+		releaseService:                 deliveryCore.releases,
+		integrationService:             deliveryCore.integration,
+		pluginService:                  deliveryCore.plugins,
+		softwareService:                softwareService,
+		contentDLPService:              contentSecurity.content,
+		companionService:               companionService,
+		pluginExtensions:               deliveryCore.pluginExtensions,
+		identityProviderService:        deliveryCore.identityProvider,
+		providerPortalService:          deliveryCore.providerPortal,
+		applicationOnboardingService:   appproviderportal.NewOnboarding(repos.providerPortalRepository, deliveryCore.providerPortal, deliveryCore.identityProvider),
+		directorySyncService:           directorySyncService,
+		directoryConnections:           directoryConnections,
+		directorySyncConnectors:        directorySyncConnectors,
 	}, nil
 }
 
@@ -759,7 +794,8 @@ type platformCoreServices struct {
 	observability *appobservability.Service
 }
 
-func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, streamTickets appresource.LogStreamTicketIssuer, accessURL appcluster.AccessURLResolver) (*platformCoreServices, error) {
+func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, streamTickets appresource.LogStreamTicketIssuer, executionIdentity appresource.PodExecutionIdentity, accessURL appcluster.AccessURLResolver) (*platformCoreServices, error) {
+	infra.clusterManager.SetConfigResolver(currentClusterConfigResolver(repos.clusterRepository))
 	clusterService, err := appcluster.New(
 		infra.clusterManager, infra.clusterManager, infra.informers,
 		func(connection domaincluster.Connection) (appcluster.AgentSummaryClient, error) {
@@ -790,12 +826,15 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 		return nil, fmt.Errorf("build observability service: %w", err)
 	}
 	resourceService := appresource.New(appresource.Dependencies{
+		PodTerminals: repos.podTerminalRepository, Lifecycle: infra.lifecycleCtx,
+		PodExecutions: repos.podExecutionRepository, PodExecutionIdentity: executionIdentity,
 		Clusters: resourceClusters, Agents: resourcebackendinfra.NewAgentClients(infra.agentRegistry), Connections: repos.clusterRepository,
 		StreamTickets: streamTickets, DurableLogs: observabilityService,
 		Authorizer: access, Permissions: permissions, Audit: audit, Operations: operations, CreationOperations: operations, CreationBatches: repos.resourceCreationRepository, PortForwards: repos.portForwardRepository,
 		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectResourceEvents: resourceDirect, DirectResourceGraph: resourceDirect, DirectSecurity: resourceDirect, DirectGeneric: resourceDirect, DirectResourceCreate: resourceDirect,
-		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectLogs: resourceDirect, DirectNetwork: resourceDirect,
-		DirectPods: resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
+		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectLogs: resourceDirect, DirectTopologySources: resourceDirect, DirectMonitoringInventory: resourceDirect,
+		DirectNetwork: resourceDirect,
+		DirectPods:    resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
 		WorkloadSnapshot: resourceDirect.BuildWorkloadSnapshot,
 	})
 	observabilityService.ConfigureCollection(appobservability.CollectionDependencies{
@@ -848,9 +887,6 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		cfg.Runtime.ExecutionJobTTLSeconds, cfg.Runtime.ExecutionRunnerToken, permissions,
 	)
 	executionService.SetSecretLeaseService(secretService)
-	if cfg.Modules.Delivery.Enabled {
-		executionService.Start(infra.lifecycleCtx)
-	}
 	releases := apprelease.New(
 		repos.releaseRepository, repos.applicationRepository, repos.catalogRepository, repos.clusterRepository, executionService, access, permissions,
 		repos.eventRepository, audit, operations, releasebackendinfra.NewDirectRuntime(infra.clusterManager),
@@ -995,6 +1031,7 @@ func newVirtualizationService(lifecycleCtx context.Context, cfg cfgpkg.Config, i
 			WorkerPools:            repos.virtualizationRepository,
 			AuthorizeWorkerCluster: core.resourceService.Inventory().AuthorizeWorkerSupply,
 			WorkerRuntime: &appvirtualization.WorkerRuntime{
+				ValidatePoolSpec: k8sinfra.ValidateWorkerPoolKubernetesSpec,
 				InspectCluster:   infra.clusterManager.InspectWorkerCluster,
 				PrepareBootstrap: infra.clusterManager.PrepareWorkerBootstrap,
 				ClaimNode:        infra.clusterManager.ClaimWorkerNode,
@@ -1027,15 +1064,17 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	workflowService.SetAlertMutator(core.monitoringService)
 	core.executionService.SetWorkflowExecutionTaskSink(workflowService)
 	virtualizationService := newVirtualizationService(lifecycleCtx, cfg, infra, repos, core)
+	personalVM, err := newPersonalEnvironmentVM(core.identityService, repos.copilotRepository, virtualizationService)
+	if err != nil {
+		panic(fmt.Errorf("build personal environment VM runtime: %w", err))
+	}
 
 	aiProductionService, err := appaiproduction.New(repos.aiProductionRepository, core.clusterService.ValidateExecutionAgent)
 	if err != nil {
 		panic(fmt.Errorf("build AI production service: %w", err))
 	}
 
-	aiProductionService.SetPersonalVMValidator(func(ctx context.Context, principal domainidentity.Principal, policy domaincopilot.PersonalVMPolicy) error {
-		return validatePersonalVMAssignment(ctx, core, repos, virtualizationService, principal, policy)
-	})
+	aiProductionService.SetPersonalVMValidator(personalVM.ValidateAssignment)
 
 	copilotService := appcopilot.MustNew(appcopilot.Dependencies{
 		Conversations: repos.copilotRepository, Feed: repos.copilotRepository,
@@ -1043,19 +1082,24 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 			Store:     repos.copilotRepository,
 			Policy:    aiProductionService.ResolvePersonalEnvironmentPolicy,
 			Templates: aiProductionService.ListPersonalEnvironmentPolicies,
-			ObserveVM: func(ctx context.Context, principal domainidentity.Principal, policy domaincopilot.PersonalVMPolicy) (domaincopilot.PersonalVMIdentity, error) {
-				return observePersonalVM(ctx, core, virtualizationService, principal, policy)
-			},
-			InvokeVM: func(ctx context.Context, principal domainidentity.Principal, item domaincopilot.PersonalEnvironmentRecord, op guest.RuntimeOperation) (guest.RuntimeResult, error) {
-				return invokePersonalVM(ctx, repos.copilotRepository, virtualizationService, principal, item, op)
-			},
-			RecoverVM: func(ctx context.Context, principal domainidentity.Principal, item domaincopilot.PersonalEnvironmentRecord) (domaincopilot.PersonalEnvironmentRecord, error) {
-				return recoverPersonalVM(ctx, repos.copilotRepository, virtualizationService, principal, item)
-			},
+			ObserveVM: personalVM.Observe,
+			InvokeVM:  personalVM.Invoke,
+			RecoverVM: personalVM.Recover,
 			Transaction: func(ctx context.Context, apply func(context.Context) error) error {
 				return dbtx.Within(ctx, infra.databaseStore.DB(), apply)
 			},
 			Authorize: core.clusterService.ValidatePersonalExecutionAccess,
+			OpenMCPStdio: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.PersonalMCPStdioRequest) (appcopilot.DSHPersonalStdioPeer, error) {
+				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
+				if err != nil {
+					return nil, err
+				}
+				client, err := infra.agentRegistry.ClientFor(connection)
+				if err != nil {
+					return nil, err
+				}
+				return client.OpenPersonalMCPStdio(ctx, request)
+			},
 			Preflight: func(ctx context.Context, principal domainidentity.Principal, nodeID string, quota contractenv.Quota) error {
 				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
 				if err != nil {
@@ -1104,8 +1148,12 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		AgentPrincipals:     core.identityService,
 		NativeAuthorization: core.accessService,
 		NativeTasks:         workflowService,
+		NativeRuns:          repos.copilotRepository,
+		NativeTaskParents:   repos.copilotRepository,
 	},
 		appcopilot.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), mcptracesinfra.DefaultRegistry()),
+		appcopilot.WithRuntimeProfiles(repos.copilotRepository),
+		appcopilot.WithRuntimeAssets(repos.copilotRepository),
 	)
 	copilotService.SetMCPRegistry(infra.mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
@@ -1142,9 +1190,6 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	if core.runtimeConfigService.ModuleEnabled("monitoring") {
 		core.monitoringService.Start(lifecycleCtx)
 	}
-	if core.runtimeConfigService.ModuleEnabled("ai") {
-		copilotService.Start(lifecycleCtx)
-	}
 
 	dockerService := appdocker.New(
 		repos.dockerRepository,
@@ -1160,15 +1205,21 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		}),
 		appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}),
 		appdocker.WithRuntimeBearerToken(cfg.Runtime.ExecutionRunnerToken),
+		appdocker.WithRuntimeIdentityV1(cfg.Security.DockerRuntimeIdentityV1),
 		appdocker.WithCredentialEncryptionKeys(cfg.Security.CredentialEncryptionKeys),
 		appdocker.WithAccessURLResolver(core.runtimeConfigService),
 		appdocker.WithAudit(core.auditService),
+		appdocker.WithContentDLP(core.contentDLPService),
 		appdocker.WithLogStreamTickets(core.identityService),
 		appdocker.WithComposeSourceFetcher(func(ctx context.Context, rawURL string) (io.ReadCloser, error) {
 			remote, err := infra.softwareFetcher.Fetch(ctx, rawURL)
 			return remote.Content, err
 		}),
 	)
+	dockerTerminals, err := appdocker.NewNativeTerminals(dockerService, repos.dockerTerminalRepository, core.identityService, lifecycleCtx)
+	if err != nil {
+		panic(fmt.Errorf("build Docker native terminals: %w", err))
+	}
 	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, core.permissionResolver, appcompute.Options{
 		VirtualizationEnabled: cfg.Modules.Virtualization.Enabled,
 		RuntimeEnabled:        cfg.Modules.Docker.Enabled,
@@ -1182,6 +1233,8 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)
 	deliveryService.SetRecorders(core.auditService, core.operationService)
+	deliveryService.SetServiceReferenceManifestConfigurationReader(repos.manifestRepository)
+	deliveryService.SetExecutionPrincipalReader(core.identityService)
 	deliveryService.SetDockerDelivery(dockerService)
 	deliveryService.SetLogRuntime(core.resourceService.Logs(), core.identityService)
 	if governanceService, governanceErr := appdeliverygovernance.New(repos.deliveryRepository, core.auditService); governanceErr == nil {
@@ -1214,6 +1267,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		computeService:        computeService,
 		virtualizationService: virtualizationService,
 		dockerService:         dockerService,
+		dockerTerminals:       dockerTerminals,
 		copilotService:        copilotService,
 		knowledgeService:      knowledgeService,
 		contextBuilder:        contextBuilder,
@@ -1248,20 +1302,26 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositories, core *coreServices, delivery *deliveryServices) (*gatewayServices, error) {
 	cfg = runtimeEffectiveConfig(cfg, core.runtimeConfigService.Current())
 	aiGatewayService := appaigateway.NewWithDeps(appaigateway.ServiceDeps{
-		Permissions:     core.permissionResolver,
-		Identity:        core.identityService,
-		Audit:           core.auditService,
-		PersonalTokens:  repos.aiGatewayRepository,
-		ServiceAccounts: repos.aiGatewayRepository,
-		Clients:         repos.aiGatewayRepository,
-		ToolGrants:      repos.aiGatewayRepository,
-		AccessPolicies:  repos.aiGatewayRepository,
-		SkillBindings:   repos.aiGatewayRepository,
-		AuditLogs:       repos.aiGatewayRepository,
-		RateLimits:      repos.aiGatewayRepository,
-		Approvals:       repos.aiGatewayRepository,
-		LLMRelay:        repos.aiGatewayRepository,
-		Secrets:         core.secretService,
+		ProtectedDurableStorage: durableStorageKeys(cfg).Active().ID() != "",
+		Permissions:             core.permissionResolver,
+		Identity:                core.identityService,
+		Audit:                   core.auditService,
+		PersonalTokens:          repos.aiGatewayRepository,
+		TokenRotations:          repos.aiGatewayRepository,
+		ServiceAccounts:         repos.aiGatewayRepository,
+		Clients:                 repos.aiGatewayRepository,
+		ToolGrants:              repos.aiGatewayRepository,
+		AccessPolicies:          repos.aiGatewayRepository,
+		SkillBindings:           repos.aiGatewayRepository,
+		AuditLogs:               repos.aiGatewayRepository,
+		RateLimits:              repos.aiGatewayRepository,
+		Approvals:               repos.aiGatewayRepository,
+		LLMRelay:                repos.aiGatewayRepository,
+		Secrets:                 core.secretService,
+		RelayTransport: aigatewayrelay.New(aigatewayrelay.Config{
+			AllowInsecureUpstreamHTTP: cfg.AIGateway.Relay.AllowInsecureUpstreamHTTP,
+			AllowPrivateUpstreamHosts: cfg.AIGateway.Relay.AllowPrivateUpstreamHosts,
+		}),
 		RelayConfig: appaigateway.LLMRelayConfig{
 			Enabled:                     cfg.AIGateway.Relay.Enabled,
 			DefaultTimeout:              cfg.AIGateway.Relay.DefaultTimeout,
@@ -1271,13 +1331,14 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 			HealthCheckEnabled:          cfg.AIGateway.Relay.HealthCheckEnabled,
 			HealthCheckInterval:         cfg.AIGateway.Relay.HealthCheckInterval,
 			MaxRequestBodyBytes:         int64(cfg.AIGateway.Relay.MaxRequestBodyMB) << 20,
-			AllowInsecureUpstreamHTTP:   cfg.AIGateway.Relay.AllowInsecureUpstreamHTTP,
-			AllowPrivateUpstreamHosts:   cfg.AIGateway.Relay.AllowPrivateUpstreamHosts,
 			IncludeUsageForOpenAIStream: cfg.AIGateway.Relay.IncludeUsageForOpenAIStream,
 			CredentialEncryptionKey:     cfg.Security.CredentialEncryptionKey,
 			CredentialEncryptionKeys:    cfg.Security.CredentialEncryptionKeys,
 		},
 	})
+	if err := aiGatewayService.ValidateRelayTransport(); err != nil {
+		return nil, fmt.Errorf("build AI Gateway relay transport: %w", err)
+	}
 	var rateLimitBackend interface{ Close() error }
 	if strings.EqualFold(strings.TrimSpace(cfg.AIGateway.RateLimit.Backend), "redis") {
 		redisRateLimitBackend, err := ratelimitinfra.NewRedisBackend(cfg.AIGateway.RateLimit)
@@ -1309,43 +1370,10 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	}
 	aiGatewayService.SetCatalogService(core.catalogService)
 	aiGatewayService.SetResourceService(core.resourceService.Runtime())
-	aiGatewayService.SetResourceCreationService(core.resourceService.ResourceCreation())
 	aiGatewayService.SetAnalysisArtifactRecorder(delivery.copilotService)
-	draftCapabilities, err := appaigateway.NewDraftCapabilityProvider(delivery.deliveryService)
-	if err != nil {
-		return nil, fmt.Errorf("build draft capabilities: %w", err)
+	if err := bindGatewayCapabilities(aiGatewayService, core, delivery, repos); err != nil {
+		return nil, err
 	}
-	virtualizationCapabilities, err := appaigateway.NewVirtualizationCapabilityProvider(delivery.virtualizationService)
-	if err != nil {
-		return nil, fmt.Errorf("build virtualization capabilities: %w", err)
-	}
-	resourceCreationCapabilities, err := appaigateway.NewResourceCreationCapabilityProvider(core.resourceService.ResourceCreation())
-	if err != nil {
-		return nil, fmt.Errorf("build Kubernetes creation capabilities: %w", err)
-	}
-	aiGatewayService.SetCapabilityProviders(draftCapabilities, virtualizationCapabilities, resourceCreationCapabilities, appaigateway.BuiltinCapabilityProvider{})
-	deliveryCapabilities, err := appaigateway.NewDeliveryCapabilityProvider(delivery.workflowService)
-	if err != nil {
-		return nil, fmt.Errorf("build delivery capabilities: %w", err)
-	}
-	aiGatewayService.AddCapabilityProviders(deliveryCapabilities)
-	observabilityCapabilities, err := appaigateway.NewObservabilityCapabilityProvider(core.monitoringService.AssessMetrics)
-	if err != nil {
-		return nil, fmt.Errorf("build observability capabilities: %w", err)
-	}
-	aiGatewayService.AddCapabilityProviders(observabilityCapabilities)
-	professionalCapabilities, err := appaigateway.NewProfessionalCapabilityProvider(delivery.copilotService.RunProfessionalCapability)
-	if err != nil {
-		return nil, fmt.Errorf("build professional capabilities: %w", err)
-	}
-	aiGatewayService.AddCapabilityProviders(professionalCapabilities)
-	dockerProjectCapabilities, err := appaigateway.NewDockerProjectCapabilityProvider(delivery.dockerService)
-	if err != nil {
-		return nil, fmt.Errorf("build Docker project capabilities: %w", err)
-	}
-	aiGatewayService.AddCapabilityProviders(dockerProjectCapabilities)
-	aiGatewayService.AddCapabilityProviders(appaigateway.NewKnowledgeCapabilityProvider(delivery.knowledgeService))
-	aiGatewayService.AddCapabilityProviders(appaigateway.NewPersonalEnvironmentCapabilityProvider(delivery.copilotService))
 	aiGatewayService.SetOperationRecorder(core.operationService)
 	aiGatewayService.SetOnCallResolver(core.monitoringService)
 	candidateExecutor, err := appaieval.NewGatewayCandidateExecutor(aiGatewayService)
@@ -1357,7 +1385,6 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 		return nil, fmt.Errorf("build advanced evaluation service: %w", err)
 	}
 	delivery.advancedEvaluationService.SetGateDecisionSink(delivery.aiProductionService)
-	delivery.copilotService.SetWorkbenchModelInvoker(aiGatewayService)
 	if err := registerAIGatewayConnectorRuntimes(ctx, aiGatewayService, cfg.AIGateway); err != nil {
 		if rateLimitBackend != nil {
 			_ = rateLimitBackend.Close()
@@ -1379,6 +1406,17 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	delivery.knowledgeService.SetRetrievalAdapters(knowledgeModels, knowledgeModels)
 	go delivery.knowledgeService.RunIngestionWorker(ctx)
 	delivery.copilotService.SetInspectionCapabilityRuntime(aiGatewayService, delivery.workflowService)
+	if err := delivery.copilotService.ConfigureRuntime(appcopilot.RuntimeDependencies{
+		Model: aiGatewayService, Stream: aiGatewayService, Tools: aiGatewayService,
+		ApprovalRequests: aiGatewayService, Approvals: aiGatewayService,
+		ModelCatalog: aiGatewayService, CapabilityCatalog: aiGatewayService,
+		GatewayAuthorization: aiGatewayService, PlanValidator: aiGatewayService, Image: aiGatewayService,
+	}); err != nil {
+		return nil, fmt.Errorf("bind Copilot runtime: %w", err)
+	}
+	if err := delivery.copilotService.ValidateRuntimeDependencies(); err != nil {
+		return nil, fmt.Errorf("validate Copilot runtime: %w", err)
+	}
 	aiGatewayService.StartRelayHealthChecks(ctx)
 	return &gatewayServices{
 		aiGatewayService: aiGatewayService,
@@ -1402,7 +1440,11 @@ func newHandlers(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, 
 	if err != nil {
 		return nil, fmt.Errorf("build platform handler: %w", err)
 	}
-	return &handlerSet{deps: newRouteDependencies(cfg, infra, repos, core, delivery, gateway, platform)}, nil
+	deps, err := newRouteDependencies(cfg, infra, repos, core, delivery, gateway, platform)
+	if err != nil {
+		return nil, err
+	}
+	return &handlerSet{deps: deps}, nil
 }
 
 func newPlatformResourceServices(service *appresource.Service) apiHandlers.ResourceServices {
@@ -1414,7 +1456,8 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 	helm := service.Helm()
 	inventory := service.Inventory()
 	return apiHandlers.ResourceServices{
-		PodReader: workloads, PodEditor: workloads, PodDiagnostics: workloads, PodStreams: workloads, Logs: service.Logs(),
+		PodTerminals: service.PodTerminals(),
+		PodReader:    workloads, PodEditor: workloads, PodDiagnostics: workloads, PodStreams: workloads, Logs: service.Logs(),
 		DeploymentReader: workloads, DeploymentEditor: workloads,
 		StatefulSetReader: workloads, StatefulSetEditor: workloads,
 		DaemonSetReader: workloads, DaemonSetEditor: workloads,
@@ -1435,9 +1478,47 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 
 }
 
-func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices, platform *apiHandlers.PlatformHandler) apiRoutes.Dependencies {
-	directorySyncHandler := directorysynchandler.New(repos.directorySyncRepository, core.directorySyncService, core.directorySyncConnectors)
+func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices, platform *apiHandlers.PlatformHandler) (apiRoutes.Dependencies, error) {
+	directorySyncHandler := directorysynchandler.New(repos.directorySyncRepository, core.directorySyncService, core.directorySyncConnectors, core.directoryConnections)
 	directorySyncHandler.SetRecorders(core.auditService, core.operationService)
+	directorySyncHandler.SetPermissionResolver(core.permissionResolver)
+	deliveryRoutes, err := newDeliveryRouteServices(cfg, infra, repos, core, delivery)
+	if err != nil {
+		return apiRoutes.Dependencies{}, err
+	}
+	if err := deliveryRoutes.startWorkers(cfg.Modules.Delivery.Enabled, infra.lifecycleCtx); err != nil {
+		return apiRoutes.Dependencies{}, err
+	}
+	dependencies := apiRoutes.Dependencies{
+		TemplateUpdates:     apiHandlers.NewTemplateUpdateHandler(deliveryRoutes.templateUpdates),
+		DeliveryDocuments:   apiHandlers.NewDeliveryDocumentHandler(deliveryRoutes.deliveryDocuments),
+		TemplateSources:     apiHandlers.NewTemplateSourceHandler(deliveryRoutes.templateSources),
+		DeliveryTriggers:    apiHandlers.NewDeliveryTriggerHandler(deliveryRoutes.deliveryTriggers),
+		Manifests:           apiHandlers.NewManifestHandler(deliveryRoutes.manifestService),
+		ManifestSources:     apiHandlers.NewManifestSourceHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestBindings:    apiHandlers.NewManifestBindingHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestDeployments: apiHandlers.NewManifestDeploymentHandler(deliveryRoutes.manifestDeclarativeService),
+		ManifestIntents:     apiHandlers.NewManifestIntentHandler(deliveryRoutes.manifestDeclarativeService),
+		DirectorySync:       directorySyncHandler,
+	}
+	wireAIRouteHandlers(&dependencies, cfg, core, delivery, gateway)
+	wirePlatformRouteHandlers(&dependencies, cfg, infra, core, delivery, platform)
+	return dependencies, nil
+}
+
+// deliveryRouteServices holds the bound delivery owners before any of their
+// workers start.
+type deliveryRouteServices struct {
+	manifestService            *appmanifest.Service
+	manifestDeclarativeService *appmanifest.DeclarativeService
+	deliveryDocuments          *appcatalog.DocumentService
+	templateSources            *appcatalog.TemplateSourceService
+	deliveryTriggers           *appdeliverytrigger.Service
+	templateUpdates            *apptemplateupdate.Service
+	workers                    deliveryWorkers
+}
+
+func newDeliveryRouteServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices) (deliveryRouteServices, error) {
 	manifestService := appmanifest.New(
 		repos.manifestRepository,
 		core.applicationService,
@@ -1455,7 +1536,11 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	core.buildService.SetExternalPipeline(core.systemIntegrationService, core.registryService)
 	core.executionService.SetExternalPipeline(core.systemIntegrationService, core.registryService)
 	manifestDeclarativeService := appmanifest.NewDeclarative(manifestService, repos.manifestRepository, appmanifest.DeclarativeRuntimeDependencies{
-		Delivery: delivery.deliveryService,
+		TemplateMigrations:  core.catalogService,
+		RootResources:       core.resourceService.Runtime(),
+		ImportedRoots:       repos.manifestRepository,
+		ExecutionPrincipals: core.identityService,
+		Delivery:            delivery.deliveryService,
 		Agents: func(connection domaincluster.Connection) (appmanifest.ManifestRuntime, error) {
 			return manifestruntimeinfra.NewAgent(infra.agentRegistry, connection)
 		},
@@ -1477,134 +1562,159 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	core.executionService.AddExecutionTaskSink(delivery.virtualizationService)
 	delivery.workflowService.SetDeliveryRuntime(delivery.deliveryService, core.identityService)
 	core.executionService.AddExecutionTaskSink(manifestDeclarativeService)
-	if cfg.Modules.Delivery.Enabled {
-		manifestDeclarativeService.Start(infra.lifecycleCtx)
-		delivery.deliveryService.StartHelmDelivery(infra.lifecycleCtx)
-		delivery.workflowService.Start(infra.lifecycleCtx)
-	}
 	deliveryDocuments := appcatalog.NewDocuments(core.catalogService, delivery.workflowService, core.applicationService, repos.catalogRepository)
 	templateSources := appcatalog.NewTemplateSources(deliveryDocuments, repos.catalogRepository, repos.catalogRepository, deliveryGit)
 	deliveryTriggers := appdeliverytrigger.New(deliverytriggerrepo.New(infra.databaseStore.DB(), cfg.Security.CredentialEncryptionKeys), core.identityService, templateSources, delivery.workflowService, core.applicationService, deliveryGit, core.permissionResolver, core.auditService, core.operationService)
-	if cfg.Modules.Delivery.Enabled {
-		deliveryTriggers.Start(infra.lifecycleCtx)
+	templateUpdates, err := apptemplateupdate.New(apptemplateupdate.Dependencies{Repository: templateupdaterepo.New(infra.databaseStore.DB()), Applications: core.applicationService, Environments: core.catalogService, Deployment: core.catalogService, Build: core.catalogService, Workflow: core.catalogService, Manifests: manifestDeclarativeService, Batches: delivery.workflowService, Baselines: delivery.deliveryService, Principals: core.identityService})
+	if err != nil {
+		return deliveryRouteServices{}, err
 	}
-	return apiRoutes.Dependencies{
-		System:           apiHandlers.NewSystemHandler(infra.databaseStore, infra.runtimeMetrics),
-		Platform:         platform,
-		AgentConnections: apiHandlers.NewAgentConnectionHandler(core.clusterService, infra.agentRegistry),
-		Announcements:    apiHandlers.NewAnnouncementHandlerWithServices(core.announcementService, core.announcementService),
-		Menu:             apiHandlers.NewMenuHandler(core.menuService),
-		Module:           apiHandlers.NewModuleHandler(core.moduleService),
-		ModuleState:      core.runtimeConfigService,
-		Monitoring: apiHandlers.NewMonitoringHandler(apiHandlers.MonitoringDependencies{
-			Alerts: core.monitoringService, Channels: core.monitoringService, Routes: core.monitoringService,
-			Silences: core.monitoringService, DeliveryLogs: core.monitoringService, Webhooks: core.monitoringService,
-			Integrations: core.monitoringService, Rules: core.monitoringService, Events: core.monitoringService,
-			HealingRuns: core.monitoringService, NotificationPolicies: core.monitoringService,
-			NotificationTemplates: core.monitoringService, HealingPolicies: core.monitoringService,
-			OnCallSchedules: core.monitoringService, OnCallRotations: core.monitoringService,
-			OnCallEscalations: core.monitoringService, OnCallAssignments: core.monitoringService,
-			OnCallRuntime: core.monitoringService,
-		}),
-		Observability:       apiHandlers.NewObservabilityHandler(core.observabilityService, core.monitoringService),
-		DeploymentTemplates: apiHandlers.NewDeploymentTemplateHandler(core.catalogService, core.catalogService),
-		DeliveryDocuments:   apiHandlers.NewDeliveryDocumentHandler(deliveryDocuments),
-		TemplateSources:     apiHandlers.NewTemplateSourceHandler(templateSources),
-		DeliveryTriggers:    apiHandlers.NewDeliveryTriggerHandler(deliveryTriggers),
-		TemplateVersions:    apiHandlers.NewTemplateVersionHandler(core.catalogService, core.catalogService),
-		Catalog: apiHandlers.NewCatalogHandlerWithServices(
-			core.catalogService, core.catalogService, core.catalogService,
-		),
-		Delivery:            newDeliveryHandler(delivery.deliveryService, cfg.Runtime.ExecutionRunnerKeys, core.clusterService),
-		Manifests:           apiHandlers.NewManifestHandler(manifestService),
-		ManifestSources:     apiHandlers.NewManifestSourceHandler(manifestDeclarativeService),
-		ManifestBindings:    apiHandlers.NewManifestBindingHandler(manifestDeclarativeService),
-		ManifestDeployments: apiHandlers.NewManifestDeploymentHandler(manifestDeclarativeService),
-		ManifestIntents:     apiHandlers.NewManifestIntentHandler(manifestDeclarativeService),
-		Applications: apiHandlers.NewApplicationHandlerWithServices(
-			core.applicationService, core.applicationService, core.applicationService,
-		),
-		Builds:          apiHandlers.NewBuildHandler(core.buildService),
-		Workflows:       apiHandlers.NewWorkflowHandler(delivery.workflowService),
-		DeliveryBatches: apiHandlers.NewDeliveryBatchHandler(delivery.workflowService),
-		Registries:      apiHandlers.NewRegistryHandler(core.registryService),
-		Releases:        apiHandlers.NewReleaseHandler(core.releaseService),
-		Copilot: apiHandlers.NewCopilotHandlerWithServices(apiHandlers.CopilotServices{
-			PersonalAgent:     delivery.copilotService,
-			PersonalAssistant: delivery.copilotService,
-			Search:            delivery.copilotService, Feed: delivery.copilotService,
-			PersonalEnvironment: delivery.copilotService,
-			Sessions:            delivery.copilotService, Messages: delivery.copilotService,
-			Streams: delivery.copilotService, Workbench: delivery.copilotService,
-			DataSources: delivery.copilotService, AnalysisProfiles: delivery.copilotService,
-			Automation: delivery.copilotService, RootCause: delivery.copilotService,
-			AgentRuns: delivery.copilotService, InspectionTasks: delivery.copilotService,
-			InspectionRuns: delivery.copilotService,
-		}, cfg.Runtime.ExecutionRunnerKeys),
-		Knowledge:    apiHandlers.NewKnowledgeHandler(delivery.knowledgeService, delivery.contextBuilder),
-		Evaluation:   apiHandlers.NewEvaluationHandler(delivery.evaluationService, core.permissionResolver),
-		AIAdvanced:   apiHandlers.NewAIAdvancedHandler(delivery.advancedEvaluationService, delivery.evaluationService, delivery.memoryService, delivery.knowledgeGraphService, delivery.multiAgentService, delivery.knowledgeService, core.permissionResolver, cfg.Modules.AI.FeatureFlags()).WithChatFeedback(delivery.copilotService),
-		AIProduction: apiHandlers.NewAIProductionHandler(delivery.aiProductionService, core.permissionResolver, cfg.Modules.AI.FeatureFlags()),
-		AgentProviders: apiHandlers.NewAgentProviderHandler(
-			delivery.agentProviderService,
-			cfg.Runtime.ExecutionRunnerKeys,
-		),
-		AIGateway: apiHandlers.NewAIGatewayHandlerWithServices(apiHandlers.AIGatewayServices{
-			Plans: gateway.aiGatewayService, Tasks: delivery.workflowService,
-			Capabilities: gateway.aiGatewayService, PersonalTokens: gateway.aiGatewayService,
-			ServiceAccounts: gateway.aiGatewayService, Clients: gateway.aiGatewayService,
-			ToolGrants: gateway.aiGatewayService, AccessPolicies: gateway.aiGatewayService,
-			Governance: gateway.aiGatewayService, Audit: gateway.aiGatewayService,
-			Approvals: gateway.aiGatewayService, Upstreams: gateway.aiGatewayService,
-			ModelRoutes: gateway.aiGatewayService, RelayObservability: gateway.aiGatewayService,
-			Relay: gateway.aiGatewayService,
-		}),
-		Plugins: apiHandlers.NewPluginHandlerWithServices(
-			core.pluginService, core.pluginService, core.pluginService, core.pluginService,
-		),
-		Software:       apiHandlers.NewSoftwareHandler(core.softwareService),
-		Companion:      apiHandlers.NewCompanionHandler(core.companionService),
-		Compute:        apiHandlers.NewComputeHandler(delivery.computeService),
-		Virtualization: newVirtualizationHandler(delivery.virtualizationService),
-		Docker:         newDockerHandler(delivery.dockerService, cfg.Runtime.ExecutionRunnerKeys),
-		NetworkAccess:  apiHandlers.NewNetworkAccessHandler(core.networkAccessService, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery),
-		NetworkProxy:   apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement),
-		NetworkVPN:     apiHandlers.NewNetworkVPNHandler(core.networkVPNService),
-		Access: accesshandler.New(accesshandler.Services{
-			Users: core.accessConsoleService, Catalog: core.accessConsoleService,
-			Roles: core.accessConsoleService, Teams: core.accessConsoleService, Policies: core.accessConsoleService,
-		}),
-		DirectorySync: directorySyncHandler,
-		ScopeGrants:   accesshandler.NewScopeGrantHandler(core.scopeGrantService),
-		Settings:      newSettingsHandler(core.settingsService, core.permissionResolver),
-		RuntimeConfig: apiHandlers.NewRuntimeConfigHandler(
-			core.runtimeConfigService,
-			runtimeinfo.NewCollector(infra.runtimeMetrics),
-		),
-		SystemIntegrations: apiHandlers.NewSystemIntegrationHandler(core.systemIntegrationService),
-		Secrets:            apiHandlers.NewSecretHandlerWithRunnerKeys(core.secretService, cfg.Runtime.ExecutionRunnerKeys),
-		Auth:               newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth),
-		MFA:                apiHandlers.NewMFAHandler(core.identityMFAService),
-		ProviderPortal: providerportalhandler.New(providerportalhandler.Services{
-			PortalReader:           core.providerPortalService,
-			PortalInteractor:       core.providerPortalService,
-			BrowserHandoffs:        core.identityService,
-			Applications:           core.providerPortalService,
-			ApplicationOnboarding:  core.applicationOnboardingService,
-			Policies:               core.providerPortalService,
-			Providers:              core.identityProviderService,
-			Outposts:               core.identityProviderService,
-			OIDCClients:            core.identityProviderService,
-			OIDC:                   core.identityProviderService,
-			OIDCLogout:             core.identityProviderService,
-			SAML:                   core.identityProviderService,
-			Proxy:                  core.identityProviderService,
-			OutpostRuntime:         core.identityProviderService,
-			OutpostContractRuntime: core.identityProviderService,
-			AccessURL:              core.runtimeConfigService,
-		}),
-		Authn: core.identityService,
+	delivery.deliveryService.SetTemplateUpdates(templateUpdates)
+	return deliveryRouteServices{
+		manifestService: manifestService, manifestDeclarativeService: manifestDeclarativeService,
+		deliveryDocuments: deliveryDocuments, templateSources: templateSources,
+		deliveryTriggers: deliveryTriggers, templateUpdates: templateUpdates,
+		workers: deliveryWorkers{
+			execution: core.executionService,
+			manifests: manifestDeclarativeService, helms: delivery.deliveryService,
+			workflows: delivery.workflowService, triggers: deliveryTriggers, updates: templateUpdates,
+		},
+	}, nil
+}
+
+func (services deliveryRouteServices) startWorkers(enabled bool, ctx context.Context) error {
+	if enabled {
+		if err := services.workers.start(ctx); err != nil {
+			return fmt.Errorf("start delivery workers: %w", err)
+		}
 	}
+	return nil
+}
+
+func wireAIRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.Config, core *coreServices, delivery *deliveryServices, gateway *gatewayServices) {
+	dependencies.Copilot = apiHandlers.NewCopilotHandlerWithServices(apiHandlers.CopilotServices{
+		PersonalAgent:     delivery.copilotService,
+		PersonalAssistant: delivery.copilotService,
+		Search:            delivery.copilotService, Feed: delivery.copilotService,
+		PersonalEnvironment: delivery.copilotService,
+		Sessions:            delivery.copilotService, Messages: delivery.copilotService,
+		Streams: delivery.copilotService, Workbench: delivery.copilotService,
+		DataSources: delivery.copilotService, AnalysisProfiles: delivery.copilotService,
+		Automation: delivery.copilotService, RootCause: delivery.copilotService,
+		AgentRuns: delivery.copilotService, InspectionTasks: delivery.copilotService,
+		InspectionRuns:  delivery.copilotService,
+		RuntimeProfiles: delivery.copilotService,
+		RuntimeAssets:   delivery.copilotService,
+	}, cfg.Runtime.ExecutionRunnerKeys)
+	dependencies.Knowledge = apiHandlers.NewKnowledgeHandler(delivery.knowledgeService, delivery.contextBuilder)
+	dependencies.Evaluation = apiHandlers.NewEvaluationHandler(delivery.evaluationService, core.permissionResolver)
+	dependencies.AIAdvanced = apiHandlers.NewAIAdvancedHandler(delivery.advancedEvaluationService, delivery.evaluationService, delivery.memoryService, delivery.knowledgeGraphService, delivery.multiAgentService, delivery.knowledgeService, core.permissionResolver, cfg.Modules.AI.FeatureFlags()).WithChatFeedback(delivery.copilotService)
+	dependencies.AIProduction = apiHandlers.NewAIProductionHandler(delivery.aiProductionService, core.permissionResolver, cfg.Modules.AI.FeatureFlags())
+	dependencies.AgentProviders = apiHandlers.NewAgentProviderHandler(
+		delivery.agentProviderService,
+		cfg.Runtime.ExecutionRunnerKeys,
+	)
+	dependencies.AIGateway = apiHandlers.NewAIGatewayHandlerWithServices(apiHandlers.AIGatewayServices{
+		Plans: gateway.aiGatewayService, Tasks: delivery.workflowService,
+		Capabilities: gateway.aiGatewayService, PersonalTokens: gateway.aiGatewayService,
+		ServiceAccounts: gateway.aiGatewayService, Clients: gateway.aiGatewayService,
+		ToolGrants: gateway.aiGatewayService, AccessPolicies: gateway.aiGatewayService,
+		Governance: gateway.aiGatewayService, Audit: gateway.aiGatewayService,
+		Approvals: gateway.aiGatewayService, Upstreams: gateway.aiGatewayService,
+		ModelRoutes: gateway.aiGatewayService, RelayObservability: gateway.aiGatewayService,
+		Relay: gateway.aiGatewayService,
+	})
+}
+
+func wirePlatformRouteHandlers(dependencies *apiRoutes.Dependencies, cfg cfgpkg.Config, infra *infrastructure, core *coreServices, delivery *deliveryServices, platform *apiHandlers.PlatformHandler) {
+	dependencies.System = apiHandlers.NewSystemHandler(infra.databaseStore, infra.runtimeMetrics)
+	dependencies.Platform = platform
+	dependencies.AgentConnections = apiHandlers.NewAgentConnectionHandler(core.clusterService, infra.agentRegistry)
+	dependencies.Announcements = apiHandlers.NewAnnouncementHandlerWithServices(core.announcementService, core.announcementService)
+	dependencies.Menu = apiHandlers.NewMenuHandler(core.menuService)
+	dependencies.Module = apiHandlers.NewModuleHandler(core.moduleService)
+	dependencies.ModuleState = core.runtimeConfigService
+	dependencies.Monitoring = apiHandlers.NewMonitoringHandler(apiHandlers.MonitoringDependencies{
+		Alerts: core.monitoringService, Channels: core.monitoringService, Routes: core.monitoringService,
+		Silences: core.monitoringService, DeliveryLogs: core.monitoringService, Webhooks: core.monitoringService,
+		Integrations: core.monitoringService, Rules: core.monitoringService, Events: core.monitoringService,
+		HealingRuns: core.monitoringService, NotificationPolicies: core.monitoringService,
+		NotificationTemplates: core.monitoringService, HealingPolicies: core.monitoringService,
+		OnCallSchedules: core.monitoringService, OnCallRotations: core.monitoringService,
+		OnCallEscalations: core.monitoringService, OnCallAssignments: core.monitoringService,
+		OnCallRuntime: core.monitoringService,
+	})
+	dependencies.Observability = apiHandlers.NewObservabilityHandler(core.observabilityService, core.monitoringService)
+	dependencies.DeploymentTemplates = apiHandlers.NewDeploymentTemplateHandler(core.catalogService, core.catalogService)
+	dependencies.TemplateVersions = apiHandlers.NewTemplateVersionHandler(core.catalogService, core.catalogService)
+	dependencies.Catalog = apiHandlers.NewCatalogHandlerWithServices(
+		core.catalogService, core.catalogService, core.catalogService,
+	)
+	dependencies.Delivery = newDeliveryHandler(delivery.deliveryService, cfg.Runtime.ExecutionRunnerKeys, core.clusterService)
+	dependencies.Applications = apiHandlers.NewApplicationHandlerWithServices(
+		core.applicationService, core.applicationService, core.applicationService,
+	)
+	dependencies.Builds = apiHandlers.NewBuildHandler(core.buildService)
+	dependencies.Workflows = apiHandlers.NewWorkflowHandler(delivery.workflowService)
+	dependencies.DeliveryBatches = apiHandlers.NewDeliveryBatchHandler(delivery.workflowService)
+	dependencies.Registries = apiHandlers.NewRegistryHandler(core.registryService)
+	dependencies.Releases = apiHandlers.NewReleaseHandler(core.releaseService)
+	dependencies.Plugins = apiHandlers.NewPluginHandlerWithServices(
+		core.pluginService, core.pluginService, core.pluginService, core.pluginService,
+	)
+	dependencies.Software = apiHandlers.NewSoftwareHandler(core.softwareService)
+	dependencies.ManagedContentDestinations = apiHandlers.NewManagedContentDestinationsHandler(core.managedContent)
+	dependencies.ManagedContentTransfers = apiHandlers.NewManagedContentTransfersHandler(core.managedContent)
+	dependencies.ManagedContentWorkflow = apiHandlers.NewManagedContentWorkflowHandler(core.managedContent)
+	dependencies.ContentDLP = apiHandlers.NewContentDLPHandler(core.contentDLPService)
+	dependencies.EndpointControls = apiHandlers.NewEndpointControlsHandler(core.endpointControls)
+	dependencies.ContentDLPWorkflow = apiHandlers.NewContentDLPWorkflowHandler(core.contentDLPService)
+	dependencies.Companion = apiHandlers.NewCompanionHandler(core.companionService)
+	dependencies.Compute = apiHandlers.NewComputeHandler(delivery.computeService)
+	dependencies.Virtualization = newVirtualizationHandler(delivery.virtualizationService)
+	dependencies.Docker = newDockerHandler(delivery.dockerService, delivery.dockerTerminals, cfg.Runtime.ExecutionRunnerKeys)
+	dependencies.NetworkAccess = apiHandlers.NewNetworkAccessHandler(apiHandlers.NetworkAccessServices{
+		Device: core.networkAccessService, Site: core.networkAccessService, Space: core.networkAccessService,
+		Resource: core.networkAccessService, Gateway: core.networkAccessService, MihomoProfile: core.networkAccessService,
+		NASBinding: core.networkAccessService, SiteProfileBinding: core.networkAccessService, Session: core.networkAccessService,
+		Policy: core.networkAccessService, PolicyEvaluation: core.networkAccessService, Workload: core.networkAccessService,
+	}, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery)
+	dependencies.NetworkEndpointResponse = apiHandlers.NewNetworkEndpointResponseHandler(core.networkEndpointResponseService, core.networkEndpointResponseService, core.networkEndpointResponseService)
+	dependencies.NetworkProxy = apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement, core.networkProxyManagement)
+	dependencies.NetworkVPN = apiHandlers.NewNetworkVPNHandler(core.networkVPNService)
+	dependencies.Access = accesshandler.New(accesshandler.Services{
+		Users: core.accessConsoleService, Catalog: core.accessConsoleService,
+		Roles: core.accessConsoleService, Teams: core.accessConsoleService, Policies: core.accessConsoleService,
+	})
+	dependencies.ScopeGrants = accesshandler.NewScopeGrantHandler(core.scopeGrantService)
+	dependencies.Settings = newSettingsHandler(core.settingsService, core.permissionResolver)
+	dependencies.RuntimeConfig = apiHandlers.NewRuntimeConfigHandler(
+		core.runtimeConfigService,
+		runtimeinfo.NewCollector(infra.runtimeMetrics),
+	)
+	dependencies.SystemIntegrations = apiHandlers.NewSystemIntegrationHandler(core.systemIntegrationService)
+	dependencies.Secrets = apiHandlers.NewSecretHandlerWithRunnerKeys(core.secretService, cfg.Runtime.ExecutionRunnerKeys)
+	dependencies.Auth = newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth)
+	dependencies.MFA = apiHandlers.NewMFAHandler(core.identityMFAService)
+	dependencies.ProviderPortal = providerportalhandler.New(providerportalhandler.Services{
+		PortalReader:           core.providerPortalService,
+		PortalInteractor:       core.providerPortalService,
+		BrowserHandoffs:        core.identityService,
+		Applications:           core.providerPortalService,
+		ApplicationOnboarding:  core.applicationOnboardingService,
+		Policies:               core.providerPortalService,
+		Providers:              core.identityProviderService,
+		Outposts:               core.identityProviderService,
+		OIDCClients:            core.identityProviderService,
+		OIDC:                   core.identityProviderService,
+		OIDCLogout:             core.identityProviderService,
+		SAML:                   core.identityProviderService,
+		Proxy:                  core.identityProviderService,
+		OutpostRuntime:         core.identityProviderService,
+		OutpostContractRuntime: core.identityProviderService,
+		AccessURL:              core.runtimeConfigService,
+	})
+	dependencies.Authn = core.identityService
 }
 
 func newDeliveryHandler(service *appdelivery.Service, keys keyring.Ring, agents apiHandlers.DeliveryAgentAuthenticator) *apiHandlers.DeliveryHandler {
@@ -1619,15 +1729,19 @@ func newVirtualizationHandler(service *appvirtualization.Service) *apiHandlers.V
 	return apiHandlers.NewVirtualizationHandlerWithServices(apiHandlers.VirtualizationServices{
 		Connections: service, Sync: service, VMs: service,
 		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: service, WorkerPools: service,
-		CapacityPolicies: service, GuestAccess: service,
+		CapacityPolicies: service, GuestAccess: service, ConsoleDialer: virtualizationinfra.DialConsole,
 	})
 }
 
-func newDockerHandler(service *appdocker.Service, keys keyring.Ring) *apiHandlers.DockerHandler {
+func newDockerHandler(service *appdocker.Service, terminals *appdocker.NativeTerminals, keys keyring.Ring) *apiHandlers.DockerHandler {
 	return apiHandlers.NewDockerHandlerWithServices(apiHandlers.DockerServices{
-		Hosts: service, HostInstallation: service, Projects: service, ProjectRuntime: service,
+		DeploymentRequests: service,
+		VersionedRuntime:   service,
+		NativeTerminals:    terminals,
+		Configuration:      service,
+		Hosts:              service, HostInstallation: service, Projects: service, ProjectRuntime: service,
 		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
-		Operations: service, RunnerOperations: service, Planning: service,
+		Operations: service, RunnerOperations: service, Planning: service, Identities: service,
 	}, keys)
 }
 

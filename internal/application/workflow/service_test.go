@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -69,16 +70,35 @@ func (r *stubWorkflowRepository) Get(_ context.Context, runID string) (domainwor
 func (r *stubWorkflowRepository) Update(_ context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cloned := cloneWorkflowRun(item)
-	r.updated = append(r.updated, cloned)
-	return cloneWorkflowRun(cloned), nil
+	return r.saveUpdate(item), nil
 }
 
-func (r *stubWorkflowRepository) CreateApproval(_ context.Context, item domainworkflow.Approval) error {
+func (r *stubWorkflowRepository) UpdateApplicationRunIfCurrent(_ context.Context, item domainworkflow.Run, pausedStatus string, approval *domainworkflow.Approval) (domainworkflow.Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.approvals = append(r.approvals, cloneWorkflowApproval(item))
-	return nil
+	for _, current := range r.items {
+		if current.ID == item.ID && current.Status == pausedStatus && current.Version == item.Version {
+			if approval != nil {
+				r.approvals = append(r.approvals, cloneWorkflowApproval(*approval))
+			}
+			return r.saveUpdate(item), nil
+		}
+	}
+	return domainworkflow.Run{}, apperrors.ErrConflict
+}
+
+func (r *stubWorkflowRepository) saveUpdate(item domainworkflow.Run) domainworkflow.Run {
+	item.Version++
+	cloned := cloneWorkflowRun(item)
+	r.updated = append(r.updated, cloned)
+	for index, current := range r.items {
+		if current.ID == item.ID {
+			r.items[index] = cloned
+			return cloneWorkflowRun(cloned)
+		}
+	}
+	r.items = append(r.items, cloned)
+	return cloneWorkflowRun(cloned)
 }
 
 func (r *stubWorkflowRepository) DeleteByIDs(_ context.Context, ids []string) error {
@@ -349,6 +369,17 @@ type recordingWorkflowArtifactStore struct {
 	items []domaindelivery.ExecutionArtifact
 	tasks []domaindelivery.ExecutionTask
 	logs  []domaindelivery.ExecutionLog
+}
+
+func (s *recordingWorkflowArtifactStore) GetExecutionTask(_ context.Context, id string) (domaindelivery.ExecutionTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, task := range s.tasks {
+		if task.ID == id {
+			return task, nil
+		}
+	}
+	return domaindelivery.ExecutionTask{}, apperrors.ErrNotFound
 }
 
 func (s *recordingWorkflowArtifactStore) UpsertExecutionArtifact(_ context.Context, item domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error) {
@@ -928,7 +959,7 @@ func TestTriggerDeliveryDAGExternalVerifyCreatesExecutionTask(t *testing.T) {
 	if _, ok := outputs["callbackToken"]; ok {
 		t.Fatalf("node outputs leaked callback token: %#v", outputs)
 	}
-	repo.setItems([]domainworkflow.Run{waitingRun})
+	repo.setItems([]domainworkflow.Run{reloadWorkflowRun(t, waitingRun)})
 	task.Status = "completed"
 	task.Result = map[string]any{"summary": "external verification passed"}
 	now := time.Now().UTC()
@@ -949,6 +980,28 @@ func TestTriggerDeliveryDAGExternalVerifyCreatesExecutionTask(t *testing.T) {
 	if _, ok := finalOutputs["callbackToken"]; ok {
 		t.Fatalf("final node outputs leaked callback token: %#v", finalOutputs)
 	}
+
+	repo.setItems([]domainworkflow.Run{reloadWorkflowRun(t, finalRun)})
+	if err := service.RecordExecutionTaskResult(context.Background(), task); err != nil {
+		t.Fatalf("replay terminal callback: %v", err)
+	}
+	if got := len(taskStore.tasksSnapshot()); got != 1 {
+		t.Fatalf("task count after duplicate callback = %d, want 1", got)
+	}
+}
+
+// Round-trip metadata as the PostgreSQL repository does before resuming a run.
+func reloadWorkflowRun(t *testing.T, run domainworkflow.Run) domainworkflow.Run {
+	t.Helper()
+	data, err := json.Marshal(run.Metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Metadata = nil
+	if err := json.Unmarshal(data, &run.Metadata); err != nil {
+		t.Fatal(err)
+	}
+	return run
 }
 
 func newExternalVerifyWorkflowTest(t *testing.T) (*Service, *stubWorkflowRepository, *recordingWorkflowArtifactStore) {
@@ -1058,7 +1111,7 @@ func TestExternalExecutionFailureResumeHonorsStopFailurePolicy(t *testing.T) {
 	if len(tasks) != 1 {
 		t.Fatalf("tasks len = %d, want 1", len(tasks))
 	}
-	repo.setItems([]domainworkflow.Run{waitingRun})
+	repo.setItems([]domainworkflow.Run{reloadWorkflowRun(t, waitingRun)})
 	task := tasks[0]
 	task.Status = "failed"
 	task.Result = map[string]any{"error": "external verification failed"}

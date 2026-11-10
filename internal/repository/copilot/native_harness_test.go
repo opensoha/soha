@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 
 func TestNativeRunWithPostgres(t *testing.T) {
 	repo, store, ctx := newCopilotPostgresTestRepository(t)
+	repo = New(store.DB(), checkpointTestKeys(t))
 	now := time.Now().UTC()
 	owner := "native-test-" + uuid.NewString()
 	session, err := repo.CreateSession(ctx, domain.Session{ID: uuid.NewString(), Title: "Native test", CreatedBy: owner, Metadata: map[string]any{}, CreatedAt: now, UpdatedAt: now})
@@ -26,8 +28,18 @@ func TestNativeRunWithPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidate := func() domain.AgentRun {
-		return domain.AgentRun{ID: "agent:" + uuid.NewString(), ProviderID: "internal", ProviderKind: "native", CapabilityID: "general", SessionID: session.ID, CreatedBy: owner, Status: "queued", Input: map[string]any{}, Output: map[string]any{}, CallbackToken: uuid.NewString(), TimeoutSeconds: 600, QueuedAt: now, CreatedAt: now, UpdatedAt: now}
+		return domain.AgentRun{ID: "agent:" + uuid.NewString(), ProviderID: "dsh", ProviderKind: "dsh", CapabilityID: "general", SessionID: session.ID, CreatedBy: owner, Status: "queued", Input: map[string]any{"_sohaExecutionOwner": "dsh-core"}, Output: map[string]any{}, CallbackToken: uuid.NewString(), TimeoutSeconds: 600, QueuedAt: now, CreatedAt: now, UpdatedAt: now}
 	}
+	t.Run("legacy_worker_and_new_run_denied", func(t *testing.T) {
+		if _, err := repo.ClaimNativeRun(ctx, "old-worker"); !errors.Is(err, apperrors.ErrUnsupportedOperation) {
+			t.Fatalf("legacy claim: %v", err)
+		}
+		old := candidate()
+		old.ProviderKind = "native"
+		if _, err := repo.CreateNativeRun(ctx, old, domain.Message{}, "legacy-new", "hash"); !errors.Is(err, apperrors.ErrUnsupportedOperation) {
+			t.Fatalf("legacy create: %v", err)
+		}
+	})
 	create := func(key string) domain.AgentRun {
 		t.Helper()
 		run := candidate()
@@ -53,6 +65,9 @@ func TestNativeRunWithPostgres(t *testing.T) {
 	})
 	t.Run("cancel fence", func(t *testing.T) { nativeRunCancelFence(t, repo, ctx, owner, run, &lease, parent) })
 	t.Run("failure stop fence", func(t *testing.T) { nativeRunFailureStopFence(t, repo, ctx, owner, session, create) })
+	t.Run("expired and reclaimed parent stop child dispatch", func(t *testing.T) {
+		nativeRunExpiredParentStopsChildDispatch(t, repo, store, ctx, owner, create)
+	})
 	t.Run("unknown outcome no replay", func(t *testing.T) { nativeRunUnknownOutcomeNoReplay(t, repo, ctx, owner, create) })
 	t.Run("input resume gate", func(t *testing.T) { nativeRunInputResumeGate(t, repo, ctx, owner, create) })
 	t.Run("atomic result", func(t *testing.T) { nativeRunAtomicResult(t, repo, store, ctx, session, create) })
@@ -62,7 +77,7 @@ func TestNativeRunWithPostgres(t *testing.T) {
 func nativeRunModelContextJournal(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context, create func(string) domain.AgentRun) {
 	t.Helper()
 	run := create("model-context-journal")
-	lease, err := repo.ClaimNativeRun(ctx, "context-journal-worker")
+	lease, err := repo.ClaimDSHRun(ctx, "dsh-core:context-journal-worker")
 	if err != nil || lease.Run.ID != run.ID {
 		t.Fatalf("journal claim: %v", err)
 	}
@@ -86,13 +101,17 @@ func nativeRunModelContextJournal(t *testing.T, repo *Repository, store *dbstore
 		t.Fatalf("context journal entries=%d: %v", len(checkpoints), err)
 	}
 	for index, entry := range checkpoints {
+		decoded, err := repo.decodeNativeCheckpoint(run, entry.Checkpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
 		var saved struct {
 			ModelContext struct {
 				ID       string
 				Snapshot struct{ ContentHash string }
 			}
 		}
-		if err := json.Unmarshal(entry.Checkpoint, &saved); err != nil || saved.ModelContext.ID != fmt.Sprintf("%s:model:%d", run.ID, index+1) || saved.ModelContext.Snapshot.ContentHash != fmt.Sprintf("source-%d", index+1) {
+		if err := json.Unmarshal(decoded, &saved); err != nil || saved.ModelContext.ID != fmt.Sprintf("%s:model:%d", run.ID, index+1) || saved.ModelContext.Snapshot.ContentHash != fmt.Sprintf("source-%d", index+1) {
 			t.Fatalf("later checkpoint overwrote original context: %v", err)
 		}
 	}
@@ -218,7 +237,7 @@ func nativeRunOwnerIsolation(t *testing.T, repo *Repository, ctx context.Context
 	if _, err := repo.ReadNativeLease(ctx, owner+"-other", run.ID); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("cross-owner read: %v", err)
 	}
-	if _, err := repo.ClaimAgentRun(ctx, domain.AgentRunClaimInput{AgentID: "legacy", ProviderIDs: []string{"internal"}, Kinds: []string{"native"}}); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err := repo.ClaimAgentRun(ctx, domain.AgentRunClaimInput{AgentID: "legacy", ProviderIDs: []string{"dsh"}, Kinds: []string{"dsh"}}); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("external owner claimed Native: %v", err)
 	}
 
@@ -248,20 +267,20 @@ func nativeRunLeaseFencing(t *testing.T, repo *Repository, store *dbstore.Store,
 	lease := *leasePtr
 	defer func() { *leasePtr = lease }()
 
-	first, err := repo.ClaimNativeRun(ctx, "worker-1")
+	first, err := repo.ClaimDSHRun(ctx, "dsh-core:worker-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := repo.RenewNativeLease(ctx, first); err != nil || !ok {
 		t.Fatalf("renew: %v %v", ok, err)
 	}
-	if _, err := repo.ClaimNativeRun(ctx, "worker-2"); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err := repo.ClaimDSHRun(ctx, "dsh-core:worker-2"); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("double claim: %v", err)
 	}
 	if err := store.DB().Exec(`UPDATE ai_agent_runs SET native_lease_until=now()-interval '1 second' WHERE id=?`, run.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	lease, err = repo.ClaimNativeRun(ctx, "worker-2")
+	lease, err = repo.ClaimDSHRun(ctx, "dsh-core:worker-2")
 	if err != nil || lease.Fence <= first.Fence {
 		t.Fatalf("reclaim: %+v %v", lease, err)
 	}
@@ -288,7 +307,10 @@ func nativeRunDurableEvents(t *testing.T, repo *Repository, ctx context.Context,
 		t.Fatalf("invalid cursor: %+v %v", page, err)
 	}
 	loaded, err := repo.ReadNativeLease(ctx, owner, run.ID)
-	if err != nil || string(loaded.Checkpoint) != `{"counter": 1}` {
+	var checkpoint struct {
+		Counter int `json:"counter"`
+	}
+	if err != nil || json.Unmarshal(loaded.Checkpoint, &checkpoint) != nil || checkpoint.Counter != 1 {
 		t.Fatalf("checkpoint: %s %v", loaded.Checkpoint, err)
 	}
 
@@ -392,7 +414,10 @@ func nativeRunCancelFence(t *testing.T, repo *Repository, ctx context.Context, o
 	if _, err := repo.AdvanceNativeRun(ctx, lease, domain.NativeAdvance{Run: lease.Run, Phase: "tools", Checkpoint: []byte(`{}`)}); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("dispatch after cancel: %v", err)
 	}
-	var err error
+	lease, err := repo.ReadNativeLease(ctx, owner, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	lease, err = repo.AdvanceNativeRun(ctx, lease, domain.NativeAdvance{Run: lease.Run, Phase: "cancelling", StopReason: "user_cancelled", Checkpoint: []byte(`{"tasks":[{"state":"observing"}]}`), Release: true})
 	if err != nil || lease.Run.Status != "running" || lease.Phase != "cancelling" {
 		t.Fatalf("cancel reconciliation could not persist without a false terminal: %+v %v", lease, err)
@@ -408,7 +433,7 @@ func nativeRunCancelFence(t *testing.T, repo *Repository, ctx context.Context, o
 
 func nativeRunFailureStopFence(t *testing.T, repo *Repository, ctx context.Context, owner string, session domain.Session, create func(string) domain.AgentRun) {
 	other := create("failure-stop")
-	lease, err := repo.ClaimNativeRun(ctx, "failure-worker")
+	lease, err := repo.ClaimDSHRun(ctx, "dsh-core:failure-worker")
 	if err != nil || lease.Run.ID != other.ID || lease.RequestHash != "request-hash" {
 		t.Fatalf("claim: %+v %v", lease, err)
 	}
@@ -434,12 +459,69 @@ func nativeRunFailureStopFence(t *testing.T, repo *Repository, ctx context.Conte
 
 }
 
+func nativeRunExpiredParentStopsChildDispatch(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context, owner string, create func(string) domain.AgentRun) {
+	run := create("child-fence-takeover")
+	first, err := repo.ClaimDSHRun(ctx, "dsh-core:child-parent")
+	if err != nil || first.Run.ID != run.ID {
+		t.Fatalf("first claim: %+v %v", first, err)
+	}
+	parent := domain.NativeTaskParent{RunID: run.ID, OwnerID: owner, SessionID: run.SessionID, RequestHash: first.RequestHash, Deadline: run.QueuedAt.Add(time.Duration(run.TimeoutSeconds) * time.Second)}
+	if reason, err := repo.NativeTaskStopReason(ctx, parent); err != nil || reason != "" {
+		t.Fatalf("active parent blocked child: %q %v", reason, err)
+	}
+	if err := store.DB().Exec(`UPDATE ai_agent_runs SET native_lease_until=now()-interval '1 second' WHERE id=?`, run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	assertNativeChildWorkStopped(t, repo, ctx, parent)
+	takeover, err := repo.ClaimDSHRun(ctx, "dsh-core:child-successor")
+	if err != nil || takeover.Run.ID != run.ID || takeover.Fence <= first.Fence || takeover.Phase != "cancelling" || takeover.Run.Phase != takeover.Phase {
+		t.Fatalf("takeover exposed ordinary work before reconciliation: %+v %v", takeover, err)
+	}
+	assertNativeChildWorkStopped(t, repo, ctx, parent)
+	takeover.Run.Status = "failed"
+	if _, err := repo.AdvanceNativeRun(ctx, takeover, domain.NativeAdvance{Run: takeover.Run, Phase: "failed", Checkpoint: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertNativeChildWorkStopped(t *testing.T, repo *Repository, ctx context.Context, parent domain.NativeTaskParent) {
+	t.Helper()
+	if reason, err := repo.NativeTaskStopReason(ctx, parent); err != nil || reason != "failure" {
+		t.Fatalf("child stop reason: %q %v", reason, err)
+	}
+	called := false
+	if err := repo.WithNativeTaskParent(ctx, parent, false, func(context.Context) error { called = true; return nil }); !errors.Is(err, apperrors.ErrConflict) || called {
+		t.Fatalf("expired/reclaimed parent admitted child work: %v", err)
+	}
+	if err := repo.ReserveNativeChildToolCall(ctx, parent, false); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("expired/reclaimed parent admitted a work reservation: %v", err)
+	}
+	if err := repo.WithNativeTaskParent(ctx, parent, true, func(cleanupCtx context.Context) error {
+		return repo.ReserveNativeChildToolCall(cleanupCtx, parent, true)
+	}); err != nil {
+		t.Fatalf("cleanup against original parent identity denied: %v", err)
+	}
+}
+
+func TestReadNativeLeaseScopesSingleSnapshotQuery(t *testing.T) {
+	repo, mock := newAgentRunRepository(t)
+	mock.ExpectQuery(`SELECT .*native_request_hash.*native_version,native_fence.*FROM ai_agent_runs LEFT JOIN .*WHERE id = \$1 AND created_by = \$2`).
+		WithArgs("run", "owner").WillReturnError(sql.ErrNoRows)
+	if _, err := repo.ReadNativeLease(t.Context(), " owner ", " run "); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("scoped lease read: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func nativeRunUnknownOutcomeNoReplay(t *testing.T, repo *Repository, ctx context.Context, owner string, create func(string) domain.AgentRun) {
 	other := create("unknown")
-	lease, err := repo.ClaimNativeRun(ctx, "worker-3")
+	lease, err := repo.ClaimDSHRun(ctx, "dsh-core:worker-3")
 	if err != nil || lease.Run.ID != other.ID {
 		t.Fatalf("claim: %+v %v", lease, err)
 	}
+	parent := domain.NativeTaskParent{RunID: other.ID, OwnerID: owner, SessionID: other.SessionID, RequestHash: lease.RequestHash, Deadline: other.QueuedAt.Add(time.Duration(other.TimeoutSeconds) * time.Second)}
 	_, err = repo.AdvanceNativeRun(ctx, lease, domain.NativeAdvance{Run: lease.Run, Phase: "paused", StopReason: "unknown_outcome", Release: true, Checkpoint: []byte(`{"pending":[{"state":"dispatching"}]}`)})
 	if err != nil {
 		t.Fatal(err)
@@ -447,15 +529,43 @@ func nativeRunUnknownOutcomeNoReplay(t *testing.T, repo *Repository, ctx context
 	if _, err = repo.ResumeNativeRun(ctx, owner, other.ID, "retry"); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("unknown write replay: %v", err)
 	}
-	if _, err = repo.ClaimNativeRun(ctx, "worker-4"); !errors.Is(err, apperrors.ErrNotFound) {
+	if _, err = repo.ClaimDSHRun(ctx, "dsh-core:worker-4"); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("paused run reclaimed: %v", err)
 	}
 
+	if reason, err := repo.NativeTaskStopReason(ctx, parent); err != nil || reason != "failure" {
+		t.Fatalf("unknown parent did not stop child work: %q %v", reason, err)
+	}
+	if err := repo.ReserveNativeChildToolCall(ctx, parent, false); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("unknown parent admitted child work: %v", err)
+	}
+	if err := repo.WithNativeTaskParent(ctx, parent, true, func(cleanupCtx context.Context) error {
+		return repo.ReserveNativeChildToolCall(cleanupCtx, parent, true)
+	}); err != nil {
+		t.Fatalf("unknown parent rejected cleanup: %v", err)
+	}
+	if _, err := repo.RequestNativeCancel(ctx, owner, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	lease, err = repo.ClaimDSHRun(ctx, "dsh-core:unknown-cancel")
+	if err != nil || !lease.CancelRequested {
+		t.Fatalf("explicit cancel did not schedule one reconciliation: %+v %v", lease, err)
+	}
+	if _, err = repo.AdvanceNativeRun(ctx, lease, domain.NativeAdvance{Run: lease.Run, Phase: "paused", StopReason: "unknown_outcome", Checkpoint: lease.Checkpoint}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := repo.RequestNativeCancel(ctx, owner, other.ID)
+	if err != nil || run.Phase != "paused" || run.StopReason != "unknown_outcome" {
+		t.Fatalf("duplicate cancel reset unknown state: %+v %v", run, err)
+	}
+	if _, err = repo.ClaimDSHRun(ctx, "dsh-core:unknown-cancel-replay"); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("unknown cancellation scheduled again: %v", err)
+	}
 }
 
 func nativeRunInputResumeGate(t *testing.T, repo *Repository, ctx context.Context, owner string, create func(string) domain.AgentRun) {
 	other := create("input-resume")
-	lease, err := repo.ClaimNativeRun(ctx, "resume-worker")
+	lease, err := repo.ClaimDSHRun(ctx, "dsh-core:resume-worker")
 	if err != nil || lease.Run.ID != other.ID {
 		t.Fatalf("claim: %+v %v", lease, err)
 	}
@@ -486,7 +596,12 @@ func nativeRunInputResumeGate(t *testing.T, repo *Repository, ctx context.Contex
 	if _, err = repo.ResumeNativeRun(ctx, owner, other.ID, "late answer"); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("canceled run accepted input: %v", err)
 	}
-	lease, err = repo.ClaimNativeRun(ctx, "resume-cancel-worker")
+	// dsh resumes the existing live worker; a second dispatcher cannot steal its
+	// preserved lease. Read its refreshed cancellation fence before terminal ACK.
+	if _, err := repo.ClaimDSHRun(ctx, "dsh-core:resume-cancel-worker"); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("resumed lease was stolen: %v", err)
+	}
+	lease, err = repo.ReadNativeLease(ctx, owner, other.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,7 +614,7 @@ func nativeRunInputResumeGate(t *testing.T, repo *Repository, ctx context.Contex
 
 func nativeRunAtomicResult(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context, session domain.Session, create func(string) domain.AgentRun) {
 	other := create("result")
-	lease, err := repo.ClaimNativeRun(ctx, "worker-5")
+	lease, err := repo.ClaimDSHRun(ctx, "dsh-core:worker-5")
 	if err != nil || lease.Run.ID != other.ID {
 		t.Fatalf("claim: %+v %v", lease, err)
 	}

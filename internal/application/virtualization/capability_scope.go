@@ -27,7 +27,8 @@ func connectionCapabilityScope(connection domain.Connection, namespace string) m
 func taskCapabilityScope(task domain.Task) map[string]string {
 	scope := map[string]string{"operationId": task.ID, "virtualizationConnectionId": task.ConnectionID}
 	if isWorkerCreation(task) {
-		if pool, err := workerPoolFromTask(task); err == nil {
+		// Scope comes from the frozen identity even when its pool cannot run.
+		if pool, err := workerPoolSnapshot(task); err == nil {
 			for key, value := range workerPoolScope(pool) {
 				scope[key] = value
 			}
@@ -130,7 +131,7 @@ func (s *Service) authorizeVMRetry(ctx context.Context, principal domainidentity
 		if err := s.authorizeWorkerCreate(ctx, principal); err != nil {
 			return err
 		}
-		pool, err := workerPoolFromTask(task)
+		pool, err := s.workerPoolFromTask(task)
 		if err != nil {
 			return err
 		}

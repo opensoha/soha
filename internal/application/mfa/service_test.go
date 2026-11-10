@@ -21,7 +21,7 @@ import (
 )
 
 func TestTOTPCodeRFC6238Vector(t *testing.T) {
-	const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+	const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	code, err := totpCode(secret, time.Unix(59, 0).Unix()/totpPeriod)
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestWebAuthnAuthenticationCompletesStepUpOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := sohaapi.MFAWebAuthnResponse{CredentialID: "Y3JlZGVudGlhbA", ClientDataJSON: "e30", AuthenticatorData: "YXV0aA", Signature: "c2ln"}
+	response := sohaapi.MFAWebAuthnResponse{CredentialID: "Y3JlZGVudGlhbA", ClientDataJSON: "e30", AuthenticatorData: "YXV0aA", Signature: "c2ln"} // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	result, err := service.VerifyWebAuthnChallenge(t.Context(), principal, "session-1", challenge.ChallengeID, response)
 	if err != nil || !result.Verified || !repo.recentStepUp {
 		t.Fatalf("VerifyWebAuthnChallenge = %#v, %v; recentStepUp=%v", result, err, repo.recentStepUp)
@@ -348,3 +348,30 @@ func (r *memoryRepository) HasRecentStepUp(context.Context, string, string, time
 func fmtError(target error) error { return errors.Join(target, errors.New("test")) }
 
 var _ = sohaapi.MFAChallengeResult{}
+
+func TestExistingFactorCannotBeBypassedByFreshEnrollment(t *testing.T) {
+	now := time.Now().UTC()
+	repo := newMemoryRepository()
+	service := testService(t, repo, now)
+	principal := domainidentity.Principal{UserID: "user-1", UserName: "alice"}
+	pending, err := service.BeginTOTPEnrollment(t.Context(), principal, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A pending enrollment created before another factor was registered must also
+	// recheck policy when redeemed, including across a server deployment.
+	repo.credentials = []domainmfa.Credential{{ID: "existing", UserID: "user-1", Type: domainmfa.CredentialTypeWebAuthn}}
+	if _, err = service.BeginTOTPEnrollment(t.Context(), principal, "session-1"); !errors.Is(err, apperrors.ErrMFARequired) {
+		t.Fatal("new TOTP bypassed the existing factor", err)
+	}
+	if _, err = service.BeginWebAuthnEnrollment(t.Context(), principal, "session-1"); !errors.Is(err, apperrors.ErrMFARequired) {
+		t.Fatal("new Passkey bypassed the existing factor", err)
+	}
+	if _, err = service.VerifyChallenge(t.Context(), principal, "session-1", pending.ChallengeID, "123456"); !errors.Is(err, apperrors.ErrMFARequired) {
+		t.Fatal("pending enrollment bypassed the existing factor", err)
+	}
+	repo.recentStepUp = true
+	if _, err = service.BeginTOTPEnrollment(t.Context(), principal, "session-1"); err != nil {
+		t.Fatal("recent MFA proof did not allow another enrollment", err)
+	}
+}

@@ -21,10 +21,6 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-type assistantImageInvoker interface {
-	InvokeWorkbenchImage(context.Context, domainidentity.Principal, appaigateway.WorkbenchImageRequest) ([]byte, error)
-}
-
 func (s *Service) assistantProfileFromChat(ctx context.Context, principal domainidentity.Principal, session domain.Session, input domain.WorkbenchSendMessageInput, mode, locale string) (domain.WorkbenchStreamResult, bool, error) {
 	if !isPersonalSession(session) {
 		return domain.WorkbenchStreamResult{}, false, nil
@@ -205,8 +201,8 @@ func assistantAvatar(item domain.PersonalAssistant) domain.PersonalAssistantAvat
 }
 
 func (s *Service) generateAssistantAppearance(ctx context.Context, principal domainidentity.Principal, session domain.Session, task domain.WorkbenchAssistantTask, instruction string, before domain.PersonalAssistant) (domain.PersonalAssistantAvatar, error) {
-	invoker, ok := s.workbenchInvoker.(assistantImageInvoker)
-	if !ok {
+	invoker := s.runtime.Image
+	if invoker == nil {
 		return domain.PersonalAssistantAvatar{}, apperrors.ErrUnsupportedOperation
 	}
 	reference := ""
@@ -329,7 +325,7 @@ func assistantImageFailure(err error) string {
 }
 
 func validateAssistantAppearanceRequest(input domain.WorkbenchSendMessageInput, task domain.WorkbenchAssistantTask) error {
-	if len(input.RequestID) > 128 {
+	if !workbenchRequestIDWithinLimit(input.RequestID) {
 		return apperrors.ErrInvalidArgument
 	}
 	if task.Kind != "avatar" && task.Kind != "undo" {

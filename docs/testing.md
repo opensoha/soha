@@ -24,6 +24,12 @@ Core HTTP 会话/消息/任务读取的六个必要子场景。没有权限的�
 `check-go-test-evidence.py <json> --exit-code <actual>` 不以包PASS代替目标运行，拒绝空结果、
 无run、skip/fail、损坏JSON、缓存、缺子场景、非零退出和不完整结束。CI继续使用既有PG service。
 
+`python3 scripts/run-deletion-integration.py --kubernetes-import --output .tmp/quality/kubernetes-import-test.json`
+复用同一归属保护，在tmpfs隔离PG执行workload/CR导入的9个必要子场景：幂等、UID替换回滚、
+管理权不升级、保留metadata、授权目标替换竞态、跨namespace、native归属冲突、CRD区分/共享观察、
+legacy缺UID冲突。`check-go-test-evidence.py --kubernetes-import`拒绝任何遗漏或skip；
+deletion-integration CI同步执行此父测试，上传原始Go JSON。资源读取是替身，不算真实集群接入。
+
 状态机用例位于 `internal/application/execution`，取消需要runtime确认，超时/重试/迟到回调
 沿用已有行为。Agent fake runner race 与真实 runner/cluster分别报告；不因假控制平面PASS宣布上线。
 HTTP黑盒/真实UI归 Web real入口；数据库与持久化冲突/副作用归本仓，不让Web直接SQL。
@@ -59,6 +65,10 @@ Kubernetes RBAC 仅授予定义读取/删除及节点/命名空间读取，不�
 登录密码，结果 manifest 不含凭据。禁止打印或上传该目录。`seed` 创建本次 CRD/实例并记录 UID；
 Git/Docker忽略该私有目录，源码打包另外无条件排除所有`.tmp`，避免认证进入构建输入。
 认证API及Kubernetes请求拒绝重定向；测试包装器拒绝缺失、旧结果、skip或身份不符的manifest。
+每次 `test` 按 lab runId 的哈希生成合法 `SOHA_E2E_TASK_ID`，并生成新的 `SOHA_E2E_EXECUTION_ID`；
+仅消费 Web `test-results/tasks/<taskId>/<executionId>/run-manifest.json`，不删除或读取全局及其他执行的报告。
+manifest 的 taskId/executionId 必须匹配本次调用，真实 runId、环境、源码与用例结果校验继续保留；
+报告隔离不改变专用 lab 的资源归属或允许共享可变环境并行执行。
 同名替换使用 Kubernetes UID precondition，校验 run/id/UID 不符就拒绝。flow 会删除本次 CRD，
 所以验收成功后不能直接重跑同一 lease；先核验旧对象已消失，再准备新的专用 lease。
 环境保留供后续验收，停止或移除时仍须核对完整容器 ID/run label/镜像和精确卷归属。
@@ -75,3 +85,24 @@ Git/Docker忽略该私有目录，源码打包另外无条件排除所有`.tmp`�
 证据必须包含 12 个指定父/子项、无跳过且容器清理 PASS；检索和引用分别验证，
 远端 public 文档不能越过 Core 保存的 importPolicy。抓取 loader 是替身，数据库与生产
 ingestion/检索/引用路径是真实执行；此验证不算外部 fetch、真实 Embedding 或来源编辑撤权验收。
+
+## Inactive environment service reference candidates
+
+`python3 scripts/run-deletion-integration.py --service-reference-candidates --output .tmp/quality/service-reference-candidates.json`
+uses this run's disposable tmpfs PostgreSQL, uncached race-enabled Go JSON and
+`check-go-test-evidence.py --service-reference-candidates`. All 18 required descendants
+(including five context-drift cases) must run and pass without skips. The suite checks
+persistence/recovery, binding and candidate CAS, delete/recreate ABA, concurrency,
+transactional reauthorization, source deletion/consumer cleanup and application
+cascade isolation. Candidate records do not activate references or modify runtime
+targets. Database proof is separate from real Kubernetes/Agent or publication acceptance.
+
+## Manifest Plan 任务归属与控制权
+
+`python3 scripts/run-deletion-integration.py --manifest-control --output .tmp/quality/manifest-control.json`
+复用 `TestDeliverySnapshotWithPostgres` 的隔离 PG18、无缓存 race 与所有权清理入口，
+严格要求 `publication-operation-context` 及其原子回滚、上下文恢复/幂等、约束/歧义拒绝、
+旧独立任务兼容四个子场景实际 run/pass，无 skip。父测试还执行原根 CR 与迁移基线场景。
+`python3 scripts/check-go-test-evidence.py <log> --exit-code 0 --manifest-control`
+只验真实 Go JSON，不以包通过代替场景证据；CI 对同一 Manifest 日志追加此检查。
+本检查不代表真实 K8s 发布或混合 Core/Agent 现场验收。

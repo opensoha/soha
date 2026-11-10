@@ -333,7 +333,7 @@ func markSessionStepUp(db *gorm.DB, sessionID, userID, method string, now time.T
 	metadata := fmt.Sprintf(`{"mfa":true,"amr":["mfa",%q],"mfaAuthenticatedAt":%q}`, method, now.Format(time.RFC3339Nano))
 	result := db.Exec(`
 		UPDATE sessions
-		SET metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb, updated_at = ?
+		SET metadata = COALESCE(metadata::jsonb, '{}'::jsonb) || ?::jsonb, updated_at = ?
 		WHERE id = ? AND user_id = ? AND status = 'active' AND expires_at > ?
 	`, metadata, now, strings.TrimSpace(sessionID), strings.TrimSpace(userID), now)
 	if result.Error != nil {

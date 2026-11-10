@@ -137,7 +137,7 @@ func (d *Direct) createResolvedManifest(ctx context.Context, clusterID string, m
 	gvr := schema.GroupVersionResource{Group: manifest.Group, Version: manifest.Version, Resource: manifest.Resource}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	created, err := dynamicResource(bundle.Dynamic, gvr, manifest.Ref.Namespaced, item.GetNamespace()).Create(queryCtx, item, metav1.CreateOptions{DryRun: dryRun})
+	created, err := dynamicResource(bundle.Dynamic, gvr, manifest.Ref.Namespaced, item.GetNamespace()).Create(queryCtx, item, metav1.CreateOptions{DryRun: dryRun, FieldManager: resourceEditFieldManager})
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, kubernetesCreateError(manifest.Ref.Kind, err)
 	}

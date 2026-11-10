@@ -1,0 +1,34 @@
+{
+  "http": 200,
+  "embedding_calls": [
+    {
+      "id": "387b7664-37df-447b-93b6-efc3eeb42f68",
+      "requestId": "5f514bd8-b132-413e-9312-ed63e42373a2",
+      "publicModel": "gpt-6-luna",
+      "endpoint": "embeddings",
+      "status": "failure",
+      "httpStatus": 502,
+      "upstreamStatus": null,
+      "errorCode": "upstream_request_failed",
+      "durationMs": 10319,
+      "createdAt": "2026-11-08T13:14:07.670533Z",
+      "upstreamId": "87b9ffc7-1f33-40ce-a83b-e640e02a6393"
+    }
+  ],
+  "transport_error_categories": {
+    "timeout": true,
+    "deadline exceeded": false,
+    "eof": false,
+    "connection refused": false,
+    "no such host": false,
+    "tls": true,
+    "reset by peer": false
+  },
+  "source_trace": {
+    "handler": "internal/api/handlers/aigateway.go:922",
+    "adapter": "internal/infrastructure/aigatewayrelay/http.go:72",
+    "mapping": "internal/application/aigateway/relay_transport.go:239",
+    "public_code": "internal/api/errors/errors.go:80"
+  },
+  "conclusion": "Request selected the existing upstream then HTTP client.Do failed before a response; not a route rejection or upstream HTTP model-unsupported response. No embedding capability proved."
+}

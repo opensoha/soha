@@ -260,13 +260,17 @@ func (h *Helm) GetHelmReleaseValues(ctx context.Context, principal domainidentit
 }
 
 func (h *Helm) UpdateHelmReleaseValues(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, content string) (domainresource.HelmValuesView, error) {
+	return h.UpdateHelmReleaseValuesWithRevision(ctx, principal, clusterID, namespace, name, content, 0)
+}
+
+func (h *Helm) UpdateHelmReleaseValuesWithRevision(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, content string, expectedRevision int) (domainresource.HelmValuesView, error) {
 	s := h
 	namespace = strings.TrimSpace(namespace)
 	name = strings.TrimSpace(name)
 	if namespace == "" || name == "" {
 		return domainresource.HelmValuesView{}, fmt.Errorf("%w: namespace and releaseName are required", apperrors.ErrInvalidArgument)
 	}
-	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionUpdate)
+	connection, decision, err := s.authorizeHelmMutation(ctx, principal, clusterID, namespace, domainaccess.ActionUpdate)
 	if err != nil {
 		return domainresource.HelmValuesView{}, err
 	}
@@ -281,7 +285,7 @@ func (h *Helm) UpdateHelmReleaseValues(ctx context.Context, principal domainiden
 			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 			return domainresource.HelmValuesView{}, err
 		}
-		item, err := client.UpdateHelmReleaseValues(ctx, namespace, name, normalizedContent)
+		item, err := client.UpdateHelmReleaseValues(ctx, namespace, name, normalizedContent, expectedRevision)
 		if err != nil {
 			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 			return domainresource.HelmValuesView{}, err
@@ -298,7 +302,7 @@ func (h *Helm) UpdateHelmReleaseValues(ctx context.Context, principal domainiden
 	}
 
 	normalizedContent := normalizeHelmValuesContent(content)
-	item, err := s.direct.UpdateHelmReleaseValues(ctx, clusterID, namespace, name, normalizedContent)
+	item, err := s.direct.UpdateHelmReleaseValues(ctx, clusterID, namespace, name, normalizedContent, expectedRevision)
 	if err != nil {
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.HelmValuesView{}, err
@@ -320,7 +324,7 @@ func (h *Helm) DeleteHelmRelease(ctx context.Context, principal domainidentity.P
 	if namespace == "" || name == "" {
 		return fmt.Errorf("%w: namespace and releaseName are required", apperrors.ErrInvalidArgument)
 	}
-	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionDelete)
+	connection, _, err := s.authorizeHelmMutation(ctx, principal, clusterID, namespace, domainaccess.ActionDelete)
 	if err != nil {
 		return err
 	}

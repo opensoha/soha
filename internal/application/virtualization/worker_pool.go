@@ -25,14 +25,25 @@ type WorkerPoolRepository interface {
 	WithWorkerPoolAdmission(context.Context, string, int, string, func(context.Context) error) error
 }
 
-// Domain-owned hooks use the already configured direct Kubernetes client. No
-// bootstrap credentials, kubeconfigs or shell are accepted from capability input.
+// WorkerRuntime validates pool syntax without I/O and uses the configured direct
+// Kubernetes client for live operations.
 type WorkerRuntime struct {
+	ValidatePoolSpec func(sohaapi.VirtualizationWorkerPoolSpec) error
 	InspectCluster   func(context.Context, sohaapi.VirtualizationWorkerPoolSpec) (domain.WorkerPoolIdentity, error)
 	PrepareBootstrap func(context.Context, domain.WorkerPool, string, string, time.Time) (domain.WorkerBootstrap, error)
 	ClaimNode        func(context.Context, domain.WorkerPool, string) error
 	Observe          func(context.Context, domain.WorkerPool, string) (domain.WorkerObservation, error)
 	RevokeBootstrap  func(context.Context, domain.WorkerPool, string, string) error
+}
+
+func (s *Service) validateWorkerPoolSpec(spec sohaapi.VirtualizationWorkerPoolSpec) error {
+	if err := domain.ValidateWorkerPoolSpec(spec); err != nil {
+		return err
+	}
+	if s.workerRuntime == nil || s.workerRuntime.ValidatePoolSpec == nil {
+		return fmt.Errorf("%w: worker pool validation is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	return s.workerRuntime.ValidatePoolSpec(spec)
 }
 
 func workerPoolScope(pool domain.WorkerPool) map[string]string {
@@ -132,7 +143,7 @@ func (s *Service) SaveWorkerPool(ctx context.Context, principal domainidentity.P
 	if err != nil || poolID == uuid.Nil || input.ExpectedRevision < 0 {
 		return sohaapi.VirtualizationWorkerPool{}, apperrors.ErrInvalidArgument
 	}
-	if err := domain.ValidateWorkerPoolSpec(input.Spec); err != nil {
+	if err := s.validateWorkerPoolSpec(input.Spec); err != nil {
 		return sohaapi.VirtualizationWorkerPool{}, err
 	}
 	if s.workerPools == nil || s.workerRuntime == nil || s.workerRuntime.InspectCluster == nil {
@@ -266,9 +277,14 @@ func (s *Service) authorizeWorkerTaskRead(ctx context.Context, principal domaini
 	if err := s.authorizeWorkerPoolView(ctx, principal); err != nil {
 		return err
 	}
-	pool, err := workerPoolFromTask(task)
+	// History and cancellation rely on the frozen target even when execution is unavailable.
+	pool, err := workerPoolSnapshot(task)
 	if err != nil {
 		return err
 	}
-	return s.checkWorkerClusterAccess(ctx, principal, pool.Spec.ClusterID, false)
+	clusterID := pool.Spec.ClusterID
+	if clusterID == "" || clusterID != strings.TrimSpace(clusterID) || len(clusterID) > 100 {
+		return fmt.Errorf("%w: worker pool snapshot requires a valid cluster identifier", apperrors.ErrInvalidArgument)
+	}
+	return s.checkWorkerClusterAccess(ctx, principal, clusterID, false)
 }

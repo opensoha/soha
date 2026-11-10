@@ -192,7 +192,9 @@ func newDockerRuntimeProxyTestService(endpoint string) *Service {
     image: nginx
 `,
 	}
-	return New(repo, dockerTestPermissions(), nil, WithRuntimeBearerToken("runtime-token"))
+	service := New(repo, dockerTestPermissions(), nil, WithRuntimeBearerToken("runtime-token"))
+	withDisabledRuntimeReadDLP(service, repo.projects["project-1"])
+	return service
 }
 
 func dockerRuntimeProxyPrincipal() domainidentity.Principal {

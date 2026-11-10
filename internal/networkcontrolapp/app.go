@@ -12,6 +12,9 @@ import (
 
 	api "github.com/opensoha/soha/internal/api/networkcontrol"
 	app "github.com/opensoha/soha/internal/application/networkcontrol"
+
+	appep "github.com/opensoha/soha/internal/application/endpointcontrol"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	appnetworkproxy "github.com/opensoha/soha/internal/application/networkproxy"
 	config "github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
@@ -19,6 +22,7 @@ import (
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkingestquery"
 	"github.com/opensoha/soha/internal/networkprotocol"
+	repoep "github.com/opensoha/soha/internal/repository/endpointcontrol"
 	networkproxyrepository "github.com/opensoha/soha/internal/repository/networkproxy"
 	networkruntimerepository "github.com/opensoha/soha/internal/repository/networkruntime"
 	runtimeconfigrepository "github.com/opensoha/soha/internal/repository/runtimeconfig"
@@ -71,9 +75,22 @@ func New(ctx context.Context) (*App, error) {
 	if err != nil {
 		return fail(err)
 	}
-	runtimeRepository := networkruntimerepository.New(store.DB())
+	runtimeRepository := networkruntimerepository.New(store.DB(), appnetworkaccess.VPNGovernancePolicy{})
+	var eapIssuer app.EAPCertificateIssuer
+	if cfg.EAPIssuer.CAFile != "" {
+		eapIssuer, err = networkidentity.LoadEAPIssuer(cfg.EAPIssuer.CAFile, cfg.EAPIssuer.KeyFile, cfg.TLS.ClientCAFile)
+		if err != nil {
+			return fail(err)
+		}
+	}
+	channels, err := appep.NewRuntime(repoep.New(store.DB()))
+	if err != nil {
+		return fail(err)
+	}
 	service, err := app.New(runtimeRepository, schemas, app.Options{
-		MaxClockSkew: cfg.MaxClockSkew, ConfigurationTTL: cfg.ConfigurationTTL, LeaseTTL: cfg.LeaseTTL,
+		EAPIssuer:        eapIssuer,
+		EndpointChannels: channels,
+		MaxClockSkew:     cfg.MaxClockSkew, ConfigurationTTL: cfg.ConfigurationTTL, LeaseTTL: cfg.LeaseTTL,
 		CredentialEncryptionKeys: cfg.CredentialEncryptionKeys, VPNProbes: probeReader,
 		LoadRuntimeConfig: runtimeconfigrepository.New(store.DB()).LoadState,
 	})

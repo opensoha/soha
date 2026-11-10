@@ -21,7 +21,14 @@ const sessionSelect = `SELECT s.id, s.runtime_id, s.subject_id, s.device_id, COA
     s.access_profile, s.status, s.policy_version,
     COALESCE((SELECT jsonb_agg(l.id ORDER BY l.id) FROM network_runtime_leases l WHERE l.session_id = s.id AND l.lease_kind = 'network'), '[]'::jsonb),
     COALESCE((SELECT jsonb_agg(l.id ORDER BY l.id) FROM network_runtime_leases l WHERE l.session_id = s.id AND l.lease_kind = 'resource'), '[]'::jsonb),
-    COALESCE(s.revoke_reason, ''), s.created_at, s.valid_until, s.updated_at
+    COALESCE(s.revoke_reason, ''), s.created_at, s.valid_until, s.updated_at, s.admission_floor_profile, s.admission_restriction_reason,
+    COALESCE((SELECT jsonb_build_object('id', c.id, 'sessionId', c.session_id, 'runtimeId', c.runtime_id, 'nasId', c.nas_id,
+      'action', c.action, 'targetAccessProfile', c.target_access_profile, 'policyVersion', c.policy_version,
+      'status', c.status, 'reasonCode', COALESCE(c.result_reason_code, c.reason_code), 'effectiveAt', c.effective_at,
+      'expiresAt', c.expires_at, 'createdAt', c.created_at, 'completedAt', c.completed_at)
+      FROM network_nas_session_commands c WHERE c.tenant_id=s.tenant_id AND c.workspace_id=s.workspace_id AND c.id=s.admission_command_id), 'null'::jsonb),
+    COALESCE((SELECT a.policy_version FROM network_nas_authorizations a WHERE a.tenant_id=s.tenant_id AND a.workspace_id=s.workspace_id AND a.session_id=s.id AND a.decision_attribute_version<>'' LIMIT 1),0),
+    COALESCE((SELECT a.decision_attribute_version FROM network_nas_authorizations a WHERE a.tenant_id=s.tenant_id AND a.workspace_id=s.workspace_id AND a.session_id=s.id LIMIT 1),'')
     FROM network_runtime_sessions s WHERE s.tenant_id = 'default' AND s.workspace_id = 'default'`
 
 func (r *Repository) ListSessions(ctx context.Context, filter domainnetworkaccess.SessionFilter) ([]domainnetworkaccess.Session, error) {
@@ -31,8 +38,8 @@ func (r *Repository) ListSessions(ctx context.Context, filter domainnetworkacces
 	query, args = addFilter(query, args, "s.subject_id", filter.SubjectID)
 	query, args = addFilter(query, args, "s.device_id", filter.DeviceID)
 	query, args = addFilter(query, args, "s.status", filter.Status)
-	query += ` ORDER BY s.created_at DESC, s.id DESC LIMIT ?`
-	args = append(args, filter.Limit)
+	query += ` ORDER BY s.created_at DESC, s.id DESC LIMIT ? OFFSET ?`
+	args = append(args, filter.Limit, filter.Offset)
 	return queryMany(ctx, r.db, query, args, scanSession)
 }
 
@@ -42,8 +49,8 @@ func (r *Repository) GetSession(ctx context.Context, id string) (domainnetworkac
 
 func scanSession(row scanner) (domainnetworkaccess.Session, error) {
 	var item domainnetworkaccess.Session
-	var networkLeaseIDs, resourceLeaseIDs []byte
-	err := row.Scan(&item.ID, &item.RuntimeID, &item.SubjectID, &item.DeviceID, &item.SiteID, &item.GatewayID, &item.NASID, &item.Mode, &item.Path, &item.AccessProfile, &item.Status, &item.PolicyVersion, &networkLeaseIDs, &resourceLeaseIDs, &item.ReasonCode, &item.StartedAt, &item.ExpiresAt, &item.UpdatedAt)
+	var networkLeaseIDs, resourceLeaseIDs, command []byte
+	err := row.Scan(&item.ID, &item.RuntimeID, &item.SubjectID, &item.DeviceID, &item.SiteID, &item.GatewayID, &item.NASID, &item.Mode, &item.Path, &item.AccessProfile, &item.Status, &item.PolicyVersion, &networkLeaseIDs, &resourceLeaseIDs, &item.ReasonCode, &item.StartedAt, &item.ExpiresAt, &item.UpdatedAt, &item.RestrictionProfile, &item.RestrictionReason, &command, &item.AdmissionPolicyVersion, &item.AdmissionAttributeVersion)
 	if err != nil {
 		return item, err
 	}
@@ -53,12 +60,21 @@ func scanSession(row scanner) (domainnetworkaccess.Session, error) {
 	if err := json.Unmarshal(resourceLeaseIDs, &item.ResourceLeaseIDs); err != nil {
 		return item, fmt.Errorf("decode resource lease IDs: %w", err)
 	}
+	if err := json.Unmarshal(command, &item.LatestCommand); err != nil {
+		return item, fmt.Errorf("decode latest NAS command: %w", err)
+	}
 	return item, nil
 }
 
 func (r *Repository) CreateSessionCommand(ctx context.Context, command domainnetworkaccess.SessionCommand) (domainnetworkaccess.SessionCommand, error) {
 	var saved domainnetworkaccess.SessionCommand
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, responsePolicyLock).Error; err != nil {
+			return err
+		}
+		if err := enforceNASCommandRestriction(tx, command); err != nil {
+			return err
+		}
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-session-command:"+command.PlanHash).Error; err != nil {
 			return err
 		}
@@ -78,7 +94,7 @@ func (r *Repository) CreateSessionCommand(ctx context.Context, command domainnet
 			}
 			radiusAttributes = string(encoded)
 		}
-		if err := tx.Exec(`INSERT INTO network_nas_session_commands (id, session_id, runtime_id, nas_id, action, target_access_profile, policy_version, status, reason_code, plan_hash, radius_attributes, effective_at, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)`, command.ID, command.SessionID, command.RuntimeID, command.NASID, command.Action, command.TargetAccessProfile, command.PolicyVersion, command.Status, command.ReasonCode, command.PlanHash, radiusAttributes, command.EffectiveAt, command.ExpiresAt, command.CreatedAt, command.CreatedAt).Error; err != nil {
+		if err := tx.Exec(`INSERT INTO network_nas_session_commands (id, session_id, runtime_id, nas_id, action, target_access_profile, policy_version, status, reason_code, plan_hash, radius_attributes, effective_at, expires_at, created_at, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)`, command.ID, command.SessionID, command.RuntimeID, command.NASID, command.Action, command.TargetAccessProfile, command.PolicyVersion, command.Status, command.ReasonCode, command.PlanHash, radiusAttributes, command.EffectiveAt, command.ExpiresAt, command.CreatedAt, command.CreatedAt, command.CompletedAt).Error; err != nil {
 			return normalizeDatabaseError(err)
 		}
 		saved = command
@@ -95,16 +111,33 @@ func (r *Repository) ClaimNASSessionCommand(ctx context.Context, runtimeID strin
 	var claimed domainnetworkaccess.SessionCommand
 	var noCommand error
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, responsePolicyLock).Error; err != nil {
+			return err
+		}
 		if err := tx.Exec(`UPDATE network_nas_session_commands SET status = 'expired', result_reason_code = 'command_expired', completed_at = ?, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND status IN ('pending', 'delivered') AND expires_at <= ?`, now, now, runtimeID, now).Error; err != nil {
 			return err
 		}
-		command, err := scanSessionCommand(tx.Raw(sessionCommandSelect+` AND runtime_id = ? AND expires_at > ? AND (status = 'pending' OR (status = 'delivered' AND delivered_at <= ?)) ORDER BY created_at ASC, id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`, runtimeID, now, now.Add(-nasCommandRedeliveryDelay)).Row())
+		command, err := scanSessionCommand(tx.Raw(sessionCommandSelect+` AND runtime_id = ? AND expires_at > ? AND (status = 'pending' OR (status = 'delivered' AND delivered_at <= ?))
+            AND (response_event_id IS NULL OR EXISTS (
+                SELECT 1 FROM network_endpoint_response_events e JOIN network_endpoint_response_policies p
+                ON p.tenant_id=e.tenant_id AND p.workspace_id=e.workspace_id AND p.id=e.policy_id
+                WHERE e.tenant_id=network_nas_session_commands.tenant_id AND e.workspace_id=network_nas_session_commands.workspace_id AND e.id=response_event_id
+                AND p.deleted_at IS NULL AND p.published_revision=e.policy_revision AND p.published_configuration->>'enabled'='true'
+            )) ORDER BY created_at ASC, id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`, runtimeID, now, now.Add(-nasCommandRedeliveryDelay)).Row())
 		if err != nil {
 			if errors.Is(err, apperrors.ErrNotFound) {
 				noCommand = err
 				return nil
 			}
 			return err
+		}
+		active, err := currentCommandResponse(tx, command.ID, now)
+		if err != nil {
+			return err
+		}
+		if !active {
+			noCommand = apperrors.ErrNotFound
+			return nil
 		}
 		result := tx.Exec(`UPDATE network_nas_session_commands SET status = 'delivered', delivered_at = ?, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND status IN ('pending', 'delivered')`, now, now, command.ID, runtimeID)
 		if result.Error != nil {
@@ -113,8 +146,28 @@ func (r *Repository) ClaimNASSessionCommand(ctx context.Context, runtimeID strin
 		if result.RowsAffected != 1 {
 			return apperrors.NewBusiness(apperrors.ErrConflict, "nas_command_claim_conflict", "The NAS session command could not be claimed.", "NAS 会话命令无法领取。")
 		}
-		if err := tx.Raw(`SELECT subject_id, device_id FROM network_runtime_sessions WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND nas_id = ?`, command.SessionID, runtimeID, command.NASID).Row().Scan(&command.SubjectID, &command.DeviceID); err != nil {
+		var sessionStatus string
+		if err := tx.Raw(`SELECT subject_id, device_id, status FROM network_runtime_sessions WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND nas_id = ?`, command.SessionID, runtimeID, command.NASID).Row().Scan(&command.SubjectID, &command.DeviceID, &sessionStatus); err != nil {
 			return err
+		}
+		if sessionStatus == "revoked" || sessionStatus == "expired" {
+			if err := tx.Exec(`UPDATE network_nas_session_commands SET status = 'expired', result_reason_code = 'nas_session_ended', completed_at = ?, updated_at = ? WHERE id = ?`, now, now, command.ID).Error; err != nil {
+				return err
+			}
+			noCommand = apperrors.ErrNotFound
+			return nil
+		}
+		var method string
+		bindingErr := tx.Raw(`SELECT a.authentication_method, COALESCE(a.station_id, ''), COALESCE(e.accounting_session_id, ''), COALESCE(e.nas_port_id, '') FROM network_nas_authorizations a LEFT JOIN network_nas_session_evidence e ON e.tenant_id = a.tenant_id AND e.workspace_id = a.workspace_id AND e.session_id = a.session_id WHERE a.tenant_id = 'default' AND a.workspace_id = 'default' AND a.session_id = ?`, command.SessionID).Row().Scan(&method, &command.StationID, &command.AccountingSessionID, &command.NASPortID)
+		if bindingErr != nil && !errors.Is(bindingErr, sql.ErrNoRows) {
+			return bindingErr
+		}
+		if method == networkprotocol.NASAuthenticationEAPTLS && command.StationID == "" {
+			if err := tx.Exec(`UPDATE network_nas_session_commands SET status = 'unsupported', result_reason_code = 'nas_station_binding_missing', completed_at = ?, updated_at = ? WHERE id = ?`, now, now, command.ID).Error; err != nil {
+				return err
+			}
+			noCommand = apperrors.ErrNotFound
+			return nil
 		}
 		command.Status = domainnetworkaccess.SessionCommandDelivered
 		claimed = command
@@ -127,8 +180,13 @@ func (r *Repository) ClaimNASSessionCommand(ctx context.Context, runtimeID strin
 }
 
 func (r *Repository) CompleteNASSessionCommand(ctx context.Context, runtimeID string, result networkprotocol.NASSessionCommandResult, now time.Time) error {
+	// PostgreSQL stores timestamps at microsecond precision; retries carry the original packet time.
+	result.CompletedAt = result.CompletedAt.UTC().Truncate(time.Microsecond)
 	var outcome error
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, responsePolicyLock).Error; err != nil {
+			return err
+		}
 		command, err := scanSessionCommand(tx.Raw(sessionCommandSelect+` AND id = ? LIMIT 1 FOR UPDATE`, result.CommandID).Row())
 		if err != nil {
 			return err
@@ -141,6 +199,14 @@ func (r *Repository) CompleteNASSessionCommand(ctx context.Context, runtimeID st
 			outcome = semanticOutcome
 		}
 		if done {
+			return nil
+		}
+		active, err := currentCommandResponse(tx, command.ID, now)
+		if err != nil {
+			return err
+		}
+		if !active {
+			outcome = apperrors.NewBusiness(apperrors.ErrConflict, "nas_command_superseded", "The NAS command was superseded by a security restriction.", "NAS 命令已被安全限制替代。")
 			return nil
 		}
 		return recordNASCommandCompletion(tx, command, runtimeID, result, now)
@@ -195,12 +261,19 @@ func applyNASSessionCommand(tx *gorm.DB, command domainnetworkaccess.SessionComm
 	if command.Action == domainnetworkaccess.SessionActionDisconnect {
 		updated = tx.Exec(`UPDATE network_runtime_sessions SET status = 'revoked', revoked_at = ?, revoke_reason = ?, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND nas_id = ?`, result.CompletedAt, result.ReasonCode, now, command.SessionID, runtimeID, command.NASID)
 	} else {
-		updated = tx.Exec(`UPDATE network_runtime_sessions SET access_profile = ?, status = ?, policy_version = ?, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND nas_id = ?`, command.TargetAccessProfile, sessionStatusForProfile(command.TargetAccessProfile), command.PolicyVersion, now, command.SessionID, runtimeID, command.NASID)
+		updated = tx.Exec(`UPDATE network_runtime_sessions SET access_profile = ?, status = ?, policy_version = ?, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND nas_id = ? AND status NOT IN ('revoked', 'expired') AND policy_version <= ?`, command.TargetAccessProfile, sessionStatusForProfile(command.TargetAccessProfile), command.PolicyVersion, now, command.SessionID, runtimeID, command.NASID, command.PolicyVersion)
 	}
 	if updated.Error != nil {
 		return updated.Error
 	}
 	if updated.RowsAffected != 1 {
+		var terminal bool
+		if err := tx.Raw(`SELECT EXISTS (SELECT 1 FROM network_runtime_sessions WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND runtime_id = ? AND nas_id = ? AND (status IN ('revoked', 'expired') OR policy_version > ?))`, command.SessionID, runtimeID, command.NASID, command.PolicyVersion).Scan(&terminal).Error; err != nil {
+			return err
+		}
+		if terminal {
+			return nil
+		}
 		return apperrors.NewBusiness(apperrors.ErrConflict, "nas_session_update_conflict", "The NAS session could not be updated.", "NAS 会话无法更新。")
 	}
 	return nil

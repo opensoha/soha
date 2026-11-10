@@ -1,8 +1,8 @@
-FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS go-source
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS go-source
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG GOPROXY=https://proxy.golang.org,direct
-ENV GOPROXY=$GOPROXY
+ENV GOPROXY=$GOPROXY GOWORK=off
 WORKDIR /src
 RUN for attempt in 1 2 3; do \
       timeout 120 apk add --no-cache git ca-certificates && exit 0; \
@@ -11,15 +11,12 @@ RUN for attempt in 1 2 3; do \
     done; \
     exit 1
 COPY go.mod go.sum ./soha/
-COPY --from=contracts go.mod go.sum ./soha-contracts/
 RUN for attempt in 1 2 3; do \
-      printf 'go 1.27.2\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n' > go.work; \
       (cd soha && timeout 180 go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \
     done; \
     exit 1
-COPY --from=contracts . ./soha-contracts
 COPY . ./soha
 
 FROM go-source AS go-build
@@ -34,7 +31,8 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o /out/soha ./cmd/server && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/network-control ./cmd/network-control && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ingest ./cmd/ingest && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-adapter ./cmd/radius-adapter
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-adapter ./cmd/radius-adapter && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/runtime-upgrade ./cmd/runtime-upgrade
 
 FROM go-source AS network-gateway-build
 ARG TARGETOS=linux
@@ -135,6 +133,7 @@ WORKDIR /app
 COPY --from=go-build /out/soha /app/soha
 COPY --from=go-build /out/network-control /app/network-control
 COPY --from=go-build /out/ingest /app/ingest
+COPY --from=go-build /out/runtime-upgrade /app/runtime-upgrade
 COPY configs/config.example.yaml /app/configs/config.yaml
 COPY migrations /app/migrations
 COPY deploy/entrypoint.sh /app/entrypoint.sh

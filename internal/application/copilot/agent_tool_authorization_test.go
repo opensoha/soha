@@ -49,7 +49,7 @@ func TestChatAgentToolRechecksAuthorization(t *testing.T) {
 	service.permissions = appaccess.NewPermissionResolver(inspectionAuthzRoleReader{matrix: roles})
 	service.agentPrincipals = &chatToolPrincipalResolver{principal: domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}}
 	gateway := &chatGatewayToolStub{}
-	service.workbenchInvoker = gateway
+	service.runtime.Tools = gateway
 	call := domaincopilot.AgentToolCallInput{RunID: repo.agentRun.ID, CallbackToken: "callback", AgentID: "runner", ToolBindingID: "node", Input: map[string]any{"clusterId": "cluster", "nodeName": "node"}}
 	if result, err := service.RecordAgentToolCall(context.Background(), call); err != nil || result.ToolExecution.Status != "success" {
 		t.Fatalf("authorized tool: result=%+v err=%v", result, err)
@@ -74,7 +74,7 @@ func TestChatAgentToolRechecksAuthorization(t *testing.T) {
 
 func TestChatKnowledgeToolPinsBasesAndSharesEvidenceBudget(t *testing.T) {
 	gateway := &chatGatewayToolStub{}
-	service := &Service{workbenchInvoker: gateway}
+	service := &Service{runtime: RuntimeDependencies{Tools: gateway}}
 	run := domaincopilot.AgentRun{Input: map[string]any{
 		"_sohaPrincipal":        map[string]any{"userId": "reader", "roles": []string{"reader"}, "permissionKeys": []string{appaccess.PermAIKnowledgeView}},
 		"_sohaKnowledgeBaseIds": []string{"selected"},

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -224,16 +225,14 @@ func (h *helmReleaseResourceHandler) RollbackHelmRelease(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 func (h *helmReleaseResourceHandler) UpdateHelmReleaseValues(c *gin.Context) {
-	var payload struct {
-		Content string `json:"content"`
-	}
+	var payload dto.ApplyHelmValuesRequest
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid helm release values payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.editor.UpdateHelmReleaseValues(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"), payload.Content)
+	item, err := h.editor.UpdateHelmReleaseValuesWithRevision(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"), payload.Content, int(payload.ExpectedRevision))
 	if err != nil {
 		writeError(c, err)
 		return

@@ -19,6 +19,16 @@ func (s *Service) CurrentExecutionPrincipal(ctx context.Context, subjectID, toke
 		}
 		return s.CurrentPrincipal(ctx, subjectID)
 	}
+	if strings.HasPrefix(tokenID, cliSessionTokenPrefix) {
+		if s.sessions == nil {
+			return domainidentity.Principal{}, apperrors.ErrUnauthorized
+		}
+		session, err := s.sessions.GetAuthSessionByID(ctx, strings.TrimPrefix(tokenID, cliSessionTokenPrefix))
+		if err != nil || session.UserID != subjectID {
+			return domainidentity.Principal{}, apperrors.ErrUnauthorized
+		}
+		return s.cliSessionPrincipal(ctx, session)
+	}
 	if s.gateway == nil {
 		return domainidentity.Principal{}, fmt.Errorf("%w: gateway token store is unavailable", apperrors.ErrUnauthorized)
 	}

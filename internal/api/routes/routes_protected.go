@@ -48,6 +48,13 @@ func registerProtectedRoutes(protected *gin.RouterGroup, cfg cfgpkg.Config, deps
 }
 
 func registerProtectedAuthRoutes(protected gin.IRoutes, deps Dependencies) {
+	if deps.CLIAuth != nil {
+		protected.GET("/auth/context", deps.CLIAuth.Context)
+		protected.POST("/auth/cli/device-authorizations/inspect", deps.CLIAuth.Inspect)
+		protected.POST("/auth/cli/device-authorizations/decision", deps.CLIAuth.Decide)
+		protected.GET("/auth/cli/sessions", deps.CLIAuth.ListSessions)
+		protected.POST("/auth/cli/sessions/:sessionID/revoke", deps.CLIAuth.RevokeSession)
+	}
 	protected.GET("/auth/me", deps.Auth.Me)
 	protected.GET("/auth/profile", deps.Auth.Profile)
 	protected.PATCH("/auth/profile", deps.Auth.UpdateProfile)

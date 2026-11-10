@@ -2,6 +2,7 @@ package resourcebackend
 
 import (
 	"errors"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"testing"
 	"time"
 
@@ -104,15 +105,12 @@ func TestResourceGVRForKindSupportsPlatformKinds(t *testing.T) {
 		resource        string
 		namespaceScoped bool
 	}{
-		{kind: "Namespace", resource: "namespaces"},
 		{kind: "ServiceAccount", resource: "serviceaccounts", namespaceScoped: true},
 		{kind: "Role", resource: "roles", namespaceScoped: true},
 		{kind: "ClusterRole", resource: "clusterroles"},
 		{kind: "ReplicaSet", resource: "replicasets", namespaceScoped: true},
 		{kind: "PersistentVolumeClaim", resource: "persistentvolumeclaims", namespaceScoped: true},
 		{kind: "StorageClass", resource: "storageclasses"},
-		{kind: "CustomResourceDefinition", resource: "customresourcedefinitions"},
-		{kind: "WorkloadCronJob", resource: "workloadcronjobs", namespaceScoped: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.kind, func(t *testing.T) {
@@ -332,3 +330,21 @@ var (
 	_ appresource.DirectNetworkReader      = (*Direct)(nil)
 	_ appresource.DirectGenericResource    = (*Direct)(nil)
 )
+
+func TestDirectKindsMatchContract(t *testing.T) {
+	for _, definition := range contractresource.KubernetesResourceKinds() {
+		gvr, namespaced, err := resourceGVRForKind(definition.Kind)
+		if !definition.GenericYAML {
+			if err == nil {
+				t.Fatalf("dedicated lifecycle exposed: %s", definition.Kind)
+			}
+			continue
+		}
+		if err != nil || gvr.Group != definition.Group || gvr.Version != definition.Version || gvr.Resource != definition.Resource || namespaced != definition.Namespaced {
+			t.Fatalf("kind %s: %s %v %v", definition.Kind, gvr, namespaced, err)
+		}
+	}
+	if _, _, err := resourceGVRForKind("Unknown"); err == nil {
+		t.Fatal("unknown kind accepted")
+	}
+}

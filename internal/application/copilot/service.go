@@ -252,10 +252,17 @@ type Service struct {
 	virtualization        VirtualizationReader
 	oncall                OnCallResolver
 	settings              AISettingsResolver
-	workbenchInvoker      WorkbenchModelInvoker
-	nativeReady           atomic.Bool
+	runtimeProfiles       RuntimeProfileStore
+	runtimeAssets         RuntimeAssetStore
+	runtime               RuntimeDependencies
+	runtimeConfigured     bool
 	permissions           *appaccess.PermissionResolver
 	nativeAuthorization   NativeAuthorizationReader
+	nativeRuns            NativeRunStore
+	dshRuntime            DSHRuntime
+	dshRuns               DSHRunStore
+	dshLocks              sync.Map
+	nativeTaskParents     NativeTaskParentStore
 	nativeTasks           NativeCapabilityTasks
 	agentPrincipals       AgentPrincipalResolver
 	logger                *zap.Logger
@@ -310,6 +317,8 @@ type Dependencies struct {
 	Settings            AISettingsResolver
 	Permissions         *appaccess.PermissionResolver
 	NativeAuthorization NativeAuthorizationReader
+	NativeRuns          NativeRunStore
+	NativeTaskParents   NativeTaskParentStore
 	NativeTasks         NativeCapabilityTasks
 	AgentPrincipals     AgentPrincipalResolver
 }
@@ -349,13 +358,19 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 	for _, dependency := range []struct {
 		name  string
 		value any
-	}{{"conversations", deps.Conversations}, {"feed", deps.Feed}} {
+	}{
+		{"conversations", deps.Conversations},
+		{"feed", deps.Feed},
+		{"AI settings", deps.Settings},
+		{"Native access authorization", deps.NativeAuthorization},
+		{"Native identity resolver", deps.AgentPrincipals},
+		{"Native run store", deps.NativeRuns},
+		{"Native task parent store", deps.NativeTaskParents},
+		{"Native task executor", deps.NativeTasks},
+	} {
 		if dependency.value != nil && isNilDependency(dependency.value) {
 			return nil, fmt.Errorf("copilot service: %s dependency is typed nil", dependency.name)
 		}
-	}
-	if deps.NativeTasks != nil && isNilDependency(deps.NativeTasks) {
-		return nil, fmt.Errorf("copilot service: Native task dependency is typed nil")
 	}
 	for _, dependency := range required {
 		if isNilDependency(dependency.value) {
@@ -385,6 +400,8 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		settings:            deps.Settings,
 		permissions:         deps.Permissions,
 		nativeAuthorization: deps.NativeAuthorization,
+		nativeRuns:          deps.NativeRuns,
+		nativeTaskParents:   deps.NativeTaskParents,
 		nativeTasks:         deps.NativeTasks,
 		agentPrincipals:     deps.AgentPrincipals,
 		logs:                unavailableTelemetry{},
@@ -504,11 +521,6 @@ func (s *Service) SetExternalAgentProviders(providers []domaincopilot.AgentProvi
 	s.agentProvidersMu.Lock()
 	defer s.agentProvidersMu.Unlock()
 	s.agentProviders = configured
-}
-
-func (s *Service) SetWorkbenchModelInvoker(invoker WorkbenchModelInvoker) {
-	s.workbenchInvoker = invoker
-	s.nativeReady.Store(invoker != nil)
 }
 
 func (s *Service) SetAgentRuntimeReaders(execution ExecutionTaskReader, resources PlatformResourceReader, docker DockerReader, virtualization VirtualizationReader, oncall OnCallResolver) {
@@ -713,87 +725,15 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 	if name, requested := personalAssistantNameForTurn(content, normalizeSessionMode(sessionMeta.Mode), nil); requested && isPersonalSession(session) {
 		return s.renameAssistantFromChat(ctx, principal, session, content, name, locale)
 	}
-	if normalizeSessionMode(sessionMeta.Mode) == "general" && s.shouldUseExternalAgent(sessionMeta.AgentProviderID) {
+
+	if s.shouldUseExternalAgent(sessionMeta.AgentProviderID) {
 		return s.queueAgentChatMessage(ctx, principal, session, sessionMeta, content, locale)
 	}
-	locale = detectMessageLocale(content, locale)
-	userMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
-		ID:        uuid.NewString(),
-		SessionID: session.ID,
-		Role:      "user",
-		Content:   strings.TrimSpace(content),
-		Metadata:  chatUserMetadata(map[string]any{"userId": principal.UserID, "locale": locale, "mode": sessionMeta.Mode}, sessionMeta.RequestContext),
-		CreatedAt: time.Now().UTC(),
-	})
+	result, err := s.queueNativeMessage(ctx, principal, session, sessionMeta, domaincopilot.WorkbenchSendMessageInput{Content: content}, locale)
 	if err != nil {
-		return domaincopilot.SessionMessageEnvelope{}, err
+		return result.Envelope, err
 	}
-	toolCalls := make([]domaincopilot.ToolExecution, 0)
-	artifacts := make([]domaincopilot.AnalysisArtifact, 0)
-	sessionPatch := map[string]any{}
-	if normalizeSessionMode(sessionMeta.Mode) != "general" {
-		toolCalls, artifacts, sessionPatch = s.analyzeConversation(ctx, principal, session, content, locale)
-	}
-	reply := chatReply{}
-	if len(artifacts) > 0 {
-		reply = chatReply{Content: artifacts[0].Summary, Source: "analysis-artifact"}
-	} else {
-		priorMessages, _ := s.listRecentMessages(ctx, session.ID, 20)
-		providerMessages, contextMeta, contextErr := s.groundedProviderMessages(ctx, principal, session, sessionMeta, priorMessages, userMessage, locale)
-		if contextErr != nil {
-			return domaincopilot.SessionMessageEnvelope{}, contextErr
-		}
-		reply = s.generateReply(ctx, principal, session.ID, sessionMeta.Mode, providerMessages, locale, sessionMeta.ModelPreferences)
-		if contextMeta != nil {
-			sessionPatch["contextEnvelope"] = contextMeta
-		}
-	}
-	reply = safeChatReply(reply, locale)
-	assistantMetadata := map[string]any{
-		"mode":              sessionMeta.Mode,
-		"source":            reply.Source,
-		"locale":            locale,
-		"analysisArtifacts": []domaincopilot.AnalysisArtifact{},
-	}
-	applyChatReplyMetadata(assistantMetadata, reply, userMessage.ID)
-	if len(artifacts) > 0 {
-		assistantMetadata["analysisArtifacts"] = artifacts
-	}
-	if contextMeta, ok := sessionPatch["contextEnvelope"]; ok {
-		assistantMetadata["contextEnvelope"] = contextMeta
-		assistantMetadata["contextSnapshot"] = contextMeta
-	}
-	agentStatus := map[string]any{
-		"status":       replyAgentStatus(reply),
-		"providerId":   firstNonEmpty(reply.ProviderID, agentProviderInternal),
-		"providerKind": firstNonEmpty(reply.ProviderKind, "internal"),
-	}
-	assistantMetadata = finalWorkbenchMessageMetadata(assistantMetadata, toolCalls, artifacts, agentStatus)
-	assistantMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
-		ID:        uuid.NewString(),
-		SessionID: session.ID,
-		Role:      chatReplyRole(reply),
-		Content:   reply.Content,
-		Metadata:  assistantMetadata,
-		CreatedAt: time.Now().UTC(),
-	})
-	if err != nil {
-		return domaincopilot.SessionMessageEnvelope{}, err
-	}
-	s.applyMessageSessionPatch(ctx, principal, session, assistantMessage.ID, sessionPatch)
-	envelope := domaincopilot.SessionMessageEnvelope{
-		Messages:          []domaincopilot.Message{userMessage, assistantMessage},
-		ToolCalls:         toolCalls,
-		AnalysisArtifacts: artifacts,
-		SessionPatch:      s.visibleSessionPatch(ctx, principal, session.ID, sessionPatch),
-	}
-	s.recordGlobalAssistantAudit(ctx, principal, domaincopilot.WorkbenchGlobalAssistantEventInput{
-		Action:    "send",
-		SessionID: session.ID,
-		Source:    sessionMeta.Source,
-		Prompt:    content,
-	}, sessionMeta, "success")
-	return envelope, nil
+	return s.waitDSHMessage(ctx, principal, result)
 }
 
 func (s *Service) applyMessageSessionPatch(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, messageID string, patch map[string]any) {
@@ -1287,157 +1227,6 @@ func (s *Service) listRecentMessages(ctx context.Context, sessionID string, limi
 	return messages[len(messages)-limit:], nil
 }
 
-func (s *Service) generateReply(ctx context.Context, principal domainidentity.Principal, sessionID, mode string, messages []chatProviderMessage, locale string, preferences domaincopilot.WorkbenchModelPreferences) chatReply {
-	workbenchModel, err := s.resolveAIWorkbenchSettings(ctx)
-	if err != nil {
-		return chatReply{
-			Content: localize(locale,
-				"当前 AI Workbench 模型设置不可用。请先在 AI Gateway 中配置模型路由，并在 AI 设置中选择默认模型。",
-				"AI Workbench model settings are unavailable. Configure a model route in AI Gateway and select the default model in AI settings.",
-			),
-			Source: "model-unconfigured",
-			Error:  err.Error(),
-		}
-	}
-	if preferences.PublicModel != "" {
-		workbenchModel.DefaultPublicModel = preferences.PublicModel
-		workbenchModel.DefaultRouteID = ""
-	}
-	if !workbenchModel.Enabled || (strings.TrimSpace(workbenchModel.DefaultPublicModel) == "" && strings.TrimSpace(workbenchModel.DefaultRouteID) == "") {
-		return chatReply{
-			Content: localize(locale,
-				"当前没有可用的 AI Workbench 默认模型。请在 AI Gateway 的模型路由中接入 Provider，并在 AI 设置里选择默认模型或路由。",
-				"No AI Workbench default model is available. Add the provider through AI Gateway model routes and select a default model or route in AI settings.",
-			),
-			Source: "model-unconfigured",
-			Model:  workbenchModel.DefaultPublicModel,
-		}
-	}
-	if s.workbenchInvoker == nil {
-		return chatReply{
-			Content: localize(locale,
-				"AI Workbench 默认模型已选择，但内部 Gateway relay invoker 尚未接入。请检查服务启动接线。",
-				"AI Workbench default model is selected, but the internal Gateway relay invoker is not wired. Check service wiring.",
-			),
-			Source: "model-unconfigured",
-			Model:  workbenchModel.DefaultPublicModel,
-		}
-	}
-	resp, err := s.workbenchInvoker.InvokeWorkbenchModel(ctx, principal, appaigateway.WorkbenchRelayRequest{
-		ReasoningEffort: preferences.ReasoningEffort,
-		PublicModel:     workbenchModel.DefaultPublicModel,
-		RouteID:         workbenchModel.DefaultRouteID,
-		Endpoint:        workbenchModel.DefaultEndpoint,
-		Messages:        mapWorkbenchRelayMessages(messages),
-		SessionID:       sessionID,
-		Mode:            normalizeSessionMode(mode),
-	})
-	if err != nil {
-		return chatReply{
-			Content: localize(locale,
-				"AI Workbench 模型调用失败。请检查 AI Gateway 的模型路由、上游状态、权限和限流配置。",
-				"AI Workbench model call failed. Check AI Gateway model routes, upstream health, permissions, and rate limits.",
-			),
-			Source: "model-error",
-			Model:  workbenchModel.DefaultPublicModel,
-			Error:  err.Error(),
-		}
-	}
-	content, reaction := splitMessageReaction(resp.Content)
-	return chatReply{
-		Reaction:     reaction,
-		Content:      content,
-		Source:       "gateway-model-route",
-		ContextUsage: modelContextUsage(resp),
-		Model:        firstNonEmpty(resp.PublicModel, workbenchModel.DefaultPublicModel),
-		ProviderID:   agentProviderInternal,
-		ProviderKind: firstNonEmpty(resp.ProviderKind, workbenchModelProviderKindFromEndpoint(workbenchModel.DefaultEndpoint)),
-	}
-}
-
-func (s *Service) generateReplyStream(ctx context.Context, principal domainidentity.Principal, sessionID, mode string, messages []chatProviderMessage, locale string, preferences domaincopilot.WorkbenchModelPreferences, onDelta func(string) bool) chatReply {
-	workbenchModel, err := s.resolveAIWorkbenchSettings(ctx)
-	if err != nil {
-		return chatReply{
-			Content: localize(locale,
-				"当前 AI Workbench 模型设置不可用。请先在 AI Gateway 中配置模型路由，并在 AI 设置中选择默认模型。",
-				"AI Workbench model settings are unavailable. Configure a model route in AI Gateway and select a default model in AI settings.",
-			),
-			Source: "model-unconfigured",
-			Error:  err.Error(),
-		}
-	}
-	if preferences.PublicModel != "" {
-		workbenchModel.DefaultPublicModel = preferences.PublicModel
-		workbenchModel.DefaultRouteID = ""
-	}
-	if !workbenchModel.Enabled || (strings.TrimSpace(workbenchModel.DefaultPublicModel) == "" && strings.TrimSpace(workbenchModel.DefaultRouteID) == "") {
-		return chatReply{
-			Content: localize(locale,
-				"当前没有可用的 AI Workbench 默认模型。请在 AI Gateway 的模型路由中接入 Provider，并在 AI 设置里选择默认模型或路由。",
-				"No AI Workbench default model is available. Add the provider through AI Gateway model routes and select a default model or route in AI settings.",
-			),
-			Source: "model-unconfigured",
-			Model:  workbenchModel.DefaultPublicModel,
-		}
-	}
-	streamInvoker, ok := s.workbenchInvoker.(WorkbenchModelStreamInvoker)
-	if !ok || streamInvoker == nil {
-		return s.generateReply(ctx, principal, sessionID, mode, messages, locale, preferences)
-	}
-	filtered := reactionStream{send: func(delta string) bool { return onDelta == nil || onDelta(delta) }}
-	resp, err := streamInvoker.InvokeWorkbenchModelStream(ctx, principal, appaigateway.WorkbenchRelayRequest{
-		ReasoningEffort: preferences.ReasoningEffort,
-		PublicModel:     workbenchModel.DefaultPublicModel,
-		RouteID:         workbenchModel.DefaultRouteID,
-		Endpoint:        workbenchModel.DefaultEndpoint,
-		Messages:        mapWorkbenchRelayMessages(messages),
-		SessionID:       sessionID,
-		Mode:            normalizeSessionMode(mode),
-	}, func(delta appaigateway.WorkbenchRelayStreamDelta) bool {
-		if delta.ContentDelta == "" {
-			return true
-		}
-		if onDelta == nil {
-			return true
-		}
-		return filtered.push(delta.ContentDelta)
-	})
-	if err != nil {
-		if errors.Is(err, appaigateway.ErrWorkbenchRelayStreamStopped) || ctx.Err() != nil {
-			return chatReply{
-				Source:       "model-cancelled",
-				Model:        workbenchModel.DefaultPublicModel,
-				ProviderID:   agentProviderInternal,
-				ProviderKind: workbenchModelProviderKindFromEndpoint(workbenchModel.DefaultEndpoint),
-				Error:        err.Error(),
-			}
-		}
-		return chatReply{
-			Content: localize(locale,
-				"AI Workbench 模型调用失败。请检查 AI Gateway 的模型路由、上游状态、权限和限流配置。",
-				"AI Workbench model call failed. Check AI Gateway model routes, upstream health, permissions, and rate limits.",
-			),
-			Source: "model-error",
-			Model:  workbenchModel.DefaultPublicModel,
-			Error:  err.Error(),
-		}
-	}
-	if !filtered.flush() {
-		return chatReply{Source: "model-cancelled"}
-	}
-	content, reaction := splitMessageReaction(resp.Content)
-	return chatReply{
-		Reaction:     reaction,
-		Content:      content,
-		Source:       "gateway-model-route-stream",
-		ContextUsage: modelContextUsage(resp),
-		Model:        firstNonEmpty(resp.PublicModel, workbenchModel.DefaultPublicModel),
-		ProviderID:   agentProviderInternal,
-		ProviderKind: firstNonEmpty(resp.ProviderKind, workbenchModelProviderKindFromEndpoint(workbenchModel.DefaultEndpoint)),
-	}
-}
-
 func mapWorkbenchRelayMessages(messages []chatProviderMessage) []appaigateway.WorkbenchRelayMessage {
 	out := make([]appaigateway.WorkbenchRelayMessage, 0, len(messages))
 	for _, message := range messages {
@@ -1499,7 +1288,7 @@ func chatHistoryExclusionReason(item domaincopilot.Message, currentID string) st
 }
 
 func markLegacyPlatformContextMessages(messages []domaincopilot.Message) []domaincopilot.Message {
-	out := append([]domaincopilot.Message(nil), messages...)
+	out := append(make([]domaincopilot.Message, 0, len(messages)), messages...)
 	for index := range out {
 		if !isLegacyPlatformContextMessage(out[index]) {
 			continue

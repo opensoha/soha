@@ -38,10 +38,19 @@ func (s *Service) WorkbenchCapabilities(ctx context.Context, principal domainide
 	if err != nil {
 		return domainaigateway.Manifest{}, err
 	}
-	return domainaigateway.Manifest{CatalogRevision: manifest.CatalogRevision, NextCursor: manifest.NextCursor, Tools: manifest.Tools}, nil
+	tools := make([]domainaigateway.ToolCapability, 0, len(manifest.Tools))
+	for _, tool := range manifest.Tools {
+		if !hasProtectedApprovalInput(tool.Name) || s.protectedDurableStorage {
+			tools = append(tools, tool)
+		}
+	}
+	return domainaigateway.Manifest{CatalogRevision: manifest.CatalogRevision, NextCursor: manifest.NextCursor, Tools: tools}, nil
 }
 
 func (s *Service) capabilities(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ManifestRequest) (domainaigateway.Manifest, error) {
+	if err := s.authorizeGovernedAICaller(ctx, principal, input.AIClientID, input.SkillID); err != nil {
+		return domainaigateway.Manifest{}, err
+	}
 	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
 	if err != nil {
 		return domainaigateway.Manifest{}, err
@@ -50,7 +59,21 @@ func (s *Service) capabilities(ctx context.Context, principal domainidentity.Pri
 	tools, deniedTools := filterTools(s.gatewayTools(), permissionKeys)
 	resources, deniedResources := filterResources(s.gatewayResources(), permissionKeys)
 	prompts, deniedPrompts := filterPrompts(s.gatewayPrompts(), permissionKeys)
+	if ceiling := governedSkillCeiling(principal); len(ceiling) > 0 {
+		var denied int
+		tools, denied = filterToolsBySkillBindingsWithSkills(tools, ceiling, input.SkillID, s.gatewaySkills())
+		deniedTools += denied
+		resources, denied = filterResourcesBySkillBindingsWithCapabilities(resources, ceiling, input.SkillID, s.gatewayResourceCapabilityRefs(), s.gatewaySkills())
+		deniedResources += denied
+		prompts, denied = filterPromptsBySkillBindingsWithCapabilities(prompts, ceiling, input.SkillID, s.gatewayResources(), s.gatewayResourceCapabilityRefs(), s.gatewaySkills())
+		deniedPrompts += denied
+	}
 	skills, deniedSkills := filterSkills(s.gatewaySkills(), permissionKeys)
+	if ceiling := governedSkillCeiling(principal); len(ceiling) > 0 {
+		var denied int
+		skills, denied = filterSkillsByBindingsWithSkills(skills, ceiling, s.gatewaySkills())
+		deniedSkills += denied
+	}
 	tools, grantDenied, err := s.filterToolsByGrants(ctx, principal, input.AIClientID, tools, permissionKeys)
 	if err != nil {
 		return domainaigateway.Manifest{}, err

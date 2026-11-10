@@ -42,8 +42,8 @@ func (s *Service) QueryProjectLogs(ctx context.Context, principal domainidentity
 	}
 	entries := parseDockerLogContent(raw.Content, projectID, raw.ServiceName, query, time.Now().UTC())
 	limit := dockerLogLimit(query)
-	truncated := len(entries) > limit
-	if truncated {
+	truncated := raw.Truncated || len(entries) > limit
+	if len(entries) > limit {
 		entries = entries[:limit]
 	}
 	coverage := &domainresource.LogCoverage{ResolvedSources: 1, SuccessfulSources: 1}

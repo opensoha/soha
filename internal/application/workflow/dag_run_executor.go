@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"go.uber.org/zap"
@@ -87,21 +89,30 @@ func (e *dagRunExecutor) run(ctx context.Context, principal domainidentity.Princ
 	}
 	state := newDAGRunState(principal, app, input, binding, definition, run)
 	e.start(ctx, state)
+	for {
+		if !e.runUntilPause(ctx, state) || !e.resumeIfExternalTaskFinished(ctx, state) {
+			return
+		}
+	}
+}
 
+func (e *dagRunExecutor) runUntilPause(ctx context.Context, state *dagRunState) bool {
 	for len(state.statuses) < len(state.definition.Nodes) {
 		if e.cancelIfRequested(ctx, state) {
-			return
+			return false
 		}
 		ready, progressed := state.collectReadyNodes()
 		if progressed {
 			e.persist(ctx, state)
 		}
 		if len(ready) == 0 {
-			paused, blocked := e.handleNoReadyNodes(ctx, state, progressed)
-			if paused {
-				return
+			switch {
+			case hasWaitingApproval(state.nodeRuns):
+				return e.persistPause(ctx, state, workflowStatusWaitingApproval)
+			case hasWaitingExecution(state.nodeRuns):
+				return e.persistPause(ctx, state, workflowStatusWaitingExecution)
 			}
-			if blocked {
+			if !progressed {
 				break
 			}
 			continue
@@ -123,7 +134,7 @@ func (e *dagRunExecutor) run(ctx context.Context, principal domainidentity.Princ
 		e.persist(ctx, state)
 	}
 
-	e.finish(ctx, state)
+	return e.finish(ctx, state)
 }
 
 func newDAGRunState(principal domainidentity.Principal, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, definition dagWorkflowDefinition, run domainworkflow.Run) *dagRunState {
@@ -233,19 +244,29 @@ func (s *dagRunState) skipRunCondition(node dagWorkflowNode, reason string) {
 	})
 }
 
-func (e *dagRunExecutor) handleNoReadyNodes(ctx context.Context, state *dagRunState, progressed bool) (bool, bool) {
-	switch {
-	case hasWaitingApproval(state.nodeRuns):
-		state.run.Status = workflowStatusWaitingApproval
-		e.persist(ctx, state)
-		return true, false
-	case hasWaitingExecution(state.nodeRuns):
-		state.run.Status = workflowStatusWaitingExecution
-		e.persist(ctx, state)
-		return true, false
-	default:
-		return false, !progressed
+func (e *dagRunExecutor) persistPause(ctx context.Context, state *dagRunState, status string) bool {
+	run := state.run
+	run.Status = status
+	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	run = syncRunNodeState(run, state.definition, state.nodeRuns)
+	updated, err := e.delivery.repo.UpdateApplicationRunIfCurrent(ctx, run, "running", nil)
+	if err != nil && !errors.Is(err, apperrors.ErrConflict) && ctx.Err() == nil {
+		updated, err = e.delivery.repo.UpdateApplicationRunIfCurrent(ctx, run, "running", nil)
+		if errors.Is(err, apperrors.ErrConflict) {
+			// The first write may have committed before its acknowledgment was lost.
+			updated, err = e.delivery.repo.Get(ctx, run.ID)
+			if err == nil && (updated.Status != status || updated.Version != run.Version+1) {
+				return false
+			}
+		}
 	}
+	if err != nil {
+		e.logWarnCtx(ctx, "could not persist workflow pause", zap.String("run_id", run.ID), zap.String("status", status), zap.String("error", redaction.LogText(err.Error(), 2048)))
+		return false
+	}
+	state.run = updated
+	e.delivery.publishRunUpdate(updated)
+	return true
 }
 
 func (s *dagRunState) markNodesRunning(nodes []dagWorkflowNode) {
@@ -314,27 +335,31 @@ func (s *dagRunState) recordFailure(result dagExecutionResult) {
 	recordDAGFailurePolicy(&s.run, result.nodeID, policy, result.summary)
 }
 
-func (e *dagRunExecutor) finish(ctx context.Context, state *dagRunState) {
+func (e *dagRunExecutor) finish(ctx context.Context, state *dagRunState) bool {
 	finalStatus := state.finalStatus()
-	state.run.Status = finalStatus
-	e.persist(ctx, state)
 	duration := time.Since(state.startedAt)
 	if finalStatus == workflowStatusWaitingApproval || finalStatus == workflowStatusWaitingExecution {
+		if !e.persistPause(ctx, state, finalStatus) {
+			return false
+		}
 		e.logDebugCtx(ctx, "workflow execution paused", zap.String("event", "workflow.execution.paused"),
 			zap.String("run_id", state.run.ID), zap.String("application_id", state.run.ApplicationID),
 			zap.String("status", finalStatus), zap.Float64("duration_ms", float64(duration)/float64(time.Millisecond)))
-		return
+		return true
 	}
+	state.run.Status = finalStatus
+	e.persist(ctx, state)
 	e.recordFinishMetrics(state, finalStatus, duration)
 	if finalStatus == "failed" {
 		e.logWarnCtx(ctx, "workflow execution failed", zap.String("event", "workflow.execution.failed"),
 			zap.String("run_id", state.run.ID), zap.String("application_id", state.run.ApplicationID),
 			zap.Float64("duration_ms", float64(duration)/float64(time.Millisecond)))
-		return
+		return false
 	}
 	e.logDebugCtx(ctx, "workflow execution completed", zap.String("event", "workflow.execution.completed"),
 		zap.String("run_id", state.run.ID), zap.String("application_id", state.run.ApplicationID),
 		zap.Float64("duration_ms", float64(duration)/float64(time.Millisecond)))
+	return false
 }
 
 func (s *dagRunState) finalStatus() string {

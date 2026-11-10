@@ -66,3 +66,39 @@ func TestMapPartialCustomResourcesUsesDefinitionIdentity(t *testing.T) {
 		t.Fatalf("mapPartialCustomResources() = %#v", views)
 	}
 }
+
+func TestCRDReadAndWriteVersionsUseServedAPIPriority(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		versions []any
+		want     string
+	}{
+		{"served stable beats beta storage", []any{
+			map[string]any{"name": "v1beta1", "served": true, "storage": true},
+			map[string]any{"name": "v1", "served": true, "storage": false},
+			map[string]any{"name": "v2", "served": false, "storage": false},
+		}, "v1"},
+		{"unserved stable is excluded", []any{
+			map[string]any{"name": "v1", "served": false, "storage": false},
+			map[string]any{"name": "v1beta1", "served": true, "storage": true},
+		}, "v1beta1"},
+		{"numeric beta priority", []any{
+			map[string]any{"name": "v1beta2", "served": true, "storage": true},
+			map[string]any{"name": "v1beta10", "served": true, "storage": false},
+		}, "v1beta10"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			item := unstructured.Unstructured{Object: map[string]any{
+				"metadata": map[string]any{"name": "widgets.example.io"},
+				"spec":     map[string]any{"group": "example.io", "scope": "Namespaced", "names": map[string]any{"kind": "Widget", "plural": "widgets"}, "versions": test.versions},
+			}}
+			definition, err := parseCRDDefinition(item)
+			if err != nil || definition.Version != test.want {
+				t.Fatalf("write definition version = %q, err=%v; want %q", definition.Version, err, test.want)
+			}
+			if view := mapCRD(item); view.Version != definition.Version {
+				t.Fatalf("full catalog version %q differs from write version %q", view.Version, definition.Version)
+			}
+		})
+	}
+}

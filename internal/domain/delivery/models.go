@@ -19,6 +19,9 @@ import (
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 )
 
+// Direct initialization must never be claimed by workers which only know Helm install/update.
+const HelmDirectInitializationProvider = "helm_direct_initialize_v1"
+
 type ReleaseBundle struct {
 	ID                       string              `json:"id"`
 	ApplicationID            string              `json:"applicationId"`
@@ -221,44 +224,50 @@ type ReleaseBundleFilter struct {
 }
 
 type ExecutionTask struct {
-	ID                       string                   `json:"id"`
-	ReleaseBundleID          string                   `json:"releaseBundleId,omitempty"`
-	ApplicationID            string                   `json:"applicationId"`
-	ApplicationEnvironmentID string                   `json:"applicationEnvironmentId,omitempty"`
-	TaskKind                 string                   `json:"taskKind"`
-	ProviderKind             string                   `json:"providerKind"`
-	TargetKind               string                   `json:"targetKind"`
-	Status                   string                   `json:"status"`
-	QueueKey                 string                   `json:"queueKey,omitempty"`
-	LockKey                  string                   `json:"lockKey,omitempty"`
-	MaxRetries               int                      `json:"maxRetries"`
-	AttemptCount             int                      `json:"attemptCount"`
-	TimeoutSeconds           int                      `json:"timeoutSeconds"`
-	CallbackToken            string                   `json:"callbackToken,omitempty"`
-	SecretLease              *domainsecret.LeaseGrant `json:"secretLease,omitempty" gorm:"-"`
-	SecretRefs               []domainsecret.Reference `json:"-" gorm:"-"`
-	SecretPrincipal          domainidentity.Principal `json:"-" gorm:"-"`
-	SecretTarget             domainsecret.Target      `json:"-" gorm:"-"`
-	ClaimedByAgentID         string                   `json:"claimedByAgentId,omitempty"`
-	RuntimeEndpoint          string                   `json:"runtimeEndpoint,omitempty"`
-	RuntimeClusterID         string                   `json:"runtimeClusterId,omitempty"`
-	StopTransport            string                   `json:"stopTransport,omitempty"`
-	Payload                  map[string]any           `json:"payload,omitempty"`
-	Result                   map[string]any           `json:"result,omitempty"`
-	OperationState           *OperationState          `json:"operationState,omitempty" gorm:"-"`
-	Artifacts                []ExecutionArtifact      `json:"artifacts,omitempty"`
-	StartedAt                *time.Time               `json:"startedAt,omitempty"`
-	LastHeartbeatAt          *time.Time               `json:"lastHeartbeatAt,omitempty"`
-	LastRuntimeSeenAt        *time.Time               `json:"lastRuntimeSeenAt,omitempty"`
-	FinishedAt               *time.Time               `json:"finishedAt,omitempty"`
-	CreatedAt                time.Time                `json:"createdAt"`
-	UpdatedAt                time.Time                `json:"updatedAt"`
+	ID                         string                   `json:"id"`
+	ReleaseBundleID            string                   `json:"releaseBundleId,omitempty"`
+	ApplicationID              string                   `json:"applicationId"`
+	ApplicationEnvironmentID   string                   `json:"applicationEnvironmentId"`
+	TaskKind                   string                   `json:"taskKind"`
+	ProviderKind               string                   `json:"providerKind"`
+	TargetKind                 string                   `json:"targetKind"`
+	Status                     string                   `json:"status"`
+	QueueKey                   string                   `json:"queueKey,omitempty"`
+	LockKey                    string                   `json:"lockKey,omitempty"`
+	MaxRetries                 int                      `json:"maxRetries"`
+	AttemptCount               int                      `json:"attemptCount"`
+	TimeoutSeconds             int                      `json:"timeoutSeconds"`
+	CallbackToken              string                   `json:"callbackToken"`
+	SecretLease                *domainsecret.LeaseGrant `json:"secretLease,omitempty" gorm:"-"`
+	SecretRefs                 []domainsecret.Reference `json:"-" gorm:"-"`
+	SecretPrincipal            domainidentity.Principal `json:"-" gorm:"-"`
+	ManifestAdmissionValidated bool                     `json:"-" gorm:"-"`
+	SecretTarget               domainsecret.Target      `json:"-" gorm:"-"`
+	ClaimedByAgentID           string                   `json:"claimedByAgentId,omitempty"`
+	RuntimeEndpoint            string                   `json:"runtimeEndpoint,omitempty"`
+	RuntimeClusterID           string                   `json:"runtimeClusterId,omitempty"`
+	StopTransport              string                   `json:"stopTransport,omitempty"`
+	Payload                    map[string]any           `json:"payload"`
+	Result                     map[string]any           `json:"result,omitempty"`
+	OperationState             *OperationState          `json:"operationState,omitempty" gorm:"-"`
+	Artifacts                  []ExecutionArtifact      `json:"artifacts,omitempty"`
+	StartedAt                  *time.Time               `json:"startedAt,omitempty"`
+	LastHeartbeatAt            *time.Time               `json:"lastHeartbeatAt,omitempty"`
+	LastRuntimeSeenAt          *time.Time               `json:"lastRuntimeSeenAt,omitempty"`
+	FinishedAt                 *time.Time               `json:"finishedAt,omitempty"`
+	CreatedAt                  time.Time                `json:"createdAt"`
+	UpdatedAt                  time.Time                `json:"updatedAt"`
 }
 
 // RequiresStopConfirmation covers delivery operations whose side effects may
 // continue after a cancellation request reaches the control plane.
 func RequiresStopConfirmation(task ExecutionTask) bool {
 	return task.Payload["workflowScope"] == "delivery_batch" || strings.HasPrefix(task.TaskKind, "helm_") || task.ProviderKind == "external_pipeline.gitlab"
+}
+
+func IsInitializationWrite(task ExecutionTask) bool {
+	plan, ok := task.Payload["initializationPlanId"].(string)
+	return ok && plan != "" && task.TaskKind == "manifest_apply"
 }
 
 type OperationState struct {
@@ -308,7 +317,7 @@ const defaultOperationTimeoutSeconds = 300
 
 func WithOperationState(task ExecutionTask, now time.Time) ExecutionTask {
 	task.OperationState = BuildOperationState(task, now)
-	return task
+	return projectConfigurationTask(task)
 }
 
 func WithOperationStates(tasks []ExecutionTask, now time.Time) []ExecutionTask {
@@ -347,6 +356,10 @@ func BuildOperationState(task ExecutionTask, now time.Time) *OperationState {
 		RecommendedNextAction: operationRecommendedNextAction(status, heartbeatStale),
 	}
 	state.RuntimeEndpointPresent = operationRuntimeEndpointPresent(task)
+	if IsInitializationWrite(task) && state.Retryable {
+		state.Retryable = false
+		state.RecommendedNextAction = "inspect_status"
+	}
 	populateOperationStateTimes(state, task, nextDeadline)
 	state.ClaimedByAgentID = strings.TrimSpace(task.ClaimedByAgentID)
 	populateOperationFailure(state, task, terminal, status)
@@ -562,6 +575,7 @@ type DeliveryPlanApprovalInput struct {
 }
 
 type DeliveryPlan struct {
+	TemplateCandidateID      string                            `json:"templateCandidateId,omitempty"`
 	DockerSnapshots          []sohaapi.DockerDeliverySnapshot  `json:"dockerSnapshots,omitempty"`
 	DockerPrepared           map[string]string                 `json:"-"`
 	HelmSnapshots            []sohaapi.HelmDeliverySnapshot    `json:"helmSnapshots,omitempty"`
@@ -600,6 +614,7 @@ type DeliveryPlan struct {
 }
 
 type DeliveryPlanInput struct {
+	TemplateCandidateID      string                            `json:"templateCandidateId,omitempty"`
 	FrozenDockerCiphertext   string                            `json:"-"`
 	DockerSnapshots          []sohaapi.DockerDeliverySnapshot  `json:"-"`
 	DockerPrepared           map[string]string                 `json:"-"`
@@ -674,26 +689,30 @@ type ApplicationDetail struct {
 }
 
 type ApplicationRuntimeWorkload struct {
-	ApplicationEnvironmentID string                 `json:"applicationEnvironmentId"`
-	ServiceID                string                 `json:"serviceId,omitempty"`
-	ServiceKey               string                 `json:"serviceKey,omitempty"`
-	ClusterID                string                 `json:"clusterId"`
-	Namespace                string                 `json:"namespace"`
-	WorkloadKind             string                 `json:"workloadKind"`
-	WorkloadName             string                 `json:"workloadName"`
-	Labels                   map[string]string      `json:"labels,omitempty"`
-	Selector                 map[string]string      `json:"selector,omitempty"`
-	DesiredReplicas          int32                  `json:"desiredReplicas"`
-	ReadyReplicas            int32                  `json:"readyReplicas"`
-	UpdatedReplicas          int32                  `json:"updatedReplicas"`
-	AvailableReplicas        int32                  `json:"availableReplicas"`
-	HealthStatus             string                 `json:"healthStatus"`
-	BuildSource              *domainapp.BuildSource `json:"buildSource,omitempty"`
-	LatestBundle             *ReleaseBundle         `json:"latestBundle,omitempty"`
-	LatestExecutionTask      *ExecutionTask         `json:"latestExecutionTask,omitempty"`
-	LatestBuild              *domainbuild.Record    `json:"latestBuild,omitempty"`
-	LatestWorkflow           *domainworkflow.Run    `json:"latestWorkflow,omitempty"`
-	LatestRelease            *domainrelease.Record  `json:"latestRelease,omitempty"`
+	NativeObservationAvailable bool                                   `json:"-"`
+	TargetID                   string                                 `json:"targetId,omitempty"`
+	Source                     *domainresource.ResourceSourceSnapshot `json:"source,omitempty"`
+	SourceStatus               string                                 `json:"sourceStatus,omitempty"`
+	ApplicationEnvironmentID   string                                 `json:"applicationEnvironmentId"`
+	ServiceID                  string                                 `json:"serviceId,omitempty"`
+	ServiceKey                 string                                 `json:"serviceKey,omitempty"`
+	ClusterID                  string                                 `json:"clusterId"`
+	Namespace                  string                                 `json:"namespace"`
+	WorkloadKind               string                                 `json:"workloadKind"`
+	WorkloadName               string                                 `json:"workloadName"`
+	Labels                     map[string]string                      `json:"labels,omitempty"`
+	Selector                   map[string]string                      `json:"selector,omitempty"`
+	DesiredReplicas            int32                                  `json:"desiredReplicas"`
+	ReadyReplicas              int32                                  `json:"readyReplicas"`
+	UpdatedReplicas            int32                                  `json:"updatedReplicas"`
+	AvailableReplicas          int32                                  `json:"availableReplicas"`
+	HealthStatus               string                                 `json:"healthStatus"`
+	BuildSource                *domainapp.BuildSource                 `json:"buildSource,omitempty"`
+	LatestBundle               *ReleaseBundle                         `json:"latestBundle,omitempty"`
+	LatestExecutionTask        *ExecutionTask                         `json:"latestExecutionTask,omitempty"`
+	LatestBuild                *domainbuild.Record                    `json:"latestBuild,omitempty"`
+	LatestWorkflow             *domainworkflow.Run                    `json:"latestWorkflow,omitempty"`
+	LatestRelease              *domainrelease.Record                  `json:"latestRelease,omitempty"`
 }
 
 type ApplicationRuntimeSummary struct {
@@ -853,22 +872,25 @@ type KubernetesRelatedResource struct {
 }
 
 type KubernetesImportCandidate struct {
-	ClusterID        string                      `json:"clusterId"`
-	Namespace        string                      `json:"namespace"`
-	WorkloadKind     string                      `json:"workloadKind"`
-	WorkloadName     string                      `json:"workloadName"`
-	DesiredReplicas  int                         `json:"desiredReplicas"`
-	ReadyReplicas    int                         `json:"readyReplicas"`
-	Containers       []string                    `json:"containers,omitempty"`
-	Labels           map[string]string           `json:"labels,omitempty"`
-	RelatedResources []KubernetesRelatedResource `json:"relatedResources"`
+	ClusterID        string                                 `json:"clusterId"`
+	Namespace        string                                 `json:"namespace"`
+	WorkloadKind     string                                 `json:"workloadKind"`
+	WorkloadName     string                                 `json:"workloadName"`
+	DesiredReplicas  int                                    `json:"desiredReplicas"`
+	ReadyReplicas    int                                    `json:"readyReplicas"`
+	Containers       []string                               `json:"containers,omitempty"`
+	Labels           map[string]string                      `json:"labels,omitempty"`
+	RelatedResources []KubernetesRelatedResource            `json:"relatedResources"`
+	Source           *domainresource.ResourceSourceSnapshot `json:"source,omitempty"`
 }
 
 type KubernetesImportCandidateFilter struct {
-	ClusterID string
-	Namespace string
-	Search    string
-	Limit     int
+	ClusterID    string
+	Namespace    string
+	Search       string
+	Limit        int
+	WorkloadKind string
+	CRDName      string
 }
 
 type KubernetesImportCandidatePage struct {
@@ -877,8 +899,20 @@ type KubernetesImportCandidatePage struct {
 }
 
 type KubernetesWorkloadImportInput struct {
-	WorkloadKind string `json:"workloadKind"`
-	WorkloadName string `json:"workloadName"`
+	ServiceID          string                                 `json:"serviceId,omitempty"`
+	WorkloadKind       string                                 `json:"workloadKind"`
+	WorkloadName       string                                 `json:"workloadName"`
+	ExpectedUID        string                                 `json:"expectedUid,omitempty"`
+	ExpectedSpecDigest string                                 `json:"expectedSpecDigest,omitempty"`
+	CRDName            string                                 `json:"crdName,omitempty"`
+	Source             *domainresource.ResourceSourceSnapshot `json:"-"`
+}
+
+// ImportDestination is resolved and authorized by the service, never supplied by a client.
+type ImportDestination struct {
+	ApplicationID string
+	EnvironmentID string
+	BindingID     string
 }
 
 type KubernetesServiceImportInput struct {
@@ -890,6 +924,7 @@ type KubernetesServiceImportInput struct {
 	EnvironmentName string                          `json:"environmentName"`
 	OwnershipMode   string                          `json:"ownershipMode"`
 	Workloads       []KubernetesWorkloadImportInput `json:"workloads"`
+	Destination     ImportDestination               `json:"-"`
 }
 
 type KubernetesImportEntityRef struct {
@@ -909,10 +944,12 @@ type KubernetesImportedService struct {
 }
 
 type KubernetesImportedTarget struct {
-	ID           string `json:"id"`
-	WorkloadKind string `json:"workloadKind"`
-	WorkloadName string `json:"workloadName"`
-	Created      bool   `json:"created"`
+	ServiceID    string                                 `json:"serviceId,omitempty"`
+	ID           string                                 `json:"id"`
+	WorkloadKind string                                 `json:"workloadKind"`
+	WorkloadName string                                 `json:"workloadName"`
+	Created      bool                                   `json:"created"`
+	Source       *domainresource.ResourceSourceSnapshot `json:"source,omitempty"`
 }
 
 type KubernetesServiceImportResult struct {
@@ -926,6 +963,7 @@ type KubernetesServiceImportResult struct {
 }
 
 type HelmReleaseImportItem struct {
+	ServiceID     string `json:"serviceId,omitempty"`
 	ReleaseName   string `json:"releaseName"`
 	Revision      string `json:"-"`
 	Status        string `json:"-"`
@@ -935,6 +973,7 @@ type HelmReleaseImportItem struct {
 }
 
 type HelmReleaseImportInput struct {
+	Destination     ImportDestination       `json:"-"`
 	ClusterID       string                  `json:"clusterId"`
 	Namespace       string                  `json:"namespace"`
 	ApplicationKey  string                  `json:"applicationKey"`
@@ -954,6 +993,7 @@ type HelmImportedService struct {
 }
 
 type HelmImportedTarget struct {
+	ServiceID   string `json:"serviceId,omitempty"`
 	ID          string `json:"id"`
 	ReleaseName string `json:"releaseName"`
 	Created     bool   `json:"created"`

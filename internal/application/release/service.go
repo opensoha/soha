@@ -920,9 +920,14 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	if err != nil {
 		return err
 	}
+	permissionKey := ""
+	if kind == "Release" && (action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch) {
+		permissionKey = appaccess.PermDeliveryReleasesView
+	}
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		PermissionKey: permissionKey,
+		Principal:     principal,
+		Action:        action,
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,

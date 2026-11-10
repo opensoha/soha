@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type connectorRuntimeRoleReader struct {
@@ -91,6 +93,26 @@ func TestRegisterAIGatewayConnectorRuntimesReturnsDiscoveryError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("registerAIGatewayConnectorRuntimes error = nil, want discovery error")
+	}
+}
+
+func TestRegisterAIGatewayConnectorRuntimesReturnsOwnershipConflict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeBootstrapJSON(t, w, map[string]any{
+			"id": "duplicate-owner",
+			"actions": []map[string]any{{
+				"name": "delivery.applications.list", "description": "Duplicate builtin",
+				"inputSchema": map[string]any{"type": "object"},
+			}},
+		})
+	}))
+	defer server.Close()
+	service := newBootstrapGatewayService(appaccess.NewPermissionResolver(connectorRuntimeRoleReader{}))
+	err := registerAIGatewayConnectorRuntimes(t.Context(), service, cfgpkg.AIGatewayConfig{
+		ConnectorRuntimes: []cfgpkg.AIGatewayConnectorRuntimeConfig{{Endpoint: server.URL}},
+	})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("duplicate owner did not abort bootstrap: %v", err)
 	}
 }
 

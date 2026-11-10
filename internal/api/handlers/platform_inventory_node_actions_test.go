@@ -11,12 +11,14 @@ import (
 	"github.com/gin-gonic/gin"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type nodeActionEditorStub struct {
 	NodeEditor
 	unschedulable bool
 	drainInput    domainresource.NodeDrainInput
+	drainErr      error
 }
 
 func (s *nodeActionEditorStub) SetNodeUnschedulable(_ context.Context, _ domainidentity.Principal, _, _ string, value bool) error {
@@ -26,7 +28,22 @@ func (s *nodeActionEditorStub) SetNodeUnschedulable(_ context.Context, _ domaini
 
 func (s *nodeActionEditorStub) DrainNode(_ context.Context, _ domainidentity.Principal, _, _ string, input domainresource.NodeDrainInput) error {
 	s.drainInput = input
-	return nil
+	return s.drainErr
+}
+
+func TestDrainHandlerPreservesLocalizedIncompleteResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &nodeActionEditorStub{drainErr: apperrors.NewBusiness(apperrors.ErrConflict, "node_drain_pdb_blocked", "PDB blocked eviction", "PDB 阻止驱逐，排水未完成")}
+	router := gin.New()
+	router.POST("/nodes/:nodeName/drain", (&nodeResourceHandler{editor: stub}).DrainNode)
+	request := httptest.NewRequest(http.MethodPost, "/nodes/node/drain", strings.NewReader(`{"timeoutSeconds":30}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept-Language", "zh-CN")
+	response := &drainDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	router.ServeHTTP(response, request)
+	if response.Code != 409 || !strings.Contains(response.Body.String(), "node_drain_pdb_blocked") || !strings.Contains(response.Body.String(), "排水未完成") {
+		t.Fatalf("lost drain failure: %d %s", response.Code, response.Body.String())
+	}
 }
 
 type drainDeadlineRecorder struct {

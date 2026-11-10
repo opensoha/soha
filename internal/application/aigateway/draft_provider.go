@@ -3,12 +3,14 @@ package aigateway
 import (
 	"context"
 	"errors"
+	"reflect"
+
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
-	"reflect"
 )
 
 type DraftCapabilityService interface {
@@ -31,15 +33,33 @@ func NewDraftCapabilityProvider(service DraftCapabilityService) (CapabilityProvi
 		return nil, err
 	}
 	schema["required"] = []string{"applicationDraft", "idempotencyKey"}
-	p := &draftCapabilityProvider{service: service}
-	for _, tool := range defaultTools() {
-		if tool.Name != "delivery.drafts.create" && tool.Name != "delivery.drafts.confirm" {
-			continue
-		}
-		tool.Version = "1"
+	tools := []domainaigateway.ToolCapability{
+		{
+			Name:        "delivery.drafts.create",
+			Title:       "Create Delivery Draft",
+			Description: "Persist a DeliveryDraft-compatible application and service specification for explicit confirmation.",
+			Action:      "create",
+			InputSchema: schema,
+		},
+		{
+			Name:             "delivery.drafts.confirm",
+			Title:            "Confirm Delivery Draft",
+			Description:      "Confirm a DeliveryDraft and apply its application, services, build sources, and environment bindings.",
+			Action:           "confirm",
+			RequiresApproval: true,
+			InputSchema: gatewayObjectSchema([]string{"draftId"}, map[string]any{
+				"draftId": gatewayStringSchema("Delivery draft id to confirm."),
+			}),
+		},
+	}
+	for i := range tools {
+		tool := &tools[i]
+		tool.Version, tool.Domain, tool.MCPAdapterID, tool.MCPToolName = "1", "delivery", "delivery.v1", tool.Name
+		tool.RiskLevel = domainaigateway.RiskLevelMutate
+		tool.PermissionKeys = []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsUpdate}
+		tool.RequiredScopes = []string{"businessLine", "application"}
 		tool.Execution = &domainaigateway.ToolExecutionContract{Mode: "sync", Idempotent: true, RecoveryMode: "original_call"}
 		if tool.Name == "delivery.drafts.create" {
-			tool.InputSchema = schema
 			tool.Execution.IdempotencyKeyField = "idempotencyKey"
 			tool.OutputSemantics = []domainaigateway.CapabilityValueSemantic{{Path: "/id", Kind: "delivery.draft"}}
 			tool.Effects = []string{"delivery.draft.created"}
@@ -56,9 +76,8 @@ func NewDraftCapabilityProvider(service DraftCapabilityService) (CapabilityProvi
 			)
 			tool.Effects = []string{"delivery.application.configured", "delivery.services.configured", "delivery.environments.configured"}
 		}
-		p.tools = append(p.tools, tool)
 	}
-	return p, nil
+	return &draftCapabilityProvider{service: service, tools: tools}, nil
 }
 func (p *draftCapabilityProvider) Tools() []domainaigateway.ToolCapability       { return p.tools }
 func (*draftCapabilityProvider) Resources() []domainaigateway.ResourceCapability { return nil }

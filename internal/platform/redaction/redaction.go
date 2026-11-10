@@ -10,8 +10,8 @@ const Redacted = "[REDACTED]"
 
 var (
 	authorizationValuePattern = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*)(?:[a-z]+\s+)?([^\s,;]+)`)
-	sensitiveValuePattern     = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|credential|kubeconfig|env(?:ironment)?[_-]?var(?:iable)?)(\s*[:=]\s*)([^\s,;]+)`)
-	sensitiveQueryPattern     = regexp.MustCompile(`(?i)([?&](?:code|access_token|refresh_token|api[_-]?key)=)([^&\s]+)`)
+	sensitiveValuePattern     = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|credential|device[_-]?code|user[_-]?code|verification[_-]?handle|code[_-]?verifier|confirmation[_-]?id|kubeconfig|env(?:ironment)?[_-]?var(?:iable)?)(\s*[:=]\s*)([^\s,;]+)`)
+	sensitiveQueryPattern     = regexp.MustCompile(`(?i)([?&](?:code|access_token|refresh_token|api[_-]?key|device[_-]?code|user[_-]?code|verification[_-]?handle|code[_-]?verifier|confirmation[_-]?id|handle)=)([^&\s]+)`)
 )
 
 func Map(values map[string]any) map[string]any {
@@ -97,7 +97,7 @@ func LogText(value string, maxBytes int) string {
 
 func SensitiveKey(key string) bool {
 	normalized := strings.NewReplacer("_", "", "-", "", " ", "", ".", "").Replace(strings.ToLower(strings.TrimSpace(key)))
-	for _, needle := range []string{"token", "password", "passwd", "secret", "credential", "apikey", "authorization", "kubeconfig", "envvar", "environmentvariable"} {
+	for _, needle := range []string{"token", "password", "passwd", "secret", "credential", "apikey", "authorization", "kubeconfig", "envvar", "environmentvariable", "devicecode", "usercode", "verificationhandle", "codeverifier", "confirmationid"} {
 		if strings.Contains(normalized, needle) {
 			return true
 		}

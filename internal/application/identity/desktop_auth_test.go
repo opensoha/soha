@@ -145,7 +145,7 @@ func TestDesktopAuthExchangeConsumesFailuresAndIssuesOneSession(t *testing.T) {
 		ID: "user-1", Username: "ada", DisplayName: "Ada", Email: "ada@example.com", Status: "active", AuthzVersion: 1,
 	}
 	service := newTestServiceWithUserStore(repo)
-	service.cfg = cfgpkg.AuthConfig{JWT: cfgpkg.JWTConfig{
+	service.cfg = cfgpkg.AuthConfig{JWT: cfgpkg.JWTConfig{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		Secret: "desktop-auth-test-secret", Issuer: "soha-test", AccessTTL: time.Minute, RefreshTTL: time.Hour,
 	}}
 	provider := desktopOAuthProvider()
@@ -197,7 +197,7 @@ func TestDesktopAuthExchangeConsumesCallbackCodeAtomically(t *testing.T) {
 		ID: "user-1", Username: "ada", DisplayName: "Ada", Email: "ada@example.com", Status: "active", AuthzVersion: 1,
 	}
 	service := newTestServiceWithUserStore(repo)
-	service.cfg = cfgpkg.AuthConfig{JWT: cfgpkg.JWTConfig{
+	service.cfg = cfgpkg.AuthConfig{JWT: cfgpkg.JWTConfig{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		Secret: "desktop-auth-test-secret", Issuer: "soha-test", AccessTTL: time.Minute, RefreshTTL: time.Hour,
 	}}
 	verifier := strings.Repeat("a", 43)
@@ -256,7 +256,7 @@ func TestDesktopAuthExchangeConsumesCallbackCodeAtomically(t *testing.T) {
 }
 
 func desktopOAuthProvider() domainsettings.LoginProviderSettings {
-	return domainsettings.LoginProviderSettings{
+	return domainsettings.LoginProviderSettings{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		ID: "oauth-main", Name: "OAuth Main", Type: "oauth2", Enabled: true,
 		ClientID: "client-1", ClientSecret: "secret-1",
 		AuthorizeURL: "https://idp.example/authorize", TokenURL: "https://idp.example/token",

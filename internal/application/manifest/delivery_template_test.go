@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -42,6 +43,9 @@ func TestRolloutTemplatesFreezeNativePolicyAndArtifactIdentity(t *testing.T) {
 			}}
 			s.base.applications, s.renderer = apps, manifestruntime.NewRenderer()
 			repo.base.item.ServiceID, repo.base.revisions[0].Files = apps.service.ID, template.Source.Files
+			// Existing controller deployments keep their native publication path. Fresh
+			// controller initialization is tested separately as unsupported, without fallback.
+			repo.deployment = domainmanifest.Deployment{ID: "existing", Generation: 1, Status: domainmanifest.DeploymentStatus{Phase: domainmanifest.DeploymentPhaseConverged, AppliedTemplate: &sohaapi.TemplateVersionReference{TemplateID: template.ID, TemplateVersion: 1, TemplateDigest: template.ContentDigest}}}
 			frozen, err := s.FreezeDeliveryConfiguration(t.Context(), testPrincipal(), "payments", apps.service.ID, "payments-dev", target, 1)
 			requireSnapshotTestNoError(t, err)
 			image := "registry.example/app@sha256:" + strings.Repeat("c", 64)
@@ -85,6 +89,9 @@ func TestServiceTemplatePlanFreezesParametersArtifactsAndServiceVersion(t *testi
 	}}
 	s.base.applications, s.renderer = apps, manifestruntime.NewRenderer()
 	repo.base.item.ServiceID, repo.base.revisions[0].Files = apps.service.ID, template.Source.Files
+	// Existing controller deployments keep their native publication path. Fresh
+	// controller initialization is tested separately as unsupported, without fallback.
+	repo.deployment = domainmanifest.Deployment{ID: "existing", Generation: 1, Status: domainmanifest.DeploymentStatus{Phase: domainmanifest.DeploymentPhaseConverged, AppliedTemplate: &sohaapi.TemplateVersionReference{TemplateID: template.ID, TemplateVersion: 1, TemplateDigest: template.ContentDigest}}}
 	repo.binding.TemplateParameters = map[string]any{"replicas": 2}
 	if _, err := s.CreateDeliverySnapshot(ctx, testPrincipal(), "payments", "payments-dev", target, 1, "plan", domainmanifest.DeliveryArtifacts{}); !errors.Is(err, apperrors.ErrInvalidArgument) || len(repo.tasks) != 0 {
 		t.Fatalf("missing artifact queued a preflight: %v", err)
@@ -140,6 +147,9 @@ func TestGitOpsServiceTemplateFreezesSameResourceKeysBeforeAndAfterBuild(t *test
 	}}
 	s.base.applications, s.renderer, s.sources, s.deliveryGit = apps, manifestruntime.NewRenderer(), reader, reader
 	repo.base.item.ServiceID, repo.base.revisions[0].Files = apps.service.ID, template.Source.Files
+	// Existing controller deployments keep their native publication path. Fresh
+	// controller initialization is tested separately as unsupported, without fallback.
+	repo.deployment = domainmanifest.Deployment{ID: "existing", Generation: 1, Status: domainmanifest.DeploymentStatus{Phase: domainmanifest.DeploymentPhaseConverged, AppliedTemplate: &sohaapi.TemplateVersionReference{TemplateID: template.ID, TemplateVersion: 1, TemplateDigest: template.ContentDigest}}}
 	frozen, err := s.FreezeDeliveryConfiguration(t.Context(), testPrincipal(), "payments", apps.service.ID, "payments-dev", target, 1)
 	requireSnapshotTestNoError(t, err)
 	if len(frozen.ResourceKeys) != 2 || len(repo.tasks) != 0 {

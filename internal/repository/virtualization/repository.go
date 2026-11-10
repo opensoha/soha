@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
@@ -28,11 +29,23 @@ var allowedTableNames = map[string]bool{
 }
 
 type Repository struct {
-	db *gorm.DB
+	db                     *gorm.DB
+	validateWorkerPoolSpec func(sohaapi.VirtualizationWorkerPoolSpec) error
 }
 
-func New(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+type Option func(*Repository)
+
+// WithWorkerPoolValidation supplies the technical validator required for saving worker pools.
+func WithWorkerPoolValidation(validate func(sohaapi.VirtualizationWorkerPoolSpec) error) Option {
+	return func(r *Repository) { r.validateWorkerPoolSpec = validate }
+}
+
+func New(db *gorm.DB, opts ...Option) *Repository {
+	r := &Repository{db: db}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 func (r *Repository) CreateConnection(ctx context.Context, input domainvirtualization.ConnectionInput) (domainvirtualization.Connection, error) {

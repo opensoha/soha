@@ -24,6 +24,10 @@ func (s *Service) manifestRuntimeBinding(ctx context.Context, principal domainid
 	resolved.Targets = nil
 	var deployments []domainmanifest.Deployment
 	for _, target := range binding.Targets {
+		if target.WorkloadKind == "CustomResource" && target.Metadata["importSource"] == "kubernetes" {
+			resolved.Targets = append(resolved.Targets, target)
+			continue
+		}
 		if target.ExecutorKind != "manifest_ssa" {
 			resolved.Targets = append(resolved.Targets, target)
 			continue

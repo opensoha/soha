@@ -9,7 +9,8 @@ import (
 )
 
 type visibilityRule struct {
-	permissions []string
+	permissions         []string
+	requiredPermissions []string
 }
 
 func workbenchPermissionForMenu(item domainmenu.Record) string {
@@ -39,6 +40,7 @@ func workbenchPermissionForMenu(item domainmenu.Record) string {
 var platformWorkbenchMenuPrefixes = []string{
 	"/cluster-resources", "/workloads", "/configuration", "/network", "/storage",
 	"/platform-access-control", "/helm", "/extensions", "/clusters", "/manifests",
+	"/resource-monitoring",
 }
 
 var deliveryWorkbenchMenuPrefixes = []string{
@@ -344,6 +346,9 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 	case "network-access":
 		return visibilityRule{permissions: []string{
 			appaccess.PermNetworkAccessEndpointDevicesView,
+			"network_access.content_transfers.view",
+			"network_access.content_destinations.view",
+			"network_access.content_transfer_events.view",
 			appaccess.PermNetworkAccessSitesView,
 			appaccess.PermNetworkAccessSpacesView,
 			appaccess.PermNetworkAccessResourcesView,
@@ -353,6 +358,7 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermNetworkAccessEnrollmentsView,
 			appaccess.PermNetworkAccessAccessGrantsView,
 			appaccess.PermNetworkAccessPolicyView,
+			"network_access.endpoint_response_policies.view", "network_access.endpoint_response_events.view",
 			"network_access.vpn_profiles.view", "network_access.vpn_selection_policies.view", "network_access.vpn_dashboard.view",
 		}}, true
 	case "network-access-vpn-profiles":
@@ -367,6 +373,10 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSitesView}}, true
 	case "network-access-settings":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSitesView, appaccess.PermNetworkAccessEnrollmentsView}}, true
+	case "network-access-content-transfers":
+		return visibilityRule{permissions: []string{"network_access.content_transfers.view", "network_access.content_destinations.view", "network_access.content_transfer_events.view"}}, true
+	case "network-access-endpoint-response":
+		return visibilityRule{permissions: []string{"network_access.endpoint_response_policies.view", "network_access.endpoint_response_events.view", "network_access.endpoint_response_events.maintenance"}}, true
 	case "network-access-spaces":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSpacesView}}, true
 	case "network-access-resources":
@@ -422,6 +432,7 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermNetworkAccessEnrollmentsView,
 			appaccess.PermNetworkAccessAccessGrantsView,
 			appaccess.PermNetworkAccessPolicyView,
+			"network_access.endpoint_response_policies.view", "network_access.endpoint_response_events.view",
 		}}, true
 	case "identity-software":
 		return visibilityRule{permissions: []string{appaccess.PermSoftwarePackageView}}, true
@@ -531,6 +542,18 @@ func platformFamilyMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: platformResourceViewPermissions("configuration")}, true
 	case id == "network-topology":
 		return visibilityRule{permissions: []string{appaccess.PermPlatformNetworkTopologyView}}, true
+	case id == "network-routing":
+		return visibilityRule{permissions: []string{"platform.network.ingresses.view", "platform.network.ingress-classes.view", "platform.network.gateway-classes.view", "platform.network.gateways.view", "platform.network.http-routes.view", "platform.network.grpc-routes.view", "platform.network.backend-tls-policies.view", "platform.network.reference-grants.view"}}, true
+	case id == "network-backends":
+		return visibilityRule{permissions: []string{"platform.network.services.view", "platform.network.endpoint-slices.view"}}, true
+	case id == "resource-monitoring":
+		return visibilityRule{requiredPermissions: []string{appaccess.PermPlatformNodesView}, permissions: []string{"platform.resource-monitoring.overview.view", "platform.resource-monitoring.cpu.view", "platform.resource-monitoring.memory.view", "platform.resource-monitoring.conntrack.view", "platform.resource-monitoring.pods.view"}}, true
+	case strings.HasPrefix(id, "resource-monitoring-"):
+		view := strings.TrimPrefix(id, "resource-monitoring-")
+		if slices.Contains([]string{"overview", "cpu", "memory", "conntrack", "pods"}, view) {
+			return visibilityRule{requiredPermissions: []string{appaccess.PermPlatformNodesView}, permissions: []string{"platform.resource-monitoring." + view + ".view"}}, true
+		}
+		return visibilityRule{}, false
 	case id == "network":
 		return visibilityRule{permissions: platformResourceViewPermissions("network")}, true
 	case id == "storage":
@@ -565,6 +588,11 @@ func isVisibleByPermissions(item domainmenu.Record, permissionKeys []string) boo
 	rule, ok := permissionRuleForMenu(item)
 	if !ok {
 		return false
+	}
+	for _, permissionKey := range rule.requiredPermissions {
+		if !slices.Contains(permissionKeys, permissionKey) {
+			return false
+		}
 	}
 	for _, permissionKey := range rule.permissions {
 		if slices.Contains(permissionKeys, permissionKey) {

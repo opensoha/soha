@@ -218,6 +218,51 @@ func (s *Service) GetService(ctx context.Context, principal domainidentity.Princ
 	return item, nil
 }
 
+// AuthorizeServiceImport checks the same application scope as normal creation without writing records.
+func (s *Service) AuthorizeServiceImport(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainapp.UpsertInput, services []domainapp.ServiceInput) error {
+	app := domainapp.App{Key: input.Key, Name: input.Name, Group: "imported"}
+	if applicationID == "" {
+		if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "Application", input.Name, input.Key, "", "imported", ""); err != nil {
+			return err
+		}
+	} else {
+		var err error
+		app, err = s.repo.Get(ctx, applicationID)
+		if err != nil {
+			return normalizeRepoError(err)
+		}
+	}
+	for _, service := range services {
+		if strings.TrimSpace(service.ID) != "" {
+			if err := s.authorizeExistingServiceImport(ctx, principal, app, service.ID); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "ApplicationService", service.Name, service.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) authorizeExistingServiceImport(ctx context.Context, principal domainidentity.Principal, app domainapp.App, serviceID string) error {
+	if app.ID == "" {
+		return fmt.Errorf("%w: an existing service requires an existing application", apperrors.ErrInvalidArgument)
+	}
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "update")); err != nil {
+		return err
+	}
+	service, err := s.repo.GetService(ctx, app.ID, strings.TrimSpace(serviceID))
+	if err != nil {
+		return normalizeRepoError(err)
+	}
+	if service.ID != strings.TrimSpace(serviceID) || service.ApplicationID != app.ID || !service.Enabled {
+		return fmt.Errorf("%w: selected service is not available in this application", apperrors.ErrConflict)
+	}
+	return s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", service.Name, service.Key, app.BusinessLineID, app.Group, app.ID)
+}
+
 func (s *Service) CreateService(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "create")); err != nil {
 		return domainapp.Service{}, err
@@ -229,7 +274,7 @@ func (s *Service) CreateService(ctx context.Context, principal domainidentity.Pr
 	if err := validateServiceInput(input); err != nil {
 		return domainapp.Service{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
 		return domainapp.Service{}, err
 	}
 	if input.ExpectedVersion != nil {
@@ -505,13 +550,32 @@ func validateServiceInput(input domainapp.ServiceInput) error {
 	return nil
 }
 
+func applicationScopePermission(kind string, action domainaccess.Action) string {
+	read := action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch
+	switch kind {
+	case "Application":
+		if read {
+			return appaccess.PermDeliveryApplicationsView
+		}
+		return "delivery.application." + string(action)
+	case "ApplicationService":
+		if read {
+			return appaccess.PermDeliveryApplicationServicesView
+		}
+		return appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, string(action))
+	default:
+		return ""
+	}
+}
+
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, resourceKind, resourceName, owner, businessLineID, applicationGroup, applicationID string) error {
 	if s.authorizer == nil {
 		return nil
 	}
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		PermissionKey: applicationScopePermission(resourceKind, action),
+		Principal:     principal,
+		Action:        action,
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,

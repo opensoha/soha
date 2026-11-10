@@ -21,14 +21,16 @@ type resourceYAMLApplier interface {
 type Workloads struct {
 	*resourceAccess
 	*metricsSupport
-	agent         AgentClientFactory[WorkloadAgent]
-	configuration AgentClientFactory[ConfigurationAgent]
-	directPods    DirectPods
-	directConfig  DirectConfiguration
-	direct        DirectWorkloads
-	network       DirectNetworkReader
-	snapshot      WorkloadSnapshotBuilder
-	yaml          resourceYAMLApplier
+	agent             AgentClientFactory[WorkloadAgent]
+	configuration     AgentClientFactory[ConfigurationAgent]
+	directPods        DirectPods
+	directConfig      DirectConfiguration
+	direct            DirectWorkloads
+	network           DirectNetworkReader
+	snapshot          WorkloadSnapshotBuilder
+	yaml              resourceYAMLApplier
+	executions        PodExecutionRepository
+	executionIdentity PodExecutionIdentity
 }
 
 // Logs owns normalized runtime log query and stream orchestration.
@@ -49,6 +51,9 @@ type Configuration struct {
 }
 
 type Network struct {
+	topologyAgent   AgentClientFactory[TopologySourceAgent]
+	topologyDirect  DirectTopologySources
+	customResources *CustomResources
 	*resourceAccess
 	*metricsSupport
 	agent         AgentClientFactory[NetworkAgent]
@@ -79,6 +84,8 @@ type Helm struct {
 }
 
 type Inventory struct {
+	monitoringAgent  AgentClientFactory[MonitoringInventoryAgent]
+	monitoringDirect DirectMonitoringInventory
 	*resourceAccess
 	*metricsSupport
 	agent  AgentClientFactory[InventoryAgent]
@@ -93,6 +100,9 @@ type CustomResources struct {
 }
 
 type GenericResources struct {
+	topologyAgent   AgentClientFactory[TopologySourceAgent]
+	topologyDirect  DirectTopologySources
+	customResources *CustomResources
 	*resourceAccess
 	agent          AgentClientFactory[GenericResourceAgent]
 	direct         DirectGenericResource
@@ -117,6 +127,7 @@ type PortForwards struct {
 // Runtime composes the capabilities used by workflow, delivery, Copilot, and
 // AI gateway runtime inspection without exposing the complete root service.
 type Runtime struct {
+	generic         *GenericResources
 	customResources *CustomResources
 	*Workloads
 	*Configuration
@@ -223,6 +234,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 	}
 	genericResources := &GenericResources{
+		topologyAgent: deps.Agents.TopologySources, topologyDirect: deps.DirectTopologySources,
 		resourceAccess: access, agent: deps.Agents.Generic, direct: deps.DirectGeneric, resourceEvents: deps.DirectResourceEvents,
 		resourceGraph: deps.DirectResourceGraph, security: deps.DirectSecurity,
 	}
@@ -236,6 +248,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		yaml:           genericResources,
 	}
 	workloads := &Workloads{
+		executions: deps.PodExecutions, executionIdentity: deps.PodExecutionIdentity,
 		resourceAccess: access, metricsSupport: metrics,
 		agent:         deps.Agents.Workloads,
 		configuration: deps.Agents.Configuration, directPods: deps.DirectPods, direct: deps.DirectWorkloads,
@@ -245,15 +258,18 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		resourceAccess: access, agent: deps.Agents.Logs, direct: deps.DirectLogs, durable: deps.DurableLogs, tickets: deps.StreamTickets,
 	}
 	network := &Network{
+		topologyAgent: deps.Agents.TopologySources, topologyDirect: deps.DirectTopologySources,
 		resourceAccess: access, metricsSupport: metrics,
 		agent: deps.Agents.Network, directReader: deps.DirectNetwork, gatewayReader: deps.DirectGateway,
 		configuration: deps.Agents.Configuration, directConfig: deps.DirectConfiguration, pods: workloads,
 	}
 	inventory := &Inventory{
+		monitoringAgent: deps.Agents.MonitoringInventory, monitoringDirect: deps.DirectMonitoringInventory,
 		resourceAccess: access, metricsSupport: metrics,
 		agent: deps.Agents.Inventory, direct: deps.DirectInventory, yaml: genericResources,
 	}
 	service := &Service{
+		terminals:        newPodTerminals(workloads, deps.PodTerminals, deps.Lifecycle),
 		workloads:        workloads,
 		logs:             logs,
 		configuration:    &Configuration{resourceAccess: access, agent: deps.Agents.Configuration, direct: deps.DirectConfiguration, generic: deps.DirectGeneric, creation: creation},
@@ -268,7 +284,10 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		portForwards:     &PortForwards{resourceAccess: access, agent: deps.Agents.PortForwards, direct: deps.DirectTunnel, repository: deps.PortForwards},
 		creation:         creation,
 	}
+	network.customResources = service.customResources
+	genericResources.customResources = service.customResources
 	service.runtime = &Runtime{
+		generic:         service.genericResources,
 		customResources: service.customResources,
 		Workloads:       workloads, Configuration: service.configuration, Network: network, Storage: service.storage,
 		Helm: service.helm, Inventory: inventory, Events: service.events,

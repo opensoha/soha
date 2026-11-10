@@ -32,26 +32,78 @@ func knowledgeVectorIndexRecall(t *testing.T, repo *Repository, store *dbstore.S
 	t.Helper()
 	doc, target, principal := seedANNDocument(t, repo, store, ctx, dimension)
 	request := domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{doc.KnowledgeBaseID}, Query: "no-lexical-match"}
-	batch := domainknowledge.EmbeddingBatch{Model: target.EmbeddingModel, Route: target.EmbeddingRoute, Vectors: [][]float64{target.Embedding}}
+	batch := domainknowledge.EmbeddingBatch{Model: target.EmbeddingModel, Route: target.EmbeddingRoute, Source: target.EmbeddingSource, Vectors: [][]float64{target.Embedding}}
 	if hits, err := repo.SearchAuthorizedChunks(ctx, principal, request, batch, 50); err != nil || len(hits) != 1 {
 		t.Fatalf("initial vector query: error=%v hits=%d", err, len(hits))
 	}
-	seedANNCorpus(t, store, target)
+	setupCtx, cancelSetup := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancelSetup()
+	seedANNCorpus(t, store.DB().WithContext(setupCtx), target)
+	verifyCtx, cancelVerify := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancelVerify()
 	query, args := captureKnowledgeSearchQuery(t, repo)
-	benchmarkKnowledgeRecall(t, repo, ctx, principal, request, batch, target, "default")
-	logKnowledgeQueryPlan(t, store.DB(), ctx, *query, *args, dimension, false)
+	benchmarkKnowledgeRecall(t, repo, verifyCtx, principal, request, batch, target, "default")
+	logKnowledgeQueryPlan(t, store.DB(), verifyCtx, *query, *args, dimension, false)
 	// Fixture-only settings exercise HNSW even when a selective scan costs less.
-	withKnowledgeANN(t, store, ctx, func(indexed *Repository) {
-		benchmarkKnowledgeRecall(t, indexed, ctx, principal, request, batch, target, "forced-ann")
-		if rows := logKnowledgeQueryPlan(t, indexed.db, ctx, *query, *args, dimension, true); rows != 50 {
+	withKnowledgeANN(t, store, verifyCtx, func(indexed *Repository) {
+		benchmarkKnowledgeRecall(t, indexed, verifyCtx, principal, request, batch, target, "forced-ann")
+		if rows := logKnowledgeQueryPlan(t, indexed.db, verifyCtx, *query, *args, dimension, true); rows != 50 {
 			t.Fatalf("ANN benchmark unexpectedly used fallback: candidates=%d", rows)
 		}
 	})
-	knowledgeEmbeddingSpaceAndACL(t, repo, store, ctx, principal, request, batch, doc)
-	knowledgeFilteredANNRecall(t, repo, store, ctx, doc, target, query, args)
+	knowledgeEmbeddingSpaceAndACL(t, repo, store, verifyCtx, principal, request, batch, doc)
+	knowledgeFilteredANNRecall(t, repo, store, verifyCtx, doc, target, query, args)
 	t.Run("partial_ann_fallback", func(t *testing.T) {
-		knowledgePartialANNRecall(t, repo, store, ctx, dimension, query, args)
+		knowledgePartialANNRecall(t, repo, store, verifyCtx, dimension, query, args)
 	})
+}
+
+func TestKnowledgeEmbeddingSourceVectorIndexesWithPostgres(t *testing.T) {
+	for _, dimension := range []int{1536, 3072} {
+		t.Run(fmt.Sprint(dimension), func(t *testing.T) {
+			repo, store, ctx := newKnowledgePostgresRepository(t)
+			doc, target, principal := seedANNDocument(t, repo, store, ctx, dimension)
+			batch := domainknowledge.EmbeddingBatch{Model: target.EmbeddingModel, Route: target.EmbeddingRoute, Source: target.EmbeddingSource, Vectors: [][]float64{target.Embedding}}
+			request := domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{doc.KnowledgeBaseID}, Query: "no-lexical-match"}
+			legacy := seedOtherEmbeddingSpaces(t, repo, store, ctx, dimension, &request)
+			query, args := captureKnowledgeSearchQuery(t, repo)
+			withKnowledgeANN(t, store, ctx, func(indexed *Repository) {
+				hits, err := indexed.SearchAuthorizedChunks(ctx, principal, request, batch, 10)
+				if err != nil || len(hits) != 1 || hits[0].DocumentID != doc.ID || hits[0].EmbeddingSource != batch.Source || hits[0].VectorScore < .99 {
+					t.Fatalf("indexed query crossed embedding sources or missed its own source: %v %+v", err, hits)
+				}
+				validateANNHit(t, indexed, ctx, principal, hits[0])
+				if rows := logKnowledgeQueryPlan(t, indexed.db, ctx, *query, *args, dimension, true); rows != 1 {
+					t.Fatalf("expected exactly one ANN candidate from the queried source, got %d", rows)
+				}
+			})
+			knowledgeEmbeddingSpaceAndACL(t, repo, store, ctx, principal, request, batch, doc)
+			request.KnowledgeBaseIDs, request.Query = []string{legacy.KnowledgeBaseID}, target.Content
+			hits, err := repo.SearchAuthorizedChunks(ctx, principal, request, batch, 10)
+			if err != nil || len(hits) != 1 || hits[0].DocumentID != legacy.ID || hits[0].LexicalScore == 0 || hits[0].VectorScore != 0 || hits[0].EmbeddingSource.Known() {
+				t.Fatalf("legacy embedding must remain lexical: %v %+v", err, hits)
+			}
+		})
+	}
+}
+
+func seedOtherEmbeddingSpaces(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context, dimension int, request *domainknowledge.SearchRequest) domainknowledge.Document {
+	t.Helper()
+	upstream, provider, model := fixtureEmbeddingSource, fixtureEmbeddingSource, fixtureEmbeddingSource
+	upstream.UpstreamID, provider.ProviderKind, model.UpstreamModel = "other-upstream", "openai-compatible", "other-configured-model"
+	var legacy domainknowledge.Document
+	for _, source := range []domainknowledge.EmbeddingSource{upstream, provider, model, {}} {
+		doc, chunk, _ := seedANNDocument(t, repo, store, ctx, dimension)
+		chunk.EmbeddingSource = source
+		if err := repo.UpsertDocument(ctx, doc, []domainknowledge.Chunk{chunk}); err != nil {
+			t.Fatal(err)
+		}
+		request.KnowledgeBaseIDs = append(request.KnowledgeBaseIDs, doc.KnowledgeBaseID)
+		if !source.Known() {
+			legacy = doc
+		}
+	}
+	return legacy
 }
 
 func knowledgePartialANNRecall(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context, dimension int, query *string, args *[]any) {
@@ -67,7 +119,7 @@ func knowledgePartialANNRecall(t *testing.T, repo *Repository, store *dbstore.St
 		t.Fatal(err)
 	}
 	request := domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{doc.KnowledgeBaseID}, Query: "no-lexical-match"}
-	batch := domainknowledge.EmbeddingBatch{Model: near.EmbeddingModel, Route: near.EmbeddingRoute, Vectors: [][]float64{near.Embedding}}
+	batch := domainknowledge.EmbeddingBatch{Model: near.EmbeddingModel, Route: near.EmbeddingRoute, Source: near.EmbeddingSource, Vectors: [][]float64{near.Embedding}}
 	withKnowledgeANN(t, store, ctx, func(indexed *Repository) {
 		hits, err := indexed.SearchAuthorizedChunks(ctx, principal, request, batch, 50)
 		if err != nil || len(hits) != 2 {
@@ -138,28 +190,48 @@ func seedANNDocument(t *testing.T, repo *Repository, store *dbstore.Store, ctx c
 	return doc, chunks[0], principal
 }
 
-func seedANNCorpus(t *testing.T, store *dbstore.Store, target domainknowledge.Chunk) {
+func seedANNCorpus(t *testing.T, db *gorm.DB, target domainknowledge.Chunk) {
 	t.Helper()
-	// Synthetic neighborhoods plus background vectors, beyond the former 500 window.
-	err := store.DB().Exec(`INSERT INTO ai_knowledge_version_chunks(id,document_version_id,ordinal,content,content_hash,location,token_count,embedding_model,embedding_route,embedding)
-		SELECT ? || ':' || i,?,i,'ann unrelated entry ' || i,'ann-hash-' || i,'{}',8,'fixture','fixture-route',
-		ARRAY(SELECT CASE WHEN i%16=0 THEN CASE WHEN j=1 THEN 1 ELSE .01*sin((i*j+j*j)::double precision) END ELSE sin((i*j+j*j)::double precision) END FROM generate_series(1,?) j)::vector
-		FROM generate_series(1,?) i`, target.DocumentVersionID, target.DocumentVersionID, len(target.Embedding), annFixtureRows-1).Error
-	if err != nil {
+	// Bulk-build the migrated index in this disposable database so corpus
+	// setup avoids incremental HNSW maintenance for every fixture row.
+	index := fmt.Sprintf("public.idx_knowledge_version_chunks_vector%d", len(target.Embedding))
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var definition string
+		if err := tx.Raw(`SELECT pg_get_indexdef(i.indexrelid)
+			FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am a ON a.oid=c.relam
+			WHERE i.indexrelid=to_regclass(?) AND i.indrelid='public.ai_knowledge_version_chunks'::regclass
+			  AND i.indisvalid AND i.indisready AND a.amname='hnsw'`, index).Row().Scan(&definition); err != nil {
+			return fmt.Errorf("read migrated ANN index %s: %w", index, err)
+		}
+		if err := tx.Exec("DROP INDEX " + index).Error; err != nil {
+			return fmt.Errorf("drop ANN index for fixture load: %w", err)
+		}
+		// Synthetic neighborhoods plus background vectors, beyond the former 500 window.
+		if err := tx.Exec(`INSERT INTO ai_knowledge_version_chunks(id,document_version_id,ordinal,content,content_hash,location,token_count,embedding_model,embedding_route,embedding_upstream_id,embedding_provider_kind,embedding_upstream_model,embedding)
+			SELECT ? || ':' || i,?,i,'ann unrelated entry ' || i,'ann-hash-' || i,'{}',8,'fixture','fixture-route',?,?,?,
+			ARRAY(SELECT CASE WHEN i%16=0 THEN CASE WHEN j=1 THEN 1 ELSE .01*sin((i*j+j*j)::double precision) END ELSE sin((i*j+j*j)::double precision) END FROM generate_series(1,?) j)::vector
+			FROM generate_series(1,?) i`, target.DocumentVersionID, target.DocumentVersionID, target.EmbeddingSource.UpstreamID, target.EmbeddingSource.ProviderKind, target.EmbeddingSource.UpstreamModel, len(target.Embedding), annFixtureRows-1).Error; err != nil {
+			return fmt.Errorf("insert ANN fixture corpus: %w", err)
+		}
+		if err := tx.Exec(definition).Error; err != nil {
+			return fmt.Errorf("rebuild ANN index %s: %w", index, err)
+		}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.DB().Exec(`INSERT INTO ai_knowledge_chunks(id,knowledge_base_id,document_id,document_title,ordinal,content,content_hash,location,token_count,acl,created_at)
+	if err := db.Exec(`INSERT INTO ai_knowledge_chunks(id,knowledge_base_id,document_id,document_title,ordinal,content,content_hash,location,token_count,acl,created_at)
 		SELECT c.id,d.knowledge_base_id,d.id,d.title,c.ordinal,c.content,c.content_hash,c.location,c.token_count,d.acl,c.created_at
 		FROM ai_knowledge_version_chunks c JOIN ai_knowledge_documents d ON d.id=? WHERE c.document_version_id=? AND c.ordinal>0`, target.DocumentID, target.DocumentVersionID).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range []string{"ai_knowledge_version_chunks", "ai_knowledge_document_versions", "ai_knowledge_documents", "ai_knowledge_bases"} {
-		if err := store.DB().Exec("ANALYZE " + table).Error; err != nil {
+		if err := db.Exec("ANALYZE " + table).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 	var bytes int64
-	if err := store.DB().Raw(`SELECT pg_total_relation_size('ai_knowledge_version_chunks')`).Scan(&bytes).Error; err != nil {
+	if err := db.Raw(`SELECT pg_total_relation_size('ai_knowledge_version_chunks')`).Scan(&bytes).Error; err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("dimension=%d corpus_rows=%d version_chunk_total_bytes=%d", len(target.Embedding), annFixtureRows, bytes)
@@ -271,8 +343,8 @@ func withKnowledgeANN(t *testing.T, store *dbstore.Store, ctx context.Context, c
 func knowledgeEmbeddingSpaceAndACL(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context, principal domainknowledge.PrincipalScope, request domainknowledge.SearchRequest, batch domainknowledge.EmbeddingBatch, doc domainknowledge.Document) {
 	t.Helper()
 	for _, forbidden := range []domainknowledge.EmbeddingBatch{
-		{Model: "other-model", Route: batch.Route, Vectors: batch.Vectors},
-		{Model: batch.Model, Route: "other-route", Vectors: batch.Vectors},
+		{Model: "other-model", Route: batch.Route, Source: batch.Source, Vectors: batch.Vectors},
+		{Model: batch.Model, Route: "other-route", Source: batch.Source, Vectors: batch.Vectors},
 	} {
 		if items, err := repo.SearchAuthorizedChunks(ctx, principal, request, forbidden, 10); err != nil || len(items) != 0 {
 			t.Fatalf("embedding space crossed: %v %+v", err, items)
@@ -292,8 +364,8 @@ func knowledgeFilteredANNRecall(t *testing.T, repo *Repository, store *dbstore.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.DB().Exec(`INSERT INTO ai_knowledge_version_chunks(id,document_version_id,ordinal,content,content_hash,location,token_count,embedding_model,embedding_route,embedding)
-		SELECT ? || ':private:' || i,?,?+i,'private nearest','private-hash-' || i,'{}',8,'fixture','fixture-route',?::vector FROM generate_series(1,512) i`, near.DocumentVersionID, near.DocumentVersionID, annFixtureRows, vector).Error; err != nil {
+	if err := store.DB().Exec(`INSERT INTO ai_knowledge_version_chunks(id,document_version_id,ordinal,content,content_hash,location,token_count,embedding_model,embedding_route,embedding_upstream_id,embedding_provider_kind,embedding_upstream_model,embedding)
+		SELECT ? || ':private:' || i,?,?+i,'private nearest','private-hash-' || i,'{}',8,'fixture','fixture-route',?,?,?,?::vector FROM generate_series(1,512) i`, near.DocumentVersionID, near.DocumentVersionID, annFixtureRows, near.EmbeddingSource.UpstreamID, near.EmbeddingSource.ProviderKind, near.EmbeddingSource.UpstreamModel, vector).Error; err != nil {
 		t.Fatal(err)
 	}
 	allowed, target, principal := seedANNDocument(t, repo, store, ctx, len(near.Embedding))
@@ -316,7 +388,7 @@ func knowledgeFilteredANNRecall(t *testing.T, repo *Repository, store *dbstore.S
 		}
 		request.KnowledgeBaseIDs = append(request.KnowledgeBaseIDs, doc.KnowledgeBaseID)
 	}
-	batch := domainknowledge.EmbeddingBatch{Model: near.EmbeddingModel, Route: near.EmbeddingRoute, Vectors: [][]float64{near.Embedding}}
+	batch := domainknowledge.EmbeddingBatch{Model: near.EmbeddingModel, Route: near.EmbeddingRoute, Source: near.EmbeddingSource, Vectors: [][]float64{near.Embedding}}
 	withKnowledgeANN(t, store, ctx, func(indexed *Repository) {
 		for _, setting := range []string{"hnsw.ef_search", "hnsw.max_scan_tuples"} {
 			if err := indexed.db.Exec("SET LOCAL " + setting + " = 1").Error; err != nil {

@@ -17,6 +17,7 @@ import (
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	kyaml "k8s.io/apimachinery/pkg/util/yaml"
+	sigyaml "sigs.k8s.io/yaml"
 )
 
 const (
@@ -170,7 +171,8 @@ func decodeDocuments(inputs []documentInput, targetNamespace string) ([]domainma
 }
 
 func decodeDocument(filePath string, raw []byte, targetNamespace string) (domainmanifest.RenderedDocument, *domainmanifest.Diagnostic, error) {
-	jsonDocument, err := kyaml.ToJSON(raw)
+	// Rendered flow-style YAML may start with '{' without being JSON.
+	jsonDocument, err := sigyaml.YAMLToJSON(raw)
 	if err != nil {
 		return domainmanifest.RenderedDocument{}, nil, fmt.Errorf("%w: invalid YAML in %s: %v", apperrors.ErrInvalidArgument, filePath, err)
 	}

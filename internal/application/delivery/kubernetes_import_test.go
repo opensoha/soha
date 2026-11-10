@@ -87,15 +87,15 @@ func TestImportKubernetesServicesValidatesOwnershipAndLiveWorkloads(t *testing.T
 	}
 
 	input.OwnershipMode = "managed"
-	if _, err := service.ImportKubernetesServices(context.Background(), deliveryActionPrincipal(), input); err != nil {
-		t.Fatalf("managed Deployment import error = %v", err)
+	if _, err := service.ImportKubernetesServices(context.Background(), deliveryActionPrincipal(), input); !errors.Is(err, apperrors.ErrUnsupportedOperation) {
+		t.Fatalf("managed Deployment requires UID-aware handoff, got = %v", err)
 	}
 	input.OwnershipMode = "observe_only"
 	input.Workloads[0].WorkloadName = "missing"
 	if _, err := service.ImportKubernetesServices(context.Background(), deliveryActionPrincipal(), input); !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("missing workload error = %v", err)
 	}
-	if calls != 2 {
+	if calls != 1 {
 		t.Fatalf("repository called %d times", calls)
 	}
 }

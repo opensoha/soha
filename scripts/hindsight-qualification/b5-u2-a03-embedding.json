@@ -1,0 +1,131 @@
+{
+  "attempt": "Task123/B5/U2/A02",
+  "script_sha256": "8ebfe1da6496d57957a0807b9efffcd50d06aaeee0a64c8e551f6f227f40f938",
+  "status": "FAIL",
+  "full_hindsight_real_gateway": "NOT_RUN",
+  "derived_memory_delete": "NOT_RUN",
+  "discovery_evidence": [
+    "b5-u2-a02-discovery.json",
+    "b5-u2-a03-discovery-failure.json"
+  ],
+  "timed_calls": [
+    {
+      "path": "/relay/model-routes",
+      "started_utc": "2026-11-08T13:39:14.944231+00:00",
+      "http": 200,
+      "finished_utc": "2026-11-08T13:39:15.181410+00:00"
+    },
+    {
+      "path": "/personal-access-tokens",
+      "started_utc": "2026-11-08T13:39:15.181579+00:00",
+      "http": 201,
+      "finished_utc": "2026-11-08T13:39:15.437796+00:00"
+    },
+    {
+      "path": "/llm/openai/v1/models",
+      "started_utc": "2026-11-08T13:39:15.437871+00:00",
+      "http": 200,
+      "finished_utc": "2026-11-08T13:39:15.661964+00:00"
+    },
+    {
+      "path": "/llm/openai/v1/embeddings",
+      "started_utc": "2026-11-08T13:39:15.662012+00:00",
+      "http": 502,
+      "finished_utc": "2026-11-08T13:39:23.410577+00:00"
+    },
+    {
+      "path": "/personal-access-tokens",
+      "started_utc": "2026-11-08T13:39:23.410591+00:00",
+      "http": 200,
+      "finished_utc": "2026-11-08T13:39:23.602537+00:00"
+    },
+    {
+      "path": "/personal-access-tokens/af12a940-8306-47bf-b6a4-3b63c2416232/revoke",
+      "started_utc": "2026-11-08T13:39:23.602564+00:00",
+      "http": 200,
+      "finished_utc": "2026-11-08T13:39:23.837113+00:00"
+    },
+    {
+      "path": "/personal-access-tokens",
+      "started_utc": "2026-11-08T13:39:23.837129+00:00",
+      "http": 200,
+      "finished_utc": "2026-11-08T13:39:23.950662+00:00"
+    }
+  ],
+  "normal_cli_session_exit": 0,
+  "route_inventory_http": 200,
+  "enabled_routes": [
+    {
+      "publicModel": "gpt-6.1-sol",
+      "upstreamModel": "gpt-6.1-sol",
+      "providerKind": "openai"
+    },
+    {
+      "publicModel": "gpt-6-luna",
+      "upstreamModel": "gpt-6-luna",
+      "providerKind": "openai"
+    }
+  ],
+  "embedding_route": "gpt-6-luna",
+  "token_name": "task123-hq-b5-u2-a02-7136fba771f34dba809d513dcfb58107",
+  "cleanup_requires_followup": false,
+  "credential": {
+    "create_http": 201,
+    "expires_at": "2026-11-08T13:54:15.181533+00:00",
+    "allowed_models": [
+      "gpt-6-luna"
+    ],
+    "type": "PAT",
+    "permission_keys": [
+      "ai.gateway.relay.invoke"
+    ],
+    "id": "af12a940-8306-47bf-b6a4-3b63c2416232"
+  },
+  "chat": {
+    "structured_extraction": "NOT_RUN",
+    "reason": "reuse intent1; no repeated paid chat"
+  },
+  "relay_models": {
+    "http": 200,
+    "models": [
+      "gpt-6-luna"
+    ]
+  },
+  "embeddings": {
+    "http": 502,
+    "error_type": "cluster_unavailable",
+    "error_code": "cluster_unavailable"
+  },
+  "revocation": {
+    "id": "af12a940-8306-47bf-b6a4-3b63c2416232",
+    "http": 200,
+    "confirmed": true
+  },
+  "script_static_action_key": "Task123/gateway-qualification/hindsight-u2/2",
+  "action_key": "Task123/gateway-qualification/hindsight-u2/3",
+  "call_log_http": 200,
+  "matching_call_logs": [
+    {
+      "id": "44bb0d4e-c65b-4768-aeba-21b3c46b79f6",
+      "requestId": "b3288cc0-8c49-4a25-8d83-7bef157889b9",
+      "endpoint": "embeddings",
+      "status": "failure",
+      "httpStatus": 503,
+      "upstreamStatus": 503,
+      "errorCode": "upstream_5xx",
+      "durationMs": 6696,
+      "createdAt": "2026-11-08T13:39:15.846147Z",
+      "upstreamId": "87b9ffc7-1f33-40ce-a83b-e640e02a6393",
+      "transport_categories": {
+        "tls handshake timeout": false,
+        "timeout": false,
+        "deadline exceeded": false,
+        "eof": false,
+        "connection refused": false,
+        "no such host": false,
+        "reset by peer": false
+      }
+    }
+  ],
+  "conclusion": "The single additional embedding request received an upstream HTTP503 (Gateway call log upstream_5xx), mapped to public HTTP502 cluster_unavailable. No vector or definitive model-unsupported 4xx/501 was obtained; embedding capability remains unproven. Stop without further probes."
+}

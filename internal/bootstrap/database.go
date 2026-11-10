@@ -95,9 +95,11 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 				}
 			}
 			if storedVersion == networkNavigationSeedVersion {
-				return writeSeedVersion(ctx, tx, bootstrapSeedVersionKey, bootstrapSeedVersion)
+				if err := writeSeedVersion(ctx, tx, bootstrapSeedVersionKey, bootstrapSeedVersion); err != nil {
+					return err
+				}
 			}
-			return nil
+			return upgradeKubernetesWorkbenchSeeds(ctx, tx)
 		}
 		if err := seedRoles(ctx, tx); err != nil {
 			return err
@@ -124,9 +126,11 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 			return err
 		}
 		if cfg.Modules.Security.Enabled {
-			return upgradeNetworkAccessNavigationSeeds(ctx, tx)
+			if err := upgradeNetworkAccessNavigationSeeds(ctx, tx); err != nil {
+				return err
+			}
 		}
-		return nil
+		return upgradeKubernetesWorkbenchSeeds(ctx, tx)
 	})
 }
 
@@ -622,14 +626,15 @@ func seedClusters(ctx context.Context, db *gorm.DB, clusters []cfgpkg.ClusterCon
 			Labels:      string(labels),
 		})
 		metadata, _ := json.Marshal(map[string]any{
-			"kubeconfig":               cluster.Kubeconfig,
-			"kubeconfig_data":          cluster.KubeconfigData,
-			"context":                  cluster.Context,
-			"source_ref":               "configs/config.yaml",
-			"prometheus_url":           cluster.PrometheusURL,
-			"prometheus_bearer_token":  cluster.PrometheusBearerToken,
-			"prometheus_cluster_label": cluster.PrometheusClusterLabel,
-			"grafana_base_url":         cluster.GrafanaBaseURL,
+			"kubeconfig":                     cluster.Kubeconfig,
+			"kubeconfig_data":                cluster.KubeconfigData,
+			"context":                        cluster.Context,
+			"source_ref":                     "configs/config.yaml",
+			"prometheus_url":                 cluster.PrometheusURL,
+			"prometheus_bearer_token":        cluster.PrometheusBearerToken,
+			"prometheus_cluster_label":       cluster.PrometheusClusterLabel,
+			"prometheus_cluster_label_value": cluster.PrometheusClusterLabelValue,
+			"grafana_base_url":               cluster.GrafanaBaseURL,
 		})
 		credentialItems = append(credentialItems, clusterCredentialSeed{
 			ID:        fmt.Sprintf("%s:primary", cluster.ID),

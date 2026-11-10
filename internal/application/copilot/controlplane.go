@@ -446,10 +446,6 @@ func normalizeAutomationAnalysisKinds(items []string) ([]string, error) {
 	return out, nil
 }
 
-type workbenchModelCatalog interface {
-	ListWorkbenchModels(context.Context, domainidentity.Principal, string) ([]appaigateway.WorkbenchModelOption, error)
-}
-
 func (s *Service) addWorkbenchModels(ctx context.Context, principal domainidentity.Principal, catalog *domaincopilot.WorkbenchCatalog) {
 	settings, err := s.resolveAIWorkbenchSettings(ctx)
 	if err != nil || !settings.Enabled {
@@ -457,10 +453,16 @@ func (s *Service) addWorkbenchModels(ctx context.Context, principal domainidenti
 		return
 	}
 	catalog.DefaultPublicModel = settings.DefaultPublicModel
-	reader, ok := s.workbenchInvoker.(workbenchModelCatalog)
-	if !ok {
+	reader := s.runtime.ModelCatalog
+	if reader == nil {
 		catalog.ModelOptionsError = "模型目录不可用"
 		return
+	}
+	if catalog.DefaultPublicModel == "" && settings.DefaultRouteID != "" {
+		option, err := reader.ResolveWorkbenchModelOption(ctx, principal, appaigateway.WorkbenchRelayRequest{RouteID: settings.DefaultRouteID, Endpoint: settings.DefaultEndpoint})
+		if err == nil {
+			catalog.DefaultPublicModel = option.PublicModel
+		}
 	}
 	models, err := reader.ListWorkbenchModels(ctx, principal, settings.DefaultEndpoint)
 	if err != nil {

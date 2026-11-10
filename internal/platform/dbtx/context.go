@@ -13,10 +13,21 @@ type binding struct{ base, tx *gorm.DB }
 // DB joins only the explicitly bound database. A repository constructed with a
 // nested transaction keeps its own handle; another database is never redirected.
 func DB(ctx context.Context, db *gorm.DB) *gorm.DB {
-	if current, ok := ctx.Value(contextKey{}).(binding); ok && current.base == db {
-		return current.tx.WithContext(ctx)
+	if tx, ok := Bound(ctx, db); ok {
+		return tx.WithContext(ctx)
 	}
 	return db.WithContext(ctx)
+}
+
+// Bound returns the transaction only when it belongs to this exact base handle.
+// Transaction-required projections use this instead of silently falling back to
+// a separate connection. Callers apply their context with tx.WithContext(ctx).
+func Bound(ctx context.Context, db *gorm.DB) (*gorm.DB, bool) {
+	current, ok := ctx.Value(contextKey{}).(binding)
+	if !ok || db == nil || current.base != db || current.tx == nil {
+		return nil, false
+	}
+	return current.tx, true
 }
 
 func Within(ctx context.Context, db *gorm.DB, apply func(context.Context) error) error {

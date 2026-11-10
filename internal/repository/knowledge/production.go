@@ -235,7 +235,11 @@ func (r *Repository) StageIngestionDocument(
 	if err != nil {
 		return fmt.Errorf("encode staged knowledge document: %w", err)
 	}
-	chunksPayload, err := json.Marshal(chunks)
+	staged := make([]stagedIngestionChunk, len(chunks))
+	for i, chunk := range chunks {
+		staged[i] = stagedIngestionChunk{Chunk: chunk, Source: chunk.EmbeddingSource}
+	}
+	chunksPayload, err := json.Marshal(staged)
 	if err != nil {
 		return fmt.Errorf("encode staged knowledge chunks: %w", err)
 	}
@@ -247,7 +251,7 @@ func (r *Repository) StageIngestionDocument(
 		WHERE EXISTS (
 			SELECT 1 FROM ai_knowledge_ingestion_jobs
 			WHERE id=? AND status='running' AND lease_token=? AND cancel_requested=false
-			  AND lease_expires_at>clock_timestamp()
+			  AND lease_expires_at>(clock_timestamp() AT TIME ZONE 'UTC')
 			FOR UPDATE
 		)
 		ON CONFLICT(job_id,document_id) DO UPDATE SET
@@ -278,7 +282,7 @@ func (r *Repository) LoadIngestionDocument(ctx context.Context, jobID, leaseToke
 		  AND s.document_payload->>'sourceId'=?
 		  AND s.document_payload->>'knowledgeBaseId'=?
 		  AND j.status='running' AND j.lease_token=? AND j.cancel_requested=false
-		  AND j.lease_expires_at>clock_timestamp()`,
+		  AND j.lease_expires_at>(clock_timestamp() AT TIME ZONE 'UTC')`,
 		jobID, document.ID, document.ContentHash, document.SourceID, document.KnowledgeBaseID, leaseToken).Row().Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -286,8 +290,8 @@ func (r *Repository) LoadIngestionDocument(ctx context.Context, jobID, leaseToke
 	if err != nil {
 		return nil, fmt.Errorf("read staged knowledge vectors: %w", err)
 	}
-	var chunks []domainknowledge.Chunk
-	if err := json.Unmarshal(payload, &chunks); err != nil {
+	chunks, err := decodeStagedIngestionChunks(payload)
+	if err != nil {
 		return nil, fmt.Errorf("decode staged knowledge vectors: %w", err)
 	}
 	return chunks, nil
@@ -441,22 +445,7 @@ func (r *Repository) PublishIngestionJob(
 			WHERE knowledge_base_id=? AND status='active'`, job.KnowledgeBaseID).Error; err != nil {
 			return fmt.Errorf("supersede knowledge revision: %w", err)
 		}
-		if err := tx.Exec(`
-			INSERT INTO ai_knowledge_index_revisions(
-				id,knowledge_base_id,revision,embedding_model,chunker_version,document_count,
-				chunk_count,status,created_at,activated_at
-			) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-			revision.ID,
-			revision.KnowledgeBaseID,
-			revision.Revision,
-			revision.EmbeddingModel,
-			revision.ChunkerVersion,
-			revision.DocumentCount,
-			revision.ChunkCount,
-			revision.Status,
-			revision.CreatedAt,
-			revision.ActivatedAt,
-		).Error; err != nil {
+		if err := insertIndexRevision(tx, revision); err != nil {
 			return fmt.Errorf("create knowledge revision: %w", err)
 		}
 		if err := tx.Exec(`
@@ -499,6 +488,25 @@ type stagedIngestionDocument struct {
 	chunks   []domainknowledge.Chunk
 }
 
+// The embedded chunk preserves the existing staged JSON shape for older jobs.
+type stagedIngestionChunk struct {
+	domainknowledge.Chunk
+	Source domainknowledge.EmbeddingSource `json:"embeddingSource,omitzero"`
+}
+
+func decodeStagedIngestionChunks(payload []byte) ([]domainknowledge.Chunk, error) {
+	var staged []stagedIngestionChunk
+	if err := json.Unmarshal(payload, &staged); err != nil {
+		return nil, err
+	}
+	chunks := make([]domainknowledge.Chunk, len(staged))
+	for i, chunk := range staged {
+		chunk.EmbeddingSource = chunk.Source
+		chunks[i] = chunk.Chunk
+	}
+	return chunks, nil
+}
+
 func loadStagedIngestionDocuments(tx *gorm.DB, jobID, leaseToken string) ([]stagedIngestionDocument, error) {
 	rows, err := tx.Raw(`
 		SELECT document_payload,chunks_payload
@@ -518,7 +526,8 @@ func loadStagedIngestionDocuments(tx *gorm.DB, jobID, leaseToken string) ([]stag
 		if err := json.Unmarshal(documentPayload, &item.document); err != nil {
 			return nil, fmt.Errorf("decode staged knowledge document: %w", err)
 		}
-		if err := json.Unmarshal(chunksPayload, &item.chunks); err != nil {
+		item.chunks, err = decodeStagedIngestionChunks(chunksPayload)
+		if err != nil {
 			return nil, fmt.Errorf("decode staged knowledge chunks: %w", err)
 		}
 		items = append(items, item)

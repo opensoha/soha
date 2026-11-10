@@ -10,6 +10,7 @@ import (
 
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -77,7 +78,7 @@ func (r *Repository) CreatePersonalAccessToken(ctx context.Context, item domaina
 		return domainaigateway.PersonalAccessToken{}, err
 	}
 	setCreateTimestamps(&item.CreatedAt, &item.UpdatedAt)
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO personal_access_tokens (id, user_id, name, token_hash, token_prefix, scopes, permission_keys, metadata, expires_at, last_used_at, revoked_at, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, item.ID, item.UserID, item.Name, item.TokenHash, item.TokenPrefix, scopes, permissionKeys, metadata, item.ExpiresAt, item.LastUsedAt, item.RevokedAt, item.CreatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
@@ -113,7 +114,7 @@ func (r *Repository) GetPersonalAccessTokenByID(ctx context.Context, tokenID str
 }
 
 func (r *Repository) RevokePersonalAccessToken(ctx context.Context, userID, tokenID string) error {
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE personal_access_tokens
 		SET revoked_at = COALESCE(revoked_at, ?), updated_at = ?
 		WHERE id = ? AND user_id = ?
@@ -187,7 +188,7 @@ func (r *Repository) CreateServiceAccountToken(ctx context.Context, item domaina
 	if item.UpdatedAt.IsZero() {
 		item.UpdatedAt = now
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO service_account_tokens (id, service_account_id, name, token_hash, token_prefix, scopes, permission_keys, metadata, expires_at, last_used_at, revoked_at, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, item.ID, item.ServiceAccountID, item.Name, item.TokenHash, item.TokenPrefix, scopes, permissionKeys, metadata, item.ExpiresAt, item.LastUsedAt, item.RevokedAt, item.CreatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
@@ -236,7 +237,7 @@ func (r *Repository) GetServiceAccountTokenByID(ctx context.Context, tokenID str
 }
 
 func (r *Repository) RevokeServiceAccountToken(ctx context.Context, tokenID string) error {
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE service_account_tokens
 		SET revoked_at = COALESCE(revoked_at, ?), updated_at = ?
 		WHERE id = ?
@@ -820,6 +821,10 @@ func (r *Repository) CreateApprovalRequest(ctx context.Context, item domainaigat
 	if err != nil {
 		return domainaigateway.ApprovalRequest{}, err
 	}
+	actorCeiling, err := json.Marshal(item.ActorPermissionCeiling)
+	if err != nil {
+		return domainaigateway.ApprovalRequest{}, err
+	}
 	now := time.Now().UTC()
 	if item.CreatedAt.IsZero() {
 		item.CreatedAt = now
@@ -831,12 +836,12 @@ func (r *Repository) CreateApprovalRequest(ctx context.Context, item domainaigat
 		INSERT INTO ai_gateway_approval_requests (
 			id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_session_id, actor_name, actor_roles, actor_teams,
 			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
-			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
+			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at, actor_token_id, actor_permission_ceiling, protected_tool_input
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, item.ID, item.Status, item.Strategy, nullableString(item.PolicyID), nullableString(item.ApprovalPolicyRef), item.ActorType, item.ActorID, nullableString(item.ActorSessionID), nullableString(item.ActorName), actorRoles, actorTeams,
 		nullableString(item.AIClientID), nullableString(item.AIClientName), nullableString(item.SkillID), item.ToolName, string(item.RiskLevel), item.RequiresApproval, resourceScope, toolInput, secretRefs, relatedIDs, output,
-		item.Summary, nullableString(item.RequestID), nullableString(item.SourceIP), nullableString(item.DecidedBy), nullableString(item.DecidedByName), item.DecidedAt, nullableString(item.DecisionComment), item.ExpiresAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		item.Summary, nullableString(item.RequestID), nullableString(item.SourceIP), nullableString(item.DecidedBy), nullableString(item.DecidedByName), item.DecidedAt, nullableString(item.DecisionComment), item.ExpiresAt, item.CreatedAt, item.UpdatedAt, nullableString(item.ActorTokenID), string(actorCeiling), nullableString(item.ProtectedToolInput)).Error; err != nil {
 		return domainaigateway.ApprovalRequest{}, err
 	}
 	return item, nil
@@ -846,7 +851,7 @@ func (r *Repository) GetApprovalRequest(ctx context.Context, requestID string) (
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_session_id, actor_name, actor_roles, actor_teams,
 			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
-			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
+			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at, actor_token_id, actor_permission_ceiling, protected_tool_input
 		FROM ai_gateway_approval_requests
 		WHERE id = ?
 		LIMIT 1
@@ -858,7 +863,7 @@ func (r *Repository) ListApprovalRequests(ctx context.Context, filter domainaiga
 	query := `
 		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_session_id, actor_name, actor_roles, actor_teams,
 			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
-			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
+			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at, actor_token_id, actor_permission_ceiling, protected_tool_input
 		FROM ai_gateway_approval_requests
 		WHERE 1 = 1
 	`
@@ -1151,6 +1156,8 @@ func scanApprovalRequestScanner(scanner interface {
 	Scan(dest ...any) error
 }) (domainaigateway.ApprovalRequest, error) {
 	var item domainaigateway.ApprovalRequest
+	var actorTokenID, protectedToolInput sql.NullString
+	var actorCeiling []byte
 	var policyID, approvalPolicyRef, actorSessionID, actorName, aiClientID, aiClientName, skillID, requestID, sourceIP, decidedBy, decidedByName, decisionComment sql.NullString
 	var decidedAt, expiresAt sql.NullTime
 	var actorRoles, actorTeams, resourceScope, toolInput, secretRefs, relatedIDs, output []byte
@@ -1188,12 +1195,18 @@ func scanApprovalRequestScanner(scanner interface {
 		&expiresAt,
 		&item.CreatedAt,
 		&item.UpdatedAt,
+		&actorTokenID,
+		&actorCeiling,
+		&protectedToolInput,
 	); err != nil {
 		return domainaigateway.ApprovalRequest{}, err
 	}
 	item.PolicyID = policyID.String
 	item.ApprovalPolicyRef = approvalPolicyRef.String
 	item.ActorSessionID = actorSessionID.String
+	item.ActorTokenID = actorTokenID.String
+	item.ProtectedToolInput = protectedToolInput.String
+	unmarshalJSON(actorCeiling, &item.ActorPermissionCeiling)
 	item.ActorName = actorName.String
 	item.AIClientID = aiClientID.String
 	item.AIClientName = aiClientName.String

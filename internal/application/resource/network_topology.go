@@ -13,7 +13,7 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
-func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.NetworkTopologyView, error) {
+func (n *Network) getLegacyNetworkTopology(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string, allowed map[string]bool) (domainresource.NetworkTopologyView, error) {
 	if _, _, err := n.authorizeResourceGroup(ctx, principal, clusterID, namespace, "network", "NetworkTopology", domainaccess.ActionView); err != nil {
 		return domainresource.NetworkTopologyView{}, err
 	}
@@ -53,7 +53,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 		}()
 	}
 
-	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "Service") {
+	if allowed["Service"] {
 		run(func() error {
 			items, err := n.ListServices(ctx, principal, clusterID, namespace)
 			mu.Lock()
@@ -63,7 +63,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 			return err
 		})
 	}
-	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "Ingress") {
+	if allowed["Ingress"] {
 		run(func() error {
 			items, err := n.ListIngresses(ctx, principal, clusterID, namespace)
 			mu.Lock()
@@ -73,7 +73,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 			return err
 		})
 	}
-	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "HTTPRoute") {
+	if allowed["HTTPRoute"] {
 		run(func() error {
 			items, err := n.ListHTTPRoutes(ctx, principal, clusterID, namespace)
 			mu.Lock()
@@ -83,7 +83,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 			return err
 		})
 	}
-	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "Gateway") {
+	if allowed["Gateway"] {
 		run(func() error {
 			items, err := n.ListGateways(ctx, principal, clusterID, namespace)
 			mu.Lock()
@@ -93,7 +93,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 			return err
 		})
 	}
-	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "Pod") {
+	if allowed["Pod"] {
 		run(func() error {
 			items, err := n.pods.ListPods(ctx, principal, clusterID, namespace)
 			mu.Lock()

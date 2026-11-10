@@ -112,38 +112,40 @@ type SourceLocation struct {
 }
 
 type Chunk struct {
-	DocumentVersionID  string         `json:"documentVersionId,omitempty"`
-	IndexRevisionID    string         `json:"indexRevisionId,omitempty"`
-	EmbeddingModel     string         `json:"embeddingModel,omitempty"`
-	EmbeddingRoute     string         `json:"embeddingRoute,omitempty"`
-	EmbeddingDimension int            `json:"-"`
-	Embedding          []float64      `json:"embedding,omitempty"`
-	LexicalScore       float64        `json:"-"`
-	VectorScore        float64        `json:"-"`
-	ID                 string         `json:"id"`
-	KnowledgeBaseID    string         `json:"knowledgeBaseId"`
-	DocumentID         string         `json:"documentId"`
-	DocumentTitle      string         `json:"documentTitle"`
-	Ordinal            int            `json:"ordinal"`
-	Content            string         `json:"content"`
-	ContentHash        string         `json:"contentHash"`
-	Location           SourceLocation `json:"location"`
-	TokenCount         int            `json:"tokenCount"`
-	ACL                AccessScope    `json:"acl"`
-	CreatedAt          time.Time      `json:"createdAt"`
+	DocumentVersionID  string          `json:"documentVersionId,omitempty"`
+	IndexRevisionID    string          `json:"indexRevisionId,omitempty"`
+	EmbeddingModel     string          `json:"embeddingModel,omitempty"`
+	EmbeddingRoute     string          `json:"embeddingRoute,omitempty"`
+	EmbeddingSource    EmbeddingSource `json:"-"`
+	EmbeddingDimension int             `json:"-"`
+	Embedding          []float64       `json:"embedding,omitempty"`
+	LexicalScore       float64         `json:"-"`
+	VectorScore        float64         `json:"-"`
+	ID                 string          `json:"id"`
+	KnowledgeBaseID    string          `json:"knowledgeBaseId"`
+	DocumentID         string          `json:"documentId"`
+	DocumentTitle      string          `json:"documentTitle"`
+	Ordinal            int             `json:"ordinal"`
+	Content            string          `json:"content"`
+	ContentHash        string          `json:"contentHash"`
+	Location           SourceLocation  `json:"location"`
+	TokenCount         int             `json:"tokenCount"`
+	ACL                AccessScope     `json:"acl"`
+	CreatedAt          time.Time       `json:"createdAt"`
 }
 
 type IndexRevision struct {
-	ID              string      `json:"id"`
-	KnowledgeBaseID string      `json:"knowledgeBaseId"`
-	Revision        int         `json:"revision"`
-	EmbeddingModel  string      `json:"embeddingModel,omitempty"`
-	ChunkerVersion  string      `json:"chunkerVersion"`
-	DocumentCount   int         `json:"documentCount"`
-	ChunkCount      int         `json:"chunkCount"`
-	Status          IndexStatus `json:"status"`
-	CreatedAt       time.Time   `json:"createdAt"`
-	ActivatedAt     *time.Time  `json:"activatedAt,omitempty"`
+	ID              string          `json:"id"`
+	KnowledgeBaseID string          `json:"knowledgeBaseId"`
+	Revision        int             `json:"revision"`
+	EmbeddingModel  string          `json:"embeddingModel,omitempty"`
+	EmbeddingSource EmbeddingSource `json:"-"`
+	ChunkerVersion  string          `json:"chunkerVersion"`
+	DocumentCount   int             `json:"documentCount"`
+	ChunkCount      int             `json:"chunkCount"`
+	Status          IndexStatus     `json:"status"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	ActivatedAt     *time.Time      `json:"activatedAt,omitempty"`
 }
 
 type SyncRun struct {
@@ -222,4 +224,20 @@ type EmbeddingBatch struct {
 	Vectors [][]float64
 	Model   string
 	Route   string
+	Source  EmbeddingSource `json:"-"`
+}
+
+// EmbeddingSource identifies the Gateway candidate that produced the vectors.
+type EmbeddingSource struct {
+	UpstreamID    string
+	ProviderKind  string
+	UpstreamModel string
+}
+
+func (s EmbeddingSource) Known() bool {
+	return s.UpstreamID != "" && s.ProviderKind != "" && s.UpstreamModel != ""
+}
+
+func (b EmbeddingBatch) MatchesChunk(chunk Chunk) bool {
+	return b.Source.Known() && chunk.EmbeddingSource == b.Source && chunk.EmbeddingModel == b.Model && chunk.EmbeddingRoute == b.Route
 }

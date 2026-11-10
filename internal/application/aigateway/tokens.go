@@ -84,7 +84,14 @@ func (s *Service) CreatePersonalAccessToken(ctx context.Context, principal domai
 	if err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
-	value, prefix, err := generateOpaqueToken(domainaigateway.PersonalAccessTokenPrefix)
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now().UTC()) {
+		return domainaigateway.CreatedPersonalAccessToken{}, fmt.Errorf("%w: expiresAt must be in the future", apperrors.ErrInvalidArgument)
+	}
+	credentialPrefix, err := gatewayCredentialPrefix(metadata, false, input.GovernedOnly)
+	if err != nil {
+		return domainaigateway.CreatedPersonalAccessToken{}, err
+	}
+	value, prefix, err := generateOpaqueToken(credentialPrefix)
 	if err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
@@ -168,6 +175,10 @@ func (s *Service) RotatePersonalAccessToken(ctx context.Context, principal domai
 	if tokenID == "" {
 		return domainaigateway.CreatedPersonalAccessToken{}, fmt.Errorf("%w: token ID is required", apperrors.ErrInvalidArgument)
 	}
+	requestID, err := s.prepareTokenRotation(ctx, principal, "personal_access_token", tokenID, input.RotationRequestID)
+	if err != nil {
+		return domainaigateway.CreatedPersonalAccessToken{}, err
+	}
 	items, err := repo.ListPersonalAccessTokens(ctx, principal.UserID)
 	if err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
@@ -185,6 +196,9 @@ func (s *Service) RotatePersonalAccessToken(ctx context.Context, principal domai
 	if previous.RevokedAt != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, fmt.Errorf("%w: token is revoked", apperrors.ErrInvalidArgument)
 	}
+	if _, err := s.normalizeGatewayTokenMetadataForPrincipal(ctx, principal, previous.Metadata); err != nil {
+		return domainaigateway.CreatedPersonalAccessToken{}, err
+	}
 	if err := s.ensureRelayDebugTokenMetadataAllowed(ctx, principal, previous.Metadata); err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
@@ -199,7 +213,11 @@ func (s *Service) RotatePersonalAccessToken(ctx context.Context, principal domai
 	if err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
-	value, prefix, err := generateOpaqueToken(domainaigateway.PersonalAccessTokenPrefix)
+	credentialPrefix, err := gatewayCredentialPrefix(previous.Metadata, false, input.GovernedOnly)
+	if err != nil {
+		return domainaigateway.CreatedPersonalAccessToken{}, err
+	}
+	value, prefix, err := generateOpaqueToken(credentialPrefix)
 	if err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
@@ -218,11 +236,9 @@ func (s *Service) RotatePersonalAccessToken(ctx context.Context, principal domai
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	created, err := repo.CreatePersonalAccessToken(ctx, replacement)
+	record := newTokenRotation(principal, requestID, "personal_access_token", principal.UserID, previous.ID, replacement.ID, now)
+	created, err := s.tokenRotations.RotatePersonalToken(ctx, previous.ID, replacement, record)
 	if err != nil {
-		return domainaigateway.CreatedPersonalAccessToken{}, err
-	}
-	if err := repo.RevokePersonalAccessToken(ctx, principal.UserID, previous.ID); err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
 	_ = s.recordTokenAudit(ctx, principal, "ai_gateway.personal_token.rotate", "success", "rotated personal access token", map[string]any{
@@ -324,7 +340,14 @@ func (s *Service) CreateServiceAccountToken(ctx context.Context, principal domai
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
-	value, prefix, err := generateOpaqueToken(domainaigateway.ServiceAccountTokenPrefix)
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now().UTC()) {
+		return domainaigateway.CreatedServiceAccountToken{}, fmt.Errorf("%w: expiresAt must be in the future", apperrors.ErrInvalidArgument)
+	}
+	credentialPrefix, err := gatewayCredentialPrefix(metadata, true, input.GovernedOnly)
+	if err != nil {
+		return domainaigateway.CreatedServiceAccountToken{}, err
+	}
+	value, prefix, err := generateOpaqueToken(credentialPrefix)
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
@@ -381,6 +404,10 @@ func (s *Service) RotateServiceAccountToken(ctx context.Context, principal domai
 	if tokenID == "" {
 		return domainaigateway.CreatedServiceAccountToken{}, fmt.Errorf("%w: token ID is required", apperrors.ErrInvalidArgument)
 	}
+	requestID, err := s.prepareTokenRotation(ctx, principal, "service_account_token", tokenID, input.RotationRequestID)
+	if err != nil {
+		return domainaigateway.CreatedServiceAccountToken{}, err
+	}
 	items, err := repo.ListAllServiceAccountTokens(ctx)
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
@@ -405,6 +432,9 @@ func (s *Service) RotateServiceAccountToken(ctx context.Context, principal domai
 	if strings.TrimSpace(account.Status) != "active" {
 		return domainaigateway.CreatedServiceAccountToken{}, fmt.Errorf("%w: service account is not active", apperrors.ErrInvalidArgument)
 	}
+	if _, err := s.normalizeGatewayTokenMetadataForPrincipal(ctx, principal, previous.Metadata); err != nil {
+		return domainaigateway.CreatedServiceAccountToken{}, err
+	}
 	if err := s.ensureRelayDebugTokenMetadataAllowed(ctx, principal, previous.Metadata); err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
@@ -420,7 +450,11 @@ func (s *Service) RotateServiceAccountToken(ctx context.Context, principal domai
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
-	value, prefix, err := generateOpaqueToken(domainaigateway.ServiceAccountTokenPrefix)
+	credentialPrefix, err := gatewayCredentialPrefix(previous.Metadata, true, input.GovernedOnly)
+	if err != nil {
+		return domainaigateway.CreatedServiceAccountToken{}, err
+	}
+	value, prefix, err := generateOpaqueToken(credentialPrefix)
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
@@ -439,11 +473,9 @@ func (s *Service) RotateServiceAccountToken(ctx context.Context, principal domai
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
-	created, err := repo.CreateServiceAccountToken(ctx, replacement)
+	record := newTokenRotation(principal, requestID, "service_account_token", account.ID, previous.ID, replacement.ID, now)
+	created, err := s.tokenRotations.RotateServiceToken(ctx, previous.ID, replacement, record)
 	if err != nil {
-		return domainaigateway.CreatedServiceAccountToken{}, err
-	}
-	if err := repo.RevokeServiceAccountToken(ctx, previous.ID); err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
 	_ = s.recordTokenAudit(ctx, principal, "ai_gateway.service_token.rotate", "success", "rotated service account token", map[string]any{
@@ -536,6 +568,13 @@ func (s *Service) normalizeGatewayTokenMetadataForPrincipal(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	binding, err := domainidentity.ParseGovernedAIBinding(out)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.validateGovernedAIReferences(ctx, binding); err != nil {
+		return nil, fmt.Errorf("%w: governed AI binding must reference an active registered client and known skill", apperrors.ErrInvalidArgument)
+	}
 	return out, s.ensureRelayDebugTokenMetadataAllowed(ctx, principal, out)
 }
 
@@ -556,6 +595,9 @@ func (s *Service) ensureRelayDebugTokenMetadataAllowed(ctx context.Context, prin
 
 func NormalizeGatewayTokenMetadata(metadata map[string]any) (map[string]any, error) {
 	out := copyMap(metadata)
+	if _, err := domainidentity.ParseGovernedAIBinding(out); err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err)
+	}
 	parsed, err := ParseLLMTokenMetadata(out)
 	if err != nil {
 		return nil, err

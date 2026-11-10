@@ -35,9 +35,9 @@ func (r *RBAC) ReviewSubjectAccess(ctx context.Context, principal domainidentity
 	}
 	var result domainresource.SubjectAccessReviewResult
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		client, err := r.rbacAgentClient(connection)
-		if err != nil {
-			return domainresource.SubjectAccessReviewResult{}, err
+		client, clientErr := r.rbacAgentClient(connection)
+		if clientErr != nil {
+			return domainresource.SubjectAccessReviewResult{}, clientErr
 		}
 		result, err = client.ReviewSubjectAccess(ctx, input)
 	} else {

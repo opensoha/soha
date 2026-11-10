@@ -34,6 +34,7 @@ type recordingVectorScorer struct {
 	batches   []int
 	failAt    int
 	model     string
+	upstream  string
 	afterCall func()
 }
 
@@ -49,7 +50,11 @@ func (s *recordingVectorScorer) Embed(_ context.Context, _ domainidentity.Princi
 	for i := range vectors {
 		vectors[i] = []float64{1, 0}
 	}
-	return domainknowledge.EmbeddingBatch{Model: firstNonEmpty(s.model, "fixture"), Vectors: vectors}, nil
+	return domainknowledge.EmbeddingBatch{Model: firstNonEmpty(s.model, "fixture"), Route: "fixture-route", Source: s.embeddingSource(), Vectors: vectors}, nil
+}
+
+func (s *recordingVectorScorer) embeddingSource() domainknowledge.EmbeddingSource {
+	return domainknowledge.EmbeddingSource{UpstreamID: firstNonEmpty(s.upstream, "fixture-upstream"), ProviderKind: "openai", UpstreamModel: "fixture-upstream-model"}
 }
 
 func (s *recordingVectorScorer) Score(_ context.Context, _ domainidentity.Principal, _ string, chunks []domainknowledge.Chunk) ([]float64, error) {
@@ -440,8 +445,8 @@ func newIngestionTestService(t *testing.T, base *ingestionRepositoryStub, produc
 }
 
 func TestIngestionResumesPersistedEmbeddingBatches(t *testing.T) {
-	for _, changedModel := range []bool{false, true} {
-		t.Run(fmt.Sprintf("model_changed_%t", changedModel), func(t *testing.T) {
+	for _, change := range []string{"unchanged", "model_changed", "upstream_changed", "legacy_staging"} {
+		t.Run(change, func(t *testing.T) {
 			job := domainknowledge.IngestionJob{ID: "resumable", Stage: domainknowledge.IngestionStageChunking, Status: domainknowledge.IngestionJobRunning, LeaseToken: "lease-1", Attempt: 1, MaxAttempts: 3}
 			repo := &productionRepositoryStub{job: job}
 			scorer := &recordingVectorScorer{failAt: 3}
@@ -470,22 +475,29 @@ func TestIngestionResumesPersistedEmbeddingBatches(t *testing.T) {
 			job.Status, job.Stage, job.LeaseToken, job.Attempt = domainknowledge.IngestionJobRunning, domainknowledge.IngestionStageChunking, "lease-2", 2
 			repo.job = job
 			scorer.batches, scorer.failAt = nil, 0
-			if changedModel {
+			switch change {
+			case "model_changed":
 				scorer.model = "fixture-v2"
+			case "upstream_changed":
+				scorer.upstream = "new-upstream"
+			case "legacy_staging":
+				for i := range repo.staged[document.ID] {
+					repo.staged[document.ID][i].EmbeddingSource = domainknowledge.EmbeddingSource{}
+				}
 			}
 			execution = &ingestionExecution{job: &job, prepared: fresh()}
 			if err := service.embedIngestion(t.Context(), execution); err != nil {
 				t.Fatal(err)
 			}
 			want := []int{1, 255, 89}
-			if changedModel {
+			if change != "unchanged" {
 				want = []int{1, 255, 255, 89}
 			}
 			if !slices.Equal(scorer.batches, want) {
 				t.Fatalf("resume batches = %v, want %v", scorer.batches, want)
 			}
 			for _, chunk := range execution.prepared.chunks[0] {
-				if !validIngestionVector(chunk.Embedding, 2) || chunk.EmbeddingModel != firstNonEmpty(scorer.model, "fixture") {
+				if !validIngestionVector(chunk.Embedding, 2) || chunk.EmbeddingModel != firstNonEmpty(scorer.model, "fixture") || chunk.EmbeddingSource != scorer.embeddingSource() {
 					t.Fatalf("invalid restored vector: %+v", chunk)
 				}
 			}

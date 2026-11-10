@@ -390,7 +390,7 @@ func normalizeGrafanaTargets(source grafanaPanel, panel *domainobservability.Das
 		}
 		refID := strings.TrimSpace(target.RefID)
 		if refID == "" {
-			refID = string(rune('A' + len(panel.Targets)))
+			refID = fmt.Sprintf("%c", 'A'+len(panel.Targets))
 		}
 		bindingType, bindingUID := grafanaDataSourceRef(dataSource)
 		panel.Targets = append(panel.Targets, domainobservability.DashboardTarget{

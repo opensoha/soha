@@ -68,7 +68,7 @@ func TestInvokeToolResolvesSecretRefsOnlyAtExecutionBoundary(t *testing.T) {
 	_, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName: "custom.echo",
 		Input:    map[string]any{"message": "hello"},
-		SecretRefs: map[string]string{
+		SecretRefs: map[string]string{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 			"TOKEN": "soha://secrets/secret-1",
 		},
 	})
@@ -100,7 +100,7 @@ func TestApprovalPinsSecretRefsWithoutResolvingUntilReplay(t *testing.T) {
 	held, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName: "custom.echo",
 		Input:    map[string]any{"message": "hello"},
-		SecretRefs: map[string]string{
+		SecretRefs: map[string]string{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 			"TOKEN": "soha://secrets/secret-1",
 		},
 	})

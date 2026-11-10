@@ -254,6 +254,7 @@ const (
 	PermDockerProjectsManage               = "docker.projects.manage"
 	PermDockerProjectsDeploy               = "docker.projects.deploy"
 	PermDockerServicesView                 = "docker.services.view"
+	PermDockerServicesFiles                = "docker.services.files"
 	PermDockerServicesManage               = "docker.services.manage"
 	PermDockerPortsView                    = "docker.ports.view"
 	PermDockerPortsManage                  = "docker.ports.manage"
@@ -297,6 +298,12 @@ const (
 	PermSoftwarePackageCreate              = "software.package.create"
 	PermSoftwarePackageDelete              = "software.package.delete"
 	PermSoftwarePackageView                = "software.package.view"
+	PermDockerDLPPolicyView                = "docker.dlp-policy.view"
+	PermDockerDLPPolicyUpdate              = "docker.dlp-policy.update"
+	PermDockerDLPPolicyPublish             = "docker.dlp-policy.publish"
+	PermDockerDLPEventsView                = "docker.dlp-events.view"
+	PermDockerDLPAppealsReview             = "docker.dlp-appeals.review"
+	PermNetworkDLPLinkageManage            = "network_access.dlp_linkage.manage"
 )
 
 // PermPlatformResourceCreate is kept as a source-compatibility alias.
@@ -307,6 +314,10 @@ var (
 	rolePermissionMatrixMu sync.RWMutex
 	rolePermissionMatrix   map[string][]string
 )
+
+var resourceMonitoringPermissionKeys = []string{
+	"platform.resource-monitoring.overview.view", "platform.resource-monitoring.cpu.view", "platform.resource-monitoring.memory.view", "platform.resource-monitoring.conntrack.view", "platform.resource-monitoring.pods.view",
+}
 
 var allPermissionKeySet = []string{
 	PermWorkbenchAIView,
@@ -511,6 +522,7 @@ var allPermissionKeySet = []string{
 	PermDockerProjectsManage,
 	PermDockerProjectsDeploy,
 	PermDockerServicesView,
+	PermDockerServicesFiles,
 	PermDockerServicesManage,
 	PermDockerPortsView,
 	PermDockerPortsManage,
@@ -553,6 +565,12 @@ var allPermissionKeySet = []string{
 	PermSettingsSystemIntegrationsManage,
 	PermSoftwarePackageCreate,
 	PermSoftwarePackageDelete,
+	PermDockerDLPAppealsReview,
+	PermNetworkDLPLinkageManage,
+	PermDockerDLPPolicyView,
+	PermDockerDLPPolicyUpdate,
+	PermDockerDLPPolicyPublish,
+	PermDockerDLPEventsView,
 	PermSoftwarePackageView,
 }
 
@@ -782,6 +800,7 @@ var opsRolePermissionKeys = []string{
 	PermDockerProjectsManage,
 	PermDockerProjectsDeploy,
 	PermDockerServicesView,
+	PermDockerServicesFiles,
 	PermDockerServicesManage,
 	PermDockerPortsView,
 	PermDockerPortsManage,
@@ -885,6 +904,7 @@ var developerRolePermissionKeys = []string{
 	PermDockerProjectsManage,
 	PermDockerProjectsDeploy,
 	PermDockerServicesView,
+	PermDockerServicesFiles,
 	PermDockerServicesManage,
 	PermDockerPortsView,
 	PermDockerPortsManage,
@@ -984,10 +1004,10 @@ var auditorRolePermissionKeys = []string{
 func defaultRolePermissions() map[string][]string {
 	return map[string][]string{
 		"admin":     allPermissionKeys(),
-		"ops":       append([]string(nil), opsRolePermissionKeys...),
+		"ops":       append(append([]string(nil), opsRolePermissionKeys...), resourceMonitoringPermissionKeys...),
 		"developer": append([]string(nil), developerRolePermissionKeys...),
 		"tester":    append([]string(nil), testerRolePermissionKeys...),
-		"readonly":  append([]string(nil), readonlyRolePermissionKeys...),
+		"readonly":  append(append([]string(nil), readonlyRolePermissionKeys...), resourceMonitoringPermissionKeys...),
 		"auditor":   append([]string(nil), auditorRolePermissionKeys...),
 	}
 }

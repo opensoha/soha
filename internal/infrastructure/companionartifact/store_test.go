@@ -1,13 +1,16 @@
 package companionartifact
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"github.com/stretchr/testify/require"
 	"io"
+	"math"
 	"testing"
 
 	domaincompanion "github.com/opensoha/soha/internal/domain/companion"
@@ -103,4 +106,39 @@ func testDescriptor(body []byte) domaincompanion.PackageDescriptor {
 func sha256String(body []byte) string {
 	digest := sha256.Sum256(body)
 	return "sha256:" + hex.EncodeToString(digest[:])
+}
+
+func TestStoreRejectsOversizedZipMetadataBeforeReading(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	_, err := writer.CreateRaw(&zip.FileHeader{Name: "orbit.svg", Method: zip.Store, UncompressedSize64: math.MaxUint64})
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	archive := buffer.Bytes()
+	store, err := NewStore(t.TempDir(), 1<<20)
+	require.NoError(t, err)
+	_, err = store.Install(t.Context(), testDescriptor(archive), testPack("orbit.svg", []byte("x")), bytes.NewReader(archive))
+	require.ErrorIs(t, err, apperrors.ErrInvalidArgument)
+}
+func TestStoreInstallsRegularTarAsset(t *testing.T) {
+	asset := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
+	var buffer bytes.Buffer
+	writer := tar.NewWriter(&buffer)
+	require.NoError(t, writer.WriteHeader(&tar.Header{Name: "orbit.svg", Mode: 0600, Size: int64(len(asset)), Typeflag: tar.TypeReg}))
+	_, err := writer.Write(asset)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	archive := buffer.Bytes()
+	descriptor := testDescriptor(archive)
+	descriptor.ContentType = "application/x-tar"
+	store, err := NewStore(t.TempDir(), 1<<20)
+	require.NoError(t, err)
+	digest, err := store.Install(t.Context(), descriptor, testPack("orbit.svg", asset), bytes.NewReader(archive))
+	require.NoError(t, err)
+	reader, err := store.Open(digest, "orbit.svg")
+	require.NoError(t, err)
+	defer func() { _ = reader.Close() }()
+	actual, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, asset, actual)
 }

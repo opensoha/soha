@@ -114,7 +114,7 @@ See the published docs for current public architecture and API behavior.
 
 | Layer | Stack |
 | --- | --- |
-| Backend | Go 1.27.2, Gin, PostgreSQL, Kubernetes `client-go` |
+| Backend | Go 1.27.3, Gin, PostgreSQL, Kubernetes `client-go` |
 | Frontend | React 18, TypeScript 5, Vite 6, React Router 6, TanStack Query 5, Zustand 5, Ant Design 6, Tailwind CSS 4 |
 | Docs | Next.js 16 and Nextra 4 in the sibling `soha-docs` repository |
 | Packaging | Docker, Docker Compose, raw Kubernetes YAML; Helm charts live in `soha-helm` |
@@ -137,7 +137,7 @@ See the published docs for current public architecture and API behavior.
 
 ### Requirements
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Node.js 20+
 - Docker and Docker Compose only when running the local container stack
 - PostgreSQL 18.4 with pgvector 0.8.5 when using an external database
@@ -285,6 +285,15 @@ make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 ```
 
+Compose uses the tracked `configs/config.example.yaml` by default. To reuse a
+private `configs/config.yaml`, set `SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`
+in the shell or Compose environment file. Relative paths resolve from `deploy/`.
+
+For new Chat and Heya on a dsh-capable Core build, deploy the matching dsh image
+and enable protected checkpoint storage. Follow the [runtime deployment and cutover
+guide](deploy/dsh-hindsight/README.md) before upgrading an existing installation.
+Core readiness checks PostgreSQL. Verify Chat and Heya separately before opening traffic.
+
 The network runtimes are opt-in in Compose because their mTLS private keys must
 not be committed. Place `tls.crt`, `tls.key`, and `ca.crt` in separate server
 and client-identity directories, keep private files at mode `0440` or `0600`,
@@ -371,15 +380,18 @@ docker compose -f deploy/docker-compose.yaml --profile network-access \
 ```
 
 Raw Kubernetes uses the same process split. The raw manifests pin the
-application and network-gateway images to `v0.1.10`, which includes the network
+application and network-gateway images to `v0.1.11`, which includes the network
 runtimes. For local development, build both images from this checkout:
 
 ```bash
 make deploy-image
-docker build --build-context contracts=../soha-contracts \
+docker build \
   --target network-gateway-runtime -f deploy/Dockerfile \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
+
+Standard image builds resolve the immutable contracts dependency from `go.mod` with `GOWORK=off`; they do not need a sibling contracts checkout. Task115 uses a reviewed Git source revision without publishing an SDK package. Its source commit must be reachable before clean remote builds.
+
 
 For local builds, load these images into every target cluster node and set both
 tags in `deploy/kustomization.yaml` to `local`, or push them to your own registry
@@ -424,7 +436,7 @@ docker run -d \
   -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
-  ghcr.io/opensoha/soha:v0.1.10
+  ghcr.io/opensoha/soha:v0.1.11
 ```
 
 The `soha-data` volume persists companion data. Software packages require an enabled S3-compatible system integration and are not stored on the local application volume.
@@ -464,10 +476,10 @@ Recommended boundaries:
 Build the image:
 
 ```bash
-make deploy-image IMAGE_TAG=v0.1.10
+make deploy-image IMAGE_TAG=v0.1.11
 
 # When proxy.golang.org is unstable:
-make deploy-image IMAGE_TAG=v0.1.10 GOPROXY=https://goproxy.cn,direct
+make deploy-image IMAGE_TAG=v0.1.11 GOPROXY=https://goproxy.cn,direct
 ```
 
 Install with Helm:

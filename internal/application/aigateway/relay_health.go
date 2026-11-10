@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -140,7 +140,7 @@ func relayHealthCheckFailedResult(upstream domainaigateway.LLMUpstream, err erro
 }
 
 func relayHealthCheckSucceeded(result domainaigateway.LLMUpstreamTestResult, err error) bool {
-	return err == nil && strings.EqualFold(strings.TrimSpace(result.Status), "success") && result.HTTPStatus < http.StatusBadRequest
+	return err == nil && strings.EqualFold(strings.TrimSpace(result.Status), "success") && relayport.IsSuccessStatus(result.HTTPStatus)
 }
 
 func (s *Service) updateRelayHealthCheckState(ctx context.Context, principal domainidentity.Principal, upstream domainaigateway.LLMUpstream, result domainaigateway.LLMUpstreamTestResult, checkErr error, policy relayHealthCheckPolicy) (string, error) {

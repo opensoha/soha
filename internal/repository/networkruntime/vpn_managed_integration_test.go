@@ -2,6 +2,7 @@ package networkruntime_test
 
 import (
 	"errors"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	"testing"
 	"time"
 
@@ -97,7 +98,7 @@ func (s *runtimeRepositoryScenario) checkManagedRevocation(t *testing.T) {
 		if err := tx.Exec(`UPDATE sessions SET status='revoked' WHERE id=?`, "auth-"+s.suffix).Error; err != nil {
 			return err
 		}
-		repo := runtimerepo.New(tx)
+		repo := runtimerepo.New(tx, appnetworkaccess.VPNGovernancePolicy{})
 		_, err := repo.RenewLeases(s.ctx, s.runtimeID, networkprotocol.LeaseRenewRequest{SessionID: s.vpnResult.SessionID, LeaseIDs: []string{s.vpnResult.NetworkLeases[0].ID}, ObservedConfigurationVersion: s.vpnResult.ConfigurationVersion}, s.snapshot, s.connectedAt.Add(time.Second), time.Minute)
 		if err == nil {
 			t.Error("revoked login session renewed managed VPN")

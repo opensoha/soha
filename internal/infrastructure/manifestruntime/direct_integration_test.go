@@ -109,6 +109,7 @@ spec:
 	if output := os.Getenv("SOHA_MANIFEST_TEST_PAYLOAD_OUT"); output != "" {
 		encoded, err := json.Marshal(payload)
 		requireDirectIntegrationNoError(t, err)
+		// #nosec G703 -- Explicit integration-runner evidence output path, never supplied by an API or resource manifest.
 		requireDirectIntegrationNoError(t, os.WriteFile(output, encoded, 0o600))
 	}
 	t.Logf("Direct: %d resources, fixed image digest, dry-run, ready observation, update, rollback, drift and SSA ownership conflict passed", len(rendered.Documents))

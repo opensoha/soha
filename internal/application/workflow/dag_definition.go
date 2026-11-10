@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
@@ -124,9 +125,40 @@ func definitionFromRunMetadata(run domainworkflow.Run) (dagWorkflowDefinition, b
 	return parseDAGWorkflowDefinition(map[string]any{
 		"mode":          workflowMetadataMode(run.Metadata),
 		"schemaVersion": run.Metadata["schemaVersion"],
-		"nodes":         run.Metadata["nodes"],
-		"edges":         run.Metadata["edges"],
+		"nodes":         normalizedDAGMetadataItems(run.Metadata["nodes"]),
+		"edges":         normalizedDAGMetadataItems(run.Metadata["edges"]),
 	})
+}
+
+// Historical runs persist untagged private Go structs with exported field names.
+// Normalize only their item keys; nested configuration and the stored record stay
+// unchanged, including caller-defined casing and exact numeric values.
+func normalizedDAGMetadataItems(value any) any {
+	items, ok := toMapSlice(value)
+	if !ok {
+		return value
+	}
+	normalized := make([]map[string]any, len(items))
+	for index, item := range items {
+		fields := maps.Clone(item)
+		for key, value := range item {
+			if key == "" || key[0] < 'A' || key[0] > 'Z' {
+				continue
+			}
+			name := strings.ToLower(key[:1]) + key[1:]
+			switch key {
+			case "ID":
+				name = "id"
+			case "TargetID":
+				name = "targetId"
+			}
+			if _, exists := fields[name]; !exists {
+				fields[name] = value
+			}
+		}
+		normalized[index] = fields
+	}
+	return normalized
 }
 
 func toMapSlice(value any) ([]map[string]any, bool) {

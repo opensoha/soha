@@ -2,14 +2,11 @@ package handlers
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -119,6 +116,7 @@ type VirtualizationServices struct {
 	Flavors          VirtualizationFlavorService
 	Operations       VirtualizationOperationService
 	Runtime          VirtualizationRuntimeService
+	ConsoleDialer    consoleport.Dialer
 	Planning         VirtualizationPlanningService
 	WorkerPools      VirtualizationWorkerPoolService
 	CapacityPolicies VirtualizationCapacityPolicyService
@@ -135,28 +133,32 @@ type VirtualizationHandler struct {
 	flavors          VirtualizationFlavorService
 	operations       VirtualizationOperationService
 	runtime          VirtualizationRuntimeService
+	consoleDialer    consoleport.Dialer
 	planning         VirtualizationPlanningService
 	workerPools      VirtualizationWorkerPoolService
 	capacityPolicies VirtualizationCapacityPolicyService
 }
 
-func NewVirtualizationHandler(service VirtualizationService) *VirtualizationHandler {
+func NewVirtualizationHandler(service VirtualizationService, consoleDialer consoleport.Dialer) *VirtualizationHandler {
 	planning, _ := any(service).(VirtualizationPlanningService)
 	workerPools, _ := any(service).(VirtualizationWorkerPoolService)
 	capacityPolicies, _ := any(service).(VirtualizationCapacityPolicyService)
 	guestAccess, _ := any(service).(VirtualizationGuestAccessService)
 	return NewVirtualizationHandlerWithServices(VirtualizationServices{
 		Connections: service, Sync: service, VMs: service,
-		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: planning, WorkerPools: workerPools, CapacityPolicies: capacityPolicies, GuestAccess: guestAccess,
+		Images: service, Flavors: service, Operations: service, Runtime: service, ConsoleDialer: consoleDialer, Planning: planning, WorkerPools: workerPools, CapacityPolicies: capacityPolicies, GuestAccess: guestAccess,
 	})
 }
 
 func NewVirtualizationHandlerWithServices(services VirtualizationServices) *VirtualizationHandler {
+	if services.Runtime != nil && services.ConsoleDialer == nil {
+		panic("virtualization handler: console dialer is required with runtime service")
+	}
 	return &VirtualizationHandler{
 		vmBindings: services.GuestAccess, sshSessions: services.GuestAccess, sshCommands: services.GuestAccess,
 		connections: services.Connections, sync: services.Sync,
 		vms: services.VMs, images: services.Images, flavors: services.Flavors,
-		operations: services.Operations, runtime: services.Runtime,
+		operations: services.Operations, runtime: services.Runtime, consoleDialer: services.ConsoleDialer,
 		planning:         services.Planning,
 		workerPools:      services.WorkerPools,
 		capacityPolicies: services.CapacityPolicies,
@@ -1187,79 +1189,28 @@ func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {
 	defer func() { _ = conn.Close() }()
 	configureWebSocketReadLimit(conn)
 
-	if consoleResult.Type == "novnc" && consoleResult.Token != "" {
-		proxyPVEVNC(c.Request.Context(), conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult.Token, consoleResult)
-	} else if consoleResult.Type == "vnc" {
-		proxyKubeVirtVNC(c.Request.Context(), conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult)
-	} else {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"VNC proxy not fully implemented for this provider"}`))
+	backendConn, err := h.consoleDialer(c.Request.Context(), consoleResult)
+	if err != nil {
+		writeWebsocketProxyError(conn, consoleDialErrorMessage(err))
+		return
 	}
+	proxyWebsocket(c.Request.Context(), conn, backendConn)
 }
 
-func proxyPVEVNC(ctx context.Context, clientConn *websocket.Conn, backendURL, ticket string, consoleResult consoleport.ConsoleURLResult) {
-	parsedURL, err := url.Parse(backendURL)
-	if err != nil {
-		writeWebsocketProxyError(clientConn, "invalid backend url")
-		return
+func consoleDialErrorMessage(err error) string {
+	for _, known := range []consoleport.DialError{
+		consoleport.ErrUnsupportedConsole,
+		consoleport.ErrInvalidBackendURL,
+		consoleport.ErrInvalidBackendTLS,
+		consoleport.ErrBackendConnection,
+		consoleport.ErrInvalidKubeVirtTLS,
+		consoleport.ErrKubeVirtConnection,
+	} {
+		if errors.Is(err, known) {
+			return string(known)
+		}
 	}
-
-	parsedURL.Scheme = "wss"
-	if strings.HasPrefix(backendURL, "http://") {
-		parsedURL.Scheme = "ws"
-	}
-	if ticket != "" && parsedURL.Query().Get("vncticket") == "" {
-		query := parsedURL.Query()
-		query.Set("vncticket", ticket)
-		parsedURL.RawQuery = query.Encode()
-	}
-
-	header := consoleBackendHeaders(consoleResult)
-
-	dialer, err := backendWebSocketDialer(consoleResult)
-	if err != nil {
-		writeWebsocketProxyError(clientConn, "invalid backend TLS configuration")
-		return
-	}
-	dialer.Subprotocols = []string{"binary"}
-	backendConn, response, err := dialer.DialContext(ctx, parsedURL.String(), header)
-	if response != nil {
-		defer func() { _ = response.Body.Close() }()
-	}
-	if err != nil {
-		writeWebsocketProxyError(clientConn, "backend connection failed")
-		return
-	}
-	defer func() { _ = backendConn.Close() }()
-
-	proxyWebsocket(ctx, clientConn, backendConn)
-}
-
-func proxyKubeVirtVNC(ctx context.Context, clientConn *websocket.Conn, backendURL string, consoleResult consoleport.ConsoleURLResult) {
-	parsedURL, err := url.Parse(backendURL)
-	if err != nil {
-		writeWebsocketProxyError(clientConn, "invalid backend url")
-		return
-	}
-	parsedURL.Scheme = "wss"
-	if strings.HasPrefix(backendURL, "http://") {
-		parsedURL.Scheme = "ws"
-	}
-	headers := consoleBackendHeaders(consoleResult)
-	dialer, err := backendWebSocketDialer(consoleResult)
-	if err != nil {
-		writeWebsocketProxyError(clientConn, "invalid kubevirt backend TLS configuration")
-		return
-	}
-	backendConn, response, err := dialer.DialContext(ctx, parsedURL.String(), headers)
-	if response != nil {
-		defer func() { _ = response.Body.Close() }()
-	}
-	if err != nil {
-		writeWebsocketProxyError(clientConn, "kubevirt backend connection failed")
-		return
-	}
-	defer func() { _ = backendConn.Close() }()
-	proxyWebsocket(ctx, clientConn, backendConn)
+	return string(consoleport.ErrBackendConnection)
 }
 
 func writeWebsocketProxyError(conn *websocket.Conn, message string) {
@@ -1267,57 +1218,7 @@ func writeWebsocketProxyError(conn *websocket.Conn, message string) {
 	_ = conn.WriteMessage(websocket.TextMessage, payload)
 }
 
-func backendWebSocketDialer(consoleResult consoleport.ConsoleURLResult) (*websocket.Dialer, error) {
-	dialer := *websocket.DefaultDialer
-	tlsConfig, err := consoleBackendTLSConfig(consoleResult)
-	if err != nil {
-		return nil, err
-	}
-	dialer.TLSClientConfig = tlsConfig
-	return &dialer, nil
-}
-
-func consoleBackendHeaders(result consoleport.ConsoleURLResult) http.Header {
-	headers := make(http.Header, len(result.BackendHeaders))
-	for name, values := range result.BackendHeaders {
-		headers[name] = append([]string(nil), values...)
-	}
-	return headers
-}
-
-func consoleBackendTLSConfig(result consoleport.ConsoleURLResult) (*tls.Config, error) {
-	config := result.BackendTLS
-	empty := config.ServerName == "" && !config.InsecureSkipVerify && len(config.CAData) == 0 &&
-		len(config.CertData) == 0 && len(config.KeyData) == 0 && len(config.NextProtos) == 0
-	if empty {
-		return nil, nil
-	}
-	tlsConfig := &tls.Config{
-		ServerName:         config.ServerName,
-		InsecureSkipVerify: config.InsecureSkipVerify, //nolint:gosec // Explicit per-connection operator setting.
-		NextProtos:         append([]string(nil), config.NextProtos...),
-	}
-	if len(config.CAData) > 0 {
-		roots := x509.NewCertPool()
-		if !roots.AppendCertsFromPEM(config.CAData) {
-			return nil, errors.New("virtualization backend TLS CA data is invalid")
-		}
-		tlsConfig.RootCAs = roots
-	}
-	if len(config.CertData) > 0 || len(config.KeyData) > 0 {
-		if len(config.CertData) == 0 || len(config.KeyData) == 0 {
-			return nil, errors.New("virtualization backend TLS client certificate and key must be provided together")
-		}
-		certificate, err := tls.X509KeyPair(config.CertData, config.KeyData)
-		if err != nil {
-			return nil, fmt.Errorf("parse virtualization backend TLS client certificate: %w", err)
-		}
-		tlsConfig.Certificates = []tls.Certificate{certificate}
-	}
-	return tlsConfig, nil
-}
-
-func proxyWebsocket(ctx context.Context, clientConn, backendConn *websocket.Conn) {
+func proxyWebsocket(ctx context.Context, clientConn, backendConn consoleport.Stream) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1333,7 +1234,7 @@ func proxyWebsocket(ctx context.Context, clientConn, backendConn *websocket.Conn
 		})
 	}
 
-	pipe := func(dst, src *websocket.Conn) {
+	pipe := func(dst, src consoleport.Stream) {
 		defer func() {
 			cancel()
 			closeBoth()
@@ -1357,7 +1258,7 @@ func proxyWebsocket(ctx context.Context, clientConn, backendConn *websocket.Conn
 	}
 }
 
-func copyWebsocketMessages(dst, src *websocket.Conn) error {
+func copyWebsocketMessages(dst, src consoleport.Stream) error {
 	for {
 		messageType, reader, err := src.NextReader()
 		if err != nil {

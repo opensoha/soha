@@ -21,6 +21,7 @@ type manifestDeliveryStub struct {
 	snapshot        domainmanifest.DeliverySnapshot
 	applied         []domainmanifest.DeliverySnapshot
 	validationError error
+	controlError    error
 }
 
 func (m *manifestDeliveryStub) DeliveryDeployment(context.Context, domainidentity.Principal, string, string, domaincatalog.ReleaseTarget) (domainmanifest.Deployment, error) {
@@ -33,6 +34,9 @@ func (m *manifestDeliveryStub) CreateDeliverySnapshot(_ context.Context, _ domai
 }
 func (m *manifestDeliveryStub) ValidateDeliverySnapshot(context.Context, domainidentity.Principal, domainmanifest.DeliverySnapshot) error {
 	return m.validationError
+}
+func (m *manifestDeliveryStub) ValidateDeliveryControl(context.Context, domainidentity.Principal, domainmanifest.DeliverySnapshot) error {
+	return m.controlError
 }
 func (m *manifestDeliveryStub) ApplyDeliverySnapshot(_ context.Context, _ domainidentity.Principal, snapshot domainmanifest.DeliverySnapshot) (domainmanifest.Deployment, domaindelivery.ExecutionTask, error) {
 	m.applied = append(m.applied, snapshot)
@@ -75,10 +79,11 @@ func TestManifestDeliveryPlanRetainsApprovalAndRejectsStaleSnapshot(t *testing.T
 			ctx := context.Background()
 			repo := &planRepository{}
 			targets := []domaincatalog.ReleaseTarget{{ID: "target", ExecutorKind: "manifest_ssa", ConfigRef: "manifest-binding", ClusterID: "cluster", Namespace: "payments", Enabled: true}}
-			service := New(stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "Payments"}}, stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", Targets: targets, ReleasePolicy: domaincatalog.ReleasePolicy{RequiresApproval: true}}}}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+			service := New(stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "Payments"}}, stubCatalogReader{envs: []domaincatalog.Environment{{ID: "env", Enabled: true}}, bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env", Targets: targets, ReleasePolicy: domaincatalog.ReleasePolicy{RequiresApproval: true}}}}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
 				deliveryActionPermissions(appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryReleasesTrigger, appaccess.PermDeliveryApplicationEnvApprove))
 			runtime := &manifestDeliveryStub{}
 			service.SetManifestDelivery(runtime)
+			service.SetServiceReferenceManifestConfigurationReader(stubRepository{})
 			plan, err := service.CreateDeliveryPlan(ctx, deliveryActionPrincipal(), domaindelivery.DeliveryPlanInput{ApplicationID: "app-1", ApplicationEnvironmentID: "binding-1", Action: domaindelivery.ApplicationDeliveryActionDeploy, TargetID: "target", ManifestRevision: 2})
 			if err != nil {
 				t.Fatal(err)

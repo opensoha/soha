@@ -18,6 +18,10 @@ import (
 )
 
 type App struct {
+	OptionalRuntimes      *optionalRuntimeServices
+	CopilotService        interface{ Stop(context.Context) error }
+	PodTerminals          interface{ Shutdown(context.Context) error }
+	DockerTerminals       interface{ Shutdown(context.Context) error }
 	Config                cfgpkg.Config
 	Logger                *zap.Logger
 	Database              *dbinfra.Store
@@ -86,6 +90,18 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if a.cancel != nil {
 		a.cancel()
+	}
+	if a.CopilotService != nil {
+		shutdownErr = errors.Join(shutdownErr, a.CopilotService.Stop(ctx))
+	}
+	if a.OptionalRuntimes != nil {
+		shutdownErr = errors.Join(shutdownErr, a.OptionalRuntimes.Close(ctx))
+	}
+	if a.PodTerminals != nil {
+		shutdownErr = errors.Join(shutdownErr, a.PodTerminals.Shutdown(ctx))
+	}
+	if a.DockerTerminals != nil {
+		shutdownErr = errors.Join(shutdownErr, a.DockerTerminals.Shutdown(ctx))
 	}
 	if a.WorkflowService != nil {
 		if err := a.WorkflowService.Shutdown(ctx); err != nil {

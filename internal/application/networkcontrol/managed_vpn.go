@@ -198,9 +198,6 @@ func (s *Service) ConnectManagedVPN(ctx context.Context, identity networkidentit
 	if previous, found, err := store.ManagedVPNResult(ctx, request.IntentID, identity.ID, request.RequestID, hash); err != nil {
 		return networkprotocol.RuntimeMessage{}, err
 	} else if found {
-		if !previous.ValidUntil.After(s.now().UTC()) {
-			return networkprotocol.RuntimeMessage{}, managedVPNIntentInvalid()
-		}
 		if err := s.revalidateManagedReplay(ctx, store, credential, request, previous); err != nil {
 			return networkprotocol.RuntimeMessage{}, err
 		}
@@ -332,6 +329,20 @@ func managedVPNIntentInvalid() error {
 }
 
 func (s *Service) revalidateManagedReplay(ctx context.Context, store ManagedVPNStore, credential runtime.Credential, request networkprotocol.VPNManagedConnectRequest, previous networkprotocol.VPNManagedConnectResult) error {
+	err := s.checkManagedReplay(ctx, store, credential, request, previous)
+	if !isStaleConfigurationPolicy(err) {
+		return err
+	}
+	if err := s.RefreshSnapshot(ctx); err != nil {
+		return err
+	}
+	return s.checkManagedReplay(ctx, store, credential, request, previous)
+}
+
+func (s *Service) checkManagedReplay(ctx context.Context, store ManagedVPNStore, credential runtime.Credential, request networkprotocol.VPNManagedConnectRequest, previous networkprotocol.VPNManagedConnectResult) error {
+	if !previous.ValidUntil.After(s.now().UTC()) {
+		return managedVPNIntentInvalid()
+	}
 	intent, err := store.GetVPNIntent(ctx, request.IntentID)
 	if err != nil {
 		return err

@@ -46,7 +46,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"workbench.platform.view"},
-			SeedMenus:          []string{"dashboard", "clusters", "workloads", "configuration", "network", "network-gateway-api-gatewayclasses", "network-gateway-api-gateways", "network-gateway-api-httproutes", "network-gateway-api-backendtlspolicies", "network-gateway-api-grpcroutes", "network-gateway-api-referencegrants", "storage", "platform-access-control", "extensions", "helm"},
+			SeedMenus:          []string{"resource-monitoring", "network-routing", "network-backends", "dashboard", "clusters", "workloads", "configuration", "network", "network-gateway-api-gatewayclasses", "network-gateway-api-gateways", "network-gateway-api-httproutes", "network-gateway-api-backendtlspolicies", "network-gateway-api-grpcroutes", "network-gateway-api-referencegrants", "storage", "platform-access-control", "extensions", "helm"},
 		},
 		{
 			ID:                 "compute",

@@ -13,18 +13,17 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 
 	required := []string{
 		"contracts_ref:",
-		"WEB_REF: ${{ inputs.web_ref || 'v0.1.10' }}",
+		"WEB_REF: ${{ inputs.web_ref || 'v0.1.12' }}",
 		"CONTRACTS_REF: ${{ inputs.contracts_ref }}",
 		"WEB_SHA256: ${{ inputs.web_sha256 }}",
 		"go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts",
 		"contracts input differs from the reviewed go.mod dependency",
+		`[[ "${reviewed_ref}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]`,
+		"GOWORK=off go mod download",
 		"GOWORK=off go mod verify",
 		"go list -m github.com/opensoha/soha-contracts",
-		"go list -m -f '{{.Dir}}' github.com/opensoha/soha-contracts",
 		"GOWORK=off go test ./...",
 		"GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build",
-		"contracts-build-context",
-		"contracts=./contracts-build-context",
 		"target: network-gateway-runtime",
 		"target: proxy-runtime-mihomo",
 		"ghcr.io/opensoha/soha-proxy-mihomo:${{ github.ref_name }}",
@@ -58,6 +57,11 @@ func TestReleaseWorkflowDoesNotUseSiblingContractsCheckout(t *testing.T) {
 	workflow := readReleaseWorkflow(t)
 
 	disallowed := []string{
+		// Release images must resolve the checksummed module themselves rather
+		// than replace it with staged or sibling source.
+		"go list -m -f '{{.Dir}}' github.com/opensoha/soha-contracts",
+		"contracts-build-context",
+		"contracts=./",
 		"go get",
 		"go mod tidy",
 		"inputs.contracts_ref ||",

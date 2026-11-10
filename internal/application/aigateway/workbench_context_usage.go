@@ -3,18 +3,7 @@ package aigateway
 import (
 	"encoding/json"
 	"math"
-	"net/http"
 )
-
-// Resolve the successful fallback route, not the initially preferred candidate.
-func workbenchResolvedSelection(headers http.Header, selections []relaySelection) relaySelection {
-	for _, selection := range selections {
-		if selection.route.ID == headers.Get("X-Soha-Route-ID") && selection.upstream.ID == headers.Get("X-Soha-Upstream-ID") {
-			return selection
-		}
-	}
-	return relaySelection{}
-}
 
 func workbenchContextWindow(metadata map[string]any) int64 {
 	var tokens float64

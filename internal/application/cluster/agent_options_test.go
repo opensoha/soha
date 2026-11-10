@@ -10,7 +10,7 @@ import (
 func TestAgentOptionsPreserveDirectDefaultAndRejectUnsafeGrants(t *testing.T) {
 	for _, input := range []domaincluster.RegisterInput{
 		{PrometheusTransport: "fallback"},
-		{PrometheusBaseURL: "https://user:pass@example.com"},
+		{PrometheusBaseURL: "https://user:pass@example.com"}, // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		{AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{APIGroup: "*", Resources: []string{"widgets"}, Verbs: []string{"get"}}}},
 		{AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{APIGroup: "example.io", Resources: []string{"*"}, Verbs: []string{"get"}}}},
 		{AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{APIGroup: "example.io", Resources: []string{"widgets"}, Verbs: []string{"*"}}}},
@@ -49,5 +49,37 @@ func TestAgentManifestScopesCustomRulesAndEnablesDeliveryRunner(t *testing.T) {
 	}
 	if strings.Contains(string(content), "apiGroups:\n- '*'") {
 		t.Fatal("wildcard grant")
+	}
+}
+
+func TestAgentProfileDefaultsAndOmittedUpdatesPreserveCompatibility(t *testing.T) {
+	input := domaincluster.RegisterInput{}
+	if err := validateAgentOptions(&input, domaincluster.ConnectionModeAgent); err != nil {
+		t.Fatal(err)
+	}
+	if input.AgentActionProfile != "legacy" {
+		t.Fatalf("omitted API profile = %q", input.AgentActionProfile)
+	}
+	for _, profile := range []string{"legacy", "read-only", "workbench"} {
+		current := domaincluster.RegisterInput{AgentActionProfile: profile}
+		if err := validateAgentOptions(&current, domaincluster.ConnectionModeAgent); err != nil {
+			t.Fatal(err)
+		}
+		if current.AgentActionProfile != profile {
+			t.Fatalf("explicit %s became %s", profile, current.AgentActionProfile)
+		}
+	}
+	if agentActionProfile(nil) != "legacy" {
+		t.Fatal("old registrations without profile were elevated")
+	}
+	for _, metadata := range []map[string]any{nil, {"agent_action_profile": "read-only"}, {"agent_action_profile": "legacy"}} {
+		update := domaincluster.RegisterInput{}
+		mergeClusterObservabilityUpdate(&update, metadata)
+		if err := validateAgentOptions(&update, domaincluster.ConnectionModeAgent); err != nil {
+			t.Fatal(err)
+		}
+		if update.AgentActionProfile != agentActionProfile(metadata) {
+			t.Fatal("omitted update profile elevated existing registration")
+		}
 	}
 }

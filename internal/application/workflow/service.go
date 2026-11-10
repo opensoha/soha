@@ -42,7 +42,7 @@ type Repository interface {
 	Get(context.Context, string) (domainworkflow.Run, error)
 	Create(context.Context, domainworkflow.Run) (domainworkflow.Run, error)
 	Update(context.Context, domainworkflow.Run) (domainworkflow.Run, error)
-	CreateApproval(context.Context, domainworkflow.Approval) error
+	UpdateApplicationRunIfCurrent(context.Context, domainworkflow.Run, string, *domainworkflow.Approval) (domainworkflow.Run, error)
 }
 
 type ApplicationReader interface {
@@ -99,6 +99,7 @@ type ArtifactStore interface {
 }
 
 type ExecutionTaskStore interface {
+	GetExecutionTask(context.Context, string) (domaindelivery.ExecutionTask, error)
 	CreateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
 	CreateExecutionLog(context.Context, domaindelivery.ExecutionLog) error
 }
@@ -246,7 +247,7 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 			}
 			continue
 		}
-		if err := s.authorize(ctx, principal, domainaccess.ActionList, app, item.ApplicationID, configString(item.Metadata, "bindingId"), ""); err != nil {
+		if err := s.authorize(ctx, principal, domainaccess.ActionList, app, item.ApplicationID, configString(item.Metadata, "bindingId"), appaccess.PermDeliveryWorkflowsView); err != nil {
 			continue
 		}
 		allowed = append(allowed, item)
@@ -278,7 +279,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, w
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionView, app, item.ApplicationID, configString(item.Metadata, "bindingId"), ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionView, app, item.ApplicationID, configString(item.Metadata, "bindingId"), appaccess.PermDeliveryWorkflowsView); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	return item, nil
@@ -298,13 +299,13 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	if run, binding, definition, ok, err := s.prepareBoundDAGRun(ctx, app, input); err != nil {
 		return domainworkflow.Run{}, err
 	} else if ok {
-		if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
+		if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 			return domainworkflow.Run{}, err
 		}
 		created, err := s.repo.Create(ctx, run)
@@ -339,7 +340,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		"triggerRelease":  input.TriggerRelease,
 	}, input)
 	item := domainworkflow.Run{
-		ID:             "workflow:" + uuid.NewString(),
+		ID:             requestedWorkflowRunID(input),
 		ApplicationID:  input.ApplicationID,
 		WorkflowName:   strings.TrimSpace(input.WorkflowName),
 		ClusterID:      strings.TrimSpace(input.ClusterID),
@@ -374,14 +375,14 @@ func (s *Service) TriggerValidation(ctx context.Context, principal domainidentit
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	run, binding, definition, err := s.prepareValidationDAGRun(ctx, app, input)
 	if err != nil {
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	created, err := s.repo.Create(ctx, run)
@@ -420,14 +421,14 @@ func (s *Service) TriggerRollback(ctx context.Context, principal domainidentity.
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	run, binding, definition, err := s.prepareRollbackDAGRun(ctx, app, input)
 	if err != nil {
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	created, err := s.repo.Create(ctx, run)
@@ -492,7 +493,7 @@ func (s *Service) ExecuteSystemDAG(ctx context.Context, principal domainidentity
 	}
 	runMetadata = withGatewayApprovalWorkflowMetadata(runMetadata, input)
 	run := domainworkflow.Run{
-		ID:             "workflow:" + uuid.NewString(),
+		ID:             requestedWorkflowRunID(input),
 		ApplicationID:  applicationID,
 		WorkflowName:   workflowName,
 		ClusterID:      strings.TrimSpace(input.ClusterID),
@@ -538,111 +539,6 @@ func (s *Service) Reject(ctx context.Context, principal domainidentity.Principal
 	return s.resolveApproval(ctx, principal, workflowRunID, "rejected", comment)
 }
 
-func (s *Service) RecordExecutionTaskResult(ctx context.Context, task domaindelivery.ExecutionTask) error {
-	runID := workflowMetadataString(task.Payload, "workflowRunId")
-	nodeID := workflowMetadataString(task.Payload, "workflowNodeId")
-	if runID == "" || nodeID == "" {
-		return nil
-	}
-	nextStatus, ok := workflowStatusFromExecutionTask(task.Status)
-	if !ok {
-		return nil
-	}
-	run, err := s.repo.Get(ctx, runID)
-	if err != nil {
-		return err
-	}
-	switch run.Scope {
-	case domainworkflow.ScopeDeliveryBatch, domainworkflow.ScopeCapabilityTask:
-		// Managed nodes reconcile their task under the current Run lease.
-		return nil
-	}
-	definition, ok := definitionFromRunMetadata(run)
-	if !ok {
-		return fmt.Errorf("%w: workflow definition is missing", apperrors.ErrInvalidArgument)
-	}
-	nodeExists := false
-	for _, node := range definition.Nodes {
-		if node.ID == nodeID {
-			nodeExists = true
-			break
-		}
-	}
-	if !nodeExists {
-		return nil
-	}
-	nodeRuns := restoreNodeRuns(definition, run.NodeRuns)
-	entry := nodeRuns[nodeID]
-	if entry.Status == nextStatus && (nextStatus == "completed" || nextStatus == "failed") {
-		return nil
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	if entry.StartedAt == "" {
-		entry.StartedAt = now
-	}
-	entry.Status = nextStatus
-	entry.Summary = executionTaskWorkflowSummary(task)
-	entry.FinishedAt = now
-	nodeRuns[nodeID] = entry
-
-	executionOutputs := map[string]any{
-		"executionTaskId":     task.ID,
-		"executionTaskStatus": strings.TrimSpace(task.Status),
-		"executionTaskResult": task.Result,
-	}
-	recordDAGNodeOutputs(&run, nodeID, map[string]any{"outputs": executionOutputs})
-	artifactState := restoredDAGArtifactState(run.Metadata)
-	for key, value := range executionOutputs {
-		artifactState[key] = value
-	}
-	run.Metadata["artifacts"] = metadataDAGArtifactState(artifactState)
-	appendDAGNodeEvent(&run, nodeID, "execution_task_callback", nextStatus, entry.Summary, map[string]any{
-		"executionTaskId":     task.ID,
-		"executionTaskStatus": strings.TrimSpace(task.Status),
-	})
-	run.Status = "queued"
-	run.UpdatedAt = now
-	run = syncRunNodeState(run, definition, nodeRuns)
-	updated := s.updateRun(ctx, run)
-
-	app, err := s.apps.Get(ctx, updated.ApplicationID)
-	if err != nil {
-		return err
-	}
-	appInput := domainworkflow.Input{
-		ApplicationID:            updated.ApplicationID,
-		ApplicationEnvironmentID: strings.TrimSpace(task.ApplicationEnvironmentID),
-		WorkflowName:             updated.WorkflowName,
-		ClusterID:                updated.ClusterID,
-		Namespace:                updated.Namespace,
-		DeploymentName:           updated.DeploymentName,
-		Variables:                map[string]any{},
-	}
-	if releaseBundleID := firstNonEmpty(task.ReleaseBundleID, workflowMetadataString(updated.Metadata, "releaseBundleId")); releaseBundleID != "" {
-		appInput.Variables["releaseBundleId"] = releaseBundleID
-	}
-	appBinding, err := s.findApplicationEnvironmentBinding(ctx, appInput)
-	if err != nil {
-		return err
-	}
-	if appBinding == nil {
-		return fmt.Errorf("%w: application environment binding is missing", apperrors.ErrInvalidArgument)
-	}
-	if err := s.enqueueDAGRun(ctx, dagRunTask{
-		principal:   workflowSystemPrincipal(),
-		app:         app,
-		input:       appInput,
-		binding:     *appBinding,
-		definition:  definition,
-		run:         updated,
-		requestMeta: requestctx.FromContext(ctx),
-	}); err != nil {
-		s.failRun(context.Background(), updated, definition, fmt.Sprintf("workflow runner enqueue failed after execution task callback: %v", err))
-		return err
-	}
-	return nil
-}
-
 func (s *Service) resolveApproval(ctx context.Context, principal domainidentity.Principal, workflowRunID, action, comment string) (domainworkflow.Run, error) {
 	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryApplicationEnvApprove); err != nil {
 		return domainworkflow.Run{}, err
@@ -651,14 +547,7 @@ func (s *Service) resolveApproval(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return domainworkflow.Run{}, err
 	}
-	if err := s.repo.CreateApproval(ctx, newDAGApproval(principal, approvalState, action, comment)); err != nil {
-		return domainworkflow.Run{}, err
-	}
-	updated := s.applyDAGApprovalDecision(ctx, approvalState, action, comment, principal.UserName)
-	if action == "rejected" {
-		return updated, nil
-	}
-	return s.resumeDAGAfterApproval(ctx, principal, approvalState, updated)
+	return s.applyDAGApprovalDecision(ctx, principal, approvalState, action, comment)
 }
 
 func (s *Service) prepareBoundDAGRun(ctx context.Context, app domainapp.App, input domainworkflow.Input) (domainworkflow.Run, *domaincatalog.ApplicationEnvironment, dagWorkflowDefinition, bool, error) {
@@ -704,7 +593,7 @@ func (s *Service) prepareBoundDAGRun(ctx context.Context, app domainapp.App, inp
 		"edges":                definition.Edges,
 	}, input)
 	run := domainworkflow.Run{
-		ID:             "workflow:" + uuid.NewString(),
+		ID:             requestedWorkflowRunID(input),
 		ApplicationID:  input.ApplicationID,
 		WorkflowName:   workflowName,
 		ClusterID:      strings.TrimSpace(input.ClusterID),

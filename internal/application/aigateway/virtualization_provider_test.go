@@ -43,7 +43,10 @@ func TestVirtualizationCapabilitiesValidateRecoverAndRedact(t *testing.T) {
 	if !ok {
 		t.Fatalf("provider type = %T, want *virtualizationCapabilityProvider", registered)
 	}
-	registry := newCapabilityRegistry(provider, BuiltinCapabilityProvider{})
+	registry, err := newCapabilityRegistry(BuiltinCapabilityProvider{}, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tool, ok := registry.ToolByName("virtualization.vms.create.trigger")
 	if !ok || tool.Version != "1" || tool.Execution.TaskKind != "virtualization.operation" {
 		t.Fatalf("wrong registered capability: %+v", tool)

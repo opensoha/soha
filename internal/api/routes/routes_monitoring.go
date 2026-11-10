@@ -78,6 +78,8 @@ func registerAlertEventRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/alert-events/:eventID/acknowledge", deps.Monitoring.AcknowledgeEvent)
 	protected.POST("/alert-events/:eventID/resolve", deps.Monitoring.ResolveEvent)
 	protected.POST("/alert-events/:eventID/heal", deps.Monitoring.HealEvent)
+	protected.POST("/alert-events/:eventID/healing-requests", deps.Monitoring.CreateOriginalHealingRequest)
+	protected.GET("/alert-events/:eventID/healing-requests/:requestID", deps.Monitoring.GetOriginalHealingRequest)
 	protected.POST("/healing-runs/:runID/approve", deps.Monitoring.ApproveHealingRun)
 	protected.POST("/healing-runs/:runID/reject", deps.Monitoring.RejectHealingRun)
 	protected.POST("/healing-runs/:runID/retry", deps.Monitoring.RetryHealingRun)

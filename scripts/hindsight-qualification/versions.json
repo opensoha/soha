@@ -1,0 +1,27 @@
+{
+  "hindsight_version": "1.2.0",
+  "source_commit": "34a138684a899b6ec34175f7a2b633860466d289",
+  "image": "ghcr.io/vectorize-io/hindsight:1.2.0",
+  "image_index_digest": "sha256:19d0c08f3df79acac29384826419a1ca158129e81ec527cdcbd8c97ff4ef76da",
+  "linux_amd64_digest": "sha256:60fcc7b8134723e83b2caa2b6feeb98fdefa99aa4265e3c483011a31657207b9",
+  "linux_arm64_digest": "sha256:86eb9956f3138b0a0a75867e9e857d2b4b82e4764fb3edb5a458dc964ea43b78",
+  "api_schema_sha256": "92b1520b1b0b559a2fa20abc674aad90ff35d983b43dd4efe8bed3b2f4320835",
+  "database_candidate": {
+    "postgresql": "18.6",
+    "pgvector": "0.8.7",
+    "pg_trgm": "1.6"
+  },
+  "image_runtime_test": "NOT_RUN",
+  "license": "MIT",
+  "checked_utc": "2026-11-07",
+  "wheel": {
+    "filename": "hindsight_api_slim-1.2.0-py3-none-any.whl",
+    "digests": {
+      "blake2b_256": "ea883f192e3060aaacb77268e4cf55748e872235d5a752587397f502f85b9112",
+      "md5": "83c4b086c3316c7e1a6ac28b301097fd",
+      "sha256": "fd170af576ab82de03047e1122eafd474d8fcfd410da8497305413d0f028520e"
+    }
+  },
+  "image_config_revision": "34a138684a899b6ec34175f7a2b633860466d289",
+  "image_config_version": "1.2.0"
+}

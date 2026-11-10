@@ -73,3 +73,23 @@ func TestLogTextSanitizesAndBoundsOutput(t *testing.T) {
 		t.Fatalf("LogText() returned invalid UTF-8: %q", value)
 	}
 }
+
+func TestCLIDeviceCredentialKeysAreRedacted(t *testing.T) {
+	for _, key := range []string{"deviceCode", "user_code", "verificationHandle", "code-verifier", "confirmationId"} {
+		if !SensitiveKey(key) {
+			t.Fatalf("CLI credential key %q was not classified", key)
+		}
+		if got := Map(map[string]any{key: "test-only-value"})[key]; got != Redacted {
+			t.Fatal("structured CLI credential escaped redaction")
+		}
+		if got := Text(key + "=test-only-value"); strings.Contains(got, "test-only-value") {
+			t.Fatal("CLI credential assignment escaped redaction")
+		}
+		if got := Text("https://example.invalid/auth/device?" + key + "=test-only-value"); strings.Contains(got, "test-only-value") {
+			t.Fatal("CLI credential query escaped redaction")
+		}
+	}
+	if SensitiveKey("deviceName") || SensitiveKey("confirmationExpiresAt") {
+		t.Fatal("display metadata was classified as a credential")
+	}
+}

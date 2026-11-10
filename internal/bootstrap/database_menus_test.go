@@ -276,9 +276,11 @@ func TestNetworkAccessMenuSeedsLiveUnderInternalWorkbench(t *testing.T) {
 		"network-access-vpn-profiles":           {parent: "network-access-vpn", path: "/network-access/vpn/profiles", section: "vpn", labelZH: "VPN 连接方案", labelEN: "VPN Profiles", sort: 10},
 		"network-access-vpn-selection-policies": {parent: "network-access-vpn", path: "/network-access/vpn/selection-policies", section: "vpn", labelZH: "VPN Auto 策略", labelEN: "VPN Auto Policies", sort: 20},
 		"network-access-vpn-dashboard":          {parent: "network-access-monitoring", path: "/network-access/vpn/dashboard", section: "vpn", labelZH: "VPN 看板", labelEN: "VPN Dashboard", sort: 30},
+		"network-access-content-transfers":      {parent: "identity", path: "/network-access/content-transfers", section: "endpoint", labelZH: "受管内容传输", labelEN: "Managed Content Transfers", sort: 20},
 		"network-access-devices":                {parent: "identity", path: "/network-access/devices", section: "endpoint", labelZH: "终端资产", labelEN: "Endpoint Assets", sort: 10},
 		"network-access-user-admission":         {parent: "identity", path: "/network-access/user-admission", section: "network", labelZH: "用户入网", labelEN: "User Admission", sort: 10},
 		"network-access-settings":               {parent: "identity", path: "/network-access/settings", section: "network", labelZH: "入网配置", labelEN: "Admission Configuration", sort: 20},
+		"network-access-endpoint-response":      {parent: "identity", path: "/network-access/endpoint-response", section: "network", labelZH: "终端联动", labelEN: "Endpoint Response", sort: 30},
 		"network-access-sites":                  {parent: "network-access-infrastructure", path: "/network-access/sites", section: "vpn", labelZH: "站点", labelEN: "Sites", sort: 10},
 		"network-access-spaces":                 {parent: "network-access-infrastructure", path: "/network-access/spaces", section: "vpn", labelZH: "网络空间", labelEN: "Network Spaces", sort: 20},
 		"network-access-resources":              {parent: "identity", path: "/network-access/resources", section: "vpn", labelZH: "网络资源", labelEN: "Network Resources", sort: 20},
@@ -337,5 +339,42 @@ func TestNetworkNavigationHasSixEntriesAndPreservesLeafPaths(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Fatalf("missing scene entries: %v", want)
+	}
+}
+
+func TestSyncNetworkClassMenuSeedUpgradesOnlyMatchesOriginalOrder(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	mock.ExpectBegin()
+	old := map[string]int{"network-ingressclasses": 54, "network-gateway-api-gatewayclasses": 43, "network-gateway-api-gateways": 44, "network-gateway-api-httproutes": 45, "network-gateway-api-backendtlspolicies": 46, "network-gateway-api-grpcroutes": 47, "network-gateway-api-referencegrants": 48}
+	for _, item := range defaultMenuSeeds() {
+		before, ok := old[item.ID]
+		if !ok {
+			continue
+		}
+		mock.ExpectExec(`UPDATE menus SET sort_order = \$1, updated_at = \$2 WHERE id = \$3 AND parent_id = \$4 AND path = \$5 AND sort_order = \$6`).WithArgs(item.SortOrder, now, item.ID, "network", item.Path, before).WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+	mock.ExpectCommit()
+	if err := syncNetworkClassMenuSeedUpgrades(context.Background(), db, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	seeds := defaultMenuSeeds()
+	sorts := map[string]int{}
+	for _, item := range seeds {
+		sorts[item.ID] = item.SortOrder
+	}
+	if sorts["network-ingressclasses"] != sorts["network-ingresses"]+1 || sorts["network-gateway-api-gatewayclasses"] != sorts["network-ingressclasses"]+1 {
+		t.Fatal("IngressClasses must immediately follow Ingresses")
 	}
 }

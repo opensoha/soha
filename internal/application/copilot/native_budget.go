@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
@@ -22,21 +23,41 @@ func reserveNativeWorkCall(ctx context.Context, store NativeRunStore, lease doma
 }
 
 func reserveNativeModelBudget(cp *nativeCheckpoint, request *appaigateway.WorkbenchRelayRequest) error {
+	messages := slices.Clone(request.Messages)
+	var images, imageBytes int64
+	for i := range messages {
+		for _, image := range messages[i].Images {
+			if len(image) == 0 || len(image) > maxChatImageDataURLBytes {
+				return fmt.Errorf("%w: Native image exceeds request size limit", apperrors.ErrInvalidArgument)
+			}
+			images++
+			imageBytes += int64(len(image))
+		}
+		messages[i].Images = nil
+	}
+	if imageBytes > 8*maxChatImageDataURLBytes {
+		return fmt.Errorf("%w: Native image egress exceeds request size limit", apperrors.ErrInvalidArgument)
+	}
 	data, err := json.Marshal(struct {
 		Messages []appaigateway.WorkbenchRelayMessage
 		Tools    []appaigateway.WorkbenchTool
-	}{request.Messages, request.Tools})
+	}{messages, request.Tools})
 	if err != nil {
 		return err
 	}
-	// ponytail: reserve serialized bytes plus per-message overhead, not a model
-	// tokenizer estimate. Add a route tokenizer when measured usage needs precision.
-	input := int64(len(data)) + int64(len(request.Messages))*64
+	// shortcut: use a fixed reservation for each validated <=1024px image,
+	// until route-specific vision token estimates are available.
+	const imageTokenReserve = 4096
+	input := int64(len(data)) + int64(len(messages))*64 + images*imageTokenReserve
 	remaining := cp.Budget.MaxTokens - max(cp.BudgetTokens, cp.Usage.Tokens) - input
 	if remaining <= 0 {
 		return fmt.Errorf("%w: Native input leaves no model output budget", apperrors.ErrInvalidArgument)
 	}
-	request.MaxOutputTokens = int(min(int64(4096), remaining))
+	outputLimit := int64(4096)
+	if request.MaxOutputTokens > 0 {
+		outputLimit = min(outputLimit, int64(request.MaxOutputTokens))
+	}
+	request.MaxOutputTokens = int(min(outputLimit, remaining))
 	cp.ModelReservation = input + int64(request.MaxOutputTokens)
 	cp.BudgetTokens = max(cp.BudgetTokens, cp.Usage.Tokens) + cp.ModelReservation
 	return nil

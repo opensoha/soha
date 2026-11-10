@@ -30,6 +30,7 @@ type Manager struct {
 	clusters map[string]cfgpkg.ClusterConfig
 	bundles  map[string]*Bundle
 	mu       sync.RWMutex
+	resolve  func(context.Context, string) (cfgpkg.ClusterConfig, error)
 }
 
 func NewManager(clusters []cfgpkg.ClusterConfig) *Manager {
@@ -48,6 +49,15 @@ func (m *Manager) RegisterCluster(cfg cfgpkg.ClusterConfig) {
 	}
 	m.clusters[cfg.ID] = cfg
 	delete(m.bundles, cfg.ID)
+}
+
+// SetConfigResolver makes the database authoritative for every direct consumer,
+// including resource, release, manifest and execution adapters.
+func (m *Manager) SetConfigResolver(resolve func(context.Context, string) (cfgpkg.ClusterConfig, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.resolve = resolve
+	m.bundles = map[string]*Bundle{}
 }
 
 func (m *Manager) UnregisterCluster(clusterID string) {
@@ -183,7 +193,31 @@ func (m *Manager) Metadata(id string) (domaincluster.Summary, error) {
 	}, nil
 }
 
-func (m *Manager) Bundle(_ context.Context, id string) (*Bundle, error) {
+func (m *Manager) Bundle(ctx context.Context, id string) (*Bundle, error) {
+	m.mu.RLock()
+	resolve := m.resolve
+	m.mu.RUnlock()
+	if resolve != nil {
+		cfg, err := resolve(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.ID != id {
+			return nil, apperrors.ErrConflict
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if current, ok := m.clusters[id]; !ok || !reflect.DeepEqual(current, cfg) {
+			m.clusters[id] = cfg
+			delete(m.bundles, id)
+		}
+		return m.bundleLocked(id)
+	}
+	// Fenced executions require a current database-backed resolution. A cached
+	// legacy manager cannot establish which configured destination was checked.
+	if domaincluster.HasExpectedExecutionConnection(ctx) {
+		return nil, apperrors.ErrConflict
+	}
 	m.mu.RLock()
 	bundle, ok := m.bundles[id]
 	m.mu.RUnlock()
@@ -194,6 +228,13 @@ func (m *Manager) Bundle(_ context.Context, id string) (*Bundle, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if bundle, ok = m.bundles[id]; ok {
+		return bundle, nil
+	}
+	return m.bundleLocked(id)
+}
+
+func (m *Manager) bundleLocked(id string) (*Bundle, error) {
+	if bundle, ok := m.bundles[id]; ok {
 		return bundle, nil
 	}
 	cfg, ok := m.clusters[id]

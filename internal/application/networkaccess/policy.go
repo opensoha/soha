@@ -1,8 +1,13 @@
 package networkaccess
 
-import domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
+import (
+	"time"
+
+	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
+)
 
 type PreviewInput struct {
+	NASBindingID  string `json:"nasBindingId,omitempty"`
 	SubjectUserID string `json:"subjectUserId"`
 	DeviceID      string `json:"deviceId"`
 	ResourceID    string `json:"resourceId"`
@@ -18,6 +23,10 @@ type AdmissionInput struct {
 }
 
 func EvaluatePolicy(input PreviewInput, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site, space domainnetworkaccess.Space, resource domainnetworkaccess.Resource, snapshot domainnetworkaccess.PolicySnapshot) domainnetworkaccess.PolicyPreview {
+	return evaluatePolicyAt(time.Now(), input, subject, device, site, space, resource, snapshot)
+}
+
+func evaluatePolicyAt(now time.Time, input PreviewInput, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site, space domainnetworkaccess.Space, resource domainnetworkaccess.Resource, snapshot domainnetworkaccess.PolicySnapshot) domainnetworkaccess.PolicyPreview {
 	result := domainnetworkaccess.PolicyPreview{
 		Decision:      domainnetworkaccess.DecisionDeny,
 		Path:          domainnetworkaccess.PathDeny,
@@ -44,6 +53,9 @@ func EvaluatePolicy(input PreviewInput, subject domainnetworkaccess.Subject, dev
 		return deny("unsupported_access_mode")
 	}
 
+	if reason := resourceGovernanceReason(now, site, device, resource, networkLease, resourceLease); reason != "" {
+		return deny(reason)
+	}
 	if resource.Protected && (path == domainnetworkaccess.PathSiteDirect || path == domainnetworkaccess.PathWireGuard) {
 		return deny("protected_resource_requires_ztna")
 	}
@@ -51,7 +63,7 @@ func EvaluatePolicy(input PreviewInput, subject domainnetworkaccess.Subject, dev
 		return deny("resource_path_mode_mismatch")
 	}
 
-	allow, denyReason := selectResourcePolicy(snapshot.Policies, input, subject, device, site, resource)
+	allow, denyReason := selectResourcePolicy(now, snapshot.Policies, input, subject, device, site, resource)
 	if denyReason != "" {
 		return deny(denyReason)
 	}
@@ -71,17 +83,17 @@ func EvaluatePolicy(input PreviewInput, subject domainnetworkaccess.Subject, dev
 	return result
 }
 
-func selectResourcePolicy(policies []domainnetworkaccess.Policy, input PreviewInput, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site, resource domainnetworkaccess.Resource) (*domainnetworkaccess.Policy, string) {
+func selectResourcePolicy(now time.Time, policies []domainnetworkaccess.Policy, input PreviewInput, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site, resource domainnetworkaccess.Resource) (*domainnetworkaccess.Policy, string) {
 	var allow *domainnetworkaccess.Policy
 	for index := range policies {
 		policy := &policies[index]
-		if !policy.Enabled || !matchesNetworkPolicy(*policy, input, subject, device, site, resource) {
+		if !policy.Enabled || !matchesNetworkPolicy(now, *policy, input, subject, device, site, resource) {
 			continue
 		}
 		if policy.Effect == domainnetworkaccess.PolicyEffectDeny {
 			return nil, "policy_deny:" + policy.ID
 		}
-		if policy.Effect == domainnetworkaccess.PolicyEffectAllow && (allow == nil || policy.Priority < allow.Priority) {
+		if policy.Effect == domainnetworkaccess.PolicyEffectAllow && governancePolicyAllows(now, site, device, *policy, resource.ID) && (allow == nil || policy.Priority < allow.Priority) {
 			allow = policy
 		}
 	}
@@ -89,6 +101,10 @@ func selectResourcePolicy(policies []domainnetworkaccess.Policy, input PreviewIn
 }
 
 func EvaluateAdmission(input AdmissionInput, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site, snapshot domainnetworkaccess.PolicySnapshot) domainnetworkaccess.PolicyPreview {
+	return evaluateAdmissionAt(time.Now(), input, subject, device, site, snapshot)
+}
+
+func evaluateAdmissionAt(now time.Time, input AdmissionInput, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site, snapshot domainnetworkaccess.PolicySnapshot) domainnetworkaccess.PolicyPreview {
 	result := domainnetworkaccess.PolicyPreview{Decision: domainnetworkaccess.DecisionDeny, Path: domainnetworkaccess.PathDeny, PolicyVersion: snapshot.PolicyVersion, Reasons: []string{}}
 	deny := func(reason string) domainnetworkaccess.PolicyPreview {
 		result.Reasons = append(result.Reasons, reason)
@@ -101,13 +117,13 @@ func EvaluateAdmission(input AdmissionInput, subject domainnetworkaccess.Subject
 	var allow *domainnetworkaccess.Policy
 	for index := range snapshot.Policies {
 		policy := &snapshot.Policies[index]
-		if !policy.Enabled || len(policy.ResourceIDs) != 0 || !matchesPolicySelectors(*policy, input.SubjectUserID, input.Mode, subject, device, site) {
+		if !policy.Enabled || len(policy.ResourceIDs) != 0 || !matchesPolicySelectors(now, *policy, input.SubjectUserID, input.Mode, subject, device, site) {
 			continue
 		}
 		if policy.Effect == domainnetworkaccess.PolicyEffectDeny {
 			return deny("policy_deny:" + policy.ID)
 		}
-		if policy.Effect == domainnetworkaccess.PolicyEffectAllow && (allow == nil || policy.Priority < allow.Priority) {
+		if policy.Effect == domainnetworkaccess.PolicyEffectAllow && governancePolicyAllows(now, site, device, *policy, "") && (allow == nil || policy.Priority < allow.Priority) {
 			allow = policy
 		}
 	}
@@ -120,6 +136,9 @@ func EvaluateAdmission(input AdmissionInput, subject domainnetworkaccess.Subject
 	path, networkLease, resourceLease, ok := accessModePath(input.Mode)
 	if !ok {
 		return deny("unsupported_access_mode")
+	}
+	if reason := admissionGovernanceReason(now, site, device, networkLease, resourceLease); reason != "" {
+		return deny(reason)
 	}
 	result.Decision, result.Path, result.NetworkProfile = domainnetworkaccess.DecisionAllow, path, allow.AccessProfile
 	result.NetworkLeaseRequired, result.ResourceLeaseRequired = networkLease, resourceLease
@@ -169,20 +188,22 @@ func admissionDenyReason(input AdmissionInput, subject domainnetworkaccess.Subje
 	return ""
 }
 
-func matchesNetworkPolicy(policy domainnetworkaccess.Policy, input PreviewInput, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site, resource domainnetworkaccess.Resource) bool {
-	return matchesPolicySelectors(policy, input.SubjectUserID, input.Mode, subject, device, site) &&
+func matchesNetworkPolicy(now time.Time, policy domainnetworkaccess.Policy, input PreviewInput, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site, resource domainnetworkaccess.Resource) bool {
+	return matchesPolicySelectors(now, policy, input.SubjectUserID, input.Mode, subject, device, site) &&
 		matchNetworkValue(policy.ResourceIDs, resource.ID)
 }
 
-func matchesPolicySelectors(policy domainnetworkaccess.Policy, subjectUserID, mode string, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site) bool {
+func matchesPolicySelectors(now time.Time, policy domainnetworkaccess.Policy, subjectUserID, mode string, subject domainnetworkaccess.Subject, device domainnetworkaccess.Device, site domainnetworkaccess.Site) bool {
 	return subject.UserID == subjectUserID &&
+		matchNetworkSlice(policy.Subjects.Roles, subject.Roles) &&
 		matchNetworkValue(policy.Subjects.Users, subject.UserID) &&
 		matchNetworkSlice(policy.Subjects.Teams, subject.Teams) &&
 		matchNetworkSlice(policy.Subjects.Tags, subject.Tags) &&
 		matchNetworkValue(policy.SiteIDs, site.ID) &&
 		matchNetworkValue(policy.Modes, mode) &&
 		matchNetworkValue(policy.DeviceStatuses, device.Status) &&
-		matchNetworkValue(policy.PostureStatuses, device.PostureStatus)
+		matchNetworkValue(policy.PostureStatuses, device.PostureStatus) &&
+		matchNetworkValue(policy.DeviceManagementStates, device.EffectiveManagementStateAt(now))
 }
 
 func matchNetworkValue(allowed []string, actual string) bool {

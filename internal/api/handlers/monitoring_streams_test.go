@@ -58,11 +58,14 @@ func TestStreamAlertEventsWritesSignals(t *testing.T) {
 	defer server.Close()
 
 	endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/alert-events/stream?clusterId=cluster-a"
-	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	conn, response, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if response != nil && response.Body != nil {
+		defer func() { _ = response.Body.Close() }()
+	}
 	if err != nil {
 		t.Fatalf("dial alert event websocket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
 	var signal domainalert.AlertEventStreamSignal

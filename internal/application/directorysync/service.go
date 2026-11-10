@@ -22,6 +22,10 @@ func (s *Service) PullSnapshot(ctx context.Context, connectionID string, connect
 	if err != nil {
 		return domain.Snapshot{}, "", err
 	}
+	return pullConnectionSnapshot(ctx, connection, policy, connector)
+}
+
+func pullConnectionSnapshot(ctx context.Context, connection domain.Connection, policy domain.Policy, connector Connector) (domain.Snapshot, string, error) {
 	organizations, cursor, err := connector.ListOrganizations(ctx, connection)
 	if err != nil {
 		return domain.Snapshot{}, "", err
@@ -44,36 +48,6 @@ func (s *Service) PullSnapshot(ctx context.Context, connectionID string, connect
 
 func New(repository domain.Repository, projector LocalProjector) *Service {
 	return &Service{repository: repository, projector: projector, now: time.Now}
-}
-
-func (s *Service) CreateConnection(ctx context.Context, connection domain.Connection, policy domain.Policy) (domain.Connection, error) {
-	if connection.ID == "" {
-		connection.ID = uuid.NewString()
-	}
-	if policy.ConnectionID == "" {
-		policy = domain.DefaultPolicy(connection.ID)
-	}
-	policy.ConnectionID = connection.ID
-	if err := policy.ValidateForProvider(connection.ProviderType); err != nil {
-		return domain.Connection{}, err
-	}
-	if policy.Mode != domain.PolicyManual {
-		if err := ValidateSchedule(policy.Schedule); err != nil {
-			return domain.Connection{}, fmt.Errorf("%w: %v", domain.ErrInvalidPolicy, err)
-		}
-		if policy.FullReconcileSchedule != "" {
-			if err := ValidateSchedule(policy.FullReconcileSchedule); err != nil {
-				return domain.Connection{}, fmt.Errorf("%w: %v", domain.ErrInvalidPolicy, err)
-			}
-		}
-	}
-	now := s.now().UTC()
-	connection.CreatedAt = now
-	connection.UpdatedAt = now
-	if connection.Status == "" {
-		connection.Status = domain.ConnectionPending
-	}
-	return s.repository.CreateConnection(ctx, connection, policy)
 }
 
 func (s *Service) Preview(ctx context.Context, connectionID string, snapshot domain.Snapshot) (domain.Plan, error) {
@@ -134,8 +108,7 @@ func (s *Service) ApplyDelta(ctx context.Context, connectionID string, delta dom
 	if err = s.repository.TransitionRun(ctx, run.ID, domain.RunSucceeded, stats, "", ""); err != nil {
 		return run, err
 	}
-	run.Status, run.Stats = domain.RunSucceeded, stats
-	return run, nil
+	return s.repository.GetRun(ctx, run.ID)
 }
 
 func staleDelta(delta domain.Delta, organizations []domain.Organization, people []domain.Person) bool {
@@ -204,20 +177,34 @@ func (s *Service) apply(ctx context.Context, connectionID string, snapshot domai
 	if err = s.repository.TransitionRun(ctx, run.ID, domain.RunRunning, domain.RunStats{}, "", ""); err != nil {
 		return run, plan, err
 	}
+	return s.applyFullPlan(ctx, connection, policy, plan, run)
+}
+
+func (s *Service) applyFullPlan(ctx context.Context, connection domain.Connection, policy domain.Policy, plan domain.Plan, run domain.Run) (domain.Run, domain.Plan, error) {
 	if s.projector != nil {
-		if err = s.projector.Apply(ctx, connection, policy, plan); err != nil {
-			return run, plan, s.fail(ctx, run.ID, "projection_apply_failed", err)
+		if err := s.projector.Apply(ctx, connection, policy, plan); err != nil {
+			return run, plan, s.failFullProjection(ctx, run, err)
 		}
-	} else if err = s.repository.ApplyProjections(ctx, connectionID, plan.Organizations, plan.People, plan.Memberships, policy.SyncPeople); err != nil {
-		return run, plan, s.fail(ctx, run.ID, "projection_apply_failed", err)
+	} else if err := s.repository.ApplyProjections(ctx, connection.ID, plan.Organizations, plan.People, plan.Memberships, policy.SyncPeople); err != nil {
+		return run, plan, s.failFullProjection(ctx, run, err)
 	}
 	stats := statsFor(plan)
-	if err = s.repository.TransitionRun(ctx, run.ID, domain.RunSucceeded, stats, "", ""); err != nil {
+	if err := s.repository.TransitionRun(ctx, run.ID, domain.RunSucceeded, stats, "", ""); err != nil {
 		return run, plan, err
 	}
-	run.Status = domain.RunSucceeded
-	run.Stats = stats
-	return run, plan, nil
+	// Return the durable terminal row, including its actual start/finish times.
+	// The locally created queued value is not a completed-run projection.
+	run, err := s.repository.GetRun(ctx, run.ID)
+	return run, plan, err
+}
+
+func (s *Service) failFullProjection(ctx context.Context, run domain.Run, cause error) error {
+	if run.RequestCredentialID != "" {
+		// Original requests persist only their fixed, sanitized failure summary
+		// in SyncOriginal, including when the request context has been canceled.
+		return cause
+	}
+	return s.fail(ctx, run.ID, "projection_apply_failed", cause)
 }
 
 func (s *Service) load(ctx context.Context, id string) (domain.Connection, domain.Policy, []domain.Organization, []domain.Person, error) {

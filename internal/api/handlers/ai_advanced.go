@@ -30,6 +30,9 @@ type ChatFeedbackReader interface {
 }
 
 type AIAdvancedHandler struct {
+	memorySources interface {
+		PrepareMemoryRecord(context.Context, domainidentity.Principal, appmemory.Record, appmemory.Policy) (appmemory.Record, error)
+	}
 	chatFeedback   ChatFeedbackReader
 	evaluation     *appaieval.AdvancedService
 	runs           *appaieval.Service
@@ -69,6 +72,11 @@ func NewAIAdvancedHandler(evaluation *appaieval.AdvancedService, runs *appaieval
 
 func (h *AIAdvancedHandler) WithChatFeedback(reader ChatFeedbackReader) *AIAdvancedHandler {
 	h.chatFeedback = reader
+	if sources, ok := reader.(interface {
+		PrepareMemoryRecord(context.Context, domainidentity.Principal, appmemory.Record, appmemory.Policy) (appmemory.Record, error)
+	}); ok {
+		h.memorySources = sources
+	}
 	return h
 }
 
@@ -416,7 +424,7 @@ func (h *AIAdvancedHandler) listMemoryPolicies(c *gin.Context) {
 	if !h.allowed(c, appaccess.PermAIMemoryView) {
 		return
 	}
-	items, err := h.memory.ListPolicies(c)
+	items, err := h.memory.ListPersonalPolicies(c, apiMiddleware.PrincipalFromContext(c).UserID)
 	writeAdvancedItems(c, items, err)
 }
 func (h *AIAdvancedHandler) putMemoryPolicy(c *gin.Context) {
@@ -434,7 +442,19 @@ func (h *AIAdvancedHandler) putMemoryPolicy(c *gin.Context) {
 		return
 	}
 	policy := input.Policy
-	if policy.Version == "" && input.TTLDays > 0 {
+	if input.TTLDays < 0 || input.TTLDays > 3650 {
+		writeAdvancedError(c, fmt.Errorf("%w: invalid memory ttl days", apperrors.ErrInvalidArgument))
+		return
+	}
+	if input.ConsentMode != "" && input.ConsentMode != "explicit" && input.ConsentMode != "disabled" && input.ConsentMode != "automatic" {
+		writeAdvancedError(c, fmt.Errorf("%w: invalid memory consent mode", apperrors.ErrInvalidArgument))
+		return
+	}
+	if input.ConsentMode == "automatic" && policy.Mode != "heya" {
+		writeAdvancedError(c, fmt.Errorf("%w: automatic memory requires Heya opt-in", apperrors.ErrInvalidArgument))
+		return
+	}
+	if input.TTLDays > 0 {
 		policy.Version = "v1"
 		policy.OwnerTypes = []string{"user"}
 		policy.DefaultTTL = time.Duration(input.TTLDays) * 24 * time.Hour
@@ -443,7 +463,16 @@ func (h *AIAdvancedHandler) putMemoryPolicy(c *gin.Context) {
 		policy.ExplicitWriteOnly = input.ConsentMode == "explicit"
 		policy.Enabled = input.ConsentMode != "disabled"
 	}
-	if err := h.memory.PutPolicy(c, policy); err != nil {
+	if input.ConsentMode != "" {
+		policy.ExplicitWriteOnly = input.ConsentMode == "explicit"
+		policy.Enabled = input.ConsentMode != "disabled"
+	}
+	if policy.Enabled && !policy.ExplicitWriteOnly && input.ConsentMode != "automatic" {
+		writeAdvancedError(c, fmt.Errorf("%w: automatic memory requires explicit opt-in", apperrors.ErrInvalidArgument))
+		return
+	}
+	policy, err := h.memory.SavePersonalPolicy(c, apiMiddleware.PrincipalFromContext(c).UserID, policy)
+	if err != nil {
 		writeAdvancedError(c, err)
 		return
 	}
@@ -465,7 +494,11 @@ func (h *AIAdvancedHandler) listMemory(c *gin.Context) {
 		apiresponse.Error(c, http.StatusForbidden, "forbidden", "only your own personal memory is supported")
 		return
 	}
-	items, err := h.memory.ListRecords(c, ownerType, ownerID)
+	if value := c.Query("includeDeleted"); value != "" && value != "true" && value != "false" {
+		writeAdvancedError(c, fmt.Errorf("%w: invalid includeDeleted", apperrors.ErrInvalidArgument))
+		return
+	}
+	items, err := h.memory.ListRecordStates(c, ownerType, ownerID, c.Query("includeDeleted") == "true")
 	writeAdvancedItems(c, items, err)
 }
 func (h *AIAdvancedHandler) putMemory(c *gin.Context) {
@@ -491,6 +524,31 @@ func (h *AIAdvancedHandler) putMemory(c *gin.Context) {
 		writeAdvancedError(c, err)
 		return
 	}
+	if policy.OwnerID != "" && policy.OwnerID != principal.UserID {
+		writeAdvancedError(c, apperrors.ErrAccessDenied)
+		return
+	}
+	if input.Record.SourceType != "explicit_user" {
+		writeAdvancedError(c, fmt.Errorf("%w: API memory writes must be explicit", apperrors.ErrInvalidArgument))
+		return
+	}
+	if h.memorySources != nil {
+		input.Record, err = h.memorySources.PrepareMemoryRecord(c, principal, input.Record, policy)
+		if err != nil {
+			writeAdvancedError(c, err)
+			return
+		}
+	} else if len(input.Record.SourceRefs) > 0 {
+		writeAdvancedError(c, apperrors.ErrServiceUnavailable)
+		return
+	} else {
+		mode := policy.Mode
+		if mode == "" {
+			mode = "chat"
+		}
+		input.Record.ScopeHash = appmemory.Scope(principal.UserID, mode)
+		input.Record.SourceHashes = nil
+	}
 	item, err := h.memory.PutRecord(c, input.Record, policy)
 	writeAdvancedItem(c, http.StatusCreated, item, err)
 }
@@ -498,7 +556,8 @@ func (h *AIAdvancedHandler) deleteMemory(c *gin.Context) {
 	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIMemoryManage, "update")) {
 		return
 	}
-	item, err := h.memory.GetRecord(c, c.Param("memoryID"))
+	memoryID := c.Param("memoryID")
+	item, err := h.memory.GetRecord(c, memoryID)
 	if err != nil {
 		writeAdvancedError(c, err)
 		return
@@ -508,7 +567,7 @@ func (h *AIAdvancedHandler) deleteMemory(c *gin.Context) {
 		apiresponse.Error(c, http.StatusForbidden, "forbidden", "cannot delete another user's memory")
 		return
 	}
-	if err := h.memory.DeleteRecord(c, item.ID); err != nil {
+	if err := h.memory.DeleteRecord(c, memoryID); err != nil {
 		writeAdvancedError(c, err)
 		return
 	}

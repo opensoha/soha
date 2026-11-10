@@ -13,6 +13,7 @@ import (
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -38,7 +39,7 @@ func New(db *gorm.DB) *Repository {
 }
 
 func (r *Repository) FindByLogin(ctx context.Context, login string) (User, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, username, email, display_name, status, tags, preferences, authz_version
 		FROM users
 		WHERE username = ? OR email = ?
@@ -48,7 +49,7 @@ func (r *Repository) FindByLogin(ctx context.Context, login string) (User, error
 }
 
 func (r *Repository) FindByEmail(ctx context.Context, email string) (User, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, username, email, display_name, status, tags, preferences, authz_version
 		FROM users
 		WHERE email = ?
@@ -58,7 +59,7 @@ func (r *Repository) FindByEmail(ctx context.Context, email string) (User, error
 }
 
 func (r *Repository) GetByID(ctx context.Context, userID string) (User, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, username, email, display_name, status, tags, preferences, authz_version
 		FROM users
 		WHERE id = ?
@@ -68,7 +69,7 @@ func (r *Repository) GetByID(ctx context.Context, userID string) (User, error) {
 }
 
 func (r *Repository) GetAuthzState(ctx context.Context, userID string) (AuthzState, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, status, authz_version
 		FROM users
 		WHERE id = ?
@@ -88,7 +89,7 @@ func (r *Repository) GetAuthzState(ctx context.Context, userID string) (AuthzSta
 }
 
 func (r *Repository) BumpUserAuthzVersion(ctx context.Context, userID string) error {
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE users
 		SET authz_version = GREATEST(authz_version, 1) + 1, updated_at = ?
 		WHERE id = ?
@@ -116,7 +117,7 @@ func (r *Repository) UpsertUser(ctx context.Context, user User) error {
 	if authzVersion < 1 {
 		authzVersion = 1
 	}
-	err = r.db.WithContext(ctx).Exec(`
+	err = dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO users (id, username, email, display_name, status, tags, preferences, authz_version, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
@@ -139,7 +140,7 @@ func (r *Repository) UpsertUser(ctx context.Context, user User) error {
 
 func (r *Repository) SetPasswordHash(ctx context.Context, userID, passwordHash string) error {
 	now := time.Now().UTC()
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO user_password_credentials (user_id, password_hash, password_updated_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET
@@ -150,7 +151,7 @@ func (r *Repository) SetPasswordHash(ctx context.Context, userID, passwordHash s
 }
 
 func (r *Repository) GetPasswordHash(ctx context.Context, userID string) (string, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT password_hash
 		FROM user_password_credentials
 		WHERE user_id = ?
@@ -179,7 +180,7 @@ func isUniqueViolation(err error) bool {
 }
 
 func (r *Repository) ListRoles(ctx context.Context, userID string) ([]string, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT role_id
 		FROM user_role_bindings
 		WHERE user_id = ?
@@ -201,7 +202,7 @@ func (r *Repository) ListRoles(ctx context.Context, userID string) ([]string, er
 }
 
 func (r *Repository) ReplaceRoleBindings(ctx context.Context, userID string, roleIDs []string) error {
-	tx := r.db.WithContext(ctx).Begin()
+	tx := dbtx.DB(ctx, r.db).Begin()
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -224,7 +225,7 @@ func (r *Repository) ReplaceRoleBindings(ctx context.Context, userID string, rol
 }
 
 func (r *Repository) ReplaceTeamBindings(ctx context.Context, userID string, teamIDs []string) error {
-	tx := r.db.WithContext(ctx).Begin()
+	tx := dbtx.DB(ctx, r.db).Begin()
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -251,7 +252,7 @@ func (r *Repository) ResolveRoleIDs(ctx context.Context, refs []string) ([]strin
 	if len(refs) == 0 {
 		return []string{}, nil
 	}
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id
 		FROM roles
 		WHERE id IN ? OR name IN ?
@@ -284,7 +285,7 @@ func (r *Repository) ResolveTeamIDsForExternalRefs(ctx context.Context, provider
 	if len(sources) == 0 {
 		sources = []string{"__none__"}
 	}
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id
 		FROM teams
 		WHERE id IN ?
@@ -344,7 +345,7 @@ func (r *Repository) syncExternalBindings(ctx context.Context, userID, source, p
 	bindingIDs = compactBindingRefs(bindingIDs)
 	source = externalBindingSource(source)
 	providerID = strings.TrimSpace(providerID)
-	tx := r.db.WithContext(ctx).Begin()
+	tx := dbtx.DB(ctx, r.db).Begin()
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -387,7 +388,7 @@ func (r *Repository) syncExternalBindings(ctx context.Context, userID, source, p
 }
 
 func (r *Repository) ListTeams(ctx context.Context, userID string) ([]string, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT team_id
 		FROM user_team_bindings
 		WHERE user_id = ?
@@ -409,7 +410,7 @@ func (r *Repository) ListTeams(ctx context.Context, userID string) ([]string, er
 }
 
 func (r *Repository) ListProjects(ctx context.Context, userID string) ([]string, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT project_id
 		FROM user_project_bindings
 		WHERE user_id = ?
@@ -431,7 +432,7 @@ func (r *Repository) ListProjects(ctx context.Context, userID string) ([]string,
 }
 
 func (r *Repository) FindIdentity(ctx context.Context, providerType, providerID, providerUserID string) (OIDCIdentity, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, user_id, provider_type, provider_id, provider_user_id, profile, last_login_at
 		FROM user_identities
 		WHERE provider_type = ? AND provider_id = ? AND provider_user_id = ?
@@ -452,7 +453,7 @@ func (r *Repository) MigrateOIDCIdentity(ctx context.Context, identity OIDCIdent
 	if err != nil {
 		return fmt.Errorf("marshal oidc profile: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE user_identities
 		SET provider_id = ?, profile = ?, last_login_at = ?, updated_at = ?
 		WHERE provider_type = ? AND provider_id = ? AND provider_user_id = ?
@@ -467,7 +468,7 @@ func (r *Repository) MigrateOIDCIdentity(ctx context.Context, identity OIDCIdent
 }
 
 func (r *Repository) ListIdentitiesByUserID(ctx context.Context, userID string) ([]OIDCIdentity, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, user_id, provider_type, provider_id, provider_user_id, profile, last_login_at
 		FROM user_identities
 		WHERE user_id = ?
@@ -495,7 +496,7 @@ func (r *Repository) UpsertOIDCIdentity(ctx context.Context, identity OIDCIdenti
 		return fmt.Errorf("marshal oidc profile: %w", err)
 	}
 	now := time.Now().UTC()
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO user_identities (id, user_id, provider_type, provider_id, provider_user_id, profile, last_login_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (provider_type, provider_id, provider_user_id) DO UPDATE SET
@@ -516,14 +517,14 @@ func (r *Repository) CreateSession(ctx context.Context, session Session) error {
 	if authzVersion < 1 {
 		authzVersion = 1
 	}
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO sessions (id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata, authz_version, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, session.ID, session.UserID, session.RefreshTokenID, session.ProviderType, session.Status, session.ExpiresAt, session.LastSeenAt, string(metadata), authzVersion, now, now).Error
 }
 
 func (r *Repository) GetSessionByRefreshID(ctx context.Context, refreshID string) (Session, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata, authz_version
 		FROM sessions
 		WHERE refresh_token_id = ?
@@ -533,7 +534,7 @@ func (r *Repository) GetSessionByRefreshID(ctx context.Context, refreshID string
 }
 
 func (r *Repository) GetAuthSessionByID(ctx context.Context, sessionID string) (Session, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata, authz_version
 		FROM sessions
 		WHERE id = ?
@@ -546,7 +547,7 @@ func (r *Repository) TouchSession(ctx context.Context, refreshID string, lastSee
 	if authzVersion < 1 {
 		authzVersion = 1
 	}
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		UPDATE sessions
 		SET last_seen_at = ?, authz_version = ?, updated_at = ?
 		WHERE refresh_token_id = ?
@@ -554,7 +555,7 @@ func (r *Repository) TouchSession(ctx context.Context, refreshID string, lastSee
 }
 
 func (r *Repository) RevokeSession(ctx context.Context, refreshID string) error {
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		UPDATE sessions
 		SET status = 'revoked', updated_at = ?
 		WHERE refresh_token_id = ?
@@ -562,7 +563,7 @@ func (r *Repository) RevokeSession(ctx context.Context, refreshID string) error 
 }
 
 func (r *Repository) GetSessionByID(ctx context.Context, sessionID string) (domainidentity.SessionRecord, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT
 			s.id,
 			s.user_id,
@@ -584,7 +585,7 @@ func (r *Repository) GetSessionByID(ctx context.Context, sessionID string) (doma
 }
 
 func (r *Repository) ListSessionRecords(ctx context.Context, limit int) ([]domainidentity.SessionRecord, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT
 			s.id,
 			s.user_id,
@@ -619,7 +620,7 @@ func (r *Repository) ListSessionRecords(ctx context.Context, limit int) ([]domai
 }
 
 func (r *Repository) ListSessionRecordsByUserID(ctx context.Context, userID string, limit int) ([]domainidentity.SessionRecord, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT
 			s.id,
 			s.user_id,
@@ -655,7 +656,7 @@ func (r *Repository) ListSessionRecordsByUserID(ctx context.Context, userID stri
 }
 
 func (r *Repository) RevokeSessionByID(ctx context.Context, sessionID string) error {
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE sessions
 		SET status = 'revoked', updated_at = ?
 		WHERE id = ?
@@ -670,7 +671,7 @@ func (r *Repository) RevokeSessionByID(ctx context.Context, sessionID string) er
 }
 
 func (r *Repository) RevokeSessionsByUserID(ctx context.Context, userID string) error {
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		UPDATE sessions
 		SET status = 'revoked', updated_at = ?
 		WHERE user_id = ? AND status = 'active'
@@ -686,14 +687,14 @@ func (r *Repository) CreateEphemeralToken(ctx context.Context, token EphemeralTo
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO auth_ephemeral_tokens (token, kind, payload, expires_at, created_at)
 		VALUES (?, ?, ?, ?, ?)
 	`, token.Token, token.Kind, string(payload), token.ExpiresAt, createdAt).Error
 }
 
 func (r *Repository) GetEphemeralToken(ctx context.Context, tokenID, kind string) (EphemeralToken, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT token, kind, payload, expires_at, created_at
 		FROM auth_ephemeral_tokens
 		WHERE token = ? AND kind = ? AND expires_at > ?
@@ -703,7 +704,7 @@ func (r *Repository) GetEphemeralToken(ctx context.Context, tokenID, kind string
 }
 
 func (r *Repository) ConsumeEphemeralToken(ctx context.Context, tokenID, kind string) (EphemeralToken, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		DELETE FROM auth_ephemeral_tokens
 		WHERE token = ? AND kind = ? AND expires_at > ?
 		RETURNING token, kind, payload, expires_at, created_at
@@ -712,7 +713,7 @@ func (r *Repository) ConsumeEphemeralToken(ctx context.Context, tokenID, kind st
 }
 
 func (r *Repository) DeleteUser(ctx context.Context, userID string) error {
-	tx := r.db.WithContext(ctx).Begin()
+	tx := dbtx.DB(ctx, r.db).Begin()
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -742,7 +743,7 @@ func (r *Repository) DeleteUser(ctx context.Context, userID string) error {
 }
 
 func (r *Repository) ListUsers(ctx context.Context) ([]domainaccess.UserRecord, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT
 			u.id,
 			u.username,
@@ -835,7 +836,7 @@ func (r *Repository) loadUserLoginSources(ctx context.Context, userIDs []string)
 	if len(userIDs) == 0 {
 		return items, nil
 	}
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT user_id, provider_type, provider_id
 		FROM user_identities
 		WHERE user_id IN ?
@@ -883,7 +884,7 @@ func (r *Repository) CreateUser(ctx context.Context, input domainaccess.UserInpu
 		return domainaccess.UserRecord{}, fmt.Errorf("marshal user preferences: %w", err)
 	}
 	now := time.Now().UTC()
-	tx := r.db.WithContext(ctx).Begin()
+	tx := dbtx.DB(ctx, r.db).Begin()
 	if tx.Error != nil {
 		return domainaccess.UserRecord{}, tx.Error
 	}
@@ -950,7 +951,7 @@ func (r *Repository) UpdateUser(ctx context.Context, userID string, input domain
 		return domainaccess.UserRecord{}, fmt.Errorf("marshal user preferences: %w", err)
 	}
 	now := time.Now().UTC()
-	tx := r.db.WithContext(ctx).Begin()
+	tx := dbtx.DB(ctx, r.db).Begin()
 	if tx.Error != nil {
 		return domainaccess.UserRecord{}, tx.Error
 	}
@@ -1025,7 +1026,7 @@ func (r *Repository) UpdateUser(ctx context.Context, userID string, input domain
 }
 
 func (r *Repository) ListTeamsDetailed(ctx context.Context) ([]domainaccess.TeamRecord, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT
 			t.id,
 			COALESCE(t.parent_id, '') AS parent_id,
@@ -1077,7 +1078,7 @@ func (r *Repository) CreateTeam(ctx context.Context, input domainaccess.TeamInpu
 	if err != nil {
 		return domainaccess.TeamRecord{}, err
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO teams (id, parent_id, name, slug, org_path, source, external_id, metadata, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, strings.TrimSpace(input.ID), nullableString(input.ParentID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Slug), path, teamSource(input.Source), nullableString(input.ExternalID), string(metadata), now, now).Error; err != nil {
@@ -1108,7 +1109,7 @@ func (r *Repository) UpdateTeam(ctx context.Context, teamID string, input domain
 	if err := r.ensureValidTeamParent(ctx, strings.TrimSpace(teamID), input.ParentID); err != nil {
 		return domainaccess.TeamRecord{}, err
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE teams
 		SET parent_id = ?, name = ?, slug = ?, org_path = ?, source = ?, external_id = ?, metadata = ?, updated_at = ?
 		WHERE id = ?
@@ -1141,7 +1142,7 @@ func (r *Repository) ensureValidTeamParent(ctx context.Context, teamID, parentID
 		return nil
 	}
 	var count int
-	if err := r.db.WithContext(ctx).Raw(`
+	if err := dbtx.DB(ctx, r.db).Raw(`
 		WITH RECURSIVE descendants AS (
 			SELECT id
 			FROM teams
@@ -1180,7 +1181,7 @@ func (r *Repository) resolveTeamPath(ctx context.Context, parentID, slug, explic
 		return "/" + slug, nil
 	}
 	var parentPath string
-	if err := r.db.WithContext(ctx).Raw(`
+	if err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT COALESCE(org_path, '/' || slug)
 		FROM teams
 		WHERE id = ?
@@ -1201,7 +1202,7 @@ func (r *Repository) refreshTeamSubtreePaths(ctx context.Context, rootID, rootPa
 	if rootID == "" || rootPath == "" {
 		return nil
 	}
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		WITH RECURSIVE team_tree AS (
 			SELECT id, parent_id, slug, CAST(? AS TEXT) AS org_path
 			FROM teams
@@ -1235,7 +1236,7 @@ func teamSource(value string) string {
 }
 
 func (r *Repository) DeleteTeam(ctx context.Context, teamID string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM teams WHERE id = ?`, strings.TrimSpace(teamID))
+	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM teams WHERE id = ?`, strings.TrimSpace(teamID))
 	if result.Error != nil {
 		return result.Error
 	}
@@ -1388,7 +1389,7 @@ func (r *Repository) loadStringBindings(ctx context.Context, tableName, ownerCol
 		WHERE %s IN ?
 		ORDER BY %s ASC, %s ASC
 	`, ownerColumn, valueColumn, tableName, ownerColumn, ownerColumn, valueColumn)
-	rows, err := r.db.WithContext(ctx).Raw(query, ownerIDs).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, ownerIDs).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -1415,7 +1416,7 @@ func (r *Repository) loadLatestTimes(ctx context.Context, query string, ownerIDs
 	if len(ownerIDs) == 0 {
 		return items, nil
 	}
-	rows, err := r.db.WithContext(ctx).Raw(query, ownerIDs).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, ownerIDs).Rows()
 	if err != nil {
 		return nil, err
 	}

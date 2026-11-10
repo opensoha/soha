@@ -16,13 +16,9 @@ type NativeAuthorizationReader interface {
 	ExecutionAuthorizationRevision(context.Context, domainidentity.Principal) (string, error)
 }
 
-type nativeGatewayAuthorizationReader interface {
-	WorkbenchAuthorizationRevision(context.Context, domainidentity.Principal) (string, error)
-}
-
 func (s *Service) freezeNativeGatewayAuthorization(ctx context.Context, principal domainidentity.Principal) (string, error) {
-	reader, ok := s.workbenchInvoker.(nativeGatewayAuthorizationReader)
-	if !ok || isNilDependency(reader) {
+	reader := s.runtime.GatewayAuthorization
+	if reader == nil {
 		return "", apperrors.ErrUnsupportedOperation
 	}
 	revision, err := reader.WorkbenchAuthorizationRevision(ctx, principal)

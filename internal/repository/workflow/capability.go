@@ -3,7 +3,6 @@ package workflow
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -14,7 +13,7 @@ import (
 )
 
 func (r *Repository) FindCapabilityRun(ctx context.Context, actor, key, digest string) (domainworkflow.Run, error) {
-	run, err := scanWorkflowRow(r.db.WithContext(ctx).Raw(`SELECT `+workflowColumns+` FROM workflow_runs WHERE scope = 'capability_task' AND metadata->>'capabilityActorId' = ? AND metadata->>'capabilityIdempotencyKey' = ?`, actor, key).Row())
+	run, err := r.scanWorkflowRow(r.db.WithContext(ctx).Raw(`SELECT `+workflowColumns+` FROM workflow_runs WHERE scope = 'capability_task' AND metadata->>'capabilityActorId' = ? AND metadata->>'capabilityIdempotencyKey' = ?`, actor, key).Row())
 	if err != nil {
 		return run, err
 	}
@@ -42,7 +41,7 @@ func (r *Repository) CreateCapabilityRun(ctx context.Context, run domainworkflow
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "capability:"+intent.ActorID+":"+intent.Input.IdempotencyKey).Error; err != nil {
 			return err
 		}
-		repo := New(tx)
+		repo := New(tx, r.storageKeys)
 		existing, err := repo.FindCapabilityRun(ctx, intent.ActorID, intent.Input.IdempotencyKey, intent.Digest)
 		if err == nil {
 			stored = existing
@@ -63,7 +62,7 @@ func (r *Repository) CreateCapabilityRun(ctx context.Context, run domainworkflow
 func (r *Repository) ReviseCapabilityRun(ctx context.Context, id string, version int64, revise func(domainworkflow.Run) (domainworkflow.Run, error)) (domainworkflow.Run, error) {
 	var updated domainworkflow.Run
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		run, err := scanWorkflowRow(tx.Raw(`SELECT `+workflowColumns+` FROM workflow_runs WHERE id = ? AND scope = 'capability_task' AND version = ? AND status IN ('completed','failed','canceled','inconclusive','blocked') AND (lease_until IS NULL OR lease_until <= NOW()) FOR UPDATE`, id, version).Row())
+		run, err := r.scanWorkflowRow(tx.Raw(`SELECT `+workflowColumns+` FROM workflow_runs WHERE id = ? AND scope = 'capability_task' AND version = ? AND status IN ('completed','failed','canceled','inconclusive','blocked') AND (lease_until IS NULL OR lease_until <= NOW()) FOR UPDATE`, id, version).Row())
 		if err != nil {
 			return fmt.Errorf("%w: task changed or is still executing", apperrors.ErrConflict)
 		}
@@ -71,11 +70,11 @@ func (r *Repository) ReviseCapabilityRun(ctx context.Context, id string, version
 		if err != nil {
 			return err
 		}
-		metadata, err := json.Marshal(persistWorkflowMetadata(run.Metadata, run.NodeRuns, run.GatewayAuthorization))
+		metadata, err := r.marshalWorkflowMetadata(run)
 		if err != nil {
 			return err
 		}
-		updated, err = scanWorkflowRow(tx.Raw(`UPDATE workflow_runs SET metadata = ?::json, status = 'queued', stop_reason = '', stop_summary = '', lease_owner = '', lease_until = NULL, version = version + 1, fencing_token = fencing_token + 1, updated_at = NOW() WHERE id = ? AND version = ? RETURNING `+workflowColumns, string(metadata), id, version).Row())
+		updated, err = r.scanWorkflowRow(tx.Raw(`UPDATE workflow_runs SET metadata = ?::json, status = 'queued', stop_reason = '', stop_summary = '', lease_owner = '', lease_until = NULL, version = version + 1, fencing_token = fencing_token + 1, updated_at = NOW() WHERE id = ? AND version = ? RETURNING `+workflowColumns, string(metadata), id, version).Row())
 		return err
 	})
 	return updated, err
@@ -100,7 +99,7 @@ func (r *Repository) ListCapabilityRuns(ctx context.Context, actor string, limit
 	defer func() { _ = rows.Close() }()
 	runs := []domainworkflow.Run{}
 	for rows.Next() {
-		run, err := scanWorkflow(rows)
+		run, err := r.scanWorkflow(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +114,7 @@ func (r *Repository) ListCapabilityRuns(ctx context.Context, actor string, limit
 func (r *Repository) UpdateCapabilityNode(ctx context.Context, expected domainworkflow.Run, nodeID string, advance func(domainworkflow.Run, domainworkflow.NodeRun) (domainworkflow.NodeRun, error)) (domainworkflow.Run, error) {
 	var updated domainworkflow.Run
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		current, err := scanWorkflowRow(tx.Raw(`SELECT `+workflowColumns+` FROM workflow_runs WHERE id = ? AND scope = 'capability_task' AND version = ? AND fencing_token = ? AND lease_owner = ? AND lease_until > NOW() FOR UPDATE`, expected.ID, expected.Version, expected.FencingToken, expected.LeaseOwner).Row())
+		current, err := r.scanWorkflowRow(tx.Raw(`SELECT `+workflowColumns+` FROM workflow_runs WHERE id = ? AND scope = 'capability_task' AND version = ? AND fencing_token = ? AND lease_owner = ? AND lease_until > NOW() FOR UPDATE`, expected.ID, expected.Version, expected.FencingToken, expected.LeaseOwner).Row())
 		if err != nil {
 			return fmt.Errorf("%w: capability dispatch lease changed", apperrors.ErrConflict)
 		}
@@ -134,7 +133,7 @@ func (r *Repository) UpdateCapabilityNode(ctx context.Context, expected domainwo
 			return err
 		}
 		current.NodeRuns[index] = node
-		updated, err = New(tx).SaveManagedRun(ctx, current, false)
+		updated, err = New(tx, r.storageKeys).SaveManagedRun(ctx, current, false)
 		return err
 	})
 	return updated, err
@@ -144,7 +143,7 @@ func (r *Repository) UpdateCapabilityNode(ctx context.Context, expected domainwo
 // It must still observe the same stop state and frozen node before dispatch.
 func (r *Repository) WithCapabilityApproval(ctx context.Context, runID string, cancellation bool, checkAndExecute func(domainworkflow.Run) error) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		run, err := scanWorkflowRow(tx.Raw(`SELECT `+workflowColumns+` FROM workflow_runs WHERE id = ? AND scope = 'capability_task' AND (stop_reason = '' OR ?) AND status NOT IN ('completed','partially_completed','failed','canceled','inconclusive') FOR UPDATE`, runID, cancellation).Row())
+		run, err := r.scanWorkflowRow(tx.Raw(`SELECT `+workflowColumns+` FROM workflow_runs WHERE id = ? AND scope = 'capability_task' AND (stop_reason = '' OR ?) AND status NOT IN ('completed','partially_completed','failed','canceled','inconclusive') FOR UPDATE`, runID, cancellation).Row())
 		if err != nil {
 			return fmt.Errorf("%w: capability task is stopped or unavailable", apperrors.ErrConflict)
 		}

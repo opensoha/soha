@@ -37,7 +37,7 @@ func (s *Service) prepareWorkerBootstrapTask(ctx context.Context, task domain.Ta
 	if !isWorkerCreation(task) {
 		return task, nil
 	}
-	pool, err := workerPoolFromTask(task)
+	pool, err := s.workerPoolFromTask(task)
 	if err != nil {
 		return task, err
 	}
@@ -108,7 +108,7 @@ func (s *Service) persistWorkerBootstrap(ctx context.Context, task domain.Task, 
 // The original VM queue owns readiness. A retry with a confirmed VM receipt
 // continues these observations; it never provisions another VM or bootstrap.
 func (s *Service) executeWorkerReadiness(ctx context.Context, task domain.Task) (string, error) {
-	pool, err := workerPoolFromTask(task)
+	pool, err := s.workerPoolFromTask(task)
 	if err != nil {
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
@@ -187,7 +187,7 @@ func (s *Service) revokeWorkerBootstrap(ctx context.Context, task domain.Task) e
 	if !isWorkerCreation(task) || boolValue(task.Result, "workerBootstrapRevoked") {
 		return nil
 	}
-	pool, err := workerPoolFromTask(task)
+	pool, err := s.workerPoolFromTask(task)
 	if err != nil {
 		return err
 	}

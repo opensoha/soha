@@ -25,7 +25,7 @@ func (h *Helm) InstallHelmChart(ctx context.Context, principal domainidentity.Pr
 	if err := validateHelmChartInstallInput(input); err != nil {
 		return domainresource.HelmChartInstallResult{}, err
 	}
-	connection, _, err := s.authorize(ctx, principal, clusterID, input.Namespace, "HelmRelease", domainaccess.ActionCreate)
+	connection, _, err := s.authorizeHelmMutation(ctx, principal, clusterID, input.Namespace, domainaccess.ActionCreate)
 	if err != nil {
 		return domainresource.HelmChartInstallResult{}, err
 	}

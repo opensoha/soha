@@ -310,7 +310,7 @@ func (s *stubPlatformResourceService) ListPods(_ context.Context, principal doma
 	return []domainresource.PodView{{Name: "api-0", Namespace: namespace, Phase: "Running"}}, nil
 }
 
-func (s *stubPlatformResourceService) GetPodLogs(_ context.Context, _ domainidentity.Principal, _, namespace, podName, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (s *stubPlatformResourceService) GetPodLogs(_ context.Context, _ domainidentity.Principal, _, namespace, podName, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
 	s.podLogsNamespace = namespace
 	s.podLogsContainer = container
 	s.podLogsTailLines = tailLines
@@ -396,6 +396,11 @@ func (s *stubPlatformResourceService) SubscribeResourceEvents(context.Context, d
 
 func (s *stubPlatformResourceService) GetResourceGraph(_ context.Context, _ domainidentity.Principal, clusterID, namespace, kind, name string) (domainresource.ResourceGraph, error) {
 	return domainresource.ResourceGraph{ClusterID: clusterID, Namespace: namespace, RootID: kind + "/" + name, Nodes: []domainresource.ResourceGraphNode{}, Edges: []domainresource.ResourceGraphEdge{}, Evidence: []domainresource.ResourceEvidence{}, Warnings: []string{}}, nil
+}
+
+func (s *stubPlatformResourceService) GetCustomResourceGraph(_ context.Context, _ domainidentity.Principal, ref domainresource.ResourceRef, resource string) (domainresource.ResourceGraph, error) {
+	return domainresource.ResourceGraph{ClusterID: ref.ClusterID, Namespace: ref.Namespace, RootID: resource + "/" + ref.Name,
+		Nodes: []domainresource.ResourceGraphNode{{Resource: ref}}}, nil
 }
 
 func (s *stubPlatformResourceService) GetSecurityPosture(_ context.Context, _ domainidentity.Principal, clusterID, _ string, _ int) (domainresource.SecurityPosture, error) {
@@ -1045,4 +1050,40 @@ func postConnectorEventSinkRequest(handler *PlatformHandler, body string, header
 	}
 	router.ServeHTTP(recorder, req)
 	return recorder
+}
+
+func (s *stubPlatformResourceService) GetJobMetrics(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	return domainresource.ResourceMetricsView{ResourceKind: "Job", ResourceName: name, Namespace: namespace, RangeMinutes: rangeMinutes, StepSeconds: stepSeconds}, nil
+}
+func TestPlatformGetJobMetricsBoundsAndScopesQuery(t *testing.T) {
+	handler := newTestPlatformHandler(nil, newStubPlatformResourceService(), nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/jobs/job-a/metrics?namespace=team-a&rangeMinutes=999999&stepSeconds=1", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}, {Key: "jobName", Value: "job-a"}})
+	handler.GetJobMetrics(ctx)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"namespace":"team-a"`) || !strings.Contains(recorder.Body.String(), `"resourceName":"job-a"`) || !strings.Contains(recorder.Body.String(), `"rangeMinutes":1440`) || !strings.Contains(recorder.Body.String(), `"stepSeconds":61`) {
+		t.Fatalf("unexpected scoped metrics: %s", recorder.Body.String())
+	}
+}
+
+func (s *stubPlatformResourceService) GetReplicaSetMetrics(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	return domainresource.ResourceMetricsView{ResourceKind: "ReplicaSet", ResourceName: name, Namespace: namespace, RangeMinutes: rangeMinutes, StepSeconds: stepSeconds}, nil
+}
+func TestPlatformGetReplicaSetMetricsBoundsAndScopesQuery(t *testing.T) {
+	handler := newTestPlatformHandler(nil, newStubPlatformResourceService(), nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/replicasets/rs-a/metrics?namespace=team-a&rangeMinutes=999999&stepSeconds=1", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}, {Key: "replicaSetName", Value: "rs-a"}})
+	handler.GetReplicaSetMetrics(ctx)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"namespace":"team-a"`) || !strings.Contains(recorder.Body.String(), `"resourceName":"rs-a"`) || !strings.Contains(recorder.Body.String(), `"rangeMinutes":1440`) || !strings.Contains(recorder.Body.String(), `"stepSeconds":61`) {
+		t.Fatalf("unexpected scoped metrics: %s", recorder.Body.String())
+	}
+}
+
+func (s *stubPlatformResourceService) GetReplicationControllerMetrics(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	return domainresource.ResourceMetricsView{ResourceKind: "ReplicationController", ResourceName: name, Namespace: namespace, RangeMinutes: rangeMinutes, StepSeconds: stepSeconds}, nil
+}
+func TestPlatformGetReplicationControllerMetricsBoundsAndScopesQuery(t *testing.T) {
+	handler := newTestPlatformHandler(nil, newStubPlatformResourceService(), nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/replicationcontrollers/rs-a/metrics?namespace=team-a&rangeMinutes=999999&stepSeconds=1", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}, {Key: "name", Value: "rs-a"}})
+	handler.GetReplicationControllerMetrics(ctx)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"namespace":"team-a"`) || !strings.Contains(recorder.Body.String(), `"resourceName":"rs-a"`) || !strings.Contains(recorder.Body.String(), `"rangeMinutes":1440`) || !strings.Contains(recorder.Body.String(), `"stepSeconds":61`) {
+		t.Fatalf("unexpected scoped metrics: %s", recorder.Body.String())
+	}
 }

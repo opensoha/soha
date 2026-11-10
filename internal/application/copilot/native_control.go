@@ -128,7 +128,7 @@ func nativeUserInputStep(ctx context.Context, store NativeRunStore, lease domain
 	if cp.UserInput == "" {
 		cp.StopReason = "waiting_input"
 		lease.Run.Output["pendingQuestion"] = input.Question
-		return saveNativeCheckpoint(ctx, store, lease, *cp, "paused", []domaincopilot.WorkbenchStreamEvent{{Type: "message.delta", Role: "assistant", MessageID: lease.Run.ID + ":reply", ContentDelta: input.Question}, {Type: "agent.status", ProviderID: lease.Run.ProviderID, ProviderKind: "native", Status: "running"}})
+		return saveNativeCheckpoint(ctx, store, lease, *cp, "paused", []domaincopilot.WorkbenchStreamEvent{{Type: "message.delta", Role: "assistant", MessageID: lease.Run.ID + ":reply", ContentDelta: input.Question}, {Type: "agent.status", ProviderID: lease.Run.ProviderID, ProviderKind: lease.Run.ProviderKind, Status: "running"}})
 	}
 	for index, pending := range cp.Pending {
 		content := "This call was not executed; user input changed. Re-evaluate its arguments before requesting another call."

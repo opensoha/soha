@@ -11,7 +11,6 @@ import (
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
-	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/telemetry"
 )
@@ -154,42 +153,11 @@ func (s *Service) HealEvent(ctx context.Context, principal domainidentity.Princi
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "heal")); err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	event, err := s.alertEvents.GetEvent(ctx, strings.TrimSpace(eventID))
+	input, err := s.prepareHealingRun(ctx, principal, eventID, policyID)
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	policy, err := s.healingPolicies.GetHealingPolicy(ctx, strings.TrimSpace(policyID))
-	if err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	result := map[string]any{
-		"eventId": event.ID,
-		"ruleId":  event.RuleID,
-		"status":  event.Status,
-		"policy":  policy.Name,
-	}
-	if strings.TrimSpace(event.RuleID) != "" {
-		if rule, ruleErr := s.rules.GetRule(ctx, event.RuleID); ruleErr == nil && strings.TrimSpace(rule.NotificationPolicyID) != "" {
-			if notificationPolicy, notifyErr := s.findNotificationPolicy(ctx, rule.NotificationPolicyID); notifyErr == nil {
-				currentOnCall := s.resolveEventOnCall(ctx, notificationPolicy, event)
-				if len(currentOnCall) > 0 {
-					result["currentOnCall"] = currentOnCall
-				}
-				if participant := stringValue(currentOnCall["currentParticipant"], ""); participant != "" {
-					result["approvalCandidates"] = []string{participant}
-				}
-			}
-		}
-	}
-	run := domainalert.HealingRunInput{
-		PolicyID:       policy.ID,
-		EventID:        event.ID,
-		Status:         "pending_approval",
-		ApprovalStatus: "pending",
-		RequestedBy:    principal.UserID,
-		Result:         result,
-	}
-	created, err := s.healingRuns.CreateHealingRun(ctx, run)
+	created, err := s.healingRuns.CreateHealingRun(ctx, input)
 	if err == nil {
 		s.recordMonitoringMutation(ctx, principal, "HealingRun", created.ID, "observability.healing_run.create", "requested healing run")
 	}
@@ -205,129 +173,6 @@ func (s *Service) GetHealingRun(ctx context.Context, principal domainidentity.Pr
 		return domainalert.HealingRun{}, err
 	}
 	return s.enrichHealingRun(ctx, item), nil
-}
-
-func (s *Service) ApproveHealingRun(ctx context.Context, principal domainidentity.Principal, runID, comment string) (domainalert.HealingRun, error) {
-	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "approve")); err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
-	if err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	policy, err := s.healingPolicies.GetHealingPolicy(ctx, run.PolicyID)
-	if err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	if strings.TrimSpace(policy.ApprovalPolicyRef) != "" {
-		candidates := stringSliceFromAny(run.Result["approvalCandidates"])
-		if len(candidates) > 0 && !containsString(candidates, principal.UserID) && !containsString(candidates, principal.UserName) {
-			return domainalert.HealingRun{}, fmt.Errorf("%w: current approver is not part of oncall approval candidates", apperrors.ErrAccessDenied)
-		}
-	}
-	event, err := s.alertEvents.GetEvent(ctx, run.EventID)
-	if err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	run.Status = "approved"
-	run.ApprovalStatus = "approved"
-	run.ApprovalComment = strings.TrimSpace(comment)
-	run.ApprovedBy = principal.UserID
-	run.Result = map[string]any{
-		"decision":       "approved",
-		"comment":        strings.TrimSpace(comment),
-		"approvedBy":     principal.UserName,
-		"executionState": "queued",
-	}
-	if s.workflow != nil && len(policy.Definition) > 0 {
-		workflowRun, execErr := s.workflow.ExecuteSystemDAG(ctx, monitoringSystemPrincipal(), "healing:"+policy.ID, firstNonEmpty(policy.Name, policy.WorkflowTemplateID), policy.WorkflowTemplateID, policy.Definition, domainworkflow.Input{
-			ApplicationID:  "healing:" + policy.ID,
-			WorkflowName:   firstNonEmpty(policy.Name, policy.WorkflowTemplateID),
-			ClusterID:      firstNonEmpty(event.ClusterID, stringValue(policy.Definition["clusterId"], "")),
-			Namespace:      firstNonEmpty(event.Namespace, stringValue(policy.Definition["namespace"], "")),
-			DeploymentName: firstNonEmpty(event.Labels["workload"], event.Labels["deployment"], event.Labels["app"], stringValue(policy.Definition["workloadName"], "")),
-		}, map[string]any{
-			"healingRunId":    run.ID,
-			"healingPolicyId": policy.ID,
-			"eventId":         event.ID,
-			"healingContext": map[string]any{
-				"event":   event,
-				"policy":  policy,
-				"comment": comment,
-			},
-		})
-		if execErr != nil {
-			run.Status = "failed"
-			run.Result["executionError"] = execErr.Error()
-			run.CompletedAt = time.Now().UTC()
-			updated, updateErr := s.healingRuns.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
-			if updateErr == nil {
-				s.recordMonitoringMutation(ctx, principal, "HealingRun", updated.ID, "observability.healing_run.approve", "approved healing run")
-			}
-			return updated, updateErr
-		}
-		run.WorkflowRunID = workflowRun.ID
-		run.WorkflowStatus = workflowRun.Status
-		run.WorkflowSummary = summarizeWorkflowRun(workflowRun)
-		run.Status = workflowRun.Status
-		run.Result["workflowRunId"] = workflowRun.ID
-		run.Result["workflowStatus"] = workflowRun.Status
-		run.Result["workflowSummary"] = run.WorkflowSummary
-	}
-	updated, err := s.healingRuns.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
-	if err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	s.recordMonitoringMutation(ctx, principal, "HealingRun", updated.ID, "observability.healing_run.approve", "approved healing run")
-	return s.enrichHealingRun(ctx, updated), nil
-}
-
-func (s *Service) RejectHealingRun(ctx context.Context, principal domainidentity.Principal, runID, comment string) (domainalert.HealingRun, error) {
-	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "reject")); err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
-	if err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	run.Status = "rejected"
-	run.ApprovalStatus = "rejected"
-	run.ApprovalComment = strings.TrimSpace(comment)
-	run.ApprovedBy = principal.UserID
-	run.CompletedAt = time.Now().UTC()
-	run.Result = map[string]any{
-		"decision": "rejected",
-		"comment":  strings.TrimSpace(comment),
-	}
-	updated, err := s.healingRuns.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
-	if err == nil {
-		s.recordMonitoringMutation(ctx, principal, "HealingRun", updated.ID, "observability.healing_run.reject", "rejected healing run")
-	}
-	return updated, err
-}
-
-func (s *Service) RetryHealingRun(ctx context.Context, principal domainidentity.Principal, runID string) (domainalert.HealingRun, error) {
-	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "retry")); err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
-	if err != nil {
-		return domainalert.HealingRun{}, err
-	}
-	run.Status = "pending_approval"
-	run.ApprovalStatus = "pending"
-	run.ApprovalComment = ""
-	run.ApprovedBy = ""
-	run.WorkflowRunID = ""
-	run.WorkflowStatus = ""
-	run.WorkflowSummary = ""
-	run.CompletedAt = time.Time{}
-	run.Result = map[string]any{"retryOf": run.ID}
-	updated, err := s.healingRuns.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
-	if err == nil {
-		s.recordMonitoringMutation(ctx, principal, "HealingRun", updated.ID, "observability.healing_run.retry", "retried healing run")
-	}
-	return updated, err
 }
 
 func (s *Service) ListDataSources(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.DataSource, error) {
@@ -1265,20 +1110,23 @@ func toAlertEventInput(item domainalert.AlertEvent) domainalert.AlertEventInput 
 
 func toHealingRunInput(item domainalert.HealingRun) domainalert.HealingRunInput {
 	return domainalert.HealingRunInput{
-		ID:              item.ID,
-		PolicyID:        item.PolicyID,
-		EventID:         item.EventID,
-		Status:          item.Status,
-		ApprovalStatus:  item.ApprovalStatus,
-		ApprovalComment: item.ApprovalComment,
-		RequestedBy:     item.RequestedBy,
-		ApprovedBy:      item.ApprovedBy,
-		WorkflowRunID:   item.WorkflowRunID,
-		WorkflowStatus:  item.WorkflowStatus,
-		WorkflowSummary: item.WorkflowSummary,
-		Result:          item.Result,
-		StartedAt:       item.StartedAt,
-		CompletedAt:     item.CompletedAt,
+		ExecutionGeneration: item.ExecutionGeneration,
+		SubmissionStatus:    item.SubmissionStatus,
+		IntentDigest:        item.IntentDigest,
+		ID:                  item.ID,
+		PolicyID:            item.PolicyID,
+		EventID:             item.EventID,
+		Status:              item.Status,
+		ApprovalStatus:      item.ApprovalStatus,
+		ApprovalComment:     item.ApprovalComment,
+		RequestedBy:         item.RequestedBy,
+		ApprovedBy:          item.ApprovedBy,
+		WorkflowRunID:       item.WorkflowRunID,
+		WorkflowStatus:      item.WorkflowStatus,
+		WorkflowSummary:     item.WorkflowSummary,
+		Result:              item.Result,
+		StartedAt:           item.StartedAt,
+		CompletedAt:         item.CompletedAt,
 	}
 }
 

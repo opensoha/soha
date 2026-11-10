@@ -25,10 +25,14 @@ func (h *Helm) GetHelmReleaseManifest(ctx context.Context, principal domainident
 	if err := h.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformHelmValuesView); err != nil {
 		return domainresource.HelmReleaseManifestView{}, err
 	}
+	return h.readHelmReleaseManifest(ctx, connection, clusterID, namespace, name, revision)
+}
+
+func (h *Helm) readHelmReleaseManifest(ctx context.Context, connection domaincluster.Connection, clusterID, namespace, name, revision string) (domainresource.HelmReleaseManifestView, error) {
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		client, err := h.helmAgentClient(connection)
-		if err != nil {
-			return domainresource.HelmReleaseManifestView{}, err
+		client, clientErr := h.helmAgentClient(connection)
+		if clientErr != nil {
+			return domainresource.HelmReleaseManifestView{}, clientErr
 		}
 		return client.GetHelmReleaseManifest(ctx, namespace, name, revision)
 	}
@@ -40,14 +44,14 @@ func (h *Helm) PlanHelmReleaseRollback(ctx context.Context, principal domainiden
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
-	connection, _, err := h.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionRollback)
+	connection, _, err := h.authorizeHelmMutation(ctx, principal, clusterID, namespace, domainaccess.ActionRollback)
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		client, err := h.helmAgentClient(connection)
-		if err != nil {
-			return domainoperation.Plan{}, err
+		client, clientErr := h.helmAgentClient(connection)
+		if clientErr != nil {
+			return domainoperation.Plan{}, clientErr
 		}
 		err = client.DryRunHelmReleaseRollback(ctx, namespace, name, input)
 	} else {
@@ -79,15 +83,15 @@ func (h *Helm) RollbackHelmRelease(ctx context.Context, principal domainidentity
 	if err != nil {
 		return domainresource.HelmReleaseDetailView{}, err
 	}
-	connection, _, err := h.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionRollback)
+	connection, _, err := h.authorizeHelmMutation(ctx, principal, clusterID, namespace, domainaccess.ActionRollback)
 	if err != nil {
 		return domainresource.HelmReleaseDetailView{}, err
 	}
 	var item domainresource.HelmReleaseDetailView
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		client, err := h.helmAgentClient(connection)
-		if err != nil {
-			return domainresource.HelmReleaseDetailView{}, err
+		client, clientErr := h.helmAgentClient(connection)
+		if clientErr != nil {
+			return domainresource.HelmReleaseDetailView{}, clientErr
 		}
 		item, err = client.RollbackHelmRelease(ctx, namespace, name, input)
 	} else {

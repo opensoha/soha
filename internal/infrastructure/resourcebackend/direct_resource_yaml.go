@@ -2,12 +2,12 @@ package resourcebackend
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -16,9 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 )
 
@@ -64,7 +62,7 @@ func (d *Direct) CreateResourceYAML(ctx context.Context, clusterID, namespace, k
 	item.SetResourceVersion("")
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	created, err := dynamicResource(bundle.Dynamic, gvr, namespaceScoped, item.GetNamespace()).Create(queryCtx, item, metav1.CreateOptions{})
+	created, err := dynamicResource(bundle.Dynamic, gvr, namespaceScoped, item.GetNamespace()).Create(queryCtx, item, metav1.CreateOptions{FieldManager: resourceEditFieldManager})
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
@@ -104,9 +102,17 @@ func (d *Direct) GetResourceYAML(ctx context.Context, clusterID, namespace, kind
 }
 
 func (d *Direct) DeleteResource(ctx context.Context, clusterID, namespace, kind, name string) error {
-	if strings.EqualFold(kind, "Pod") {
+	if strings.EqualFold(strings.TrimSpace(kind), "Pod") {
 		return d.DeletePod(ctx, clusterID, namespace, name)
 	}
+	return d.deleteManifest(ctx, clusterID, namespace, kind, name, "")
+}
+
+func (d *Direct) DeleteDeploymentWithExpectedUID(ctx context.Context, clusterID, namespace, name, expectedUID string) error {
+	return observedWorkloadDeleteError(d.deleteManifest(ctx, clusterID, namespace, "Deployment", name, expectedUID))
+}
+
+func (d *Direct) deleteManifest(ctx context.Context, clusterID, namespace, kind, name, expectedUID string) error {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return err
@@ -117,52 +123,62 @@ func (d *Direct) DeleteResource(ctx context.Context, clusterID, namespace, kind,
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return resourceMutationError(contractruntime.DeleteManifest(queryCtx, dynamicResource(bundle.Dynamic, gvr, namespaceScoped, namespace), name, ""))
+	return resourceMutationError(contractruntime.DeleteManifest(queryCtx, dynamicResource(bundle.Dynamic, gvr, namespaceScoped, namespace), name, expectedUID))
 }
 
 func (d *Direct) ApplyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
-	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false)
+	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false, false)
 	return view, err
 }
 
 func (d *Direct) DryRunResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceUpdateAnalysis, error) {
-	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true)
+	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true, false)
 	return analysis, err
 }
 
-func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string, dryRun bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+func (d *Direct) ApplyObservedResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
+	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false, true)
+	return view, observedResourceYAMLError(err)
+}
+
+func (d *Direct) DryRunObservedResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceUpdateAnalysis, error) {
+	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true, true)
+	return analysis, observedResourceYAMLError(err)
+}
+
+func observedResourceYAMLError(err error) error {
+	switch {
+	case apierrors.IsBadRequest(err), apierrors.IsInvalid(err):
+		return fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err)
+	case apierrors.IsForbidden(err), apierrors.IsUnauthorized(err):
+		return fmt.Errorf("%w: %v", apperrors.ErrAccessDenied, err)
+	case apierrors.IsNotFound(err):
+		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+	default:
+		return resourceMutationError(err)
+	}
+}
+
+func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string, dryRun, requireObserved bool, expected ...contractresource.ResourceMutationPreconditions) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
+	if len(expected) > 0 {
+		if err := expected[0].Validate(); err != nil || len(content) > 4<<20 {
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: valid preconditions and bounded YAML are required", apperrors.ErrInvalidArgument)
+		}
+	}
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
-	var object map[string]any
-	if err := yaml.Unmarshal([]byte(content), &object); err != nil {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
-	}
-	item := &unstructured.Unstructured{Object: object}
-	item.SetKind(kind)
-	if item.GetName() == "" {
-		item.SetName(name)
-	}
-	if item.GetNamespace() == "" {
-		item.SetNamespace(namespace)
-	}
-	if item.GetName() != name {
-		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
+	item, err := decodeResourceEditManifest(namespace, name, content)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	gvr, namespaceScoped, err := resourceGVRForKind(kind)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
-	if namespaceScoped {
-		if item.GetNamespace() != namespace {
-			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.namespace does not match target resource", apperrors.ErrInvalidArgument)
-		}
-	} else {
-		if strings.TrimSpace(item.GetNamespace()) != "" {
-			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.namespace must be empty for cluster-scoped resource", apperrors.ErrInvalidArgument)
-		}
-		item.SetNamespace("")
+	if err := validateResourceEditScope(item, namespace, namespaceScoped, len(expected) > 0); err != nil {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -171,32 +187,35 @@ func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, ki
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
+	if len(expected) > 0 {
+		if err := contractruntime.ValidateResourceEditPreconditions(current, item, expected[0]); err != nil {
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, conditionalResourceError(err)
+		}
+	}
+	item.SetKind(kind)
 	if err := validateResourceMutation(current); err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	item.SetAPIVersion(gvr.GroupVersion().String())
-	item.SetResourceVersion(current.GetResourceVersion())
-	item.SetUID(current.GetUID())
+	if err := contractruntime.BindResourceEditIdentity(current, item, gvr.GroupResource(), requireObserved); err != nil {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
+	}
 	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(item.Object, "metadata", "creationTimestamp")
 	unstructured.RemoveNestedField(item.Object, "metadata", "generation")
 	unstructured.RemoveNestedField(item.Object, "status")
 	analysis := analyzeResourceUpdate(current, item)
-	patch, err := json.Marshal(item.Object)
+	updated, err := contractruntime.ApplyResourceEdit(queryCtx, resource, current, item, resourceEditFieldManager, dryRun)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, analysis, err
-	}
-	options := metav1.PatchOptions{FieldManager: resourceEditFieldManager, Force: ptr.To(false)}
-	if dryRun {
-		options.DryRun = []string{metav1.DryRunAll}
-	}
-	updated, err := resource.Patch(queryCtx, name, types.ApplyPatchType, patch, options)
-	if err != nil {
-		if dryRun && apierrors.IsConflict(err) {
-			analysis.Conflicts = conflictsFromError(err.Error(), analysis)
+		if dryRun && apierrors.IsConflict(err) && (!requireObserved || contractruntime.IsResourceEditOwnershipConflict(err)) {
+			message := err.Error()
+			if len(expected) > 0 {
+				message = "Kubernetes reported a field ownership conflict; reconcile the reviewed manifest with its current owners"
+			}
+			analysis.Conflicts = conflictsFromError(message, analysis)
 			return domainresource.ResourceYAMLView{}, analysis, nil
 		}
-		return domainresource.ResourceYAMLView{}, analysis, err
+		return domainresource.ResourceYAMLView{}, analysis, resourceMutationError(err)
 	}
 	unstructured.RemoveNestedField(updated.Object, "metadata", "managedFields")
 	rendered, err := yaml.Marshal(updated.Object)
@@ -222,62 +241,21 @@ func dynamicResource(client dynamic.Interface, gvr schema.GroupVersionResource, 
 	return client.Resource(gvr)
 }
 
-type resourceKindDefinition struct {
-	gvr        schema.GroupVersionResource
-	namespaced bool
-}
-
-var resourceKindDefinitions = map[string]resourceKindDefinition{
-	"namespace":                      {gvr: schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}},
-	"pod":                            {gvr: schema.GroupVersionResource{Version: "v1", Resource: "pods"}, namespaced: true},
-	"node":                           {gvr: schema.GroupVersionResource{Version: "v1", Resource: "nodes"}},
-	"deployment":                     {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, namespaced: true},
-	"statefulset":                    {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, namespaced: true},
-	"daemonset":                      {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, namespaced: true},
-	"replicaset":                     {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}, namespaced: true},
-	"job":                            {gvr: schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, namespaced: true},
-	"cronjob":                        {gvr: schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}, namespaced: true},
-	"configmap":                      {gvr: schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}, namespaced: true},
-	"secret":                         {gvr: schema.GroupVersionResource{Version: "v1", Resource: "secrets"}, namespaced: true},
-	"serviceaccount":                 {gvr: schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"}, namespaced: true},
-	"replicationcontroller":          {gvr: schema.GroupVersionResource{Version: "v1", Resource: "replicationcontrollers"}, namespaced: true},
-	"service":                        {gvr: schema.GroupVersionResource{Version: "v1", Resource: "services"}, namespaced: true},
-	"persistentvolumeclaim":          {gvr: schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"}, namespaced: true},
-	"persistentvolume":               {gvr: schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumes"}},
-	"storageclass":                   {gvr: schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}},
-	"role":                           {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"}, namespaced: true},
-	"rolebinding":                    {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"}, namespaced: true},
-	"resourcequota":                  {gvr: schema.GroupVersionResource{Version: "v1", Resource: "resourcequotas"}, namespaced: true},
-	"limitrange":                     {gvr: schema.GroupVersionResource{Version: "v1", Resource: "limitranges"}, namespaced: true},
-	"lease":                          {gvr: schema.GroupVersionResource{Group: "coordination.k8s.io", Version: "v1", Resource: "leases"}, namespaced: true},
-	"horizontalpodautoscaler":        {gvr: schema.GroupVersionResource{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}, namespaced: true},
-	"poddisruptionbudget":            {gvr: schema.GroupVersionResource{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}, namespaced: true},
-	"ingress":                        {gvr: schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}, namespaced: true},
-	"endpointslice":                  {gvr: schema.GroupVersionResource{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"}, namespaced: true},
-	"networkpolicy":                  {gvr: schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}, namespaced: true},
-	"ingressclass":                   {gvr: schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingressclasses"}},
-	"gatewayclass":                   {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gatewayclasses"}},
-	"gateway":                        {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gateways"}, namespaced: true},
-	"httproute":                      {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}, namespaced: true},
-	"backendtlspolicy":               {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "backendtlspolicies"}, namespaced: true},
-	"grpcroute":                      {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "grpcroutes"}, namespaced: true},
-	"referencegrant":                 {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "referencegrants"}, namespaced: true},
-	"priorityclass":                  {gvr: schema.GroupVersionResource{Group: "scheduling.k8s.io", Version: "v1", Resource: "priorityclasses"}},
-	"runtimeclass":                   {gvr: schema.GroupVersionResource{Group: "node.k8s.io", Version: "v1", Resource: "runtimeclasses"}},
-	"clusterrole":                    {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"}},
-	"clusterrolebinding":             {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"}},
-	"customresourcedefinition":       {gvr: schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}},
-	"workloadcronjob":                {gvr: schema.GroupVersionResource{Group: "workloads.soha.io", Version: "v1alpha1", Resource: "workloadcronjobs"}, namespaced: true},
-	"mutatingwebhookconfiguration":   {gvr: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1", Resource: "mutatingwebhookconfigurations"}},
-	"validatingwebhookconfiguration": {gvr: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1", Resource: "validatingwebhookconfigurations"}},
-}
-
 func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) {
-	definition, ok := resourceKindDefinitions[strings.ToLower(strings.TrimSpace(kind))]
-	if !ok {
+	definition, ok := contractresource.LookupKubernetesResourceKind(kind)
+	if !ok || !definition.GenericYAML {
 		return schema.GroupVersionResource{}, false, fmt.Errorf("%w: yaml apply does not support kind %s", apperrors.ErrInvalidArgument, kind)
 	}
-	return definition.gvr, definition.namespaced, nil
+	return knownResourceGVRForKind(kind)
+}
+
+// Creation has its own per-kind authorization and may include dedicated lifecycle kinds.
+func knownResourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) {
+	definition, ok := contractresource.LookupKubernetesResourceKind(kind)
+	if !ok {
+		return schema.GroupVersionResource{}, false, fmt.Errorf("%w: unsupported kind %s", apperrors.ErrInvalidArgument, kind)
+	}
+	return schema.GroupVersionResource{Group: definition.Group, Version: definition.Version, Resource: definition.Resource}, definition.Namespaced, nil
 }
 
 var _ appresource.DirectGenericResource = (*Direct)(nil)
@@ -287,4 +265,39 @@ func resourceMutationError(err error) error {
 		return fmt.Errorf("%w: %v", apperrors.ErrConflict, err)
 	}
 	return err
+}
+
+func decodeResourceEditManifest(namespace, name, content string) (*unstructured.Unstructured, error) {
+	var object map[string]any
+	if err := yaml.Unmarshal([]byte(content), &object); err != nil {
+		return nil, fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
+	}
+	item := &unstructured.Unstructured{Object: object}
+	if item.GetName() == "" {
+		item.SetName(name)
+	}
+	if item.GetNamespace() == "" {
+		item.SetNamespace(namespace)
+	}
+	if item.GetName() != name {
+		return nil, fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
+	}
+	return item, nil
+}
+
+func validateResourceEditScope(item *unstructured.Unstructured, namespace string, namespaced, conditional bool) error {
+	if namespaced {
+		if conditional && strings.TrimSpace(namespace) == "" {
+			return fmt.Errorf("%w: namespace is required", apperrors.ErrInvalidArgument)
+		}
+		if item.GetNamespace() != namespace {
+			return fmt.Errorf("%w: yaml metadata.namespace does not match target resource", apperrors.ErrInvalidArgument)
+		}
+		return nil
+	}
+	if strings.TrimSpace(item.GetNamespace()) != "" {
+		return fmt.Errorf("%w: yaml metadata.namespace must be empty for cluster-scoped resource", apperrors.ErrInvalidArgument)
+	}
+	item.SetNamespace("")
+	return nil
 }

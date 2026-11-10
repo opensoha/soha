@@ -16,6 +16,9 @@ import (
 
 func (s *Service) ValidateCapabilityPlan(ctx context.Context, principal domainidentity.Principal, input domainaigateway.CapabilityTaskInput) (domainaigateway.CapabilityPlanValidation, error) {
 	result := domainaigateway.CapabilityPlanValidation{Issues: []domainaigateway.CapabilityPlanIssue{}}
+	if err := s.authorizeGovernedAICaller(ctx, principal, input.AIClientID, input.SkillID); err != nil {
+		return result, err
+	}
 	schema, err := capabilityTaskInputSchema()
 	if err != nil {
 		return result, fmt.Errorf("%w: capability plan contract unavailable", apperrors.ErrInvalidArgument)
@@ -49,7 +52,7 @@ func (s *Service) ValidateCapabilityPlan(ctx context.Context, principal domainid
 			result.Issues = append(result.Issues, planIssue(step.ID, "duplicate_step", "Step IDs must be unique"))
 		}
 		steps[step.ID] = step
-		result.Issues = append(result.Issues, validatePlannedCapability(step, tools)...)
+		result.Issues = append(result.Issues, validatePlannedCapability(step, tools, s.protectedDurableStorage)...)
 	}
 	for _, step := range input.Plan.Steps {
 		result.Issues = append(result.Issues, validatePlannedBindings(step, steps, tools)...)
@@ -77,7 +80,7 @@ func planIssue(step, code, message string) domainaigateway.CapabilityPlanIssue {
 	return domainaigateway.CapabilityPlanIssue{StepID: step, Code: code, Message: message}
 }
 
-func validatePlannedCapability(step domainaigateway.CapabilityPlanStep, tools map[string]domainaigateway.ToolCapability) []domainaigateway.CapabilityPlanIssue {
+func validatePlannedCapability(step domainaigateway.CapabilityPlanStep, tools map[string]domainaigateway.ToolCapability, protectedStorage bool) []domainaigateway.CapabilityPlanIssue {
 	issue := func(code, message string) []domainaigateway.CapabilityPlanIssue {
 		return []domainaigateway.CapabilityPlanIssue{planIssue(step.ID, code, message)}
 	}
@@ -88,11 +91,14 @@ func validatePlannedCapability(step domainaigateway.CapabilityPlanStep, tools ma
 	if step.Call.CapabilityVersion == "" || tool.Version == "" || validateCapabilityVersion(tool, step.Call.CapabilityVersion) != nil {
 		return issue("version_unavailable", "Pin an available capability version")
 	}
+	if hasProtectedApprovalInput(tool.Name) && !protectedStorage {
+		return issue("protected_input_not_supported", "Protected input requires direct Gateway approval; durable plan/checkpoint storage does not support it")
+	}
 	if tool.Execution == nil || !tool.Execution.Idempotent {
 		return issue("recovery_not_supported", "Durable plans require an explicit idempotency contract")
 	}
 	sensitive := gatewayRedactionAuditSummaryForValue(step.Call.Input, gatewayRedactionRule{SecretTypes: []string{"default"}}, "input")
-	if !sensitive.empty() {
+	if !sensitive.empty() && !hasProtectedApprovalInput(tool.Name) {
 		return issue("secret_reference_required", "Use SecretRef instead of persisting sensitive literal input")
 	}
 	if !validPlannedCapabilityInput(tool, step) {

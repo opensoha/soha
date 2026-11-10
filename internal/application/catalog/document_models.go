@@ -156,7 +156,7 @@ func (s *DocumentService) readDocument(ctx context.Context, principal domainiden
 		if err != nil {
 			return contractdelivery.Document{}, 0, "", err
 		}
-		input := domaincatalog.BuildTemplateInput{Key: item.Key, Name: item.Name, Description: item.Description, BuilderKind: item.BuilderKind, DockerfileTemplate: item.DockerfileTemplate, BuildCommands: item.BuildCommands, VariableSchema: item.VariableSchema, DefaultVariables: item.DefaultVariables, Enabled: item.Enabled}
+		input := domaincatalog.BuildTemplateInput{Key: item.Key, Name: item.Name, Description: item.Description, BuilderKind: item.BuilderKind, DockerfileTemplate: item.DockerfileTemplate, BuildCommands: item.BuildCommands, VariableSchema: item.VariableSchema, DefaultVariables: item.DefaultVariables, MigrationPolicy: item.MigrationPolicy, Enabled: item.Enabled}
 		document, err := templateDocument(kind, item.Key, item.Name, item.Description, input)
 		return document, item.Revision, item.PublicationState, err
 	case "WorkflowTemplate":
@@ -167,7 +167,7 @@ func (s *DocumentService) readDocument(ctx context.Context, principal domainiden
 		if err != nil {
 			return contractdelivery.Document{}, 0, "", err
 		}
-		input := domaincatalog.WorkflowTemplateInput{Key: item.Key, Name: item.Name, Description: item.Description, Category: item.Category, Definition: item.Definition, Enabled: item.Enabled}
+		input := domaincatalog.WorkflowTemplateInput{Key: item.Key, Name: item.Name, Description: item.Description, Category: item.Category, Definition: item.Definition, MigrationPolicy: item.MigrationPolicy, Enabled: item.Enabled}
 		document, err := templateDocument(kind, item.Key, item.Name, item.Description, input)
 		return document, item.Revision, item.PublicationState, err
 	case "DeploymentTemplate":

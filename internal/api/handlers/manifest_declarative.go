@@ -129,7 +129,7 @@ func (h *ManifestSourceHandler) Preflight(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusAccepted, item)
+	apiresponse.Item(c, http.StatusAccepted, domaindelivery.PublicExecutionTask(item))
 }
 
 func (h *ManifestSourceHandler) Sync(c *gin.Context) {
@@ -145,7 +145,7 @@ func (h *ManifestSourceHandler) Sync(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusAccepted, gin.H{"run": run, "task": task})
+	apiresponse.Item(c, http.StatusAccepted, gin.H{"run": run, "task": domaindelivery.PublicExecutionTask(task)})
 }
 
 func (h *ManifestSourceHandler) SyncWebhook(c *gin.Context) {
@@ -161,7 +161,7 @@ func (h *ManifestSourceHandler) SyncWebhook(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusAccepted, gin.H{"run": run, "task": task})
+	apiresponse.Item(c, http.StatusAccepted, gin.H{"run": run, "task": domaindelivery.PublicExecutionTask(task)})
 }
 
 func (h *ManifestSourceHandler) ListSyncRuns(c *gin.Context) {
@@ -183,7 +183,7 @@ func (h *ManifestBindingHandler) List(c *gin.Context) {
 	for _, item := range items {
 		result = append(result, manifestBindingDTO(item))
 	}
-	apiresponse.Items(c, http.StatusOK, result)
+	writeDeliveryList(c, result)
 }
 
 func (h *ManifestBindingHandler) Create(c *gin.Context) {
@@ -494,7 +494,7 @@ func manifestDeploymentDTO(item domainmanifest.Deployment) sohaapi.ManifestDeplo
 		},
 		Status: sohaapi.ManifestDeploymentStatus{
 			ObservedGeneration: item.Status.ObservedGeneration, AppliedRevision: item.Status.AppliedRevision,
-			AppliedDigest: item.Status.AppliedDigest, LastKnownGoodRevision: item.Status.LastKnownGoodRevision,
+			AppliedDigest: item.Status.AppliedDigest, AppliedTemplate: item.Status.AppliedTemplate, LastKnownGoodRevision: item.Status.LastKnownGoodRevision,
 			Phase: sohaapi.ManifestDeploymentPhase(item.Status.Phase), Conditions: conditions, Inventory: inventory,
 			LastReconciledAt: item.Status.LastReconciledAt, LastExecutionTaskID: item.Status.LastExecutionTaskID,
 			Drift: manifestDriftDTO(item.Status.Drift), LastErrorCode: item.Status.LastErrorCode,
@@ -505,7 +505,7 @@ func manifestDeploymentDTO(item domainmanifest.Deployment) sohaapi.ManifestDeplo
 }
 
 func manifestDeploymentActionDTO(item appmanifest.DeploymentActionResult) gin.H {
-	return gin.H{"deployment": manifestDeploymentDTO(item.Deployment), "task": item.Task}
+	return gin.H{"deployment": manifestDeploymentDTO(item.Deployment), "task": domaindelivery.PublicExecutionTask(item.Task)}
 }
 
 func manifestDriftDTO(item *domainmanifest.DriftReport) *sohaapi.ManifestDriftReport {

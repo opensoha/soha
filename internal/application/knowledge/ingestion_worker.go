@@ -220,11 +220,13 @@ func (s *Service) verifyAndPublishIngestion(ctx context.Context, execution *inge
 	execution.source.LastError = ""
 	execution.source.LastSyncedAt = &completed
 	execution.source.UpdatedAt = completed
+	model, source := preparedEmbeddingIdentity(execution.prepared.chunks)
 	revision := domainknowledge.IndexRevision{
 		ID:              uuid.NewString(),
 		KnowledgeBaseID: job.KnowledgeBaseID,
 		Revision:        int(job.TargetRevision),
-		EmbeddingModel:  preparedEmbeddingIdentity(execution.prepared.chunks),
+		EmbeddingModel:  model,
+		EmbeddingSource: source,
 		ChunkerVersion:  "rune-v1-1200-150",
 		DocumentCount:   len(execution.prepared.documents),
 		ChunkCount:      checkpoint.ChunksStored,
@@ -510,10 +512,10 @@ func embedPreparedChunks(ctx context.Context, embedder Embedder, principal domai
 	if err != nil {
 		return err
 	}
-	if batch.Model == "" || len(batch.Vectors) != len(chunks) {
+	if batch.Model == "" || !batch.Source.Known() || len(batch.Vectors) != len(chunks) {
 		return fmt.Errorf("embedding provider returned an incomplete batch")
 	}
-	if len(space.Vectors) > 0 && (batch.Model != space.Model || batch.Route != space.Route) {
+	if len(space.Vectors) > 0 && (batch.Model != space.Model || batch.Route != space.Route || batch.Source != space.Source) {
 		return fmt.Errorf("embedding provider changed during ingestion")
 	}
 	for i, vector := range batch.Vectors {
@@ -524,18 +526,20 @@ func embedPreparedChunks(ctx context.Context, embedder Embedder, principal domai
 			return fmt.Errorf("embedding dimension changed during ingestion")
 		}
 		if len(space.Vectors) == 0 {
-			*space = domainknowledge.EmbeddingBatch{Model: batch.Model, Route: batch.Route, Vectors: [][]float64{vector}}
+			*space = domainknowledge.EmbeddingBatch{Model: batch.Model, Route: batch.Route, Source: batch.Source, Vectors: [][]float64{vector}}
 		}
 		chunks[i].Embedding, chunks[i].EmbeddingModel, chunks[i].EmbeddingRoute = vector, batch.Model, batch.Route
+		chunks[i].EmbeddingSource = batch.Source
 	}
 	return nil
 }
 
-func preparedEmbeddingIdentity(groups [][]domainknowledge.Chunk) string {
+func preparedEmbeddingIdentity(groups [][]domainknowledge.Chunk) (string, domainknowledge.EmbeddingSource) {
 	for _, chunks := range groups {
 		if len(chunks) > 0 {
-			return fmt.Sprintf("%s@%s:%d", chunks[0].EmbeddingModel, chunks[0].EmbeddingRoute, len(chunks[0].Embedding))
+			chunk := chunks[0]
+			return fmt.Sprintf("%s@%s:%d", chunk.EmbeddingModel, chunk.EmbeddingRoute, len(chunk.Embedding)), chunk.EmbeddingSource
 		}
 	}
-	return ""
+	return "", domainknowledge.EmbeddingSource{}
 }

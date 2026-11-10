@@ -239,7 +239,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/clusters/:clusterID/configuration/hpas/:name",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -249,12 +249,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/hpas/:name/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/configuration/hpas/:name/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -334,7 +334,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/clusters/:clusterID/configuration/poddisruptionbudgets/:name",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -344,12 +344,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/poddisruptionbudgets/:name/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/configuration/poddisruptionbudgets/:name/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -432,6 +432,11 @@
       "classification": "internal"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/configuration/secrets/:name/certificate",
+      "classification": "public"
+    },
+    {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/configuration/secrets/:name/data",
       "classification": "public"
@@ -454,7 +459,7 @@
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/configuration/secrets/:name/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -594,7 +599,7 @@
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/helm/releases/:releaseName/values",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -677,8 +682,23 @@
       "classification": "public"
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/network/backendtlspolicies/:name",
+      "classification": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/backendtlspolicies/:name/detail",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/network/backendtlspolicies/:name/yaml",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/clusters/:clusterID/network/backendtlspolicies/:name/yaml",
       "classification": "public"
     },
     {
@@ -762,8 +782,23 @@
       "classification": "public"
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/network/grpcroutes/:name",
+      "classification": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/grpcroutes/:name/detail",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/network/grpcroutes/:name/yaml",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/clusters/:clusterID/network/grpcroutes/:name/yaml",
       "classification": "public"
     },
     {
@@ -772,8 +807,23 @@
       "classification": "public"
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/network/httproutes/:name",
+      "classification": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/httproutes/:name/detail",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/network/httproutes/:name/yaml",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/clusters/:clusterID/network/httproutes/:name/yaml",
       "classification": "public"
     },
     {
@@ -824,7 +874,7 @@
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/network/ingresses/:name/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -872,8 +922,23 @@
       "classification": "public"
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/network/referencegrants/:name",
+      "classification": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/referencegrants/:name/detail",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/network/referencegrants/:name/yaml",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/clusters/:clusterID/network/referencegrants/:name/yaml",
       "classification": "public"
     },
     {
@@ -904,7 +969,7 @@
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/network/services/:serviceName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -949,6 +1014,36 @@
     {
       "method": "POST",
       "path": "/api/v1/clusters/:clusterID/resource-creation/workload-snapshot",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/resource-monitoring",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/conditional",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/conditional/actions/:action",
+      "classification": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/conditional/yaml",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/conditional/yaml/preflight",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/resources/:kind/:name/identity",
       "classification": "public"
     },
     {
@@ -1118,6 +1213,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/daemonsets/:daemonSetName/rollouts",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/daemonsets/:daemonSetName/rollouts/:revisionName/yaml",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/daemonsets/:daemonSetName/yaml",
       "classification": "public"
     },
@@ -1139,7 +1244,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/clusters/:clusterID/workloads/deployments/:deploymentName",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -1203,6 +1308,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/jobs/:jobName/metrics",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/jobs/:jobName/yaml",
       "classification": "public"
     },
@@ -1238,6 +1348,21 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/executions",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/executions",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/executions/:executionID",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/logs",
       "classification": "public"
     },
@@ -1255,6 +1380,26 @@
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal",
       "classification": "stream-only"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal-sessions",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal-sessions/:sessionID",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal-sessions/:sessionID",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal-sessions/:sessionID/stream",
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -1283,6 +1428,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/replicasets/:replicaSetName/metrics",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/replicasets/:replicaSetName/yaml",
       "classification": "public"
     },
@@ -1297,8 +1447,18 @@
       "classification": "public"
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/workloads/replicationcontrollers/:name",
+      "classification": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/replicationcontrollers/:name/detail",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/replicationcontrollers/:name/metrics",
       "classification": "public"
     },
     {
@@ -1329,6 +1489,16 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/statefulsets/:statefulSetName/metrics",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/statefulsets/:statefulSetName/rollouts",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/workloads/statefulsets/:statefulSetName/rollouts/:revisionName/yaml",
       "classification": "public"
     },
     {

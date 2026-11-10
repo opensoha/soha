@@ -16,7 +16,15 @@ func (r *Repository) CreateAccessGrant(ctx context.Context, grant domainnetworkr
 	if err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Create(&row).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWireGuardMutations(tx); err != nil {
+			return err
+		}
+		if err := ensureVPNNotRevoked(tx, grant.SubjectID, grant.DeviceID, grant.SiteID); err != nil {
+			return err
+		}
+		return tx.Create(&row).Error
+	})
 }
 
 func (r *Repository) GetAccessGrant(ctx context.Context, id string, now time.Time) (domainnetworkruntime.AccessGrant, error) {

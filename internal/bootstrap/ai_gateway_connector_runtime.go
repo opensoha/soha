@@ -31,6 +31,8 @@ func registerAIGatewayConnectorRuntimes(ctx context.Context, service *appaigatew
 		}
 		providers = append(providers, provider)
 	}
-	service.AddCapabilityProviders(providers...)
+	if err := service.AddCapabilityProviders(providers...); err != nil {
+		return fmt.Errorf("register AI Gateway connector runtimes: %w", err)
+	}
 	return nil
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"maps"
-	"reflect"
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
@@ -54,7 +53,7 @@ func (s *Service) prepareCapabilityNode(ctx context.Context, principal domainide
 		if err != nil {
 			return node, err
 		}
-		if summary := gatewayRedactionAuditSummaryForValue(call.Input, gatewayRedactionRule{SecretTypes: []string{"default"}}, "input"); !summary.empty() {
+		if summary := gatewayRedactionAuditSummaryForValue(call.Input, gatewayRedactionRule{SecretTypes: []string{"default"}}, "input"); !summary.empty() && (!s.protectedDurableStorage || !hasProtectedApprovalInput(call.ToolName)) {
 			return node, fmt.Errorf("%w: bound input contains sensitive literal data", apperrors.ErrInvalidArgument)
 		}
 		tool, _ := s.toolByName(call.ToolName)
@@ -78,12 +77,18 @@ func (s *Service) prepareCapabilityNode(ctx context.Context, principal domainide
 // Preparing and displaying a call may not consume a mutation. Execution still
 // passes through InvokeTool, including current policy, input and SecretRef checks.
 func (s *Service) authorizeCapabilityCall(ctx context.Context, principal domainidentity.Principal, call domainaigateway.ToolInvocationRequest) (context.Context, error) {
+	if err := s.authorizeGovernedAICaller(ctx, principal, call.AIClientID, call.SkillID); err != nil {
+		return ctx, err
+	}
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayInvoke); err != nil {
 		return ctx, err
 	}
 	tool, ok := s.toolByName(call.ToolName)
 	if !ok || validateCapabilityVersion(tool, call.CapabilityVersion) != nil {
 		return ctx, apperrors.ErrConflict
+	}
+	if err := s.authorizeGovernedAITool(principal, tool); err != nil {
+		return ctx, err
 	}
 	if err := s.authorizeTool(ctx, principal, tool); err != nil {
 		return ctx, err
@@ -211,7 +216,7 @@ func (s *Service) capabilityNodeApproval(ctx context.Context, call domainaigatew
 	if err != nil {
 		return request, false, err
 	}
-	if request.RequestID != call.RequestID || request.ToolName != call.ToolName || !reflect.DeepEqual(request.ToolInput, call.Input) || !maps.Equal(request.SecretRefs, call.SecretRefs) {
+	if request.RequestID != call.RequestID || request.ToolName != call.ToolName || !approvalInputMatchesCall(request, call.Input) || !maps.Equal(request.SecretRefs, call.SecretRefs) {
 		return request, false, fmt.Errorf("%w: frozen capability approval changed", apperrors.ErrConflict)
 	}
 	return request, true, nil

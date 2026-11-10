@@ -71,37 +71,54 @@ type ManifestTaskRuntime interface {
 }
 
 type DeliveryTaskReader interface {
+	GetExecutingDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlan, error)
 	GetExecutionTask(context.Context, domainidentity.Principal, string) (domaindelivery.ExecutionTask, error)
 	GetConfirmedDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlan, error)
 }
 
 type DeclarativeRuntimeDependencies struct {
-	Delivery    DeliveryTaskReader
-	Agents      func(domaincluster.Connection) (ManifestRuntime, error)
-	DeliveryGit DeliveryGitReader
-	Renderer    ManifestRenderer
-	Direct      ManifestRuntime
-	Git         ManifestRuntime
-	Tasks       ManifestTaskRuntime
-	Sources     SourceRepositoryReader
+	TemplateMigrations interface {
+		ServiceTemplateMigrationRequired(context.Context, string, string) (bool, error)
+	}
+	ExecutionPrincipals ExecutionPrincipalReader
+	ImportedRoots       ImportedRootAdmission
+	RootResources       RootResourceReader
+	Delivery            DeliveryTaskReader
+	Agents              func(domaincluster.Connection) (ManifestRuntime, error)
+	DeliveryGit         DeliveryGitReader
+	Renderer            ManifestRenderer
+	Direct              ManifestRuntime
+	Git                 ManifestRuntime
+	Tasks               ManifestTaskRuntime
+	Sources             SourceRepositoryReader
 }
 
 type DeclarativeService struct {
-	delivery    DeliveryTaskReader
-	agents      func(domaincluster.Connection) (ManifestRuntime, error)
-	deliveryGit DeliveryGitReader
-	base        *Service
-	repository  DeclarativeRepository
-	renderer    ManifestRenderer
-	direct      ManifestRuntime
-	git         ManifestRuntime
-	tasks       ManifestTaskRuntime
-	sources     SourceRepositoryReader
+	templateMigrations interface {
+		ServiceTemplateMigrationRequired(context.Context, string, string) (bool, error)
+	}
+	executionPrincipals ExecutionPrincipalReader
+	importedRoots       ImportedRootAdmission
+	rootResources       RootResourceReader
+	delivery            DeliveryTaskReader
+	agents              func(domaincluster.Connection) (ManifestRuntime, error)
+	deliveryGit         DeliveryGitReader
+	base                *Service
+	repository          DeclarativeRepository
+	renderer            ManifestRenderer
+	direct              ManifestRuntime
+	git                 ManifestRuntime
+	tasks               ManifestTaskRuntime
+	sources             SourceRepositoryReader
 }
 
 func NewDeclarative(base *Service, repository DeclarativeRepository, runtime ...DeclarativeRuntimeDependencies) *DeclarativeService {
 	service := &DeclarativeService{base: base, repository: repository}
 	if len(runtime) > 0 {
+		service.templateMigrations = runtime[0].TemplateMigrations
+		service.executionPrincipals = runtime[0].ExecutionPrincipals
+		service.importedRoots = runtime[0].ImportedRoots
+		service.rootResources = runtime[0].RootResources
 		service.delivery = runtime[0].Delivery
 		service.agents = runtime[0].Agents
 		service.deliveryGit = runtime[0].DeliveryGit
@@ -211,6 +228,7 @@ func (s *DeclarativeService) UpdateBinding(ctx context.Context, principal domain
 	if input.ExpectedVersion < 1 {
 		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("%w: expectedVersion must be positive", apperrors.ErrInvalidArgument)
 	}
+	binding.TemplateSelection = existing.TemplateSelection
 	if err := s.validateBinding(ctx, principal, domainaccess.ActionUpdate, item, app, &binding); err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
 	}
@@ -260,7 +278,16 @@ func (s *DeclarativeService) ListDeployments(ctx context.Context, principal doma
 		return domainmanifest.DeploymentPage{}, err
 	}
 	filter.ApplicationIDs = applicationIDs
-	return s.repository.ListDeployments(ctx, filter)
+	page, err := s.repository.ListDeployments(ctx, filter)
+	if err != nil {
+		return page, err
+	}
+	for _, deployment := range page.Items {
+		if err = s.authorizeRootDeploymentRead(ctx, principal, deployment); err != nil {
+			return domainmanifest.DeploymentPage{}, err
+		}
+	}
+	return page, nil
 }
 
 func (s *DeclarativeService) GetDeployment(ctx context.Context, principal domainidentity.Principal, deploymentID string) (domainmanifest.Deployment, error) {
@@ -274,30 +301,33 @@ func (s *DeclarativeService) GetDeployment(ctx context.Context, principal domain
 	if _, err := s.base.Get(ctx, principal, item.PackageID); err != nil {
 		return domainmanifest.Deployment{}, err
 	}
+	if err := s.authorizeRootDeploymentRead(ctx, principal, item); err != nil {
+		return domainmanifest.Deployment{}, err
+	}
 	return item, nil
 }
 
-func (s *DeclarativeService) bindingPackage(ctx context.Context, principal domainidentity.Principal, packageID string, action domainaccess.Action) (domainmanifest.Package, domainapp.App, error) {
+func (s *DeclarativeService) bindingPackage(ctx context.Context, principal domainidentity.Principal, packageID string, action domainaccess.Action, permissionKeys ...string) (domainmanifest.Package, domainapp.App, error) {
 	item, err := s.base.get(ctx, packageID)
 	if err != nil {
 		return domainmanifest.Package{}, domainapp.App{}, err
 	}
-	app, err := s.base.authorizePackage(ctx, principal, action, item)
+	app, err := s.base.authorizePackage(ctx, principal, action, item, permissionKeys...)
 	return item, app, err
 }
 
-func (s *DeclarativeService) validateBinding(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package, app domainapp.App, binding *domainmanifest.EnvironmentBinding) error {
+func (s *DeclarativeService) validateBinding(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package, app domainapp.App, binding *domainmanifest.EnvironmentBinding, permissionKeys ...string) error {
 	legacy := domainmanifest.Binding{
 		ID: binding.ID, ApplicationEnvironmentID: binding.ApplicationEnvironmentID,
 		ClusterID: binding.ClusterID, Namespace: binding.Namespace, Overlay: binding.Overlay,
 		Kustomize: binding.Kustomize,
 	}
 	item.Bindings = []domainmanifest.Binding{legacy}
-	if err := s.base.validateBindings(ctx, principal, action, &item, app); err != nil {
+	if err := s.base.validateBindings(ctx, principal, action, &item, app, permissionKeys...); err != nil {
 		return err
 	}
 	binding.EnvironmentKey = item.Bindings[0].EnvironmentKey
-	return s.base.validateTemplateParameters(ctx, principal, item, binding.TemplateParameters)
+	return s.base.validateSelectedTemplateParameters(ctx, principal, item, binding.TemplateParameters, binding.TemplateSelection)
 }
 
 func normalizeSourceInput(input domainmanifest.SourceInput) (domainmanifest.SourceInput, error) {

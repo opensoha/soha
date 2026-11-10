@@ -46,7 +46,11 @@ func (s *Service) groundedProviderMessages(ctx context.Context, principal domain
 }
 
 func (s *Service) groundedProviderContext(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, history []domaincopilot.Message, current domaincopilot.Message, locale string) ([]chatProviderMessage, map[string]any, chatContextLineage, error) {
-	history, excluded, sources := s.groundedHistorySelections(ctx, principal, history)
+	memoryMode := "chat"
+	if isPersonalSession(session) {
+		memoryMode = "heya"
+	}
+	history, excluded, sources := s.groundedTurnHistorySelections(ctx, principal, history, session.ID, memoryMode)
 	messages, lineage := buildProviderChatMessages(history, current, locale)
 	lineage.ExcludedMessages = append(excluded, lineage.ExcludedMessages...)
 	envelope, err := s.buildChatContext(ctx, principal, session.ID, metadata, current.Content)
@@ -60,14 +64,44 @@ func (s *Service) groundedProviderContext(ctx context.Context, principal domaini
 		}
 	}
 	envelope, err = inheritChatHistoryCitations(ctx, principal, session.ID, current.Content, envelope, inherited)
-	if err != nil || envelope == nil {
+	if err != nil {
+		return messages, nil, lineage, err
+	}
+	if envelope == nil {
+		seed, e := NewContextBuilder(nil, nil).BuildForCopilot(ctx, principal, domaincopilot.ContextBuildInput{SessionID: session.ID, Task: domaincopilot.ContextTask{Mode: "general", Goal: current.Content}})
+		if e != nil {
+			return messages, nil, lineage, e
+		}
+		envelope = &seed
+	}
+	if err := s.RecallChatMemory(ctx, principal, envelope, memoryMode, current.Content); err != nil {
+		envelope.Truncations = append(envelope.Truncations, "memory_unavailable")
+	}
+	historyIDs := make([]string, 0, len(history))
+	for _, message := range history {
+		if chatHistoryExclusionReason(message, current.ID) == "" {
+			historyIDs = append(historyIDs, message.ID)
+		}
+	}
+	if envelope.Session.Summary != "" {
+		historyIDs = append(historyIDs, agentPrincipalStringList(metadata.PinnedContext["summarySourceMessageIds"])...)
+	}
+	receipts, err := s.MemoryShareReceiptsForTurn(ctx, principal, envelope, memoryMode, current.ID, historyIDs)
+	if err != nil {
+		return messages, nil, lineage, err
+	}
+	if err := sealContextEnvelope(envelope); err != nil {
 		return messages, nil, lineage, err
 	}
 	if len(envelope.Evidence) > 0 || envelope.Session.Summary != "" {
 		messages = append([]chatProviderMessage{contextEvidenceSystemMessage(*envelope)}, messages...)
 	}
 	lineage.Summary = chatSummarySources(metadata, *envelope)
-	return messages, contextSnapshot(*envelope), lineage, nil
+	snapshot := contextSnapshot(*envelope)
+	if len(receipts) > 0 {
+		snapshot["_sohaMemoryShareReceipts"] = receipts
+	}
+	return messages, snapshot, lineage, nil
 }
 
 // Preserve source withdrawal checks on answers derived from authorized history,
@@ -201,4 +235,21 @@ func withChatBranchReference(metadata domaincopilot.SessionMetadata) (domaincopi
 		metadata.RequestContext = &selection
 	}
 	return metadata, nil
+}
+
+// A missing sharing receipt withholds only the affected historical answer; it
+// never turns an ordinary new question into a failed chat request.
+func (s *Service) groundedTurnHistorySelections(ctx context.Context, principal domainidentity.Principal, history []domaincopilot.Message, sessionID, mode string) ([]domaincopilot.Message, []chatContextExclusion, map[string][]domainknowledge.Citation) {
+	visible, excluded, sources := s.groundedHistorySelections(ctx, principal, history)
+	accepted := make([]domaincopilot.Message, 0, len(visible))
+	for _, message := range visible {
+		envelope := &domaincopilot.ContextEnvelope{SessionID: sessionID, Citations: sources[message.ID]}
+		if err := s.ValidateChatMemoryScopeForTurn(ctx, principal, envelope, mode, "", []string{message.ID}); err != nil {
+			excluded = append(excluded, chatContextExclusion{MessageID: message.ID, Reason: "memory_scope_unavailable"})
+			delete(sources, message.ID)
+			continue
+		}
+		accepted = append(accepted, message)
+	}
+	return accepted, excluded, sources
 }

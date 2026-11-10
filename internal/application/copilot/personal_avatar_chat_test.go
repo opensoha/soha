@@ -53,7 +53,7 @@ func TestAssistantAppearanceChatLifecycle(t *testing.T) {
 	source := personalAvatarPNG(t, 2)
 	raw, _ := base64.StdEncoding.DecodeString(strings.Split(source, ",")[1])
 	invoker := &appearanceImageTestInvoker{image: raw}
-	s.workbenchInvoker = invoker
+	s.runtime.Image = invoker
 	input := domain.WorkbenchSendMessageInput{Content: "把虚拟形象改成白色小机器人", RequestID: "appearance-once", AssistantTask: &domain.WorkbenchAssistantTask{Kind: "avatar"}}
 	result, err := s.StreamMessage(t.Context(), user, repo.session.ID, input, "zh-CN")
 	if err != nil || len(result.Envelope.Messages) != 2 || result.Envelope.Messages[1].Metadata["assistantProfileUpdated"] != true || repo.assistants[user.UserID].AvatarURL == "" {

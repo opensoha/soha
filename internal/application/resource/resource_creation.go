@@ -47,12 +47,17 @@ func (s *ResourceCreation) PreflightCreate(ctx context.Context, principal domain
 	if err := s.authorizeResourceCreationEntry(ctx, principal, request.Source); err != nil {
 		return domainresource.ResourceCreatePreflight{}, err
 	}
-	_, manifests, err := s.resolveCreateManifests(ctx, clusterID, request.Content)
+	preflight, _, _, err := s.preflightCreate(ctx, principal, clusterID, request)
+	return preflight, err
+}
+
+func (s *ResourceCreation) preflightCreate(ctx context.Context, principal domainidentity.Principal, clusterID string, request domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, domaincluster.Connection, []domainresource.ResolvedCreateManifest, error) {
+	connection, manifests, err := s.resolveCreateManifests(ctx, principal, clusterID, request)
 	if err != nil {
-		return domainresource.ResourceCreatePreflight{}, err
+		return domainresource.ResourceCreatePreflight{}, connection, nil, err
 	}
 	if isScopedResourceCreateSource(request.Source) && len(manifests) != 1 {
-		return domainresource.ResourceCreatePreflight{}, fmt.Errorf("%w: multi_document_not_allowed: list creation accepts exactly one document", apperrors.ErrInvalidArgument)
+		return domainresource.ResourceCreatePreflight{}, connection, nil, fmt.Errorf("%w: multi_document_not_allowed: list creation accepts exactly one document", apperrors.ErrInvalidArgument)
 	}
 	result := domainresource.ResourceCreatePreflight{
 		Ready:       true,
@@ -75,7 +80,7 @@ func (s *ResourceCreation) PreflightCreate(ctx context.Context, principal domain
 		}
 		result.Documents = append(result.Documents, document)
 	}
-	return result, nil
+	return result, connection, manifests, nil
 }
 
 func resourceCreateIdentity(ref domainresource.ResourceCreateRef) string {
@@ -97,7 +102,7 @@ func (s *ResourceCreation) preflightDocument(ctx context.Context, principal doma
 		return failCreateDocument(document, createErrorCode(err), err)
 	}
 	resourceGroup := resourceGroupForResolvedResource(manifest.Group, manifest.Resource, manifest.Ref.Kind)
-	connection, decision, err := s.authorizeResourceGroup(ctx, principal, clusterID, manifest.Ref.Namespace, resourceGroup, manifest.Ref.Kind, domainaccess.ActionCreate)
+	connection, decision, err := s.authorizeResolvedResourceCreate(ctx, principal, clusterID, resourceGroup, manifest)
 	if connection.Summary.ID != "" {
 		document.Capability = resourceCreateCapability(connection)
 	}
@@ -164,16 +169,12 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	} else if found {
 		return existing, nil
 	}
-	preflight, err := s.PreflightCreate(ctx, principal, clusterID, request)
+	preflight, connection, manifests, err := s.preflightCreate(ctx, principal, clusterID, request)
 	if err != nil {
 		return domainresource.ResourceCreateExecution{}, err
 	}
 	if !preflight.Ready {
 		return executionFromRejectedPreflight(preflight), preflightRejectionError(preflight)
-	}
-	connection, manifests, err := s.resolveCreateManifests(ctx, clusterID, request.Content)
-	if err != nil {
-		return domainresource.ResourceCreateExecution{}, err
 	}
 	if err := resolveCreateManifestTargets(manifests, request); err != nil {
 		return domainresource.ResourceCreateExecution{}, err
@@ -186,8 +187,13 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	for index, manifest := range manifests {
 		result.Documents[index] = domainresource.ResourceCreateExecutionDocument{Index: manifest.Index, Resource: manifest.Ref, Status: "not_started", DocumentHash: manifest.ContentHash}
 	}
-	if request.RequestID != "" && s.batches != nil {
-		claim, claimErr := s.batches.Claim(ctx, principal.UserID, clusterID, request.RequestID, result.ContentHash, result.Documents)
+	if s.batches != nil {
+		key := request.RequestID
+		if key == "" {
+			// Legacy list creates still need a durable receipt before the Kubernetes write.
+			key = operationID
+		}
+		claim, claimErr := s.batches.Claim(ctx, principal.UserID, clusterID, key, result.ContentHash, result.Documents)
 		if claimErr != nil {
 			return domainresource.ResourceCreateExecution{}, claimErr
 		}
@@ -275,7 +281,7 @@ func (s *ResourceCreation) findExistingCreateBatch(ctx context.Context, principa
 	return executionFromResourceCreateBatch(batch), true, nil
 }
 
-func (s *ResourceCreation) resolveCreateManifests(ctx context.Context, clusterID, content string) (domaincluster.Connection, []domainresource.ResolvedCreateManifest, error) {
+func (s *ResourceCreation) resolveCreateManifests(ctx context.Context, principal domainidentity.Principal, clusterID string, request domainresource.ResourceCreateRequest) (domaincluster.Connection, []domainresource.ResolvedCreateManifest, error) {
 	connection, err := s.loadConnection(ctx, clusterID)
 	if err != nil {
 		return domaincluster.Connection{}, nil, err
@@ -292,14 +298,65 @@ func (s *ResourceCreation) resolveCreateManifests(ctx context.Context, clusterID
 		if err != nil {
 			return connection, nil, err
 		}
-		manifests, err := client.ResolveCreateManifests(ctx, content, domainresource.ResourceCreateMaxDocuments)
+		manifests, err := client.ResolveCreateManifests(ctx, request.Content, domainresource.ResourceCreateMaxDocuments, func(ctx context.Context, apiVersion, kind, namespace string) error {
+			return s.authorizeCustomCreateDiscovery(ctx, principal, clusterID, request, apiVersion, kind, namespace)
+		})
 		return connection, manifests, err
 	}
 	if s.direct == nil {
 		return connection, nil, fmt.Errorf("%w: direct resource creation adapter is not configured", apperrors.ErrClusterUnready)
 	}
-	manifests, err := s.direct.ResolveCreateManifests(ctx, clusterID, content, domainresource.ResourceCreateMaxDocuments)
+	manifests, err := s.direct.ResolveCreateManifests(ctx, clusterID, request.Content, domainresource.ResourceCreateMaxDocuments)
 	return connection, manifests, err
+}
+
+const customResourceCreatePermission = "platform.extensions.custom-resources.create"
+
+func (s *ResourceCreation) authorizeResolvedResourceCreate(ctx context.Context, principal domainidentity.Principal, clusterID, resourceGroup string, manifest domainresource.ResolvedCreateManifest) (domaincluster.Connection, domainaccess.Decision, error) {
+	if resourceGroup != "extensions" || (manifest.Group == "apiextensions.k8s.io" && manifest.Resource == "customresourcedefinitions") {
+		return s.authorizeResourceGroup(ctx, principal, clusterID, manifest.Ref.Namespace, resourceGroup, manifest.Ref.Kind, domainaccess.ActionCreate)
+	}
+	connection, decision, err := s.decideWithPermission(ctx, principal, clusterID, manifest.Ref.Namespace, resourceGroup, manifest.Ref.Kind, domainaccess.ActionCreate, customResourceCreatePermission)
+	if err == nil && (!decision.Allowed || (!manifest.Ref.Namespaced && !clusterWideResourceScope(decision))) {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, manifest.Ref.Namespace, manifest.Ref.Kind, manifest.Ref.Name, string(domainaccess.ActionCreate), "deny", decision.Reason)
+		err = apperrors.ErrAccessDenied
+	}
+	return connection, decision, err
+}
+
+// The Agent's discovery list is privileged. Check the concrete manifest kind
+// before any remote discovery, then check its resolved GVR and scope again.
+func (s *ResourceCreation) authorizeCustomCreateDiscovery(ctx context.Context, principal domainidentity.Principal, clusterID string, request domainresource.ResourceCreateRequest, apiVersion, kind, namespace string) error {
+	ref := domainresource.ResourceCreateRef{APIVersion: apiVersion, Kind: kind, Namespace: namespace}
+	if err := validateCreateTarget(ref, request, "extensions"); err != nil {
+		return err
+	}
+	// An explicit target denial must not fall through to an unrestricted lookup.
+	// With no named target, only a cluster-wide grant can authorize discovery.
+	if strings.TrimSpace(namespace) != "" || request.DefaultNamespace != "" {
+		ref.Namespaced = true
+		if _, err := resolveCreateTargetNamespace(&ref, request); err != nil {
+			return err
+		}
+		connection, decision, err := s.decideWithPermission(ctx, principal, clusterID, ref.Namespace, "extensions", kind, domainaccess.ActionCreate, customResourceCreatePermission)
+		if err != nil {
+			return err
+		}
+		if !decision.Allowed {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, ref.Namespace, kind, "", string(domainaccess.ActionCreate), "deny", decision.Reason)
+			return apperrors.ErrAccessDenied
+		}
+		return nil
+	}
+	connection, decision, err := s.decideWithPermission(ctx, principal, clusterID, "", "extensions", kind, domainaccess.ActionCreate, customResourceCreatePermission)
+	if err != nil {
+		return err
+	}
+	if !clusterWideResourceScope(decision) {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, "", string(domainaccess.ActionCreate), "deny", decision.Reason)
+		return apperrors.ErrAccessDenied
+	}
+	return nil
 }
 
 func (s *ResourceCreation) dryRunCreateManifest(ctx context.Context, connection domaincluster.Connection, clusterID string, manifest domainresource.ResolvedCreateManifest) error {
@@ -395,20 +452,30 @@ func normalizeResourceCreateRequest(request domainresource.ResourceCreateRequest
 	return request, nil
 }
 
-func resolveManifestTarget(manifest *domainresource.ResolvedCreateManifest, request domainresource.ResourceCreateRequest) ([]domainresource.ResourceCreateWarning, error) {
-	if request.ExpectedKind != "" && !strings.EqualFold(request.ExpectedKind, manifest.Ref.Kind) {
-		return nil, fmt.Errorf("%w: resource_kind_mismatch: manifest kind %s does not match %s", apperrors.ErrInvalidArgument, manifest.Ref.Kind, request.ExpectedKind)
+func validateCreateTarget(ref domainresource.ResourceCreateRef, request domainresource.ResourceCreateRequest, resolvedGroup string) error {
+	if request.ExpectedKind != "" && !strings.EqualFold(request.ExpectedKind, ref.Kind) {
+		return fmt.Errorf("%w: resource_kind_mismatch: manifest kind %s does not match %s", apperrors.ErrInvalidArgument, ref.Kind, request.ExpectedKind)
 	}
-	if request.ExpectedAPIVersion != "" && request.ExpectedAPIVersion != manifest.Ref.APIVersion {
-		return nil, fmt.Errorf("%w: resource_kind_mismatch: manifest apiVersion %s does not match %s", apperrors.ErrInvalidArgument, manifest.Ref.APIVersion, request.ExpectedAPIVersion)
+	if request.ExpectedAPIVersion != "" && request.ExpectedAPIVersion != ref.APIVersion {
+		return fmt.Errorf("%w: resource_kind_mismatch: manifest apiVersion %s does not match %s", apperrors.ErrInvalidArgument, ref.APIVersion, request.ExpectedAPIVersion)
 	}
-	resolvedGroup := resourceGroupForResolvedResource(manifest.Group, manifest.Resource, manifest.Ref.Kind)
 	if request.ResourceGroup != "" && !strings.EqualFold(request.ResourceGroup, resolvedGroup) {
-		return nil, fmt.Errorf("%w: resource_kind_mismatch: manifest resource group %s does not match %s", apperrors.ErrInvalidArgument, resolvedGroup, request.ResourceGroup)
+		return fmt.Errorf("%w: resource_kind_mismatch: manifest resource group %s does not match %s", apperrors.ErrInvalidArgument, resolvedGroup, request.ResourceGroup)
 	}
-	explicitNamespace := strings.TrimSpace(manifest.Ref.Namespace)
-	if !manifest.Ref.Namespaced {
-		manifest.Ref.Namespace = ""
+	return nil
+}
+
+func resolveManifestTarget(manifest *domainresource.ResolvedCreateManifest, request domainresource.ResourceCreateRequest) ([]domainresource.ResourceCreateWarning, error) {
+	if err := validateCreateTarget(manifest.Ref, request, resourceGroupForResolvedResource(manifest.Group, manifest.Resource, manifest.Ref.Kind)); err != nil {
+		return nil, err
+	}
+	return resolveCreateTargetNamespace(&manifest.Ref, request)
+}
+
+func resolveCreateTargetNamespace(ref *domainresource.ResourceCreateRef, request domainresource.ResourceCreateRequest) ([]domainresource.ResourceCreateWarning, error) {
+	explicitNamespace := strings.TrimSpace(ref.Namespace)
+	if !ref.Namespaced {
+		ref.Namespace = ""
 		if explicitNamespace == "" {
 			return nil, nil
 		}
@@ -423,17 +490,17 @@ func resolveManifestTarget(manifest *domainresource.ResolvedCreateManifest, requ
 		if explicitNamespace != "" && explicitNamespace != request.DefaultNamespace {
 			return nil, fmt.Errorf("%w: namespace_mismatch: manifest namespace %s does not match list namespace %s", apperrors.ErrAccessDenied, explicitNamespace, request.DefaultNamespace)
 		}
-		manifest.Ref.Namespace = request.DefaultNamespace
+		ref.Namespace = request.DefaultNamespace
 		return nil, nil
 	}
 	if explicitNamespace != "" {
-		manifest.Ref.Namespace = explicitNamespace
+		ref.Namespace = explicitNamespace
 		return nil, nil
 	}
 	if request.DefaultNamespace == "" {
 		return nil, fmt.Errorf("%w: namespace_required: manifest or default namespace is required", apperrors.ErrInvalidArgument)
 	}
-	manifest.Ref.Namespace = request.DefaultNamespace
+	ref.Namespace = request.DefaultNamespace
 	return nil, nil
 }
 
