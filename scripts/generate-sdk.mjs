@@ -245,6 +245,8 @@ const (
   // oapi-codegen changes enum prefixes when another schema introduces the same
   // value. Preserve both published spellings without redeclaring generated ones.
   for (const [typeName, values] of [
+    ["IdentityProviderUserMetadataProtocol", [["OIDC", "oidc"], ["Proxy", "proxy"], ["Saml", "saml"]]],
+    ["PersonalEnvironmentTemplateMode", [["ObserveOnly", "observe-only"], ["RestrictedWrite", "restricted-write"]]],
     ["PersonalGuestRuntimeInputKind", [["Browser", "browser"], ["Docker", "docker"], ["Execute", "execute"], ["FileRead", "file_read"], ["FileWrite", "file_write"]]],
     ["ExportDeliveryDocumentParamsFormat", [["JSON", "json"], ["Yaml", "yaml"]]],
     ["DeliveryDraftServiceServiceKind", [["ExternalService", "external_service"], ["HelmRelease", "helm_release"], ["Job", "job"], ["KubernetesWorkload", "kubernetes_workload"]]],
@@ -322,6 +324,13 @@ async function writeGoCompatibilitySpec() {
 
 function applyGoCompatibility(spec) {
   const schemas = spec?.components?.schemas ?? {};
+
+  // Keep Rejected available for the published PersonalAgentAccessDecisionStatus.
+  schemas.WorkflowRequestReceipt.properties.submissionStatus["x-enum-varnames"] = [
+    "WorkflowRequestReceiptSubmissionStatusAccepted",
+    "WorkflowRequestReceiptSubmissionStatusUnknown",
+    "WorkflowRequestReceiptSubmissionStatusRejected",
+  ];
 
   // Keep the published full-input request-body alias and its string Content.
   // Partial HTTP updates have a separate schema used explicitly by new consumers.

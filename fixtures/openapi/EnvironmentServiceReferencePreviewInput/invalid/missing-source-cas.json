@@ -1,0 +1,5 @@
+{
+  "serviceId": "svc-api",
+  "sourceApplicationEnvironmentId": "test-b",
+  "expectedConsumerUpdatedAt": "2026-10-26T08:00:00Z"
+}

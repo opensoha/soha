@@ -206,6 +206,23 @@ reviewed pin after they are committed.
 Use `--dry-run` to inspect the discovered commands without executing consumer
 builds.
 
+## Execution task callback credentials
+
+`ExecutionTask.callbackToken` is a callback capability, not ordinary task-view data.
+Normal task list/get and application, environment, runtime and release-board read
+views return the fixed non-secret string `[redacted]` when a callback is configured.
+This preserves the existing SDK string shape and configured-callback presence
+signal; the marker cannot be submitted as a callback credential. Historical empty
+values remain empty. Only authenticated runner claim/status paths return the real
+credential needed by that runner. Internal execution and callback validation keep
+the original value; task-view or configuration-secret read permission does not
+grant it.
+
+This documents the security projection within the existing v0.1.26 field shape.
+It adds no schema fields or SDK types and does not change the runner protocol.
+Clients must obtain runner credentials through the authorized runner flow rather
+than copying them from a user-facing task read.
+
 ## Compatibility Policy
 
 See [COMPATIBILITY.md](./COMPATIBILITY.md) for the versioning, compatibility,
@@ -296,6 +313,9 @@ rendered manifests plus hooks to 2 MiB and values to 1 MiB, and are never logged
 ### Controller-aware Agent execution
 
 Manifest tasks emitted by the controller-aware Core use `manifest_agent_v3.<clusterId>` and require the Agent summary capability `manifest.execution.v3`. New Agents also accept legacy `manifest_agent.<clusterId>` and `manifest_agent_v2.<clusterId>` tasks using the protected executor. Old Agents cannot claim the new provider kind; capability checks alone are not a substitute for this claim boundary during rolling upgrades.
+
+Plan-bound Manifest tasks additionally use `manifest_delivery_v1.<existingProvider>` and require `manifest.delivery-admission.v1`. Core validates the durable private operation and current Plan authority on every claim, then supplies `X-Soha-Manifest-Admission-Version: 1` in that claim response. Agent runners must reject a protected task without that exact response confirmation, including when polling an older Core with general runner credentials. A payload or a later task read is not admission proof. Direct providers remain local-only; protected Agent providers require the cluster Agent token. No fallback to an older provider is permitted. Known old application Plan tasks with `fieldManager` beginning `opensoha-manifest/` or a nonempty `initializationPlanId` are rejected on legacy providers, even with a header. These markers only deny execution; they never reconstruct or authorize Plan identity. Existing initialization and root-CR identity rules still apply to the underlying provider. These wire additions use existing SDK task and HTTP client APIs and remain source-compatible with SDK v0.1.26.
+
 
 Native YAML/CR writes and workload restart, scale, rollback and image changes use the existing request/response bodies under `/api/v1/platform/ownership-v2`, with the original route suffix. This endpoint family guarantees live external-owner checks for Operator, Argo CD, and Argo Rollouts resources and optimistic identity fencing; ownership conflicts return HTTP 409. Core must not fall back to older mutations after 404/405. Reads retain their existing routes.
 

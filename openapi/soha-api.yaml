@@ -2840,6 +2840,30 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /application-environments/imports/mapped:
+    post:
+      tags: [Delivery]
+      operationId: importMappedKubernetesServices
+      description: Explicit logical service mapping. Use this endpoint when any item has serviceId; older servers return 404 instead of silently creating services. Requires at least one existing serviceId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KubernetesServiceImportRequest"
+      responses:
+        "200":
+          description: Idempotent Kubernetes service import result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesServiceImportResultEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /application-environments/helm-release-imports:
     post:
       tags: [ Delivery ]
@@ -2862,6 +2886,374 @@ paths:
         "403":
           $ref: "#/components/responses/Error"
         "409":
+          $ref: "#/components/responses/Error"
+  /application-environments/helm-release-imports/mapped:
+    post:
+      tags: [Delivery]
+      operationId: importMappedHelmReleases
+      description: Explicit logical service mapping. Use this endpoint when any item has serviceId; older servers return 404 instead of silently creating services. Requires at least one existing serviceId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelmReleaseImportRequest"
+      responses:
+        "200":
+          description: Idempotent Helm release import result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelmReleaseImportResultEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-reference-previews:
+    post:
+      tags: [Delivery]
+      operationId: previewEnvironmentServiceReference
+      description: Read-only preflight for a direct same-application, same-service, same-tier source. Requires consumer environment update, service update, source environment view and each actual source resource read permission. Returns the complete atomic source target set and current local target IDs without creating a reference, changing deployment control, executing a Plan or proving network reachability. Omitted sourceTargetIds selects the complete set; an explicit selection must equal that set. Revalidate all revisions and permissions when references are eventually saved; this response is not a write or stream ticket.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentServiceReferencePreviewInput"
+      responses:
+        "200":
+          description: Authorized source identity preview. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferencePreviewEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-reference-candidates:
+    get:
+      tags: [Delivery]
+      operationId: listEnvironmentServiceReferenceCandidates
+      description: Paginated metadata for inactive candidates in the authorized consumer configuration. Requires consumer environment view/update and application view, but not source access, so unavailable candidates can be safely cleaned after a cold open. Returns only candidate/service identity, edit revision and timestamps; never source IDs, locations, digests or previews. This is not a list or count of active source consumers.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - in: query
+          name: cursor
+          description: Last service ID from the preceding page.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Consumer-owned metadata only. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceCandidatePage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-reference-candidates/{serviceID}:
+    get:
+      tags: [Delivery]
+      operationId: getEnvironmentServiceReferenceCandidate
+      description: Reload an inactive configuration candidate after current source authorization and identity checks. Requires the same configuration permissions as source previews. Source configuration changes return outdated; identity or permission failures never fall back to cached source data.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      responses:
+        "200":
+          description: Inactive candidate, never an active environment association. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Delivery]
+      operationId: putEnvironmentServiceReferenceCandidate
+      description: Save an inactive configuration candidate after a fresh authorized source preview and transactional context revalidation. Does not create an active reference, change local targets or publication control, execute a Plan, or grant source/stream access. Revision zero creates; updates require both candidate ID and revision to reject delete-and-recreate ABA.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateInput"
+      responses:
+        "200":
+          description: Inactive candidate, never an active environment association. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Delivery]
+      operationId: deleteEnvironmentServiceReferenceCandidate
+      description: Delete only the inactive candidate, using consumer view/update permission and binding/candidate CAS. No source permission is needed for cleanup after source deletion or revocation. Does not delete or modify source resources.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateDeleteInput"
+      responses:
+        "204":
+          description: Candidate deleted; Cache-Control no-store.
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-references:
+    get:
+      tags: [Delivery]
+      operationId: listEnvironmentServiceReferences
+      description: Paginate only active reference metadata owned by the consumer. Requires consumer environment view/update and application view, without source access, for safe cleanup after a cold open. No source content or global counts are returned. All success and error responses use Cache-Control no-store.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - in: query
+          name: cursor
+          description: Last service ID from the preceding page.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Authorized result. No cached source data.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferencePage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-references/{serviceID}:
+    get:
+      tags: [Delivery]
+      operationId: getEnvironmentServiceReference
+      description: Read the active reference with current consumer environment view, service view, corresponding source view and actual source resource read permissions; consumer update is not required. Freshly validate source UIDs, identity and publication control. Ordinary configuration versions may refresh the preview. Identity/control drift or denied access fails without falling back to cached source data. This grants no write or stream access. All success and error responses use Cache-Control no-store.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      responses:
+        "200":
+          description: Authorized result. No cached source data.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Delivery]
+      operationId: putEnvironmentServiceReference
+      description: Activate or explicitly rebind using the saved candidate and its complete atomic source target group, never caller-supplied source, targets, ownership or force. Require current consumer view/update, service update, source view and each actual source resource read permission. In one transaction revalidate consumer/source updatedAt, fresh source digest and UIDs, current permissions, candidate ID/revision and reference ID/revision against ABA. The source must directly own the same application/service in the same tier; reference-to-reference chains are forbidden. Existing consumer-owned targets for this service cause conflict and are never implicitly removed. Reject mutations while a source publication is executing, preserving the claimed Plan impact. Revision zero creates; updates require expectedReferenceId. All success and error responses use Cache-Control no-store.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentServiceReferenceInput"
+      responses:
+        "200":
+          description: Authorized result. No cached source data.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Delivery]
+      operationId: deleteEnvironmentServiceReference
+      description: Safely detach only the active reference after current consumer environment view/update, consumer updatedAt and reference ID/revision CAS. Source revocation or absence does not block cleanup. A source publication currently executing still returns conflict. Do not modify the source, owned targets or actual resources. All success and error responses use Cache-Control no-store.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentServiceReferenceDeleteInput"
+      responses:
+        "204":
+          description: Reference detached without modifying source or targets.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-references/{serviceID}/targets/{targetID}:
+    get:
+      tags: [Delivery]
+      operationId: resolveEnvironmentServiceReferenceTarget
+      description: Resolve a referenced target identity after current reference ID/revision CAS, fresh source UID validation and both consumer and source view/service/resource read authorization. The view scope is the consumer and origin scope is the direct owned source. This is identity resolution only and grants no YAML, logs, terminal or stream authorization. All success and error responses use Cache-Control no-store.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+        - in: path
+          name: targetID
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - in: query
+          name: expectedReferenceId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - in: query
+          name: expectedRevision
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Authorized result. No cached source data.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceResolvedTarget"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-reference-consumers:
+    get:
+      tags: [Delivery]
+      operationId: listEnvironmentServiceReferenceConsumers
+      description: List current consumers of the source service with source environment view and service view. Filter every consumer using its current view permissions before pagination. Only visible reference IDs may become cursors. hasRestrictedConsumers signals omitted consumers without exposing their count or identity. Server-side governance uses the complete private set independently of this caller-visible page. All success and error responses use Cache-Control no-store.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - in: query
+          name: serviceId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - in: query
+          name: cursor
+          description: Last visible reference ID from the preceding page; never a hidden reference ID.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Authorized result. No cached source data.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceConsumerPage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
           $ref: "#/components/responses/Error"
   /application-environments/{applicationEnvironmentID}:
     get:
@@ -2914,6 +3306,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OperationStatus"
+        "404":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/configuration:
+    put:
+      tags: [Delivery]
+      operationId: updateApplicationEnvironmentConfiguration
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+      description: Configuration-only update. Requires expectedUpdatedAt and omission of targets; existing targets and their actual locations are preserved. Older servers return 404; clients must not fall back to the replacement endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ApplicationEnvironmentInput"
+                - type: object
+                  required: [expectedUpdatedAt]
+                  not: { required: [targets] }
+      responses:
+        "200":
+          description: Updated application environment binding.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationEnvironmentEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
   /application-environments/{applicationEnvironmentID}/detail:
@@ -5227,6 +5647,40 @@ paths:
                 $ref: "#/components/schemas/DeliveryPlanEnvelope"
         "404":
           $ref: "#/components/responses/Error"
+  /delivery/plans/{planID}/service-reference-impact:
+    get:
+      tags: [Delivery]
+      operationId: getDeliveryPlanServiceReferenceImpact
+      description: Read service-reference impact with current Plan/source read permissions and per-consumer view filtering. revision is the server-frozen complete-set digest and currentRevision is the current complete-set digest; the public page always lists current visible consumers. A changed set makes isCurrent false and requires a new Plan preflight. Never expose the private complete snapshot, hidden IDs or hidden counts. Approval and execution permissions remain independent. A known application Plan without its required stored snapshot must fail closed rather than fabricate an empty set; standalone Manifest Plans retain their existing compatibility. All success and error responses use Cache-Control no-store.
+      parameters:
+        - $ref: "#/components/parameters/PlanID"
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - in: query
+          name: cursor
+          description: Last visible reference ID from the preceding page; never a hidden reference ID.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Authorized result. No cached source data.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryPlanServiceReferenceImpact"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
   /delivery/plans/{planID}/approval:
     post:
       tags: [ Delivery ]
@@ -5582,7 +6036,26 @@ paths:
     post:
       tags: [ Runner ]
       operationId: claimExecutionTask
-      description: Claims one task from the authorized subset of requested providers. Local Direct providers are never available over HTTP. Helm Agent providers require the target cluster Agent token; general runner credentials alone do not grant access to confidential Helm inputs.
+      description: >-
+        Claims one task from the authorized subset of requested providers. Local Direct
+        providers are never available over HTTP. Helm Agent and manifest_delivery_v1.
+        providers require the target cluster Agent token; general runner credentials
+        alone do not grant access. Plan-bound Manifest providers prepend
+        manifest_delivery_v1. to the existing Direct, initialization or Agent provider.
+        They require Agent capability manifest.delivery-admission.v1 and fresh Core
+        admission against the durable operation, current publisher, target, policy and
+        approved Plan on every claim and retry. Runners must require the response header
+        X-Soha-Manifest-Admission-Version with the single value 1 before executing such
+        a task. Missing or different confirmation fails the task without Kubernetes
+        execution. A task payload or a status read cannot supply this confirmation.
+        Older providers retain their existing semantics; protected tasks must never
+        fall back to them during mixed-version operation.
+        Known legacy application Plan tasks (fieldManager beginning with
+        opensoha-manifest/ or a nonempty initializationPlanId) must be rejected
+        when returned with a legacy provider, even if a response contains the header.
+        These markers are rejection hints only and cannot reconstruct or grant
+        publication identity. Unassociated standalone Manifest tasks and read-only
+        Git synchronization retain their existing behavior.
       security:
         - runtimeBearerAuth: []
       requestBody:
@@ -5594,12 +6067,24 @@ paths:
       responses:
         "200":
           description: Legacy claimed-task response retained for client compatibility.
+          headers:
+            X-Soha-Manifest-Admission-Version:
+              description: Present only after successful current admission of a manifest_delivery_v1. task. Required by runners for that provider family.
+              schema:
+                type: string
+                enum: ["1"]
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExecutionTaskEnvelope"
         "202":
           description: Execution task claimed for the runner.
+          headers:
+            X-Soha-Manifest-Admission-Version:
+              description: Present only after successful current admission of a manifest_delivery_v1. task. Required by runners for that provider family.
+              schema:
+                type: string
+                enum: ["1"]
           content:
             application/json:
               schema:
@@ -37540,6 +38025,9 @@ components:
       type: object
       required: [ id, applicationEnvironmentId, clusterId, namespace, workloadKind, workloadName, enabled ]
       properties:
+        serviceId:
+          type: string
+          description: Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping.
         docker: { $ref: "#/components/schemas/DockerDeliveryConfiguration" }
         helm: { $ref: "#/components/schemas/HelmDeliveryConfiguration" }
         id:
@@ -37585,6 +38073,9 @@ components:
       type: object
       required: [ clusterId, namespace, workloadKind, workloadName, enabled ]
       properties:
+        serviceId:
+          type: string
+          description: Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping.
         docker: { $ref: "#/components/schemas/DockerDeliveryConfiguration" }
         helm: { $ref: "#/components/schemas/HelmDeliveryConfiguration" }
         id:
@@ -38354,6 +38845,7 @@ components:
         resourceSelector:
           $ref: "#/components/schemas/ResourceSelector"
         targets:
+          description: On update, omission preserves the existing target set and its actual locations. An explicit array replaces it under expectedUpdatedAt; an empty array clears associations. Editing clusterId or namespace defaults never moves existing targets.
           type: array
           items:
             $ref: "#/components/schemas/ReleaseTargetInput"
@@ -38368,6 +38860,311 @@ components:
         name:
           type: string
           minLength: 1
+      additionalProperties: false
+    EnvironmentServiceReferencePreviewInput:
+      type: object
+      required: [serviceId, sourceApplicationEnvironmentId, expectedConsumerUpdatedAt, expectedSourceUpdatedAt]
+      properties:
+        serviceId: { type: string, minLength: 1, maxLength: 200 }
+        sourceApplicationEnvironmentId: { type: string, minLength: 1, maxLength: 200 }
+        expectedConsumerUpdatedAt: { type: string, format: date-time }
+        expectedSourceUpdatedAt: { type: string, format: date-time }
+        sourceTargetIds:
+          type: array
+          description: Must equal the complete source service target set; partial Helm or multi-root selections are rejected.
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200 }
+        expectedSourceRevision:
+          type: string
+          description: Optional previous preview revision. Mismatches require a fresh preview.
+          pattern: '^[a-f0-9]{64}$'
+      additionalProperties: false
+    EnvironmentServiceReferenceScope:
+      type: object
+      required: [applicationEnvironmentId, environmentId, environmentKey, tier, stageLevel, isProduction, updatedAt]
+      properties:
+        applicationEnvironmentId: { type: string, minLength: 1 }
+        environmentId: { type: string, minLength: 1 }
+        environmentKey: { type: string, minLength: 1 }
+        tier: { type: string, minLength: 1 }
+        stageLevel: { type: integer, minimum: 1 }
+        isProduction: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceTarget:
+      type: object
+      required: [targetId, clusterId, namespace, workloadKind, workloadName, ownershipMode, resources]
+      properties:
+        targetId: { type: string, minLength: 1 }
+        clusterId: { type: string, minLength: 1 }
+        namespace: { type: string, minLength: 1 }
+        workloadKind: { type: string, minLength: 1 }
+        workloadName: { type: string, minLength: 1 }
+        ownershipMode: { type: string, enum: [observe_only, managed] }
+        helmRevision: { type: integer, minimum: 1 }
+        resources:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceResource" }
+      additionalProperties: false
+    EnvironmentServiceReferenceResource:
+      type: object
+      description: Identity only; no workload spec, CR values, Helm values, annotations, output or credentials.
+      required: [resource, specDigest]
+      properties:
+        resource:
+          allOf:
+            - $ref: "#/components/schemas/KubernetesResourceRef"
+            - type: object
+              required: [uid]
+              properties:
+                uid: { type: string, minLength: 1 }
+        specDigest: { type: string, pattern: '^[a-f0-9]{64}$' }
+        crdName: { type: string, minLength: 1 }
+        plural: { type: string, minLength: 1 }
+      additionalProperties: false
+    EnvironmentServiceReferencePreview:
+      type: object
+      required: [applicationId, serviceId, consumer, source, sourceRevision, targets, currentLocalTargetIds, observedAt]
+      properties:
+        applicationId: { type: string, minLength: 1 }
+        serviceId: { type: string, minLength: 1 }
+        consumer: { $ref: "#/components/schemas/EnvironmentServiceReferenceScope" }
+        source: { $ref: "#/components/schemas/EnvironmentServiceReferenceScope" }
+        sourceRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        targets:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceTarget" }
+        currentLocalTargetIds:
+          type: array
+          description: Existing local associations are only compared, never removed by this preview.
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        observedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferencePreviewEnvelope:
+      type: object
+      required: [item]
+      properties:
+        item: { $ref: "#/components/schemas/EnvironmentServiceReferencePreview" }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidateInput:
+      type: object
+      description: Candidate only. Explicit complete source target selection and a fresh preview digest are mandatory. No activation, force, ownership or publication field is accepted.
+      required: [sourceApplicationEnvironmentId, expectedConsumerUpdatedAt, expectedSourceUpdatedAt, sourceTargetIds, expectedSourceRevision, expectedRevision]
+      properties:
+        sourceApplicationEnvironmentId: { type: string, minLength: 1, maxLength: 200 }
+        expectedConsumerUpdatedAt: { type: string, format: date-time }
+        expectedSourceUpdatedAt: { type: string, format: date-time }
+        sourceTargetIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200 }
+        expectedSourceRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        expectedCandidateId: { type: string, minLength: 1, maxLength: 200 }
+      oneOf:
+        - properties:
+            expectedRevision: { type: integer, enum: [0] }
+          not: { required: [expectedCandidateId] }
+        - required: [expectedCandidateId]
+          properties:
+            expectedRevision: { type: integer, minimum: 1 }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidateDeleteInput:
+      type: object
+      required: [expectedCandidateId, expectedRevision, expectedConsumerUpdatedAt]
+      properties:
+        expectedCandidateId: { type: string, minLength: 1, maxLength: 200 }
+        expectedRevision: { type: integer, format: int64, minimum: 1 }
+        expectedConsumerUpdatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidate:
+      type: object
+      description: Persisted inactive proposal. Identity digest excludes ordinary configuration/runtime versions; neither digest nor current status is activation permission or proof of runtime health/network reachability. Reads reauthorize and reobserve the source. No local target or source resource is claimed.
+      required: [id, revision, state, status, sourceIdentityRevision, currentSourceRevision, preview, createdAt, updatedAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: integer, format: int64, minimum: 1 }
+        state: { type: string, enum: [candidate] }
+        status: { type: string, enum: [current, outdated] }
+        sourceIdentityRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        currentSourceRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        preview: { $ref: "#/components/schemas/EnvironmentServiceReferencePreview" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidateSummary:
+      type: object
+      description: Only the authorized consumer's candidate identity; no source metadata or runtime authorization.
+      required: [id, serviceId, revision, state, createdAt, updatedAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200 }
+        serviceId: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: integer, format: int64, minimum: 1 }
+        state: { type: string, enum: [candidate] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidatePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateSummary" }
+        nextCursor: { type: string, minLength: 1, maxLength: 200 }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidateEnvelope:
+      type: object
+      required: [item]
+      properties:
+        item: { $ref: "#/components/schemas/EnvironmentServiceReferenceCandidate" }
+      additionalProperties: false
+    EnvironmentServiceReferenceInput:
+      type: object
+      description: Activate or explicitly rebind only from the saved candidate and complete source target group. No source, targets, ownership or force overrides are accepted. Candidate and reference identities fence delete-and-recreate ABA in addition to transactional consumer/source CAS.
+      required: [expectedCandidateId, expectedCandidateRevision, expectedConsumerUpdatedAt, expectedSourceUpdatedAt, expectedSourceRevision, expectedRevision]
+      properties:
+        expectedCandidateId: { type: string, minLength: 1, maxLength: 200 }
+        expectedCandidateRevision: { type: integer, format: int64, minimum: 1 }
+        expectedConsumerUpdatedAt: { type: string, format: date-time }
+        expectedSourceUpdatedAt: { type: string, format: date-time }
+        expectedSourceRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        expectedReferenceId: { type: string, minLength: 1, maxLength: 200 }
+      if:
+        properties:
+          expectedRevision: { const: 0 }
+      then:
+        not: { required: [expectedReferenceId] }
+      else:
+        required: [expectedReferenceId]
+      additionalProperties: false
+    EnvironmentServiceReferenceDeleteInput:
+      type: object
+      description: Consumer-only safe detach CAS; source access or presence is not required. Executing source publication still blocks detachment.
+      required: [expectedReferenceId, expectedRevision, expectedConsumerUpdatedAt]
+      properties:
+        expectedReferenceId: { type: string, minLength: 1, maxLength: 200 }
+        expectedRevision: { type: integer, format: int64, minimum: 1 }
+        expectedConsumerUpdatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReference:
+      type: object
+      description: Active direct reference, not deployment or stream authorization. Reads reauthorize and freshly validate source identity/control and actual resource UIDs. Ordinary source configuration versions may refresh the preview; identity/control drift fails without cached fallback.
+      required: [id, revision, state, sourceIdentityRevision, currentSourceRevision, preview, createdAt, updatedAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: integer, format: int64, minimum: 1 }
+        state: { type: string, enum: [active] }
+        sourceIdentityRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        currentSourceRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        preview: { $ref: "#/components/schemas/EnvironmentServiceReferencePreview" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceEnvelope:
+      type: object
+      required: [item]
+      properties:
+        item: { $ref: "#/components/schemas/EnvironmentServiceReference" }
+      additionalProperties: false
+    EnvironmentServiceReferenceSummary:
+      type: object
+      description: Consumer-owned active reference metadata for cold-open cleanup, without any source content, digest or global count.
+      required: [id, serviceId, revision, state, createdAt, updatedAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200 }
+        serviceId: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: integer, format: int64, minimum: 1 }
+        state: { type: string, enum: [active] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferencePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceSummary" }
+        nextCursor:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Last service ID in this page.
+      additionalProperties: false
+    EnvironmentServiceReferenceResolvedTarget:
+      type: object
+      description: Authorized identity only. view is the consumer scope and origin is the direct source scope; this does not authorize YAML, logs, terminal or stream operations.
+      required: [referenceId, referenceRevision, applicationId, serviceId, view, origin, target, observedAt]
+      properties:
+        referenceId: { type: string, minLength: 1, maxLength: 200 }
+        referenceRevision: { type: integer, format: int64, minimum: 1 }
+        applicationId: { type: string, minLength: 1, maxLength: 200 }
+        serviceId: { type: string, minLength: 1, maxLength: 200 }
+        view: { $ref: "#/components/schemas/EnvironmentServiceReferenceScope" }
+        origin: { $ref: "#/components/schemas/EnvironmentServiceReferenceScope" }
+        target: { $ref: "#/components/schemas/EnvironmentServiceReferenceTarget" }
+        observedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceConsumer:
+      type: object
+      description: One currently authorized consumer of a directly owned source service. No source resource content or hidden consumer metadata.
+      required: [referenceId, referenceRevision, applicationEnvironmentId, environmentId, environmentKey, serviceId, sourceApplicationEnvironmentId, sourceTargetIds]
+      properties:
+        referenceId: { type: string, minLength: 1, maxLength: 200 }
+        referenceRevision: { type: integer, format: int64, minimum: 1 }
+        applicationEnvironmentId: { type: string, minLength: 1, maxLength: 200 }
+        environmentId: { type: string, minLength: 1, maxLength: 200 }
+        environmentKey: { type: string, minLength: 1, maxLength: 200 }
+        serviceId: { type: string, minLength: 1, maxLength: 200 }
+        sourceApplicationEnvironmentId: { type: string, minLength: 1, maxLength: 200 }
+        sourceTargetIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200 }
+      additionalProperties: false
+    EnvironmentServiceReferenceConsumerPage:
+      type: object
+      description: Current consumers filtered by authorization before pagination. The restricted flag reveals no hidden count or identity; cursors contain visible reference IDs only.
+      required: [items, hasRestrictedConsumers]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceConsumer" }
+        hasRestrictedConsumers: { type: boolean }
+        nextCursor: { type: string, minLength: 1, maxLength: 200 }
+      additionalProperties: false
+    DeliveryPlanServiceReferenceImpact:
+      type: object
+      description: Frozen server digest compared with the current complete consumer-set digest, alongside a current caller-visible page. Complete private snapshots, hidden IDs and hidden counts are never public. A stale revision requires a new Plan preflight, independently of approval and execution permissions.
+      required: [planId, sourceApplicationEnvironmentId, revision, currentRevision, isCurrent, items, hasRestrictedConsumers]
+      properties:
+        planId: { type: string, minLength: 1, maxLength: 200 }
+        sourceApplicationEnvironmentId: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        currentRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        isCurrent: { type: boolean }
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceConsumer" }
+        hasRestrictedConsumers: { type: boolean }
+        nextCursor: { type: string, minLength: 1, maxLength: 200 }
       additionalProperties: false
     KubernetesImportOwnerReference:
       type: object
@@ -38454,6 +39251,9 @@ components:
       type: object
       required: [ workloadKind, workloadName ]
       properties:
+        serviceId:
+          type: string
+          description: Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control.
         expectedUid: { type: string, minLength: 1 }
         expectedSpecDigest: { type: string, pattern: '^[a-f0-9]{64}$' }
         crdName:
@@ -38536,6 +39336,9 @@ components:
       type: object
       required: [ id, workloadKind, workloadName, created ]
       properties:
+        serviceId:
+          type: string
+          description: Logical service selected or created for this target; identity is independent of cluster and namespace.
         source: { $ref: "#/components/schemas/KubernetesImportSource" }
         id:
           type: string
@@ -38582,6 +39385,9 @@ components:
       type: object
       required: [ releaseName ]
       properties:
+        serviceId:
+          type: string
+          description: Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control.
         releaseName:
           type: string
           minLength: 1
@@ -38638,6 +39444,9 @@ components:
       type: object
       required: [ id, releaseName, created ]
       properties:
+        serviceId:
+          type: string
+          description: Logical service selected or created for this target; identity is independent of cluster and namespace.
         id:
           type: string
         releaseName:
@@ -41910,6 +42719,7 @@ components:
         requiresApproval:
           type: boolean
         impact:
+          description: General caller-visible Plan impact. Service-reference impact may contain only a server-produced opaque revision and an existence hint; never include the private complete consumer snapshot, hidden consumer IDs or counts. Read current authorized consumer details from the dedicated service-reference-impact endpoint.
           type: object
           additionalProperties: true
         rollbackStrategy:

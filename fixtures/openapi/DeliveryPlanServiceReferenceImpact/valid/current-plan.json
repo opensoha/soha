@@ -1,0 +1,23 @@
+{
+  "planId": "plan-a",
+  "sourceApplicationEnvironmentId": "test-b",
+  "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "currentRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "isCurrent": true,
+  "items": [
+    {
+      "referenceId": "reference-a",
+      "referenceRevision": 3,
+      "applicationEnvironmentId": "test-a",
+      "environmentId": "env-a",
+      "environmentKey": "test-a",
+      "serviceId": "svc-api",
+      "sourceApplicationEnvironmentId": "test-b",
+      "sourceTargetIds": [
+        "target-b"
+      ]
+    }
+  ],
+  "hasRestrictedConsumers": false,
+  "nextCursor": "reference-a"
+}

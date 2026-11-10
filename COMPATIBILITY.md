@@ -626,3 +626,35 @@ file/PTY support.
 Versioned read responses bind the complete original request and require explicit arrays and completeness. For `files.read`, `sizeBytes` reports the full observed source file size and `returnedBytes` counts the returned UTF-8 payload; truncation must agree with the difference. Log byte counts describe returned content. Files and logs never imply a coherent ongoing stream snapshot. Agent read action policies apply to both versioned and legacy route families: existing deployments explicitly add `docker.runtime.logs` / `docker.runtime.files` to use the corresponding reads after upgrade. Legacy wire formats remain accepted when allowlisted, and are never a fallback for identity-bound reads.
 
 The additive `/docker/projects/{dockerProjectID}/runtime/v1/{logs,volumes,files,file}` GET family is identity-bound and never forwards caller-supplied UID/CID values. Logs uses docker.services.logs; mount metadata and files use docker.services.files plus the existing resource scope. Caller query controls are action-specific. Old paths are retained. New endpoints reject unbound projects and do not fall back to legacy agents. Identity v1 represents one container per service, so explicit scale/replicas must be literal 1 and deploy mode must be replicated; dynamic or multi-replica shapes are rejected before runtime execution.
+
+## Manifest publication admission v1
+
+`manifest_delivery_v1.` is an opt-in provider family, not a change to legacy
+providers. New Core uses it for Plan-bound Manifest tasks only after an Agent
+advertises `manifest.delivery-admission.v1`. The claim response header
+`X-Soha-Manifest-Admission-Version: 1` confirms current Core admission for that
+claim, not a permanent grant. Missing, repeated, or different confirmation prevents
+execution on a new runner, even if an older Core accepted the provider string.
+Old runners and Direct workers do not claim this family. No legacy fallback is
+allowed. Private Plan/target context is not runner payload or a new public DTO.
+Rollback must settle or cancel protected tasks before removing the new workers;
+retain the additive private operation column and do not rewrite task providers.
+
+New runners also reject known old application Plan tasks (`fieldManager` begins
+`opensoha-manifest/` or `initializationPlanId` is nonempty) returned on legacy
+providers. This prevents an old Core from being treated as a standalone Manifest
+executor for those Plans. Markers are rejection hints only, not identity or grants.
+Unassociated standalone tasks and read-only Git synchronization keep their behavior.
+
+## Pod session identity in Agent mode
+
+Core sends UID-bound log snapshots, log streams and terminals to the Agent
+GET routes under `/api/v1/platform/workloads/pods/:name/uid-bound/` with
+`expectedUid`. The matching suffixes are `logs`, `logs/stream` and `terminal`.
+Each route uses the corresponding existing action authorization and requires a
+live UID match on the Agent before opening the subresource. Returning a UID in
+Pod detail does not imply support for these routes.
+
+Core fails closed if the Agent lacks the bound route. It never retries a
+UID-bound operation through a legacy route, including during rollback or a mixed
+Agent rollout. Requests without a UID continue to use the existing routes.
