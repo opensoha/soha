@@ -86,6 +86,8 @@ import {
 import '../shared/styles.css'
 import type { AISettingsPageProps } from '../types'
 import './styles.css'
+import { RuntimeAssetsSettings } from './runtime-assets'
+import { RuntimeProfilesSettings } from './runtime-profiles'
 
 const { Paragraph, Text } = Typography
 
@@ -829,6 +831,21 @@ export function AISettingsPage({ embedded = false, section = 'model' }: AISettin
       {!dataSourceModalVisible ? dataSourceMutation.feedback : null}
       {!profileModalVisible ? profileMutation.feedback : null}
       {showModel ? workbenchModelCard : null}
+      {showModel && canViewAISettings && companionOwner && (
+        <RuntimeAssetsSettings
+          key={`runtime-assets:${companionOwner}`}
+          owner={companionOwner}
+          canManage={canManageAISettings}
+        />
+      )}
+      {showModel && canViewAISettings && (
+        <RuntimeProfilesSettings
+          key={`runtime-profiles:${companionOwner}`}
+          owner={companionOwner}
+          canManage={canManageAISettings}
+          publicModels={enabledModelRoutes.map((route) => route.publicModel)}
+        />
+      )}
       {showCompanion ? companionCard : null}
       {showSkills ? (
         <section className="soha-skill-registry">

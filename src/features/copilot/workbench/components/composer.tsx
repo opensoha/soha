@@ -1,3 +1,4 @@
+import { isDefaultRunProvider } from '../agent-selection'
 import type { WorkbenchAgentProvider, WorkbenchMode } from '../types'
 import type { AssistantChatTask } from '../types'
 import { prepareAssistantAvatar, prepareChatImage } from '../avatar-image'
@@ -35,6 +36,7 @@ export function WorkbenchComposer({
   agentMode,
   onAgentChange,
   preferences,
+  profilePreferences,
   onPreferencesChange,
   modelOptions,
   defaultPublicModel,
@@ -72,6 +74,7 @@ export function WorkbenchComposer({
   agentMode: WorkbenchMode
   onAgentChange: (id: string) => void
   preferences: WorkbenchModelPreferences
+  profilePreferences?: WorkbenchModelPreferences
   onPreferencesChange: (value: WorkbenchModelPreferences) => void
   modelOptions: WorkbenchModelOption[]
   defaultPublicModel?: string
@@ -107,7 +110,7 @@ export function WorkbenchComposer({
   const [preparing, setPreparing] = useState(false)
   const attach = async (file: File) => {
     if (disabled || loading || preparing) return
-    if (agentProviderId !== 'internal') {
+    if (!isDefaultRunProvider(agentProviderId)) {
       void message.warning('当前助手不支持图片，请选择内置助手')
       return
     }
@@ -125,18 +128,20 @@ export function WorkbenchComposer({
       setPreparing(false)
     }
   }
-  const effectiveModel = preferences.publicModel || defaultPublicModel
-  const efforts =
-    modelOptions.find((item) => item.publicModel === effectiveModel)?.reasoningEfforts ?? []
-  const configuredCapacity = modelContextSummary(
-    modelOptions.find((item) => item.publicModel === effectiveModel),
-  ).capacity
+  const fallbackModel = profilePreferences?.publicModel || defaultPublicModel
+  const effectiveModel = preferences.publicModel || fallbackModel
+  const modelOption = modelOptions.find((item) => item.publicModel === effectiveModel)
+  const efforts = modelOption?.reasoningEfforts ?? []
+  const profileEffort = profilePreferences?.reasoningEffort
+  const effectiveEffort = preferences.reasoningEffort || profileEffort || 'auto'
+  const unsupportedEffort = effectiveEffort !== 'auto' && !efforts.includes(effectiveEffort)
+  const configuredCapacity = modelContextSummary(modelOption).capacity
   const effortLabels = { auto: '自动', low: '轻度', medium: '标准', high: '深度' }
   const provider = agentProviders.find((item) => item.id === agentProviderId)
   const modelLabel = modelSelectionEnabled
     ? effectiveModel || '默认模型'
     : provider?.name || '助手管理'
-  const effortLabel = effortLabels[preferences.reasoningEffort || 'auto']
+  const effortLabel = effortLabels[effectiveEffort]
   const context = modelContextSummary(contextUsage)
   const controlsDisabled = disabled || loading || !modelSelectionEnabled
   const [open, setOpen] = useState(false)
@@ -462,13 +467,12 @@ export function WorkbenchComposer({
                         onChange={onAgentChange}
                         options={agentProviders.map((item) => ({
                           value: item.id,
-                          label:
-                            item.id === 'internal'
-                              ? '模型直连（兼容）'
-                              : item.name +
-                                (agentUnavailableReason(item, agentMode)
-                                  ? ' · ' + agentUnavailableReason(item, agentMode)
-                                  : ''),
+                          label: isDefaultRunProvider(item.id)
+                            ? '模型直连（兼容）'
+                            : item.name +
+                              (agentUnavailableReason(item, agentMode)
+                                ? ' · ' + agentUnavailableReason(item, agentMode)
+                                : ''),
                           disabled: !!agentUnavailableReason(item, agentMode),
                         }))}
                       />
@@ -482,16 +486,13 @@ export function WorkbenchComposer({
                             disabled={controlsDisabled}
                             style={{ width: '100%' }}
                             onChange={(publicModel) =>
-                              onPreferencesChange({
-                                publicModel: publicModel || undefined,
-                                reasoningEffort: 'auto',
-                              })
+                              onPreferencesChange(publicModel ? { publicModel, reasoningEffort: 'auto' } : {})
                             }
                             options={[
                               {
                                 value: '',
-                                label: defaultPublicModel
-                                  ? `默认 · ${defaultPublicModel}`
+                                label: fallbackModel
+                                  ? `${profilePreferences?.publicModel ? '配置' : '默认'} · ${fallbackModel}`
                                   : '默认模型',
                               },
                               ...modelOptions.map((item) => ({
@@ -504,21 +505,33 @@ export function WorkbenchComposer({
                           <Segmented
                             block
                             aria-label="思考强度"
-                            value={preferences.reasoningEffort || 'auto'}
-                            disabled={controlsDisabled || !efforts.length}
-                            options={['auto' as const, ...efforts].map((effort) => ({
-                              value: effort,
-                              label: effortLabels[effort],
-                            }))}
+                            value={profileEffort && !preferences.reasoningEffort ? 'inherit' : effectiveEffort}
+                            disabled={controlsDisabled || (!efforts.length && !unsupportedEffort && !profileEffort)}
+                            options={[
+                              ...['auto' as const, ...efforts].map((effort) => ({
+                                value: effort,
+                                label: effortLabels[effort],
+                              })),
+                              ...(profileEffort ? [{ value: 'inherit', label: `配置 · ${effortLabels[profileEffort]}` }] : []),
+                              ...(unsupportedEffort && preferences.reasoningEffort
+                                ? [{ value: effectiveEffort, label: effortLabels[effectiveEffort], disabled: true }]
+                                : []),
+                            ]}
                             onChange={(reasoningEffort) =>
                               onPreferencesChange({
                                 ...preferences,
                                 reasoningEffort:
-                                  reasoningEffort as WorkbenchModelPreferences['reasoningEffort'],
+                                  reasoningEffort === 'inherit'
+                                    ? undefined
+                                    : (reasoningEffort as WorkbenchModelPreferences['reasoningEffort']),
                               })
                             }
                           />
-                          {!efforts.length && (
+                          {unsupportedEffort ? (
+                            <span className="soha-ai-workbench__menu-label" role="status">
+                              当前模型未确认支持此思考强度，请调整模型或强度。
+                            </span>
+                          ) : !efforts.length && (
                             <span className="soha-ai-workbench__menu-label">
                               当前模型自动管理思考强度
                             </span>

@@ -10,6 +10,20 @@ export interface AISettingsPageProps extends SettingsPageProps {
   section?: AISettingsSection
 }
 
+export interface WorkbenchRuntimeAsset {
+  kind: 'mcp' | 'skill' | 'hook'
+  id: string
+  version: string
+  transport?: 'http' | 'stdio'
+  executionPosition?: string
+  enabled: boolean
+}
+
+export interface WorkbenchRuntimeAssetProbe {
+  status: 'ready' | 'unavailable' | 'cleanup_unknown'
+  capabilities: string[]
+}
+
 export interface LoginProviderSettings {
   id: string
   name: string

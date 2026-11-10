@@ -1,27 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query'
 import {
-  pendingNativeRequests,
-  forgetNativeRequest,
-  rememberNativeRequest,
-  nativeRecoveryBatch,
-  pendingNativeCancellations,
-  requestNativeCancellation,
-  nativeCancellationRequested,
-} from '../native-request-journal'
+  acknowledgeReadOnlyRunRequest,
+  pendingRunRequests,
+  forgetRunRequest,
+  rememberRunRequest,
+  runRecoveryBatch,
+  pendingRunCancellations,
+  requestRunCancellation,
+  runCancellationRequested,
+} from '../run-request-journal'
 import { workbenchQueries } from '../queries'
 import { workbenchKeys } from '../keys'
 import type { ApiResponse } from '@/types'
 import type { WorkbenchAgentRun } from '../types'
 import { workbenchApi } from '../api'
-import { isRunningAgentRun } from '../agent-run-replay'
+import { isRunningAgentRun, isReadOnlyAgentRun } from '../agent-run-replay'
 import { isTerminalWorkbenchAgentStatus } from '../stream'
 
 function cancellationConfirmed(run: WorkbenchAgentRun) {
   return isTerminalWorkbenchAgentStatus(run.status) && !isRunningAgentRun(run)
 }
 
-export function useNativeRequestRecovery(
+export function useRunRequestRecovery(
   owner: string | undefined,
   sessionId: string | undefined,
   enabled: boolean,
@@ -72,7 +73,7 @@ export function useNativeRequestRecovery(
       if (input.scope !== activeScope.current) return
       applyRun(run)
       if (cancellationConfirmed(run)) {
-        forgetNativeRequest(input.scope, input.sessionId, input.requestId)
+        forgetRunRequest(input.scope, input.sessionId, input.requestId)
         refresh()
       }
     },
@@ -87,8 +88,8 @@ export function useNativeRequestRecovery(
   const journal = useMemo(() => {
     void revision
     try {
-      const ids = pendingNativeRequests(scope, sessionId)
-      const cancellations = pendingNativeCancellations(scope)
+      const ids = pendingRunRequests(scope, sessionId)
+      const cancellations = pendingRunCancellations(scope)
       const entries = [
         ...ids.map((requestId) => ({ sessionId: sessionId!, requestId })),
         ...cancellations.filter((entry) => entry.sessionId !== sessionId),
@@ -113,7 +114,7 @@ export function useNativeRequestRecovery(
     const timer = window.setInterval(() => setPage((value) => value + 1), 5000)
     return () => window.clearInterval(timer)
   }, [enabled, journal.entries.length])
-  const batch = nativeRecoveryBatch(journal.entries, page)
+  const batch = runRecoveryBatch(journal.entries, page)
   const recoveries = useQueries({
     queries: batch.map((entry) => ({
       ...workbenchQueries.agentRuns.request(scope, entry.sessionId, entry.requestId),
@@ -129,15 +130,22 @@ export function useNativeRequestRecovery(
       if (!run || !entry) return
       let stopping: boolean
       try {
-        stopping = nativeCancellationRequested(scope, entry.sessionId, entry.requestId)
+        stopping = runCancellationRequested(scope, entry.sessionId, entry.requestId)
       } catch {
         changed = true
         return
       }
-      if (
-        cancellationConfirmed(run) &&
-        forgetNativeRequest(scope, entry.sessionId, entry.requestId)
-      )
+      if (isReadOnlyAgentRun(run)) {
+        try {
+          acknowledgeReadOnlyRunRequest(scope, entry.sessionId, entry.requestId)
+          applyRun(run)
+          changed = true
+        } catch {
+          // Storage failure retains the unresolved journal and prevents dispatch.
+        }
+        return
+      }
+      if (cancellationConfirmed(run) && forgetRunRequest(scope, entry.sessionId, entry.requestId))
         changed = true
       const receipt = JSON.stringify([
         scope,
@@ -161,8 +169,8 @@ export function useNativeRequestRecovery(
   }, [recoveries, batch, scope, enabled, refresh, applyRun, cancellation])
   return {
     pending: journal.ids.length > 0,
-    canRetry: (id: string | undefined) =>
-      !journal.cancelling && !journal.error && journal.ids.every((pending) => pending === id),
+    canRetry: (_id: string | undefined) =>
+      !journal.cancelling && !journal.error && journal.ids.length === 0,
     cancelling: journal.cancelling,
     error:
       journal.error ||
@@ -182,7 +190,7 @@ export function useNativeRequestRecovery(
     cancel: (target: string) => {
       if (!scope) throw new Error('请先登录后停止任务')
       try {
-        requestNativeCancellation(scope, target)
+        requestRunCancellation(scope, target)
         setStorageError(undefined)
       } catch (error) {
         setStorageError({ scope, sessionId: target })
@@ -193,13 +201,13 @@ export function useNativeRequestRecovery(
     },
     remember: (target: string, id: string) => {
       if (!scope) throw new Error('请先登录后分配任务')
-      rememberNativeRequest(scope, target, id)
+      rememberRunRequest(scope, target, id)
       refresh()
     },
     acknowledge: (target: string, id: string) => {
       try {
-        if (scope && !nativeCancellationRequested(scope, target, id))
-          forgetNativeRequest(scope, target, id)
+        if (scope && !runCancellationRequested(scope, target, id))
+          forgetRunRequest(scope, target, id)
       } finally {
         refresh()
       }

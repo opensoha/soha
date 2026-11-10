@@ -251,18 +251,26 @@ it('keeps actionable states explicit in the compact summary without inventing su
     [{ status: 'failed', errorMessage: 'agent timed out' }, '执行超时，请核对执行端状态'],
     [{ status: 'cancelled' }, '本次任务已取消'],
     [{ status: 'unrecognized' }, '查看执行记录'],
+    [{ providerKind: 'native', phase: 'waiting_approval' }, '旧版任务记录，仅供查看'],
   ]
   for (const [patch, summary] of cases) {
     const [item] = buildAssistantActivity({
       ...empty,
-      personalRuns: [{ ...run, ...patch }],
+      personalRuns: [{ ...run, providerId: 'dsh', providerKind: 'dsh', ...patch }],
     })
     expect(activitySummary(item)).toBe(summary)
     expect(item.run).toMatchObject(patch)
   }
   const [item] = buildAssistantActivity({
     ...empty,
-    personalRuns: [{ ...run, output: { summary: '读取了维护规程，确认了维护窗口。' } }],
+    personalRuns: [
+      {
+        ...run,
+        providerId: 'dsh',
+        providerKind: 'dsh',
+        output: { summary: '读取了维护规程，确认了维护窗口。' },
+      },
+    ],
   })
   expect(activitySummary(item)).toBe('读取了维护规程，确认了维护窗口。')
 })

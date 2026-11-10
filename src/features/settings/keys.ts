@@ -9,6 +9,9 @@ export const settingsKeys = {
     detail: () => ['settings', 'identity', 'detail'] as const,
   },
   ai: {
+    runtimeAssets: (owner: string) => ['settings', 'ai', 'runtime-assets', owner] as const,
+    runtimeProfileHistory: (owner: string, id: string) =>
+      ['settings', 'ai', 'runtime-profile-history', owner, id] as const,
     all: ['settings', 'ai'] as const,
     detail: () => ['settings', 'ai', 'detail'] as const,
     skills: () => ['settings', 'ai', 'skills'] as const,

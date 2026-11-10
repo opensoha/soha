@@ -46,11 +46,13 @@ export function UserMessageContent({
 export function AssistantChatResult({
   metadata,
   loading,
+  readOnly = false,
   onContinue,
   onUndo,
 }: {
   metadata?: Record<string, unknown>
   loading?: boolean
+  readOnly?: boolean
   onContinue?: () => void
   onUndo?: () => void
 }) {
@@ -62,7 +64,7 @@ export function AssistantChatResult({
   return (
     <div className="soha-ai-assistant-chat-result">
       {valid && <img src={source} alt="助手形象" />}
-      {updated && (
+      {updated && !readOnly && (
         <Space wrap>
           <Button size="small" type="text" disabled={loading} onClick={onContinue}>
             继续调整

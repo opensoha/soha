@@ -11,9 +11,11 @@ import { gatewayQueries } from '../../gateway/queries'
 export function MessageApproval({
   id,
   continuesTask = false,
+  readOnly = false,
 }: {
   id: string
   continuesTask?: boolean
+  readOnly?: boolean
 }) {
   const { modal } = App.useApp()
   const client = useQueryClient()
@@ -35,6 +37,7 @@ export function MessageApproval({
       canView,
     ),
     refetchInterval: (state) =>
+      !readOnly &&
       !state.state.error &&
       state.state.data?.data?.some((item) => ['pending', 'approved'].includes(item.status))
         ? 4000
@@ -89,7 +92,7 @@ export function MessageApproval({
         </Tag>
       </Space>
       <Typography.Paragraph>
-        {pending
+        {pending && !readOnly
           ? '请核对已保存参数，再决定是否执行。'
           : request.status === 'executed'
             ? '变更已执行，可展开查看实际结果。'
@@ -113,7 +116,7 @@ export function MessageApproval({
           </pre>
         </details>
       ) : null}
-      {pending ? (
+      {pending && !readOnly ? (
         <Space wrap>
           {(['approve', 'reject', 'cancel'] as const)
             .filter((action) => hasPermission(snapshot, `ai.gateway.approvals.${action}`))
@@ -156,10 +159,12 @@ export function MessageApproval({
         </Space>
       ) : null}
       <Typography.Paragraph type="secondary">
-        批准仅执行以上参数。回滚需单独发起申请；本步骤不会自动重试变更。
-        {continuesTask
-          ? '审批结果会继续推进原任务；助手等待领域执行与验收回执后再回答。'
-          : '助手本轮已结束，审批结果在此更新；需要后续分析时，请发送新消息。'}
+        {readOnly
+          ? '旧版审批仅供查看，无法继续原任务。'
+          : '批准仅执行以上参数。回滚需单独发起申请；本步骤不会自动重试变更。' +
+            (continuesTask
+              ? '审批结果会继续推进原任务；助手等待领域执行与验收回执后再回答。'
+              : '助手本轮已结束，审批结果在此更新；需要后续分析时，请发送新消息。')}
       </Typography.Paragraph>
     </div>
   )

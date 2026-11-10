@@ -10,6 +10,7 @@ import {
 import type { WorkbenchSource } from '@opensoha/contracts/gen/ts/sohaapi'
 import { App, Button, Popover, Space, Tag, Typography } from 'antd'
 import { useState } from 'react'
+import { isReadOnlyAgentRunMessage } from '../agent-run-replay'
 import type { ConversationMessage } from '../conversation'
 import {
   metadataAgentStatus,
@@ -52,6 +53,7 @@ export function MessageActivity({
   const [reactionOpen, setReactionOpen] = useState(false)
   const sources = metadataSources(item.metadata)
   const tools = metadataToolExecutions(item.metadata)
+  const readOnly = isReadOnlyAgentRunMessage(item)
   const pending = ['loading', 'updating'].includes(item.deliveryStatus ?? '')
   const terminal = ['succeeded', 'failed', 'cancelled'].includes(
     metadataAgentStatus(item.metadata)?.status ?? '',
@@ -60,6 +62,7 @@ export function MessageActivity({
   if (pending && tools.length === 0) return null
   return (
     <div className="soha-ai-workbench__message-activity">
+      {readOnly ? <Typography.Text type="secondary">旧版任务记录，仅供查看</Typography.Text> : null}
       {!pending ? (
         <Space size={4} wrap>
           <Button
@@ -76,7 +79,7 @@ export function MessageActivity({
               }
             }}
           />
-          {onReply ? (
+          {onReply && !readOnly ? (
             <Button
               size="small"
               type="text"
@@ -85,7 +88,7 @@ export function MessageActivity({
               onClick={onReply}
             />
           ) : null}
-          {onReaction ? (
+          {onReaction && !readOnly ? (
             <Popover
               trigger="click"
               open={reactionOpen}
@@ -119,7 +122,7 @@ export function MessageActivity({
               </Button>
             </Popover>
           ) : null}
-          {onFeedback ? (
+          {onFeedback && !readOnly ? (
             <>
               <Button
                 size="small"
@@ -139,7 +142,7 @@ export function MessageActivity({
               />
             </>
           ) : null}
-          {onSaveMemory ? (
+          {onSaveMemory && !readOnly ? (
             <Button
               size="small"
               type="text"
@@ -148,7 +151,7 @@ export function MessageActivity({
               onClick={onSaveMemory}
             />
           ) : null}
-          {onBranch ? (
+          {onBranch && !readOnly ? (
             <Button
               size="small"
               type="text"
@@ -201,7 +204,7 @@ export function MessageActivity({
             const approvalId = toolApprovalId(tool)
             const interrupted = terminal && tool.status === 'running'
             const failed = interrupted || ['failed', 'error'].includes(tool.status)
-            const running = !terminal && tool.status === 'running'
+            const inProgress = !terminal && tool.status === 'running'
             const duration =
               tool.startedAt && tool.completedAt
                 ? Math.max(
@@ -225,15 +228,19 @@ export function MessageActivity({
               .join(' / ')
             const label = toolExecutionLabel(tool.toolName)
             return (
-              <details key={tool.id} open={running || failed || !!approvalId}>
+              <details key={tool.id} open={inProgress || failed || !!approvalId}>
                 <summary>
                   <Space size={8} wrap>
                     <span>{label}</span>
-                    <Tag color={failed ? 'error' : running ? 'processing' : 'success'}>
+                    <Tag
+                      color={
+                        failed ? 'error' : inProgress ? (readOnly ? 'default' : 'processing') : 'success'
+                      }
+                    >
                       {failed
                         ? '失败'
-                        : running
-                          ? '进行中'
+                        : inProgress
+                          ? (readOnly ? '历史状态 · 进行中' : '进行中')
                           : approvalId
                             ? '已提交'
                             : tool.toolName === 'agent.delegate'
@@ -255,11 +262,15 @@ export function MessageActivity({
                     {interrupted ? '任务已结束，未收到该步骤的结果。' : toolExecutionSummary(tool)}
                   </Typography.Paragraph>
                 ) : null}
-                {approvalId ? <MessageApproval id={approvalId} /> : null}
+                {approvalId ? <MessageApproval id={approvalId} readOnly={readOnly} /> : null}
                 {tool.toolName === 'agent.delegate' &&
                 typeof related?.childRunId === 'string' &&
                 typeof related?.sessionId === 'string' ? (
-                  <MessageSpecialist id={related.childRunId} sessionId={related.sessionId} />
+                  <MessageSpecialist
+                    id={related.childRunId}
+                    sessionId={related.sessionId}
+                    readOnly={readOnly}
+                  />
                 ) : null}
               </details>
             )

@@ -15,13 +15,10 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MemoryPolicy } from '../memory/types'
-import {
-  forgetNativeRequest,
-  pendingNativeRequests,
-  rememberNativeRequest,
-} from './native-request-journal'
+import type { MemoryPolicy, MemoryRecord } from '../memory/types'
+import { forgetRunRequest, pendingRunRequests, rememberRunRequest } from './run-request-journal'
 import { AIWorkbenchPage, RUNNABLE_ANALYSIS_MODE_OPTIONS } from './page'
+import type { WorkbenchRuntimeProfile } from './runtime-profile'
 import type {
   WorkbenchAgentRun,
   WorkbenchMessage,
@@ -37,6 +34,7 @@ type MessageScenario =
   | 'legacy-platform'
   | 'metadata-sources'
   | 'final-agent-run-metadata'
+  | 'historical-system-runtime'
   | 'native-request'
 
 const testState = vi.hoisted(() => ({
@@ -50,6 +48,7 @@ const testState = vi.hoisted(() => ({
   environmentError: false,
   environmentTemplates: [] as PersonalEnvironmentTemplate[],
   catalogError: false,
+  runtimeProfiles: [] as WorkbenchRuntimeProfile[],
   snapshot: {
     permissionKeys: [
       'observe.ai.view',
@@ -78,12 +77,15 @@ const testState = vi.hoisted(() => ({
   agentRuns: [] as WorkbenchAgentRun[],
   nativeEvents: [] as WorkbenchStreamEvent[],
   memoryPolicies: [] as MemoryPolicy[],
+  memoryRecords: [] as MemoryRecord[],
+  memoryMessageMetadata: {} as Record<string, unknown>,
+  memoryUserMetadata: {} as Record<string, unknown>,
   recoveredRun: undefined as WorkbenchAgentRun | undefined,
   recoveryRequest: undefined as string | undefined,
   agentProviders: [
     {
-      id: 'internal',
-      kind: 'internal',
+      id: 'dsh',
+      kind: 'dsh',
       name: '内置分析',
       description: '由 soha 内置分析链路同步执行。',
       enabled: true,
@@ -169,6 +171,13 @@ const apiGetMock = vi.hoisted(() =>
       return {
         data: [
           {
+            id: 'approval-dsh-1',
+            status: 'pending',
+            toolName: 'docker.projects.deploy.trigger',
+            toolInput: { projectId: 'project-dsh', idempotencyKey: 'dsh:operation' },
+            summary: '当前任务领域变更',
+          },
+          {
             id: 'approval-native-1',
             status: 'pending',
             toolName: 'docker.projects.deploy.trigger',
@@ -204,7 +213,8 @@ const apiGetMock = vi.hoisted(() =>
     if (path === '/copilot/assistant/environment/templates')
       return { data: testState.environmentTemplates }
     if (path === '/copilot/assistant/artifacts') return { data: [] }
-    if (path === '/ai/memory') return { data: [] }
+    if (path === '/ai/memory' || path === '/ai/memory?includeDeleted=true')
+      return { data: [...testState.memoryRecords] }
     if (path === '/ai/memory/policies') return { data: [...testState.memoryPolicies] }
     if (path === '/copilot/sessions/main-chat')
       return {
@@ -215,7 +225,7 @@ const apiGetMock = vi.hoisted(() =>
           metadata: {
             conversationKind: testState.personal ? 'personal_main' : 'main',
             mode: 'general',
-            agentProviderId: 'internal',
+            agentProviderId: 'dsh',
           },
         },
       }
@@ -316,6 +326,7 @@ const apiGetMock = vi.hoisted(() =>
         return {
           data: [
             {
+              metadata: testState.memoryUserMetadata,
               id: 'plain-user',
               sessionId: 'session-1',
               role: 'user',
@@ -323,6 +334,7 @@ const apiGetMock = vi.hoisted(() =>
               createdAt: '2026-05-12T10:01:00Z',
             },
             {
+              metadata: testState.memoryMessageMetadata,
               id: 'plain-answer',
               sessionId: 'session-1',
               role: 'assistant',
@@ -579,8 +591,8 @@ const apiGetMock = vi.hoisted(() =>
               },
             ],
             agentStatus: {
-              providerId: 'internal',
-              providerKind: 'internal',
+              providerId: 'dsh',
+              providerKind: 'dsh',
               status: 'succeeded',
             },
           },
@@ -626,13 +638,34 @@ const apiGetMock = vi.hoisted(() =>
           },
         })
       }
+      if (testState.messageScenario === 'historical-system-runtime') {
+        baseMessages.push({
+          id: 'old-run:reply',
+          sessionId: 'session-1',
+          role: 'system',
+          content: '上一轮已取消。',
+          createdAt: '2026-05-12T10:06:00Z',
+          metadata: {
+            source: 'dsh-runtime',
+            agentRunId: 'old-run',
+            runtimeAssembly: { profileId: 'ops', revision: 3, status: 'confirmed', assets: [] },
+            runtimeHooks: [
+              { id: 'tool-audit', version: '1', callId: 'call-1', toolName: 'metrics.read', outcome: 'unknown' },
+              { id: 'tool-audit', version: '1', callId: 'call-2', toolName: 'private upstream payload', outcome: 'completed' },
+            ],
+          },
+        })
+      }
       return {
         data: baseMessages,
       }
     }
     if (path.includes('/events?afterSequence=')) {
+      const runId = decodeURIComponent(path.split('/')[3])
       const after = Number(path.split('afterSequence=')[1])
-      const items = testState.nativeEvents.filter((event) => event.sequence > after)
+      const items = testState.nativeEvents.filter(
+        (event) => event.runId === runId && event.sequence > after,
+      )
       return {
         data: {
           items,
@@ -655,9 +688,10 @@ const apiGetMock = vi.hoisted(() =>
         (testState.recoveryRequest &&
           new URLSearchParams(path.split('?')[1]).get('requestId') !== testState.recoveryRequest)
       )
-        throw new Error('Request not yet visible')
+        throw new ApiError(404, 'Request not yet visible', { method: 'GET' })
       return { data: testState.recoveredRun }
     }
+    if (path === '/copilot/workbench/runtime-profiles') return { data: testState.runtimeProfiles }
     if (path === '/copilot/workbench/catalog') {
       if (testState.catalogError) throw new Error('catalog unavailable')
       return {
@@ -666,6 +700,7 @@ const apiGetMock = vi.hoisted(() =>
           modelOptions: [
             { publicModel: 'reasoning-model', reasoningEfforts: ['low', 'medium', 'high'] },
             { publicModel: 'plain-model', reasoningEfforts: [] },
+            { publicModel: 'profile-model', reasoningEfforts: ['high'], contextWindowTokens: 65536 },
           ],
           adapters: [
             {
@@ -738,7 +773,7 @@ const apiPostMock = vi.hoisted(() =>
           metadata: {
             conversationKind: testState.personal ? 'personal_main' : 'main',
             mode: 'general',
-            agentProviderId: 'internal',
+            agentProviderId: 'dsh',
           },
         },
       }
@@ -907,8 +942,8 @@ const streamWorkbenchMessageMock = vi.hoisted(() =>
       }
       await emit({
         type: 'agent.status',
-        providerId: 'internal',
-        providerKind: 'internal',
+        providerId: 'dsh',
+        providerKind: 'dsh',
         status: 'succeeded',
       })
     },
@@ -1133,20 +1168,20 @@ async function submitSenderMessage(container: HTMLElement, value: string) {
 function expectedStreamBody(
   content: string,
   mode: TestWorkbenchMode = 'root_cause',
-  agentProviderId = 'internal',
+  agentProviderId = 'dsh',
 ) {
   return {
     requestId: expect.any(String),
     content,
     mode,
     agentProviderId,
-    ...(agentProviderId === 'internal'
+    ...(agentProviderId === 'dsh'
       ? { taskIntent: { capabilities: mode === 'general' ? [] : [mode] } }
       : {}),
-    ...(mode === 'general' || agentProviderId === 'internal'
+    ...(mode === 'general' || agentProviderId === 'dsh'
       ? { contextSelection: {}, knowledgeContext: { enabled: false, knowledgeBaseIds: [] } }
       : {}),
-    ...(agentProviderId === 'internal' ? { modelPreferences: {} } : {}),
+    ...(agentProviderId === 'dsh' ? { modelPreferences: {} } : {}),
     toolset: {
       enabledAdapterIds: ['metrics.v1'],
       enabledSkillIds: ['root-cause-skill'],
@@ -1263,6 +1298,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     testState.environmentError = false
     testState.environmentTemplates = []
     testState.catalogError = false
+    testState.runtimeProfiles = []
     testState.snapshot = {
       permissionKeys: [
         'observe.ai.view',
@@ -1291,6 +1327,9 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     testState.agentRuns = []
     testState.nativeEvents = []
     testState.memoryPolicies = []
+    testState.memoryRecords = []
+    testState.memoryMessageMetadata = {}
+    testState.memoryUserMetadata = {}
     apiGetMock.mockClear()
     apiPostMock.mockClear()
     apiPatchMock.mockClear()
@@ -1305,6 +1344,71 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       'trace',
       'inspection_review',
     ])
+  })
+
+  it('shows the ordinary Chat profile and keeps Heya profiles out of the picker', async () => {
+    testState.runtimeProfiles = [
+      { id: 'ops', name: '排障配置', scope: 'chat', revision: 2, enabled: true, assets: [] },
+      { id: 'personal', name: '个人配置', scope: 'heya', revision: 1, enabled: true, assets: [] },
+    ]
+    const container = await renderPage('/ai-workbench/chat?session=session-1')
+    await waitForWorkbenchText(container, 'Chat 默认配置')
+    const select = container.querySelector<HTMLElement>('[aria-label="运行配置"]')!
+    await act(async () => {
+      select.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      select.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+      await flushAsyncWork()
+    })
+    expect(document.body.textContent).toContain('排障配置 · v2')
+    expect(document.body.textContent).not.toContain('个人配置')
+  })
+
+  it.each([false, true])('shows historical system reply runtime evidence (authoritative Run=%s)', async (hasRun) => {
+    testState.messageScenario = 'historical-system-runtime'
+    if (hasRun) {
+      testState.agentRuns = [{
+        id: 'old-run', sessionId: 'session-1', status: 'completed', providerId: 'dsh', providerKind: 'dsh',
+        capabilityId: 'general', timeoutSeconds: 10, createdAt: '2026-05-12T10:06:00Z', updatedAt: '2026-05-12T10:06:00Z',
+        output: {
+          runtimeHooks: [{ id: 'tool-audit', version: '1', callId: 'call-1', toolName: 'metrics.read', outcome: 'completed' }],
+        },
+      }]
+    }
+    const container = await renderPage('/ai-workbench/chat?session=session-1')
+    await waitForWorkbenchText(container, 'ops · v3 · 1 条 Hook 记录')
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="查看本轮装配详情"]')!
+    expect(button).toBeTruthy()
+    await act(async () => {
+      button.click()
+      await flushAsyncWork()
+    })
+    expect(document.body.textContent).toContain(`tool-audit @ 1 · metrics.read · ${hasRun ? '已完成' : '结果未知'}`)
+    expect(document.body.textContent).not.toContain('private upstream payload')
+  })
+
+  it('uses the effective Chat profile model, effort and capacity until overridden', async () => {
+    testState.sessionMode = 'general'
+    testState.runtimeProfiles = [{
+      id: 'chat-default', name: '排障配置', scope: 'chat', revision: 2, enabled: true, assets: [],
+      modelPreferences: { publicModel: 'profile-model', reasoningEffort: 'high' },
+    }]
+    const container = await renderPage('/ai-workbench/chat?session=session-1')
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="模型与思考强度"]')!
+    await waitForWorkbenchText(container, 'profile-model')
+    expect(trigger.textContent).toContain('深度')
+    await act(async () => {
+      trigger.click()
+      await flushAsyncWork()
+    })
+    const menu = document.body.querySelector('.soha-ai-workbench__model-menu')
+    expect(menu?.textContent).toContain('配置 · profile-model')
+    expect(menu?.textContent).toContain('配置 · 深度')
+    expect(menu?.textContent).toContain('65.5K tokens')
+    await selectWorkbenchOption('选择模型', 'plain-model')
+    expect(trigger.textContent).toContain('plain-model')
+    expect(trigger.textContent).toContain('自动')
+    await selectWorkbenchOption('选择模型', '配置 · profile-model')
+    expect(trigger.textContent).toContain('深度')
   })
 
   it.each([
@@ -1380,6 +1484,208 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     })
     expect(composer.value).toBe('已有草稿')
   })
+
+  it.each([
+    [
+      '/ai-workbench/chat?session=session-1',
+      { contextSnapshot: { truncations: ['memory_unavailable'] } },
+    ],
+    [
+      '/heya?session=session-1',
+      { sessionPatch: { memoryStatus: 'degraded', memoryWarning: 'upstream internal diagnostic' } },
+    ],
+  ] as const)(
+    'shows memory degradation while a successful reply continues in %s and clears on a clean current reply',
+    async (path, metadata) => {
+      testState.messageScenario = 'plain'
+      if (path.startsWith('/heya'))
+        testState.memoryUserMetadata = {
+          memoryStatus: 'degraded',
+          memoryWarning: 'upstream internal diagnostic',
+        }
+      else testState.memoryMessageMetadata = metadata
+      const container = await renderPage(path)
+      await waitForWorkbenchText(container, '我们可以从一个简单例子开始。')
+      expect(container.textContent).toContain('长期记忆暂不可用，本次对话将继续')
+      expect(container.textContent).not.toContain('memory_unavailable')
+      expect(container.textContent).not.toContain('upstream internal diagnostic')
+      expect(streamWorkbenchMessageMock).not.toHaveBeenCalled()
+      testState.memoryUserMetadata = {}
+      testState.memoryMessageMetadata = { contextSnapshot: { truncations: [] } }
+      await act(async () => {
+        await container.queryClient.refetchQueries({ queryKey: ['copilot-sessions'] })
+        await container.queryClient.refetchQueries({
+          predicate: (query) => query.queryKey.includes('session-1'),
+        })
+        await flushAsyncWork()
+      })
+      expect(container.textContent).not.toContain('长期记忆暂不可用，本次对话将继续')
+      expect(container.textContent).toContain('我们可以从一个简单例子开始。')
+    },
+  )
+
+  it('offers another mode personal fact only for explicit selection without changing its policy', async () => {
+    useAuthStore.getState().setUser({
+      userId: 'sharing-owner',
+      userName: 'Owner',
+      email: '',
+      roles: [],
+      teams: [],
+      projects: [],
+      tags: [],
+    })
+    testState.snapshot.permissionKeys.push('ai.memory.view', 'ai.memory.update')
+    testState.memoryPolicies = [
+      {
+        id: 'heya-policy',
+        version: 'v1',
+        ownerId: 'sharing-owner',
+        mode: 'heya',
+        ownerTypes: ['user'],
+        defaultTtl: 864e11,
+        maximumTtl: 864e11,
+        minimumConfidence: 1,
+        explicitWriteOnly: true,
+        enabled: true,
+      },
+    ]
+    testState.memoryRecords = [
+      {
+        id: 'heya-fact',
+        ownerType: 'user',
+        ownerId: 'sharing-owner',
+        fact: '偏好中文回复',
+        policyId: 'heya-policy',
+        policyVersion: 'v1',
+        status: 'active',
+        sourceRefs: [],
+        sourceType: 'explicit_user',
+        scopeHash: 'scope',
+        confidence: 1,
+        validFrom: '2026-01-01T00:00:00Z',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+    ]
+    try {
+      const container = await renderPage('/ai-workbench/chat?session=session-1')
+      await waitForChat(container)
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[aria-label="添加内容"]')?.click()
+        await flushAsyncWork()
+      })
+      // The normal add-menu memory entry opens the same selector used by explicit remember.
+      const memoryButton = document.body.querySelector<HTMLButtonElement>(
+        '.soha-ai-workbench__add-menu [aria-label="个人记忆"]',
+      )
+      await act(async () => {
+        memoryButton!.click()
+        await flushAsyncWork()
+      })
+      const label = Array.from(document.body.querySelectorAll('label')).find((item) =>
+        item.textContent?.includes('偏好中文回复'),
+      )!
+      const checkbox = label.querySelector<HTMLInputElement>('input')!
+      expect(checkbox.checked).toBe(false)
+      expect(checkbox.disabled).toBe(false)
+      expect(document.body.textContent).toContain('来自 Heya，勾选后共享至本次会话')
+      expect(
+        Array.from(document.body.querySelectorAll('.ant-modal button')).some(
+          (button) => button.textContent === '改正',
+        ),
+      ).toBe(false)
+      await act(async () => {
+        checkbox.click()
+        await flushAsyncWork()
+      })
+      expect(checkbox.checked).toBe(true)
+      expect(apiPostMock.mock.calls.filter(([path]) => path === '/ai/memory')).toEqual([])
+    } finally {
+      await act(async () => useAuthStore.getState().clearAuth())
+    }
+  })
+
+  it.each([false, true])(
+    'quarantined=%s personal facts keep source visibility and gate reference and correction',
+    async (quarantined) => {
+      useAuthStore.getState().setUser({
+        userId: 'sharing-owner',
+        userName: 'Owner',
+        email: '',
+        roles: [],
+        teams: [],
+        projects: [],
+        tags: [],
+      })
+      testState.snapshot.permissionKeys.push('ai.memory.view', 'ai.memory.update')
+      testState.memoryPolicies = [
+        {
+          id: 'heya-policy',
+          version: 'v1',
+          ownerId: 'sharing-owner',
+          mode: 'chat',
+          ownerTypes: ['user'],
+          defaultTtl: 864e11,
+          maximumTtl: 864e11,
+          minimumConfidence: 1,
+          explicitWriteOnly: true,
+          enabled: true,
+        },
+      ]
+      testState.memoryRecords = [
+        {
+          id: 'heya-fact',
+          quarantined,
+          quarantineReason: quarantined ? '来源待核对' : undefined,
+          syncStatus: 'disabled',
+          ownerType: 'user',
+          ownerId: 'sharing-owner',
+          fact: '偏好中文回复',
+          policyId: 'heya-policy',
+          policyVersion: 'v1',
+          status: 'active',
+          sourceRefs: ['soha://session/source/message/source'],
+          sourceType: 'explicit_user',
+          scopeHash: 'scope',
+          confidence: 1,
+          validFrom: '2026-01-01T00:00:00Z',
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ]
+      try {
+        const container = await renderPage('/ai-workbench/chat?session=session-1')
+        await waitForChat(container)
+        await act(async () => {
+          container.querySelector<HTMLButtonElement>('[aria-label="添加内容"]')?.click()
+          await flushAsyncWork()
+        })
+        // The normal add-menu memory entry opens the same selector used by explicit remember.
+        const memoryButton = document.body.querySelector<HTMLButtonElement>(
+          '.soha-ai-workbench__add-menu [aria-label="个人记忆"]',
+        )
+        await act(async () => {
+          memoryButton!.click()
+          await flushAsyncWork()
+        })
+        const label = Array.from(document.body.querySelectorAll('label')).find((item) =>
+          item.textContent?.includes('偏好中文回复'),
+        )!
+        const checkbox = label.querySelector<HTMLInputElement>('input')!
+        expect(checkbox.disabled).toBe(quarantined)
+        expect(document.body.textContent).toContain('soha://session/source/message/source')
+        expect(document.body.textContent).toContain(quarantined ? '待核对（已隔离）' : '同步已关闭')
+        const correct = Array.from(
+          document.body.querySelectorAll<HTMLButtonElement>('.ant-modal button'),
+        ).find((button) => button.textContent?.replace(/\s/g, '') === '改正')!
+        expect(correct.disabled).toBe(quarantined)
+        const remove = Array.from(
+          document.body.querySelectorAll<HTMLButtonElement>('.ant-modal button'),
+        ).find((button) => button.textContent?.replace(/\s/g, '') === '删除')!
+        expect(remove.disabled).toBe(false)
+      } finally {
+        await act(async () => useAuthStore.getState().clearAuth())
+      }
+    },
+  )
 
   it('saves a persisted reply with a canonical source receipt for current authorization checks', async () => {
     const originalCrypto = globalThis.crypto
@@ -1484,10 +1790,10 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       new URL('/api/v1', window.location.origin).toString(),
       'fixture-owner',
     ])
-    rememberNativeRequest(scope, 'session-1', 'lost-response')
+    rememberRunRequest(scope, 'session-1', 'lost-response')
     const container = await renderPage('/ai-workbench/chat?session=session-1')
     await waitForWorkbenchText(container, '任务提交结果未确认')
-    expect(pendingNativeRequests(scope, 'session-1')).toEqual(['lost-response'])
+    expect(pendingRunRequests(scope, 'session-1')).toEqual(['lost-response'])
     expect(streamWorkbenchMessageMock).not.toHaveBeenCalled()
     expect(apiGetMock).toHaveBeenCalledWith(
       '/copilot/sessions/session-1/native-request?requestId=lost-response',
@@ -1495,19 +1801,19 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     testState.recoveredRun = {
       ...externalAgentRun([], 'completed'),
       providerKind: 'native',
-      providerId: 'internal',
+      providerId: 'dsh',
       id: 'recovered-original',
       sessionId: 'session-1',
     }
     // Another window received the same receipt and removed the shared marker first.
-    forgetNativeRequest(scope, 'session-1', 'lost-response')
+    forgetRunRequest(scope, 'session-1', 'lost-response')
     await act(async () => {
       await container.queryClient.refetchQueries({
-        queryKey: ['copilot-native-request', scope, 'session-1', 'lost-response'],
+        queryKey: ['copilot-run-request', scope, 'session-1', 'lost-response'],
       })
       await flushAsyncWork()
     })
-    expect(pendingNativeRequests(scope, 'session-1')).toEqual([])
+    expect(pendingRunRequests(scope, 'session-1')).toEqual([])
     expect(container.textContent).not.toContain('任务提交结果未确认')
     expect(
       container.queryClient
@@ -1522,32 +1828,36 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     ).toEqual([])
   })
 
-  it.each(['agent_unsupported', 'agent_failed'])(
-    'settles only explicitly rejected Native creation (%s)',
-    async (code) => {
-      testState.sessionMode = 'general'
-      testState.streamError = { message: 'creation response', code, retryable: false }
-      const container = await renderPage('/ai-workbench/chat?session=session-1')
-      await submitSenderMessage(container, 'Synthetic rejected creation')
-      const requestId = streamWorkbenchMessageMock.mock.calls[0][1].requestId as string
-      const scope = JSON.stringify([
-        new URL('/api/v1', window.location.origin).toString(),
-        'fixture-owner',
-      ])
-      expect(pendingNativeRequests(scope, 'session-1')).toEqual(
-        code === 'agent_unsupported' ? [] : [requestId],
-      )
-      expect(container.textContent).toContain('creation response')
-      expect(streamWorkbenchMessageMock).toHaveBeenCalledTimes(1)
-    },
-  )
+  it.each([
+    ['request_not_accepted', true],
+    ['agent_unsupported', true],
+    ['agent_failed', false],
+  ])('settles only explicitly rejected Run creation (%s)', async (code, rejected) => {
+    testState.sessionMode = 'general'
+    testState.streamError = { message: 'creation response', code, retryable: false }
+    const container = await renderPage('/ai-workbench/chat?session=session-1')
+    await submitSenderMessage(container, 'Synthetic rejected creation')
+    const requestId = streamWorkbenchMessageMock.mock.calls[0][1].requestId as string
+    const scope = JSON.stringify([
+      new URL('/api/v1', window.location.origin).toString(),
+      'fixture-owner',
+    ])
+    expect(pendingRunRequests(scope, 'session-1')).toEqual(rejected ? [] : [requestId])
+    expect(container.textContent).toContain('creation response')
+    expect(container.textContent?.includes('任务提交结果未确认')).toBe(!rejected)
+    expect(streamWorkbenchMessageMock).toHaveBeenCalledTimes(1)
+  })
 
   it.each(['HTTP 404', 'network error', 'AbortError'])(
-    'retains unknown Native creation after %s',
+    'retains unknown Run creation after %s',
     async (failure) => {
       testState.sessionMode = 'general'
       streamWorkbenchMessageMock.mockRejectedValueOnce(
-        failure === 'AbortError' ? new DOMException('Aborted', 'AbortError') : new Error(failure),
+        failure === 'AbortError'
+          ? new DOMException('Aborted', 'AbortError')
+          : failure === 'HTTP 404'
+            ? new ApiError(404, 'Not found', { method: 'POST' })
+            : new Error(failure),
       )
       const container = await renderPage('/ai-workbench/chat?session=session-1')
       await submitSenderMessage(container, 'Synthetic unknown creation')
@@ -1556,7 +1866,8 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
         new URL('/api/v1', window.location.origin).toString(),
         'fixture-owner',
       ])
-      expect(pendingNativeRequests(scope, 'session-1')).toEqual([requestId])
+      expect(pendingRunRequests(scope, 'session-1')).toEqual([requestId])
+      expect(container.textContent).toContain('任务提交结果未确认')
       expect(streamWorkbenchMessageMock).toHaveBeenCalledTimes(1)
     },
   )
@@ -1567,11 +1878,11 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       'fixture-owner',
     ])
     for (let index = 0; index < 65; index++)
-      rememberNativeRequest(scope, 'session-1', `r-${String(index).padStart(2, '0')}`)
+      rememberRunRequest(scope, 'session-1', `r-${String(index).padStart(2, '0')}`)
     testState.recoveryRequest = 'r-64'
     testState.recoveredRun = {
       ...externalAgentRun([], 'completed'),
-      providerId: 'internal',
+      providerId: 'dsh',
       providerKind: 'native',
       id: 'later-original',
       sessionId: 'session-1',
@@ -1589,8 +1900,8 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(apiGetMock).toHaveBeenCalledWith(
       '/copilot/sessions/session-1/native-request?requestId=r-64',
     )
-    expect(pendingNativeRequests(scope, 'session-1')).toHaveLength(64)
-    expect(pendingNativeRequests(scope, 'session-1')).not.toContain('r-64')
+    expect(pendingRunRequests(scope, 'session-1')).toHaveLength(64)
+    expect(pendingRunRequests(scope, 'session-1')).not.toContain('r-64')
     expect(
       container.queryClient
         .getQueryData<{ data: WorkbenchAgentRun[] }>(['copilot-agent-runs', 'session-1'])
@@ -2001,7 +2312,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     })
     const dialog = document.body.querySelector('[role="dialog"]')!
     expect(dialog.textContent).toContain('仅显式保存')
-    expect(apiGetMock.mock.calls.map(([path]) => path)).toContain('/ai/memory')
+    expect(apiGetMock.mock.calls.map(([path]) => path)).toContain('/ai/memory?includeDeleted=true')
     await act(async () => {
       Array.from(dialog.querySelectorAll<HTMLButtonElement>('button'))
         .find((button) => button.textContent?.replace(/\s/g, '') === '完成')!
@@ -2141,7 +2452,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       await flushAsyncWork()
     })
     expect(streamWorkbenchMessageMock.mock.calls[0]?.[1]).toMatchObject({
-      agentProviderId: 'internal',
+      agentProviderId: 'dsh',
       taskIntent: {
         capabilities: ['performance', 'trace'],
         performanceDataSourceId: 'ds-1',
@@ -2433,7 +2744,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     await act(flushAsyncWork)
     await waitForChat(container)
     expect(apiPostMock).toHaveBeenCalledWith('/copilot/sessions/main', {
-      agentProviderId: 'internal',
+      agentProviderId: 'dsh',
     })
     expect(latestRoute).toContain('session=main-chat')
     expect(container.textContent).toContain('今天，想一起完成什么？')
@@ -3142,8 +3453,8 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       },
       {
         type: 'agent.status',
-        providerId: 'internal',
-        providerKind: 'internal',
+        providerId: 'dsh',
+        providerKind: 'dsh',
         status: 'succeeded',
       },
     ]
@@ -3278,28 +3589,38 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(activity?.textContent).toContain('已完成')
   })
 
-  it('shows Native domain approval and cancellation waits without ending or resubmitting the task', async () => {
+  it('shows dsh domain waits alongside read-only legacy approval history', async () => {
     testState.sessionMode = 'general'
     testState.snapshot.permissionKeys.push(
       'ai.gateway.approvals.view',
       'ai.gateway.approvals.approve',
+      'ai.gateway.approvals.reject',
+      'ai.gateway.approvals.cancel',
     )
     testState.agentRuns = [
       {
         ...externalAgentRun([], 'running'),
-        id: 'native:approval',
-        providerId: 'internal',
-        providerKind: 'native',
+        id: 'dsh:approval',
+        providerId: 'dsh',
+        providerKind: 'dsh',
         phase: 'waiting_approval',
-        output: { approvalRequestIds: ['approval-native-1'], capabilityTaskId: 'task-1' },
+        output: { approvalRequestIds: ['approval-dsh-1'], capabilityTaskId: 'task-1' },
       },
       {
         ...externalAgentRun([], 'running'),
-        id: 'native:cancel',
-        providerId: 'internal',
-        providerKind: 'native',
+        id: 'dsh:cancel',
+        providerId: 'dsh',
+        providerKind: 'dsh',
         phase: 'cancelling',
         output: { cancellationConfirmed: false },
+      },
+      {
+        ...externalAgentRun([], 'running'),
+        id: 'native:approval',
+        providerId: 'dsh',
+        providerKind: 'native',
+        phase: 'waiting_approval',
+        output: { approvalRequestIds: ['approval-native-1'], capabilityTaskId: 'legacy-task' },
       },
     ]
     const container = await renderPage('/heya?session=session-1')
@@ -3310,6 +3631,9 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       await flushAsyncWork()
     })
     await waitForWorkbenchText(container, '等待变更审批')
+    expect(
+      container.querySelector('[data-activity-id="task:native:approval"]')?.textContent,
+    ).toContain('旧版任务记录，仅供查看')
     expect(container.textContent).toContain('取消处理中，等待领域终态确认')
     expect(
       Array.from(container.querySelectorAll('.soha-ai-message-progress')).map(
@@ -3319,13 +3643,28 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(container.textContent).not.toContain('助手正在处理当前请求。')
     expect(container.querySelector('button[aria-label="停止回复"]')).not.toBeNull()
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLElement>('.ant-segmented-item'))
-        .find((item) => item.textContent?.includes('批准'))!
+      container
+        .querySelector<HTMLButtonElement>('[data-activity-id="task:native:approval"] button')
+        ?.click()
+      await flushAsyncWork()
+    })
+    const legacyDetails = document.body.querySelector('[role="dialog"]')
+    expect(legacyDetails?.textContent).toContain('不能继续旧执行检查点')
+    expect(legacyDetails?.textContent).not.toContain('取消任务')
+    await act(async () => {
+      Array.from(legacyDetails!.querySelectorAll('button'))
+        .find((item) => item.textContent?.includes('查看批准'))!
         .click()
       await flushAsyncWork()
     })
     await waitForWorkbenchText(container, '审批结果会继续推进原任务')
-    expect(container.textContent).toContain('project-1')
+    const approvalCards = Array.from(container.querySelectorAll('.soha-ai-approval'))
+    const dshApproval = approvalCards.find((item) => item.textContent?.includes('project-dsh'))
+    const legacyApproval = approvalCards.find((item) => item.textContent?.includes('project-1'))
+    expect(dshApproval?.textContent).toContain('审批结果会继续推进原任务')
+    expect(dshApproval?.querySelectorAll('button')).toHaveLength(3)
+    expect(legacyApproval?.textContent).toContain('旧版审批仅供查看，无法继续原任务')
+    expect(legacyApproval?.querySelectorAll('button')).toHaveLength(0)
     expect(container.textContent).not.toContain('助手本轮已结束')
     expect(
       apiGetMock.mock.calls.some(
@@ -3342,49 +3681,81 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(streamWorkbenchMessageMock).not.toHaveBeenCalled()
   })
 
-  it('recovers Native events by cursor and keeps the request message from hiding its live run', async () => {
+  it('recovers read-only Native history and active dsh events by cursor without resending', async () => {
     testState.sessionMode = 'general'
     testState.messageScenario = 'native-request'
-    testState.agentRuns = [
-      {
-        ...externalAgentRun([], 'running'),
-        id: 'native:run',
-        providerId: 'internal',
-        providerKind: 'native',
-        executionOwner: 'native',
-        output: {
-          workbenchEvents: [
-            { id: 'stale-tail', type: 'message.delta', contentDelta: 'Duplicated tail' },
-          ],
-        },
+    testState.snapshot.permissionKeys.push(
+      'ai.gateway.approvals.view',
+      'ai.gateway.approvals.approve',
+      'ai.evaluations.feedback.curate',
+    )
+    testState.agentRuns = (['native', 'dsh'] as const).map((providerKind) => ({
+      ...externalAgentRun([], 'running'),
+      id: `${providerKind}:run`,
+      providerId: 'dsh',
+      providerKind,
+      executionOwner: providerKind === 'dsh' ? 'external' : 'native',
+      output: {
+        workbenchEvents: [
+          { id: 'stale-tail', type: 'message.delta', contentDelta: 'Duplicated tail' },
+        ],
       },
-    ]
-    testState.nativeEvents = [1, 2].map((sequence) => ({
-      id: `native:${sequence}`,
-      type: 'message.delta',
+    }))
+    testState.nativeEvents = testState.agentRuns.flatMap((run) =>
+      [1, 2].map<WorkbenchStreamEvent>((sequence) => ({
+        id: `${run.id}:${sequence}`,
+        type: 'message.delta',
+        runId: run.id,
+        sessionId: 'session-1',
+        messageId: `${run.id}:message`,
+        role: 'assistant',
+        sequence,
+        createdAt: '2026-10-08T00:00:01Z',
+        contentDelta: sequence === 1 ? `${run.providerKind} durable ` : 'answer',
+      })),
+    )
+    testState.nativeEvents.push({
+      id: 'native:approval-event',
+      type: 'tool.completed',
       runId: 'native:run',
       sessionId: 'session-1',
-      messageId: 'native:model:1',
-      role: 'assistant',
-      sequence,
-      createdAt: '2026-10-08T00:00:01Z',
-      contentDelta: sequence === 1 ? 'Durable ' : 'answer',
-    }))
+      sequence: 3,
+      createdAt: '2026-10-08T00:00:02Z',
+      toolCall: {
+        id: 'legacy-change',
+        adapterId: 'docker',
+        toolName: 'change.request',
+        status: 'success',
+        startedAt: '2026-10-08T00:00:01Z',
+        outputPreview: { relatedIds: { approvalRequestId: 'approval-native-1' } },
+      },
+    })
     const container = await renderPage('/ai-workbench/chat?session=session-1')
-    await waitForWorkbenchText(container, 'Durable answer')
-    expect(apiGetMock).toHaveBeenCalledWith(
-      '/copilot/agent-runs/native%3Arun/events?afterSequence=0',
-    )
-    expect(apiGetMock).toHaveBeenCalledWith(
-      '/copilot/agent-runs/native%3Arun/events?afterSequence=2',
-    )
+    await waitForWorkbenchText(container, 'native durable answer')
+    await waitForWorkbenchText(container, 'dsh durable answer')
+    await waitForWorkbenchText(container, '旧版审批仅供查看，无法继续原任务')
+    expect(container.querySelector('.soha-ai-approval')?.querySelectorAll('button')).toHaveLength(0)
+    expect(container.querySelector('button[aria-label="有帮助"]')).toBeNull()
+    for (const [run, after] of [['native', 3], ['dsh', 2]]) {
+      expect(apiGetMock).toHaveBeenCalledWith(
+        `/copilot/agent-runs/${run}%3Arun/events?afterSequence=0`,
+      )
+      expect(apiGetMock).toHaveBeenCalledWith(
+        `/copilot/agent-runs/${run}%3Arun/events?afterSequence=${after}`,
+      )
+    }
+    expect(container.querySelector('button[aria-label="停止回复"]')).not.toBeNull()
+    testState.agentRuns = testState.agentRuns.filter((run) => run.providerKind === 'native')
     await act(async () => {
-      await container.queryClient.refetchQueries({ queryKey: ['copilot-agent-runs'] })
+      await container.queryClient.refetchQueries({ queryKey: ['copilot-agent-runs', 'session-1'] })
       await flushAsyncWork()
     })
-    expect(container.textContent?.match(/Durable answer/g)).toHaveLength(1)
+    expect(container.textContent?.match(/native durable answer/g)).toHaveLength(1)
     expect(container.textContent).not.toContain('Duplicated tail')
+    expect(container.querySelector('button[aria-label="停止回复"]')).toBeNull()
+    expect(container.querySelector('.soha-ai-message-progress')).toBeNull()
     expect(streamWorkbenchMessageMock).not.toHaveBeenCalled()
+    expect(apiPostMock.mock.calls.filter(([path]) => path.includes('/cancel'))).toEqual([])
   })
 
   it('does not duplicate running external run replay when polling returns the same events', async () => {

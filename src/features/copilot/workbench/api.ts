@@ -1,5 +1,7 @@
 import { api } from '@/services/api-client'
+import { ApiError } from '@/services/api-error'
 import type { ApiResponse } from '@/types'
+import type { WorkbenchRuntimeProfile } from './runtime-profile'
 import type {
   PersonalAgentAccess,
   WorkbenchMessageSearchPage,
@@ -67,6 +69,20 @@ export interface CreateInspectionTaskInput {
 }
 
 export const workbenchApi = {
+  runtimeProfiles: {
+    list: () => api.get<ApiResponse<WorkbenchRuntimeProfile[]>>('/copilot/workbench/runtime-profiles'),
+    select: async ({ sessionId, profileId }: { sessionId: string; profileId: string }) => {
+      const path = `/copilot/sessions/${encodeURIComponent(sessionId)}/runtime-profile`
+      const response = await api.put<ApiResponse<WorkbenchSession>>(path, { profileId })
+      if (
+        response.data?.id !== sessionId ||
+        (response.data.metadata?.runtimeProfileId ?? '') !== profileId
+      ) {
+        throw new ApiError(502, '运行配置回执与会话不匹配', { method: 'PUT', path })
+      }
+      return response
+    },
+  },
   searchMessages: (query: string, cursor = '', personal = false) =>
     api.get<ApiResponse<WorkbenchMessageSearchPage>>(
       `/copilot/messages/search?${new URLSearchParams({ q: query, workspace: personal ? 'heya' : 'chat', ...(cursor ? { cursor } : {}) })}`,
@@ -247,7 +263,10 @@ export const workbenchApi = {
       const result = await api.get<ApiResponse<WorkbenchAgentRun>>(
         `/copilot/sessions/${encodeURIComponent(sessionId)}/native-request?requestId=${encodeURIComponent(requestId)}`,
       )
-      if (result.data?.sessionId !== sessionId || result.data?.providerKind !== 'native')
+      if (
+        result.data?.sessionId !== sessionId ||
+        !['native', 'dsh'].includes(result.data?.providerKind ?? '')
+      )
         throw new Error('恢复回执与原会话或任务不匹配')
       return result
     },

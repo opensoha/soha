@@ -8,15 +8,19 @@ import { Button, Checkbox, Input, Modal, Popconfirm, Select, Space, Typography }
 import { useEffect, useState } from 'react'
 import { memoryApi } from '../../memory/api'
 import { memoryKeys } from '../../memory/keys'
+import { MemoryConsent } from '../../memory/consent'
+import { memoryDeleted, memorySyncLabel } from '../../memory/state'
 import type { MemoryRecord } from '../../memory/types'
 
 export function ChatMemory({
+  mode = 'chat',
   initialFact = '',
   sourceRefs = [],
   selected,
   onSelect,
   onClose,
 }: {
+  mode?: 'chat' | 'heya'
   initialFact?: string
   sourceRefs?: string[]
   selected: string[]
@@ -29,8 +33,14 @@ export function ChatMemory({
   const canRead = hasPermission(permissions, 'ai.memory.view')
   const canWrite = canRead && hasPermission(permissions, 'ai.memory.update')
   const records = useQuery({
-    queryFn: () => memoryApi.records.list(),
+    queryFn: () => memoryApi.records.list(true),
     queryKey: memoryKeys.chatRecords(ownerId),
+    refetchInterval: (query) =>
+      query.state.data?.data.some(
+        (record) => record.syncStatus === 'pending' || record.syncStatus === 'delete_pending',
+      )
+        ? 3000
+        : false,
     enabled: canRead,
   })
   const policies = useQuery({
@@ -38,12 +48,67 @@ export function ChatMemory({
     queryKey: memoryKeys.chatPolicies(ownerId),
     enabled: canRead,
   })
+  useEffect(() => {
+    if (!records.isSuccess || !policies.isSuccess) return
+    const allowed = new Set(
+      (records.data?.data ?? [])
+        .filter(
+          (record) =>
+            !memoryDeleted(record) &&
+            !record.quarantined &&
+            record.status === 'active' &&
+            !(record.validFrom && Date.parse(record.validFrom) > Date.now()) &&
+            record.ownerType === 'user' &&
+            record.ownerId === ownerId &&
+            !(record.expiresAt && Date.parse(record.expiresAt) <= Date.now()) &&
+            (policies.data?.data ?? []).some(
+              (policy) =>
+                policy.id === record.policyId &&
+                policy.version === record.policyVersion &&
+                (!policy.ownerId || policy.ownerId === ownerId) &&
+                policy.enabled &&
+                (policy.readEnabled ?? policy.enabled),
+            ),
+        )
+        .map((record) => record.id),
+    )
+    const own = policies.data?.data.find(
+      (policy) => policy.mode === mode && policy.ownerId === ownerId,
+    )
+    const next = selected.filter(
+      (id) => allowed.has(id) && (!own || (own.enabled && (own.readEnabled ?? own.enabled))),
+    )
+    if (next.length !== selected.length) onSelect(next)
+  }, [
+    records.data,
+    records.isSuccess,
+    policies.data,
+    policies.isSuccess,
+    mode,
+    ownerId,
+    selected,
+    onSelect,
+  ])
   const [fact, setFact] = useState(initialFact.slice(0, 2000))
   const [editing, setEditing] = useState<MemoryRecord>()
   const [policyKey, setPolicyKey] = useState<string>()
   const denied = !canRead || queryAccessDenied(records) || queryAccessDenied(policies)
-  const enabledPolicies = (denied ? [] : (readableQueryData(policies)?.data ?? [])).filter(
-    (item) => item.enabled && item.explicitWriteOnly && item.ownerTypes.includes('user'),
+  const visiblePolicies = (denied ? [] : (readableQueryData(policies)?.data ?? [])).filter(
+    (item) => !item.ownerId || item.ownerId === ownerId,
+  )
+  const scopedPolicies = visiblePolicies.filter((item) => !item.mode || item.mode === mode)
+  const sourceMode = (record: MemoryRecord) =>
+    visiblePolicies.find(
+      (item) => item.id === record.policyId && item.version === record.policyVersion,
+    )?.mode
+  const crossMode = (record: MemoryRecord) =>
+    Boolean(sourceMode(record) && sourceMode(record) !== mode)
+  const personalPolicy = scopedPolicies.find(
+    (item) => item.mode === mode && item.ownerId === ownerId,
+  )
+  const enabledPolicies = (personalPolicy ? [personalPolicy] : scopedPolicies).filter(
+    (item) =>
+      item.enabled && (item.writeEnabled ?? item.enabled) && item.ownerTypes.includes('user'),
   )
   const policy = policyKey
     ? enabledPolicies.find((item) => item.id + ':' + item.version === policyKey)
@@ -52,9 +117,13 @@ export function ChatMemory({
     if (!denied && !policyKey && enabledPolicies[0])
       setPolicyKey(enabledPolicies[0].id + ':' + enabledPolicies[0].version)
   }, [denied, policyKey, enabledPolicies[0]?.id, enabledPolicies[0]?.version])
+  const editingQuarantined = Boolean(
+    editing && (records.data?.data ?? []).find((record) => record.id === editing.id)?.quarantined,
+  )
   const save = useOperationMutation(
     {
       mutationFn: async () => {
+        if (editingQuarantined) throw new Error('这条记忆已隔离，待核对后才能改正。')
         if (!canWrite || denied || !ownerId || !policy || !fact.trim())
           throw new Error('请选择有效策略并填写记忆内容。')
         const now = new Date()
@@ -96,7 +165,7 @@ export function ChatMemory({
     {
       label: ['保存个人记忆', 'Save personal memory'],
       target: () => `${editing?.id ?? '个人记忆'} · ${policy?.id}:${policy?.version}`,
-      receipt: () => ({ message: '个人记忆已保存；仅勾选的条目用于背景。' }),
+      receipt: () => ({ message: '个人记忆已受理；同步状态见条目，读取仍受当前授权控制。' }),
     },
   )
   const remove = useOperationMutation(
@@ -135,7 +204,7 @@ export function ChatMemory({
       }
     >
       <Typography.Paragraph type="secondary">
-        仅显式保存。勾选的记忆用于下次发送；删除后不再作为背景使用，历史对话保留。
+        Chat 仅显式保存；Heya 自动记忆需主动授权。勾选的记忆用于下次发送，历史对话保留。
       </Typography.Paragraph>
       {selected.length > 0 ? (
         <Button size="small" type="text" disabled={blocked} onClick={() => onSelect([])}>
@@ -145,8 +214,23 @@ export function ChatMemory({
       {!canRead ? (
         <Typography.Paragraph type="secondary">当前无权读取个人记忆。</Typography.Paragraph>
       ) : null}
+      <Button
+        size="small"
+        disabled={blocked || !canRead}
+        loading={records.isFetching || policies.isFetching}
+        onClick={() => void Promise.all([records.refetch(), policies.refetch()])}
+      >
+        刷新记忆状态
+      </Button>
       <ReadFeedback query={records} label="个人记忆" canRead={canRead} />
       <ReadFeedback query={policies} label="记忆策略" canRead={canRead} />
+      {canWrite && !accessDenied ? (
+        <MemoryConsent
+          mode={mode}
+          policy={personalPolicy}
+          disabled={blocked || policies.isPending || policies.isError}
+        />
+      ) : null}
       {save.feedback}
       {remove.feedback}
       {(accessDenied ? [] : (readableQueryData(records)?.data ?? [])).map((record) => (
@@ -154,9 +238,22 @@ export function ChatMemory({
           <Checkbox
             disabled={
               blocked ||
-              !enabledPolicies.some(
+              memoryDeleted(record) ||
+              record.quarantined === true ||
+              record.status !== 'active' ||
+              Boolean(record.validFrom && Date.parse(record.validFrom) > Date.now()) ||
+              record.ownerType !== 'user' ||
+              record.ownerId !== ownerId ||
+              Boolean(record.expiresAt && Date.parse(record.expiresAt) <= Date.now()) ||
+              !visiblePolicies.some(
                 (policy) =>
-                  policy.id === record.policyId && policy.version === record.policyVersion,
+                  policy.enabled &&
+                  (policy.readEnabled ?? policy.enabled) &&
+                  (!personalPolicy ||
+                    (personalPolicy.enabled &&
+                      (personalPolicy.readEnabled ?? personalPolicy.enabled))) &&
+                  policy.id === record.policyId &&
+                  policy.version === record.policyVersion,
               )
             }
             checked={selected.includes(record.id)}
@@ -168,17 +265,21 @@ export function ChatMemory({
               )
             }
           >
-            {record.fact}
+            {memoryDeleted(record) ? '已删除的个人记忆' : record.fact}
           </Checkbox>
           <Typography.Paragraph type="secondary">
-            有效期至 {record.expiresAt ? new Date(record.expiresAt).toLocaleString() : '未知'} ·
-            来源 {record.sourceRefs?.join('、') || '显式输入'}
+            {crossMode(record) && !memoryDeleted(record)
+              ? `来自 ${sourceMode(record) === 'heya' ? 'Heya' : 'Chat'}，勾选后共享至本次会话；请在原入口管理。 · `
+              : ''}
+            {memorySyncLabel(record)} · 有效期至{' '}
+            {record.expiresAt ? new Date(record.expiresAt).toLocaleString() : '未知'} · 来源{' '}
+            {memoryDeleted(record) ? '已隐藏' : record.sourceRefs?.join('、') || '显式输入'}
           </Typography.Paragraph>
-          {canWrite && !accessDenied ? (
+          {canWrite && !accessDenied && !memoryDeleted(record) && !crossMode(record) ? (
             <Space>
               <Button
                 size="small"
-                disabled={blocked}
+                disabled={blocked || record.quarantined === true}
                 onClick={() => {
                   setEditing(record)
                   setFact(record.fact)
@@ -228,7 +329,7 @@ export function ChatMemory({
           ) : null}
           <Button
             type="primary"
-            disabled={blocked || !policy || !fact.trim()}
+            disabled={blocked || editingQuarantined || !policy || !fact.trim()}
             loading={save.isPending}
             onClick={() => save.mutate()}
           >

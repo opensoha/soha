@@ -401,7 +401,7 @@ describe('workbench stream helpers', () => {
     )
   })
 
-  it('accepts a durable Native run handoff without treating it as completion', async () => {
+  it.each(['native', 'dsh'] as const)('accepts a durable %s handoff without completion', async (providerKind) => {
     const event: WorkbenchStreamEvent = {
       id: 'evt-queued',
       sessionId: 'session-1',
@@ -410,7 +410,7 @@ describe('workbench stream helpers', () => {
       createdAt,
       type: 'agent.status',
       providerId: 'internal',
-      providerKind: 'native',
+      providerKind,
       status: 'queued',
     }
     const body = new ReadableStream<Uint8Array>({

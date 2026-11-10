@@ -213,6 +213,8 @@ export function streamMessageMetadata(
     sources: sources.length > 0 ? sources : state.sources,
     analysisArtifacts: artifacts.length > 0 ? artifacts : streamStateArtifacts(state),
     agentStatus: agentStatus ?? state.agentStatus,
+    runtimeAssembly: serverMetadata.runtimeAssembly ?? state.agentStatus?.metadata?.runtimeAssembly ?? current?.runtimeAssembly,
+    runtimeHooks: serverMetadata.runtimeHooks ?? state.agentStatus?.metadata?.runtimeHooks ?? current?.runtimeHooks,
     ...(state.error
       ? {
           error: state.error.message,

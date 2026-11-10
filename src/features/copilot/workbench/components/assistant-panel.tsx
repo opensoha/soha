@@ -1,3 +1,4 @@
+import { isLegacyAgentRun, isReadOnlyAgentRunMessage } from '../agent-run-replay'
 import { ManagementState } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -255,20 +256,31 @@ export function AssistantPanel({
       ].map((tool) => [tool.id, tool]),
     ).values(),
   ].sort((a, b) => b.startedAt.localeCompare(a.startedAt))
-  const nativeApprovalIds = new Set(
-    [...runs, ...personalRuns]
-      .filter((run) => run.providerKind === 'native')
-      .flatMap((run) => {
-        const ids = run.output?.approvalRequestIds
-        return Array.isArray(ids)
-          ? ids.filter((id): id is string => typeof id === 'string' && id.length > 0).slice(0, 8)
-          : []
-      }),
+  const activityRuns = [...runs, ...personalRuns]
+  const taskApprovalIds = new Set<string>()
+  const readOnlyApprovalIds = new Set(
+    [
+      ...messages
+        .filter((item) => isReadOnlyAgentRunMessage(item))
+        .flatMap((item) => metadataToolExecutions(item.metadata)),
+      ...activityRuns.filter(isLegacyAgentRun).flatMap((run) => run.toolExecutions ?? []),
+    ].map(toolApprovalId),
   )
+  for (const run of activityRuns) {
+    const readOnly = isLegacyAgentRun(run)
+    const ids = run.output?.approvalRequestIds
+    if ((!readOnly && run.providerKind !== 'dsh') || !Array.isArray(ids)) continue
+    for (const id of ids
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      .slice(0, 8)) {
+      taskApprovalIds.add(id)
+      if (readOnly) readOnlyApprovalIds.add(id)
+    }
+  }
   const approvalIds = [
     ...new Set([
       ...tools.map(toolApprovalId).filter((id): id is string => Boolean(id)),
-      ...nativeApprovalIds,
+      ...taskApprovalIds,
     ]),
   ]
   const reason = agentConnectionUnavailableReason(provider)
@@ -344,7 +356,9 @@ export function AssistantPanel({
         className="soha-ai-activity-icon"
         aria-label={`查看动态：${item.title}`}
         icon={
-          item.kind === 'artifact' || (!item.run && item.artifacts.length) ? (
+          item.kind === 'artifact' ||
+          (!item.run && item.artifacts.length) ||
+          (item.run && isLegacyAgentRun(item.run)) ? (
             <FileTextOutlined />
           ) : (
             executionIcon(item.run?.stopReason === 'unknown_outcome' ? 'failed' : item.status)
@@ -412,7 +426,7 @@ export function AssistantPanel({
             查看批准
           </Button>
         ) : null}
-        {run && ['queued', 'running'].includes(run.status) ? (
+        {run && !isLegacyAgentRun(run) && ['queued', 'running'].includes(run.status) ? (
           <Button
             size="small"
             type="text"
@@ -429,7 +443,8 @@ export function AssistantPanel({
   const renderActivityOverview = (item: AssistantActivity) => {
     const run = item.run
     const taskUsage = taskUsageSummary(run?.output?.usage)
-    const waitingInput = run?.phase === 'paused' && run.stopReason === 'waiting_input'
+    const waitingInput =
+      run && !isLegacyAgentRun(run) && run.phase === 'paused' && run.stopReason === 'waiting_input'
     const question = typeof run?.input?.question === 'string' ? run.input.question : ''
     const outcome =
       typeof run?.output?.summary === 'string'
@@ -456,6 +471,12 @@ export function AssistantPanel({
             <p>多次模型调用的累计输入与输出，不代表上下文窗口占用。</p>
           </section>
         )}
+        {run && isLegacyAgentRun(run) ? (
+          <p role="status">
+            旧版任务记录，仅供查看；不能继续旧执行检查点。
+            {run.output?.stopReason === 'legacy_reconciliation_required' ? '执行结果待核对。' : ''}
+          </p>
+        ) : null}
         <h3>执行结果</h3>
         {renderDetailText(outcome || item.artifacts[0]?.artifact.summary || activitySummary(item))}
         {run?.errorMessage ? (
@@ -655,7 +676,12 @@ export function AssistantPanel({
             </Typography.Text>
             {approvalIds.length ? (
               approvalIds.map((id) => (
-                <MessageApproval key={id} id={id} continuesTask={nativeApprovalIds.has(id)} />
+                <MessageApproval
+                  key={id}
+                  id={id}
+                  continuesTask={taskApprovalIds.has(id)}
+                  readOnly={readOnlyApprovalIds.has(id)}
+                />
               ))
             ) : (
               <ManagementState

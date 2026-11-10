@@ -27,3 +27,8 @@ export type {
   WorkbenchCatalog,
 } from './workbench/types'
 export { getAIWorkbenchPathForMode } from './workbench/navigation'
+export type {
+  WorkbenchRuntimeProfile,
+  WorkbenchRuntimeProfileUpdate,
+} from './workbench/runtime-profile'
+export { workbenchKeys } from './workbench/keys'
