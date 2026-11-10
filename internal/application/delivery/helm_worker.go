@@ -31,7 +31,7 @@ func (s *Service) helmWorkerLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			task, err := s.ClaimExecutionTask(ctx, []string{"helm_direct"}, owner, "local")
+			task, err := s.ClaimExecutionTask(ctx, []string{"helm_direct", domaindelivery.HelmDirectInitializationProvider}, owner, "local")
 			if err == nil {
 				s.executeLocalHelmTask(ctx, task)
 			}

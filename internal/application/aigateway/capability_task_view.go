@@ -17,6 +17,9 @@ func (s *Service) VisibleCapabilityTask(ctx context.Context, principal domainide
 	if err != nil || intent.ActorID != principal.UserID {
 		return domainaigateway.CapabilityTask{}, apperrors.ErrNotFound
 	}
+	if s.authorizeGovernedAICaller(ctx, principal, intent.Input.AIClientID, intent.Input.SkillID) != nil {
+		return domainaigateway.CapabilityTask{}, apperrors.ErrNotFound
+	}
 	if intent.PermissionCeiling != nil {
 		principal, err = appaccess.RuntimePrincipalWithin(ctx, s.permissions, principal, intent.PermissionCeiling)
 		if err != nil {
@@ -87,7 +90,11 @@ func (s *Service) visibleCapabilityPlan(ctx context.Context, principal domainide
 			return domainaigateway.CapabilityPlan{}, err
 		}
 		tool, _ := s.toolByName(call.ToolName)
-		visible, _, err := s.sanitizeToolOutputByAccessPolicy(ctx, principal, call.AIClientID, call.SkillID, tool, capabilityGatewayScope(tool, call.Input), step.Call.Input)
+		input := step.Call.Input
+		if hasProtectedApprovalInput(call.ToolName) {
+			input = approvalDisplayInput(call.ToolName, input)
+		}
+		visible, _, err := s.sanitizeToolOutputByAccessPolicy(ctx, principal, call.AIClientID, call.SkillID, tool, capabilityGatewayScope(tool, call.Input), input)
 		if err != nil {
 			return domainaigateway.CapabilityPlan{}, err
 		}
@@ -117,13 +124,19 @@ func (s *Service) visibleCapabilityNode(ctx context.Context, principal domainide
 			return domainaigateway.CapabilityTaskNode{}, err
 		}
 		tool, _ := s.toolByName(call.ToolName)
-		output, _, err := s.sanitizeToolOutputByAccessPolicy(ctx, principal, call.AIClientID, call.SkillID, tool, capabilityGatewayScope(tool, call.Input), node.Invocation.Output)
+		projected, err := protectedCapabilityOutput(node.PreparedCall.ToolName, node.Invocation.Output)
+		if err != nil {
+			return domainaigateway.CapabilityTaskNode{}, err
+		}
+		output, _, err := s.sanitizeToolOutputByAccessPolicy(ctx, principal, call.AIClientID, call.SkillID, tool, capabilityGatewayScope(tool, call.Input), projected)
 		if err != nil {
 			return domainaigateway.CapabilityTaskNode{}, err
 		}
 		invocation := *node.Invocation
 		invocation.Output = output
-		invocation.Task = visibleCapabilityTaskRef(invocation.Task, output)
+		if invocation.Task != nil {
+			invocation.Task = s.gatewayRegistry().TaskReference(tool, node.Invocation.Output, output)
+		}
 		invocation.Assessment = visibleCapabilityAssessment(tool, output)
 		// Related IDs and audit metadata are not needed to resume a goal;
 		// don't restore fields removed from the policy-filtered output.

@@ -32,6 +32,7 @@ type RuntimePermissionAuthorizer interface {
 }
 
 type Service struct {
+	terminals        *PodTerminals
 	workloads        *Workloads
 	logs             *Logs
 	configuration    *Configuration
@@ -50,6 +51,10 @@ type Service struct {
 }
 
 type Dependencies struct {
+	PodTerminals              PodTerminalRepository
+	Lifecycle                 context.Context
+	PodExecutions             PodExecutionRepository
+	PodExecutionIdentity      PodExecutionIdentity
 	DirectMonitoringInventory DirectMonitoringInventory
 	Clusters                  ClusterMetadataProvider
 	Agents                    AgentClients

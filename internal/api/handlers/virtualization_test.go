@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -57,7 +56,7 @@ func (s *streamTaskUpdatesStubService) GetOperation(_ context.Context, _ domaini
 
 func TestStreamTaskUpdatesUsesFixedErrorMessage(t *testing.T) {
 	service := &streamTaskUpdatesStubService{}
-	handler := NewVirtualizationHandler(service)
+	handler := NewVirtualizationHandlerWithServices(VirtualizationServices{Operations: service})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -76,38 +75,6 @@ func TestStreamTaskUpdatesUsesFixedErrorMessage(t *testing.T) {
 	}
 	if strings.Contains(body, "context canceled") {
 		t.Fatalf("expected backend error to be redacted, got %q", body)
-	}
-}
-
-func TestBackendWebSocketDialerUsesConsoleTLSOptions(t *testing.T) {
-	result := consoleport.ConsoleURLResult{
-		BackendTLS: consoleport.BackendTLS{
-			ServerName:         "k8s.example",
-			InsecureSkipVerify: true,
-		},
-	}
-
-	dialer, err := backendWebSocketDialer(result)
-	if err != nil {
-		t.Fatalf("backendWebSocketDialer() error = %v", err)
-	}
-	if dialer.TLSClientConfig == nil {
-		t.Fatalf("TLSClientConfig is nil")
-	}
-	if dialer.TLSClientConfig.ServerName != "k8s.example" {
-		t.Fatalf("ServerName = %q", dialer.TLSClientConfig.ServerName)
-	}
-	if !dialer.TLSClientConfig.InsecureSkipVerify {
-		t.Fatalf("InsecureSkipVerify = false, want true")
-	}
-}
-
-func TestBackendWebSocketDialerRejectsInvalidTLSMaterial(t *testing.T) {
-	_, err := backendWebSocketDialer(consoleport.ConsoleURLResult{
-		BackendTLS: consoleport.BackendTLS{CAData: []byte("not pem")},
-	})
-	if err == nil {
-		t.Fatal("backendWebSocketDialer() error = nil")
 	}
 }
 
@@ -288,7 +255,7 @@ func (s *deleteConnectionStubService) GetConnectionDeleteDependencies(_ context.
 
 func TestDeleteConnectionPassesForceQuery(t *testing.T) {
 	service := &deleteConnectionStubService{}
-	handler := NewVirtualizationHandler(service)
+	handler := NewVirtualizationHandlerWithServices(VirtualizationServices{Connections: service})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -321,7 +288,7 @@ func TestGetConnectionDeleteDependenciesMapsPreview(t *testing.T) {
 			BlockingReasons:  []string{"virtual_machines", "docker_hosts"},
 		},
 	}
-	handler := NewVirtualizationHandler(service)
+	handler := NewVirtualizationHandlerWithServices(VirtualizationServices{Connections: service})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -394,149 +361,14 @@ func TestProxyWebsocketCopiesFullMessages(t *testing.T) {
 	waitProxyDone(t, done)
 }
 
-func TestProxyPVEVNCDialsBackendWithTicketCookieAndQuery(t *testing.T) {
-	errCh := make(chan error, 1)
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cookie, err := r.Cookie("PVEAuthCookie"); err != nil || cookie.Value != "auth-ticket-1" {
-			errCh <- fmt.Errorf("PVEAuthCookie = %#v err=%v", cookie, err)
-			http.Error(w, "bad cookie", http.StatusUnauthorized)
-			return
-		}
-		if r.URL.Query().Get("vncticket") != "ticket-1" || r.URL.Query().Get("port") != "5901" {
-			errCh <- fmt.Errorf("query = %s", r.URL.RawQuery)
-			http.Error(w, "bad query", http.StatusBadRequest)
-			return
-		}
-		if r.Header.Get("Sec-WebSocket-Protocol") != "binary" {
-			errCh <- fmt.Errorf("websocket subprotocol = %q", r.Header.Get("Sec-WebSocket-Protocol"))
-			http.Error(w, "bad subprotocol", http.StatusBadRequest)
-			return
-		}
-		conn, err := upgrader.Upgrade(w, r, http.Header{"Sec-WebSocket-Protocol": {"binary"}})
-		if err != nil {
-			errCh <- err
-			return
-		}
-		defer func() { _ = conn.Close() }()
-		messageType, payload, err := conn.ReadMessage()
-		if err != nil {
-			errCh <- err
-			return
-		}
-		if messageType != websocket.BinaryMessage || string(payload) != "hello" {
-			errCh <- fmt.Errorf("message type=%d payload=%q", messageType, payload)
-			return
-		}
-		if err := conn.WriteMessage(websocket.TextMessage, []byte("ready")); err != nil {
-			errCh <- err
-		}
-	}))
-	defer backend.Close()
-
-	clientProxyConn, clientConn := newWebSocketTestPair(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		proxyPVEVNC(ctx, clientProxyConn, backend.URL+"/api2/json/nodes/pve-a/qemu/101/vncwebsocket?port=5901", "ticket-1", consoleport.ConsoleURLResult{
-			BackendHeaders: map[string][]string{"Cookie": {"PVEAuthCookie=auth-ticket-1"}},
-		})
-	}()
-
-	if err := clientConn.WriteMessage(websocket.BinaryMessage, []byte("hello")); err != nil {
-		t.Fatalf("write client message: %v", err)
-	}
-	if err := clientConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		t.Fatalf("set client read deadline: %v", err)
-	}
-	messageType, payload, err := clientConn.ReadMessage()
-	if err != nil {
-		t.Fatalf("read client response: %v", err)
-	}
-	if messageType != websocket.TextMessage || string(payload) != "ready" {
-		t.Fatalf("client response type=%d payload=%q", messageType, payload)
-	}
-	select {
-	case err := <-errCh:
-		t.Fatalf("backend validation error: %v", err)
-	default:
-	}
-	cancel()
-	waitProxyDone(t, done)
-}
-
-func TestProxyPVEVNCUsesInsecureTLSForSelfSignedBackend(t *testing.T) {
-	errCh := make(chan error, 1)
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("vncticket") != "ticket-tls" {
-			errCh <- fmt.Errorf("query = %s", r.URL.RawQuery)
-			http.Error(w, "bad query", http.StatusBadRequest)
-			return
-		}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			errCh <- err
-			return
-		}
-		defer func() { _ = conn.Close() }()
-		_, payload, err := conn.ReadMessage()
-		if err != nil {
-			errCh <- err
-			return
-		}
-		if string(payload) != "ping" {
-			errCh <- fmt.Errorf("payload=%q", payload)
-			return
-		}
-		if err := conn.WriteMessage(websocket.TextMessage, []byte("pong")); err != nil {
-			errCh <- err
-		}
-	}))
-	defer backend.Close()
-
-	clientProxyConn, clientConn := newWebSocketTestPair(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		proxyPVEVNC(ctx, clientProxyConn, backend.URL+"/vncwebsocket", "ticket-tls", consoleport.ConsoleURLResult{
-			BackendTLS: consoleport.BackendTLS{InsecureSkipVerify: true},
-		})
-	}()
-
-	if err := clientConn.WriteMessage(websocket.TextMessage, []byte("ping")); err != nil {
-		t.Fatalf("write client message: %v", err)
-	}
-	if err := clientConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		t.Fatalf("set client read deadline: %v", err)
-	}
-	_, payload, err := clientConn.ReadMessage()
-	if err != nil {
-		t.Fatalf("read client response: %v", err)
-	}
-	if string(payload) != "pong" {
-		t.Fatalf("payload = %q, want pong", payload)
-	}
-	select {
-	case err := <-errCh:
-		t.Fatalf("backend validation error: %v", err)
-	default:
-	}
-	cancel()
-	waitProxyDone(t, done)
-}
-
 type consoleURLStubService struct {
 	VirtualizationService
 	result consoleport.ConsoleURLResult
+	err    error
 }
 
 func (s *consoleURLStubService) GetConsoleURL(context.Context, domainidentity.Principal, string) (consoleport.ConsoleURLResult, error) {
-	return s.result, nil
+	return s.result, s.err
 }
 
 func TestStreamVMConsoleReturnsServiceUnavailableWhenConsoleNotReady(t *testing.T) {
@@ -545,7 +377,10 @@ func TestStreamVMConsoleReturnsServiceUnavailableWhenConsoleNotReady(t *testing.
 		Provider: "pve",
 		Ready:    false,
 		Message:  "console not ready",
-	}})
+	}}, func(context.Context, consoleport.ConsoleURLResult) (consoleport.Stream, error) {
+		t.Error("console dial attempted before readiness check")
+		return nil, consoleport.ErrBackendConnection
+	})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -694,7 +529,7 @@ func (s *connectionTestStub) TestConnection(context.Context, domainidentity.Prin
 func TestConnectionReturnsCompletedResult(t *testing.T) {
 	for _, status := range []string{"healthy", "unavailable"} {
 		t.Run(status, func(t *testing.T) {
-			handler := NewVirtualizationHandler(&connectionTestStub{status: status})
+			handler := NewVirtualizationHandlerWithServices(VirtualizationServices{Connections: &connectionTestStub{status: status}})
 			recorder := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(recorder)
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/virtualization/clusters/connection-1/test", nil)

@@ -33,7 +33,7 @@ func TestPlatformRouteSurfaceMatchesReviewedSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatalf("encode platform route surface: %v", err)
 		}
-		if err := os.WriteFile(filepath.Clean(platformRouteSurfacePath), append(payload, '\n'), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Clean(platformRouteSurfacePath), append(payload, '\n'), 0o600); err != nil {
 			t.Fatalf("write platform route surface: %v", err)
 		}
 		t.Skip("updated platform route surface")

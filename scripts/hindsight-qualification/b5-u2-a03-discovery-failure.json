@@ -1,0 +1,47 @@
+{
+  "attempt": "Task123/B5/U2/A02",
+  "script_sha256": "8ebfe1da6496d57957a0807b9efffcd50d06aaeee0a64c8e551f6f227f40f938",
+  "status": "FAIL",
+  "chat": "NOT_RUN; no repeated chat",
+  "full_hindsight_real_gateway": "NOT_RUN",
+  "derived_memory_delete": "NOT_RUN",
+  "timed_calls": [
+    {
+      "path": "/relay/model-routes",
+      "started_utc": "2026-11-08T13:31:51.391373+00:00",
+      "http": 200,
+      "finished_utc": "2026-11-08T13:31:51.509543+00:00"
+    },
+    {
+      "path": "/relay/upstreams",
+      "started_utc": "2026-11-08T13:31:51.509607+00:00",
+      "http": 200,
+      "finished_utc": "2026-11-08T13:31:51.710520+00:00"
+    },
+    {
+      "path": "/relay/upstreams/87b9ffc7-1f33-40ce-a83b-e640e02a6393/test",
+      "started_utc": "2026-11-08T13:31:51.710549+00:00",
+      "finished_utc": "2026-11-08T13:32:12.086425+00:00"
+    }
+  ],
+  "normal_cli_session_exit": 0,
+  "route_inventory_http": 200,
+  "enabled_routes": [
+    {
+      "publicModel": "gpt-6.1-sol",
+      "upstreamModel": "gpt-6.1-sol",
+      "providerKind": "openai"
+    },
+    {
+      "publicModel": "gpt-6-luna",
+      "upstreamModel": "gpt-6-luna",
+      "providerKind": "openai"
+    }
+  ],
+  "embedding_route": "gpt-6-luna",
+  "upstream_inventory_http": 200,
+  "upstream_discovery": [],
+  "error_class": "RemoteDisconnected",
+  "script_static_action_key": null,
+  "action_key": "Task123/gateway-qualification/hindsight-u2/3"
+}

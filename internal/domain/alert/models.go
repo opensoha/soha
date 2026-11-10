@@ -445,39 +445,47 @@ type HealingPolicyInput struct {
 }
 
 type HealingRun struct {
-	ID              string         `json:"id"`
-	PolicyID        string         `json:"policyId"`
-	EventID         string         `json:"eventId,omitempty"`
-	Status          string         `json:"status"`
-	ApprovalStatus  string         `json:"approvalStatus,omitempty"`
-	ApprovalComment string         `json:"approvalComment,omitempty"`
-	RequestedBy     string         `json:"requestedBy,omitempty"`
-	ApprovedBy      string         `json:"approvedBy,omitempty"`
-	WorkflowRunID   string         `json:"workflowRunId,omitempty"`
-	WorkflowStatus  string         `json:"workflowStatus,omitempty"`
-	WorkflowSummary string         `json:"workflowSummary,omitempty"`
-	Result          map[string]any `json:"result,omitempty"`
-	StartedAt       time.Time      `json:"startedAt,omitempty"`
-	CompletedAt     time.Time      `json:"completedAt,omitempty"`
-	CreatedAt       time.Time      `json:"createdAt"`
-	UpdatedAt       time.Time      `json:"updatedAt"`
+	// Internal dispatch fence. The versioned original-request view exposes only
+	// its closed, safe projection; legacy API JSON remains unchanged.
+	ExecutionGeneration int64          `json:"-"`
+	SubmissionStatus    string         `json:"-"`
+	IntentDigest        string         `json:"-"`
+	ID                  string         `json:"id"`
+	PolicyID            string         `json:"policyId"`
+	EventID             string         `json:"eventId,omitempty"`
+	Status              string         `json:"status"`
+	ApprovalStatus      string         `json:"approvalStatus,omitempty"`
+	ApprovalComment     string         `json:"approvalComment,omitempty"`
+	RequestedBy         string         `json:"requestedBy,omitempty"`
+	ApprovedBy          string         `json:"approvedBy,omitempty"`
+	WorkflowRunID       string         `json:"workflowRunId,omitempty"`
+	WorkflowStatus      string         `json:"workflowStatus,omitempty"`
+	WorkflowSummary     string         `json:"workflowSummary,omitempty"`
+	Result              map[string]any `json:"result,omitempty"`
+	StartedAt           time.Time      `json:"startedAt,omitempty"`
+	CompletedAt         time.Time      `json:"completedAt,omitempty"`
+	CreatedAt           time.Time      `json:"createdAt"`
+	UpdatedAt           time.Time      `json:"updatedAt"`
 }
 
 type HealingRunInput struct {
-	ID              string         `json:"id"`
-	PolicyID        string         `json:"policyId"`
-	EventID         string         `json:"eventId,omitempty"`
-	Status          string         `json:"status"`
-	ApprovalStatus  string         `json:"approvalStatus,omitempty"`
-	ApprovalComment string         `json:"approvalComment,omitempty"`
-	RequestedBy     string         `json:"requestedBy,omitempty"`
-	ApprovedBy      string         `json:"approvedBy,omitempty"`
-	WorkflowRunID   string         `json:"workflowRunId,omitempty"`
-	WorkflowStatus  string         `json:"workflowStatus,omitempty"`
-	WorkflowSummary string         `json:"workflowSummary,omitempty"`
-	Result          map[string]any `json:"result,omitempty"`
-	StartedAt       time.Time      `json:"startedAt,omitempty"`
-	CompletedAt     time.Time      `json:"completedAt,omitempty"`
+	ExecutionGeneration int64          `json:"-"`
+	SubmissionStatus    string         `json:"-"`
+	IntentDigest        string         `json:"-"`
+	ID                  string         `json:"id"`
+	PolicyID            string         `json:"policyId"`
+	EventID             string         `json:"eventId,omitempty"`
+	Status              string         `json:"status"`
+	ApprovalStatus      string         `json:"approvalStatus,omitempty"`
+	ApprovalComment     string         `json:"approvalComment,omitempty"`
+	RequestedBy         string         `json:"requestedBy,omitempty"`
+	ApprovedBy          string         `json:"approvedBy,omitempty"`
+	WorkflowRunID       string         `json:"workflowRunId,omitempty"`
+	WorkflowStatus      string         `json:"workflowStatus,omitempty"`
+	WorkflowSummary     string         `json:"workflowSummary,omitempty"`
+	Result              map[string]any `json:"result,omitempty"`
+	StartedAt           time.Time      `json:"startedAt,omitempty"`
+	CompletedAt         time.Time      `json:"completedAt,omitempty"`
 }
 
 type HealingRunFilter struct {

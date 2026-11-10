@@ -28,6 +28,7 @@ import (
 	deliveryrepo "github.com/opensoha/soha/internal/repository/delivery"
 	manifestrepo "github.com/opensoha/soha/internal/repository/manifest"
 	operationrepo "github.com/opensoha/soha/internal/repository/operationlog"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 )
 
@@ -233,7 +234,7 @@ func openDraftReceiptTestStore(t *testing.T) *dbstore.Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := dbstore.New(config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 10, MaxIdleConns: 8}, zap.NewNop())
+	store, err := dbstore.New(testpostgres.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 10, MaxIdleConns: 8}), zap.NewNop())
 	if err != nil {
 		t.Fatal(err)
 	}

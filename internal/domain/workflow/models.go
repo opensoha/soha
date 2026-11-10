@@ -61,6 +61,7 @@ type Run struct {
 }
 
 type Input struct {
+	RequestedRunID           string                      `json:"-"`
 	ApplicationID            string                      `json:"applicationId"`
 	ApplicationEnvironmentID string                      `json:"applicationEnvironmentId,omitempty"`
 	WorkflowName             string                      `json:"workflowName"`

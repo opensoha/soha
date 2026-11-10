@@ -8,7 +8,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-type nativeTaskStore interface {
+type NativeTaskParentStore interface {
 	WithNativeTaskCreation(context.Context, domaincopilot.NativeLease, func(context.Context, domaincopilot.NativeTaskParent) error) error
 	NativeTaskStopReason(context.Context, domaincopilot.NativeTaskParent) (string, error)
 	WithNativeTaskParent(context.Context, domaincopilot.NativeTaskParent, bool, func(context.Context) error) error
@@ -16,20 +16,25 @@ type nativeTaskStore interface {
 }
 
 func (s *Service) ReserveNativeTaskToolCall(ctx context.Context, parent domaincopilot.NativeTaskParent, cancellation bool) error {
-	store, _, err := s.nativeTaskStore()
+	store, runs, err := s.nativeTaskStore()
 	if err != nil {
 		return err
+	}
+	lease, err := runs.ReadNativeLease(ctx, parent.OwnerID, parent.RunID)
+	if err != nil {
+		return err
+	}
+	if legacyExecutionReadOnly(lease.Run) {
+		return apperrors.ErrAccessDenied
 	}
 	return store.ReserveNativeChildToolCall(ctx, parent, cancellation)
 }
 
-func (s *Service) nativeTaskStore() (nativeTaskStore, NativeRunStore, error) {
-	tasks, ok := s.agentRuns.(nativeTaskStore)
-	runs, runOK := s.agentRuns.(NativeRunStore)
-	if !ok || !runOK {
+func (s *Service) nativeTaskStore() (NativeTaskParentStore, NativeRunStore, error) {
+	if s.nativeTaskParents == nil || s.nativeRuns == nil {
 		return nil, nil, apperrors.ErrUnsupportedOperation
 	}
-	return tasks, runs, nil
+	return s.nativeTaskParents, s.nativeRuns, nil
 }
 
 func (s *Service) WithNativeTaskCreation(ctx context.Context, expected domaincopilot.NativeLease, register func(context.Context, domaincopilot.NativeTaskParent, domainidentity.Principal) error) error {
@@ -41,6 +46,9 @@ func (s *Service) WithNativeTaskCreation(ctx context.Context, expected domaincop
 		lease, err := runs.ReadNativeLease(txCtx, parent.OwnerID, parent.RunID)
 		if err != nil {
 			return err
+		}
+		if legacyExecutionReadOnly(lease.Run) {
+			return apperrors.ErrAccessDenied
 		}
 		principal, err := s.nativePrincipal(txCtx, lease.Run)
 		if err != nil {
@@ -73,6 +81,9 @@ func (s *Service) NativeTaskStopReason(ctx context.Context, parent domaincopilot
 	if err != nil {
 		return "", err
 	}
+	if legacyExecutionReadOnly(lease.Run) {
+		return "legacy_reconciliation_required", nil
+	}
 	principal, err := s.nativePrincipal(ctx, lease.Run)
 	if err == nil {
 		ctx, err = s.nativeAuthorizationContext(ctx, principal, lease.Run, true)
@@ -98,6 +109,9 @@ func (s *Service) WithNativeTaskParent(ctx context.Context, parent domaincopilot
 		lease, err := runs.ReadNativeLease(boundedCtx, parent.OwnerID, parent.RunID)
 		if err != nil {
 			return err
+		}
+		if legacyExecutionReadOnly(lease.Run) {
+			return apperrors.ErrAccessDenied
 		}
 		principal, err := s.nativePrincipal(boundedCtx, lease.Run)
 		if err != nil {

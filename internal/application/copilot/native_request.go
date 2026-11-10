@@ -15,7 +15,7 @@ import (
 // FindNativeRequest reads the original run without rebuilding today's model or context policy.
 // Absence is not a dispatch receipt: an in-flight creation can still commit after this read.
 func (s *Service) FindNativeRequest(ctx context.Context, principal domainidentity.Principal, sessionID, requestID string) (domaincopilot.AgentRun, error) {
-	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(requestID) == "" || len(requestID) > 128 {
+	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(requestID) == "" || !workbenchRequestIDWithinLimit(requestID) {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: session and bounded request ID are required", apperrors.ErrInvalidArgument)
 	}
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {

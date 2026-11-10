@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
@@ -22,8 +23,9 @@ import (
 )
 
 type frozenDeliveryProject struct {
-	Project       domaindocker.Project `json:"project"`
-	ProjectDigest string               `json:"projectDigest"`
+	Project        domaindocker.Project          `json:"project"`
+	ProjectDigest  string                        `json:"projectDigest"`
+	RuntimeBinding *dockerruntime.ProjectBinding `json:"runtimeBinding,omitempty"`
 }
 
 func dockerDeliveryDigest(value any) (string, error) {
@@ -55,6 +57,17 @@ func (s *Service) FreezeDeliveryProject(ctx context.Context, principal domainide
 		return domaindocker.PreparedDeliveryProject{}, err
 	}
 	frozen := frozenDeliveryProject{Project: project, ProjectDigest: digest}
+	if project.RuntimeIdentityVersion != 0 {
+		host, err := s.repo.GetHost(ctx, project.HostID)
+		if err != nil {
+			return domaindocker.PreparedDeliveryProject{}, err
+		}
+		binding, err := dockerruntime.NewProjectBinding(host.ResourceUID, project.ResourceUID)
+		if err != nil || project.RuntimeIdentityVersion != 1 {
+			return domaindocker.PreparedDeliveryProject{}, apperrors.ErrConflict
+		}
+		frozen.RuntimeBinding = &binding
+	}
 	return s.sealDeliveryProject(frozen, nil)
 }
 
@@ -121,6 +134,9 @@ func (s *Service) validateDeliveryProject(ctx context.Context, principal domaini
 	if err != nil {
 		return err
 	}
+	if err := validateFrozenRuntimeIdentity(current, host, frozen.RuntimeBinding); err != nil {
+		return err
+	}
 	if host.AgentID == "" || host.DockerVersion == "" || host.ComposeVersion == "" || host.LastHeartbeatAt == nil || time.Since(*host.LastHeartbeatAt) > 2*time.Minute || host.LastHeartbeatAt.After(time.Now().Add(5*time.Second)) || !slices.Contains([]string{"online", "docker_ready"}, host.Status) {
 		return fmt.Errorf("%w: Docker host requires a fresh ready Agent heartbeat", apperrors.ErrClusterUnready)
 	}
@@ -172,6 +188,13 @@ func (s *Service) QueueDeliveryProject(ctx context.Context, principal domainiden
 		return domaindocker.Operation{}, apperrors.ErrConflict
 	}
 	payload := node.Metadata(map[string]any{"action": action, "applicationId": snapshot.ApplicationID, "applicationEnvironmentId": snapshot.ApplicationEnvironmentID, "deliveryPlanId": snapshot.DeliveryPlanID, "releaseTargetId": snapshot.TargetID, "renderedDigest": snapshot.RenderedDigest, "deliveryCiphertext": ciphertext})
+	frozen, err := s.openDeliveryProject(ciphertext)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if frozen.RuntimeBinding != nil {
+		payload["runtimeBinding"] = *frozen.RuntimeBinding
+	}
 	return s.enqueueClaimedOperation(ctx, principal, OperationKindProjectDeploy, snapshot.HostID, snapshot.ProjectID, "", payload, claim)
 }
 

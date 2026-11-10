@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func (s *networkAccessGrantStub) Revoke(context.Context, domainidentity.Principa
 }
 
 type networkAccessSessionStub struct {
-	NetworkAccessService
+	NetworkSessionService
 	command   domainnetworkaccess.SessionCommand
 	sessionID string
 	input     domainnetworkaccess.SessionActionInput
@@ -128,7 +129,7 @@ func TestCreateEnrollmentReturnsNestedOneTimeTokenWithoutDigest(t *testing.T) {
 func TestCreateAccessGrantBindsAuthSessionAndReturnsOnlyOneTimeToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	now := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
-	grants := &networkAccessGrantStub{secret: domainnetworkruntime.AccessGrantSecret{Grant: domainnetworkruntime.AccessGrant{
+	grants := &networkAccessGrantStub{secret: domainnetworkruntime.AccessGrantSecret{Grant: domainnetworkruntime.AccessGrant{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		ID: "grant-1", SubjectID: "user-1", AuthSessionID: "do-not-return", DeviceID: "device-1", SiteID: "site-1",
 		NetworkSpaceID: "space-1", Mode: domainnetworkaccess.ModeInternalZTNA, ResourceIDs: []string{"resource-1"},
 		PolicyVersion: 7, Status: domainnetworkruntime.AccessGrantIssued, TokenHash: "sha256:do-not-return",
@@ -161,7 +162,7 @@ func TestExecuteSessionActionReturnsAcceptedPublicCommand(t *testing.T) {
 		PolicyVersion: 7, Status: domainnetworkaccess.SessionCommandPending, ReasonCode: "manual_revoke",
 		PlanHash: "sha256:secret-internal-plan-hash", EffectiveAt: now, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now,
 	}}
-	handler := &NetworkAccessHandler{service: stub}
+	handler := &NetworkAccessHandler{session: stub}
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	context.Params = gin.Params{{Key: "sessionID", Value: "session-1"}}
@@ -204,7 +205,7 @@ func TestGetTelemetrySummaryForwardsBoundedFilterAndReturnsAggregateOnly(t *test
 
 func TestGetTelemetrySummaryReturnsUnavailableWithoutQueryClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := NewNetworkAccessHandler(nil, nil, nil, nil)
+	handler := NewNetworkAccessHandler(NetworkAccessServices{}, nil, nil, nil)
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/v1/network-access/telemetry/summary", nil)
@@ -214,4 +215,8 @@ func TestGetTelemetrySummaryReturnsUnavailableWithoutQueryClient(t *testing.T) {
 	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), `"code":"network_ingest_unavailable"`) {
 		t.Fatalf("response=%d body=%s", recorder.Code, recorder.Body.String())
 	}
+}
+
+func TestNetworkAccessConsumerInterfacesRemainNarrow(t *testing.T) {
+	assertNarrowHandlerCapabilities(t, reflect.TypeFor[NetworkAccessHandler](), nil)
 }

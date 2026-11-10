@@ -58,6 +58,7 @@ type IntegrationService interface {
 }
 
 type podResourceHandler struct {
+	terminals   PodTerminalService
 	reader      PodReader
 	editor      PodResourceEditor
 	diagnostics PodDiagnostics
@@ -213,7 +214,7 @@ func NewPlatformHandlerWithResources(deps PlatformDependencies) (*PlatformHandle
 	resources := deps.Resources
 	return &PlatformHandler{
 		podResourceHandler: &podResourceHandler{
-			reader: resources.PodReader, editor: resources.PodEditor, diagnostics: resources.PodDiagnostics,
+			reader: resources.PodReader, editor: resources.PodEditor, diagnostics: resources.PodDiagnostics, terminals: resources.PodTerminals,
 		},
 		deploymentResourceHandler: &deploymentResourceHandler{
 			reader: resources.DeploymentReader, editor: resources.DeploymentEditor,

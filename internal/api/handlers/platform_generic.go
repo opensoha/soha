@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func (h *genericResourceHandler) PlanResourceUpdate(c *gin.Context) {
@@ -40,13 +43,25 @@ func (h *genericResourceHandler) genericResourceYAMLApplyWithParam(kind, namePar
 		principal := apiMiddleware.PrincipalFromContext(c)
 		namespace := c.Query("namespace")
 		var payload struct {
-			Content string `json:"content"`
+			Content                 string `json:"content"`
+			RequireObservedIdentity bool   `json:"requireObservedIdentity"`
 		}
 		if err := c.ShouldBindJSON(&payload); err != nil {
 			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid yaml payload")
 			return
 		}
-		item, err := h.service.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam), payload.Content)
+		apply := h.service.ApplyResourceYAMLByKind
+		if payload.RequireObservedIdentity {
+			guarded, ok := h.service.(interface {
+				ApplyObservedResourceYAMLByKind(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
+			})
+			if !ok {
+				writeError(c, apperrors.ErrUnsupportedOperation)
+				return
+			}
+			apply = guarded.ApplyObservedResourceYAMLByKind
+		}
+		item, err := apply(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam), payload.Content)
 		if err != nil {
 			writeError(c, err)
 			return
@@ -69,6 +84,7 @@ func (h *genericResourceHandler) genericResourceDeleteWithParam(kind, nameParam 
 // RegisterGenericResourceRoutes wires delete + yaml view/apply endpoints for
 // platform resources backed by the generic dynamic-client path.
 func (h *genericResourceHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
+	h.registerConditionalResourceRoutes(group)
 	kinds := []struct {
 		path      string
 		kind      string

@@ -66,3 +66,27 @@ func TestPersonalEnvironmentCannotReplayUnknownOrRecreateInitializedData(t *test
 		t.Fatalf("expired receipt claims readiness: %+v", view)
 	}
 }
+
+func TestStoppedPersonalStdioReceiptFencesOriginalEnvironment(t *testing.T) {
+	principal := domainidentity.Principal{UserID: "owner"}
+	lease := personalEnvironmentLease("assistant", principal.UserID, domain.PersonalEnvironmentPolicy{Mode: "restricted-write", LeaseSeconds: 600,
+		Quota: contractenv.Quota{DiskBytes: 32 << 20, MemoryBytes: 64 << 20, CPUUnits: 250, MaxProcesses: 16}}, time.Now().UTC())
+	original := domain.PersonalEnvironmentRecord{CreatedBy: principal.UserID, AssistantID: "assistant", Backend: "container", Provider: "docker", State: "ready", Version: 5,
+		DataInitialized: true, DataCreationAttempted: true, Usage: &contractenv.Usage{Processes: 1}, Lease: lease, LeaseSeconds: 600}
+	store := &personalCleanupStore{item: original}
+	service := &Service{personalEnvironment: &PersonalEnvironmentDependencies{Store: store}}
+	if err := service.recordStoppedPersonalStdio(t.Context(), principal, original); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.item; got.State != "missing" || got.Usage != nil || got.ObservedAt == nil || !got.DataInitialized || !got.DataCreationAttempted || got.Lease.ID != original.Lease.ID || got.Version != original.Version+1 {
+		t.Fatalf("stopped receipt changed data or retained readiness: %+v", got)
+	}
+	wake, dispatch, err := personalEnvironmentRequest(store.item, "wake")
+	if err != nil || !dispatch || wake.Action != "acquire" || wake.CreateData || wake.Lease.ID == lease.ID {
+		t.Fatalf("stopped receipt did not enable a fresh wake over existing data: %+v %v", wake, err)
+	}
+	store.item.Lease.ID, store.item.State = "replacement", "ready"
+	if err := service.recordStoppedPersonalStdio(t.Context(), principal, original); !errors.Is(err, apperrors.ErrConflict) || store.item.State != "ready" || store.item.Lease.ID != "replacement" {
+		t.Fatalf("late receipt changed replacement: %+v %v", store.item, err)
+	}
+}

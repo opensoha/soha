@@ -41,7 +41,7 @@ func TestNativePersonalToolsRequireAnApprovedPersonalSession(t *testing.T) {
 			repo.session = domain.Session{ID: "session", CreatedBy: "reader", Metadata: map[string]any{"conversationKind": tc.kind}}
 			gateway.catalog = appaigateway.NewPersonalEnvironmentCapabilityProvider(service).Tools()
 			capture := &nativeQueueCapture{inspectionAuthzTestRepository: repo, nativeLoopStore: loop}
-			service.agentRuns = capture
+			service.nativeRuns = capture
 			_, err := service.queueNativeMessage(t.Context(), identity.Principal{UserID: "reader", Roles: []string{"reader"}}, repo.session, domain.SessionMetadata{}, domain.WorkbenchSendMessageInput{Content: "hello"}, "zh-CN")
 			if tc.denied {
 				if !errors.Is(err, apperrors.ErrAccessDenied) {

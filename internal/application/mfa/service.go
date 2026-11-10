@@ -151,6 +151,9 @@ func (s *Service) BeginTOTPEnrollment(ctx context.Context, principal domainident
 		if !errors.Is(err, apperrors.ErrNotFound) {
 			return sohaapi.MFAEnrollmentChallenge{}, err
 		}
+		if err := s.requireExistingMFAForEnrollment(ctx, principal.UserID, sessionID); err != nil {
+			return sohaapi.MFAEnrollmentChallenge{}, err
+		}
 		secret, generateErr := newTOTPSecret()
 		if generateErr != nil {
 			return sohaapi.MFAEnrollmentChallenge{}, generateErr
@@ -202,6 +205,11 @@ func (s *Service) VerifyChallenge(ctx context.Context, principal domainidentity.
 	if challenge.Type == domainmfa.ChallengeTypeRecoveryCode {
 		return s.verifyRecoveryChallenge(ctx, principal, sessionID, challenge, response, now)
 	}
+	if challenge.Type == domainmfa.ChallengeTypeTOTPEnrollment {
+		if err := s.requireExistingMFAForEnrollment(ctx, principal.UserID, sessionID); err != nil {
+			return sohaapi.MFAChallengeResult{}, err
+		}
+	}
 	secret, credential, method, err := s.challengeSecret(ctx, challenge)
 	if err != nil {
 		return sohaapi.MFAChallengeResult{}, err
@@ -249,6 +257,11 @@ func (s *Service) BeginWebAuthnEnrollment(ctx context.Context, principal domaini
 	credentials, err := s.repository.ListCredentials(ctx, principal.UserID)
 	if err != nil {
 		return sohaapi.MFAWebAuthnCreationOptions{}, err
+	}
+	if len(credentials) > 0 {
+		if err := s.requireRecentStepUp(ctx, principal.UserID, sessionID); err != nil {
+			return sohaapi.MFAWebAuthnCreationOptions{}, err
+		}
 	}
 	webUser := domainmfa.WebAuthnUser{ID: []byte(user.ID), Name: user.Username, DisplayName: user.DisplayName}
 	for _, credential := range credentials {
@@ -330,6 +343,9 @@ func (s *Service) VerifyWebAuthnChallenge(ctx context.Context, principal domaini
 	}
 	if challenge.Type != domainmfa.ChallengeTypeWebAuthnEnrollment {
 		return sohaapi.MFAChallengeResult{}, fmt.Errorf("%w: challenge type mismatch", apperrors.ErrInvalidArgument)
+	}
+	if err := s.requireExistingMFAForEnrollment(ctx, principal.UserID, sessionID); err != nil {
+		return sohaapi.MFAChallengeResult{}, err
 	}
 	sessionData, err := secretcrypto.DecryptStringWithKeyring(s.keys, challenge.SecretCiphertext)
 	if err != nil {
@@ -549,4 +565,17 @@ func (s *Service) record(ctx context.Context, principal domainidentity.Principal
 		ResourceName: resource, Action: action, Result: result, Summary: action,
 		Metadata: metadata, CreatedAt: s.now().UTC(),
 	})
+}
+
+// First enrollment needs no existing factor. Once one exists, registering a
+// replacement is not a substitute for proving the already registered factor.
+func (s *Service) requireExistingMFAForEnrollment(ctx context.Context, userID, sessionID string) error {
+	credentials, err := s.repository.ListCredentials(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if len(credentials) == 0 {
+		return nil
+	}
+	return s.requireRecentStepUp(ctx, userID, sessionID)
 }

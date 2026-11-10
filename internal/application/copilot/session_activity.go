@@ -8,12 +8,9 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
-type chatApprovalReader interface {
-	ListApprovalRequests(context.Context, domainidentity.Principal, domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error)
-}
-
 func (s *Service) sessionActivities(ctx context.Context, principal domainidentity.Principal, sessions []domaincopilot.Session) []domaincopilot.Session {
 	activity := map[string]string{}
+	legacySessions := map[string]bool{}
 	if s.agentRuns != nil {
 		for _, status := range []string{"queued", "running"} {
 			runs, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{CreatedBy: principal.UserID, Status: status, Limit: 100})
@@ -22,16 +19,20 @@ func (s *Service) sessionActivities(ctx context.Context, principal domainidentit
 			}
 			for _, run := range runs {
 				if run.CreatedBy == principal.UserID && run.ParentRunID == "" && run.Status == status {
+					if legacyExecutionReadOnly(run) {
+						legacySessions[run.SessionID] = true
+						continue
+					}
 					activity[run.SessionID] = status
 				}
 			}
 		}
 	}
-	if reader, ok := s.workbenchInvoker.(chatApprovalReader); ok {
+	if reader := s.runtime.Approvals; reader != nil {
 		requests, err := reader.ListApprovalRequests(ctx, principal, domainaigateway.ApprovalRequestFilter{ActorType: "user", ActorID: principal.UserID, Status: "pending", Limit: 100})
 		if err == nil {
 			for _, request := range requests {
-				if request.ActorID == principal.UserID && request.Status == "pending" {
+				if request.ActorID == principal.UserID && request.Status == "pending" && !(legacySessions[request.ActorSessionID] && activity[request.ActorSessionID] == "") {
 					activity[request.ActorSessionID] = "waiting_approval"
 				}
 			}
@@ -41,4 +42,9 @@ func (s *Service) sessionActivities(ctx context.Context, principal domainidentit
 		sessions[index].Activity = activity[sessions[index].ID]
 	}
 	return sessions
+}
+
+// Frozen execution records remain available for history and reconciliation.
+func legacyExecutionReadOnly(run domaincopilot.AgentRun) bool {
+	return run.ProviderKind == "native" || run.Output["executionReadOnly"] == true || run.Output["stopReason"] == "legacy_reconciliation_required"
 }

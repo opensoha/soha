@@ -137,6 +137,8 @@ type CopilotHandler struct {
 	copilotMessageHandler
 	copilotStreamHandler
 	copilotWorkbenchHandler
+	copilotRuntimeProfileHandler
+	copilotRuntimeAssetHandler
 	copilotDataSourceHandler
 	copilotAnalysisProfileHandler
 	copilotAutomationHandler
@@ -159,11 +161,15 @@ func NewCopilotHandlerWithRunnerKeys(service CopilotService, keys keyring.Ring) 
 	environments, _ := service.(CopilotPersonalEnvironmentService)
 	search, _ := service.(CopilotMessageSearchService)
 	feed, _ := service.(CopilotFeedService)
+	runtimeProfiles, _ := service.(CopilotRuntimeProfileService)
+	runtimeAssets, _ := service.(CopilotRuntimeAssetService)
 	return NewCopilotHandlerWithServices(CopilotServices{
 		PersonalAgent:       personalAgent,
 		PersonalEnvironment: environments,
 		Search:              search, Feed: feed,
 		PersonalAssistant: service,
+		RuntimeProfiles:   runtimeProfiles,
+		RuntimeAssets:     runtimeAssets,
 		Sessions:          service, Messages: service, Streams: service, Workbench: service,
 		DataSources: service, AnalysisProfiles: service, Automation: service,
 		RootCause: service, AgentRuns: service, InspectionTasks: service, InspectionRuns: service,
@@ -180,6 +186,8 @@ type CopilotServices struct {
 	Messages            CopilotMessageService
 	Streams             CopilotStreamService
 	Workbench           CopilotWorkbenchService
+	RuntimeProfiles     CopilotRuntimeProfileService
+	RuntimeAssets       CopilotRuntimeAssetService
 	DataSources         CopilotDataSourceService
 	AnalysisProfiles    CopilotAnalysisProfileService
 	Automation          CopilotAutomationService
@@ -220,6 +228,8 @@ func NewCopilotHandlerWithServices(services CopilotServices, keys keyring.Ring) 
 		copilotMessageHandler:             copilotMessageHandler{service: services.Messages},
 		copilotStreamHandler:              copilotStreamHandler{service: services.Streams},
 		copilotWorkbenchHandler:           copilotWorkbenchHandler{service: services.Workbench},
+		copilotRuntimeProfileHandler:      copilotRuntimeProfileHandler{service: services.RuntimeProfiles},
+		copilotRuntimeAssetHandler:        copilotRuntimeAssetHandler{service: services.RuntimeAssets},
 		copilotDataSourceHandler:          copilotDataSourceHandler{service: services.DataSources},
 		copilotAnalysisProfileHandler:     copilotAnalysisProfileHandler{service: services.AnalysisProfiles},
 		copilotAutomationHandler:          copilotAutomationHandler{service: services.Automation},

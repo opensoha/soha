@@ -15,7 +15,7 @@ func TestBeginAgentToolCallChecksLockedState(t *testing.T) {
 	for _, name := range []string{"canceled", "busy", "exhausted", "artifacts"} {
 		t.Run(name, func(t *testing.T) {
 			repo, mock := newAgentRunRepository(t)
-			run := domaincopilot.AgentRun{ID: "run", Status: "running", ClaimedByAgentID: "runner", CallbackToken: "token", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+			run := domaincopilot.AgentRun{ID: "run", CapabilityID: "general", Status: "running", ClaimedByAgentID: "runner", CallbackToken: "token", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 			switch name {
 			case "canceled":
 				run.Status = "canceled"
@@ -44,7 +44,7 @@ func TestBeginAgentToolCallChecksLockedState(t *testing.T) {
 
 func TestBeginAgentToolCallPersistsReservationBeforeReturning(t *testing.T) {
 	repo, mock := newAgentRunRepository(t)
-	run := domaincopilot.AgentRun{ID: "run", Status: "running", ClaimedByAgentID: "runner", CallbackToken: "token", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	run := domaincopilot.AgentRun{ID: "run", CapabilityID: "general", Status: "running", ClaimedByAgentID: "runner", CallbackToken: "token", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	tool := domaincopilot.ToolExecution{ID: "tool", ToolName: "knowledge.search", Status: "running"}
 	expectLockedAgentRun(mock, run)
 	mock.ExpectExec(`(?s)UPDATE ai_agent_runs`).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -123,5 +123,61 @@ func TestCancellationAcknowledgementOnlyAcceptsClaimedRunner(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestReadOnlyRunnerWritesDeniedUnderLockedCurrentState(t *testing.T) {
+	for _, reason := range []string{"native", "explicit", "reconciliation"} {
+		for _, operation := range []string{"tool", "callback", "delegate"} {
+			t.Run(reason+"/"+operation, func(t *testing.T) {
+				repo, mock := newAgentRunRepository(t)
+				run := domaincopilot.AgentRun{ID: "parent", CreatedBy: "owner", SessionID: "session", ProviderKind: "hermes", Status: "running", ClaimedByAgentID: "runner", CallbackToken: "valid", Output: map[string]any{}, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+				switch reason {
+				case "native":
+					run.ProviderKind = "native"
+				case "explicit":
+					run.Output["executionReadOnly"] = true
+				case "reconciliation":
+					run.Output["stopReason"] = "legacy_reconciliation_required"
+				}
+				expectLockedAgentRun(mock, run)
+				mock.ExpectRollback()
+				input := domaincopilot.AgentRunCallbackInput{RunID: run.ID, AgentID: "runner", CallbackToken: "valid", Status: "running", Payload: map[string]any{"executionReadOnly": false}, ToolExecutions: []domaincopilot.ToolExecution{{ID: "next", ToolName: "knowledge.search", Status: "running"}}}
+				var err error
+				switch operation {
+				case "tool":
+					_, err = repo.BeginAgentToolCall(t.Context(), input)
+				case "callback":
+					_, err = repo.UpdateAgentRunCallback(t.Context(), input)
+				case "delegate":
+					_, err = repo.CreateDelegatedAgentRun(t.Context(), run.ID, domaincopilot.AgentRun{ID: "parent:specialist", ParentRunID: run.ID, CreatedBy: run.CreatedBy, SessionID: run.SessionID})
+				}
+				if !errors.Is(err, apperrors.ErrAccessDenied) {
+					t.Fatalf("readonly %s: %v", operation, err)
+				}
+				if err = mock.ExpectationsWereMet(); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
+func TestProfessionalRunnerReservationPreservesExistingToolBudgetAndConcurrency(t *testing.T) {
+	repo, mock := newAgentRunRepository(t)
+	run := domaincopilot.AgentRun{ID: "professional", CapabilityID: "performance", ProviderKind: "hermes", Status: "running", ClaimedByAgentID: "runner", CallbackToken: "valid", ToolExecutions: make([]domaincopilot.ToolExecution, 9), AnalysisArtifacts: make([]domaincopilot.AnalysisArtifact, 4), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	run.ToolExecutions[0] = domaincopilot.ToolExecution{ID: "already-running", Status: "running"}
+	expectLockedAgentRun(mock, run)
+	mock.ExpectExec(`(?s)UPDATE ai_agent_runs`).WillReturnResult(sqlmock.NewResult(0, 1))
+	tool := domaincopilot.ToolExecution{ID: "next", ToolName: "artifact.preview", Status: "running"}
+	run.ToolExecutions = append(run.ToolExecutions, tool)
+	expectGetAgentRun(mock, run)
+	mock.ExpectCommit()
+	got, err := repo.BeginAgentToolCall(t.Context(), domaincopilot.AgentRunCallbackInput{RunID: run.ID, AgentID: "runner", CallbackToken: "valid", ToolExecutions: []domaincopilot.ToolExecution{tool}})
+	if err != nil || len(got.ToolExecutions) != 10 {
+		t.Fatalf("professional budget changed: %v %+v", err, got.ToolExecutions)
+	}
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domain "github.com/opensoha/soha/internal/domain/directorysync"
@@ -31,7 +32,7 @@ func (s *auditRecorderStub) Record(_ context.Context, entry domainaudit.Entry) e
 func TestRetryEventReturnsQueuedEvent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &repositoryStub{event: domain.EventEnvelope{ID: "event-1", Status: "failed"}}
-	handler := New(repo, &serviceStub{}, factoryStub{})
+	handler := New(repo, &serviceStub{}, factoryStub{}, nil)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Params = gin.Params{{Key: "connectionID", Value: "connection-1"}, {Key: "eventID", Value: "event-1"}}
@@ -46,9 +47,10 @@ func TestRetryEventReturnsQueuedEvent(t *testing.T) {
 func TestUpdateConnectionRejectsRealtimeModeForUnsupportedProvider(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &repositoryStub{connection: domain.Connection{ID: "connection-1", ProviderType: domain.ProviderWeCom}, policy: domain.DefaultPolicy("connection-1")}
-	handler := New(repo, &serviceStub{}, factoryStub{})
+	handler := New(repo, nil, nil, testConnectionService(t, repo, nil, nil))
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("principal", domainidentity.Principal{UserID: "admin-1", Roles: []string{"test-role"}})
 	ctx.Params = gin.Params{{Key: "connectionID", Value: "connection-1"}}
 	ctx.Request = httptest.NewRequest(http.MethodPut, "/api/v1/access/directory-connections/connection-1", strings.NewReader(`{"name":"WeCom","providerType":"wecom","policy":{"syncOrganizations":true,"mode":"scheduled_and_realtime","schedule":"0 * * * *"}}`))
 	ctx.Request.Header.Set("Content-Type", "application/json")
@@ -78,13 +80,16 @@ type repositoryStub struct {
 	scimScope         string
 }
 
-func (s *repositoryStub) CreateConnection(_ context.Context, c domain.Connection, p domain.Policy) (domain.Connection, error) {
+func (s *repositoryStub) CreateConnection(_ context.Context, c domain.Connection, p domain.Policy, _ domain.ConnectionCredentials) (domain.Connection, error) {
 	s.connection, s.policy = c, p
 	return c, nil
 }
-func (s *repositoryStub) UpdateConnection(_ context.Context, c domain.Connection, p domain.Policy) (domain.Connection, error) {
+func (s *repositoryStub) UpdateConnection(_ context.Context, c domain.Connection, p domain.Policy, _ domain.ConnectionCredentials) (domain.Connection, error) {
 	s.connection, s.policy = c, p
 	return c, nil
+}
+func (s *repositoryStub) SaveConnectionValidation(context.Context, string, time.Time, domain.Capabilities, time.Time) error {
+	return nil
 }
 func (s *repositoryStub) GetConnection(context.Context, string) (domain.Connection, domain.Policy, error) {
 	return s.connection, s.policy, nil
@@ -168,9 +173,6 @@ type serviceStub struct {
 	pullErr    error
 }
 
-func (s *serviceStub) CreateConnection(ctx context.Context, c domain.Connection, p domain.Policy) (domain.Connection, error) {
-	return s.repository.CreateConnection(ctx, c, p)
-}
 func (s *serviceStub) PullSnapshot(context.Context, string, appdirectorysync.Connector) (domain.Snapshot, string, error) {
 	return s.snapshot, "cursor-1", s.pullErr
 }
@@ -204,13 +206,23 @@ type factoryStub struct{}
 
 func (factoryStub) Connector(string) (appdirectorysync.Connector, error) { return connectorStub{}, nil }
 
+func testConnectionService(t *testing.T, repo *repositoryStub, audit *auditRecorderStub, operations *operationRecorderStub) *appdirectorysync.ConnectionService {
+	t.Helper()
+	permissions := appaccess.NewPermissionResolver(directoryPermissionRoles{keys: []string{appaccess.PermAccessDirectoryManage}})
+	service, err := appdirectorysync.NewConnectionService(repo, factoryStub{}, permissions, audit, operations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
 func TestCreateConnectionUsesNestedPolicyAndSafeDefaults(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &repositoryStub{}
-	handler := New(repo, &serviceStub{repository: repo}, factoryStub{})
+	handler := New(repo, nil, nil, testConnectionService(t, repo, nil, nil))
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Set("principal", domainidentity.Principal{UserID: "admin-1"})
+	ctx.Set("principal", domainidentity.Principal{UserID: "admin-1", Roles: []string{"test-role"}})
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"Feishu directory","providerType":"FEISHU","loginProviderId":"login-1","policy":{"schedule":"*/15 * * * *"}}`))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 
@@ -245,7 +257,7 @@ func TestCreateConnectionUsesNestedPolicyAndSafeDefaults(t *testing.T) {
 func TestPreviewPullsRemoteSnapshot(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &repositoryStub{connection: domain.Connection{ID: "c-1", ProviderType: domain.ProviderFeishu}, policy: domain.DefaultPolicy("c-1")}
-	handler := New(repo, &serviceStub{repository: repo, snapshot: domain.Snapshot{Organizations: []domain.Organization{{ExternalID: "d-1"}}}}, factoryStub{})
+	handler := New(repo, &serviceStub{repository: repo, snapshot: domain.Snapshot{Organizations: []domain.Organization{{ExternalID: "d-1"}}}}, factoryStub{}, nil)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Params = gin.Params{{Key: "connectionID", Value: "c-1"}}
@@ -264,7 +276,7 @@ func TestPreviewPullsRemoteSnapshot(t *testing.T) {
 func TestSyncReportsUnavailableLoginProvider(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &repositoryStub{connection: domain.Connection{ID: "c-1", ProviderType: domain.ProviderFeishu}, policy: domain.DefaultPolicy("c-1")}
-	handler := New(repo, &serviceStub{repository: repo, pullErr: apperrors.ErrNotFound}, factoryStub{})
+	handler := New(repo, &serviceStub{repository: repo, pullErr: apperrors.ErrNotFound}, factoryStub{}, nil)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Params = gin.Params{{Key: "connectionID", Value: "c-1"}}
@@ -279,7 +291,7 @@ func TestSyncReportsUnavailableLoginProvider(t *testing.T) {
 
 func TestConflictListIsEmptyUntilConflictRepositoryIsAvailable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := New(&repositoryStub{}, &serviceStub{}, factoryStub{})
+	handler := New(&repositoryStub{}, &serviceStub{}, factoryStub{}, nil)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
@@ -296,7 +308,7 @@ func TestFeishuEventIsVerifiedAndQueued(t *testing.T) {
 	policy := domain.DefaultPolicy("c-1")
 	policy.Mode = domain.PolicyScheduledAndRealtime
 	repo := &repositoryStub{connection: domain.Connection{ID: "c-1", ProviderType: domain.ProviderFeishu, Enabled: true}, policy: policy, webhookCredential: domain.WebhookCredential{VerificationToken: "verify-token"}}
-	handler := New(repo, &serviceStub{}, factoryStub{})
+	handler := New(repo, &serviceStub{}, factoryStub{}, nil)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Params = gin.Params{{Key: "connectionID", Value: "c-1"}}
@@ -324,7 +336,7 @@ func TestSCIMCreateUserHonorsPeopleGateAndUsesReconciler(t *testing.T) {
 			policy.SyncPeople = test.syncPeople
 			repo := &repositoryStub{connection: domain.Connection{ID: "c-1", ProviderType: domain.ProviderSCIM, Enabled: true}, policy: policy}
 			service := &serviceStub{repository: repo}
-			handler := New(repo, service, factoryStub{})
+			handler := New(repo, service, factoryStub{}, nil)
 			recorder := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(recorder)
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"id":"u-1","userName":"ada","displayName":"Ada","active":true,"emails":[{"value":"ada@example.com","primary":true}]}`))
@@ -347,7 +359,7 @@ func TestSCIMCreateUserHonorsPeopleGateAndUsesReconciler(t *testing.T) {
 func TestSCIMListUsersRequiresReadScope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &repositoryStub{scimSnapshot: domain.Snapshot{}}
-	handler := New(repo, &serviceStub{repository: repo}, factoryStub{})
+	handler := New(repo, &serviceStub{repository: repo}, factoryStub{}, nil)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/scim/v2/Users", nil)
@@ -365,7 +377,7 @@ func TestSCIMListUsersRequiresReadScope(t *testing.T) {
 
 func TestSCIMRejectsMissingBearerToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := New(&repositoryStub{}, &serviceStub{}, factoryStub{})
+	handler := New(&repositoryStub{}, &serviceStub{}, factoryStub{}, nil)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
@@ -378,12 +390,12 @@ func TestSCIMRejectsMissingBearerToken(t *testing.T) {
 func TestCreateConnectionRecordsAuditAndOperation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &repositoryStub{}
-	handler := New(repo, &serviceStub{repository: repo}, factoryStub{})
+
 	audit, operations := &auditRecorderStub{}, &operationRecorderStub{}
-	handler.SetRecorders(audit, operations)
+	handler := New(repo, nil, nil, testConnectionService(t, repo, audit, operations))
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Set("principal", domainidentity.Principal{UserID: "admin-1", UserName: "Admin"})
+	ctx.Set("principal", domainidentity.Principal{UserID: "admin-1", Roles: []string{"test-role"}, UserName: "Admin"})
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/access/directory-connections", strings.NewReader(`{"name":"Feishu","providerType":"feishu","policy":{"mode":"manual"}}`))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 
@@ -414,7 +426,7 @@ func TestSCIMPatchUserAppliesSupportedPatchAndRejectsUnknownPath(t *testing.T) {
 			policy := domain.DefaultPolicy("c-1")
 			policy.SyncPeople = true
 			repo := &repositoryStub{connection: domain.Connection{ID: "c-1", ProviderType: domain.ProviderSCIM, Enabled: true}, policy: policy, scimSnapshot: domain.Snapshot{People: []domain.Person{{ExternalID: "u-1", Username: "ada", DisplayName: "Ada", Status: domain.ProjectionActive}}}}
-			handler := New(repo, &serviceStub{repository: repo}, factoryStub{})
+			handler := New(repo, &serviceStub{repository: repo}, factoryStub{}, nil)
 			recorder := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(recorder)
 			ctx.Params = gin.Params{{Key: "resourceID", Value: "u-1"}}
@@ -446,7 +458,7 @@ func TestFeishuChallengeAndDingTalkSignedEventFixtures(t *testing.T) {
 		policy := domain.DefaultPolicy("c-1")
 		policy.Mode = domain.PolicyScheduledAndRealtime
 		repo := &repositoryStub{connection: domain.Connection{ID: "c-1", ProviderType: domain.ProviderFeishu, Enabled: true}, policy: policy, webhookCredential: domain.WebhookCredential{VerificationToken: "verify-token"}}
-		handler := New(repo, &serviceStub{}, factoryStub{})
+		handler := New(repo, &serviceStub{}, factoryStub{}, nil)
 		recorder := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(recorder)
 		ctx.Params = gin.Params{{Key: "connectionID", Value: "c-1"}}
@@ -466,7 +478,7 @@ func TestFeishuChallengeAndDingTalkSignedEventFixtures(t *testing.T) {
 		policy := domain.DefaultPolicy("c-1")
 		policy.Mode = domain.PolicyScheduledAndRealtime
 		repo := &repositoryStub{connection: domain.Connection{ID: "c-1", ProviderType: domain.ProviderDingTalk, Enabled: true}, policy: policy, webhookCredential: domain.WebhookCredential{VerificationToken: secret}}
-		handler := New(repo, &serviceStub{}, factoryStub{})
+		handler := New(repo, &serviceStub{}, factoryStub{}, nil)
 		handler.now = func() time.Time { return now }
 		recorder := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(recorder)

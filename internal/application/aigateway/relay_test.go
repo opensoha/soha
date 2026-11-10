@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -18,10 +19,13 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/opensoha/soha/internal/api/relaywebsocket"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/infrastructure/aigatewayrelay"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 )
@@ -439,7 +443,7 @@ func TestRelayLLMHTTPListsOpenAIModelsWithRestrictedToken(t *testing.T) {
 			{ID: "route-3", PublicModel: "gpt-transformed", ProviderKind: "anthropic", UpstreamModel: "claude-upstream", Enabled: true, TransformPolicy: map[string]any{"mode": "convert", "targetProviderKind": "anthropic"}},
 		},
 	}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -496,7 +500,7 @@ func TestRelayLLMHTTPModelsHideTeamRestrictedRoutes(t *testing.T) {
 			{ID: "route-upstream-denied", PublicModel: "gpt-upstream-denied", ProviderKind: "openai", UpstreamID: "upstream-finance", UpstreamModel: "gpt-upstream", Enabled: true},
 		},
 	}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 	principal := relayTestPrincipal()
 	principal.Teams = []string{"platform"}
 	recorder := httptest.NewRecorder()
@@ -544,7 +548,7 @@ func TestRelayLLMHTTPProxiesOpenAIChatCompletionAndRecordsUsage(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -586,7 +590,7 @@ func TestInvokeWorkbenchModelUsesRelayRouteAndRecordsWorkbenchMetadata(t *testin
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.routes[0].ID = "route-workbench"
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	principal := relayWorkbenchTestPrincipal()
 	principal.Teams = []string{"platform"}
 	resp, err := service.InvokeWorkbenchModel(context.Background(), principal, WorkbenchRelayRequest{
@@ -645,7 +649,7 @@ func TestInvokeWorkbenchModelStreamParsesOpenAIDeltasAndRecordsStreamCall(t *tes
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.routes[0].ID = "route-workbench-stream"
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	deltas := []string{}
 	resp, err := service.InvokeWorkbenchModelStream(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
 		PublicModel: "gpt-public",
@@ -690,7 +694,7 @@ func TestInvokeWorkbenchModelStreamReturnsStoppedWhenDeltaSinkStops(t *testing.T
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.routes[0].ID = "route-workbench-stream-stop"
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	deltas := []string{}
 	resp, err := service.InvokeWorkbenchModelStream(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
 		PublicModel: "gpt-public",
@@ -734,7 +738,7 @@ func TestInvokeWorkbenchModelFiltersByRouteID(t *testing.T) {
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
 	repo.routes[0].ID = "route-wrong"
 	repo.routes[1].ID = "route-selected"
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	resp, err := service.InvokeWorkbenchModel(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
 		PublicModel: "gpt-public",
 		RouteID:     "route-selected",
@@ -766,7 +770,7 @@ func TestInvokeWorkbenchModelUsesFirstClassOpenAICompatibleRouteProvider(t *test
 
 	repo := relayRepoForUpstream(t, upstream.URL, "deepseek", upstreamKey)
 	repo.routes[0].ID = "route-deepseek"
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	resp, err := service.InvokeWorkbenchModel(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
 		PublicModel: "gpt-public",
 		RouteID:     "route-deepseek",
@@ -806,7 +810,7 @@ func TestInvokeWorkbenchModelPreservesOpenAIToAnthropicTransformRoute(t *testing
 	repo.routes[0].ID = "route-anthropic-transform"
 	repo.routes[0].ProviderKind = "anthropic"
 	repo.routes[0].TransformPolicy = map[string]any{"mode": "convert", "targetProviderKind": "anthropic"}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	resp, err := service.InvokeWorkbenchModel(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
 		PublicModel: "gpt-public",
 		RouteID:     "route-anthropic-transform",
@@ -839,7 +843,7 @@ func realtimeRelayHandler(t *testing.T, service *Service, claims map[string]any,
 		err := service.RelayLLMWebSocket(r.Context(), relayTestPrincipal(), relayTestAccessContext(claims), LLMRelayHTTPRequest{
 			ProviderKind: "openai", Endpoint: "realtime", QueryModel: r.URL.Query().Get("model"), Method: r.Method,
 			Headers: r.Header.Clone(), RequestID: requestID, SourceIP: "203.0.113.8", UserAgent: "relay-test",
-		}, w, r)
+		}, relaywebsocket.Upgrader(w, r))
 		if err != nil {
 			t.Errorf("RelayLLMWebSocket returned error: %v", err)
 		}
@@ -892,7 +896,7 @@ func TestRelayLLMWebSocketProxiesOpenAIRealtimeAndRecordsCall(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	router := http.NewServeMux()
 	router.HandleFunc("/api/v1/ai-gateway/llm/openai/v1/realtime", realtimeRelayHandler(t, service, map[string]any{
 		"purpose": LLMRelayTokenPurpose, "allowedModels": []string{"gpt-public"},
@@ -996,7 +1000,7 @@ func TestRelayLLMWebSocketRealtimeFallsBackBeforeClientUpgrade(t *testing.T) {
 	defer second.Close()
 
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	restore := stubRelayRandomIntn(func(int) int { return 0 })
 	defer restore()
 	router := http.NewServeMux()
@@ -1066,13 +1070,13 @@ func TestRelayLLMWebSocketRealtimeFallsBackBeforeClientUpgrade(t *testing.T) {
 
 func TestRelayLLMWebSocketRealtimeRequiresModel(t *testing.T) {
 	repo := relayRepoForUpstream(t, "https://example.com", "openai", "sk-test")
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 	err := service.RelayLLMWebSocket(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
 		ProviderKind: "openai",
 		Endpoint:     "realtime",
 		Method:       http.MethodGet,
 		Headers:      http.Header{},
-	}, httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/ai-gateway/llm/openai/v1/realtime", nil))
+	}, relaywebsocket.Upgrader(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/ai-gateway/llm/openai/v1/realtime", nil)))
 	if err == nil || !strings.Contains(err.Error(), "model query parameter is required") {
 		t.Fatalf("RelayLLMWebSocket error = %v", err)
 	}
@@ -1100,7 +1104,7 @@ func TestRelayLLMHTTPProxiesFirstClassOpenAICompatibleChatCompletion(t *testing.
 			defer upstream.Close()
 
 			repo := relayRepoForUpstream(t, upstream.URL, providerKind, upstreamKey)
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			recorder := httptest.NewRecorder()
 
 			err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1158,7 +1162,7 @@ func TestRelayLLMHTTPProxiesAzureOpenAIChatCompletionV1(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "azure-openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1219,7 +1223,7 @@ func TestRelayLLMHTTPProxiesAzureOpenAIDeploymentChatCompletion(t *testing.T) {
 			"apiVersion": "2024-10-21",
 		},
 	}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1274,7 +1278,7 @@ func TestRelayLLMHTTPProxiesGeminiGenerateContent(t *testing.T) {
 	repo := relayRepoForUpstream(t, upstream.URL, "gemini", upstreamKey)
 	repo.routes[0].PublicModel = "gemini-public"
 	repo.routes[0].UpstreamModel = "gemini-upstream"
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1370,7 +1374,7 @@ func TestRelayLLMHTTPGeminiGenerateContentAudioInputBypassesCacheAndBase64Estima
 			repo.routes[0].PublicModel = "gemini-audio-public"
 			repo.routes[0].UpstreamModel = "gemini-audio-upstream"
 			repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			recorder := httptest.NewRecorder()
 
 			err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1448,7 +1452,7 @@ func TestRelayLLMHTTPGeminiStreamGenerateContentAudioInputBypassesCacheAndParses
 	repo.routes[0].PublicModel = "gemini-audio-public"
 	repo.routes[0].UpstreamModel = "gemini-audio-upstream"
 	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1518,7 +1522,7 @@ func TestRelayLLMHTTPProxiesGeminiInteractions(t *testing.T) {
 	repo := relayRepoForUpstream(t, upstream.URL, "gemini", upstreamKey)
 	repo.routes[0].PublicModel = "gemini-image-public"
 	repo.routes[0].UpstreamModel = "gemini-image-upstream"
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1569,7 +1573,7 @@ func TestRelayLLMHTTPGeminiInteractionsBypassResponseCache(t *testing.T) {
 	repo.routes[0].PublicModel = "gemini-image-public"
 	repo.routes[0].UpstreamModel = "gemini-image-upstream"
 	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	req := LLMRelayHTTPRequest{
 		ProviderKind: "gemini",
 		Endpoint:     "interactions",
@@ -1611,7 +1615,7 @@ func TestRelayLLMHTTPRejectsGeminiInteractionsUnsupportedModes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := relayRepoForUpstream(t, "https://generativelanguage.googleapis.com", "gemini", "gemini-key")
 			repo.routes[0].PublicModel = "gemini-image-public"
-			service := newRelayRuntimeTestService(repo, nil)
+			service := newRelayRuntimeTestService(repo)
 			err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
 				"purpose":              LLMRelayTokenPurpose,
 				"allowedModels":        []string{"gemini-image-public"},
@@ -1657,7 +1661,7 @@ func TestRelayLLMHTTPProxiesCohereRerank(t *testing.T) {
 	repo := relayRepoForUpstream(t, upstream.URL, "cohere", upstreamKey)
 	repo.routes[0].PublicModel = "rerank-public"
 	repo.routes[0].UpstreamModel = "rerank-v3.5"
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1717,7 +1721,7 @@ func TestRelayLLMHTTPListsModelsForFirstClassOpenAICompatibleProvider(t *testing
 			Weight:        1,
 		},
 	)
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1755,7 +1759,7 @@ func TestRelayLLMHTTPListsGeminiModels(t *testing.T) {
 	repo := relayRepoForUpstream(t, "https://generativelanguage.googleapis.com", "gemini", "gemini-key")
 	repo.routes[0].PublicModel = "gemini-public"
 	repo.routes[0].UpstreamModel = "gemini-upstream"
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1810,7 +1814,7 @@ func TestRelayLLMHTTPConvertsOpenAIChatToAnthropicMessagesNonStream(t *testing.T
 	repo := relayRepoForUpstream(t, upstream.URL, "anthropic", upstreamKey)
 	repo.routes[0].ProviderKind = "anthropic"
 	repo.routes[0].TransformPolicy = map[string]any{"mode": "convert", "targetProviderKind": "anthropic"}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -1838,7 +1842,7 @@ func TestRelayLLMHTTPRejectsStreamingTransform(t *testing.T) {
 	repo := relayRepoForUpstream(t, "https://anthropic.example", "anthropic", "sk-ant-stream-transform")
 	repo.routes[0].ProviderKind = "anthropic"
 	repo.routes[0].TransformPolicy = map[string]any{"mode": "convert", "targetProviderKind": "anthropic"}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
 		ProviderKind: "openai",
@@ -1861,7 +1865,7 @@ func TestRelayLLMHTTPRejectsToolTransform(t *testing.T) {
 	repo := relayRepoForUpstream(t, "https://anthropic.example", "anthropic", "sk-ant-tool-transform")
 	repo.routes[0].ProviderKind = "anthropic"
 	repo.routes[0].TransformPolicy = map[string]any{"mode": "convert", "targetProviderKind": "anthropic"}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
 		ProviderKind: "openai",
@@ -1895,7 +1899,7 @@ func TestRelayLLMHTTPResponseCacheWritesThenHits(t *testing.T) {
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	accessCtx := relayTestAccessContext(map[string]any{
 		"purpose":         LLMRelayTokenPurpose,
 		"allowRouteTrace": true,
@@ -1973,7 +1977,7 @@ func TestRelayLLMHTTPResponseCacheStoresConvertedClientBody(t *testing.T) {
 	repo.routes[0].ProviderKind = "anthropic"
 	repo.routes[0].TransformPolicy = map[string]any{"mode": "convert", "targetProviderKind": "anthropic"}
 	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	accessCtx := relayTestAccessContext(map[string]any{
 		"purpose":         LLMRelayTokenPurpose,
 		"allowRouteTrace": true,
@@ -2044,7 +2048,7 @@ func TestRelayLLMHTTPResponseCacheDefaultBypassDoesNotWrite(t *testing.T) {
 	}))
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	req := LLMRelayHTTPRequest{
 		ProviderKind: "openai",
 		Endpoint:     "chat/completions",
@@ -2095,7 +2099,7 @@ func TestRelayLLMHTTPResponseCacheModes(t *testing.T) {
 			defer upstream.Close()
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 			repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			req := LLMRelayHTTPRequest{
 				ProviderKind: "openai",
 				Endpoint:     "chat/completions",
@@ -2144,7 +2148,7 @@ func TestRelayLLMHTTPResponseCacheSkipsStreamingAndToolRequests(t *testing.T) {
 			defer upstream.Close()
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 			repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			req := LLMRelayHTTPRequest{
 				ProviderKind: "openai",
 				Endpoint:     "chat/completions",
@@ -2182,7 +2186,7 @@ func TestLLMRelayCacheStatsAggregatesLogsAndPolicy(t *testing.T) {
 			{ID: "old", PublicModel: "gpt-public", UpstreamID: "upstream-openai", CacheStatus: relayCacheHit, CreatedAt: now.Add(-48 * time.Hour)},
 		},
 	}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 
 	stats, err := service.LLMRelayCacheStats(context.Background(), relayTestViewPrincipal(), domainaigateway.LLMRelayCacheStatsRequest{
 		WindowHours: 24,
@@ -2221,7 +2225,7 @@ func TestLLMRelayMetricsAggregatesBeyondLogListLimit(t *testing.T) {
 		upstreams: []domainaigateway.LLMUpstream{{ID: "upstream-openai", Status: "active"}},
 		callLogs:  logs,
 	}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 
 	metrics, err := service.LLMRelayMetrics(context.Background(), relayTestViewPrincipal())
 
@@ -2250,7 +2254,7 @@ func TestPurgeLLMRelayCacheDryRunAndDelete(t *testing.T) {
 			{ID: "cache-other", PublicModel: "gpt-other", UpstreamID: "upstream-openai", UpdatedAt: oldTime},
 		},
 	}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 
 	dryRun, err := service.PurgeLLMRelayCache(context.Background(), relayTestManagePrincipal(), domainaigateway.LLMRelayCachePurgeRequest{
 		PublicModel: "gpt-public",
@@ -2285,7 +2289,7 @@ func TestPurgeLLMRelayCacheDryRunAndDelete(t *testing.T) {
 
 func TestPurgeLLMRelayCacheRequiresManagePermission(t *testing.T) {
 	repo := &relayTestRepository{}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 
 	_, err := service.PurgeLLMRelayCache(context.Background(), relayTestPrincipal(), domainaigateway.LLMRelayCachePurgeRequest{DryRun: true})
 
@@ -2307,7 +2311,7 @@ func TestRelayLLMHTTPEstimatesOpenAIChatUsageWhenProviderOmitsUsage(t *testing.T
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
@@ -2351,7 +2355,7 @@ func TestRelayLLMHTTPProxiesOpenAIEmbeddingsAndRecordsUsage(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -2413,7 +2417,7 @@ func TestRelayLLMHTTPProxiesOpenAIImageGenerations(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -2477,7 +2481,7 @@ func TestRelayLLMHTTPProxiesOpenAIAudioSpeech(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -2547,7 +2551,7 @@ func TestRelayLLMHTTPProxiesOpenAIAudioMultipartEndpoints(t *testing.T) {
 				"custom":          "preserved",
 			}, "file", "sample.wav", "audio/wav", "fake-audio-bytes")
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			recorder := httptest.NewRecorder()
 
 			err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -2655,7 +2659,7 @@ func testOpenAIImageMultipartEndpoint(t *testing.T, tt imageMultipartCase) {
 
 	body, contentType := imageMultipartRequestBody(t, tt)
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -2753,21 +2757,17 @@ func assertImageMultipartLog(t *testing.T, log domainaigateway.LLMCallLog, tt im
 
 func TestRelayLLMHTTPAudioSpeechDefaultsBinaryContentType(t *testing.T) {
 	const upstreamKey = "sk-openai-audio-content-type-test"
-	repo := relayRepoForUpstream(t, "https://upstream.example", "openai", upstreamKey)
-	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.String() != "https://upstream.example/v1/audio/speech" {
-			t.Fatalf("url = %s, want https://upstream.example/v1/audio/speech", r.URL.String())
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/speech" {
+			t.Errorf("path = %s, want /v1/audio/speech", r.URL.Path)
 		}
 		_ = decodeRelayTestJSON(t, r.Body)
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Status:     "200 OK",
-			Header:     http.Header{},
-			Body:       io.NopCloser(strings.NewReader("audio-bytes")),
-			Request:    r,
-		}, nil
-	})}
-	service := newRelayRuntimeTestService(repo, client)
+		w.Header()["Content-Type"] = nil
+		_, _ = io.WriteString(w, "audio-bytes")
+	}))
+	defer upstream.Close()
+	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -2789,12 +2789,6 @@ func TestRelayLLMHTTPAudioSpeechDefaultsBinaryContentType(t *testing.T) {
 	if recorder.Header().Get("Content-Type") != "application/octet-stream" {
 		t.Fatalf("Content-Type = %q, want application/octet-stream", recorder.Header().Get("Content-Type"))
 	}
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r)
 }
 
 func TestRelayLLMHTTPRejectsOpenAIAudioSpeechStreamingAndMultipart(t *testing.T) {
@@ -2827,7 +2821,7 @@ func TestRelayLLMHTTPRejectsOpenAIAudioSpeechStreamingAndMultipart(t *testing.T)
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
 				"purpose":              LLMRelayTokenPurpose,
 				"allowedModels":        []string{"gpt-public"},
@@ -2927,7 +2921,7 @@ func TestRelayLLMHTTPRejectsOpenAIAudioMultipartInvalidRequests(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
 				"purpose":              LLMRelayTokenPurpose,
 				"allowedModels":        []string{"gpt-public"},
@@ -3004,7 +2998,7 @@ func TestRelayLLMHTTPRejectsOpenAIImageMultipartInvalidRequests(t *testing.T) {
 	for _, tt := range invalidImageMultipartCases(t) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
 				"purpose":              LLMRelayTokenPurpose,
 				"allowedModels":        []string{"gpt-public"},
@@ -3040,7 +3034,7 @@ func runRelayCacheBypassTest(t *testing.T, contentType, responseFormat, endpoint
 	t.Cleanup(upstream.Close)
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", "sk-openai-cache-bypass-test")
 	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	request := LLMRelayHTTPRequest{ProviderKind: "openai", Endpoint: endpoint, Method: http.MethodPost, Headers: http.Header{}, Body: body}
 	for call := range 2 {
 		if err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -3076,7 +3070,7 @@ func TestRelayLLMHTTPRejectsOpenAIImageGenerationStreamFlag(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
 		"purpose":              LLMRelayTokenPurpose,
 		"allowedModels":        []string{"gpt-public"},
@@ -3114,7 +3108,7 @@ func TestRelayLLMHTTPAudioMultipartBypassResponseCache(t *testing.T) {
 	}, "file", "sample.wav", "audio/wav", "fake-audio-bytes")
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	req := LLMRelayHTTPRequest{
 		ProviderKind: "openai",
 		Endpoint:     "audio/transcriptions",
@@ -3176,7 +3170,7 @@ func TestRelayLLMHTTPImageMultipartBypassResponseCache(t *testing.T) {
 			body, contentType := relayTestMultipartBody(t, tt.fields, "image", "input.png", "image/png", "fake-image-bytes")
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 			repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-			service := newRelayRuntimeTestService(repo, upstream.Client())
+			service := newRelayRuntimeTestService(repo)
 			req := LLMRelayHTTPRequest{
 				ProviderKind: "openai",
 				Endpoint:     tt.endpoint,
@@ -3238,7 +3232,7 @@ func TestRelayLLMHTTPEstimatesOpenAIResponsesUsageWhenProviderOmitsUsage(t *test
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
@@ -3283,7 +3277,7 @@ func TestRelayLLMHTTPProxiesOpenAIChatStreamAndRecordsUsage(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
@@ -3329,7 +3323,7 @@ func TestRelayLLMHTTPEstimatesOpenAIChatStreamUsageWhenProviderOmitsUsage(t *tes
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
@@ -3374,7 +3368,7 @@ func TestRelayLLMHTTPProxiesAnthropicMessagesAndRecordsUsage(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "anthropic", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -3424,7 +3418,7 @@ func TestRelayLLMHTTPConvertsAnthropicMessagesToOpenAIChatNonStream(t *testing.T
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.routes[0].ProviderKind = "openai"
 	repo.routes[0].TransformPolicy = map[string]any{"mode": "convert", "targetProviderKind": "openai"}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -3498,7 +3492,7 @@ func TestRelayLLMHTTPEstimatesAnthropicMessagesUsageWhenProviderOmitsUsage(t *te
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "anthropic", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
@@ -3535,7 +3529,7 @@ func TestRelayLLMHTTPUsesUpdatedRouteWithoutStaleConfig(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	call := func(requestID string) {
 		t.Helper()
 		err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
@@ -3585,7 +3579,7 @@ func TestRelayLLMHTTPProxiesAnthropicMessagesStreamAndRecordsUsage(t *testing.T)
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "anthropic", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
@@ -3641,7 +3635,7 @@ func TestRelayLLMHTTPCancelsUpstreamAndRecordsClientCancelled(t *testing.T) {
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "anthropic", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	ctx, cancel := context.WithCancel(context.Background())
 	writer := &cancelingRelayWriter{header: http.Header{}, cancel: cancel}
 
@@ -3716,7 +3710,7 @@ func TestRelayLLMHTTPSkipsTeamRestrictedRouteAndFallsBack(t *testing.T) {
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
 	repo.routes[0].Metadata = map[string]any{"allowedTeams": []string{"finance"}}
 	repo.routes[1].Metadata = map[string]any{"teamPolicy": map[string]any{"allowedTeams": []string{"platform"}}}
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	principal := relayTestPrincipal()
 	principal.Teams = []string{"platform"}
 
@@ -3758,7 +3752,7 @@ func TestRelayLLMHTTPSkipsTeamRestrictedUpstreamAndFallsBack(t *testing.T) {
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
 	repo.upstreams[0].Metadata = map[string]any{"deniedTeams": []string{"platform"}}
 	repo.upstreams[1].Metadata = map[string]any{"teamPolicy": map[string]any{"allowedTeams": []string{"platform"}}}
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	principal := relayTestPrincipal()
 	principal.Teams = []string{"platform"}
 
@@ -3784,7 +3778,7 @@ func TestRelayLLMHTTPSkipsTeamRestrictedUpstreamAndFallsBack(t *testing.T) {
 
 func TestSelectRelayUpstreamCandidatesUsesWeightedChoiceWithinPriority(t *testing.T) {
 	repo := relayRepoForWeightedSelection(t)
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 	calls := 0
 	restore := stubRelayRandomIntn(func(n int) int {
 		calls++
@@ -3816,7 +3810,7 @@ func TestSelectRelayUpstreamCandidatesPreservesPriorityBeforeWeight(t *testing.T
 	repo.routes[0].Weight = 1
 	repo.routes[1].Priority = 2
 	repo.routes[1].Weight = 100
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 	restore := stubRelayRandomIntn(func(n int) int { return n - 1 })
 	defer restore()
 
@@ -3832,7 +3826,7 @@ func TestSelectRelayUpstreamCandidatesPreservesPriorityBeforeWeight(t *testing.T
 func TestSelectRelayUpstreamCandidatesSkipsCircuitOpenUpstream(t *testing.T) {
 	repo := relayRepoForWeightedSelection(t)
 	repo.upstreams[0].Health = map[string]any{"circuitOpenUntil": time.Now().UTC().Add(time.Hour).Format(time.RFC3339)}
-	service := newRelayRuntimeTestService(repo, nil)
+	service := newRelayRuntimeTestService(repo)
 
 	candidates, err := service.selectRelayUpstreamCandidates(context.Background(), "openai", "gpt-public")
 	if err != nil {
@@ -3861,483 +3855,6 @@ func TestNormalizeRelayProviderKindAcceptsFirstClassOpenAICompatibleProviders(t 
 				t.Fatalf("normalizeRelayProviderKind(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestRelayEndpointURLUsesOpenAIPathsForFirstClassOpenAICompatibleProviders(t *testing.T) {
-	for _, tt := range []struct {
-		name         string
-		baseURL      string
-		providerKind string
-		endpoint     string
-		want         string
-	}{
-		{
-			name:         "deepseek chat appends v1",
-			baseURL:      "https://api.deepseek.com",
-			providerKind: "deepseek",
-			endpoint:     "chat/completions",
-			want:         "https://api.deepseek.com/v1/chat/completions",
-		},
-		{
-			name:         "qwen compatible mode keeps v1 suffix",
-			baseURL:      "https://dashscope.aliyuncs.com/compatible-mode/v1",
-			providerKind: "qwen",
-			endpoint:     "models",
-			want:         "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
-		},
-		{
-			name:         "openrouter api v1 keeps v1 suffix",
-			baseURL:      "https://openrouter.ai/api/v1",
-			providerKind: "openrouter",
-			endpoint:     "responses",
-			want:         "https://openrouter.ai/api/v1/responses",
-		},
-		{
-			name:         "deepseek image generation appends v1",
-			baseURL:      "https://api.deepseek.com",
-			providerKind: "deepseek",
-			endpoint:     "images/generations",
-			want:         "https://api.deepseek.com/v1/images/generations",
-		},
-		{
-			name:         "openai compatible image edits appends v1",
-			baseURL:      "https://api.openai.com",
-			providerKind: "openai",
-			endpoint:     "images/edits",
-			want:         "https://api.openai.com/v1/images/edits",
-		},
-		{
-			name:         "openai compatible image variations appends v1",
-			baseURL:      "https://api.openai.com",
-			providerKind: "openai",
-			endpoint:     "images/variations",
-			want:         "https://api.openai.com/v1/images/variations",
-		},
-		{
-			name:         "openai compatible audio speech appends v1",
-			baseURL:      "https://api.openai.com",
-			providerKind: "openai",
-			endpoint:     "audio/speech",
-			want:         "https://api.openai.com/v1/audio/speech",
-		},
-		{
-			name:         "openai compatible audio transcription appends v1",
-			baseURL:      "https://api.openai.com",
-			providerKind: "openai",
-			endpoint:     "audio/transcriptions",
-			want:         "https://api.openai.com/v1/audio/transcriptions",
-		},
-		{
-			name:         "openai compatible audio translation appends v1",
-			baseURL:      "https://api.openai.com",
-			providerKind: "openai",
-			endpoint:     "audio/translations",
-			want:         "https://api.openai.com/v1/audio/translations",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := relayEndpointURL(tt.baseURL, tt.providerKind, tt.endpoint)
-			if err != nil {
-				t.Fatalf("relayEndpointURL returned error: %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("relayEndpointURL = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-var azureOpenAIPathCases = []struct {
-	name     string
-	upstream domainaigateway.LLMUpstream
-	route    domainaigateway.LLMModelRoute
-	endpoint string
-	want     string
-}{
-	{
-		name: "v1 chat appends openai v1",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com",
-		},
-		endpoint: "chat/completions",
-		want:     "https://example.openai.azure.com/openai/v1/chat/completions",
-	},
-	{
-		name: "v1 models keeps existing openai v1 suffix",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com/openai/v1",
-		},
-		endpoint: "models",
-		want:     "https://example.openai.azure.com/openai/v1/models",
-	},
-	{
-		name: "deployment chat uses route upstream model and api version",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"apiVersion": "2024-10-21",
-				},
-			},
-		},
-		route: domainaigateway.LLMModelRoute{
-			UpstreamModel: "gpt-4o-prod",
-		},
-		endpoint: "chat/completions",
-		want:     "https://example.openai.azure.com/openai/deployments/gpt-4o-prod/chat/completions?api-version=2024-10-21",
-	},
-	{
-		name: "route metadata overrides deployment",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com/openai",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"apiVersion": "2024-10-21",
-					"deployment": "upstream-deployment",
-				},
-			},
-		},
-		route: domainaigateway.LLMModelRoute{
-			UpstreamModel: "route-model",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"deployment": "route-deployment",
-				},
-			},
-		},
-		endpoint: "embeddings",
-		want:     "https://example.openai.azure.com/openai/deployments/route-deployment/embeddings?api-version=2024-10-21",
-	},
-	{
-		name: "deployment images generations uses route upstream model and api version",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"apiVersion": "2024-10-21",
-				},
-			},
-		},
-		route: domainaigateway.LLMModelRoute{
-			UpstreamModel: "gpt-image-prod",
-		},
-		endpoint: "images/generations",
-		want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/generations?api-version=2024-10-21",
-	},
-	{
-		name: "deployment images edits uses route upstream model and api version",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"apiVersion": "2024-10-21",
-				},
-			},
-		},
-		route: domainaigateway.LLMModelRoute{
-			UpstreamModel: "gpt-image-prod",
-		},
-		endpoint: "images/edits",
-		want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/edits?api-version=2024-10-21",
-	},
-	{
-		name: "deployment images variations uses route upstream model and api version",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"apiVersion": "2024-10-21",
-				},
-			},
-		},
-		route: domainaigateway.LLMModelRoute{
-			UpstreamModel: "gpt-image-prod",
-		},
-		endpoint: "images/variations",
-		want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/variations?api-version=2024-10-21",
-	},
-	{
-		name: "deployment audio speech uses route upstream model and api version",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"apiVersion": "2024-10-21",
-				},
-			},
-		},
-		route: domainaigateway.LLMModelRoute{
-			UpstreamModel: "tts-prod",
-		},
-		endpoint: "audio/speech",
-		want:     "https://example.openai.azure.com/openai/deployments/tts-prod/audio/speech?api-version=2024-10-21",
-	},
-	{
-		name: "deployment audio transcriptions uses route upstream model and api version",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"apiVersion": "2024-10-21",
-				},
-			},
-		},
-		route: domainaigateway.LLMModelRoute{
-			UpstreamModel: "whisper-prod",
-		},
-		endpoint: "audio/transcriptions",
-		want:     "https://example.openai.azure.com/openai/deployments/whisper-prod/audio/transcriptions?api-version=2024-10-21",
-	},
-	{
-		name: "deployment audio translations uses route upstream model and api version",
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL: "https://example.openai.azure.com",
-			Metadata: map[string]any{
-				"azureOpenAI": map[string]any{
-					"apiVersion": "2024-10-21",
-				},
-			},
-		},
-		route: domainaigateway.LLMModelRoute{
-			UpstreamModel: "whisper-prod",
-		},
-		endpoint: "audio/translations",
-		want:     "https://example.openai.azure.com/openai/deployments/whisper-prod/audio/translations?api-version=2024-10-21",
-	},
-}
-
-func TestRelayEndpointURLUsesAzureOpenAIPaths(t *testing.T) {
-	for _, tt := range azureOpenAIPathCases {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := relayEndpointURLForUpstream(tt.upstream, tt.route, "azure-openai", tt.endpoint)
-			if err != nil {
-				t.Fatalf("relayEndpointURLForUpstream returned error: %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("relayEndpointURLForUpstream = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestRelayEndpointURLUsesGeminiNativePaths(t *testing.T) {
-	for _, tt := range []struct {
-		name     string
-		upstream domainaigateway.LLMUpstream
-		route    domainaigateway.LLMModelRoute
-		endpoint string
-		want     string
-	}{
-		{
-			name: "generate content appends v1beta",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://generativelanguage.googleapis.com",
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "gemini-2.0-flash",
-			},
-			endpoint: "generateContent",
-			want:     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-		},
-		{
-			name: "stream generate content keeps v1beta suffix and requests sse",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://generativelanguage.googleapis.com/v1beta",
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "models/gemini-2.0-flash",
-			},
-			endpoint: "streamGenerateContent",
-			want:     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse",
-		},
-		{
-			name: "metadata version override",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://generativelanguage.googleapis.com",
-				Metadata: map[string]any{
-					"gemini": map[string]any{"apiVersion": "v1"},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "gemini-2.0-flash",
-			},
-			endpoint: "models",
-			want:     "https://generativelanguage.googleapis.com/v1/models",
-		},
-		{
-			name: "interactions appends v1beta resource path",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://generativelanguage.googleapis.com",
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "gemini-2.5-flash-image",
-			},
-			endpoint: "interactions",
-			want:     "https://generativelanguage.googleapis.com/v1beta/interactions",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := relayEndpointURLForUpstream(tt.upstream, tt.route, "gemini", tt.endpoint)
-			if err != nil {
-				t.Fatalf("relayEndpointURLForUpstream returned error: %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("relayEndpointURLForUpstream = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestRelayEndpointURLUsesCohereNativePaths(t *testing.T) {
-	for _, tt := range []struct {
-		name     string
-		upstream domainaigateway.LLMUpstream
-		endpoint string
-		want     string
-	}{
-		{
-			name: "rerank appends v2",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://api.cohere.com",
-			},
-			endpoint: "rerank",
-			want:     "https://api.cohere.com/v2/rerank",
-		},
-		{
-			name: "rerank keeps v2 suffix",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://api.cohere.com/v2",
-			},
-			endpoint: "rerank",
-			want:     "https://api.cohere.com/v2/rerank",
-		},
-		{
-			name: "models uses v1",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://api.cohere.com/v2",
-			},
-			endpoint: "models",
-			want:     "https://api.cohere.com/v1/models",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := relayEndpointURLForUpstream(tt.upstream, domainaigateway.LLMModelRoute{}, "cohere", tt.endpoint)
-			if err != nil {
-				t.Fatalf("relayEndpointURLForUpstream returned error: %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("relayEndpointURLForUpstream = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestApplyRelayUpstreamHeadersUsesBearerForFirstClassOpenAICompatibleProviders(t *testing.T) {
-	for _, providerKind := range []string{"deepseek", "qwen", "openrouter"} {
-		t.Run(providerKind, func(t *testing.T) {
-			headers := http.Header{}
-			applyRelayUpstreamHeaders(headers, LLMRelayHTTPRequest{
-				ProviderKind: providerKind,
-				Endpoint:     "chat/completions",
-				Headers:      http.Header{"Accept": []string{"application/json"}},
-			}, domainaigateway.LLMUpstream{
-				DefaultHeaders: map[string]any{
-					"HTTP-Referer":  "https://soha.example",
-					"Authorization": "Bearer should-not-forward",
-				},
-			}, "sk-provider")
-
-			if got := headers.Get("Authorization"); got != "Bearer sk-provider" {
-				t.Fatalf("Authorization = %q", got)
-			}
-			if got := headers.Get("x-api-key"); got != "" {
-				t.Fatalf("x-api-key should be empty, got %q", got)
-			}
-			if got := headers.Get("HTTP-Referer"); got != "https://soha.example" {
-				t.Fatalf("HTTP-Referer = %q", got)
-			}
-		})
-	}
-}
-
-func TestApplyRelayUpstreamHeadersUsesGoogleAPIKeyForGemini(t *testing.T) {
-	headers := http.Header{}
-	applyRelayUpstreamHeaders(headers, LLMRelayHTTPRequest{
-		ProviderKind: "gemini",
-		Endpoint:     "generateContent",
-		Headers:      http.Header{"Accept": []string{"application/json"}},
-	}, domainaigateway.LLMUpstream{
-		DefaultHeaders: map[string]any{
-			"X-Goog-Api-Key":      "should-not-forward",
-			"Authorization":       "Bearer should-not-forward",
-			"X-Goog-User-Project": "soha-project",
-		},
-	}, "gemini-provider-key")
-
-	if got := headers.Get("x-goog-api-key"); got != "gemini-provider-key" {
-		t.Fatalf("x-goog-api-key = %q", got)
-	}
-	if got := headers.Get("Authorization"); got != "" {
-		t.Fatalf("Authorization should be empty, got %q", got)
-	}
-	if got := headers.Get("X-Goog-User-Project"); got != "soha-project" {
-		t.Fatalf("X-Goog-User-Project = %q", got)
-	}
-}
-
-func TestApplyRelayUpstreamHeadersFiltersCohereAPIKeyHeader(t *testing.T) {
-	headers := http.Header{}
-	applyRelayUpstreamHeaders(headers, LLMRelayHTTPRequest{
-		ProviderKind: "cohere",
-		Endpoint:     "rerank",
-		Headers: http.Header{
-			"Accept":              []string{"application/json"},
-			"OpenAI-Organization": []string{"org-should-not-forward"},
-		},
-	}, domainaigateway.LLMUpstream{
-		DefaultHeaders: map[string]any{
-			"Cohere-Api-Key": "should-not-forward",
-			"X-Client-Name":  "opensoha",
-		},
-	}, "cohere-provider-key")
-
-	if got := headers.Get("Authorization"); got != "Bearer cohere-provider-key" {
-		t.Fatalf("Authorization = %q", got)
-	}
-	if got := headers.Get("Cohere-Api-Key"); got != "" {
-		t.Fatalf("Cohere-Api-Key should be empty, got %q", got)
-	}
-	if got := headers.Get("OpenAI-Organization"); got != "" {
-		t.Fatalf("OpenAI-Organization should be empty, got %q", got)
-	}
-	if got := headers.Get("X-Client-Name"); got != "opensoha" {
-		t.Fatalf("X-Client-Name = %q", got)
-	}
-}
-
-func TestApplyRelayUpstreamHeadersUsesAPIKeyForAzureOpenAI(t *testing.T) {
-	headers := http.Header{}
-	applyRelayUpstreamHeaders(headers, LLMRelayHTTPRequest{
-		ProviderKind: "azure-openai",
-		Endpoint:     "chat/completions",
-		Headers:      http.Header{"Accept": []string{"application/json"}},
-	}, domainaigateway.LLMUpstream{
-		DefaultHeaders: map[string]any{
-			"api-key":       "should-not-forward",
-			"Authorization": "Bearer should-not-forward",
-			"X-Client-Name": "soha",
-		},
-	}, "sk-azure")
-
-	if got := headers.Get("api-key"); got != "sk-azure" {
-		t.Fatalf("api-key = %q", got)
-	}
-	if got := headers.Get("Authorization"); got != "" {
-		t.Fatalf("Authorization should be empty, got %q", got)
-	}
-	if got := headers.Get("X-Client-Name"); got != "soha" {
-		t.Fatalf("X-Client-Name = %q", got)
 	}
 }
 
@@ -4370,10 +3887,19 @@ func TestRelayResponseCacheKeyIncludesAzureOpenAITargetFingerprint(t *testing.T)
 	req := LLMRelayHTTPRequest{
 		ProviderKind: "azure_openai",
 		Endpoint:     "chat/completions",
+		Body:         []byte(`{"model":"gpt-public"}`),
+	}
+	adapter := aigatewayrelay.New(aigatewayrelay.Config{})
+	prepare := func(selection relaySelection) string {
+		prepared, err := adapter.Prepare(relayProviderRequest(req), relayProviderTarget(selection.upstream, selection.route), relayport.RequestOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return prepared.URL
 	}
 
-	firstKey := relayResponseCacheKey("secret", "scope", req, first, "gpt-public", "request-hash", "v1")
-	secondKey := relayResponseCacheKey("secret", "scope", req, second, "gpt-public", "request-hash", "v1")
+	firstKey := relayResponseCacheKey("secret", "scope", req, first, "gpt-public", "request-hash", "v1", prepare(first))
+	secondKey := relayResponseCacheKey("secret", "scope", req, second, "gpt-public", "request-hash", "v1", prepare(second))
 
 	if firstKey == "" || secondKey == "" {
 		t.Fatalf("cache keys should be populated, got first=%q second=%q", firstKey, secondKey)
@@ -4384,11 +3910,35 @@ func TestRelayResponseCacheKeyIncludesAzureOpenAITargetFingerprint(t *testing.T)
 }
 
 func TestRelayLLMHTTPRetriesNonStreamRetryableUpstreamStatus(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		status    int
+		errorCode string
+	}{
+		{name: "retryable provider failure", status: http.StatusServiceUnavailable, errorCode: "upstream_5xx"},
+		{name: "blocked provider redirect", status: http.StatusTemporaryRedirect, errorCode: "upstream_redirect_blocked"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assertRelayHTTPFallback(t, test.status, test.errorCode)
+		})
+	}
+}
+
+func assertRelayHTTPFallback(t *testing.T, status int, errorCode string) {
+	t.Helper()
 	const upstreamKey = "sk-openai-upstream-test"
 	firstCalls := 0
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		firstCalls++
-		http.Error(w, `{"error":{"message":"temporary"}}`, http.StatusServiceUnavailable)
+		if status == http.StatusTemporaryRedirect {
+			if r.URL.Path == "/redirect-target" {
+				t.Error("HTTP fallback replayed the request to the redirect target")
+				return
+			}
+			http.Redirect(w, r, "/redirect-target", status)
+			return
+		}
+		http.Error(w, `{"error":{"message":"temporary"}}`, status)
 	}))
 	defer first.Close()
 	secondCalls := 0
@@ -4399,7 +3949,7 @@ func TestRelayLLMHTTPRetriesNonStreamRetryableUpstreamStatus(t *testing.T) {
 	}))
 	defer second.Close()
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	restore := stubRelayRandomIntn(func(n int) int { return 0 })
 	defer restore()
 	recorder := httptest.NewRecorder()
@@ -4425,7 +3975,7 @@ func TestRelayLLMHTTPRetriesNonStreamRetryableUpstreamStatus(t *testing.T) {
 	if len(logs) != 2 {
 		t.Fatalf("log count = %d, want 2", len(logs))
 	}
-	if logs[0].Status != "failure" || logs[0].ErrorCode != "upstream_5xx" {
+	if logs[0].Status != "failure" || logs[0].ErrorCode != errorCode {
 		t.Fatalf("first log = %#v, want retryable upstream failure", logs[0])
 	}
 	if logs[1].Status != "success" || logs[1].UpstreamID != "upstream-second" {
@@ -4457,7 +4007,7 @@ func TestRelayLLMHTTPEnforcesRateLimitOnFallbackSelection(t *testing.T) {
 		TotalTokens: 1,
 		CreatedAt:   now.Add(-10 * time.Second),
 	})
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	restore := stubRelayRandomIntn(func(n int) int { return 0 })
 	defer restore()
 
@@ -4493,7 +4043,7 @@ func TestRelayLLMHTTPRejectsUnauthorizedExplicitUpstreamSelection(t *testing.T) 
 	}))
 	defer second.Close()
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
 		ProviderKind: "openai",
@@ -4524,7 +4074,7 @@ func TestRelayLLMHTTPRejectsUnauthorizedRouteTraceHeaders(t *testing.T) {
 	}))
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
 		ProviderKind: "openai",
@@ -4558,7 +4108,7 @@ func TestRelayLLMHTTPAllowsManagerExplicitUpstreamAndRouteTrace(t *testing.T) {
 	}))
 	defer second.Close()
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	principal := relayTestPrincipal()
 	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test")}
 	recorder := httptest.NewRecorder()
@@ -4601,7 +4151,7 @@ func TestRelayLLMHTTPAllowsTokenExplicitUpstreamSelectionAndWritesTraceHeaders(t
 	}))
 	defer second.Close()
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
@@ -4656,7 +4206,7 @@ func TestRelayLLMHTTPSeparatesTraceAndUpstreamSelectionTokenGrants(t *testing.T)
 	}))
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	baseRequest := LLMRelayHTTPRequest{
 		ProviderKind: "openai",
 		Endpoint:     "chat/completions",
@@ -4712,7 +4262,7 @@ func TestRelayLLMHTTPOpensCircuitBreakerAfterRetryableFailure(t *testing.T) {
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
 	repo.upstreams[0].Metadata = map[string]any{"circuitBreaker": map[string]any{"failureThreshold": 1, "openSeconds": 60}}
 	audit := &captureAuditRecorder{}
-	service := newRelayRuntimeTestServiceWithAudit(repo, first.Client(), audit, &memoryGatewayRepository{})
+	service := newRelayRuntimeTestServiceWithAudit(repo, audit, &memoryGatewayRepository{})
 	restore := stubRelayRandomIntn(func(n int) int { return 0 })
 	defer restore()
 
@@ -4764,7 +4314,7 @@ func TestRelayLLMHTTPClearsCircuitBreakerOnHalfOpenSuccess(t *testing.T) {
 		"lastErrorCode":       "upstream_5xx",
 	}
 	audit := &captureAuditRecorder{}
-	service := newRelayRuntimeTestServiceWithAudit(repo, upstream.Client(), audit, &memoryGatewayRepository{})
+	service := newRelayRuntimeTestServiceWithAudit(repo, audit, &memoryGatewayRepository{})
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
 		ProviderKind: "openai",
@@ -4809,7 +4359,7 @@ func TestRunLLMRelayHealthChecksMarksFailedActiveUpstreamDegraded(t *testing.T) 
 	repo.upstreams[0].Health = map[string]any{"circuitState": "closed", "consecutiveFailures": 1}
 	repo.upstreams[0].Metadata = map[string]any{"healthCheck": map[string]any{"degradeAfterFailures": 1}}
 	audit := &captureAuditRecorder{}
-	service := newRelayRuntimeTestServiceWithAudit(repo, upstream.Client(), audit, &memoryGatewayRepository{})
+	service := newRelayRuntimeTestServiceWithAudit(repo, audit, &memoryGatewayRepository{})
 
 	run, err := service.RunLLMRelayHealthChecks(context.Background(), relayTestManagePrincipal())
 
@@ -4859,7 +4409,7 @@ func TestRunLLMRelayHealthChecksRestoresHealthManagedDegradedUpstream(t *testing
 		"lastHealthErrorCode":            "upstream_5xx",
 	}
 	audit := &captureAuditRecorder{}
-	service := newRelayRuntimeTestServiceWithAudit(repo, upstream.Client(), audit, &memoryGatewayRepository{})
+	service := newRelayRuntimeTestServiceWithAudit(repo, audit, &memoryGatewayRepository{})
 
 	run, err := service.RunLLMRelayHealthChecks(context.Background(), relayTestManagePrincipal())
 
@@ -4899,7 +4449,7 @@ func TestRunLLMRelayHealthChecksSkipsDisabledUpstream(t *testing.T) {
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.upstreams[0].Status = "disabled"
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 
 	run, err := service.RunLLMRelayHealthChecks(context.Background(), relayTestManagePrincipal())
 
@@ -4928,7 +4478,7 @@ func TestRelayLLMHTTPHonorsFallbackPolicyMaxAttempts(t *testing.T) {
 	defer second.Close()
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
 	repo.routes[0].FallbackPolicy = map[string]any{"maxAttempts": 1}
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	restore := stubRelayRandomIntn(func(n int) int { return 0 })
 	defer restore()
 
@@ -4964,7 +4514,7 @@ func TestRelayLLMHTTPDoesNotRetryStreamingUpstreamStatus(t *testing.T) {
 	}))
 	defer second.Close()
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	restore := stubRelayRandomIntn(func(n int) int { return 0 })
 	defer restore()
 	recorder := httptest.NewRecorder()
@@ -4988,6 +4538,31 @@ func TestRelayLLMHTTPDoesNotRetryStreamingUpstreamStatus(t *testing.T) {
 	}
 }
 
+// This HTTP test scripts counts in one logical quota window. The real
+// counter backend's calendar keying must not make this decision test depend
+// on whether its two requests happen to straddle a wall-clock minute.
+type relaySingleWindowCounter struct {
+	fakeRateLimitBackend
+	requests []domainaigateway.RateLimitCounter
+}
+
+func (b *relaySingleWindowCounter) IncrementRateLimitCounter(_ context.Context, item domainaigateway.RateLimitCounter) (domainaigateway.RateLimitCounter, error) {
+	b.counterCalls++
+	b.requests = append(b.requests, item)
+	item.Count = b.counterCalls
+	return item, nil
+}
+
+func TestGatewayRateLimitWindowSeparatesMinuteBoundary(t *testing.T) {
+	boundary := time.Date(2026, 11, 1, 12, 31, 0, 0, time.UTC)
+	beforeStart, beforeEnd := gatewayRateLimitWindow(boundary.Add(-time.Nanosecond), time.Minute)
+	afterStart, afterEnd := gatewayRateLimitWindow(boundary, time.Minute)
+	if !beforeStart.Equal(boundary.Add(-time.Minute)) || !beforeEnd.Equal(boundary) ||
+		!afterStart.Equal(boundary) || !afterEnd.Equal(boundary.Add(time.Minute)) {
+		t.Fatalf("minute boundary windows = [%v,%v), [%v,%v)", beforeStart, beforeEnd, afterStart, afterEnd)
+	}
+}
+
 func TestRelayLLMHTTPEnforcesTokenRateLimit(t *testing.T) {
 	const upstreamKey = "sk-openai-upstream-test"
 	upstreamCalls := 0
@@ -4998,7 +4573,9 @@ func TestRelayLLMHTTPEnforcesTokenRateLimit(t *testing.T) {
 	}))
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
+	counter := &relaySingleWindowCounter{}
+	service.rateLimits = counter
 	accessCtx := relayTestAccessContext(map[string]any{
 		"purpose":   LLMRelayTokenPurpose,
 		"rateLimit": map[string]any{"rpm": 1, "mode": "counter"},
@@ -5021,6 +4598,21 @@ func TestRelayLLMHTTPEnforcesTokenRateLimit(t *testing.T) {
 	if upstreamCalls != 1 {
 		t.Fatalf("upstream calls = %d, want 1", upstreamCalls)
 	}
+	if len(counter.requests) != 2 {
+		t.Fatalf("counter requests = %d, want 2", len(counter.requests))
+	}
+	first, second := counter.requests[0], counter.requests[1]
+	if first.Key == "" || second.Key == "" {
+		t.Fatal("counter keys must be nonempty")
+	}
+	if first.WindowStart.Equal(second.WindowStart) != (first.Key == second.Key) {
+		t.Fatal("counter keys must match within a window and differ across windows")
+	}
+	first.Key, second.Key = "", ""
+	first.WindowStart, first.WindowEnd = second.WindowStart, second.WindowEnd
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("counter identity changed between the same token requests: %#v / %#v", first, second)
+	}
 }
 
 func TestRelayLLMHTTPEnforcesRouteModelRateLimitAcrossTokens(t *testing.T) {
@@ -5034,7 +4626,7 @@ func TestRelayLLMHTTPEnforcesRouteModelRateLimitAcrossTokens(t *testing.T) {
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	repo.routes[0].Metadata = map[string]any{"rateLimit": map[string]any{"rpm": 1, "mode": "counter"}}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	firstAccess := relayTestAccessContext(nil)
 	secondAccess := relayTestAccessContext(nil)
 	secondAccess.TokenID = "pat-2"
@@ -5075,7 +4667,7 @@ func TestRelayLLMHTTPEnforcesTokenPerMinuteLimit(t *testing.T) {
 		domainaigateway.LLMCallLog{ID: "other-token", TokenID: "pat-2", TokenKind: "personal_access_token", TotalTokens: 100, CreatedAt: now.Add(-10 * time.Second)},
 		domainaigateway.LLMCallLog{ID: "old-token", TokenID: "pat-1", TokenKind: "personal_access_token", TotalTokens: 100, CreatedAt: now.Add(-2 * time.Minute)},
 	)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	accessCtx := relayTestAccessContext(map[string]any{
 		"purpose":   LLMRelayTokenPurpose,
 		"rateLimit": map[string]any{"tpm": 10},
@@ -5113,7 +4705,7 @@ func TestRelayLLMHTTPIgnoresOldAndOtherTokenPerMinuteUsage(t *testing.T) {
 		domainaigateway.LLMCallLog{ID: "other-token", TokenID: "pat-2", TokenKind: "personal_access_token", TotalTokens: 100, CreatedAt: now.Add(-10 * time.Second)},
 		domainaigateway.LLMCallLog{ID: "old-token", TokenID: "pat-1", TokenKind: "personal_access_token", TotalTokens: 100, CreatedAt: now.Add(-2 * time.Minute)},
 	)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	accessCtx := relayTestAccessContext(map[string]any{
 		"purpose":   LLMRelayTokenPurpose,
 		"rateLimit": map[string]any{"tpm": 10},
@@ -5151,7 +4743,7 @@ func TestRelayLLMHTTPEnforcesRouteModelTokenPerMinuteAcrossTokens(t *testing.T) 
 		domainaigateway.LLMCallLog{ID: "same-model", TokenID: "pat-1", PublicModel: "gpt-public", TotalTokens: 12, CreatedAt: now.Add(-10 * time.Second)},
 		domainaigateway.LLMCallLog{ID: "other-model", TokenID: "pat-2", PublicModel: "gpt-other", TotalTokens: 100, CreatedAt: now.Add(-10 * time.Second)},
 	)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	accessCtx := relayTestAccessContext(nil)
 	accessCtx.TokenID = "pat-2"
 	accessCtx.TokenPrefix = "soha_pat_second"
@@ -5189,7 +4781,7 @@ func TestRelayLLMHTTPEnforcesUpstreamTokenPerMinuteLimit(t *testing.T) {
 		domainaigateway.LLMCallLog{ID: "same-upstream", UpstreamID: "upstream-openai", TotalTokens: 20, CreatedAt: now.Add(-10 * time.Second)},
 		domainaigateway.LLMCallLog{ID: "other-upstream", UpstreamID: "upstream-other", TotalTokens: 100, CreatedAt: now.Add(-10 * time.Second)},
 	)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(nil), LLMRelayHTTPRequest{
 		ProviderKind: "openai",
@@ -5232,7 +4824,7 @@ func TestRelayLLMHTTPFallsBackWhenUpstreamConcurrencyLimitIsFull(t *testing.T) {
 	repo.upstreams[0].MaxConcurrency = 1
 	repo.routes[0].Priority = 1
 	repo.routes[1].Priority = 2
-	service := newRelayRuntimeTestService(repo, first.Client())
+	service := newRelayRuntimeTestService(repo)
 	request := LLMRelayHTTPRequest{
 		ProviderKind: "openai",
 		Endpoint:     "chat/completions",
@@ -5304,7 +4896,7 @@ func testRelayTokenConcurrencyLimit(t *testing.T, stream bool) {
 	}))
 	defer upstream.Close()
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", "sk-openai-upstream-test")
-	service := newRelayRuntimeTestService(repo, upstream.Client())
+	service := newRelayRuntimeTestService(repo)
 	claims := map[string]any{"purpose": LLMRelayTokenPurpose}
 	errorCode := "token_concurrency_limited"
 	if stream {
@@ -5342,24 +4934,6 @@ func testRelayTokenConcurrencyLimit(t *testing.T, stream bool) {
 	assertRelayLogWithErrorCode(t, repo, errorCode)
 }
 
-func TestRelayModelsFromResponse(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		body string
-		want []string
-	}{
-		{name: "OpenAI data", body: `{"data":[{"id":"gpt-5.6-sol"},{"id":"gpt-5.6-luna"}]}`, want: []string{"gpt-5.6-luna", "gpt-5.6-sol"}},
-		{name: "Gemini models", body: `{"models":[{"name":"models/gemini-2.5-pro"}]}`, want: []string{"gemini-2.5-pro"}},
-		{name: "invalid JSON", body: `{`, want: nil},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := relayModelsFromResponse([]byte(tt.body)); !slices.Equal(got, tt.want) {
-				t.Fatalf("relayModelsFromResponse() = %#v, want %#v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestTestLLMUpstreamDraftDiscoversModels(t *testing.T) {
 	const apiKey = "sk-draft-test" // #nosec G101 -- nonfunctional credential used by the local mock upstream.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -5373,7 +4947,7 @@ func TestTestLLMUpstreamDraftDiscoversModels(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	service := newRelayRuntimeTestService(&relayTestRepository{}, upstream.Client())
+	service := newRelayRuntimeTestService(&relayTestRepository{})
 	result, err := service.TestLLMUpstreamDraft(context.Background(), relayTestManagePrincipal(), domainaigateway.LLMUpstreamInput{
 		Name:         "draft",
 		ProviderKind: "openai",
@@ -5388,11 +4962,11 @@ func TestTestLLMUpstreamDraftDiscoversModels(t *testing.T) {
 	}
 }
 
-func newRelayRuntimeTestService(repo *relayTestRepository, client *http.Client) *Service {
-	return newRelayRuntimeTestServiceWithAudit(repo, client, nil, nil)
+func newRelayRuntimeTestService(repo *relayTestRepository) *Service {
+	return newRelayRuntimeTestServiceWithAudit(repo, nil, nil)
 }
 
-func newRelayRuntimeTestServiceWithAudit(repo *relayTestRepository, client *http.Client, audit AuditRecorder, auditRepo AuditLogRepository) *Service {
+func newRelayRuntimeTestServiceWithAudit(repo *relayTestRepository, audit AuditRecorder, auditRepo AuditLogRepository) *Service {
 	rateLimits := &fakeRateLimitBackend{}
 	return NewWithDeps(ServiceDeps{
 		Permissions: appaccess.NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{
@@ -5401,15 +4975,13 @@ func newRelayRuntimeTestServiceWithAudit(repo *relayTestRepository, client *http
 		Audit:            audit,
 		AuditLogs:        auditRepo,
 		LLMRelay:         repo,
-		HTTPClient:       client,
+		RelayTransport:   aigatewayrelay.New(aigatewayrelay.Config{AllowInsecureUpstreamHTTP: true, AllowPrivateUpstreamHosts: true}),
 		RateLimits:       rateLimits,
 		RateLimitBackend: rateLimits,
 		RelayConfig: LLMRelayConfig{
 			Enabled:                     true,
 			DefaultTimeout:              2 * time.Second,
 			StreamTimeout:               2 * time.Second,
-			AllowInsecureUpstreamHTTP:   true,
-			AllowPrivateUpstreamHosts:   true,
 			IncludeUsageForOpenAIStream: true,
 			CredentialEncryptionKey:     relayTestEncryptionKey,
 		},

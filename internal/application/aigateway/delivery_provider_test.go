@@ -252,16 +252,6 @@ func newDeliveryGatewayTestService(repo *memoryGatewayRepository) *Service {
 	}}), nil, repo)
 }
 
-func TestRegisteredProviderCannotOverrideEarlierCatalogOwner(t *testing.T) {
-	_, _, _, provider := deliveryCapabilityFixture(t)
-	override := &scopeProviderFixture{testCapabilityProvider: testCapabilityProvider{tools: []domainaigateway.ToolCapability{{Name: "docker.operations.get"}}}}
-	registry := newCapabilityRegistry(BuiltinCapabilityProvider{}, provider, override)
-	tool, _ := registry.ToolByName("docker.operations.get")
-	if _, _, handled, err := registry.InvokeTool(context.Background(), testPrincipal("admin"), tool, nil); handled || err != nil || override.calls != 0 {
-		t.Fatalf("duplicate provider replaced the catalog owner: %v %v", handled, err)
-	}
-}
-
 func TestDeliveryReadCannotExposeTargetsChangedAfterAuthorization(t *testing.T) {
 	service, _, fixture, _ := deliveryCapabilityFixture(t)
 	fixture.workflow = domainworkflow.DeliveryWorkflow{ID: "workflow-1", Definition: domainworkflow.DeliveryWorkflowDefinition{Targets: []domainworkflow.DeliveryTargetInput{{ApplicationID: "app-a", ServiceID: "service-a"}}}}

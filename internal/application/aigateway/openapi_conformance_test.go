@@ -45,7 +45,19 @@ func TestOpenAPICapabilitiesMatchLiveMCPToolCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tool := range newCapabilityRegistry(vmProvider, BuiltinCapabilityProvider{}).Tools() {
+	creationProvider, err := NewResourceCreationCapabilityProvider(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draftProvider, err := NewDraftCapabilityProvider(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := newCapabilityRegistry(vmProvider, creationProvider, draftProvider, BuiltinCapabilityProvider{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range registry.Tools() {
 		tools[tool.Name] = struct {
 			riskLevel        string
 			requiresApproval bool

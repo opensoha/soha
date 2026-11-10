@@ -910,3 +910,19 @@ type stubRolePermissionReader struct {
 func (s stubRolePermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
 	return s.matrix, nil
 }
+
+func TestInitializationRetryCannotReplayUnknownCreation(t *testing.T) {
+	repo := newExecutionRepoFake()
+	task := domaindelivery.ExecutionTask{ID: "first", TaskKind: "manifest_apply", Status: "failed", CallbackToken: "original", AttemptCount: 1, Payload: map[string]any{"initializationPlanId": "plan"}}
+	repo.tasks[task.ID] = task
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	if _, err := service.RetryExecutionTask(t.Context(), task.ID, domaindelivery.ExecutionTaskActionInput{}); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("unsafe bootstrap retry accepted: %v", err)
+	}
+	if repo.tasks[task.ID].CallbackToken != "original" || repo.tasks[task.ID].Status != "failed" {
+		t.Fatal("denied bootstrap retry changed history")
+	}
+	if state := domaindelivery.BuildOperationState(task, time.Now()); state.Retryable || state.RecommendedNextAction != "inspect_status" {
+		t.Fatalf("unsafe retry offered: %+v", state)
+	}
+}

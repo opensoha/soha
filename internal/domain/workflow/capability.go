@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -39,7 +40,9 @@ func CapabilityRevisionsFrom(run Run) ([]CapabilityRevision, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(raw, &revisions)
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	err = decoder.Decode(&revisions)
 	return revisions, err
 }
 
@@ -52,7 +55,9 @@ func CapabilityIntentFrom(run Run) (CapabilityIntent, error) {
 	if err != nil {
 		return intent, err
 	}
-	if err := json.Unmarshal(raw, &intent); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&intent); err != nil {
 		return intent, err
 	}
 	if intent.ActorID == "" || intent.Digest == "" || intent.Deadline.IsZero() {

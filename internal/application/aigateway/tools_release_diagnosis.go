@@ -169,7 +169,7 @@ func (s *Service) collectReleaseRuntimeEvidence(ctx context.Context, principal d
 		evidence["events"] = filterEventsForDiagnosis(events, req.PodName, req.WorkloadName)
 	}
 	if req.PodName != "" {
-		logs, err := s.resources.GetPodLogs(ctx, principal, req.ClusterID, req.Namespace, req.PodName, req.Container, 200, 0, false)
+		logs, err := s.resources.GetPodLogs(ctx, principal, req.ClusterID, req.Namespace, req.PodName, req.Container, 200, 0, false, "")
 		if err != nil {
 			evidence["podLogsError"] = err.Error()
 		} else {

@@ -19,6 +19,7 @@ type DeploymentTemplateReader interface {
 
 type DeploymentPackageReader interface {
 	Get(context.Context, string) (domainmanifest.Package, error)
+	ListBindings(context.Context, string) ([]domainmanifest.EnvironmentBinding, error)
 }
 
 func (s *Service) SetDeploymentTemplateReaders(templates DeploymentTemplateReader, packages DeploymentPackageReader) {
@@ -26,6 +27,9 @@ func (s *Service) SetDeploymentTemplateReaders(templates DeploymentTemplateReade
 }
 
 func (s *Service) prepareServiceDeploymentTemplate(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string, input *domainapp.ServiceInput) error {
+	if err := s.preserveEnvironmentTemplateSelections(ctx, applicationID, serviceID, input.DeploymentTemplate); err != nil {
+		return err
+	}
 	if input.DeploymentTemplate == nil {
 		return nil
 	}
@@ -36,6 +40,16 @@ func (s *Service) prepareServiceDeploymentTemplate(ctx context.Context, principa
 		return fmt.Errorf("%w: deployment template changes require expectedVersion", apperrors.ErrInvalidArgument)
 	}
 	binding := *input.DeploymentTemplate
+	if serviceID != "" {
+		current, err := s.repo.GetService(ctx, applicationID, serviceID)
+		if err != nil {
+			return err
+		}
+		previous := current.DeploymentTemplate
+		if previous != nil && !previous.Detached && !binding.Detached && (previous.TemplateID != binding.TemplateID || previous.Version != binding.Version) {
+			return fmt.Errorf("%w: adopt deployment templates per environment through the template update Plan", apperrors.ErrConflict)
+		}
+	}
 	snapshot, err := s.serviceDeploymentTemplate(ctx, principal, applicationID, serviceID, binding)
 	if err != nil {
 		return err
@@ -56,6 +70,33 @@ func (s *Service) prepareServiceDeploymentTemplate(ctx context.Context, principa
 		return err
 	}
 	input.DeploymentTemplate = &binding
+	return nil
+}
+
+func (s *Service) preserveEnvironmentTemplateSelections(ctx context.Context, appID, serviceID string, next *domaincatalog.DeploymentTemplateBinding) error {
+	if serviceID == "" {
+		return nil
+	}
+	current, err := s.repo.GetService(ctx, appID, serviceID)
+	if err != nil {
+		return err
+	}
+	previous := current.DeploymentTemplate
+	if previous == nil || previous.ManifestPackageID == "" || next != nil && !next.Detached && next.TemplateID == previous.TemplateID && next.ManifestPackageID == previous.ManifestPackageID {
+		return nil
+	}
+	if s.deploymentPackages == nil {
+		return fmt.Errorf("%w: deployment configuration reader is unavailable", apperrors.ErrConflict)
+	}
+	bindings, err := s.deploymentPackages.ListBindings(ctx, previous.ManifestPackageID)
+	if err != nil {
+		return err
+	}
+	for _, binding := range bindings {
+		if binding.TemplateSelection != nil {
+			return fmt.Errorf("%w: environments have adopted independent template versions; preserve their bindings and create a separate configuration before detaching or replacing this service source", apperrors.ErrConflict)
+		}
+	}
 	return nil
 }
 

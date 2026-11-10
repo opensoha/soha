@@ -51,8 +51,18 @@ func radclientRequest(cfg Config, command networkprotocol.NASSessionCommand) ([]
 	var input strings.Builder
 	stringAttribute(&input, "NAS-Identifier", command.NASID)
 	stringAttribute(&input, "User-Name", command.SubjectID)
-	stringAttribute(&input, "Calling-Station-Id", command.DeviceID)
+	station := command.StationID
+	if station == "" {
+		station = command.DeviceID
+	}
+	stringAttribute(&input, "Calling-Station-Id", station)
 	stringAttribute(&input, "Class", command.SessionID)
+	if command.AccountingSessionID != "" {
+		stringAttribute(&input, "Acct-Session-Id", command.AccountingSessionID)
+	}
+	if command.NASPortID != "" {
+		stringAttribute(&input, "NAS-Port-Id", command.NASPortID)
+	}
 	if command.Action == "coa" && command.RadiusAttributes != nil {
 		if command.RadiusAttributes.VLANID != 0 {
 			stringAttribute(&input, "Tunnel-Type", "VLAN")

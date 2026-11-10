@@ -40,8 +40,8 @@ func nativeDefinition(tool domainaigateway.ToolCapability) (nativeToolDefinition
 }
 
 func (s *Service) nativeGatewayCatalog(ctx context.Context, principal domainidentity.Principal, sessionID string) (domainaigateway.Manifest, error) {
-	reader, ok := s.workbenchInvoker.(nativeCapabilities)
-	if !ok {
+	reader := s.runtime.CapabilityCatalog
+	if reader == nil {
 		return domainaigateway.Manifest{}, apperrors.ErrUnsupportedOperation
 	}
 	return reader.WorkbenchCapabilities(ctx, principal, domainaigateway.ManifestRequest{SessionID: sessionID})

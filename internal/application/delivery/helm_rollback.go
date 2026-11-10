@@ -47,6 +47,7 @@ func (s *Service) historicalHelmPreparation(ctx context.Context, principal domai
 		if _, err := s.manifestArtifacts(ctx, principal, snapshot.ApplicationID, snapshot.ServiceID, previous.ReleaseBundleID); err != nil {
 			return prepared, err
 		}
+		snapshot.TemplateInputs = previous.TemplateInputs
 		snapshot.Chart, snapshot.ChartVersion, snapshot.ChartDigest = previous.Chart, previous.ChartVersion, previous.ChartDigest
 		snapshot.ValuesDigest, snapshot.RenderedDigest, snapshot.ReleaseBundleID = previous.ValuesDigest, previous.RenderedDigest, previous.ReleaseBundleID
 		prepared.Payload.Snapshot = snapshot

@@ -171,6 +171,7 @@ func TestUpdateApplicationUsesUpdateActionForScopeAuthorization(t *testing.T) {
 func TestUpdateApplicationCannotMoveAnUnauthorizedOriginalScope(t *testing.T) {
 	repo := &captureAppRepository{items: map[string]domainapp.App{"app-1": {ID: "app-1", Name: "Payments", Key: "payments", BusinessLineID: "private", Version: 1}}}
 	authorizer := appaccess.New(policy.NewEngine(), nil, appScopeGrantReader{items: []domainscopegrant.Record{{ID: "grant", SubjectType: "user", SubjectID: "user-1", BusinessLineID: "retail", Role: "ops", Effect: "allow", Enabled: true}}}, nil)
+	authorizer.SetPermissionResolver(appaccess.NewPermissionResolver(permissionOnlyRoleReader{}))
 	service := New(repo, nil, authorizer, nil, nil)
 	_, err := service.Update(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"ops"}}, "app-1", validAppInput("payments"))
 	if !errors.Is(err, apperrors.ErrAccessDenied) {
@@ -194,6 +195,7 @@ func TestCreateApplicationAllowsMatchingCreateScopeGrant(t *testing.T) {
 			Enabled:        true,
 		},
 	}}, nil)
+	authorizer.SetPermissionResolver(appaccess.NewPermissionResolver(permissionOnlyRoleReader{}))
 	service := New(repo, nil, authorizer, nil, nil)
 
 	item, err := service.Create(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"ops"}}, validAppInput("payments"))
@@ -218,6 +220,7 @@ func TestCreateApplicationDeniesScopeGrantRoleWithoutCreateAction(t *testing.T) 
 			Enabled:        true,
 		},
 	}}, nil)
+	authorizer.SetPermissionResolver(appaccess.NewPermissionResolver(permissionOnlyRoleReader{}))
 	service := New(repo, nil, authorizer, nil, nil)
 
 	_, err := service.Create(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}}, validAppInput("payments"))

@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidWebAuthnResponseRejectsOversizedAttestation(t *testing.T) {
-	request := sohaapi.MFAWebAuthnResponse{
+	request := sohaapi.MFAWebAuthnResponse{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		CredentialID: "Y3JlZGVudGlhbA", ClientDataJSON: "e30",
 		AttestationObject: strings.Repeat("A", 131073),
 	}
@@ -18,7 +18,7 @@ func TestValidWebAuthnResponseRejectsOversizedAttestation(t *testing.T) {
 }
 
 func TestValidWebAuthnResponseAcceptsAssertionAndRequiresSignature(t *testing.T) {
-	request := sohaapi.MFAWebAuthnResponse{CredentialID: "Y3JlZGVudGlhbA", ClientDataJSON: "e30", AuthenticatorData: "YXV0aA", Signature: "c2ln"}
+	request := sohaapi.MFAWebAuthnResponse{CredentialID: "Y3JlZGVudGlhbA", ClientDataJSON: "e30", AuthenticatorData: "YXV0aA", Signature: "c2ln"} // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	if !validWebAuthnResponse(request) {
 		t.Fatal("valid WebAuthn assertion was rejected")
 	}

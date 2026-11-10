@@ -21,6 +21,7 @@ const (
 )
 
 type DeliveryTargetInput struct {
+	TemplateCandidateID      string                      `json:"templateCandidateId,omitempty"`
 	ID                       string                      `json:"id"`
 	ApplicationID            string                      `json:"applicationId"`
 	ServiceID                string                      `json:"serviceId"`
@@ -78,6 +79,7 @@ type DeliveryBatchInput struct {
 }
 
 type DeliveryTargetSnapshot struct {
+	TemplateUpdate       *sohaapi.TemplateUpdateReceipt           `json:"templateUpdate,omitempty"`
 	FrozenScope          map[string]string                        `json:"_frozenScope,omitempty"`
 	FrozenDocker         *domaindocker.PreparedDeliveryProject    `json:"_frozenDocker,omitempty"`
 	FrozenHelm           *sohaapi.HelmDeliverySnapshot            `json:"_frozenHelm,omitempty"`

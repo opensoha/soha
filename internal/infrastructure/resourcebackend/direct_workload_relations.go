@@ -27,6 +27,9 @@ func buildWorkloadAssociations(ctx context.Context, bundle *k8sinfra.Bundle, nam
 	pods := make([]domainresource.PodView, 0, len(podList.Items))
 	refs := buildPodSourceRefs(corev1.Pod{Spec: template.Spec})
 	for _, pod := range podList.Items {
+		if ownerKind == "DaemonSet" && !daemonSetControlsPod(pod.OwnerReferences, ownerUID) {
+			continue
+		}
 		if ownerUID == "" || ownedByUID(pod.OwnerReferences, ownerUID, ownerKind) {
 			pods = append(pods, mapPodView(pod))
 			mergeWorkloadSourceRefs(&refs, buildPodSourceRefs(pod))

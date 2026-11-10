@@ -37,7 +37,7 @@ func (r *Repository) CreateDeliveryWorkflowIdempotent(ctx context.Context, item 
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "delivery.workflow.create:"+item.CreatedBy+":"+key).Error; err != nil {
 			return err
 		}
-		repo := New(tx)
+		repo := New(tx, r.storageKeys)
 		found, err := repo.FindDeliveryWorkflowCreation(ctx, item.CreatedBy, key, digest)
 		if err == nil {
 			result = found

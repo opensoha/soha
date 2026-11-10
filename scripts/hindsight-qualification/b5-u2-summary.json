@@ -1,0 +1,103 @@
+{
+  "identity": {
+    "task": "Task123",
+    "batch": "B5",
+    "unit": "U2",
+    "attempt": "A01",
+    "core_head": "fd41e56c2567b02e46e86d99acdcd7303149c7c4"
+  },
+  "outcome": "partial",
+  "real_results": {
+    "structured_chat": "PASS; intent1 only, 160 max completion tokens",
+    "embedding": "FAIL; one intent2 request, HTTP502 upstream_request_failed, no upstream response",
+    "discovery": "PASS; 19 upstream model IDs, no declared embedding capability"
+  },
+  "not_run": [
+    "real Hindsight service/embeddings/semantic recall",
+    "derived correction/deletion and late worker fences in actual Hindsight",
+    "production egress isolation",
+    "Docker runtime (parent owns resources)",
+    "whole repository gates/independent review/commit/publish"
+  ],
+  "resources": {
+    "pat1": {
+      "id": "f3c9dfc8-e907-47e2-9bf0-6d2aa05a7cb3",
+      "action_key": "Task123/gateway-qualification/hindsight-u2/1",
+      "revocation_confirmed": true
+    },
+    "pat2": {
+      "id": "8f0ff57e-db12-4519-bcd8-7ec5bcb3d8c1",
+      "action_key": "Task123/gateway-qualification/hindsight-u2/2",
+      "revocation_confirmed": true
+    },
+    "pg_banks_runtime_created": false,
+    "unknown_external_results": false,
+    "temporary_snippet_removed": true
+  },
+  "final_source_hashes": {
+    "gateway_preflight.py": "8ebfe1da6496d57957a0807b9efffcd50d06aaeee0a64c8e551f6f227f40f938",
+    "test_gateway_preflight.py": "42f6883dd599e3130037a409b57e55ed8b46dce235902bd51760b123bea38843",
+    "README.md": "ba91d204925ec6aa93a8edc33ab3e9098e027e1f7bb1b37d7165f038d0b16169",
+    "run_local.py": "5868a65a09740fb2ec512eb95336333e93b3155613747cf089568d89a8aa202a",
+    "qualify.py": "d9a28fed3e64b57cde4974ba6352179bdfbecd611c83a14a5deadb399702fbf4",
+    "versions.json": "f36d0fde7c6c5662a6a206a8cfc8fe4ef9dab3a49de58bc6f31ac005dd94172f",
+    "requirements.lock": "8c09d14c243aeb2a977d6915ebec2efe95080d7a3564e5b8ce308726b5724aee"
+  },
+  "commands": [
+    {
+      "command": "opensoha-verify run -- python3 scripts/hindsight-qualification/gateway_preflight.py --invoke",
+      "exit": 0,
+      "evidence": "b5-u2-a01-gateway.json"
+    },
+    {
+      "command": "opensoha-verify run -- python3 scripts/hindsight-qualification/gateway_preflight.py --invoke --embedding-only --embedding-model gpt-6-luna --discover-upstreams",
+      "exit": 1,
+      "evidence": "b5-u2-a02-embedding.json"
+    },
+    {
+      "command": "opensoha-verify run -- python3 scripts/hindsight-qualification/gateway_preflight.py --discover-upstreams",
+      "exit": 0,
+      "evidence": "b5-u2-a02-discovery.json"
+    }
+  ],
+  "checks": {
+    "selftest_command": "opensoha-verify run -- python3 -m unittest discover -s scripts/hindsight-qualification -p test_gateway_preflight.py -v",
+    "last_completed_result": "PASS; final 8 tests, 0 failures, 0 skips; exit0",
+    "diff_check": "PASS; scoped git diff --check (directory untracked)",
+    "selftest_evidence": "b5-u2-selftest.log",
+    "selftest_log_sha256": "93c496d54b89f5a0137fe634788dde0cba3c5c692dcfbdc28e7a0b3c9626bb24",
+    "untracked_whitespace_checks": [
+      {
+        "file": "README.md",
+        "exit": 1,
+        "diagnostics_empty": true,
+        "note": "no-index exit1 reports added file differences; no whitespace diagnostics"
+      },
+      {
+        "file": "gateway_preflight.py",
+        "exit": 1,
+        "diagnostics_empty": true,
+        "note": "no-index exit1 reports added file differences; no whitespace diagnostics"
+      },
+      {
+        "file": "test_gateway_preflight.py",
+        "exit": 1,
+        "diagnostics_empty": true,
+        "note": "no-index exit1 reports added file differences; no whitespace diagnostics"
+      }
+    ]
+  },
+  "followup_A02": {
+    "action_key": "Task123/gateway-qualification/hindsight-u2/3",
+    "evidence": "b5-u2-a03-embedding.json",
+    "result": "The single additional embedding request received an upstream HTTP503 (Gateway call log upstream_5xx), mapped to public HTTP502 cluster_unavailable. No vector or definitive model-unsupported 4xx/501 was obtained; embedding capability remains unproven. Stop without further probes.",
+    "credential": {
+      "id": "af12a940-8306-47bf-b6a4-3b63c2416232",
+      "revocation_confirmed": true
+    },
+    "source_unchanged": true,
+    "embedding_requests": 1,
+    "chat_requests": 0,
+    "discovery_failure_evidence": "b5-u2-a03-discovery-failure.json"
+  }
+}

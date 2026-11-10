@@ -7,152 +7,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 )
 
-func TestQueryMetricSeriesWithFallbackAllowsUnambiguousFallback(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasPrefix(r.URL.Path, "/api/v1/query_range"):
-			query := r.URL.Query().Get("query")
-			if strings.Contains(query, `cluster="cluster-a"`) {
-				_ = json.NewEncoder(w).Encode(map[string]any{
-					"status": "success",
-					"data": map[string]any{
-						"resultType": "matrix",
-						"result":     []any{},
-					},
-				})
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status": "success",
-				"data": map[string]any{
-					"resultType": "matrix",
-					"result": []any{
-						map[string]any{
-							"values": [][]any{
-								{float64(1713225600), "0.25"},
-								{float64(1713225660), "0.5"},
-							},
-						},
-					},
-				},
-			})
-		case strings.HasPrefix(r.URL.Path, "/api/v1/query"):
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status": "success",
-				"data": map[string]any{
-					"resultType": "vector",
-					"result": []any{
-						map[string]any{
-							"metric": map[string]string{"pod": "api"},
-							"value":  []any{float64(1713225600), "1"},
-						},
-					},
-				},
-			})
-		default:
-			t.Fatalf("unexpected path %q", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	service := &metricsSupport{httpClient: server.Client()}
-	series, firstError := service.queryMetricSeriesWithFallback(
-		context.Background(),
-		server.URL,
-		"",
-		[]metricDefinition{
-			{Key: "cpu", Label: "CPU Usage", Unit: "cores", Query: `sum(rate(container_cpu_usage_seconds_total{namespace="team-a",pod="api",cluster="cluster-a"}[5m]))`},
-		},
-		[]metricDefinition{
-			{Key: "cpu", Label: "CPU Usage", Unit: "cores", Query: `sum(rate(container_cpu_usage_seconds_total{namespace="team-a",pod="api"}[5m]))`},
-		},
-		"team-a",
-		[]string{"api"},
-		time.Hour,
-		time.Minute,
-	)
-
-	if firstError != "" {
-		t.Fatalf("firstError = %q, want empty", firstError)
-	}
-	if len(series) != 1 {
-		t.Fatalf("len(series) = %d, want 1", len(series))
-	}
-	if series[0].Latest != 0.5 {
-		t.Fatalf("Latest = %v, want 0.5", series[0].Latest)
-	}
-}
-
-func TestQueryMetricSeriesWithFallbackRejectsAmbiguousFallback(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasPrefix(r.URL.Path, "/api/v1/query_range"):
-			query := r.URL.Query().Get("query")
-			if !strings.Contains(query, `cluster="cluster-a"`) {
-				t.Fatalf("unexpected unscoped fallback query %q", query)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status": "success",
-				"data": map[string]any{
-					"resultType": "matrix",
-					"result":     []any{},
-				},
-			})
-		case strings.HasPrefix(r.URL.Path, "/api/v1/query"):
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status": "success",
-				"data": map[string]any{
-					"resultType": "vector",
-					"result": []any{
-						map[string]any{
-							"metric": map[string]string{"pod": "api"},
-							"value":  []any{float64(1713225600), "2"},
-						},
-					},
-				},
-			})
-		default:
-			t.Fatalf("unexpected path %q", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	service := &metricsSupport{httpClient: server.Client()}
-	series, firstError := service.queryMetricSeriesWithFallback(
-		context.Background(),
-		server.URL,
-		"",
-		[]metricDefinition{
-			{Key: "cpu", Label: "CPU Usage", Unit: "cores", Query: `sum(rate(container_cpu_usage_seconds_total{namespace="team-a",pod="api",cluster="cluster-a"}[5m]))`},
-		},
-		[]metricDefinition{
-			{Key: "cpu", Label: "CPU Usage", Unit: "cores", Query: `sum(rate(container_cpu_usage_seconds_total{namespace="team-a",pod="api"}[5m]))`},
-		},
-		"team-a",
-		[]string{"api"},
-		time.Hour,
-		time.Minute,
-	)
-
-	if len(series) != 0 {
-		t.Fatalf("len(series) = %d, want 0", len(series))
-	}
-	if !strings.Contains(firstError, "ambiguous") {
-		t.Fatalf("firstError = %q, want ambiguity message", firstError)
-	}
-}
-
-func TestListPodUsageValuesFallsBackWithoutClusterMatcher(t *testing.T) {
+func TestListPodUsageValuesSupportsDedicatedEndpoint(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,17 +20,6 @@ func TestListPodUsageValuesFallsBackWithoutClusterMatcher(t *testing.T) {
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
 		query := r.URL.Query().Get("query")
-		if strings.Contains(query, `cluster="cluster-a"`) {
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"status": "success",
-				"data": map[string]any{
-					"resultType": "vector",
-					"result":     []any{},
-				},
-			})
-			return
-		}
-
 		result := []map[string]any(nil)
 		switch {
 		case strings.Contains(query, "container_cpu_usage_seconds_total"):
@@ -203,9 +52,8 @@ func TestListPodUsageValuesFallsBackWithoutClusterMatcher(t *testing.T) {
 	values, err := service.listPodUsageValues(
 		context.Background(),
 		domainsettings.PrometheusSettings{
-			Enabled:      true,
-			BaseURL:      server.URL,
-			ClusterLabel: "cluster",
+			Enabled: true,
+			BaseURL: server.URL,
 		},
 		"cluster-a",
 		[]podIdentity{{Name: "api", Namespace: "team-a"}},
@@ -303,5 +151,38 @@ func TestPodMetricDefinitionsKeepNetworkAtPodScope(t *testing.T) {
 		if !strings.Contains(byKey["cpu"], `container!=""`) {
 			t.Fatalf("cpu query includes pod sandbox samples: %s", byKey["cpu"])
 		}
+	}
+}
+
+func TestPodMetricDefinitionsOptionalDiagnosticsRespectTargetScope(t *testing.T) {
+	t.Parallel()
+	definitions := buildPodMetricDefinitions("team-a", "api-0", "cluster-a", "cluster")
+	byKey := make(map[string]metricDefinition, len(definitions))
+	for _, definition := range definitions {
+		byKey[definition.Key] = definition
+	}
+	for _, test := range []struct{ key, metric, unit string }{
+		{"filesystem", "container_fs_usage_bytes", "bytes"},
+		{"restarts", "kube_pod_container_status_restarts_total", "count"},
+		{"cpu_throttled", "container_cpu_cfs_throttled_periods_total", "%"},
+		{"oom_events", "container_oom_events_total", "count"},
+	} {
+		t.Run(test.key, func(t *testing.T) {
+			definition, ok := byKey[test.key]
+			if !ok || definition.Unit != test.unit || !strings.Contains(definition.Query, test.metric) {
+				t.Fatalf("missing diagnostic definition %s: %#v", test.key, definition)
+			}
+			for _, matcher := range []string{`namespace="team-a"`, `pod="api-0"`, `cluster="cluster-a"`} {
+				if !strings.Contains(definition.Query, matcher) {
+					t.Fatalf("%s escapes target scope: %s", test.key, definition.Query)
+				}
+			}
+			if test.key == "cpu_throttled" && !strings.Contains(definition.Query, "> 0)") {
+				t.Fatalf("CPU throttling must omit undefined ratios: %s", definition.Query)
+			}
+			if strings.Contains(definition.Query, "vector(0)") || strings.Contains(definition.Query, "increase(") {
+				t.Fatalf("%s must preserve missing and cumulative semantics: %s", test.key, definition.Query)
+			}
+		})
 	}
 }

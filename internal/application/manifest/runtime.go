@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	"slices"
 	"strings"
@@ -84,7 +85,7 @@ func (s *DeclarativeService) Preflight(ctx context.Context, principal domainiden
 	}
 	payload := s.taskPayload(domainmanifest.TaskActionPreflight, item, binding, domainmanifest.Deployment{}, rendered, generation, input.ForceConflicts, principal.UserID)
 	payload.IdempotencyKey = fmt.Sprintf("manifest:%s:%s:%d:%s:%t", item.ID, binding.ID, generation, rendered.RenderedDigest, input.ForceConflicts)
-	return s.queueOperation(ctx, item, binding, domainmanifest.Deployment{}, payload)
+	return s.queueOperation(ctx, item, binding, domainmanifest.Deployment{}, payload, principal)
 }
 
 func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal domainidentity.Principal, bindingID string, input domainmanifest.DesiredRevisionInput) (DeploymentActionResult, error) {
@@ -95,7 +96,7 @@ func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal d
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
-	if err := s.requireLegacyDeployment(ctx, binding.ID); err != nil {
+	if err := s.requireLegacyDeployment(ctx, principal, binding.ID); err != nil {
 		return DeploymentActionResult{}, err
 	}
 	item, _, err := s.bindingPackage(ctx, principal, binding.PackageID, domainaccess.ActionTrigger)
@@ -127,7 +128,7 @@ func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal d
 	}
 	payload := s.taskPayload(domainmanifest.TaskActionApply, item, binding, deployment, rendered, deployment.Generation, false, principal.UserID)
 	payload.IdempotencyKey = operationKey(deployment, domainmanifest.TaskActionApply)
-	task, err := s.queueOperation(ctx, item, binding, deployment, payload)
+	task, err := s.queueOperation(ctx, item, binding, deployment, payload, principal)
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
@@ -137,9 +138,10 @@ func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal d
 
 func (s *DeclarativeService) Reconcile(ctx context.Context, principal domainidentity.Principal, deploymentID, action string, input domainmanifest.ActionInput) (DeploymentActionResult, error) {
 	permission := appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "trigger")
-	if action == domainmanifest.TaskActionRepair {
+	switch action {
+	case domainmanifest.TaskActionRepair:
 		permission = appaccess.PermDeliveryManifestDriftRepair
-	} else if action == domainmanifest.TaskActionAdopt {
+	case domainmanifest.TaskActionAdopt:
 		permission = appaccess.PermDeliveryManifestDriftAdopt
 	}
 	if err := s.base.authorize(ctx, principal, permission); err != nil {
@@ -157,9 +159,14 @@ func (s *DeclarativeService) Reconcile(ctx context.Context, principal domainiden
 	if deployment.Spec.DeliverySnapshot != nil && action != domainmanifest.TaskActionObserve {
 		return DeploymentActionResult{}, fmt.Errorf("%w: this deployment is governed by application delivery plans", apperrors.ErrConflict)
 	}
+	if action == domainmanifest.TaskActionApply || action == domainmanifest.TaskActionRepair {
+		if err := s.requireLegacyMigration(ctx, principal, item.ID); err != nil {
+			return DeploymentActionResult{}, err
+		}
+	}
 	payload := s.taskPayload(action, item, binding, deployment, rendered, deployment.Generation, input.ForceConflicts, principal.UserID)
 	payload.IdempotencyKey = operationKey(deployment, action)
-	task, err := s.queueOperation(ctx, item, binding, deployment, payload)
+	task, err := s.queueOperation(ctx, item, binding, deployment, payload, principal)
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
@@ -196,6 +203,9 @@ func (s *DeclarativeService) Rollback(ctx context.Context, principal domainident
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
+	if err = s.requireLegacyMigration(ctx, principal, item.ID); err != nil {
+		return DeploymentActionResult{}, err
+	}
 	files, revision, err := s.filesForRevision(ctx, item, target)
 	if err != nil {
 		return DeploymentActionResult{}, err
@@ -213,7 +223,7 @@ func (s *DeclarativeService) Rollback(ctx context.Context, principal domainident
 	}
 	payload := s.taskPayload(domainmanifest.TaskActionRollback, item, binding, current, rendered, current.Generation, false, principal.UserID)
 	payload.IdempotencyKey = operationKey(current, domainmanifest.TaskActionRollback)
-	task, err := s.queueOperation(ctx, item, binding, current, payload)
+	task, err := s.queueOperation(ctx, item, binding, current, payload, principal)
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
@@ -264,20 +274,34 @@ func (s *DeclarativeService) taskPayload(action string, item domainmanifest.Pack
 		fieldManager = "opensoha-manifest/" + binding.ID
 		gitOpsDocuments = deployment.Spec.DeliverySnapshot.GitOpsDocuments
 	}
+	var rootResource *sohaapi.ManifestRootResource
+	if deployment.Spec.DeliverySnapshot != nil {
+		rootResource = deployment.Spec.DeliverySnapshot.RootResource
+	}
 	return domainmanifest.TaskPayload{
-		GitOpsDocuments: gitOpsDocuments,
-		Action:          action, PackageID: item.ID, BindingID: binding.ID, DeploymentID: deployment.ID,
+		InitializationPlanID: initializationPlan(deployment.Spec.DeliverySnapshot),
+		RootResource:         rootResource,
+		GitOpsDocuments:      gitOpsDocuments,
+		Action:               action, PackageID: item.ID, BindingID: binding.ID, DeploymentID: deployment.ID,
 		Generation: generation, Revision: rendered.Revision, RenderedDigest: rendered.RenderedDigest,
 		ClusterID: binding.ClusterID, Namespace: binding.Namespace, FieldManager: fieldManager,
 		ForceConflicts: force, Documents: rendered.Documents, Inventory: deployment.Status.Inventory, RequestedBy: actor,
 	}
 }
 
-func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmanifest.Package, binding domainmanifest.EnvironmentBinding, deployment domainmanifest.Deployment, payload domainmanifest.TaskPayload) (domaindelivery.ExecutionTask, error) {
+func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmanifest.Package, binding domainmanifest.EnvironmentBinding, deployment domainmanifest.Deployment, payload domainmanifest.TaskPayload, principals ...domainidentity.Principal) (domaindelivery.ExecutionTask, error) {
 	if s.tasks == nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: manifest task runtime is unavailable", apperrors.ErrInvalidArgument)
 	}
-	provider, err := s.taskProvider(ctx, binding.ClusterID)
+	if err := s.prepareOperationContext(ctx, deployment, &payload); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if s.importedRoots != nil {
+		if err := s.importedRoots.ValidateImportedManifestTargets(ctx, payload); err != nil {
+			return domaindelivery.ExecutionTask{}, err
+		}
+	}
+	provider, err := s.operationProvider(ctx, binding, payload)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
@@ -290,6 +314,12 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 		MaxRetries: 1, TimeoutSeconds: 300, CallbackToken: uuid.NewString(), Payload: structMap(payload), Result: map[string]any{},
 		CreatedAt: now, UpdatedAt: now,
 	}
+	if len(principals) > 0 {
+		task.SecretPrincipal = principals[0]
+	}
+	if domaindelivery.IsInitializationWrite(task) {
+		task.MaxRetries = 0
+	}
 	if payload.Action == domainmanifest.TaskActionApply && hasRolloutDocuments(payload.Documents) {
 		task.TimeoutSeconds = 24 * 60 * 60
 	}
@@ -297,6 +327,26 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 		task.ID, task.Payload, task.MaxRetries = node.ResourceID("task"), node.Metadata(task.Payload), 0
 	}
 	run := domainmanifest.OperationRun{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, DeploymentID: deployment.ID, Generation: payload.Generation, Action: payload.Action, IdempotencyKey: payload.IdempotencyKey, ExecutionTaskID: task.ID, CreatedAt: now}
+	run.DeliveryContext = payload.DeliveryContext
+	if domainmanifest.StagePreparedOperation(ctx, func(txctx context.Context) error {
+		// This projection performs database policy reads only. Recheck the frozen
+		// scope under the same transaction before exposing an otherwise stale preflight.
+		if run.DeliveryContext != nil {
+			if err := s.validateCurrentDeliveryContext(txctx, task.SecretPrincipal, task.ApplicationID, task.ApplicationEnvironmentID, *run.DeliveryContext); err != nil {
+				return err
+			}
+		}
+		existingID, _, err := s.repository.CreateOperationTask(txctx, run, task)
+		if err != nil {
+			return err
+		}
+		if existingID != task.ID {
+			return fmt.Errorf("%w: prepared operation belongs to another task", apperrors.ErrConflict)
+		}
+		return nil
+	}) {
+		return task, nil
+	}
 	existingID, created, err := s.repository.CreateOperationTask(ctx, run, task)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
@@ -307,6 +357,26 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 	return s.tasks.GetExecutionTaskInternal(ctx, existingID)
 }
 
+func (s *DeclarativeService) operationProvider(ctx context.Context, binding domainmanifest.EnvironmentBinding, payload domainmanifest.TaskPayload) (string, error) {
+	provider, err := s.rootTaskProvider(ctx, binding.ClusterID, payload.RootResource != nil)
+	if err == nil && payload.InitializationPlanID != "" {
+		provider, err = s.initializationProvider(ctx, binding.ClusterID)
+	}
+	if err != nil || payload.DeliveryContext == nil {
+		return provider, err
+	}
+	if provider != domainmanifest.TaskProviderDirect && provider != domainmanifest.TaskProviderDirectInitialization {
+		connection, err := s.base.loadCluster(ctx, binding.ClusterID)
+		if err != nil {
+			return "", err
+		}
+		if connection == nil || !slices.Contains(connection.Summary.Capabilities, domaindelivery.ManifestAdmissionCapability) {
+			return "", fmt.Errorf("%w: upgrade the Agent for current Manifest Plan admission", apperrors.ErrUnsupportedOperation)
+		}
+	}
+	return domaindelivery.ManifestAdmissionProviderPrefix + provider, nil
+}
+
 func (s *DeclarativeService) taskProvider(ctx context.Context, clusterID string) (string, error) {
 	connection, err := s.base.loadCluster(ctx, clusterID)
 	if err != nil {
@@ -315,6 +385,10 @@ func (s *DeclarativeService) taskProvider(ctx context.Context, clusterID string)
 	if connection != nil && connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
 		if !slices.Contains(connection.Summary.Capabilities, resourceruntime.ManifestAgentCapability) {
 			return "", fmt.Errorf("%w: upgrade the Agent to support controller-aware manifest execution", apperrors.ErrUnsupportedOperation)
+		}
+		// Runner-based advertisements use RootCRAgentCapability for the standalone claim set, including manifest_agent_v3.
+		if !slices.Contains(connection.Summary.Capabilities, resourceruntime.RootCRAgentCapability) {
+			return "", fmt.Errorf("%w: the Agent manifest task runner is unavailable", apperrors.ErrUnsupportedOperation)
 		}
 		return resourceruntime.ManifestAgentProviderPrefix + strings.TrimSpace(clusterID), nil
 	}
@@ -339,7 +413,7 @@ func (s *DeclarativeService) workerLoop(ctx context.Context) {
 				s.observeContinuousDeployments(ctx)
 				nextObserve = time.Now().UTC().Add(10 * time.Second)
 			}
-			task, err := s.tasks.ClaimExecutionTask(ctx, []string{domainmanifest.TaskProviderDirect, domainmanifest.TaskProviderGit}, "soha-manifest-controller", "local")
+			task, err := s.tasks.ClaimExecutionTask(ctx, []string{domainmanifest.TaskProviderDirect, domainmanifest.TaskProviderDirectInitialization, domainmanifest.TaskProviderGit, domaindelivery.ManifestAdmissionProviderPrefix + domainmanifest.TaskProviderDirect, domaindelivery.ManifestAdmissionProviderPrefix + domainmanifest.TaskProviderDirectInitialization}, "soha-manifest-controller", "local")
 			if err != nil {
 				continue
 			}
@@ -355,6 +429,10 @@ func (s *DeclarativeService) executeLocalTask(ctx context.Context, task domainde
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
+	if domaindelivery.RequiresManifestAdmission(task) && !task.ManifestAdmissionValidated {
+		_, _ = s.tasks.RecordCallback(context.WithoutCancel(ctx), domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: "failed", Payload: map[string]any{"error": "Manifest Plan admission was not confirmed"}})
+		return
+	}
 	payload, err := decodeTaskPayload(task.Payload)
 	if err != nil {
 		_, _ = s.tasks.RecordCallback(context.WithoutCancel(ctx), domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: "failed", Payload: map[string]any{"error": "invalid manifest task payload"}})
@@ -427,7 +505,7 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 	if err != nil {
 		return err
 	}
-	if deployment.Generation != payload.Generation {
+	if ignoreDeploymentTaskResult(deployment, payload) {
 		return nil
 	}
 	status := deployment.Status
@@ -440,6 +518,9 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 		return s.updateStatusIgnoringStale(ctx, deployment.ID, payload.Generation, status)
 	}
 	result := decodeTaskResult(task.Result)
+	if err := validateInitializationResult(task, payload, status, result); err != nil {
+		return err
+	}
 	if task.Status != "completed" {
 		status.Phase = domainmanifest.DeploymentPhaseDegraded
 		status.LastErrorCode = "manifest_task_failed"
@@ -457,6 +538,8 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 	case domainmanifest.TaskActionApply, domainmanifest.TaskActionRepair, domainmanifest.TaskActionRollback:
 		status.AppliedRevision = payload.Revision
 		status.AppliedDigest = payload.RenderedDigest
+		status.AppliedTemplate = appliedTemplateReference(deployment, payload, result)
+
 		if inventoryHealthy(result.Inventory, payload.Documents, payload.GitOpsDocuments) {
 			status.LastKnownGoodRevision = payload.Revision
 			status.Phase = domainmanifest.DeploymentPhaseConverged
@@ -475,6 +558,10 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 			status.LastKnownGoodRevision = payload.Revision
 			status.Phase = domainmanifest.DeploymentPhaseConverged
 			status.Conditions = upsertCondition(status.Conditions, domainmanifest.Condition{Type: "Healthy", Status: "true", Reason: "ObservedHealthy", Message: "managed resources are healthy", ObservedGeneration: payload.Generation, LastTransitionAt: now, EvidenceRefs: []string{task.ID}})
+			if payload.InitializationPlanID != "" && status.AppliedDigest == payload.RenderedDigest && deployment.Spec.DeliverySnapshot != nil && deployment.Spec.DeliverySnapshot.TemplateInputs != nil {
+				ref := deployment.Spec.DeliverySnapshot.TemplateInputs
+				status.AppliedTemplate = &sohaapi.TemplateVersionReference{TemplateID: ref.TemplateID, TemplateVersion: ref.TemplateVersion, TemplateDigest: ref.TemplateDigest}
+			}
 			status.Conditions = upsertCondition(status.Conditions, domainmanifest.Condition{Type: "Drifted", Status: "false", Reason: "DesiredStateMatched", Message: "managed resource fields match the desired revision", ObservedGeneration: payload.Generation, LastTransitionAt: now, EvidenceRefs: []string{task.ID}})
 		}
 	case domainmanifest.TaskActionAdopt:
@@ -536,8 +623,32 @@ func (s *DeclarativeService) observeContinuousDeployments(ctx context.Context) {
 		return
 	}
 	for _, deployment := range items {
+		// A newly selected Plan is pending execution, not drifted from a rollout
+		// that has already been applied. Preserve the source health receipt until
+		// apply finishes; failed writes must retain their failure status.
+		if deployment.Spec.DeliverySnapshot != nil && (deployment.Status.AppliedDigest != deployment.Spec.DesiredDigest || failedPlanWrite(deployment)) {
+			continue
+		}
 		_ = s.queueAutomaticAction(ctx, deployment, domainmanifest.TaskActionObserve, time.Now().UTC())
 	}
+}
+
+// Stale generations and reads queued before a failed publication cannot update
+// its status. Each task's own execution receipt remains available independently.
+func ignoreDeploymentTaskResult(deployment domainmanifest.Deployment, payload domainmanifest.TaskPayload) bool {
+	return deployment.Generation != payload.Generation || payload.Action == domainmanifest.TaskActionObserve && failedPlanWrite(deployment)
+}
+
+func failedPlanWrite(deployment domainmanifest.Deployment) bool {
+	if deployment.Spec.DeliverySnapshot == nil {
+		return false
+	}
+	for _, condition := range deployment.Status.Conditions {
+		if condition.Type == "Synced" && condition.Status == "false" && condition.Reason == "TaskFailed" && condition.ObservedGeneration == deployment.Generation {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *DeclarativeService) queueAutomaticAction(ctx context.Context, deployment domainmanifest.Deployment, action string, observedAt time.Time) error {
@@ -557,7 +668,15 @@ func (s *DeclarativeService) queueAutomaticAction(ctx context.Context, deploymen
 	// Reconcile active rollouts promptly; settled deployments remain due at 60 seconds.
 	bucket := observedAt.UTC().Unix() / 10
 	payload.IdempotencyKey = fmt.Sprintf("manifest:%s:%d:%s:%d", deployment.ID, deployment.Generation, action, bucket)
-	_, err = s.queueOperation(ctx, item, binding, deployment, payload)
+	var principals []domainidentity.Principal
+	if deployment.Spec.DeliverySnapshot != nil || payload.RootResource != nil || payload.InitializationPlanID != "" {
+		principal, principalErr := s.rootObservationPrincipal(ctx, deployment)
+		if principalErr != nil {
+			return principalErr
+		}
+		principals = append(principals, principal)
+	}
+	_, err = s.queueOperation(ctx, item, binding, deployment, payload, principals...)
 	return err
 }
 

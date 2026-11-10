@@ -52,6 +52,7 @@ func (r *captureOperationRecorder) Record(_ context.Context, entry domainoperati
 
 type memoryGatewayRepository struct {
 	personalTokens       []domainaigateway.PersonalAccessToken
+	tokenRotations       map[string]domainaigateway.TokenRotationRecord
 	serviceAccounts      map[string]domainaigateway.ServiceAccount
 	serviceAccountTokens []domainaigateway.ServiceAccountToken
 	aiClients            map[string]domainaigateway.AIClient
@@ -91,6 +92,7 @@ func newTestServiceWithRelay(permissions *appaccess.PermissionResolver, audit Au
 			return domainidentity.Principal{}, apperrors.ErrUnauthorized
 		})
 		deps.PersonalTokens = repo
+		deps.TokenRotations = repo
 		deps.ServiceAccounts = repo
 		deps.Clients = repo
 		deps.ToolGrants = repo
@@ -179,7 +181,7 @@ func (p testCapabilityProvider) InvokeTool(ctx context.Context, principal domain
 }
 
 func TestCapabilityRegistryMergesResourceRefs(t *testing.T) {
-	registry := newCapabilityRegistry(
+	registry, err := newCapabilityRegistry(
 		testCapabilityProvider{
 			resourceRefs: []ResourceCapabilityRefs{
 				{
@@ -199,6 +201,10 @@ func TestCapabilityRegistryMergesResourceRefs(t *testing.T) {
 			},
 		},
 	)
+
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	refs := registry.ResourceRefs("resource/soha://custom/context")
 	if refs.Resource != "soha://custom/context" || !slices.Equal(refs.Tools, []string{"custom.echo", "custom.inspect"}) || !slices.Equal(refs.Prompts, []string{"custom.prompt"}) || !slices.Equal(refs.Skills, []string{"custom-skill"}) {
@@ -789,13 +795,11 @@ func (s *fakeApplicationService) ListServices(_ context.Context, _ domainidentit
 }
 
 type fakeDeliveryService struct {
-	triggered          bool
-	lastActionInput    domaindelivery.ApplicationDeliveryActionInput
-	lastDraftInput     domaindelivery.DeliveryDraftInput
-	lastConfirmedDraft string
-	lastPlanInput      domaindelivery.DeliveryPlanInput
-	lastConfirmedPlan  string
-	workflowRunID      string
+	triggered         bool
+	lastActionInput   domaindelivery.ApplicationDeliveryActionInput
+	lastPlanInput     domaindelivery.DeliveryPlanInput
+	lastConfirmedPlan string
+	workflowRunID     string
 }
 
 type fakeOnCallResolver struct {
@@ -821,26 +825,6 @@ func (r *fakeOnCallResolver) ResolveOnCall(_ context.Context, _ domainidentity.P
 		return nil, r.routeErr
 	}
 	return r.route, nil
-}
-
-func (s *fakeDeliveryService) CreateDeliveryDraft(_ context.Context, _ domainidentity.Principal, input domaindelivery.DeliveryDraftInput) (domaindelivery.DeliveryDraft, error) {
-	s.lastDraftInput = input
-	return domaindelivery.DeliveryDraft{
-		ID:               firstNonEmpty(input.ID, "draft-1"),
-		Source:           firstNonEmpty(input.Source, domaindelivery.DeliveryDraftSourceAI),
-		Status:           domaindelivery.DeliveryDraftStatusDraft,
-		ApplicationDraft: input.ApplicationDraft,
-		Services:         input.Services,
-	}, nil
-}
-
-func (s *fakeDeliveryService) ConfirmDeliveryDraft(_ context.Context, _ domainidentity.Principal, draftID string) (domaindelivery.DeliveryDraftConfirmResult, error) {
-	s.lastConfirmedDraft = draftID
-	return domaindelivery.DeliveryDraftConfirmResult{
-		Draft:       domaindelivery.DeliveryDraft{ID: draftID, Status: domaindelivery.DeliveryDraftStatusConfirmed},
-		Application: domainapp.App{ID: "app-1"},
-		Services:    []domainapp.Service{{ID: "service-1", ApplicationID: "app-1"}},
-	}, nil
 }
 
 func (s *fakeDeliveryService) CreateDeliveryPlan(_ context.Context, _ domainidentity.Principal, input domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error) {
@@ -1087,7 +1071,7 @@ func (s *fakeResourceService) GetPodDetail(_ context.Context, _ domainidentity.P
 	}, nil
 }
 
-func (s *fakeResourceService) GetPodLogs(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (s *fakeResourceService) GetPodLogs(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
 	s.readLogs = true
 	s.clusterID = clusterID
 	s.namespace = namespace
@@ -1479,7 +1463,15 @@ func TestDefaultToolMCPNamesMatchCanonicalNames(t *testing.T) {
 	}
 }
 
-func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
+func TestRegisteredToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
+	draftProvider, err := NewDraftCapabilityProvider(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := newCapabilityRegistry(BuiltinCapabilityProvider{}, draftProvider)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, item := range []struct {
 		tool     string
 		required []string
@@ -1487,7 +1479,7 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 		{tool: "delivery.applications.list"},
 		{tool: "delivery.applications.detail", required: []string{"applicationId"}},
 		{tool: "delivery.applications.create", required: []string{"name", "key", "group", "language", "enabled"}},
-		{tool: "delivery.drafts.create", required: []string{"applicationDraft"}},
+		{tool: "delivery.drafts.create", required: []string{"applicationDraft", "idempotencyKey"}},
 		{tool: "delivery.drafts.confirm", required: []string{"draftId"}},
 		{tool: "delivery.application_environments.list"},
 		{tool: "delivery.application_services.list", required: []string{"applicationId"}},
@@ -1529,7 +1521,7 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 		{tool: "k8s.events.list", required: []string{"clusterId"}},
 		{tool: "diagnosis.release_failure.analyze", required: []string{"applicationId"}},
 	} {
-		tool, ok := toolByName(item.tool)
+		tool, ok := registry.ToolByName(item.tool)
 		if !ok {
 			t.Fatalf("expected tool %s", item.tool)
 		}
@@ -1550,7 +1542,7 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 			}
 		}
 	}
-	for _, tool := range defaultTools() {
+	for _, tool := range registry.Tools() {
 		if tool.InputSchema["type"] != "object" {
 			t.Fatalf("default tool %s must expose object input schema: %#v", tool.Name, tool.InputSchema)
 		}
@@ -4178,35 +4170,13 @@ func TestInvokeToolRoutesDeliveryListThroughApplicationService(t *testing.T) {
 	}
 }
 
-func TestInvokeDeliveryWorkflowToolsUseDeliveryService(t *testing.T) {
+func TestInvokeDeliveryPlanToolsUseDeliveryService(t *testing.T) {
 	delivery := &fakeDeliveryService{}
 	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{}), nil, &memoryGatewayRepository{})
 	service.SetDeliveryServices(&fakeApplicationService{}, delivery)
 	principal := testPrincipal("developer")
 
-	_, related, err := service.invokeDeliveryWorkflowTool(context.Background(), principal, "delivery.drafts.create", map[string]any{
-		"source": "ai",
-		"applicationDraft": map[string]any{
-			"name": "Checkout", "key": "checkout", "group": "commerce", "language": "go", "enabled": true,
-		},
-		"services": []any{map[string]any{"key": "api", "name": "Checkout API", "serviceKind": "kubernetes_workload", "enabled": true}},
-	})
-	if err != nil {
-		t.Fatalf("create draft tool returned error: %v", err)
-	}
-	if delivery.lastDraftInput.ApplicationDraft.Key != "checkout" || len(delivery.lastDraftInput.Services) != 1 || related["draftId"] != "draft-1" {
-		t.Fatalf("unexpected delivery draft routing: input=%#v related=%#v", delivery.lastDraftInput, related)
-	}
-
-	_, related, err = service.invokeDeliveryWorkflowTool(context.Background(), principal, "delivery.drafts.confirm", map[string]any{"draftId": "draft-1"})
-	if err != nil {
-		t.Fatalf("confirm draft tool returned error: %v", err)
-	}
-	if delivery.lastConfirmedDraft != "draft-1" || related["applicationId"] != "app-1" || related["serviceCount"] != 1 {
-		t.Fatalf("unexpected delivery draft confirmation: delivery=%#v related=%#v", delivery, related)
-	}
-
-	_, related, err = service.invokeDeliveryWorkflowTool(context.Background(), principal, "delivery.plans.create", map[string]any{
+	_, related, err := service.invokeDeliveryWorkflowTool(context.Background(), principal, "delivery.plans.create", map[string]any{
 		"source": "ai", "applicationId": "app-1", "applicationEnvironmentId": "binding-1", "action": "deploy", "targetIds": []any{"target-1"},
 	})
 	if err != nil {
@@ -4226,6 +4196,14 @@ func TestInvokeDeliveryWorkflowToolsUseDeliveryService(t *testing.T) {
 }
 
 func TestDeliveryWorkflowToolApprovalBoundaries(t *testing.T) {
+	draftProvider, err := NewDraftCapabilityProvider(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := newCapabilityRegistry(BuiltinCapabilityProvider{}, draftProvider)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, item := range []struct {
 		name             string
 		requiresApproval bool
@@ -4236,7 +4214,7 @@ func TestDeliveryWorkflowToolApprovalBoundaries(t *testing.T) {
 		{name: "delivery.plans.create", risk: domainaigateway.RiskLevelMutate},
 		{name: "delivery.plans.confirm", requiresApproval: true, risk: domainaigateway.RiskLevelExecute},
 	} {
-		tool, ok := toolByName(item.name)
+		tool, ok := registry.ToolByName(item.name)
 		if !ok {
 			t.Fatalf("missing workflow tool %s", item.name)
 		}
@@ -4244,7 +4222,7 @@ func TestDeliveryWorkflowToolApprovalBoundaries(t *testing.T) {
 			t.Fatalf("unexpected workflow tool boundary for %s: %#v", item.name, tool)
 		}
 	}
-	confirm, _ := toolByName("delivery.plans.confirm")
+	confirm, _ := registry.ToolByName("delivery.plans.confirm")
 	for _, permission := range []string{
 		appaccess.PermDeliveryBuildsTrigger,
 		appaccess.PermDeliveryReleasesTrigger,

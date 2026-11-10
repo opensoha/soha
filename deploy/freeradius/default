@@ -42,26 +42,77 @@ server default {
 	}
 
 	accounting {
-		update control { &Tmp-String-1 := "%{string:&Class}" }
-		if (!&Event-Timestamp || !&Acct-Session-Id || &Acct-Session-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&NAS-Port-Id || &NAS-Port-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&control:Tmp-String-1 || &control:Tmp-String-1 !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+		if (!&Event-Timestamp || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}") {
 			fail
 		}
-		if (&Acct-Status-Type == Start) {
-			update control { &Tmp-String-0 := "start" }
+		update control {
+			&Tmp-String-2 := ""
+			&Tmp-String-3 := ""
 		}
-		elsif (&Acct-Status-Type == Interim-Update) {
-			update control { &Tmp-String-0 := "interim-update" }
-		}
-		elsif (&Acct-Status-Type == Stop) {
-			update control { &Tmp-String-0 := "stop" }
-		}
-		elsif (&Acct-Status-Type == Accounting-On) {
-			update control { &Tmp-String-0 := "accounting-on" }
-		}
-		elsif (&Acct-Status-Type == Accounting-Off) {
-			update control { &Tmp-String-0 := "accounting-off" }
+		if (&Acct-Status-Type == Accounting-On || &Acct-Status-Type == Accounting-Off) {
+			update request {
+				&Acct-Session-Id := "nas-epoch"
+				&NAS-Port-Id := "nas-reset"
+				&User-Name := "nas-runtime"
+				&Calling-Station-Id := "nas-runtime"
+			}
+			update control {
+				&Tmp-String-1 := "nas-epoch"
+			}
+			if (&Acct-Status-Type == Accounting-On) {
+				update control {
+					&Tmp-String-0 := "accounting-on"
+				}
+			}
+			else {
+				update control {
+					&Tmp-String-0 := "accounting-off"
+				}
+			}
 		}
 		else {
+			update control {
+				&Tmp-String-1 := "%{string:&Class}"
+			}
+			if (!&Acct-Session-Id || &Acct-Session-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Port-Id || &NAS-Port-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&control:Tmp-String-1 || &control:Tmp-String-1 !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+				fail
+			}
+			if (&Acct-Status-Type == Start) {
+				update control {
+					&Tmp-String-0 := "start"
+				}
+			}
+			elsif (&Acct-Status-Type == Interim-Update) {
+				update control {
+					&Tmp-String-0 := "interim-update"
+				}
+			}
+			elsif (&Acct-Status-Type == Stop) {
+				update control {
+					&Tmp-String-0 := "stop"
+				}
+			}
+			else {
+				fail
+			}
+			if (&Tunnel-Private-Group-Id && &Tunnel-Private-Group-Id =~ /^[0-9]{1,4}$/) {
+				update control {
+					&Tmp-Integer-0 := "%{Tunnel-Private-Group-Id}"
+				}
+				if (&control:Tmp-Integer-0 > 0 && &control:Tmp-Integer-0 < 4095) {
+					update control {
+						&Tmp-String-2 := ",\"observedVlanId\":%{control:Tmp-Integer-0}"
+					}
+				}
+			}
+			if (&Filter-Id && &Filter-Id =~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+				update control {
+					&Tmp-String-3 := ",\"observedFilterId\":\"%{Filter-Id}\""
+				}
+			}
+		}
+		soha_accounting_control
+		if (fail || invalid || reject || userlock || notfound) {
 			fail
 		}
 		soha_accounting
@@ -71,6 +122,10 @@ server default {
 	}
 
 	post-auth {
+		# The 3.2 virtual attribute expands directly; nested hex expansion is empty.
+		if ("%{Packet-Authentication-Vector}" !~ /^0x[A-Fa-f0-9]{32}$/) {
+			reject
+		}
 		if (!&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
 			reject
 		}

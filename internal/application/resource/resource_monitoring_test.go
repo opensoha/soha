@@ -105,8 +105,36 @@ func TestMonitoringCounterTemplatesArePerSeriesAndFreshnessBounded(t *testing.T)
 		t.Fatal("inventory error masked as empty")
 	}
 	quality, _ = monitoringPrerequisites(true, "http://metrics", "", 1, "valid")
-	if quality != "not_configured" {
-		t.Fatal("cluster matcher silently removed")
+	if quality != "" {
+		t.Fatalf("dedicated source was blocked: %s", quality)
+	}
+}
+
+func TestDedicatedMonitoringQueriesAndAcceptsUnlabeledSeries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("query")
+		for _, invalid := range []string{`"cluster-a"`, "{=", "{,", ",)"} {
+			if strings.Contains(query, invalid) {
+				t.Errorf("invalid dedicated source query: %s", query)
+			}
+		}
+		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"instance":"10.0.0.70:9100"},"values":[[1000,"1"]]}]}}`)
+	}))
+	defer server.Close()
+	inventory := &Inventory{metricsSupport: &metricsSupport{httpClient: server.Client()}}
+	ctx := context.WithValue(t.Context(), prometheusClusterKey{}, "cluster-a")
+	settings := domainsettings.PrometheusSettings{BaseURL: server.URL}
+	window := monitoringWindow{from: time.Unix(1000, 0), to: time.Unix(1060, 0), step: 60}
+	for _, view := range []string{"overview", "cpu", "memory", "conntrack", "pods"} {
+		t.Run(view, func(t *testing.T) {
+			definitions := monitoringDefinitions(view, "cluster-a", "")
+			results := inventory.queryMonitoringDefinitions(ctx, "cluster-a", settings, definitions, window)
+			for key, result := range results {
+				if result.quality != "valid" || len(result.series) != 1 {
+					t.Errorf("%s rejected unlabeled series: %+v", key, result)
+				}
+			}
+		})
 	}
 }
 

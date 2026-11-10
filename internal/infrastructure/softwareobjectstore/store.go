@@ -271,7 +271,7 @@ func (s *Store) cleanup(ctx context.Context, objectKey string) error {
 }
 
 func storageHTTPClient(allowPrivate bool) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := cloneHTTPTransport(http.DefaultTransport)
 	transport.Proxy = nil
 	if !allowPrivate {
 		transport.DialContext = dialPublicAddress
@@ -312,4 +312,11 @@ type countingWriter struct{ n int64 }
 func (w *countingWriter) Write(p []byte) (int, error) {
 	w.n += int64(len(p))
 	return len(p), nil
+}
+
+func cloneHTTPTransport(base http.RoundTripper) *http.Transport {
+	if transport, ok := base.(*http.Transport); ok && transport != nil {
+		return transport.Clone()
+	}
+	return &http.Transport{TLSHandshakeTimeout: 10 * time.Second, IdleConnTimeout: 90 * time.Second}
 }

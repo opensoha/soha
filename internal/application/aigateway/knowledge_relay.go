@@ -21,13 +21,14 @@ type KnowledgeModelRequest struct {
 }
 
 type KnowledgeModelResponse struct {
-	Body         []byte
-	PublicModel  string
-	RouteID      string
-	UpstreamID   string
-	ProviderKind string
-	Status       int
-	RequestID    string
+	Body          []byte
+	PublicModel   string
+	RouteID       string
+	UpstreamID    string
+	ProviderKind  string
+	UpstreamModel string
+	Status        int
+	RequestID     string
 }
 
 // InvokeKnowledgeModel provides a governed raw relay boundary for production
@@ -58,6 +59,15 @@ func (s *Service) InvokeKnowledgeModel(
 	if err != nil {
 		return KnowledgeModelResponse{}, err
 	}
+	for i := range selections {
+		// The outbound adapter replaces the request's model with the route target.
+		// Normalize legacy routes here so the sent model and receipt agree.
+		model := strings.TrimSpace(selections[i].route.UpstreamModel)
+		if model == "" {
+			model = publicModel
+		}
+		selections[i].route.UpstreamModel = model
+	}
 	payload := copyMap(input.Payload)
 	payload["model"] = publicModel
 	body, err := json.Marshal(payload)
@@ -78,7 +88,11 @@ func (s *Service) InvokeKnowledgeModel(
 		Metadata: map[string]any{"requestId": req.RequestID},
 	})
 	writer := &workbenchRelayResponseWriter{header: http.Header{}}
-	if err := s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, selections, publicModel, false, writer); err != nil {
+	receipt, err := s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, selections, publicModel, false, writer)
+	if err != nil {
+		return KnowledgeModelResponse{}, err
+	}
+	if err := receipt.requireSuccess(ctx); err != nil {
 		return KnowledgeModelResponse{}, err
 	}
 	status := writer.status
@@ -89,12 +103,13 @@ func (s *Service) InvokeKnowledgeModel(
 		return KnowledgeModelResponse{}, fmt.Errorf("%w: knowledge model relay returned status %d", apperrors.ErrClusterUnready, status)
 	}
 	return KnowledgeModelResponse{
-		Body:         append([]byte{}, writer.body.Bytes()...),
-		PublicModel:  publicModel,
-		RouteID:      selections[0].route.ID,
-		UpstreamID:   selections[0].upstream.ID,
-		ProviderKind: selections[0].upstreamProviderKind(),
-		Status:       status,
-		RequestID:    req.RequestID,
+		Body:          append([]byte{}, writer.body.Bytes()...),
+		PublicModel:   publicModel,
+		RouteID:       receipt.Selection.route.ID,
+		UpstreamID:    receipt.Selection.upstream.ID,
+		ProviderKind:  receipt.Selection.upstreamProviderKind(),
+		UpstreamModel: receipt.Selection.route.UpstreamModel,
+		Status:        status,
+		RequestID:     req.RequestID,
 	}, nil
 }

@@ -14,6 +14,8 @@ import (
 
 func TestNativeCatalogFreezesActualDefaultProviderDefinitions(t *testing.T) {
 	service, loop, gateway, _ := nativeLoopFixture(t)
+	// This fixture exercises directly invokable tools without governed task dispatch.
+	service.nativeTasks = nil
 	sessions, ok := service.sessions.(*inspectionAuthzTestRepository)
 	if !ok {
 		t.Fatal("fixture has no inspection session repository")

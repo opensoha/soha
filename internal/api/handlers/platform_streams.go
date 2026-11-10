@@ -18,6 +18,10 @@ import (
 )
 
 func (h *podStreamResourceHandler) StreamPodLogs(c *gin.Context) {
+	expectedUID, valid := podExpectedUID(c)
+	if !valid {
+		return
+	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	container := c.Query("container")
@@ -44,6 +48,7 @@ func (h *podStreamResourceHandler) StreamPodLogs(c *gin.Context) {
 			tailLines,
 			sinceSeconds,
 			&logStreamWriter{conn: session.conn, writeMu: &session.writeMu},
+			expectedUID,
 		)
 	}()
 
@@ -70,6 +75,7 @@ func (h *podStreamResourceHandler) streamPodLogsWithReconnect(
 	clusterID, namespace, podName, container string,
 	tailLines, sinceSeconds int64,
 	writer *logStreamWriter,
+	expectedUID string,
 ) error {
 	currentTailLines := tailLines
 	connectedOnce := false
@@ -84,6 +90,7 @@ func (h *podStreamResourceHandler) streamPodLogsWithReconnect(
 			currentTailLines,
 			sinceSeconds,
 			writer,
+			expectedUID,
 		)
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			if ctx.Err() != nil {
@@ -91,7 +98,7 @@ func (h *podStreamResourceHandler) streamPodLogsWithReconnect(
 			}
 			return err
 		}
-		if !connectedOnce && err != nil {
+		if err != nil && (!connectedOnce || expectedUID != "") {
 			return err
 		}
 		connectedOnce = true
@@ -105,6 +112,10 @@ func (h *podStreamResourceHandler) streamPodLogsWithReconnect(
 }
 
 func (h *podStreamResourceHandler) StreamPodTerminal(c *gin.Context) {
+	expectedUID, valid := podExpectedUID(c)
+	if !valid {
+		return
+	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	container := c.Query("container")
@@ -115,6 +126,8 @@ func (h *podStreamResourceHandler) StreamPodTerminal(c *gin.Context) {
 		return
 	}
 	defer session.Close()
+	session.SetPongWait(podLogPongWait)
+	session.StartPing(podLogPingInterval)
 
 	stdinReader, stdinWriter := io.Pipe()
 	defer func() { _ = stdinWriter.Close() }()
@@ -140,13 +153,32 @@ func (h *podStreamResourceHandler) StreamPodTerminal(c *gin.Context) {
 			terminalStreamWriter{conn: session.conn, writeMu: &session.writeMu, channel: "stdout"},
 			terminalStreamWriter{conn: session.conn, writeMu: &session.writeMu, channel: "stderr"},
 			sizeQueue,
+			expectedUID,
 		)
 	}()
 
+	input := make(chan string, 16)
+	inputDone := make(chan struct{})
+	go func() {
+		defer close(inputDone)
+		for {
+			select {
+			case <-session.Context().Done():
+				return
+			case data := <-input:
+				if _, err := io.WriteString(stdinWriter, data); err != nil {
+					session.Cancel()
+					return
+				}
+			}
+		}
+	}()
 	readDone := session.ReadMessages(func(message terminalMessage) bool {
 		switch message.Type {
 		case "input":
-			if _, err := io.WriteString(stdinWriter, message.Data); err != nil {
+			select {
+			case input <- message.Data:
+			default:
 				return false
 			}
 		case "resize":
@@ -159,11 +191,12 @@ func (h *podStreamResourceHandler) StreamPodTerminal(c *gin.Context) {
 		_ = session.WriteMessage(terminalMessage{Type: "status", Message: "ignored invalid terminal message"})
 	})
 	go func() {
-		<-readDone
+		<-session.Context().Done()
 		_ = stdinWriter.Close()
 	}()
 
 	streamErr := <-streamErrCh
+	_ = stdinWriter.Close()
 	resultMessage := terminalMessage{Type: "exit", Message: streamExitMessage(streamExitKindPodTerminal)}
 	if streamErr != nil && !errors.Is(streamErr, context.Canceled) {
 		resultMessage = terminalMessage{Type: "error", Message: "terminal session ended with an error"}
@@ -172,6 +205,7 @@ func (h *podStreamResourceHandler) StreamPodTerminal(c *gin.Context) {
 	session.Cancel()
 	_ = session.conn.Close()
 	<-readDone
+	<-inputDone
 }
 
 type terminalMessage struct {
@@ -375,6 +409,9 @@ func (q *terminalSizeQueue) Close() {
 func writeTerminalMessage(conn *websocket.Conn, writeMu *sync.Mutex, message terminalMessage) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
 	return conn.WriteJSON(message)
 }
 

@@ -127,6 +127,20 @@ network_ingest_query:
   max_response_bytes: 1048576
 
 auth:
+  cli:
+    enabled: false
+    public_url: "" # Browser URL, including the deployment base path; HTTPS outside loopback.
+    allow_password: true # Per-account MFA and existing verification policy still apply.
+    device_ttl: 5m
+    poll_interval: 5s
+    access_ttl: 15m
+    idle_ttl: 168h
+    absolute_ttl: 720h
+    create_limit: 10
+    source_pending_limit: 5
+    active_grant_limit: 1000
+    source_attempt_limit: 20
+    user_attempt_limit: 5
   enable_dev_auth: false
   login_verification:
     slider_enabled: true
@@ -248,6 +262,8 @@ security:
   # Public zero-config default. Changing this after credentials are stored requires
   # re-encrypting those records with the new key before restarting Soha.
   credential_encryption_key: soha-123456789012345678901234567890
+  # Required by dsh_runtime.enabled to seal and recover Run checkpoints.
+  protected_durable_storage: false
   secret_provider: ""
   vault_kv2:
     address: ""
@@ -264,4 +280,35 @@ bootstrap:
   seed_defaults: true
 
 kubernetes:
+  # Each cluster can use its existing Prometheus identity instead of the Soha ID:
+  # - id: <Soha cluster UUID>
+  #   name: production
+  #   kubeconfig: /path/to/kubeconfig
+  #   prometheus_url: http://prometheus:9090
+  #   prometheus_cluster_label: cluster
+  #   prometheus_cluster_label_value: production
+  # Omit the label value to use the Soha cluster ID as the exact matcher.
+  # For shared Prometheus, configure a cluster label that uniquely identifies
+  # each cluster. Omit both label fields only for a dedicated single-cluster
+  # endpoint. An empty scoped query never retries without its cluster label.
   clusters: []
+
+
+# New Chat/Heya execution requires DSH runtime; disabled or unavailable returns
+# unavailable and never falls back to Native. HTTP is for isolated networks only.
+dsh_runtime:
+  enabled: false
+  base_url: ""
+  service_token_file: ""
+  timeout: 30s
+  allow_insecure_http: false
+
+# Apply Core migrations through 0145 before Hindsight cutover.
+# Before an existing installation cuts over, run runtime-upgrade dry-run;
+# legacy active runs must be drained or explicitly quarantined, never replayed.
+hindsight:
+  enabled: false
+  base_url: ""
+  token_file: ""
+  instance_namespace: ""
+  timeout: 15s

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
 	domain "github.com/opensoha/soha/internal/domain/directorysync"
 )
 
@@ -331,7 +332,7 @@ func (h *Handler) scimConnection(c *gin.Context, scope string) (string, bool) {
 		h.scimError(c, http.StatusUnauthorized, "invalidToken", "Bearer token required")
 		return "", false
 	}
-	connectionID, err := h.repository.ResolveSCIMConnectionForScope(c.Request.Context(), hashToken(token), scope)
+	connectionID, err := h.repository.ResolveSCIMConnectionForScope(c.Request.Context(), appdirectorysync.HashSCIMToken(token), scope)
 	if err != nil {
 		h.scimError(c, http.StatusUnauthorized, "invalidToken", "Invalid bearer token")
 		return "", false

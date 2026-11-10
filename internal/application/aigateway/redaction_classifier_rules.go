@@ -103,7 +103,7 @@ func gatewaySecretClassifierDefinitionsForType(secretType string) []gatewaySecre
 func gatewayDefaultSecretDefinitions() []gatewaySecretClassifierDefinition {
 	out := []gatewaySecretClassifierDefinition{{
 		name:    "token",
-		pattern: `(?i)(?:bearer\s+)?(?:ghp|github_pat|glpat|sk|xox[baprs])[-_A-Za-z0-9]{12,}`,
+		pattern: `(?i)\b(?:bearer\s+)?(?:ghp|github_pat|glpat|sk|xox[baprs])[-_A-Za-z0-9]{12,}`,
 	}}
 	for _, name := range gatewayDefaultSecretClassifierNames {
 		for _, definition := range gatewaySpecificSecretClassifierDefinitions {

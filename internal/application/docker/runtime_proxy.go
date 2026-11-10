@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,6 +88,9 @@ func (s *Service) getProjectLogs(ctx context.Context, principal domainidentity.P
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, serviceName)
 	if err != nil {
+		if errors.Is(err, apperrors.ErrUnsupportedOperation) {
+			return s.getBoundProjectLogs(ctx, principal, projectID, serviceName, tailLines, sinceSeconds)
+		}
 		return domaindocker.ProjectRuntimeLogs{}, err
 	}
 	req := target.runtimeRequest()
@@ -214,7 +218,7 @@ func (s *Service) ListProjectVolumes(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) ListProjectVolumeFiles(ctx context.Context, principal domainidentity.Principal, projectID string, input domaindocker.ProjectVolumeFileListInput) (domaindocker.ProjectVolumeFileList, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesFiles); err != nil {
 		return domaindocker.ProjectVolumeFileList{}, err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, input.ServiceName)
@@ -229,18 +233,14 @@ func (s *Service) ListProjectVolumeFiles(ctx context.Context, principal domainid
 }
 
 func (s *Service) ReadProjectVolumeFile(ctx context.Context, principal domainidentity.Principal, projectID string, input domaindocker.ProjectVolumeFileReadInput) (domaindocker.ProjectVolumeFileContent, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesFiles); err != nil {
 		return domaindocker.ProjectVolumeFileContent{}, err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, input.ServiceName)
 	if err != nil {
 		return domaindocker.ProjectVolumeFileContent{}, err
 	}
-	req := target.runtimeRequest()
-	req.Target = input.Target
-	req.Path = input.Path
-	req.LimitBytes = normalizeVolumeReadLimit(input.LimitBytes)
-	return postDockerRuntime[domaindocker.ProjectVolumeFileContent](ctx, target.Endpoint, target.BearerToken, "/docker/runtime/volume-file", req)
+	return s.readVolumeContent(ctx, principal, target, input)
 }
 
 type dockerRuntimeTarget struct {
@@ -269,6 +269,12 @@ func (s *Service) projectRuntimeTarget(ctx context.Context, projectID, requested
 	project, err := s.repo.GetProject(ctx, projectID)
 	if err != nil {
 		return dockerRuntimeTarget{}, err
+	}
+	if err := checkProjectScope(ctx, project); err != nil {
+		return dockerRuntimeTarget{}, err
+	}
+	if project.RuntimeIdentityVersion != 0 {
+		return dockerRuntimeTarget{}, fmt.Errorf("%w: identity-bound Docker runtime requires the versioned runtime API", apperrors.ErrUnsupportedOperation)
 	}
 	if strings.TrimSpace(project.ComposeContent) == "" {
 		return dockerRuntimeTarget{}, fmt.Errorf("%w: composeContent is required for docker runtime access", apperrors.ErrInvalidArgument)
@@ -322,10 +328,23 @@ func postDockerRuntime[T any](ctx context.Context, endpoint string, token string
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
+		if runtimePath == "/docker/runtime/volume-file" {
+			return zero, fmt.Errorf("%w: Docker volume content could not be read", apperrors.ErrClusterUnready)
+		}
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return zero, fmt.Errorf("%w: docker agent runtime returned %d: %s", apperrors.ErrClusterUnready, resp.StatusCode, strings.TrimSpace(string(detail)))
 	}
 	var out dockerRuntimeItemResponse[T]
+	if runtimePath == "/docker/runtime/volume-file" {
+		data, err := io.ReadAll(io.LimitReader(resp.Body, (8<<20)+1))
+		if err != nil || len(data) > 8<<20 {
+			return zero, apperrors.ErrServiceUnavailable
+		}
+		if err := json.Unmarshal(data, &out); err != nil {
+			return zero, apperrors.ErrServiceUnavailable
+		}
+		return out.Data, nil
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return zero, fmt.Errorf("%w: decode docker agent runtime response: %v", apperrors.ErrClusterUnready, err)
 	}

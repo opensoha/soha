@@ -141,6 +141,11 @@ type SettingsReader interface {
 }
 
 type Service struct {
+	cliState        CLIStateStore
+	cliSessions     CLISessionStore
+	cliMFA          CLIMFAStore
+	cliReceiptKeys  keyring.Ring
+	cliNow          func() time.Time
 	cfg             appconfig.Auth
 	accounts        UserAccountStore
 	passwords       PasswordStore
@@ -160,6 +165,10 @@ type Service struct {
 }
 
 type Dependencies struct {
+	CLIState        CLIStateStore
+	CLISessions     CLISessionStore
+	CLIMFA          CLIMFAStore
+	CLIReceiptKeys  keyring.Ring
 	Config          appconfig.Auth
 	Accounts        UserAccountStore
 	Passwords       PasswordStore
@@ -244,6 +253,10 @@ type oidcProfile struct {
 }
 
 func New(deps Dependencies) (*Service, error) {
+	if err := validateCLIDependencies(deps); err != nil {
+		return nil, err
+	}
+	deps.Config.CLI = deps.Config.CLI.WithDefaults()
 	required := []struct {
 		name  string
 		value any
@@ -264,6 +277,7 @@ func New(deps Dependencies) (*Service, error) {
 		}
 	}
 	return &Service{
+		cliState: deps.CLIState, cliSessions: deps.CLISessions, cliMFA: deps.CLIMFA, cliReceiptKeys: deps.CLIReceiptKeys, cliNow: time.Now,
 		cfg: deps.Config, accounts: deps.Accounts, passwords: deps.Passwords,
 		authorization: deps.Authorization, roleBindings: deps.RoleBindings, teamBindings: deps.TeamBindings,
 		identities: deps.Identities, sessions: deps.Sessions, sessionAdmin: deps.SessionAdmin,
@@ -327,41 +341,45 @@ func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
 	return providers
 }
 
-func (s *Service) LoginWithPassword(ctx context.Context, login, password string) (domainidentity.AuthResult, error) {
+func (s *Service) authenticatePassword(ctx context.Context, login, password string) (domainidentity.Principal, error) {
 	if s.settings != nil {
 		enabled, err := s.settings.LocalPasswordLoginEnabled(ctx)
 		if err != nil {
-			return domainidentity.AuthResult{}, fmt.Errorf("load password login setting: %w", err)
+			return domainidentity.Principal{}, fmt.Errorf("load password login setting: %w", err)
 		}
 		if !enabled {
-			return domainidentity.AuthResult{}, fmt.Errorf("%w: local password login is disabled", apperrors.ErrUnauthorized)
+			return domainidentity.Principal{}, fmt.Errorf("%w: local password login is disabled", apperrors.ErrUnauthorized)
 		}
 	}
 	login = strings.TrimSpace(login)
 	password = strings.TrimSpace(password)
 	if login == "" || password == "" {
-		return domainidentity.AuthResult{}, fmt.Errorf("%w: login and password are required", apperrors.ErrInvalidArgument)
+		return domainidentity.Principal{}, fmt.Errorf("%w: login and password are required", apperrors.ErrInvalidArgument)
 	}
 
 	user, err := s.passwords.FindByLogin(ctx, login)
 	if err != nil {
 		_ = s.recordAudit(ctx, domainidentity.Principal{UserName: login}, "login", "deny", "password login failed: user not found", map[string]any{"provider": "password"})
-		return domainidentity.AuthResult{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
+		return domainidentity.Principal{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
 	}
 	if user.Status != "active" {
-		return domainidentity.AuthResult{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
+		return domainidentity.Principal{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
 	}
 
 	hash, err := s.passwords.GetPasswordHash(ctx, user.ID)
 	if err != nil {
-		return domainidentity.AuthResult{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
+		return domainidentity.Principal{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
 		_ = s.recordAudit(ctx, domainidentity.Principal{UserID: user.ID, UserName: user.DisplayName, Email: user.Email}, "login", "deny", "password login failed: invalid password", map[string]any{"provider": "password"})
-		return domainidentity.AuthResult{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
+		return domainidentity.Principal{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
 	}
 
-	principal, err := s.loadPrincipal(ctx, user.ID)
+	return s.loadPrincipal(ctx, user.ID)
+}
+
+func (s *Service) LoginWithPassword(ctx context.Context, login, password string) (domainidentity.AuthResult, error) {
+	principal, err := s.authenticatePassword(ctx, login, password)
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
@@ -446,10 +464,10 @@ func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) 
 }
 
 func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (domainidentity.Principal, domainidentity.AccessContext, error) {
-	if strings.HasPrefix(accessToken, domainaigateway.PersonalAccessTokenPrefix) {
+	if strings.HasPrefix(accessToken, domainaigateway.PersonalAccessTokenPrefix) || strings.HasPrefix(accessToken, domainaigateway.GovernedPersonalAccessTokenPrefix) {
 		return s.parsePersonalAccessToken(ctx, accessToken)
 	}
-	if strings.HasPrefix(accessToken, domainaigateway.ServiceAccountTokenPrefix) {
+	if strings.HasPrefix(accessToken, domainaigateway.ServiceAccountTokenPrefix) || strings.HasPrefix(accessToken, domainaigateway.GovernedServiceAccountTokenPrefix) {
 		return s.parseServiceAccountToken(ctx, accessToken)
 	}
 	claims, err := s.parseToken(accessToken, "access")
@@ -462,6 +480,9 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 	}
 	if session.Status != "active" || session.ExpiresAt.Before(time.Now().UTC()) {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session revoked", apperrors.ErrUnauthorized)
+	}
+	if (claims.TokenType == "cli_access") != (session.ProviderType == "cli_v2") {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session token type mismatch", apperrors.ErrUnauthorized)
 	}
 	if session.UserID != claims.Subject {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session subject mismatch", apperrors.ErrUnauthorized)
@@ -478,7 +499,13 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
 	}
-	return principal, domainidentity.AccessContext{TokenID: claims.ID, TokenKind: "session_access", SessionID: claims.SessionID, SubjectType: "user", SubjectID: principal.UserID, Metadata: session.Metadata, ExpiresAt: claims.ExpiresAt.Time}, nil
+	if session.ProviderType == "cli_v2" {
+		principal, err = s.cliSessionPrincipal(ctx, session)
+		if err != nil {
+			return domainidentity.Principal{}, domainidentity.AccessContext{}, err
+		}
+	}
+	return principal, domainidentity.AccessContext{AuthzVersion: session.AuthzVersion, TokenID: claims.ID, TokenKind: "session_access", SessionID: claims.SessionID, SubjectType: "user", SubjectID: principal.UserID, Metadata: session.Metadata, ExpiresAt: claims.ExpiresAt.Time}, nil
 }
 
 func (s *Service) IssueStreamTicket(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error) {
@@ -543,7 +570,7 @@ func (s *Service) ParseStreamTicket(ctx context.Context, ticket, requestPath str
 	} else if err := json.Unmarshal(rawPayload, &payload); err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("decode stream ticket payload: %w", err)
 	}
-	if payload.UserID == "" || payload.SessionID == "" || normalizeStreamTicketPath(payload.Path) != path {
+	if payload.UserID == "" || payload.SessionID == "" || normalizeStreamTicketPath(payload.Path) != streamTicketRequestTarget(payload.Path, path) {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket does not match request", apperrors.ErrUnauthorized)
 	}
 	session, err := s.sessions.GetAuthSessionByID(ctx, payload.SessionID)
@@ -589,7 +616,20 @@ func (s *Service) parsePersonalAccessToken(ctx context.Context, token string) (d
 	return s.personalAccessTokenPrincipal(ctx, item)
 }
 
+// A governed prefix cannot survive removal of its stored binding, and adding a
+// binding to an ordinary prefix cannot make an older server safe.
+func credentialBindingMatchesPrefix(binding *domainidentity.GovernedAIBinding, prefix, expected string) bool {
+	if binding != nil {
+		return strings.HasPrefix(prefix, expected)
+	}
+	return !strings.HasPrefix(prefix, domainaigateway.GovernedPersonalAccessTokenPrefix) && !strings.HasPrefix(prefix, domainaigateway.GovernedServiceAccountTokenPrefix)
+}
+
 func (s *Service) personalAccessTokenPrincipal(ctx context.Context, item domainaigateway.PersonalAccessToken) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	binding, bindingErr := domainidentity.ParseGovernedAIBinding(item.Metadata)
+	if bindingErr != nil || !credentialBindingMatchesPrefix(binding, item.TokenPrefix, domainaigateway.GovernedPersonalAccessTokenPrefix) {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: invalid credential binding", apperrors.ErrUnauthorized)
+	}
 	if item.RevokedAt != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: personal access token revoked", apperrors.ErrUnauthorized)
 	}
@@ -602,6 +642,7 @@ func (s *Service) personalAccessTokenPrincipal(ctx context.Context, item domaina
 	}
 	principal.PermissionKeys = append([]string(nil), item.PermissionKeys...)
 	principal.AccessTokenID = item.ID
+	principal.GovernedAI = binding
 	_ = s.gateway.TouchPersonalAccessToken(ctx, item.ID, time.Now().UTC())
 	return principal, domainidentity.AccessContext{
 		TokenID:     item.ID,
@@ -627,6 +668,10 @@ func (s *Service) parseServiceAccountToken(ctx context.Context, token string) (d
 }
 
 func (s *Service) serviceAccountTokenPrincipal(ctx context.Context, item domainaigateway.ServiceAccountToken) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	binding, bindingErr := domainidentity.ParseGovernedAIBinding(item.Metadata)
+	if bindingErr != nil || !credentialBindingMatchesPrefix(binding, item.TokenPrefix, domainaigateway.GovernedServiceAccountTokenPrefix) {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: invalid credential binding", apperrors.ErrUnauthorized)
+	}
 	if item.RevokedAt != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account token revoked", apperrors.ErrUnauthorized)
 	}
@@ -642,6 +687,7 @@ func (s *Service) serviceAccountTokenPrincipal(ctx context.Context, item domaina
 	}
 	principal := domainidentity.Principal{
 		AccessTokenID:  item.ID,
+		GovernedAI:     binding,
 		UserID:         "service_account:" + account.ID,
 		UserName:       account.Name,
 		Roles:          append([]string(nil), account.RoleIDs...),
@@ -733,10 +779,13 @@ func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentit
 
 func (s *Service) CurrentPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {
 	user, err := s.accounts.GetByID(ctx, userID)
+	if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+		return domainidentity.Principal{}, err
+	}
 	if err != nil || user.Status != "active" {
 		return domainidentity.Principal{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
 	}
-	return s.loadPrincipal(ctx, userID)
+	return s.principalForUser(ctx, user)
 }
 
 func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.Principal) (domainidentity.UserProfile, error) {
@@ -1300,6 +1349,11 @@ func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainident
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
 	}
+	return s.principalForUser(ctx, user)
+}
+
+func (s *Service) principalForUser(ctx context.Context, user domainidentity.User) (domainidentity.Principal, error) {
+	userID := user.ID
 	roles, err := s.authorization.ListRoles(ctx, userID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("list user roles: %w", err)
@@ -1604,13 +1658,17 @@ func (s *Service) oidcRuntimeWithProvider(ctx context.Context, item domainsettin
 }
 
 func (s *Service) signAccessToken(principal domainidentity.Principal, sessionID string, authzVersion int64) (string, *tokenClaims, error) {
+	return s.signSessionAccessToken(principal, sessionID, authzVersion, s.cfg.JWT.AccessTTL, "access")
+}
+
+func (s *Service) signSessionAccessToken(principal domainidentity.Principal, sessionID string, authzVersion int64, ttl time.Duration, tokenType string) (string, *tokenClaims, error) {
 	if authzVersion < 1 {
 		return "", nil, fmt.Errorf("%w: invalid authorization version", apperrors.ErrUnauthorized)
 	}
 	now := time.Now().UTC()
 	claims := &tokenClaims{
 		AuthzVersion: &authzVersion,
-		TokenType:    "access",
+		TokenType:    tokenType,
 		SessionID:    sessionID,
 		UserName:     principal.UserName,
 		Email:        principal.Email,
@@ -1624,7 +1682,7 @@ func (s *Service) signAccessToken(principal domainidentity.Principal, sessionID 
 			ID:        uuid.NewString(),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(s.cfg.JWT.AccessTTL)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
 	}
 	signingKeys, err := s.jwtKeyring()
@@ -1687,7 +1745,7 @@ func (s *Service) parseToken(tokenString, expectedType string) (*tokenClaims, er
 			return []byte(key.Secret()), nil
 		})
 		if err == nil && token.Valid {
-			if claims.TokenType != expectedType {
+			if claims.TokenType != expectedType && (expectedType != "access" || claims.TokenType != "cli_access") {
 				return nil, fmt.Errorf("%w: unexpected token type", apperrors.ErrUnauthorized)
 			}
 			return claims, nil
@@ -2543,24 +2601,53 @@ func timePointerValue(value *time.Time) time.Time {
 	return *value
 }
 
-func normalizeStreamTicketPath(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
+func streamTicketRequestTarget(savedPath, requestPath string) string {
+	saved, _ := url.Parse(savedPath)
+	if saved != nil && !saved.Query().Has("expectedUid") {
+		request, err := url.Parse(requestPath)
+		if err == nil {
+			return normalizeStreamTicketPath(request.Path)
+		}
 	}
-	if parsed, err := url.Parse(value); err == nil && parsed.Path != "" {
-		value = parsed.Path
-	}
-	if !strings.HasPrefix(value, "/") {
-		value = "/" + value
-	}
-	return strings.TrimRight(value, "/")
+	return requestPath
 }
 
-func isAllowedStreamTicketPath(path string) bool {
-	path = normalizeStreamTicketPath(path)
+func normalizeStreamTicketPath(value string) string {
+	value = strings.TrimSpace(value)
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Path == "" {
+		return ""
+	}
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return ""
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if !query.Has("expectedUid") {
+		return path
+	}
+	target := url.Values{}
+	for _, key := range []string{"expectedUid", "namespace", "container", "shell"} {
+		if values := query[key]; len(values) > 0 {
+			if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
+				return ""
+			}
+			target.Set(key, values[0])
+		}
+	}
+	return path + "?" + target.Encode()
+}
+
+func isAllowedStreamTicketPath(target string) bool {
+	parsed, err := url.Parse(normalizeStreamTicketPath(target))
+	if err != nil {
+		return false
+	}
 	for _, pattern := range streamTicketPaths {
-		if pattern.MatchString(path) {
+		if pattern.MatchString(parsed.Path) {
 			return true
 		}
 	}

@@ -5,9 +5,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	goldap "github.com/go-ldap/ldap/v3"
 	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
@@ -157,20 +159,42 @@ func (a *Adapter) people(ctx context.Context, c domain.Connection) ([]*goldap.En
 	}
 	return result.Entries, nil
 }
-func (a *Adapter) connect(ctx context.Context, c domain.Connection) (*goldap.Conn, error) {
+
+type contextualConnection struct {
+	*goldap.Conn
+	stop func() bool
+}
+
+func (c *contextualConnection) Close() error {
+	c.stop()
+	return c.Conn.Close()
+}
+
+func (a *Adapter) connect(ctx context.Context, c domain.Connection) (*contextualConnection, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	endpoint := metadata(c, "endpoint", "")
 	parsed, err := url.Parse(endpoint)
 	if err != nil || !(parsed.Scheme == "ldap" || parsed.Scheme == "ldaps") {
 		return nil, errors.New("LDAP endpoint must use ldap or ldaps")
 	}
-	options := []goldap.DialOpt{}
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	if deadline, ok := ctx.Deadline(); ok {
+		dialer.Deadline = deadline
+	}
+	options := []goldap.DialOpt{goldap.DialWithDialer(dialer)}
 	if parsed.Scheme == "ldaps" {
 		options = append(options, goldap.DialWithTLSConfig(&tls.Config{MinVersion: tls.VersionTLS12, ServerName: parsed.Hostname()}))
 	}
-	conn, err := a.dial(endpoint, options...)
+	raw, err := a.dial(endpoint, options...)
 	if err != nil {
 		return nil, err
 	}
+	raw.SetTimeout(30 * time.Second)
+	// LDAP bind/search do not consume context themselves. Closing their owned
+	// connection interrupts blocked I/O; normal Close removes the callback.
+	conn := &contextualConnection{Conn: raw, stop: context.AfterFunc(ctx, func() { _ = raw.Close() })}
 	if metadataBool(c, "startTLS") && parsed.Scheme == "ldap" {
 		if err := conn.StartTLS(&tls.Config{MinVersion: tls.VersionTLS12, ServerName: parsed.Hostname()}); err != nil {
 			conn.Close()

@@ -53,7 +53,11 @@ func (s *Service) InvokeWorkbenchImage(ctx context.Context, principal domainiden
 	access := workbenchRelayAccessContext(principal, WorkbenchRelayRequest{SessionID: input.SessionID, Mode: "assistant-avatar"})
 	req := LLMRelayHTTPRequest{ProviderKind: provider, Endpoint: endpoint, Method: http.MethodPost, Headers: http.Header{"Content-Type": {contentType}}, Body: body, RequestID: workbenchRelayRequestID(access.Metadata), UserAgent: "opensoha-ai-workbench"}
 	writer := &workbenchImageWriter{workbenchRelayResponseWriter: workbenchRelayResponseWriter{header: http.Header{}}}
-	if err := s.proxyRelayRequestWithFallback(ctx, principal, access, req, selections, model, false, writer); err != nil {
+	receipt, err := s.proxyRelayRequestWithFallback(ctx, principal, access, req, selections, model, false, writer)
+	if err != nil {
+		return nil, err
+	}
+	if err := receipt.requireSuccess(ctx); err != nil {
 		return nil, err
 	}
 	if writer.status >= 400 {

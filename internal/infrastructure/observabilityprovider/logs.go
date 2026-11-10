@@ -109,7 +109,7 @@ func (c *LogClient) Search(ctx context.Context, runtime appobservability.Provide
 	if err != nil {
 		return telemetry.LogSearchResult{}, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
 		return telemetry.LogSearchResult{}, fmt.Errorf("provider returned http status %d", response.StatusCode)
@@ -139,13 +139,13 @@ func actionURL(runtime appobservability.ProviderRuntime) (string, error) {
 }
 
 func noRedirectClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := cloneHTTPTransport(http.DefaultTransport)
 	transport.Proxy = nil
 	return &http.Client{Timeout: 15 * time.Second, Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
 func publicHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := cloneHTTPTransport(http.DefaultTransport)
 	transport.Proxy = nil
 	dialer := &net.Dialer{Timeout: 10 * time.Second, ControlContext: func(_ context.Context, _, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
@@ -178,4 +178,11 @@ func validatePublicHost(host string) error {
 		}
 	}
 	return nil
+}
+
+func cloneHTTPTransport(base http.RoundTripper) *http.Transport {
+	if transport, ok := base.(*http.Transport); ok && transport != nil {
+		return transport.Clone()
+	}
+	return &http.Transport{TLSHandshakeTimeout: 10 * time.Second, IdleConnTimeout: 90 * time.Second}
 }

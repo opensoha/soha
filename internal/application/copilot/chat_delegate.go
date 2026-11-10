@@ -19,6 +19,9 @@ type chatDelegateRepository interface {
 }
 
 func (s *Service) delegateChatSpecialist(ctx context.Context, parent domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
+	if legacyExecutionReadOnly(parent) {
+		return nil, fmt.Errorf("%w: specialist parent execution is read-only", apperrors.ErrAccessDenied)
+	}
 	query := strings.TrimSpace(stringValue(input["query"]))
 	if parent.ParentRunID != "" || query == "" || len([]rune(query)) > 2048 {
 		return nil, fmt.Errorf("%w: one specialist requires a bounded question; recursive delegation is disabled", apperrors.ErrInvalidArgument)
@@ -34,12 +37,7 @@ func (s *Service) delegateChatSpecialist(ctx context.Context, parent domaincopil
 	if err != nil {
 		return nil, err
 	}
-	bindings := []domaincopilot.AgentToolBinding{}
-	for _, binding := range parent.ToolBindings {
-		if binding.ToolName == "knowledge.search" || chatKubernetesReadTool(binding.ToolName) {
-			bindings = append(bindings, binding)
-		}
-	}
+	bindings := chatSpecialistToolBindings(parent)
 	if len(bindings) == 0 {
 		return nil, fmt.Errorf("%w: no authorized specialist tools", apperrors.ErrAccessDenied)
 	}
@@ -83,6 +81,16 @@ func (s *Service) delegateChatSpecialist(ctx context.Context, parent domaincopil
 		}
 	}
 	return chatSpecialistResult(child, remainingChatToolEvidenceTokens(parent)), nil
+}
+
+func chatSpecialistToolBindings(parent domaincopilot.AgentRun) []domaincopilot.AgentToolBinding {
+	bindings := []domaincopilot.AgentToolBinding{}
+	for _, binding := range parent.ToolBindings {
+		if binding.ToolName == "knowledge.search" || chatKubernetesReadTool(binding.ToolName) {
+			bindings = append(bindings, binding)
+		}
+	}
+	return bindings
 }
 
 func chatSpecialistResult(child domaincopilot.AgentRun, remaining int) map[string]any {

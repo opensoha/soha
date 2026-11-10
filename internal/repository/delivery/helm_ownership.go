@@ -103,6 +103,15 @@ func lockHelmDelivery(ctx context.Context, tx *gorm.DB, task domaindelivery.Exec
 		return fmt.Errorf("%w: Helm release belongs to an unfinished delivery", apperrors.ErrConflict)
 	}
 	keys := domainworkflow.HelmResourceKeys(snapshot)
+	if snapshot.Migration != nil && snapshot.Migration.Initialization {
+		previous, err := TargetWriteHistory(tx, snapshot.ClusterID, snapshot.Namespace, keys, snapshot.ReleaseName, snapshot.DeliveryPlanID)
+		if err != nil {
+			return err
+		}
+		if previous {
+			return fmt.Errorf("%w: initialization target has previous writes", apperrors.ErrConflict)
+		}
+	}
 	if err := CheckManifestResourceOwners(tx, snapshot.ClusterID, "", keys); err != nil {
 		return err
 	}

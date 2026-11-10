@@ -34,6 +34,9 @@ func (m *Manager) InspectWorkerCluster(ctx context.Context, spec sohaapi.Virtual
 	if err := domain.ValidateWorkerPoolSpec(spec); err != nil {
 		return identity, err
 	}
+	if err := ValidateWorkerPoolKubernetesSpec(spec); err != nil {
+		return identity, err
+	}
 	bundle, err := m.Bundle(ctx, spec.ClusterID)
 	if err != nil {
 		return identity, err
@@ -46,24 +49,8 @@ func (m *Manager) InspectWorkerCluster(ctx context.Context, spec sohaapi.Virtual
 		return identity, fmt.Errorf("%w: target cluster identity is unavailable", apperrors.ErrConflict)
 	}
 	identity.ClusterUID = string(namespace.UID)
-	config, err := bundle.Typed.CoreV1().ConfigMaps("kube-system").Get(ctx, "kubeadm-config", metav1.GetOptions{})
-	if err != nil {
-		return identity, fmt.Errorf("%w: target must be a configured kubeadm cluster", apperrors.ErrConflict)
-	}
-	var clusterConfig struct{ Kind, KubernetesVersion string }
-	if err := yaml.Unmarshal([]byte(config.Data["ClusterConfiguration"]), &clusterConfig); err != nil {
-		return identity, fmt.Errorf("%w: invalid kubeadm cluster configuration", apperrors.ErrConflict)
-	}
-	if clusterConfig.Kind != "ClusterConfiguration" || clusterConfig.KubernetesVersion != spec.KubernetesVersion {
-		return identity, fmt.Errorf("%w: kubeadm and worker image versions must match", apperrors.ErrConflict)
-	}
-	discovery, err := requestDiscoveryClient(ctx, bundle.RESTConfig)
-	if err != nil {
+	if err := verifyWorkerKubernetesVersion(ctx, bundle, spec.KubernetesVersion); err != nil {
 		return identity, err
-	}
-	version, err := discovery.ServerVersion()
-	if err != nil || version.GitVersion != spec.KubernetesVersion {
-		return identity, fmt.Errorf("%w: live API server and worker image versions must match", apperrors.ErrConflict)
 	}
 	info, err := bundle.Typed.CoreV1().ConfigMaps("kube-public").Get(ctx, "cluster-info", metav1.GetOptions{})
 	if err != nil {
@@ -81,6 +68,29 @@ func (m *Manager) InspectWorkerCluster(ctx context.Context, spec sohaapi.Virtual
 		identity.DaemonSetUIDs[ref.Namespace+"/"+ref.Name] = string(daemon.UID)
 	}
 	return identity, nil
+}
+
+func verifyWorkerKubernetesVersion(ctx context.Context, bundle *Bundle, workerVersion string) error {
+	config, err := bundle.Typed.CoreV1().ConfigMaps("kube-system").Get(ctx, "kubeadm-config", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("%w: target must be a configured kubeadm cluster", apperrors.ErrConflict)
+	}
+	var clusterConfig struct{ Kind, KubernetesVersion string }
+	if err := yaml.Unmarshal([]byte(config.Data["ClusterConfiguration"]), &clusterConfig); err != nil {
+		return fmt.Errorf("%w: invalid kubeadm cluster configuration", apperrors.ErrConflict)
+	}
+	if clusterConfig.Kind != "ClusterConfiguration" || clusterConfig.KubernetesVersion != workerVersion {
+		return fmt.Errorf("%w: kubeadm and worker image versions must match", apperrors.ErrConflict)
+	}
+	discovery, err := requestDiscoveryClient(ctx, bundle.RESTConfig)
+	if err != nil {
+		return err
+	}
+	version, err := discovery.ServerVersion()
+	if err != nil || version.GitVersion != workerVersion {
+		return fmt.Errorf("%w: live API server and worker image versions must match", apperrors.ErrConflict)
+	}
+	return nil
 }
 
 func workerDiscoveryIdentity(kubeconfig string, config *rest.Config) (string, string, error) {

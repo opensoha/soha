@@ -39,11 +39,29 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
+	optionalRuntimes, err := configureOptionalRuntimes(cfg, repos, delivery)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	initialized := false
+	defer func() {
+		if !initialized {
+			_ = optionalRuntimes.Close(context.Background())
+		}
+	}()
 	handlers, err := newHandlers(cfg, infra, repos, core, delivery, gateway)
 	if err != nil {
 		infra.cancel()
 		return nil, err
 	}
+	cliAuth, err := apiHandlers.NewCLIAuthHandler(core.identityService, core.identityService)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	handlers.deps.CLIAuth = cliAuth
+	handlers.deps.DSHRuntime = optionalRuntimes.callback
 	guestServer, guestPreparation, err := newPersonalGuestServer(cfg.PersonalGuest, core, delivery, repos)
 	if err != nil {
 		infra.cancel()
@@ -52,8 +70,28 @@ func New(ctx context.Context) (*App, error) {
 	handlers.deps.PersonalGuestPreparation = apiHandlers.NewPersonalGuestPreparationHandler(guestPreparation)
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
 	core.runtimeConfigService.Start(infra.lifecycleCtx, 0)
+	startCLIAuthCleanup(infra.lifecycleCtx, core.identityService, infra.logger)
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podExecutionRepository, infra.logger, "platform.pod.execution.cleanup.failed")
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.podTerminalRepository, infra.logger, "platform.pod.execution.cleanup.failed")
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.dockerTerminalRepository, infra.logger, "docker.native.terminal.cleanup.failed")
+	startPlatformReceiptCleanup(infra.lifecycleCtx, repos.conditionalMutationRepository, infra.logger, "platform.resource.mutation.cleanup.failed")
+	go core.networkEndpointResponseService.Run(infra.lifecycleCtx, func(err error) {
+		infra.logger.Named("network-endpoint-response").Warn("endpoint response reconciliation failed", zap.Error(err))
+	})
+	go core.networkEndpointResponseService.RunNotifications(infra.lifecycleCtx, func(err error) {
+		infra.logger.Named("network-endpoint-response").Warn("endpoint notification delivery failed", zap.Error(err))
+	})
 
+	if core.runtimeConfigService.ModuleEnabled("ai") {
+		delivery.copilotService.Start(infra.lifecycleCtx)
+	}
+	optionalRuntimes.Start(infra.lifecycleCtx, infra.logger)
+	initialized = true
 	return &App{
+		OptionalRuntimes:      optionalRuntimes,
+		CopilotService:        delivery.copilotService,
+		PodTerminals:          core.resourceService.PodTerminals(),
+		DockerTerminals:       delivery.dockerTerminals,
 		Config:                cfg,
 		Logger:                infra.logger.Named("server"),
 		Database:              infra.databaseStore,

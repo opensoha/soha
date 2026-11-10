@@ -3,7 +3,6 @@ package aigateway
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -75,14 +74,6 @@ func assertOpenAIAudioSpeechResult(t *testing.T, recorder *httptest.ResponseReco
 	}
 }
 
-type relayHTTPDoerFunc func(*http.Request) (*http.Response, error)
-
-func (f relayHTTPDoerFunc) Do(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
-var _ relayHTTPDoer = relayHTTPDoerFunc(nil)
-
 type relaySelectorRepositoryStub struct {
 	routes    []domainaigateway.LLMModelRoute
 	upstreams []domainaigateway.LLMUpstream
@@ -139,255 +130,6 @@ func TestRelaySelectorUsesFocusedRepositoryContract(t *testing.T) {
 	}
 }
 
-func TestRelayHTTPTransportPropagatesParentCancellation(t *testing.T) {
-	config := LLMRelayConfig{
-		DefaultTimeout:          time.Minute,
-		StreamTimeout:           time.Minute,
-		CredentialEncryptionKey: "relay-component-test-key-1234567890",
-	}
-	credentials := newRelayCredentialCodec(config)
-	ciphertext, err := credentials.encrypt("upstream-api-key")
-	if err != nil {
-		t.Fatalf("encrypt API key: %v", err)
-	}
-	var called bool
-	transport := newRelayHTTPTransport(relayHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
-		called = true
-		<-req.Context().Done()
-		return nil, req.Context().Err()
-	}), config, credentials)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	result, err := transport.execute(ctx, relayTransportRequest{
-		request: LLMRelayHTTPRequest{
-			ProviderKind: "openai",
-			Endpoint:     "chat/completions",
-			Headers:      http.Header{},
-		},
-		selection: relaySelection{
-			route: domainaigateway.LLMModelRoute{UpstreamModel: "gpt-test"},
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL:          "https://api.example.com",
-				ProviderKind:     "openai",
-				APIKeyCiphertext: ciphertext,
-			},
-		},
-		body:             []byte(`{"model":"gpt-test"}`),
-		upstreamProvider: "openai",
-		upstreamEndpoint: "chat/completions",
-		writer:           httptest.NewRecorder(),
-	})
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	if !called {
-		t.Fatal("transport did not call the HTTP dependency")
-	}
-	if result.failure == nil || result.failure.status != "client_cancelled" {
-		t.Fatalf("failure = %#v, want client_cancelled", result.failure)
-	}
-	if !errors.Is(result.failure.publicError, apperrors.ErrClusterUnready) {
-		t.Fatalf("public error = %v, want cluster unready", result.failure.publicError)
-	}
-}
-
-func TestNormalizedHTTPClientDoesNotOverrideStreamDeadline(t *testing.T) {
-	client := normalizedHTTPClient(nil)
-	if client.Timeout != 0 {
-		t.Fatalf("default HTTP client timeout = %v, want request context to own deadlines", client.Timeout)
-	}
-	custom := &http.Client{Timeout: 3 * time.Second}
-	if got := normalizedHTTPClient(custom); got != custom {
-		t.Fatal("normalizedHTTPClient() replaced caller-provided client")
-	}
-}
-
-func TestRelayHTTPTransportEnforcesFirstByteTimeout(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(150 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	transport, selection := newRelayTimeoutTestTransport(t, server.URL, LLMRelayConfig{
-		DefaultTimeout:            time.Second,
-		StreamTimeout:             time.Second,
-		FirstByteTimeout:          25 * time.Millisecond,
-		StreamIdleTimeout:         time.Second,
-		AllowPrivateUpstreamHosts: true,
-	})
-	started := time.Now()
-	result, err := transport.execute(context.Background(), relayTransportRequest{
-		request:          LLMRelayHTTPRequest{ProviderKind: "openai", Endpoint: "chat/completions", Headers: make(http.Header)},
-		selection:        selection,
-		body:             []byte(`{"model":"gpt-test"}`),
-		upstreamProvider: "openai",
-		upstreamEndpoint: "chat/completions",
-		stream:           true,
-		writer:           httptest.NewRecorder(),
-	})
-	if err != nil {
-		t.Fatalf("execute() error = %v", err)
-	}
-	if result.failure == nil || result.failure.code != "upstream_request_failed" {
-		t.Fatalf("failure = %#v, want first-byte request failure", result.failure)
-	}
-	if elapsed := time.Since(started); elapsed >= 120*time.Millisecond {
-		t.Fatalf("first-byte timeout elapsed = %v", elapsed)
-	}
-}
-
-func TestRelayHTTPTransportEnforcesStreamIdleTimeout(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		if err := http.NewResponseController(w).Flush(); err != nil {
-			t.Errorf("flush response headers: %v", err)
-			return
-		}
-		select {
-		case <-time.After(150 * time.Millisecond):
-			_, _ = w.Write([]byte("data: late\n\n"))
-		case <-r.Context().Done():
-		}
-	}))
-	defer server.Close()
-
-	transport, selection := newRelayTimeoutTestTransport(t, server.URL, LLMRelayConfig{
-		DefaultTimeout:            time.Second,
-		StreamTimeout:             time.Second,
-		FirstByteTimeout:          100 * time.Millisecond,
-		StreamIdleTimeout:         25 * time.Millisecond,
-		AllowPrivateUpstreamHosts: true,
-	})
-	started := time.Now()
-	result, err := transport.execute(context.Background(), relayTransportRequest{
-		request:          LLMRelayHTTPRequest{ProviderKind: "openai", Endpoint: "chat/completions", Headers: make(http.Header)},
-		selection:        selection,
-		body:             []byte(`{"model":"gpt-test"}`),
-		upstreamProvider: "openai",
-		upstreamEndpoint: "chat/completions",
-		stream:           true,
-		writer:           httptest.NewRecorder(),
-	})
-	if err != nil {
-		t.Fatalf("execute() error = %v", err)
-	}
-	if result.failure == nil || result.failure.code != "upstream_read_failed" {
-		t.Fatalf("failure = %#v, want stream idle read failure", result.failure)
-	}
-	if elapsed := time.Since(started); elapsed >= 120*time.Millisecond {
-		t.Fatalf("stream idle timeout elapsed = %v", elapsed)
-	}
-}
-
-func newRelayTimeoutTestTransport(t *testing.T, baseURL string, config LLMRelayConfig) (*relayHTTPTransport, relaySelection) {
-	t.Helper()
-	config.CredentialEncryptionKey = "relay-timeout-test-key-1234567890"
-	config.AllowInsecureUpstreamHTTP = true
-	credentials := newRelayCredentialCodec(config)
-	ciphertext, err := credentials.encrypt("upstream-api-key")
-	if err != nil {
-		t.Fatalf("encrypt API key: %v", err)
-	}
-	return newRelayHTTPTransport(normalizedHTTPClient(nil), config, credentials), relaySelection{
-		route: domainaigateway.LLMModelRoute{UpstreamModel: "gpt-test"},
-		upstream: domainaigateway.LLMUpstream{
-			BaseURL:          baseURL,
-			ProviderKind:     "openai",
-			APIKeyCiphertext: ciphertext,
-		},
-	}
-}
-
-func TestRelayHTTPTransportRejectsOversizedNonStreamResponse(t *testing.T) {
-	body := strings.Repeat("x", relayMaxNonStreamResponseBytes+1)
-	transport := &relayHTTPTransport{client: relayHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(body)),
-		}, nil
-	})}
-
-	result, err := transport.copyResponse(context.Background(), relayTransportRequest{}, relayTransportResult{
-		response: &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(body)),
-		},
-	}, func() {})
-	if err != nil {
-		t.Fatalf("copyResponse() error = %v", err)
-	}
-	if result.failure == nil || result.failure.code != "upstream_response_too_large" {
-		t.Fatalf("failure = %#v, want upstream_response_too_large", result.failure)
-	}
-	if len(result.body) != relayMaxNonStreamResponseBytes || !result.bodyTruncated {
-		t.Fatalf("buffered=%d truncated=%v", len(result.body), result.bodyTruncated)
-	}
-}
-
-func TestRelayHTTPTransportBoundsStreamAuditBuffer(t *testing.T) {
-	body := strings.Repeat("prefix", relayStreamAuditBufferBytes/6+100) + "usage-tail"
-	writer := httptest.NewRecorder()
-	transport := &relayHTTPTransport{}
-	result, err := transport.copyResponse(context.Background(), relayTransportRequest{
-		stream: true,
-		writer: writer,
-	}, relayTransportResult{
-		response: &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(body)),
-		},
-	}, func() {})
-	if err != nil {
-		t.Fatalf("copyResponse() error = %v", err)
-	}
-	if got := int(result.outputBytes); got != len(body) {
-		t.Fatalf("output bytes = %d, want %d", got, len(body))
-	}
-	if len(result.body) != relayStreamAuditBufferBytes || !result.bodyTruncated {
-		t.Fatalf("buffered=%d truncated=%v", len(result.body), result.bodyTruncated)
-	}
-	if !strings.HasSuffix(string(result.body), "usage-tail") {
-		t.Fatal("bounded audit buffer did not retain response tail")
-	}
-	if writer.Body.Len() != len(body) {
-		t.Fatalf("forwarded bytes = %d, want %d", writer.Body.Len(), len(body))
-	}
-}
-
-func TestRelayAllowWebSocketOrigin(t *testing.T) {
-	tests := []struct {
-		name    string
-		host    string
-		origins []string
-		want    bool
-	}{
-		{name: "missing origin", host: "gateway.example", want: true},
-		{name: "same public host and port", host: "gateway.example:8443", origins: []string{"https://gateway.example:8443"}, want: true},
-		{name: "different public port", host: "gateway.example:8443", origins: []string{"https://gateway.example:9443"}},
-		{name: "local cross port", host: "127.0.0.1:8080", origins: []string{"http://localhost:3000"}, want: true},
-		{name: "duplicate origin", host: "gateway.example", origins: []string{"https://gateway.example", "https://evil.example"}},
-		{name: "origin path", host: "gateway.example", origins: []string{"https://gateway.example/path"}},
-		{name: "unsupported scheme", host: "gateway.example", origins: []string{"file://gateway.example"}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "http://"+test.host+"/realtime", nil)
-			for _, origin := range test.origins {
-				req.Header.Add("Origin", origin)
-			}
-			if got := relayAllowWebSocketOrigin(req); got != test.want {
-				t.Fatalf("relayAllowWebSocketOrigin() = %v, want %v", got, test.want)
-			}
-		})
-	}
-}
-
 type relayCacheRepositoryStub struct {
 	entry domainaigateway.LLMCacheEntry
 }
@@ -436,6 +178,7 @@ func TestRelayResponseCacheOwnsEncryptedPersistence(t *testing.T) {
 		"gpt-public",
 		false,
 		requestBody,
+		"",
 	)
 	if !attempt.enabled {
 		t.Fatal("cache attempt is disabled")

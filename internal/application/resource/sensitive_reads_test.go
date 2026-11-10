@@ -8,6 +8,7 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -51,6 +52,24 @@ func TestSensitiveReadsRequireDedicatedRuntimePermission(t *testing.T) {
 			},
 		},
 		{
+			name:    "secret yaml apply response",
+			wantKey: appaccess.PermPlatformConfigurationSecretDataView,
+			call: func(ctx context.Context, principal domainidentity.Principal, access *resourceAccess) error {
+				_, err := (&GenericResources{resourceAccess: access}).ApplyObservedResourceYAMLByKind(ctx, principal, "cluster-a", "team-a", "Secret", "registry", "metadata: {}")
+				return err
+			},
+		},
+		{
+			name:    "secret yaml preflight",
+			wantKey: appaccess.PermPlatformConfigurationSecretDataView,
+			call: func(ctx context.Context, principal domainidentity.Principal, access *resourceAccess) error {
+				_, err := (&GenericResources{resourceAccess: access}).PlanResourceYAMLUpdate(ctx, principal, "cluster-a", domainresource.ResourceUpdatePlanRequest{
+					Namespace: "team-a", Kind: "Secret", Name: "registry", Content: "metadata: {}", RequireObservedIdentity: true,
+				})
+				return err
+			},
+		},
+		{
 			name:    "helm values",
 			wantKey: appaccess.PermPlatformHelmValuesView,
 			call: func(ctx context.Context, principal domainidentity.Principal, access *resourceAccess) error {
@@ -80,5 +99,20 @@ func TestSensitiveReadsRequireDedicatedRuntimePermission(t *testing.T) {
 				t.Fatalf("permission = %q, want %q", permissions.key, test.wantKey)
 			}
 		})
+	}
+}
+
+func TestNamespacedYAMLRequiresExplicitTargetBeforeProviderSelection(t *testing.T) {
+	const manifest = "metadata: {namespace: other-team, uid: old, resourceVersion: '1'}"
+	service := &GenericResources{}
+	_, err := service.ApplyObservedResourceYAMLByKind(t.Context(), domainidentity.Principal{}, "cluster", " ", "Service", "web", manifest)
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("apply with no target namespace: %v", err)
+	}
+	_, err = service.PlanResourceYAMLUpdate(t.Context(), domainidentity.Principal{}, "cluster", domainresource.ResourceUpdatePlanRequest{
+		Kind: "Service", Name: "web", Content: manifest, RequireObservedIdentity: true,
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("preflight with no target namespace: %v", err)
 	}
 }

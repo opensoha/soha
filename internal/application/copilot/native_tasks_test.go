@@ -45,7 +45,7 @@ func TestNativeChildGuardRefreshesStoredIdentityAndEvidence(t *testing.T) {
 			loop.lease.Run.Output["contextSnapshot"] = map[string]any{"citations": []map[string]any{{"knowledgeBaseId": "base", "documentId": "doc", "chunkId": "chunk", "contentHash": "hash"}}}
 			parent := domaincopilot.NativeTaskParent{RunID: loop.lease.Run.ID, OwnerID: "reader", SessionID: "session", RequestHash: "frozen", Deadline: time.Now().Add(time.Minute)}
 			store := &nativeTaskStoreFixture{nativeQueueCapture: &nativeQueueCapture{inspectionAuthzTestRepository: &inspectionAuthzTestRepository{}, nativeLoopStore: loop}, parent: parent}
-			service.agentRuns = store
+			service.nativeTaskParents = store
 			switch scenario {
 			case "knowledge_revoked":
 				nativeLoopCitations(t, service).denied = true

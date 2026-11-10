@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	domaindlp "github.com/opensoha/soha/internal/domain/contentdlp"
 	"strings"
 	"time"
 
@@ -44,6 +45,8 @@ type Host struct {
 	LastHeartbeatAt            *time.Time     `json:"lastHeartbeatAt,omitempty"`
 	CreatedAt                  time.Time      `json:"createdAt"`
 	UpdatedAt                  time.Time      `json:"updatedAt"`
+	ResourceUID                string         `json:"-" yaml:"-"`
+	ConfigurationRevision      string         `json:"-" yaml:"-"`
 }
 
 type HostInput struct {
@@ -121,9 +124,12 @@ func (a RunnerAuthorization) HostBound() bool {
 }
 
 type ProjectDeployInput struct {
-	Action         string `json:"action,omitempty"`
-	IdempotencyKey string `json:"-"`
+	Action         string                      `json:"action,omitempty"`
+	IdempotencyKey string                      `json:"-"`
+	Preconditions  *ProjectDeployPreconditions `json:"preconditions,omitempty"`
 }
+
+type ProjectDeployPreconditions = sohaapi.DockerProjectDeployPreconditions
 
 type ServiceActionInput struct {
 	Action         string `json:"action"`
@@ -141,50 +147,54 @@ type HostFilter struct {
 }
 
 type Project struct {
-	ID             string         `json:"id"`
-	HostID         string         `json:"hostId"`
-	Name           string         `json:"name"`
-	Slug           string         `json:"slug"`
-	Description    string         `json:"description,omitempty"`
-	Environment    string         `json:"environment,omitempty"`
-	Owner          string         `json:"owner,omitempty"`
-	Team           string         `json:"team,omitempty"`
-	SourceKind     string         `json:"sourceKind,omitempty"`
-	SourceRef      string         `json:"sourceRef,omitempty"`
-	ComposeContent string         `json:"composeContent,omitempty"`
-	EnvContent     string         `json:"envContent,omitempty"`
-	Status         string         `json:"status"`
-	DesiredState   string         `json:"desiredState,omitempty"`
-	TemplateID     string         `json:"templateId,omitempty"`
-	TTLSeconds     int            `json:"ttlSeconds,omitempty"`
-	ExpiresAt      *time.Time     `json:"expiresAt,omitempty"`
-	LastDeployedAt *time.Time     `json:"lastDeployedAt,omitempty"`
-	Labels         map[string]any `json:"labels,omitempty"`
-	Config         map[string]any `json:"config,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	ID                     string         `json:"id"`
+	HostID                 string         `json:"hostId"`
+	Name                   string         `json:"name"`
+	Slug                   string         `json:"slug"`
+	Description            string         `json:"description,omitempty"`
+	Environment            string         `json:"environment,omitempty"`
+	Owner                  string         `json:"owner,omitempty"`
+	Team                   string         `json:"team,omitempty"`
+	SourceKind             string         `json:"sourceKind,omitempty"`
+	SourceRef              string         `json:"sourceRef,omitempty"`
+	ComposeContent         string         `json:"composeContent,omitempty"`
+	EnvContent             string         `json:"envContent,omitempty"`
+	Status                 string         `json:"status"`
+	DesiredState           string         `json:"desiredState,omitempty"`
+	TemplateID             string         `json:"templateId,omitempty"`
+	TTLSeconds             int            `json:"ttlSeconds,omitempty"`
+	ExpiresAt              *time.Time     `json:"expiresAt,omitempty"`
+	LastDeployedAt         *time.Time     `json:"lastDeployedAt,omitempty"`
+	Labels                 map[string]any `json:"labels,omitempty"`
+	Config                 map[string]any `json:"config,omitempty"`
+	CreatedAt              time.Time      `json:"createdAt"`
+	UpdatedAt              time.Time      `json:"updatedAt"`
+	ResourceUID            string         `json:"-" yaml:"-"`
+	ConfigurationRevision  string         `json:"-" yaml:"-"`
+	RuntimeIdentityVersion int            `json:"-" yaml:"-"`
 }
 
 type ProjectInput struct {
-	IdempotencyKey string         `json:"idempotencyKey,omitempty"`
-	ID             string         `json:"id,omitempty"`
-	HostID         string         `json:"hostId"`
-	Name           string         `json:"name"`
-	Slug           string         `json:"slug,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Environment    string         `json:"environment,omitempty"`
-	Owner          string         `json:"owner,omitempty"`
-	Team           string         `json:"team,omitempty"`
-	SourceKind     string         `json:"sourceKind,omitempty"`
-	SourceRef      string         `json:"sourceRef,omitempty"`
-	ComposeContent string         `json:"composeContent,omitempty"`
-	EnvContent     string         `json:"envContent,omitempty"`
-	Status         string         `json:"status,omitempty"`
-	DesiredState   string         `json:"desiredState,omitempty"`
-	TemplateID     string         `json:"templateId,omitempty"`
-	TTLSeconds     int            `json:"ttlSeconds,omitempty"`
-	Labels         map[string]any `json:"labels,omitempty"`
-	Config         map[string]any `json:"config,omitempty"`
+	RuntimeIdentityVersion int            `json:"-" yaml:"-"`
+	IdempotencyKey         string         `json:"idempotencyKey,omitempty"`
+	ID                     string         `json:"id,omitempty"`
+	HostID                 string         `json:"hostId"`
+	Name                   string         `json:"name"`
+	Slug                   string         `json:"slug,omitempty"`
+	Description            string         `json:"description,omitempty"`
+	Environment            string         `json:"environment,omitempty"`
+	Owner                  string         `json:"owner,omitempty"`
+	Team                   string         `json:"team,omitempty"`
+	SourceKind             string         `json:"sourceKind,omitempty"`
+	SourceRef              string         `json:"sourceRef,omitempty"`
+	ComposeContent         string         `json:"composeContent,omitempty"`
+	EnvContent             string         `json:"envContent,omitempty"`
+	Status                 string         `json:"status,omitempty"`
+	DesiredState           string         `json:"desiredState,omitempty"`
+	TemplateID             string         `json:"templateId,omitempty"`
+	TTLSeconds             int            `json:"ttlSeconds,omitempty"`
+	Labels                 map[string]any `json:"labels,omitempty"`
+	Config                 map[string]any `json:"config,omitempty"`
 }
 
 type ProjectFilter struct {
@@ -199,6 +209,8 @@ type ProjectFilter struct {
 }
 
 type ProjectRuntimeLogs struct {
+	ContainerID string `json:"containerId,omitempty"`
+	Truncated   bool   `json:"truncated,omitempty"`
 	ProjectID   string `json:"projectId"`
 	ServiceName string `json:"serviceName,omitempty"`
 	TailLines   int    `json:"tailLines"`
@@ -240,20 +252,23 @@ type ProjectVolumeFileList struct {
 }
 
 type ProjectVolumeFileReadInput struct {
-	ServiceName string `json:"serviceName,omitempty"`
-	Target      string `json:"target"`
-	Path        string `json:"path"`
-	LimitBytes  int64  `json:"limitBytes,omitempty"`
+	SessionID     string `json:"-"`
+	Authorization string `json:"-"`
+	ServiceName   string `json:"serviceName,omitempty"`
+	Target        string `json:"target"`
+	Path          string `json:"path"`
+	LimitBytes    int64  `json:"limitBytes,omitempty"`
 }
 
 type ProjectVolumeFileContent struct {
-	ProjectID   string `json:"projectId"`
-	ServiceName string `json:"serviceName"`
-	Target      string `json:"target"`
-	Path        string `json:"path"`
-	Content     string `json:"content"`
-	SizeBytes   int64  `json:"sizeBytes"`
-	Truncated   bool   `json:"truncated"`
+	DLP         *domaindlp.Decision `json:"dlp,omitempty"`
+	ProjectID   string              `json:"projectId"`
+	ServiceName string              `json:"serviceName"`
+	Target      string              `json:"target"`
+	Path        string              `json:"path"`
+	Content     string              `json:"content"`
+	SizeBytes   int64               `json:"sizeBytes"`
+	Truncated   bool                `json:"truncated"`
 }
 
 type Service struct {
@@ -513,6 +528,9 @@ func operationHeartbeatReference(operation Operation) time.Time {
 	return operation.CreatedAt.UTC()
 }
 
+// IsTerminal uses the durable status independently of lease timing.
+func (operation Operation) IsTerminal() bool { return operationStatusTerminal(operation.Status) }
+
 func operationStatusTerminal(status string) bool {
 	switch strings.TrimSpace(status) {
 	case "completed", "failed", "canceled", "callback_timeout":
@@ -613,6 +631,7 @@ type OperationClaimInput struct {
 	HostIDs                []string            `json:"hostIds,omitempty"`
 	OperationKinds         []string            `json:"operationKinds,omitempty"`
 	CallbackTokenSupported bool                `json:"callbackTokenSupported,omitempty"`
+	RuntimeProtocols       []string            `json:"runtimeProtocols,omitempty"`
 	Authorization          RunnerAuthorization `json:"-"`
 }
 

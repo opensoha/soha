@@ -60,6 +60,9 @@ func verifyTOTP(secret, code string, now time.Time) bool {
 }
 
 func totpCode(secret string, counter int64) (string, error) {
+	if counter < 0 {
+		return "", fmt.Errorf("invalid negative TOTP counter")
+	}
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(strings.TrimSpace(secret)))
 	if err != nil {
 		return "", err

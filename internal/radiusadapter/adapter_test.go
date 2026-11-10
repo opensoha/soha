@@ -22,7 +22,7 @@ func TestRadclientRequestUsesSecretFileAndEscapesValues(t *testing.T) {
 		Action: "coa", TargetAccessProfile: "restricted", PolicyVersion: 7, EffectiveAt: time.Now().UTC(), ReasonCode: "risk_changed",
 		RadiusAttributes: &networkprotocol.RadiusAttributes{VLANID: 30, FilterID: "restricted\nFilter-Id = injected", SessionTimeoutSeconds: 900},
 	}
-	args, input := radclientRequest(Config{
+	args, input := radclientRequest(Config{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		RadclientPath: "/usr/bin/radclient", NASTarget: "192.0.2.10:3799", SecretFile: "/run/secrets/radius", CommandTimeout: 3 * time.Second,
 	}, command)
 	joined := strings.Join(args, " ")
@@ -39,6 +39,19 @@ func TestRadclientRequestUsesSecretFileAndEscapesValues(t *testing.T) {
 		if !strings.Contains(input, expected) {
 			t.Fatalf("radclient input %q does not contain %q", input, expected)
 		}
+	}
+}
+
+func TestRadclientTargetsEAPStationAndAccountingSession(t *testing.T) {
+	command := networkprotocol.NASSessionCommand{NASID: "nas-1", SubjectID: "user-1", DeviceID: "opaque-endpoint-id", SessionID: "core-session-1", StationID: "aa:bb:cc:dd:ee:ff", AccountingSessionID: "acct-1", NASPortID: "Gi1/0/1", Action: "disconnect"}
+	_, input := radclientRequest(Config{CommandTimeout: time.Second}, command)
+	for _, attribute := range []string{`Calling-Station-Id = "aa:bb:cc:dd:ee:ff"`, `Acct-Session-Id = "acct-1"`, `NAS-Port-Id = "Gi1/0/1"`, `Class = "core-session-1"`} {
+		if !strings.Contains(input, attribute) {
+			t.Fatalf("missing bound target %q in %q", attribute, input)
+		}
+	}
+	if strings.Contains(input, command.DeviceID) {
+		t.Fatal("opaque Soha device ID was used as a station address")
 	}
 }
 

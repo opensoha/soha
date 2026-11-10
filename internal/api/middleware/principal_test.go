@@ -273,3 +273,19 @@ func TestBuildPrincipalMiddlewareAcceptsProtocolCookieOnlyOnProtocolReturnPaths(
 		}
 	})
 }
+
+func TestAuthenticationRejectionMarksRequestBeforeProtectedHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	parser := &stubAccessTokenParser{}
+	router := gin.New()
+	router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser), RequireAuth())
+	called := false
+	router.POST("/api/v1/test-write", func(c *gin.Context) { called = true; c.Status(http.StatusOK) })
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/test-write", nil)
+	req.Header.Set("Authorization", "Bearer rejected-test-token")
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	if called || out.Code != http.StatusUnauthorized || out.Header().Get("WWW-Authenticate") != `Bearer realm="soha", error="invalid_token"` {
+		t.Fatal("authentication rejection did not identify a pre-handler failure")
+	}
+}

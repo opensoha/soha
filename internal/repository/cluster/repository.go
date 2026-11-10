@@ -104,15 +104,50 @@ func (r *Repository) GetConnection(ctx context.Context, clusterID string) (domai
 	return scanConnectionRow(row)
 }
 
-func (r *Repository) UpsertRegistration(ctx context.Context, connection domaincluster.Connection) error {
-	return r.saveRegistration(ctx, connection)
+// HasPrometheusSourceConflict checks legacy/config-seeded sources and protects
+// reads even when two registrations were validated concurrently.
+func (r *Repository) HasPrometheusSourceConflict(ctx context.Context, connection domaincluster.Connection) (bool, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT c.id, ccm.metadata->>'prometheus_url', ccm.metadata->>'prometheus_transport',
+			ccm.metadata->>'endpoint', ccm.metadata->>'prometheus_cluster_label',
+			ccm.metadata->>'prometheus_cluster_label_value'
+		FROM clusters c
+		JOIN LATERAL (
+			SELECT metadata FROM cluster_credentials_meta
+			WHERE cluster_id = c.id ORDER BY updated_at DESC LIMIT 1
+		) ccm ON TRUE
+		WHERE c.id <> ? AND btrim(ccm.metadata->>'prometheus_url') <> ''
+	`, connection.Summary.ID).Rows()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		var endpointURL, transport, endpoint, label, value sql.NullString
+		if err := rows.Scan(&id, &endpointURL, &transport, &endpoint, &label, &value); err != nil {
+			return false, err
+		}
+		other := domaincluster.Connection{Summary: domaincluster.Summary{ID: id}, Metadata: map[string]any{
+			"prometheus_url": endpointURL.String, "prometheus_transport": transport.String, "endpoint": endpoint.String,
+			"prometheus_cluster_label": label.String, "prometheus_cluster_label_value": value.String,
+		}}
+		if domaincluster.PrometheusSourceConflict(connection, other) {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func (r *Repository) CreateRegistration(ctx context.Context, connection domaincluster.Connection) error {
+	return r.saveRegistration(ctx, connection, true)
 }
 
 func (r *Repository) UpdateRegistration(ctx context.Context, connection domaincluster.Connection) error {
 	if _, err := r.GetConnection(ctx, connection.Summary.ID); err != nil {
 		return err
 	}
-	return r.saveRegistration(ctx, connection)
+	return r.saveRegistration(ctx, connection, false)
 }
 
 func (r *Repository) Delete(ctx context.Context, clusterID string) error {
@@ -167,7 +202,7 @@ func requireClusterUnused(tx *gorm.DB, clusterID string) error {
 		fmt.Sprintf("集群仍被 %s 使用，请先解除关联后再删除。", reference))
 }
 
-func (r *Repository) saveRegistration(ctx context.Context, connection domaincluster.Connection) error {
+func (r *Repository) saveRegistration(ctx context.Context, connection domaincluster.Connection, createOnly bool) error {
 	labels, err := json.Marshal(connection.Summary.Labels)
 	if err != nil {
 		return fmt.Errorf("marshal cluster labels: %w", err)
@@ -189,10 +224,9 @@ func (r *Repository) saveRegistration(ctx context.Context, connection domainclus
 	if tx.Error != nil {
 		return tx.Error
 	}
-	if err := tx.Exec(`
-		INSERT INTO clusters (id, name, region, environment, labels, connection_mode, version, capabilities, health_snapshot, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET
+	onConflict := `DO NOTHING`
+	if !createOnly {
+		onConflict = `DO UPDATE SET
 			name = EXCLUDED.name,
 			region = EXCLUDED.region,
 			environment = EXCLUDED.environment,
@@ -201,10 +235,21 @@ func (r *Repository) saveRegistration(ctx context.Context, connection domainclus
 			version = EXCLUDED.version,
 			capabilities = EXCLUDED.capabilities,
 			health_snapshot = EXCLUDED.health_snapshot,
-			updated_at = EXCLUDED.updated_at
-	`, connection.Summary.ID, connection.Summary.Name, connection.Summary.Region, connection.Summary.Environment, string(labels), connection.Summary.ConnectionMode, connection.Summary.Version, string(capabilities), string(health), now, now).Error; err != nil {
+			updated_at = EXCLUDED.updated_at`
+	}
+	result := tx.Exec(`
+		INSERT INTO clusters (id, name, region, environment, labels, connection_mode, version, capabilities, health_snapshot, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) `+onConflict,
+		connection.Summary.ID, connection.Summary.Name, connection.Summary.Region, connection.Summary.Environment,
+		string(labels), connection.Summary.ConnectionMode, connection.Summary.Version, string(capabilities), string(health), now, now)
+	if result.Error != nil {
 		tx.Rollback()
-		return err
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		tx.Rollback()
+		return fmt.Errorf("%w: cluster ID already exists", apperrors.ErrConflict)
 	}
 	if err := tx.Exec(`
 		INSERT INTO cluster_credentials_meta (id, cluster_id, credential_type, source_type, source_ref, metadata, created_at, updated_at)

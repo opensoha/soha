@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 	"fmt"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	"path"
 	"slices"
 	"sort"
@@ -350,9 +351,14 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 		return nil
 	}
 	app, _ := s.apps.Get(ctx, resourceName)
+	permissionKey := ""
+	if action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch {
+		permissionKey = appaccess.PermDeliveryApplicationsView
+	}
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		PermissionKey: permissionKey,
+		Principal:     principal,
+		Action:        action,
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,

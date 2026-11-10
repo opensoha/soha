@@ -169,6 +169,8 @@ func writeMFAError(c *gin.Context, err error) {
 	_ = c.Error(err)
 	status, code, message := http.StatusInternalServerError, "internal_error", "internal server error"
 	switch {
+	case errors.Is(err, apperrors.ErrMFARequired):
+		status, code, message = http.StatusForbidden, "mfa_required", "Recent MFA verification is required"
 	case errors.Is(err, apperrors.ErrAccessDenied):
 		status, code, message = http.StatusForbidden, "forbidden", "permission denied"
 	case errors.Is(err, apperrors.ErrUnauthorized):

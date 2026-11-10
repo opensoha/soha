@@ -21,14 +21,16 @@ type resourceYAMLApplier interface {
 type Workloads struct {
 	*resourceAccess
 	*metricsSupport
-	agent         AgentClientFactory[WorkloadAgent]
-	configuration AgentClientFactory[ConfigurationAgent]
-	directPods    DirectPods
-	directConfig  DirectConfiguration
-	direct        DirectWorkloads
-	network       DirectNetworkReader
-	snapshot      WorkloadSnapshotBuilder
-	yaml          resourceYAMLApplier
+	agent             AgentClientFactory[WorkloadAgent]
+	configuration     AgentClientFactory[ConfigurationAgent]
+	directPods        DirectPods
+	directConfig      DirectConfiguration
+	direct            DirectWorkloads
+	network           DirectNetworkReader
+	snapshot          WorkloadSnapshotBuilder
+	yaml              resourceYAMLApplier
+	executions        PodExecutionRepository
+	executionIdentity PodExecutionIdentity
 }
 
 // Logs owns normalized runtime log query and stream orchestration.
@@ -98,6 +100,9 @@ type CustomResources struct {
 }
 
 type GenericResources struct {
+	topologyAgent   AgentClientFactory[TopologySourceAgent]
+	topologyDirect  DirectTopologySources
+	customResources *CustomResources
 	*resourceAccess
 	agent          AgentClientFactory[GenericResourceAgent]
 	direct         DirectGenericResource
@@ -122,6 +127,7 @@ type PortForwards struct {
 // Runtime composes the capabilities used by workflow, delivery, Copilot, and
 // AI gateway runtime inspection without exposing the complete root service.
 type Runtime struct {
+	generic         *GenericResources
 	customResources *CustomResources
 	*Workloads
 	*Configuration
@@ -228,6 +234,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 	}
 	genericResources := &GenericResources{
+		topologyAgent: deps.Agents.TopologySources, topologyDirect: deps.DirectTopologySources,
 		resourceAccess: access, agent: deps.Agents.Generic, direct: deps.DirectGeneric, resourceEvents: deps.DirectResourceEvents,
 		resourceGraph: deps.DirectResourceGraph, security: deps.DirectSecurity,
 	}
@@ -241,6 +248,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		yaml:           genericResources,
 	}
 	workloads := &Workloads{
+		executions: deps.PodExecutions, executionIdentity: deps.PodExecutionIdentity,
 		resourceAccess: access, metricsSupport: metrics,
 		agent:         deps.Agents.Workloads,
 		configuration: deps.Agents.Configuration, directPods: deps.DirectPods, direct: deps.DirectWorkloads,
@@ -261,6 +269,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		agent: deps.Agents.Inventory, direct: deps.DirectInventory, yaml: genericResources,
 	}
 	service := &Service{
+		terminals:        newPodTerminals(workloads, deps.PodTerminals, deps.Lifecycle),
 		workloads:        workloads,
 		logs:             logs,
 		configuration:    &Configuration{resourceAccess: access, agent: deps.Agents.Configuration, direct: deps.DirectConfiguration, generic: deps.DirectGeneric, creation: creation},
@@ -276,7 +285,9 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		creation:         creation,
 	}
 	network.customResources = service.customResources
+	genericResources.customResources = service.customResources
 	service.runtime = &Runtime{
+		generic:         service.genericResources,
 		customResources: service.customResources,
 		Workloads:       workloads, Configuration: service.configuration, Network: network, Storage: service.storage,
 		Helm: service.helm, Inventory: inventory, Events: service.events,

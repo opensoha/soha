@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -23,26 +24,53 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 	if request.Kind == "" || request.Name == "" || strings.TrimSpace(request.Content) == "" {
 		return domainoperation.Plan{}, fmt.Errorf("%w: kind, name, and content are required", apperrors.ErrInvalidArgument)
 	}
+	if err := validateResourceYAMLNamespace(request.Kind, request.Namespace); err != nil {
+		return domainoperation.Plan{}, err
+	}
 	connection, _, err := g.authorize(ctx, principal, clusterID, request.Namespace, request.Kind, domainaccess.ActionUpdate)
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
+	if err := g.authorizeResourceYAMLData(ctx, principal, request.Kind); err != nil {
+		return domainoperation.Plan{}, err
+	}
 	var analysis domainresource.ResourceUpdateAnalysis
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		client, err := g.genericResourceAgentClient(connection)
-		if err != nil {
-			return domainoperation.Plan{}, err
+		client, clientErr := g.genericResourceAgentClient(connection)
+		if clientErr != nil {
+			return domainoperation.Plan{}, clientErr
 		}
-		analysis, err = client.DryRunResourceYAML(ctx, request.Namespace, request.Kind, request.Name, request.Content)
+		if request.RequireObservedIdentity {
+			guarded, ok := client.(observedYAMLAgent)
+			if !ok {
+				return domainoperation.Plan{}, apperrors.ErrUnsupportedOperation
+			}
+			analysis, err = guarded.DryRunObservedResourceYAML(ctx, request.Namespace, request.Kind, request.Name, request.Content)
+		} else {
+			analysis, err = client.DryRunResourceYAML(ctx, request.Namespace, request.Kind, request.Name, request.Content)
+		}
+		if err != nil {
+			return domainoperation.Plan{}, wrapAgentPreflightError(err)
+		}
 	} else if g.direct == nil {
 		return domainoperation.Plan{}, fmt.Errorf("%w: direct generic resource adapter is not configured", apperrors.ErrClusterUnready)
+	} else if request.RequireObservedIdentity {
+		guarded, ok := g.direct.(observedYAMLDirect)
+		if !ok {
+			return domainoperation.Plan{}, apperrors.ErrUnsupportedOperation
+		}
+		analysis, err = guarded.DryRunObservedResourceYAML(ctx, clusterID, request.Namespace, request.Kind, request.Name, request.Content)
 	} else {
 		analysis, err = g.direct.DryRunResourceYAML(ctx, clusterID, request.Namespace, request.Kind, request.Name, request.Content)
 	}
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
-	encoded, err := json.Marshal(request)
+	return resourceUpdatePlan(connection.Summary.ID, request, analysis, request)
+}
+
+func resourceUpdatePlan(clusterID string, request domainresource.ResourceUpdatePlanRequest, analysis domainresource.ResourceUpdateAnalysis, input any) (domainoperation.Plan, error) {
+	encoded, err := json.Marshal(input)
 	if err != nil {
 		return domainoperation.Plan{}, fmt.Errorf("hash resource update plan: %w", err)
 	}
@@ -57,7 +85,7 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 	if sensitive {
 		warnings = append(warnings, "Secret values are redacted from the change summary.")
 	}
-	target := strings.Join([]string{connection.Summary.ID, request.Namespace, request.Kind, request.Name}, "/")
+	target := strings.Join([]string{clusterID, request.Namespace, request.Kind, request.Name}, "/")
 	return domainoperation.Plan{
 		Capability: "k8s.resources.update", Target: target, Ready: ready,
 		RiskLevel: risk, RequiresApproval: approval, InputHash: hex.EncodeToString(digest[:]),
@@ -67,6 +95,14 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 		}},
 		Warnings: warnings, KubernetesResourceUpdate: &analysis,
 	}, nil
+}
+
+func wrapAgentPreflightError(err error) error {
+	classified := wrapAgentResourceError(err)
+	if errors.Is(classified, apperrors.ErrClusterUnready) && !errors.Is(err, apperrors.ErrClusterUnready) {
+		return fmt.Errorf("%w: %w", apperrors.ErrClusterUnready, err)
+	}
+	return classified
 }
 
 func resourceUpdateRisk(kind string) (string, bool) {

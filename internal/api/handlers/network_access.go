@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -18,59 +20,92 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-type NetworkAccessService interface {
+type NetworkDeviceService interface {
 	ListDevices(context.Context, domainidentity.Principal, domainnetworkaccess.DeviceFilter) ([]domainnetworkaccess.Device, error)
 	GetDevice(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Device, error)
 	RegisterDevice(context.Context, domainidentity.Principal, string, domainnetworkaccess.DeviceRegistrationInput) (domainnetworkaccess.Device, error)
 	UpdateDevice(context.Context, domainidentity.Principal, string, domainnetworkaccess.DeviceInput) (domainnetworkaccess.Device, error)
+	ListConnectionOptions(context.Context, domainidentity.Principal, string) ([]domainnetworkaccess.ConnectionOption, error)
+}
+
+type NetworkSiteService interface {
 	ListSites(context.Context, domainidentity.Principal, domainnetworkaccess.SiteFilter) ([]domainnetworkaccess.Site, error)
 	GetSite(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Site, error)
 	CreateSite(context.Context, domainidentity.Principal, domainnetworkaccess.SiteInput) (domainnetworkaccess.Site, error)
 	UpdateSite(context.Context, domainidentity.Principal, string, domainnetworkaccess.SiteInput) (domainnetworkaccess.Site, error)
 	DeleteSite(context.Context, domainidentity.Principal, string) error
+}
+
+type NetworkSpaceService interface {
 	ListSpaces(context.Context, domainidentity.Principal, domainnetworkaccess.SpaceFilter) ([]domainnetworkaccess.Space, error)
 	GetSpace(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Space, error)
 	CreateSpace(context.Context, domainidentity.Principal, domainnetworkaccess.SpaceInput) (domainnetworkaccess.Space, error)
 	UpdateSpace(context.Context, domainidentity.Principal, string, domainnetworkaccess.SpaceInput) (domainnetworkaccess.Space, error)
 	DeleteSpace(context.Context, domainidentity.Principal, string) error
+}
+
+type NetworkResourceService interface {
 	ListResources(context.Context, domainidentity.Principal, domainnetworkaccess.ResourceFilter) ([]domainnetworkaccess.Resource, error)
 	GetResource(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Resource, error)
 	CreateResource(context.Context, domainidentity.Principal, domainnetworkaccess.ResourceInput) (domainnetworkaccess.Resource, error)
 	UpdateResource(context.Context, domainidentity.Principal, string, domainnetworkaccess.ResourceInput) (domainnetworkaccess.Resource, error)
 	DeleteResource(context.Context, domainidentity.Principal, string) error
+}
+
+type NetworkGatewayService interface {
 	ListGateways(context.Context, domainidentity.Principal, domainnetworkaccess.GatewayFilter) ([]domainnetworkaccess.Gateway, error)
 	GetGateway(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Gateway, error)
 	CreateGateway(context.Context, domainidentity.Principal, domainnetworkaccess.GatewayInput) (domainnetworkaccess.Gateway, error)
 	UpdateGateway(context.Context, domainidentity.Principal, string, domainnetworkaccess.GatewayInput) (domainnetworkaccess.Gateway, error)
+}
+
+type NetworkMihomoProfileService interface {
 	ListMihomoProfiles(context.Context, domainidentity.Principal, domainnetworkaccess.MihomoProfileFilter) ([]domainnetworkaccess.MihomoProfile, error)
 	GetMihomoProfile(context.Context, domainidentity.Principal, string) (domainnetworkaccess.MihomoProfile, error)
 	CreateMihomoProfile(context.Context, domainidentity.Principal, domainnetworkaccess.MihomoProfileInput) (domainnetworkaccess.MihomoProfile, error)
 	UpdateMihomoProfile(context.Context, domainidentity.Principal, string, domainnetworkaccess.MihomoProfileInput) (domainnetworkaccess.MihomoProfile, error)
 	DeleteMihomoProfile(context.Context, domainidentity.Principal, string) error
-	ListConnectionOptions(context.Context, domainidentity.Principal, string) ([]domainnetworkaccess.ConnectionOption, error)
+}
+
+type NetworkNASBindingService interface {
 	ListNASBindings(context.Context, domainidentity.Principal, domainnetworkaccess.NASBindingFilter) ([]domainnetworkaccess.NASBinding, error)
 	GetNASBinding(context.Context, domainidentity.Principal, string) (domainnetworkaccess.NASBinding, error)
 	CreateNASBinding(context.Context, domainidentity.Principal, domainnetworkaccess.NASBindingInput) (domainnetworkaccess.NASBinding, error)
 	UpdateNASBinding(context.Context, domainidentity.Principal, string, domainnetworkaccess.NASBindingInput) (domainnetworkaccess.NASBinding, error)
 	DeleteNASBinding(context.Context, domainidentity.Principal, string) error
+}
+
+type NetworkSiteProfileBindingService interface {
 	ListSiteProfileBindings(context.Context, domainidentity.Principal, domainnetworkaccess.SiteProfileBindingFilter) ([]domainnetworkaccess.SiteProfileBinding, error)
 	GetSiteProfileBinding(context.Context, domainidentity.Principal, string) (domainnetworkaccess.SiteProfileBinding, error)
 	CreateSiteProfileBinding(context.Context, domainidentity.Principal, domainnetworkaccess.SiteProfileBindingInput) (domainnetworkaccess.SiteProfileBinding, error)
 	UpdateSiteProfileBinding(context.Context, domainidentity.Principal, string, domainnetworkaccess.SiteProfileBindingInput) (domainnetworkaccess.SiteProfileBinding, error)
 	DeleteSiteProfileBinding(context.Context, domainidentity.Principal, string) error
+}
+
+type NetworkSessionService interface {
 	ListSessions(context.Context, domainidentity.Principal, domainnetworkaccess.SessionFilter) ([]domainnetworkaccess.Session, error)
 	GetSession(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Session, error)
 	PlanSessionAction(context.Context, domainidentity.Principal, string, domainnetworkaccess.SessionActionInput) (domainnetworkaccess.SessionActionPlan, error)
 	ExecuteSessionAction(context.Context, domainidentity.Principal, string, domainnetworkaccess.SessionActionInput) (domainnetworkaccess.SessionCommand, error)
+	GetSessionCommandForSession(context.Context, domainidentity.Principal, string, string) (domainnetworkaccess.SessionCommand, error)
+	GetOriginalSessionCommand(context.Context, domainidentity.Principal, string, string) (domainnetworkaccess.SessionCommand, error)
+}
+
+type NetworkPolicyService interface {
 	ListPolicies(context.Context, domainidentity.Principal, domainnetworkaccess.PolicyFilter) ([]domainnetworkaccess.Policy, error)
 	GetPolicy(context.Context, domainidentity.Principal, string) (domainnetworkaccess.Policy, error)
 	CreatePolicy(context.Context, domainidentity.Principal, domainnetworkaccess.PolicyInput) (domainnetworkaccess.Policy, error)
 	UpdatePolicy(context.Context, domainidentity.Principal, string, domainnetworkaccess.PolicyInput) (domainnetworkaccess.Policy, error)
 	DeletePolicy(context.Context, domainidentity.Principal, string) error
+}
+
+type NetworkPolicyEvaluationService interface {
 	CompilePolicySnapshot(context.Context, domainidentity.Principal) (domainnetworkaccess.PolicySnapshot, error)
 	GetPolicySnapshot(context.Context, domainidentity.Principal) (domainnetworkaccess.PolicySnapshot, error)
 	AnalyzeConflicts(context.Context, domainidentity.Principal, []domainnetworkaccess.ConflictRange) (domainnetworkaccess.ConflictAnalysis, error)
 	PreviewPolicy(context.Context, domainidentity.Principal, appnetworkaccess.PreviewInput) (domainnetworkaccess.PolicyPreview, error)
+	PreviewAdmission(context.Context, domainidentity.Principal, appnetworkaccess.AdmissionPreviewInput) (domainnetworkaccess.PolicyPreview, error)
 }
 
 type NetworkEnrollmentService interface {
@@ -91,15 +126,41 @@ type NetworkTelemetryService interface {
 	Summary(context.Context, domainnetworkingest.SummaryFilter) (domainnetworkingest.Summary, error)
 }
 
-type NetworkAccessHandler struct {
-	service     NetworkAccessService
-	enrollments NetworkEnrollmentService
-	grants      NetworkAccessGrantService
-	telemetry   NetworkTelemetryService
+type NetworkAccessServices struct {
+	Workload           NetworkWorkloadManagement
+	Device             NetworkDeviceService
+	Site               NetworkSiteService
+	Space              NetworkSpaceService
+	Resource           NetworkResourceService
+	Gateway            NetworkGatewayService
+	MihomoProfile      NetworkMihomoProfileService
+	NASBinding         NetworkNASBindingService
+	SiteProfileBinding NetworkSiteProfileBindingService
+	Session            NetworkSessionService
+	Policy             NetworkPolicyService
+	PolicyEvaluation   NetworkPolicyEvaluationService
 }
 
-func NewNetworkAccessHandler(service NetworkAccessService, enrollments NetworkEnrollmentService, grants NetworkAccessGrantService, telemetry NetworkTelemetryService) *NetworkAccessHandler {
-	return &NetworkAccessHandler{service: service, enrollments: enrollments, grants: grants, telemetry: telemetry}
+type NetworkAccessHandler struct {
+	workload           NetworkWorkloadManagement
+	device             NetworkDeviceService
+	site               NetworkSiteService
+	space              NetworkSpaceService
+	resource           NetworkResourceService
+	gateway            NetworkGatewayService
+	mihomoProfile      NetworkMihomoProfileService
+	nASBinding         NetworkNASBindingService
+	siteProfileBinding NetworkSiteProfileBindingService
+	session            NetworkSessionService
+	policy             NetworkPolicyService
+	policyEvaluation   NetworkPolicyEvaluationService
+	enrollments        NetworkEnrollmentService
+	grants             NetworkAccessGrantService
+	telemetry          NetworkTelemetryService
+}
+
+func NewNetworkAccessHandler(services NetworkAccessServices, enrollments NetworkEnrollmentService, grants NetworkAccessGrantService, telemetry NetworkTelemetryService) *NetworkAccessHandler {
+	return &NetworkAccessHandler{workload: services.Workload, device: services.Device, site: services.Site, space: services.Space, resource: services.Resource, gateway: services.Gateway, mihomoProfile: services.MihomoProfile, nASBinding: services.NASBinding, siteProfileBinding: services.SiteProfileBinding, session: services.Session, policy: services.Policy, policyEvaluation: services.PolicyEvaluation, enrollments: enrollments, grants: grants, telemetry: telemetry}
 }
 
 func (h *NetworkAccessHandler) ListDevices(c *gin.Context) {
@@ -107,21 +168,21 @@ func (h *NetworkAccessHandler) ListDevices(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListDevices(c.Request.Context(), principal(c), domainnetworkaccess.DeviceFilter{Search: params.Search, OwnerUserID: params.OwnerUserID, SiteID: params.SiteID, Status: string(params.Status), Limit: params.Limit})
+	items, err := h.device.ListDevices(c.Request.Context(), principal(c), domainnetworkaccess.DeviceFilter{Search: params.Search, OwnerUserID: params.OwnerUserID, SiteID: params.SiteID, Status: string(params.Status), Limit: params.Limit})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetDevice(c *gin.Context) {
-	item, err := h.service.GetDevice(c.Request.Context(), principal(c), c.Param("deviceID"))
+	item, err := h.device.GetDevice(c.Request.Context(), principal(c), c.Param("deviceID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) RegisterDevice(c *gin.Context) {
 	var input sohaapi.EndpointDeviceRegistrationInput
-	if !bindNetworkJSON(c, &input) {
+	if !bindDeviceRegistration(c, &input) {
 		return
 	}
-	item, err := h.service.RegisterDevice(c.Request.Context(), principal(c), c.Param("deviceID"), domainnetworkaccess.DeviceRegistrationInput{Name: input.Name, Hostname: input.Hostname, Platform: input.Platform, DeviceType: string(input.DeviceType), ReportedFacts: endpointDeviceReportedFacts(input.ReportedFacts)})
+	item, err := h.device.RegisterDevice(c.Request.Context(), principal(c), c.Param("deviceID"), domainnetworkaccess.DeviceRegistrationInput{Name: input.Name, Hostname: input.Hostname, Platform: input.Platform, DeviceType: string(input.DeviceType), ReportedFacts: endpointDeviceReportedFacts(input.ReportedFacts)})
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -130,7 +191,7 @@ func (h *NetworkAccessHandler) UpdateDevice(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateDevice(c.Request.Context(), principal(c), c.Param("deviceID"), domainnetworkaccess.DeviceInput{Name: input.Name, SiteID: input.SiteID, Status: string(input.Status), PostureStatus: string(input.PostureStatus), DeviceType: string(input.DeviceType), OwnershipType: string(input.OwnershipType)})
+	item, err := h.device.UpdateDevice(c.Request.Context(), principal(c), c.Param("deviceID"), domainnetworkaccess.DeviceInput{Name: input.Name, SiteID: input.SiteID, Status: string(input.Status), PostureStatus: string(input.PostureStatus), DeviceType: string(input.DeviceType), OwnershipType: string(input.OwnershipType), ManagementState: string(input.ManagementState)})
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -139,7 +200,7 @@ func (h *NetworkAccessHandler) ListConnectionOptions(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListConnectionOptions(c.Request.Context(), principal(c), params.DeviceID)
+	items, err := h.device.ListConnectionOptions(c.Request.Context(), principal(c), params.DeviceID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -161,12 +222,12 @@ func (h *NetworkAccessHandler) ListSites(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListSites(c.Request.Context(), principal(c), domainnetworkaccess.SiteFilter{Search: params.Search, Status: string(params.Status), Limit: params.Limit})
+	items, err := h.site.ListSites(c.Request.Context(), principal(c), domainnetworkaccess.SiteFilter{Search: params.Search, Status: string(params.Status), Limit: params.Limit})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetSite(c *gin.Context) {
-	item, err := h.service.GetSite(c.Request.Context(), principal(c), c.Param("siteID"))
+	item, err := h.site.GetSite(c.Request.Context(), principal(c), c.Param("siteID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -175,7 +236,7 @@ func (h *NetworkAccessHandler) CreateSite(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreateSite(c.Request.Context(), principal(c), domainnetworkaccess.SiteInput{Name: input.Name, Description: input.Description, Location: input.Location, Status: string(input.Status)})
+	item, err := h.site.CreateSite(c.Request.Context(), principal(c), domainnetworkaccess.SiteInput{Name: input.Name, Description: input.Description, Location: input.Location, DeviceGovernance: string(input.DeviceGovernance), ManagementIssuerKey: input.ManagementIssuerKey, Status: string(input.Status)})
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -184,12 +245,12 @@ func (h *NetworkAccessHandler) UpdateSite(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateSite(c.Request.Context(), principal(c), c.Param("siteID"), domainnetworkaccess.SiteInput{Name: input.Name, Description: input.Description, Location: input.Location, Status: string(input.Status)})
+	item, err := h.site.UpdateSite(c.Request.Context(), principal(c), c.Param("siteID"), domainnetworkaccess.SiteInput{Name: input.Name, Description: input.Description, Location: input.Location, DeviceGovernance: string(input.DeviceGovernance), ManagementIssuerKey: input.ManagementIssuerKey, Status: string(input.Status)})
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) DeleteSite(c *gin.Context) {
-	respondDelete(c, h.service.DeleteSite(c.Request.Context(), principal(c), c.Param("siteID")))
+	respondDelete(c, h.site.DeleteSite(c.Request.Context(), principal(c), c.Param("siteID")))
 }
 
 func (h *NetworkAccessHandler) ListSpaces(c *gin.Context) {
@@ -197,12 +258,12 @@ func (h *NetworkAccessHandler) ListSpaces(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListSpaces(c.Request.Context(), principal(c), domainnetworkaccess.SpaceFilter{Search: params.Search, SiteID: params.SiteID, Status: string(params.Status), Limit: params.Limit})
+	items, err := h.space.ListSpaces(c.Request.Context(), principal(c), domainnetworkaccess.SpaceFilter{Search: params.Search, SiteID: params.SiteID, Status: string(params.Status), Limit: params.Limit})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetSpace(c *gin.Context) {
-	item, err := h.service.GetSpace(c.Request.Context(), principal(c), c.Param("spaceID"))
+	item, err := h.space.GetSpace(c.Request.Context(), principal(c), c.Param("spaceID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -211,7 +272,7 @@ func (h *NetworkAccessHandler) CreateSpace(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreateSpace(c.Request.Context(), principal(c), domainnetworkaccess.SpaceInput{SiteID: input.SiteID, Name: input.Name, CIDRs: input.Cidrs, Status: string(input.Status)})
+	item, err := h.space.CreateSpace(c.Request.Context(), principal(c), domainnetworkaccess.SpaceInput{SiteID: input.SiteID, Name: input.Name, CIDRs: input.Cidrs, Status: string(input.Status)})
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -220,12 +281,12 @@ func (h *NetworkAccessHandler) UpdateSpace(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateSpace(c.Request.Context(), principal(c), c.Param("spaceID"), domainnetworkaccess.SpaceInput{SiteID: input.SiteID, Name: input.Name, CIDRs: input.Cidrs, Status: string(input.Status)})
+	item, err := h.space.UpdateSpace(c.Request.Context(), principal(c), c.Param("spaceID"), domainnetworkaccess.SpaceInput{SiteID: input.SiteID, Name: input.Name, CIDRs: input.Cidrs, Status: string(input.Status)})
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) DeleteSpace(c *gin.Context) {
-	respondDelete(c, h.service.DeleteSpace(c.Request.Context(), principal(c), c.Param("spaceID")))
+	respondDelete(c, h.space.DeleteSpace(c.Request.Context(), principal(c), c.Param("spaceID")))
 }
 
 func (h *NetworkAccessHandler) ListResources(c *gin.Context) {
@@ -242,12 +303,12 @@ func (h *NetworkAccessHandler) ListResources(c *gin.Context) {
 		}
 		protected = &value
 	}
-	items, err := h.service.ListResources(c.Request.Context(), principal(c), domainnetworkaccess.ResourceFilter{Search: params.Search, SpaceID: params.SpaceID, Kind: string(params.Kind), Protected: protected, Limit: params.Limit})
+	items, err := h.resource.ListResources(c.Request.Context(), principal(c), domainnetworkaccess.ResourceFilter{Search: params.Search, SpaceID: params.SpaceID, Kind: string(params.Kind), Protected: protected, Limit: params.Limit})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetResource(c *gin.Context) {
-	item, err := h.service.GetResource(c.Request.Context(), principal(c), c.Param("resourceID"))
+	item, err := h.resource.GetResource(c.Request.Context(), principal(c), c.Param("resourceID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -256,7 +317,7 @@ func (h *NetworkAccessHandler) CreateResource(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreateResource(c.Request.Context(), principal(c), resourceInput(input))
+	item, err := h.resource.CreateResource(c.Request.Context(), principal(c), resourceInput(input))
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -265,12 +326,12 @@ func (h *NetworkAccessHandler) UpdateResource(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateResource(c.Request.Context(), principal(c), c.Param("resourceID"), resourceInput(input))
+	item, err := h.resource.UpdateResource(c.Request.Context(), principal(c), c.Param("resourceID"), resourceInput(input))
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) DeleteResource(c *gin.Context) {
-	respondDelete(c, h.service.DeleteResource(c.Request.Context(), principal(c), c.Param("resourceID")))
+	respondDelete(c, h.resource.DeleteResource(c.Request.Context(), principal(c), c.Param("resourceID")))
 }
 
 func (h *NetworkAccessHandler) ListGateways(c *gin.Context) {
@@ -278,12 +339,12 @@ func (h *NetworkAccessHandler) ListGateways(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListGateways(c.Request.Context(), principal(c), domainnetworkaccess.GatewayFilter{Search: params.Search, SiteID: params.SiteID, Status: string(params.Status), Limit: params.Limit})
+	items, err := h.gateway.ListGateways(c.Request.Context(), principal(c), domainnetworkaccess.GatewayFilter{Search: params.Search, SiteID: params.SiteID, Status: string(params.Status), Limit: params.Limit})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetGateway(c *gin.Context) {
-	item, err := h.service.GetGateway(c.Request.Context(), principal(c), c.Param("gatewayID"))
+	item, err := h.gateway.GetGateway(c.Request.Context(), principal(c), c.Param("gatewayID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -292,7 +353,7 @@ func (h *NetworkAccessHandler) CreateGateway(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreateGateway(c.Request.Context(), principal(c), gatewayInput(input))
+	item, err := h.gateway.CreateGateway(c.Request.Context(), principal(c), gatewayInput(input))
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -301,7 +362,7 @@ func (h *NetworkAccessHandler) UpdateGateway(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateGateway(c.Request.Context(), principal(c), c.Param("gatewayID"), gatewayInput(input))
+	item, err := h.gateway.UpdateGateway(c.Request.Context(), principal(c), c.Param("gatewayID"), gatewayInput(input))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -310,14 +371,14 @@ func (h *NetworkAccessHandler) ListMihomoProfiles(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListMihomoProfiles(c.Request.Context(), principal(c), domainnetworkaccess.MihomoProfileFilter{
+	items, err := h.mihomoProfile.ListMihomoProfiles(c.Request.Context(), principal(c), domainnetworkaccess.MihomoProfileFilter{
 		Search: params.Search, DeviceID: params.DeviceID, Mode: string(params.Mode), Status: string(params.Status), Limit: params.Limit,
 	})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetMihomoProfile(c *gin.Context) {
-	item, err := h.service.GetMihomoProfile(c.Request.Context(), principal(c), c.Param("profileID"))
+	item, err := h.mihomoProfile.GetMihomoProfile(c.Request.Context(), principal(c), c.Param("profileID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -326,7 +387,7 @@ func (h *NetworkAccessHandler) CreateMihomoProfile(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreateMihomoProfile(c.Request.Context(), principal(c), mihomoProfileInput(input))
+	item, err := h.mihomoProfile.CreateMihomoProfile(c.Request.Context(), principal(c), mihomoProfileInput(input))
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -335,12 +396,12 @@ func (h *NetworkAccessHandler) UpdateMihomoProfile(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateMihomoProfile(c.Request.Context(), principal(c), c.Param("profileID"), mihomoProfileInput(input))
+	item, err := h.mihomoProfile.UpdateMihomoProfile(c.Request.Context(), principal(c), c.Param("profileID"), mihomoProfileInput(input))
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) DeleteMihomoProfile(c *gin.Context) {
-	respondDelete(c, h.service.DeleteMihomoProfile(c.Request.Context(), principal(c), c.Param("profileID")))
+	respondDelete(c, h.mihomoProfile.DeleteMihomoProfile(c.Request.Context(), principal(c), c.Param("profileID")))
 }
 
 func (h *NetworkAccessHandler) ListNASBindings(c *gin.Context) {
@@ -348,12 +409,12 @@ func (h *NetworkAccessHandler) ListNASBindings(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListNASBindings(c.Request.Context(), principal(c), domainnetworkaccess.NASBindingFilter{SiteID: params.SiteID, RuntimeID: params.RuntimeID, Status: string(params.Status), Limit: params.Limit})
+	items, err := h.nASBinding.ListNASBindings(c.Request.Context(), principal(c), domainnetworkaccess.NASBindingFilter{SiteID: params.SiteID, RuntimeID: params.RuntimeID, Status: string(params.Status), Limit: params.Limit})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetNASBinding(c *gin.Context) {
-	item, err := h.service.GetNASBinding(c.Request.Context(), principal(c), c.Param("bindingID"))
+	item, err := h.nASBinding.GetNASBinding(c.Request.Context(), principal(c), c.Param("bindingID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -362,7 +423,7 @@ func (h *NetworkAccessHandler) CreateNASBinding(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreateNASBinding(c.Request.Context(), principal(c), nasBindingInput(input))
+	item, err := h.nASBinding.CreateNASBinding(c.Request.Context(), principal(c), nasBindingInput(input))
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -371,12 +432,12 @@ func (h *NetworkAccessHandler) UpdateNASBinding(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateNASBinding(c.Request.Context(), principal(c), c.Param("bindingID"), nasBindingInput(input))
+	item, err := h.nASBinding.UpdateNASBinding(c.Request.Context(), principal(c), c.Param("bindingID"), nasBindingInput(input))
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) DeleteNASBinding(c *gin.Context) {
-	respondDelete(c, h.service.DeleteNASBinding(c.Request.Context(), principal(c), c.Param("bindingID")))
+	respondDelete(c, h.nASBinding.DeleteNASBinding(c.Request.Context(), principal(c), c.Param("bindingID")))
 }
 
 func (h *NetworkAccessHandler) ListSiteProfileBindings(c *gin.Context) {
@@ -384,12 +445,12 @@ func (h *NetworkAccessHandler) ListSiteProfileBindings(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListSiteProfileBindings(c.Request.Context(), principal(c), domainnetworkaccess.SiteProfileBindingFilter{SiteID: params.SiteID, AccessProfile: string(params.AccessProfile), Limit: params.Limit})
+	items, err := h.siteProfileBinding.ListSiteProfileBindings(c.Request.Context(), principal(c), domainnetworkaccess.SiteProfileBindingFilter{SiteID: params.SiteID, AccessProfile: string(params.AccessProfile), Limit: params.Limit})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetSiteProfileBinding(c *gin.Context) {
-	item, err := h.service.GetSiteProfileBinding(c.Request.Context(), principal(c), c.Param("bindingID"))
+	item, err := h.siteProfileBinding.GetSiteProfileBinding(c.Request.Context(), principal(c), c.Param("bindingID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -398,7 +459,7 @@ func (h *NetworkAccessHandler) CreateSiteProfileBinding(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreateSiteProfileBinding(c.Request.Context(), principal(c), siteProfileBindingInput(input))
+	item, err := h.siteProfileBinding.CreateSiteProfileBinding(c.Request.Context(), principal(c), siteProfileBindingInput(input))
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -407,12 +468,12 @@ func (h *NetworkAccessHandler) UpdateSiteProfileBinding(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdateSiteProfileBinding(c.Request.Context(), principal(c), c.Param("bindingID"), siteProfileBindingInput(input))
+	item, err := h.siteProfileBinding.UpdateSiteProfileBinding(c.Request.Context(), principal(c), c.Param("bindingID"), siteProfileBindingInput(input))
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) DeleteSiteProfileBinding(c *gin.Context) {
-	respondDelete(c, h.service.DeleteSiteProfileBinding(c.Request.Context(), principal(c), c.Param("bindingID")))
+	respondDelete(c, h.siteProfileBinding.DeleteSiteProfileBinding(c.Request.Context(), principal(c), c.Param("bindingID")))
 }
 
 func (h *NetworkAccessHandler) ListSessions(c *gin.Context) {
@@ -420,7 +481,7 @@ func (h *NetworkAccessHandler) ListSessions(c *gin.Context) {
 	if !bindNetworkQuery(c, &params) {
 		return
 	}
-	items, err := h.service.ListSessions(c.Request.Context(), principal(c), domainnetworkaccess.SessionFilter{
+	items, err := h.session.ListSessions(c.Request.Context(), principal(c), domainnetworkaccess.SessionFilter{
 		SiteID: params.SiteID, RuntimeID: params.RuntimeID, SubjectID: params.SubjectID,
 		DeviceID: params.DeviceID, Status: string(params.Status), Limit: params.Limit,
 	})
@@ -450,7 +511,7 @@ func (h *NetworkAccessHandler) GetTelemetrySummary(c *gin.Context) {
 }
 
 func (h *NetworkAccessHandler) GetSession(c *gin.Context) {
-	item, err := h.service.GetSession(c.Request.Context(), principal(c), c.Param("sessionID"))
+	item, err := h.session.GetSession(c.Request.Context(), principal(c), c.Param("sessionID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -463,7 +524,7 @@ func (h *NetworkAccessHandler) PlanSessionAction(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.PlanSessionAction(c.Request.Context(), principal(c), c.Param("sessionID"), domainnetworkaccess.SessionActionInput{
+	item, err := h.session.PlanSessionAction(c.Request.Context(), principal(c), c.Param("sessionID"), domainnetworkaccess.SessionActionInput{
 		Action: string(input.Action), TargetAccessProfile: string(input.TargetAccessProfile), ReasonCode: input.ReasonCode,
 	})
 	if err != nil {
@@ -478,7 +539,7 @@ func (h *NetworkAccessHandler) ExecuteSessionAction(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.ExecuteSessionAction(c.Request.Context(), principal(c), c.Param("sessionID"), domainnetworkaccess.SessionActionInput{
+	item, err := h.session.ExecuteSessionAction(c.Request.Context(), principal(c), c.Param("sessionID"), domainnetworkaccess.SessionActionInput{
 		Action: string(input.Action), TargetAccessProfile: string(input.TargetAccessProfile), ReasonCode: input.ReasonCode, PlanHash: input.PlanHash,
 	})
 	if err != nil {
@@ -592,12 +653,12 @@ func (h *NetworkAccessHandler) ListPolicies(c *gin.Context) {
 		}
 		enabled = &value
 	}
-	items, err := h.service.ListPolicies(c.Request.Context(), principal(c), domainnetworkaccess.PolicyFilter{Search: params.Search, Enabled: enabled, Effect: string(params.Effect), Limit: params.Limit})
+	items, err := h.policy.ListPolicies(c.Request.Context(), principal(c), domainnetworkaccess.PolicyFilter{Search: params.Search, Enabled: enabled, Effect: string(params.Effect), Limit: params.Limit})
 	respondItems(c, items, err)
 }
 
 func (h *NetworkAccessHandler) GetPolicy(c *gin.Context) {
-	item, err := h.service.GetPolicy(c.Request.Context(), principal(c), c.Param("policyID"))
+	item, err := h.policy.GetPolicy(c.Request.Context(), principal(c), c.Param("policyID"))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -606,7 +667,7 @@ func (h *NetworkAccessHandler) CreatePolicy(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.CreatePolicy(c.Request.Context(), principal(c), policyInput(input))
+	item, err := h.policy.CreatePolicy(c.Request.Context(), principal(c), policyInput(input))
 	respondItem(c, http.StatusCreated, item, err)
 }
 
@@ -615,21 +676,21 @@ func (h *NetworkAccessHandler) UpdatePolicy(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.UpdatePolicy(c.Request.Context(), principal(c), c.Param("policyID"), policyInput(input))
+	item, err := h.policy.UpdatePolicy(c.Request.Context(), principal(c), c.Param("policyID"), policyInput(input))
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) DeletePolicy(c *gin.Context) {
-	respondDelete(c, h.service.DeletePolicy(c.Request.Context(), principal(c), c.Param("policyID")))
+	respondDelete(c, h.policy.DeletePolicy(c.Request.Context(), principal(c), c.Param("policyID")))
 }
 
 func (h *NetworkAccessHandler) CompilePolicySnapshot(c *gin.Context) {
-	item, err := h.service.CompilePolicySnapshot(c.Request.Context(), principal(c))
+	item, err := h.policyEvaluation.CompilePolicySnapshot(c.Request.Context(), principal(c))
 	respondItem(c, http.StatusOK, item, err)
 }
 
 func (h *NetworkAccessHandler) GetPolicySnapshot(c *gin.Context) {
-	item, err := h.service.GetPolicySnapshot(c.Request.Context(), principal(c))
+	item, err := h.policyEvaluation.GetPolicySnapshot(c.Request.Context(), principal(c))
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -642,7 +703,7 @@ func (h *NetworkAccessHandler) AnalyzeConflicts(c *gin.Context) {
 	for index, item := range input.RuntimeRanges {
 		ranges[index] = domainnetworkaccess.ConflictRange{SourceType: string(item.SourceType), SourceID: item.SourceID, Name: item.Name, CIDR: item.Cidr}
 	}
-	result, err := h.service.AnalyzeConflicts(c.Request.Context(), principal(c), ranges)
+	result, err := h.policyEvaluation.AnalyzeConflicts(c.Request.Context(), principal(c), ranges)
 	respondItem(c, http.StatusOK, result, err)
 }
 
@@ -651,7 +712,19 @@ func (h *NetworkAccessHandler) PreviewPolicy(c *gin.Context) {
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
-	item, err := h.service.PreviewPolicy(c.Request.Context(), principal(c), appnetworkaccess.PreviewInput{SubjectUserID: input.SubjectUserID, DeviceID: input.DeviceID, ResourceID: input.ResourceID, SiteID: input.SiteID, Mode: string(input.Mode)})
+	item, err := h.policyEvaluation.PreviewPolicy(c.Request.Context(), principal(c), appnetworkaccess.PreviewInput{SubjectUserID: input.SubjectUserID, DeviceID: input.DeviceID, ResourceID: input.ResourceID, SiteID: input.SiteID, Mode: string(input.Mode)})
+	respondItem(c, http.StatusOK, item, err)
+}
+
+func (h *NetworkAccessHandler) PreviewAdmission(c *gin.Context) {
+	var input *sohaapi.NetworkAdmissionPreviewRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil || input == nil || decoder.Decode(&struct{}{}) != io.EOF {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid bounded admission preview payload")
+		return
+	}
+	item, err := h.policyEvaluation.PreviewAdmission(c.Request.Context(), principal(c), appnetworkaccess.AdmissionPreviewInput{DeviceID: input.DeviceID, NASBindingID: input.NasBindingID})
 	respondItem(c, http.StatusOK, item, err)
 }
 
@@ -721,6 +794,7 @@ func nasBindingInput(input sohaapi.NetworkNASBindingInput) domainnetworkaccess.N
 		NASID: input.NasID, RuntimeID: input.RuntimeID, SiteID: input.SiteID, Name: input.Name,
 		AccessMedium: string(input.AccessMedium), DeviceType: string(input.DeviceType), SSID: input.Ssid, ManagementAddress: input.ManagementAddress,
 		Status: string(input.Status), CoASupported: input.CoaSupported, DisconnectSupported: input.DisconnectSupported,
+		EAPServerTrust: input.EapServerTrust,
 	}
 }
 
@@ -747,7 +821,8 @@ func accessGrantDTO(item domainnetworkruntime.AccessGrant) sohaapi.NetworkAccess
 }
 
 func sessionDTO(item domainnetworkaccess.Session) sohaapi.NetworkSession {
-	return sohaapi.NetworkSession{
+	result := sohaapi.NetworkSession{
+		RestrictionProfile: sohaapi.NetworkAccessProfile(item.RestrictionProfile), RestrictionReason: item.RestrictionReason,
 		ID: item.ID, SubjectID: item.SubjectID, DeviceID: item.DeviceID, SiteID: item.SiteID,
 		GatewayID: item.GatewayID, NasID: item.NASID, Mode: sohaapi.NetworkAccessMode(item.Mode),
 		Path: sohaapi.NetworkPolicyPath(item.Path), AccessProfile: sohaapi.NetworkAccessProfile(item.AccessProfile),
@@ -755,6 +830,11 @@ func sessionDTO(item domainnetworkaccess.Session) sohaapi.NetworkSession {
 		NetworkLeaseIDs: item.NetworkLeaseIDs, ResourceLeaseIDs: item.ResourceLeaseIDs,
 		ReasonCode: item.ReasonCode, StartedAt: item.StartedAt, ExpiresAt: item.ExpiresAt,
 	}
+	if item.LatestCommand != nil {
+		command := sessionCommandDTO(*item.LatestCommand)
+		result.LatestCommand = &command
+	}
+	return result
 }
 
 func sessionActionPlanDTO(item domainnetworkaccess.SessionActionPlan) sohaapi.NetworkSessionActionPlan {
@@ -778,10 +858,17 @@ func sessionCommandDTO(item domainnetworkaccess.SessionCommand) sohaapi.NetworkS
 func policyInput(input sohaapi.NetworkAccessPolicyInput) domainnetworkaccess.PolicyInput {
 	return domainnetworkaccess.PolicyInput{
 		Name: input.Name, Enabled: input.Enabled, Priority: input.Priority, Effect: string(input.Effect),
-		Subjects: domainnetworkaccess.PolicySubjects{Users: input.Subjects.Users, Teams: input.Subjects.Teams, Tags: input.Subjects.Tags},
+		Subjects: domainnetworkaccess.PolicySubjects{Roles: input.Subjects.Roles, Users: input.Subjects.Users, Teams: input.Subjects.Teams, Tags: input.Subjects.Tags},
 		SiteIDs:  input.SiteIDs, ResourceIDs: input.ResourceIDs, Modes: stringValues(input.Modes),
-		DeviceStatuses: stringValues(input.DeviceStatuses), PostureStatuses: stringValues(input.PostureStatuses), AccessProfile: string(input.AccessProfile),
+		DeviceManagementStates: optionalStringValues(input.DeviceManagementStates), DeviceStatuses: stringValues(input.DeviceStatuses), PostureStatuses: stringValues(input.PostureStatuses), AccessProfile: string(input.AccessProfile),
 	}
+}
+
+func optionalStringValues[T ~string](values []T) []string {
+	if values == nil {
+		return nil
+	}
+	return stringValues(values)
 }
 
 func stringValues[T ~string](values []T) []string {
@@ -793,6 +880,17 @@ func stringValues[T ~string](values []T) []string {
 }
 
 func principal(c *gin.Context) domainidentity.Principal { return apiMiddleware.PrincipalFromContext(c) }
+
+// Registration must not silently accept administrative classification fields.
+func bindDeviceRegistration(c *gin.Context, target any) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid endpoint registration payload")
+		return false
+	}
+	return true
+}
 
 func bindNetworkJSON(c *gin.Context, target any) bool {
 	if err := c.ShouldBindJSON(target); err != nil {

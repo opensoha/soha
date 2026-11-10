@@ -92,23 +92,6 @@ func nativeTaskFixturePlan() domainaigateway.CapabilityPlan {
 	}}
 }
 
-func TestNativeTaskRecoversLostCreationReceiptBeforeCancellation(t *testing.T) {
-	service, store, gateway, owner := nativeGovernedTaskFixture(t)
-	owner.lostCreateReceipt = true
-	gateway.model = func(context.Context, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-		return appaigateway.WorkbenchRelayResponse{Usage: map[string]float64{"totalTokens": 10}, ToolCalls: []appaigateway.WorkbenchToolCall{{ID: "request", Name: "harness_request_task", Arguments: nativeTaskFixtureArguments(t)}}}, nil
-	}
-	for i := 0; i < 2; i++ {
-		if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Phase != "cancelling" || owner.creates != 1 || owner.finds == 0 || len(store.final) != 0 {
-			t.Fatalf("lost submission was not reconciled safely: phase=%s creates=%d finds=%d err=%v", store.lease.Phase, owner.creates, owner.finds, err)
-		}
-	}
-	owner.task.Status = "canceled"
-	if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Run.Status != "failed" || len(store.final) != 1 || owner.creates != 1 {
-		t.Fatalf("failed attempt did not wait for confirmed child stop: status=%s err=%v", store.lease.Run.Status, err)
-	}
-}
-
 func TestNativeTaskInputPinsServerKeysScopeChecksAndRemainingBudget(t *testing.T) {
 	service, store, gateway, owner := nativeGovernedTaskFixture(t)
 	principal := domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}
@@ -158,83 +141,6 @@ func nativeGovernedTaskFixture(t *testing.T) (*Service, *nativeLoopStore, *nativ
 	store.lease.Run.Input["_sohaNativeCatalog"] = catalog
 	store.lease.Run.ToolBindings = appendNativeTaskBindings(nil, catalog.Tasks)
 	return service, store, gateway, owner
-}
-
-func TestNativeTaskWaitsForOriginalApprovalAndFreshAssessmentAcrossRecovery(t *testing.T) {
-	service, store, gateway, owner := nativeGovernedTaskFixture(t)
-	models := 0
-	gateway.model = func(_ context.Context, request appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-		models++
-		response := appaigateway.WorkbenchRelayResponse{Usage: map[string]float64{"totalTokens": 10}}
-		if models == 1 {
-			response.ToolCalls = []appaigateway.WorkbenchToolCall{{ID: "request", Name: "harness_request_task", Arguments: nativeTaskFixtureArguments(t)}}
-		} else {
-			last := request.Messages[len(request.Messages)-1]
-			if last.Role != "tool" || !strings.Contains(last.Content, `"goalVerified":true`) {
-				t.Fatal("model received submission instead of verified domain evidence")
-			}
-			response.Content = "The domain verified the change."
-		}
-		return response, nil
-	}
-	if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Phase != "waiting_approval" || len(store.final) != 0 || owner.creates != 1 {
-		t.Fatalf("approval was bypassed: phase=%s creates=%d err=%v", store.lease.Phase, owner.creates, err)
-	}
-	store.lease.Fence++ // Core restart takes over the same parent and child.
-	if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || owner.creates != 1 || owner.finds != 1 || models != 1 {
-		t.Fatalf("recovery resubmitted or resumed model early: creates=%d finds=%d models=%d err=%v", owner.creates, owner.finds, models, err)
-	}
-	owner.task.Status = "completed"
-	owner.task.Assessment = &domainaigateway.CapabilityAssessment{Verdict: "satisfied", Evidence: []domainaigateway.CapabilityEvidence{{Kind: "domain", Source: "test.assess", ObservedAt: time.Now(), Summary: "Actual operation verified"}}}
-	if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Run.Status != "completed" || len(store.final) != 1 || models != 2 || owner.creates != 1 {
-		t.Fatalf("verified completion failed: status=%s creates=%d models=%d err=%v", store.lease.Run.Status, owner.creates, models, err)
-	}
-}
-
-func TestNativeTaskCancellationRequiresDomainTerminalConfirmation(t *testing.T) {
-	for _, revoked := range []bool{false, true} {
-		t.Run(map[bool]string{false: "confirmed", true: "authorization_revoked"}[revoked], func(t *testing.T) {
-			service, store, gateway, owner := nativeGovernedTaskFixture(t)
-			gateway.model = func(context.Context, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
-				return appaigateway.WorkbenchRelayResponse{Usage: map[string]float64{"totalTokens": 10}, ToolCalls: []appaigateway.WorkbenchToolCall{{ID: "request", Name: "harness_request_task", Arguments: nativeTaskFixtureArguments(t)}}}, nil
-			}
-			if err := service.processNativeRun(t.Context(), store, store.lease); err != nil {
-				t.Fatal(err)
-			}
-			store.lease.CancelRequested = true
-			owner.denyLookup = revoked
-			if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Phase != "cancelling" || store.lease.Run.Status != "running" || len(store.final) != 0 {
-				t.Fatalf("cancel acknowledgement became a false terminal: %+v err=%v", store.lease, err)
-			}
-			if revoked {
-				if owner.cancels != 0 {
-					t.Fatal("revoked authorization was bypassed for cancellation")
-				}
-				return
-			}
-			owner.task.Status = "canceled"
-			if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || store.lease.Run.Status != "canceled" || len(store.final) != 1 || owner.creates != 1 {
-				t.Fatalf("confirmed cancellation failed: status=%s err=%v", store.lease.Run.Status, err)
-			}
-		})
-	}
-}
-
-func TestNativeTaskDoesNotRedispatchUnknownSubmission(t *testing.T) {
-	service, store, _, owner := nativeGovernedTaskFixture(t)
-	cp := initialNativeCheckpoint(store.lease.Run)
-	principal := domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}
-	child, err := service.prepareNativeTask(t.Context(), principal, store.lease, &cp, nativeTaskFixtureArguments(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	child.State = "dispatching"
-	cp.Tasks = []nativeTaskCheckpoint{child}
-	cp.Pending = []nativeCall{{ToolName: "harness.request_task", TaskKey: child.Input.IdempotencyKey, Call: appaigateway.WorkbenchToolCall{ID: "unknown"}}}
-	store.lease.Checkpoint, _ = json.Marshal(cp)
-	if err := service.processNativeRun(t.Context(), store, store.lease); err != nil || owner.creates != 0 || store.lease.Phase != "paused" || store.lease.Run.Status != "running" {
-		t.Fatalf("unknown submission was replayed: creates=%d phase=%s err=%v", owner.creates, store.lease.Phase, err)
-	}
 }
 
 func TestNativeTaskRejectsUnfreshOrUnconfirmedVerification(t *testing.T) {
@@ -361,5 +267,49 @@ func assertNativeTaskPreparationRejected(t *testing.T, scenario string, service 
 	raw, _ = json.Marshal(request)
 	if _, err := service.prepareNativeTask(t.Context(), principal, lease, &cp, raw); err == nil || owner.creates != 0 {
 		t.Fatalf("invalid Native task accepted: scenario=%s creates=%d err=%v", scenario, owner.creates, err)
+	}
+}
+
+func TestGovernedTaskPreparationRetainsAuthorityAndBudgetGuards(t *testing.T) {
+	for _, scenario := range []string{"budget", "identity_field", "missing_precondition", "unrelated_verification", "changed_cancel", "legacy", "missing_request_hash"} {
+		t.Run(scenario, func(t *testing.T) {
+			service, store, gateway, owner := nativeGovernedTaskFixture(t)
+			assertNativeTaskPreparationRejected(t, scenario, service, store, gateway, owner, domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}})
+		})
+	}
+}
+
+func TestGovernedTaskLostReceiptReconcilesBeforeConfirmedCancellation(t *testing.T) {
+	service, store, _, owner := nativeGovernedTaskFixture(t)
+	owner.lostCreateReceipt = true
+	actor := domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}
+	cp := initialNativeCheckpoint(store.lease.Run)
+	cp.Pending = []nativeCall{{Call: appaigateway.WorkbenchToolCall{ID: "request", Name: "harness_request_task", Arguments: nativeTaskFixtureArguments(t)}, ToolName: "harness.request_task", State: "prepared"}}
+	_, err := service.nativeTaskToolStep(t.Context(), store, store.lease, &cp, actor)
+	if !errors.Is(err, context.DeadlineExceeded) || owner.creates != 1 {
+		t.Fatalf("lost receipt: %v creates=%d", err, owner.creates)
+	}
+	if err = json.Unmarshal(store.lease.Checkpoint, &cp); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.nativeTaskToolStep(t.Context(), store, store.lease, &cp, actor)
+	if err != nil || owner.creates != 1 || owner.finds != 1 || store.lease.Phase != "waiting_approval" {
+		t.Fatalf("recovery redispatched: %v creates=%d finds=%d", err, owner.creates, owner.finds)
+	}
+	if err = service.finishNativeRun(t.Context(), store, store.lease, cp, "canceled", "user_cancelled", "Canceled"); err != nil {
+		t.Fatal(err)
+	}
+	if store.lease.Phase != "cancelling" || len(store.final) != 0 {
+		t.Fatal("cancellation accepted without domain confirmation")
+	}
+	owner.task.Status = "canceled"
+	if err = json.Unmarshal(store.lease.Checkpoint, &cp); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.finishNativeRun(t.Context(), store, store.lease, cp, "canceled", "user_cancelled", "Canceled"); err != nil {
+		t.Fatal(err)
+	}
+	if store.lease.Run.Status != "canceled" || len(store.final) != 1 || owner.creates != 1 {
+		t.Fatal("confirmed cancellation lost receipt or resubmitted")
 	}
 }

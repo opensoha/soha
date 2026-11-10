@@ -115,6 +115,14 @@ func (s *Service) createToolApprovalRequest(ctx context.Context, principal domai
 	}
 	now := time.Now().UTC()
 	expiresAt := gatewayApprovalExpiresAt(decision, now)
+	var permissionCeiling []string
+	if principal.AccessTokenID != "" {
+		keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+		if err != nil {
+			return nil, nil, err
+		}
+		permissionCeiling = keys
+	}
 	actorType, actorID := gatewaySubject(principal)
 	meta := requestctx.FromContext(ctx)
 	approvalRouting := s.resolveGatewayApprovalOnCall(ctx, input, gatewayApprovalRoutingFromDecision(decision))
@@ -122,34 +130,39 @@ func (s *Service) createToolApprovalRequest(ctx context.Context, principal domai
 		relatedIDs["approvalRouting"] = approvalRouting
 	}
 	request := domainaigateway.ApprovalRequest{
-		ID:                trackingID,
-		Status:            "pending",
-		Strategy:          string(decision.Strategy),
-		PolicyID:          decision.PolicyID,
-		ApprovalPolicyRef: decision.ApprovalPolicyRef,
-		ActorType:         actorType,
-		ActorID:           actorID,
-		ActorSessionID:    strings.TrimSpace(input.SessionID),
-		ActorName:         principal.UserName,
-		ActorRoles:        normalizeStringSlice(principal.Roles),
-		ActorTeams:        normalizeStringSlice(principal.Teams),
-		AIClientID:        strings.TrimSpace(input.AIClientID),
-		AIClientName:      strings.TrimSpace(input.AIClientName),
-		SkillID:           strings.TrimSpace(input.SkillID),
-		ToolName:          tool.Name,
-		RiskLevel:         tool.RiskLevel,
-		RequiresApproval:  true,
-		ResourceScope:     resolvedCapabilityAuditScope(ctx, tool, input.Input, nil),
-		ToolInput:         sanitizeGatewayMap(input.Input),
-		SecretRefs:        cloneSecretRefs(input.SecretRefs),
-		RelatedIDs:        relatedIDs,
-		Output:            map[string]any{},
-		Summary:           summary,
-		RequestID:         firstNonEmpty(input.RequestID, meta.RequestID),
-		SourceIP:          meta.SourceIP,
-		ExpiresAt:         expiresAt,
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		ID:                     trackingID,
+		Status:                 "pending",
+		Strategy:               string(decision.Strategy),
+		PolicyID:               decision.PolicyID,
+		ApprovalPolicyRef:      decision.ApprovalPolicyRef,
+		ActorType:              actorType,
+		ActorID:                actorID,
+		ActorSessionID:         strings.TrimSpace(input.SessionID),
+		ActorTokenID:           principal.AccessTokenID,
+		ActorPermissionCeiling: permissionCeiling,
+		ActorName:              principal.UserName,
+		ActorRoles:             normalizeStringSlice(principal.Roles),
+		ActorTeams:             normalizeStringSlice(principal.Teams),
+		AIClientID:             strings.TrimSpace(input.AIClientID),
+		AIClientName:           strings.TrimSpace(input.AIClientName),
+		SkillID:                strings.TrimSpace(input.SkillID),
+		ToolName:               tool.Name,
+		RiskLevel:              tool.RiskLevel,
+		RequiresApproval:       true,
+		ResourceScope:          resolvedCapabilityAuditScope(ctx, tool, input.Input, nil),
+		ToolInput:              sanitizeGatewayMap(input.Input),
+		SecretRefs:             cloneSecretRefs(input.SecretRefs),
+		RelatedIDs:             relatedIDs,
+		Output:                 map[string]any{},
+		Summary:                summary,
+		RequestID:              firstNonEmpty(input.RequestID, meta.RequestID),
+		SourceIP:               meta.SourceIP,
+		ExpiresAt:              expiresAt,
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	if err := s.protectApprovalInput(&request, input.Input); err != nil {
+		return nil, nil, err
 	}
 	if node, ok := capabilityExecutionFrom(ctx); ok && node.Scope == domainworkflow.ScopeCapabilityTask {
 		if existing, found, err := s.capabilityNodeApproval(ctx, input); err != nil {
@@ -424,12 +437,14 @@ func (s *Service) executeApprovedCapability(ctx context.Context, principal domai
 	if err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, replayPrincipal, appaccess.PermAIGatewayInvoke); err != nil {
+	if err := s.authorizeApprovalReplayCaller(ctx, replayPrincipal, request, tool); err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
-	if err := s.authorizeTool(ctx, replayPrincipal, tool); err != nil {
+	executionInput, err := s.approvalExecutionInput(request)
+	if err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
+	request.ToolInput = executionInput
 	if err := validateApprovedCapability(tool, request); err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
@@ -458,13 +473,17 @@ func (s *Service) executeApprovedCapability(ctx context.Context, principal domai
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
 	request.ToolInput = gatewayApprovalReplayInput(request)
-	ctx = withGatewayExecutionAuthorization(ctx, replayPrincipal, tool, domainaigateway.ToolInvocationRequest{ToolName: request.ToolName, Input: request.ToolInput, SecretRefs: request.SecretRefs, AIClientID: request.AIClientID, SkillID: request.SkillID, RequestID: request.RequestID}, request.ID, decision)
+	ctx = withGatewayExecutionAuthorization(ctx, replayPrincipal, tool, domainaigateway.ToolInvocationRequest{ToolName: request.ToolName, Input: request.ToolInput, SecretRefs: request.SecretRefs, AIClientID: request.AIClientID, SkillID: request.SkillID, RequestID: request.RequestID, SessionID: request.ActorSessionID}, request.ID, decision)
 	output, relatedIDs, err := s.invokeGatewayTool(ctx, replayPrincipal, tool, request.ToolInput, request.SecretRefs, request.ActorSessionID)
 	if err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
 	var outputRedactionSummary gatewayRedactionAuditSummary
 	rawOutput := output
+	output, err = approvedCapabilityOutput(ctx, tool.Name, output)
+	if err != nil {
+		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
+	}
 	output, outputRedactionSummary, err = s.sanitizeToolOutputByAccessPolicy(ctx, replayPrincipal, request.AIClientID, request.SkillID, tool, invocationScope, output)
 	redactionSummary.merge(outputRedactionSummary)
 	if err != nil {

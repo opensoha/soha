@@ -8,7 +8,7 @@ import (
 )
 
 func TestLifecycleIsIdempotentAndRestartable(t *testing.T) {
-	service := &Service{}
+	service := configuredRuntimeTestService(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	service.Start(ctx)
@@ -35,7 +35,7 @@ func TestLifecycleIsIdempotentAndRestartable(t *testing.T) {
 }
 
 func TestLifecycleConcurrentStartStop(t *testing.T) {
-	service := &Service{}
+	service := configuredRuntimeTestService(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

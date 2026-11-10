@@ -10,18 +10,26 @@ import (
 
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
+	"github.com/opensoha/soha/internal/platform/keyring"
+	"github.com/opensoha/soha/internal/platform/protectedpayload"
 	"gorm.io/gorm"
 )
 
 type Repository struct {
-	db *gorm.DB
+	db          *gorm.DB
+	storageKeys keyring.Ring
 }
 
 const workflowColumns = `id, application_id, workflow_name, cluster_id, namespace, deployment_name, status, steps, metadata, created_at, updated_at,
     scope, COALESCE(delivery_batch_id, ''), version, lease_owner, lease_until, fencing_token, stop_reason, stop_summary`
 
-func New(db *gorm.DB) *Repository {
-	return &Repository{db: db}
+func New(db *gorm.DB, keys ...keyring.Ring) *Repository {
+	r := &Repository{db: db}
+	if len(keys) > 0 {
+		r.storageKeys = keys[0]
+	}
+	return r
 }
 
 func (r *Repository) List(ctx context.Context, applicationID, applicationEnvironmentID string, limit int) ([]domainworkflow.Run, error) {
@@ -47,7 +55,7 @@ func (r *Repository) List(ctx context.Context, applicationID, applicationEnviron
 	defer func() { _ = rows.Close() }()
 	items := make([]domainworkflow.Run, 0, limit)
 	for rows.Next() {
-		item, err := scanWorkflow(rows)
+		item, err := r.scanWorkflow(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +69,7 @@ func (r *Repository) Get(ctx context.Context, runID string) (domainworkflow.Run,
 		WHERE id = ?
 		LIMIT 1
 	`, runID).Row()
-	return scanWorkflowRow(row)
+	return r.scanWorkflowRow(row)
 }
 
 func (r *Repository) Create(ctx context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
@@ -81,7 +89,7 @@ func (r *Repository) createRun(ctx context.Context, item domainworkflow.Run) (do
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow steps: %w", err)
 	}
-	metadata, err := json.Marshal(storedMetadata)
+	metadata, err := r.marshalWorkflowMetadata(item)
 	item.Metadata = storedMetadata
 	delete(item.Metadata, "gatewayAuthorizationCredential")
 	if err != nil {
@@ -97,6 +105,32 @@ func (r *Repository) createRun(ctx context.Context, item domainworkflow.Run) (do
 }
 
 func (r *Repository) Update(ctx context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
+	return r.updateApplicationRun(ctx, item, "")
+}
+
+// UpdateApplicationRunIfCurrent gives one caller ownership of the Run's next transition.
+func (r *Repository) UpdateApplicationRunIfCurrent(ctx context.Context, item domainworkflow.Run, expectedStatus string, approval *domainworkflow.Approval) (domainworkflow.Run, error) {
+	switch expectedStatus {
+	case "running", "waiting_execution", "waiting_approval":
+	default:
+		return domainworkflow.Run{}, apperrors.ErrInvalidArgument
+	}
+	if approval == nil {
+		return r.updateApplicationRun(ctx, item, expectedStatus)
+	}
+	var updated domainworkflow.Run
+	err := dbtx.Within(ctx, r.db, func(txCtx context.Context) error {
+		var err error
+		updated, err = r.updateApplicationRun(txCtx, item, expectedStatus)
+		if err != nil {
+			return err
+		}
+		return r.createApproval(txCtx, *approval)
+	})
+	return updated, err
+}
+
+func (r *Repository) updateApplicationRun(ctx context.Context, item domainworkflow.Run, expectedStatus string) (domainworkflow.Run, error) {
 	if item.Scope != "" && item.Scope != domainworkflow.ScopeApplication {
 		return domainworkflow.Run{}, fmt.Errorf("%w: batch runs require a current execution lease", apperrors.ErrConflict)
 	}
@@ -105,23 +139,33 @@ func (r *Repository) Update(ctx context.Context, item domainworkflow.Run) (domai
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow steps: %w", err)
 	}
-	metadata, err := json.Marshal(storedMetadata)
+	metadata, err := r.marshalWorkflowMetadata(item)
 	item.Metadata = storedMetadata
 	delete(item.Metadata, "gatewayAuthorizationCredential")
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	query := `
 		UPDATE workflow_runs
-		SET status = ?, steps = ?, metadata = ?, updated_at = ?
+		SET status = ?, steps = ?, metadata = ?, updated_at = ?, version = version + 1
 		WHERE id = ? AND scope = 'application'
-	`, item.Status, string(steps), string(metadata), parseTime(item.UpdatedAt), item.ID).Error; err != nil {
+	`
+	args := []any{item.Status, string(steps), string(metadata), parseTime(item.UpdatedAt), item.ID}
+	if expectedStatus != "" {
+		query += ` AND status = ? AND version = ?`
+		args = append(args, expectedStatus, item.Version)
+	}
+	err = dbtx.DB(ctx, r.db).Raw(query+` RETURNING version`, args...).Row().Scan(&item.Version)
+	if errors.Is(err, sql.ErrNoRows) && expectedStatus != "" {
+		return domainworkflow.Run{}, fmt.Errorf("%w: application workflow run has changed", apperrors.ErrConflict)
+	}
+	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("update workflow run: %w", err)
 	}
 	return item, nil
 }
 
-func (r *Repository) CreateApproval(ctx context.Context, item domainworkflow.Approval) error {
+func (r *Repository) createApproval(ctx context.Context, item domainworkflow.Approval) error {
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
 	}
@@ -129,7 +173,7 @@ func (r *Repository) CreateApproval(ctx context.Context, item domainworkflow.App
 	if err != nil {
 		return fmt.Errorf("marshal workflow approval metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO workflow_approvals (id, workflow_run_id, node_id, action, comment, actor_id, actor_name, metadata, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
 	`, item.ID, item.WorkflowRunID, item.NodeID, item.Action, nullable(item.Comment), item.ActorID, nullable(item.ActorName), string(metadata), item.CreatedAt).Error; err != nil {
@@ -258,7 +302,7 @@ func extractWorkflowNodeRuns(metadata map[string]any) []domainworkflow.NodeRun {
 			return nil
 		}
 		var items []domainworkflow.NodeRun
-		if err := json.Unmarshal(encoded, &items); err != nil {
+		if err := protectedpayload.Decode(encoded, &items); err != nil {
 			return nil
 		}
 		return items

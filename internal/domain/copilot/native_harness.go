@@ -64,10 +64,12 @@ type NativeEventPage struct {
 
 func NativeRunProjection(run AgentRun) AgentRun {
 	run.ExecutionOwner = "external"
-	if run.ProviderKind != "native" {
+	if run.ProviderKind != "native" && run.ProviderKind != "dsh" {
 		return run
 	}
-	run.ExecutionOwner = "native"
+	if run.ProviderKind == "native" {
+		run.ExecutionOwner = "native"
+	}
 	run.Phase, _ = run.Output["phase"].(string)
 	run.StopReason, _ = run.Output["stopReason"].(string)
 	run.UsageKnown, _ = run.Output["usageKnown"].(bool)

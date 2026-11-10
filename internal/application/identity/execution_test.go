@@ -85,3 +85,55 @@ func TestExecutionPrincipalRechecksTokenAndSubjectWithoutWideningPermissions(t *
 		})
 	}
 }
+
+func TestExecutionPrincipalReloadsGovernedAIBinding(t *testing.T) {
+	store := &executionTokenStore{loginMappingUserRepo: newLoginMappingUserRepo(),
+		account:  domainaigateway.ServiceAccount{ID: "automation", Name: "Automation", Status: "active"},
+		token:    domainaigateway.ServiceAccountToken{ID: "token", ServiceAccountID: "automation", TokenPrefix: domainaigateway.GovernedServiceAccountTokenPrefix},
+		personal: domainaigateway.PersonalAccessToken{ID: "personal", UserID: "user", TokenPrefix: domainaigateway.GovernedPersonalAccessTokenPrefix},
+	}
+	store.usersByID["user"] = domainidentity.User{ID: "user", Status: "active"}
+	service := newTestServiceWithUserStore(store.loginMappingUserRepo)
+	service.gateway = store
+	for _, skill := range []string{"k8s-sre", "delivery-developer"} {
+		metadata := map[string]any{"governedAI": map[string]any{"mode": "gateway_only", "aiClientId": "codex", "skillId": skill}}
+		store.token.Metadata, store.personal.Metadata = metadata, metadata
+		for _, entry := range []struct{ subject, token string }{{"service_account:automation", "token"}, {"user", "personal"}} {
+			principal, err := service.CurrentExecutionPrincipal(t.Context(), entry.subject, entry.token)
+			if err != nil || principal.GovernedAI == nil || principal.GovernedAI.SkillID != skill {
+				t.Fatalf("current stored binding was not restored: %+v %v", principal.GovernedAI, err)
+			}
+		}
+	}
+	store.token.Metadata, store.personal.Metadata = map[string]any{"governedAI": nil}, map[string]any{"governedAI": nil}
+	for _, entry := range []struct{ subject, token string }{{"service_account:automation", "token"}, {"user", "personal"}} {
+		if _, err := service.CurrentExecutionPrincipal(t.Context(), entry.subject, entry.token); !errors.Is(err, apperrors.ErrUnauthorized) {
+			t.Fatalf("malformed stored binding did not fail closed: %v", err)
+		}
+	}
+}
+
+func TestGovernedCredentialPrefixMustMatchStoredBinding(t *testing.T) {
+	binding := &domainidentity.GovernedAIBinding{Mode: "gateway_only", AIClientID: "codex", SkillID: "k8s-sre"}
+	for _, entry := range []struct {
+		prefix, expected string
+		binding          *domainidentity.GovernedAIBinding
+		allowed          bool
+	}{
+		{"soha_pat_ordinary", "soha_gpat_", nil, true},
+		{"soha_sat_ordinary", "soha_gsat_", nil, true},
+		{"soha_gpat_bound", "soha_gpat_", binding, true},
+		{"soha_gsat_bound", "soha_gsat_", binding, true},
+		{"soha_gpat_bound", "soha_gpat_", nil, false},
+		{"soha_gsat_bound", "soha_gsat_", nil, false},
+		{"soha_pat_ordinary", "soha_gpat_", binding, false},
+		{"soha_sat_ordinary", "soha_gsat_", binding, false},
+		{"soha_gsat_bound", "soha_gpat_", binding, false},
+		{"soha_gpat_bound", "soha_gsat_", binding, false},
+		{"soha_gsat_bound", "soha_gpat_", nil, false},
+	} {
+		if got := credentialBindingMatchesPrefix(entry.binding, entry.prefix, entry.expected); got != entry.allowed {
+			t.Errorf("binding/prefix validation = %v for %s; want %v", got, entry.prefix, entry.allowed)
+		}
+	}
+}

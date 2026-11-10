@@ -56,7 +56,7 @@ func (s *Service) embedResumableIngestion(ctx context.Context, execution *ingest
 			owners[chunk] = i
 		}
 	}
-	// One current-provider probe pins the model, route and dimension. Resume
+	// One probe pins the current embedding source, model, route and dimension. Resume
 	// never silently combines vectors produced by different embedding spaces.
 	space := domainknowledge.EmbeddingBatch{}
 	if err := embedPreparedChunks(ctx, embedder, execution.principal, chunks[:1], &space); err != nil {
@@ -105,11 +105,12 @@ func (s *Service) restoreIngestionVectors(ctx context.Context, execution *ingest
 				continue
 			}
 			previous := staged[j]
-			if previous.Ordinal != chunk.Ordinal || previous.DocumentID != document.ID || previous.KnowledgeBaseID != document.KnowledgeBaseID || previous.ContentHash != chunk.ContentHash || previous.EmbeddingModel != space.Model || previous.EmbeddingRoute != space.Route || !validIngestionVector(previous.Embedding, len(space.Vectors[0])) {
+			if previous.Ordinal != chunk.Ordinal || previous.DocumentID != document.ID || previous.KnowledgeBaseID != document.KnowledgeBaseID || previous.ContentHash != chunk.ContentHash || !space.MatchesChunk(previous) || !validIngestionVector(previous.Embedding, len(space.Vectors[0])) {
 				continue
 			}
 			chunk.Embedding = previous.Embedding
 			chunk.EmbeddingModel, chunk.EmbeddingRoute = previous.EmbeddingModel, previous.EmbeddingRoute
+			chunk.EmbeddingSource = previous.EmbeddingSource
 		}
 	}
 	return nil

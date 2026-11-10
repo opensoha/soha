@@ -68,7 +68,7 @@ func TestClientTestConnectionUsesOAuthBearerToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewWithOptions(Options{Enabled: true, BaseURL: server.URL, Token: "oauth-token", Bearer: true})
+	client := NewWithOptions(Options{Enabled: true, BaseURL: server.URL, Token: "oauth-token", Bearer: true}) // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	if err := client.TestConnection(context.Background()); err != nil {
 		t.Fatalf("TestConnection() error = %v", err)
 	}

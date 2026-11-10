@@ -306,9 +306,7 @@ func ApplicationPolicyConditionsFromMetadata(metadata map[string]any) Applicatio
 		StartTimeUTC: stringValue(values["startTimeUtc"]),
 		EndTimeUTC:   stringValue(values["endTimeUtc"]),
 	}
-	for _, value := range stringSliceValue(values["allowedCidrs"]) {
-		conditions.AllowedCIDRs = append(conditions.AllowedCIDRs, value)
-	}
+	conditions.AllowedCIDRs = append(conditions.AllowedCIDRs, stringSliceValue(values["allowedCidrs"])...)
 	return conditions
 }
 

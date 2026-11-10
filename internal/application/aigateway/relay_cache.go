@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -226,11 +227,11 @@ func (s *Service) relayCacheComponent() *relayResponseCache {
 	return newRelayResponseCache(s.llmRelayRepository(), s.relayCredentialCodec(), s.relayConfig)
 }
 
-func (s *Service) relayResponseCacheAttempt(accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, stream bool, body []byte) relayResponseCacheAttempt {
-	return s.relayCacheComponent().attempt(accessCtx, req, selection, publicModel, stream, body)
+func (s *Service) relayResponseCacheAttempt(accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, stream bool, body []byte, targetURL string) relayResponseCacheAttempt {
+	return s.relayCacheComponent().attempt(accessCtx, req, selection, publicModel, stream, body, targetURL)
 }
 
-func (c *relayResponseCache) attempt(accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, stream bool, body []byte) relayResponseCacheAttempt {
+func (c *relayResponseCache) attempt(accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, stream bool, body []byte, targetURL string) relayResponseCacheAttempt {
 	policy := relayResponseCachePolicyFromRoute(selection.route)
 	mode := relayCacheMode(req)
 	attempt := relayResponseCacheAttempt{policy: policy, status: relayCacheBypass}
@@ -254,7 +255,7 @@ func (c *relayResponseCache) attempt(accessCtx domainidentity.AccessContext, req
 	}
 	scopeKey := relayResponseCacheScopeKey(accessCtx, selection.route)
 	requestHash := relayResponseCacheRequestHash(body)
-	cacheKey := relayResponseCacheKey(c.keySecret, scopeKey, req, selection, publicModel, requestHash, policy.version)
+	cacheKey := relayResponseCacheKey(c.keySecret, scopeKey, req, selection, publicModel, requestHash, policy.version, targetURL)
 	if scopeKey == "" || requestHash == "" || cacheKey == "" {
 		return relayResponseCacheAttempt{policy: policy, status: relayCacheBypass}
 	}
@@ -265,7 +266,7 @@ func (c *relayResponseCache) attempt(accessCtx domainidentity.AccessContext, req
 	attempt.publicModel = strings.TrimSpace(publicModel)
 	attempt.upstreamID = strings.TrimSpace(selection.upstream.ID)
 	attempt.upstreamModel = strings.TrimSpace(selection.route.UpstreamModel)
-	attempt.providerKind = normalizeRelayProviderKind(req.ProviderKind)
+	attempt.providerKind = relayport.NormalizeProvider(req.ProviderKind)
 	attempt.endpoint = strings.TrimSpace(req.Endpoint)
 	if !attempt.forceRefresh && policy.allowRead {
 		attempt.status = relayCacheMiss
@@ -367,32 +368,33 @@ func relayResponseCacheRequestHash(body []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func relayResponseCacheKey(secret, scopeKey string, req LLMRelayHTTPRequest, selection relaySelection, publicModel, requestHash, version string) string {
+func relayResponseCacheKey(secret, scopeKey string, req LLMRelayHTTPRequest, selection relaySelection, publicModel, requestHash, version, targetURL string) string {
 	if scopeKey == "" || requestHash == "" {
 		return ""
 	}
-	keyMaterial := strings.Join([]string{
+	keyMaterial, _ := json.Marshal([]string{
+		"relay-response-cache-v2",
 		scopeKey,
-		normalizeRelayProviderKind(req.ProviderKind),
+		relayport.NormalizeProvider(req.ProviderKind),
 		strings.TrimSpace(req.Endpoint),
 		strings.TrimSpace(publicModel),
+		selection.route.ID,
 		strings.TrimSpace(selection.upstream.ID),
 		strings.TrimSpace(selection.route.UpstreamModel),
-		relayResponseCacheTargetFingerprint(req, selection),
+		relayResponseCacheTargetFingerprint(req, targetURL),
 		strings.TrimSpace(requestHash),
 		strings.TrimSpace(version),
-	}, "\n")
+	})
 	mac := hmac.New(sha256.New, []byte(firstNonEmpty(strings.TrimSpace(secret), "opensoha-relay-cache-key")))
-	_, _ = mac.Write([]byte(keyMaterial))
+	_, _ = mac.Write(keyMaterial)
 	return "sha256:" + hex.EncodeToString(mac.Sum(nil))
 }
 
-func relayResponseCacheTargetFingerprint(req LLMRelayHTTPRequest, selection relaySelection) string {
-	if normalizeRelayProviderKind(req.ProviderKind) != "azure-openai" {
+func relayResponseCacheTargetFingerprint(req LLMRelayHTTPRequest, targetURL string) string {
+	if relayport.NormalizeProvider(req.ProviderKind) != "azure-openai" {
 		return ""
 	}
-	targetURL, err := relayEndpointURLForSelection(selection, "azure-openai", strings.TrimSpace(req.Endpoint))
-	if err != nil || targetURL == "" {
+	if targetURL == "" {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(targetURL))
@@ -480,18 +482,18 @@ func (c *relayResponseCache) store(ctx context.Context, attempt relayResponseCac
 	return relayCacheWrite
 }
 
-func (s *Service) writeRelayCachedResponse(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, stream bool, attempt relayResponseCacheAttempt, started time.Time, writer http.ResponseWriter) (bool, error) {
+func (s *Service) writeRelayCachedResponse(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req LLMRelayHTTPRequest, selection relaySelection, publicModel string, stream bool, attempt relayResponseCacheAttempt, started time.Time, writer http.ResponseWriter) (bool, bool) {
 	if !attempt.enabled || attempt.forceRefresh || !attempt.policy.allowRead || attempt.cacheKey == "" {
-		return false, nil
+		return false, false
 	}
 	now := time.Now().UTC()
 	entry, body, found := s.relayCacheComponent().read(ctx, attempt, now)
 	if !found {
-		return false, nil
+		return false, false
 	}
 	for key, value := range entry.ResponseHeaders {
 		name := http.CanonicalHeaderKey(strings.TrimSpace(key))
-		if name == "" || isSensitiveRelayHeader(name) {
+		if name == "" || relayport.SensitiveHeader(name) {
 			continue
 		}
 		if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
@@ -516,7 +518,7 @@ func (s *Service) writeRelayCachedResponse(ctx context.Context, principal domain
 			CacheStatus:          relayCacheHit,
 			CreatedAt:            started,
 		})
-		return true, nil
+		return true, false
 	}
 	s.relayCacheComponent().recordHit(ctx, entry, now)
 	usage, estimatedTokens := (relayUsageAnalyzer{}).analyze(req, []byte(body), http.StatusOK, "success")
@@ -537,7 +539,7 @@ func (s *Service) writeRelayCachedResponse(ctx context.Context, principal domain
 		CacheStatus:          relayCacheHit,
 		CreatedAt:            started,
 	})
-	return true, nil
+	return true, true
 }
 
 func relayCacheEntryActive(entry domainaigateway.LLMCacheEntry, now time.Time) bool {
@@ -570,40 +572,13 @@ func relayRequestResponseCacheSafe(body []byte) bool {
 	if len(body) == 0 || json.Unmarshal(body, &payload) != nil {
 		return false
 	}
-	return !relayJSONContainsCacheUnsafeValue(payload)
-}
-
-func relayJSONContainsCacheUnsafeValue(value any) bool {
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, item := range typed {
-			switch strings.ToLower(strings.TrimSpace(key)) {
-			case "tools", "tool_choice", "tool_calls", "function_call", "functions", "file", "files", "file_id", "file_data", "filedata", "inlinedata", "inline_data", "cachedcontent", "cached_content", "image", "images", "image_url", "input_image", "audio", "input_audio":
-				return true
-			case "type":
-				text := strings.ToLower(strings.TrimSpace(fmt.Sprint(item)))
-				if strings.Contains(text, "image") || strings.Contains(text, "file") || strings.Contains(text, "audio") || strings.Contains(text, "tool") {
-					return true
-				}
-			}
-			if relayJSONContainsCacheUnsafeValue(item) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			if relayJSONContainsCacheUnsafeValue(item) {
-				return true
-			}
-		}
-	}
-	return false
+	return !relayport.ContainsNonTextPayload(payload)
 }
 
 func relayCacheResponseHeaders(headers http.Header) map[string]any {
 	out := map[string]any{}
 	for _, name := range []string{"Content-Type", "Cache-Control", "X-Request-Id", "Openai-Request-Id", "Request-Id", "Anthropic-Organization-Id"} {
-		if value := headers.Get(name); strings.TrimSpace(value) != "" && !isSensitiveRelayHeader(name) {
+		if value := headers.Get(name); strings.TrimSpace(value) != "" && !relayport.SensitiveHeader(name) {
 			out[http.CanonicalHeaderKey(name)] = value
 		}
 	}

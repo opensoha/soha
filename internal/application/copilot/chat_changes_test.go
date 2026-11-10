@@ -20,7 +20,7 @@ func (f *fakeChatChanges) RequestToolApproval(context.Context, domainidentity.Pr
 
 func TestChatChangeRepeatKeepsSavedRequest(t *testing.T) {
 	gateway := &fakeChatChanges{}
-	service := &Service{workbenchInvoker: gateway}
+	service := &Service{runtime: RuntimeDependencies{ApprovalRequests: gateway}}
 	run := domaincopilot.AgentRun{Input: map[string]any{"_sohaPrincipal": map[string]any{"userId": "user", "roles": []string{"admin"}, "permissionKeys": []string{"ai.gateway.invoke"}}}}
 	input := map[string]any{"toolName": "delivery.applications.create", "arguments": map[string]any{"name": "Example", "key": "example"}}
 	output, err := service.requestChatChange(context.Background(), run, input)

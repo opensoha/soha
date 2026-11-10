@@ -111,6 +111,28 @@ func (s *Service) FindPersonalCommand(ctx context.Context, principal domainident
 	return personalCommandView(command), err
 }
 
+type personalTaskEnvironmentReader interface {
+	FindPersonalTaskEnvironment(context.Context, string, string) (domain.PersonalEnvironmentRecord, error)
+}
+
+func (s *Service) hasNativePersonalTaskLease(ctx context.Context, owner, task string) (bool, error) {
+	reader, ok := s.personalEnvironment.Store.(personalTaskEnvironmentReader)
+	if !ok {
+		return false, apperrors.ErrUnsupportedOperation
+	}
+	owned, err := reader.FindPersonalTaskEnvironment(ctx, owner, task)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if owned.CreatedBy != owner || owned.AssistantID == "" || owned.ActiveTaskID != task {
+		return false, apperrors.ErrConflict
+	}
+	return true, nil
+}
+
 func (s *Service) cleanupNativePersonalTask(ctx context.Context, lease domain.NativeLease, cp nativeCheckpoint) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 40*time.Second)
 	defer cancel()
@@ -121,44 +143,51 @@ func (s *Service) cleanupNativePersonalTask(ctx context.Context, lease domain.Na
 	parent := domain.NativeTaskParent{RunID: lease.Run.ID, OwnerID: lease.Run.CreatedBy, SessionID: lease.Run.SessionID, RequestHash: lease.RequestHash, Deadline: cp.Budget.Deadline}
 	confirmed := false
 	err = s.WithNativeTaskParent(ctx, parent, true, func(boundedCtx context.Context) error {
-		// At most an original-lease inspection followed by a release. Both use
-		// the existing independent cleanup budget; unknown work is never replayed.
-		for range 2 {
-			item, err := s.personalEnvironmentForChange(boundedCtx, principal, "reconcile", "", "en-US")
-			if errors.Is(err, apperrors.ErrNotFound) {
-				confirmed = true
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			if item.ActiveTaskID != domain.PersonalTaskID(parent.RunID) {
-				confirmed = true // Never stop an unrelated task or a newer lease.
-				return nil
-			}
-			if item.OperationUntil != nil && item.OperationUntil.After(time.Now()) {
-				return apperrors.ErrConflict
-			}
-			action := "release"
-			if item.State == "unknown" || item.State == "pending" {
-				action = "inspect"
-			}
-			if err := s.ReserveNativeTaskToolCall(boundedCtx, parent, true); err != nil {
-				return err
-			}
-			request := contractenv.Request{SchemaVersion: contractenv.RequestVersion, Action: action, Lease: item.Lease}
-			view, _, err := s.dispatchPersonalEnvironment(boundedCtx, principal, "task_cleanup", item, request)
-			if err != nil {
-				return err
-			}
-			if view.State == "sleeping" || view.State == "missing" || view.State == "expired" || item.Backend == "vm" && action == "release" && view.State == "ready" {
-				confirmed = true
-				return nil
-			}
+		owned, err := s.hasNativePersonalTaskLease(boundedCtx, principal.UserID, domain.PersonalTaskID(parent.RunID))
+		if err != nil || !owned {
+			confirmed = err == nil
+			return err
 		}
-		return nil
+		confirmed, err = s.releaseNativePersonalTask(boundedCtx, principal, parent)
+		return err
 	})
 	return err == nil && confirmed
+}
+
+func (s *Service) releaseNativePersonalTask(ctx context.Context, principal domainidentity.Principal, parent domain.NativeTaskParent) (bool, error) {
+	// At most an original-lease inspection followed by a release. Both use
+	// the existing independent cleanup budget; unknown work is never replayed.
+	for range 2 {
+		item, err := s.personalEnvironmentForChange(ctx, principal, "reconcile", "", "en-US")
+		if errors.Is(err, apperrors.ErrNotFound) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if item.ActiveTaskID != domain.PersonalTaskID(parent.RunID) {
+			return true, nil // Never stop an unrelated task or a newer lease.
+		}
+		if item.OperationUntil != nil && item.OperationUntil.After(time.Now()) {
+			return false, apperrors.ErrConflict
+		}
+		action := "release"
+		if item.State == "unknown" || item.State == "pending" {
+			action = "inspect"
+		}
+		if err := s.ReserveNativeTaskToolCall(ctx, parent, true); err != nil {
+			return false, err
+		}
+		request := contractenv.Request{SchemaVersion: contractenv.RequestVersion, Action: action, Lease: item.Lease}
+		view, _, err := s.dispatchPersonalEnvironment(ctx, principal, "task_cleanup", item, request)
+		if err != nil {
+			return false, err
+		}
+		if view.State == "sleeping" || view.State == "missing" || view.State == "expired" || item.Backend == "vm" && action == "release" && view.State == "ready" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Service) personalCommandForOwner(ctx context.Context, principal domainidentity.Principal, id string) (domain.PersonalEnvironmentRecord, domain.PersonalCommandRecord, error) {

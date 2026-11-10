@@ -12,19 +12,10 @@ import (
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
-	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainknowledge "github.com/opensoha/soha/internal/domain/knowledge"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/redaction"
 )
-
-type chatToolInvoker interface {
-	InvokeTool(context.Context, domainidentity.Principal, domainaigateway.ToolInvocationRequest) (domainaigateway.ToolInvocationResult, error)
-}
-
-type chatChangeRequester interface {
-	RequestToolApproval(context.Context, domainidentity.Principal, domainaigateway.ToolInvocationRequest) (domainaigateway.ToolInvocationResult, error)
-}
 
 func chatToolEvents(run domaincopilot.AgentRun, execution domaincopilot.ToolExecution, eventType string) []domaincopilot.WorkbenchStreamEvent {
 	if run.CapabilityID != "general" {
@@ -74,8 +65,8 @@ func (s *Service) executeChatAgentTool(ctx context.Context, run domaincopilot.Ag
 	if binding.ToolName == "change.request" {
 		return s.requestChatChange(ctx, run, input)
 	}
-	gateway, ok := s.workbenchInvoker.(chatToolInvoker)
-	if !ok {
+	gateway := s.runtime.Tools
+	if gateway == nil {
 		return nil, fmt.Errorf("%w: AI Gateway tools are unavailable", apperrors.ErrUnsupportedOperation)
 	}
 	principal, err := agentToolPrincipal(run)
@@ -100,7 +91,7 @@ func (s *Service) executeChatAgentTool(ctx context.Context, run domaincopilot.Ag
 		return nil, err
 	}
 	version := ""
-	if run.ProviderKind == "native" {
+	if run.ProviderKind == "native" || run.ProviderKind == "dsh" {
 		version = stringValue(binding.Config["capabilityVersion"])
 		ctx = appaigateway.WithNativeWorkbenchInvocation(ctx)
 	}

@@ -155,7 +155,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: soha
-          image: ghcr.io/opensoha/soha:v0.1.11
+          image: ghcr.io/opensoha/soha:v0.1.12
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -165,6 +165,14 @@ spec:
           env:
             - name: SOHA_CONFIG_FILE
               value: /app/configs/config.yaml
+            # Enable after installing a compatible Core/Web/CLI combination.
+            # Set the externally reachable HTTPS console URL (with its base path).
+            - name: SOHA_AUTH_CLI_ENABLED
+              value: "false"
+            - name: SOHA_AUTH_CLI_PUBLIC_URL
+              value: ""
+            - name: SOHA_AUTH_CLI_ALLOW_PASSWORD
+              value: "true"
             - name: SOHA_DATABASE_HOST
               value: soha-postgres
             - name: SOHA_DATABASE_PASSWORD

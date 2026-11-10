@@ -17,7 +17,7 @@ func (s *Service) workerToolScopes(ctx context.Context, principal domainidentity
 		if err != nil {
 			return nil, err
 		}
-		if _, err := workerPoolFromTask(task); err != nil {
+		if _, err := s.workerPoolFromTask(task); err != nil {
 			return nil, err
 		}
 		return []map[string]string{taskCapabilityScope(task)}, nil
@@ -56,7 +56,7 @@ func (s *Service) AssessWorkerReadiness(ctx context.Context, principal domainide
 	if err := s.authorizeWorkerPoolView(ctx, principal); err != nil {
 		return result, err
 	}
-	pool, err := workerPoolFromTask(task)
+	pool, err := s.workerPoolFromTask(task)
 	if err != nil {
 		return result, err
 	}
@@ -103,6 +103,9 @@ func (s *Service) FindWorkerCreation(ctx context.Context, principal domainidenti
 	}
 	if !found {
 		return domain.Task{}, apperrors.ErrNotFound
+	}
+	if _, err := s.workerPoolFromTask(task); err != nil {
+		return domain.Task{}, err
 	}
 	return domain.WithOperationState(task, time.Now().UTC()), nil
 }

@@ -9,9 +9,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"syscall"
 	"time"
+
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"github.com/opensoha/soha/internal/networkgateway"
 	"github.com/opensoha/soha/internal/networkprotocol"
@@ -75,21 +78,21 @@ func runGateway(config networkgateway.Config, privateKey [32]byte, control *netw
 	if err != nil {
 		return fail(err)
 	}
-	var telemetry networkgateway.Telemetry
-	if config.IngestURL != "" {
-		client, err := config.IngestHTTPClient()
-		if err != nil {
-			return fail(err)
-		}
-		metrics, err := networkgateway.NewTelemetryClient(config.IngestURL, config.RuntimeID, client, schemas)
-		if err != nil {
-			return fail(err)
-		}
-		metrics.SetVPNPeerCounters(system.VPNPeerCounters)
-		telemetry = metrics
+	telemetry, err := gatewayTelemetry(config, schemas, system.VPNPeerCounters)
+	if err != nil {
+		return fail(err)
 	}
 	runtime, err := networkgateway.NewRuntime(config.RuntimeID, control, executor, telemetry, config.PollInterval, config.HeartbeatInterval, config.MaxClockSkew, logger)
 	if err != nil {
+		return fail(err)
+	}
+	cleanup, cancelCleanup := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := executor.Disable(cleanup); err != nil {
+		cancelCleanup()
+		return fail(err)
+	}
+	cancelCleanup()
+	if err := runtime.ConfigureState(filepath.Join(filepath.Dir(config.WireGuardPrivateKeyFile), "configuration-floor.json"), config.ControlURL, wgtypes.Key(privateKey).PublicKey().String()); err != nil {
 		return fail(err)
 	}
 	health := &http.Server{Addr: config.HealthAddress, Handler: runtime.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10}
@@ -158,4 +161,21 @@ func clientVersion() string {
 func fail(err error) int {
 	_, _ = fmt.Fprintln(os.Stderr, redaction.LogText(err.Error(), 2048))
 	return 1
+}
+
+func gatewayTelemetry(config networkgateway.Config, schemas *networkprotocol.Schemas, peerCounters func(string) ([]wgtypes.Peer, error)) (networkgateway.Telemetry, error) {
+	var telemetry networkgateway.Telemetry
+	if config.IngestURL != "" {
+		client, err := config.IngestHTTPClient()
+		if err != nil {
+			return nil, err
+		}
+		metrics, err := networkgateway.NewTelemetryClient(config.IngestURL, config.RuntimeID, client, schemas)
+		if err != nil {
+			return nil, err
+		}
+		metrics.SetVPNPeerCounters(peerCounters)
+		telemetry = metrics
+	}
+	return telemetry, nil
 }

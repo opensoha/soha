@@ -346,6 +346,9 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 	case "network-access":
 		return visibilityRule{permissions: []string{
 			appaccess.PermNetworkAccessEndpointDevicesView,
+			"network_access.content_transfers.view",
+			"network_access.content_destinations.view",
+			"network_access.content_transfer_events.view",
 			appaccess.PermNetworkAccessSitesView,
 			appaccess.PermNetworkAccessSpacesView,
 			appaccess.PermNetworkAccessResourcesView,
@@ -355,6 +358,7 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermNetworkAccessEnrollmentsView,
 			appaccess.PermNetworkAccessAccessGrantsView,
 			appaccess.PermNetworkAccessPolicyView,
+			"network_access.endpoint_response_policies.view", "network_access.endpoint_response_events.view",
 			"network_access.vpn_profiles.view", "network_access.vpn_selection_policies.view", "network_access.vpn_dashboard.view",
 		}}, true
 	case "network-access-vpn-profiles":
@@ -369,6 +373,10 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSitesView}}, true
 	case "network-access-settings":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSitesView, appaccess.PermNetworkAccessEnrollmentsView}}, true
+	case "network-access-content-transfers":
+		return visibilityRule{permissions: []string{"network_access.content_transfers.view", "network_access.content_destinations.view", "network_access.content_transfer_events.view"}}, true
+	case "network-access-endpoint-response":
+		return visibilityRule{permissions: []string{"network_access.endpoint_response_policies.view", "network_access.endpoint_response_events.view", "network_access.endpoint_response_events.maintenance"}}, true
 	case "network-access-spaces":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSpacesView}}, true
 	case "network-access-resources":
@@ -424,6 +432,7 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermNetworkAccessEnrollmentsView,
 			appaccess.PermNetworkAccessAccessGrantsView,
 			appaccess.PermNetworkAccessPolicyView,
+			"network_access.endpoint_response_policies.view", "network_access.endpoint_response_events.view",
 		}}, true
 	case "identity-software":
 		return visibilityRule{permissions: []string{appaccess.PermSoftwarePackageView}}, true

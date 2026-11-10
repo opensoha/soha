@@ -75,7 +75,7 @@ func (h *ApplicationHandler) ListApplications(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *ApplicationHandler) GetApplication(c *gin.Context) {
@@ -134,7 +134,7 @@ func (h *ApplicationHandler) ListApplicationServices(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	writeDeliveryList(c, items)
 }
 
 func (h *ApplicationHandler) GetApplicationService(c *gin.Context) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +24,100 @@ type fakeBundleManager struct {
 	clusterIDs []string
 	bundle     *k8sinfra.Bundle
 	err        error
+}
+
+type rotatingBundleManager struct {
+	mu     sync.RWMutex
+	bundle *k8sinfra.Bundle
+	err    error
+}
+
+func (m *rotatingBundleManager) ClusterIDs() []string { return []string{"cluster-1"} }
+func (m *rotatingBundleManager) Bundle(context.Context, string) (*k8sinfra.Bundle, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.bundle, m.err
+}
+func (m *rotatingBundleManager) set(bundle *k8sinfra.Bundle, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bundle, m.err = bundle, err
+}
+
+func TestCurrentConnectionInvalidatesOldInformerAndSubscriptions(t *testing.T) {
+	first := &k8sinfra.Bundle{Typed: fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "old", Namespace: "ns"}})}
+	second := &k8sinfra.Bundle{Typed: fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "new", Namespace: "ns"}})}
+	manager := &rotatingBundleManager{bundle: first}
+	service := New(manager)
+	t.Cleanup(service.Stop)
+	if err := service.RegisterCluster(t.Context(), "cluster-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 3*time.Second, func() bool { return service.Ready("cluster-1") })
+	old, _ := service.entry("cluster-1")
+	events, cancel, err := service.Subscribe("cluster-1", "ns", []string{"Pod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cancel)
+	<-events
+	manager.set(second, nil)
+	if _, err := service.ListPods("cluster-1", "ns"); !errors.Is(err, ErrCacheNotReady) {
+		t.Fatalf("old cache accepted: %v", err)
+	}
+	if _, open := <-events; open {
+		t.Fatal("old subscription remains open")
+	}
+	if err := service.RegisterCluster(t.Context(), "cluster-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 3*time.Second, func() bool { return service.Ready("cluster-1") })
+	pods, err := service.ListPods("cluster-1", "ns")
+	if err != nil || len(pods) != 1 || pods[0].Name != "new" {
+		t.Fatalf("wrong connection data: %v %v", pods, err)
+	}
+	events, cancelNew, err := service.Subscribe("cluster-1", "ns", []string{"Pod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cancelNew)
+	<-events
+	service.publishInformerObject(old, "cluster-1", "v1", "Pod", true, "added", &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "late-old", Namespace: "ns"}})
+	select {
+	case event := <-events:
+		t.Fatalf("old generation callback published: %v", event)
+	default:
+	}
+	manager.set(nil, errors.New("database unavailable"))
+	if _, err := service.ListPods("cluster-1", "ns"); !errors.Is(err, ErrCacheNotReady) {
+		t.Fatalf("database failure accepted: %v", err)
+	}
+	if _, open := <-events; open {
+		t.Fatal("failed connection subscription remains open")
+	}
+}
+
+func TestRegisterReplacesConnectionGenerationWithoutCacheRead(t *testing.T) {
+	manager := &rotatingBundleManager{bundle: &k8sinfra.Bundle{Typed: fake.NewSimpleClientset()}}
+	service := New(manager)
+	t.Cleanup(service.Stop)
+	if err := service.RegisterCluster(t.Context(), "cluster-1"); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := service.entry("cluster-1")
+	manager.set(&k8sinfra.Bundle{Typed: fake.NewSimpleClientset()}, nil)
+	if err := service.RegisterCluster(t.Context(), "cluster-1"); err != nil {
+		t.Fatal(err)
+	}
+	current, _ := service.entry("cluster-1")
+	if old == current {
+		t.Fatal("registration retained old generation")
+	}
+	select {
+	case <-old.stopCh:
+	default:
+		t.Fatal("old informer did not stop")
+	}
 }
 
 func (m fakeBundleManager) ClusterIDs() []string { return m.clusterIDs }

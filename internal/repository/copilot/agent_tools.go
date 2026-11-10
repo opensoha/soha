@@ -28,19 +28,21 @@ func (r *Repository) withLockedAgentRun(ctx context.Context, runID string, mutat
 // The row lock covers only the reservation, never the remote tool execution.
 func (r *Repository) BeginAgentToolCall(ctx context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
 	return r.withLockedAgentRun(ctx, input.RunID, func(repo *Repository, current domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
-		if current.Status != domaincopilot.AgentRunStatusRunning || current.ClaimedByAgentID == "" || current.ClaimedByAgentID != input.AgentID || current.CallbackToken == "" || current.CallbackToken != input.CallbackToken {
+		if agentRunExecutionReadOnly(current) || current.Status != domaincopilot.AgentRunStatusRunning || current.ClaimedByAgentID == "" || current.ClaimedByAgentID != input.AgentID || current.CallbackToken == "" || current.CallbackToken != input.CallbackToken {
 			return domaincopilot.AgentRun{}, fmt.Errorf("%w: run is not active for this tool caller", apperrors.ErrAccessDenied)
 		}
-		if len(current.ToolExecutions) >= 8 || len(input.ToolExecutions) != 1 {
-			return domaincopilot.AgentRun{}, fmt.Errorf("%w: tool call budget exhausted", apperrors.ErrInvalidArgument)
-		}
-		for _, tool := range current.ToolExecutions {
-			if tool.Status == "running" {
-				return domaincopilot.AgentRun{}, fmt.Errorf("%w: a tool call is already active", apperrors.ErrConflict)
+		if current.CapabilityID == "general" {
+			if len(current.ToolExecutions) >= 8 || len(input.ToolExecutions) != 1 {
+				return domaincopilot.AgentRun{}, fmt.Errorf("%w: tool call budget exhausted", apperrors.ErrInvalidArgument)
 			}
-		}
-		if input.ToolExecutions[0].ToolName == "artifact.preview" && len(current.AnalysisArtifacts) >= 4 {
-			return domaincopilot.AgentRun{}, fmt.Errorf("%w: artifact budget exhausted", apperrors.ErrInvalidArgument)
+			for _, tool := range current.ToolExecutions {
+				if tool.Status == "running" {
+					return domaincopilot.AgentRun{}, fmt.Errorf("%w: a tool call is already active", apperrors.ErrConflict)
+				}
+			}
+			if input.ToolExecutions[0].ToolName == "artifact.preview" && len(current.AnalysisArtifacts) >= 4 {
+				return domaincopilot.AgentRun{}, fmt.Errorf("%w: artifact budget exhausted", apperrors.ErrInvalidArgument)
+			}
 		}
 		return repo.updateAgentRunCallback(ctx, current, input)
 	})
@@ -50,7 +52,7 @@ func (r *Repository) BeginAgentToolCall(ctx context.Context, input domaincopilot
 // child ID makes repeated delegate requests return the original run.
 func (r *Repository) CreateDelegatedAgentRun(ctx context.Context, parentID string, child domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
 	return r.withLockedAgentRun(ctx, parentID, func(repo *Repository, parent domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
-		if parent.Status != domaincopilot.AgentRunStatusRunning || parent.ParentRunID != "" || child.ParentRunID != parent.ID || child.ID != parent.ID+":specialist" || child.CreatedBy != parent.CreatedBy || child.SessionID != parent.SessionID {
+		if agentRunExecutionReadOnly(parent) || parent.Status != domaincopilot.AgentRunStatusRunning || parent.ParentRunID != "" || child.ParentRunID != parent.ID || child.ID != parent.ID+":specialist" || child.CreatedBy != parent.CreatedBy || child.SessionID != parent.SessionID {
 			return domaincopilot.AgentRun{}, fmt.Errorf("%w: specialist parent is not active", apperrors.ErrAccessDenied)
 		}
 		existing, err := repo.GetAgentRun(ctx, parent.CreatedBy, child.ID)
@@ -93,4 +95,9 @@ func (r *Repository) acknowledgeAgentCancellation(ctx context.Context, current d
 	updated, err := r.GetAgentRun(ctx, "", current.ID)
 	updated.CallbackTransition = domaincopilot.AgentRunCallbackTransitionTerminal
 	return updated, err
+}
+
+// Storage admission rechecks the frozen execution policy under the run row lock.
+func agentRunExecutionReadOnly(run domaincopilot.AgentRun) bool {
+	return run.ProviderKind == "native" || run.Output["executionReadOnly"] == true || run.Output["stopReason"] == "legacy_reconciliation_required"
 }

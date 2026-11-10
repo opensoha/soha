@@ -11,6 +11,7 @@ import (
 
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -45,7 +46,12 @@ func (r *Repository) UpdateSource(ctx context.Context, packageID string, input d
 	if err != nil {
 		return domainmanifest.Source{}, fmt.Errorf("encode manifest source exclude patterns: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	var result *gorm.DB
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, strings.TrimSpace(packageID), ""); err != nil {
+			return err
+		}
+		result = tx.Exec(`
 		UPDATE manifest_sources
 		SET mode = ?, repository_id = NULLIF(?, ''), ref_type = NULLIF(?, ''), ref_value = ?,
 			source_path = ?, include_patterns = ?::jsonb, exclude_patterns = ?::jsonb,
@@ -53,13 +59,15 @@ func (r *Repository) UpdateSource(ctx context.Context, packageID string, input d
 			generation = generation + 1, updated_at = CURRENT_TIMESTAMP
 		WHERE package_id = ? AND generation = ?
 	`, input.Mode, input.RepositoryID, input.RefType, input.RefValue, input.Path,
-		string(includePatterns), string(excludePatterns), input.SyncPolicy, input.PollIntervalSeconds,
-		input.AutoPublish, input.AutoDeploy, strings.TrimSpace(packageID), input.ExpectedGeneration)
-	if result.Error != nil {
-		if hasSQLState(result.Error, "23503") {
+			string(includePatterns), string(excludePatterns), input.SyncPolicy, input.PollIntervalSeconds,
+			input.AutoPublish, input.AutoDeploy, strings.TrimSpace(packageID), input.ExpectedGeneration)
+		return result.Error
+	})
+	if err != nil {
+		if hasSQLState(err, "23503") {
 			return domainmanifest.Source{}, fmt.Errorf("%w: manifest source repository does not exist", apperrors.ErrInvalidArgument)
 		}
-		return domainmanifest.Source{}, fmt.Errorf("update manifest source: %w", result.Error)
+		return domainmanifest.Source{}, fmt.Errorf("update manifest source: %w", referenceLifecycleError(err))
 	}
 	if result.RowsAffected == 0 {
 		if _, err := r.GetSource(ctx, packageID); err != nil {
@@ -101,7 +109,7 @@ func scanSource(source scanner) (domainmanifest.Source, error) {
 }
 
 func (r *Repository) ListBindings(ctx context.Context, packageID string) ([]domainmanifest.EnvironmentBinding, error) {
-	rows, err := r.db.WithContext(ctx).Raw(bindingSelect+` WHERE package_id = ? ORDER BY created_at, id`, strings.TrimSpace(packageID)).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(bindingSelect+` WHERE package_id = ? ORDER BY created_at, id`, strings.TrimSpace(packageID)).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("list manifest bindings: %w", err)
 	}
@@ -118,7 +126,7 @@ func (r *Repository) ListBindings(ctx context.Context, packageID string) ([]doma
 }
 
 func (r *Repository) GetBinding(ctx context.Context, bindingID string) (domainmanifest.EnvironmentBinding, error) {
-	item, err := scanEnvironmentBinding(r.db.WithContext(ctx).Raw(bindingSelect+` WHERE id = ? LIMIT 1`, strings.TrimSpace(bindingID)).Row())
+	item, err := scanEnvironmentBinding(dbtx.DB(ctx, r.db).Raw(bindingSelect+` WHERE id = ? LIMIT 1`, strings.TrimSpace(bindingID)).Row())
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainmanifest.EnvironmentBinding{}, apperrors.ErrNotFound
 	}
@@ -138,7 +146,13 @@ func (r *Repository) CreateBinding(ctx context.Context, item domainmanifest.Envi
 	if err != nil {
 		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode template parameters: %w", err)
 	}
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockPackageConfiguration(tx, item.PackageID, "", item.ApplicationEnvironmentID); err != nil {
+			return err
+		}
+		if err := lockBindingProjectionPackage(tx, item.PackageID); err != nil {
+			return err
+		}
 		if err := tx.Exec(`
 			INSERT INTO manifest_bindings (
 				id, package_id, application_environment_id, environment_key, cluster_id, namespace,
@@ -153,7 +167,7 @@ func (r *Repository) CreateBinding(ctx context.Context, item domainmanifest.Envi
 		return syncBindingProjection(tx, item.PackageID)
 	})
 	if err != nil {
-		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("create manifest binding: %w", err)
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("create manifest binding: %w", referenceLifecycleError(err))
 	}
 	return r.GetBinding(ctx, item.ID)
 }
@@ -171,7 +185,14 @@ func (r *Repository) UpdateBinding(ctx context.Context, item domainmanifest.Envi
 	if err != nil {
 		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode template parameters: %w", err)
 	}
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		packageID, err := lockBindingConfiguration(tx, item.ID, item.ApplicationEnvironmentID, true)
+		if err != nil {
+			return err
+		}
+		if packageID != item.PackageID {
+			return apperrors.ErrConflict
+		}
 		result := tx.Exec(`
 			UPDATE manifest_bindings
 			SET application_environment_id = ?, environment_key = ?, cluster_id = ?, namespace = ?,
@@ -196,40 +217,42 @@ func (r *Repository) UpdateBinding(ctx context.Context, item domainmanifest.Envi
 			}
 			return domainmanifest.EnvironmentBinding{}, fmt.Errorf("%w: manifest binding version changed", apperrors.ErrConflict)
 		}
-		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("update manifest binding: %w", err)
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("update manifest binding: %w", referenceLifecycleError(err))
 	}
 	return r.GetBinding(ctx, item.ID)
 }
 
 func (r *Repository) DeleteBinding(ctx context.Context, bindingID string) error {
-	existing, err := r.GetBinding(ctx, bindingID)
-	if err != nil {
-		return err
-	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Exec(`DELETE FROM manifest_bindings WHERE id = ?`, existing.ID)
+	bindingID = strings.TrimSpace(bindingID)
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		packageID, err := lockBindingConfiguration(tx, bindingID, "", true)
+		if err != nil {
+			return err
+		}
+		result := tx.Exec(`DELETE FROM manifest_bindings WHERE id = ?`, bindingID)
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
 			return apperrors.ErrNotFound
 		}
-		return syncBindingProjection(tx, existing.PackageID)
+		return syncBindingProjection(tx, packageID)
 	})
+	return referenceLifecycleError(err)
 }
 
 const bindingSelect = `SELECT id, package_id, application_environment_id, environment_key, cluster_id, namespace,
 	overlay, rollout_strategy_id, verification_policy_id, drift_policy, deletion_policy, enabled, version,
-	created_at, updated_at, COALESCE(kustomize, 'null'::jsonb), template_parameters FROM manifest_bindings`
+	created_at, updated_at, COALESCE(kustomize, 'null'::jsonb), template_parameters, COALESCE(template_selection, 'null'::jsonb) FROM manifest_bindings`
 
 func scanEnvironmentBinding(source scanner) (domainmanifest.EnvironmentBinding, error) {
 	var item domainmanifest.EnvironmentBinding
-	var overlay, kustomize, templateParameters []byte
+	var overlay, kustomize, templateParameters, selection []byte
 	if err := source.Scan(
 		&item.ID, &item.PackageID, &item.ApplicationEnvironmentID, &item.EnvironmentKey,
 		&item.ClusterID, &item.Namespace, &overlay, &item.RolloutStrategyID,
 		&item.VerificationPolicyID, &item.DriftPolicy, &item.DeletionPolicy, &item.Enabled,
-		&item.Version, &item.CreatedAt, &item.UpdatedAt, &kustomize, &templateParameters,
+		&item.Version, &item.CreatedAt, &item.UpdatedAt, &kustomize, &templateParameters, &selection,
 	); err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
 	}
@@ -244,6 +267,9 @@ func scanEnvironmentBinding(source scanner) (domainmanifest.EnvironmentBinding, 
 	}
 	if err := json.Unmarshal(templateParameters, &item.TemplateParameters); err != nil {
 		return item, fmt.Errorf("decode template parameters: %w", err)
+	}
+	if err := json.Unmarshal(selection, &item.TemplateSelection); err != nil {
+		return item, fmt.Errorf("decode template selection: %w", err)
 	}
 	return item, nil
 }
@@ -407,7 +433,7 @@ const deploymentSelectQuery = `SELECT deployment.id, deployment.package_id, depl
 	COALESCE(status.phase, 'pending'), status.last_reconciled_at,
 	COALESCE(status.last_execution_task_id, ''), COALESCE(status.drift, '{}'::jsonb),
 	COALESCE(status.last_error_code, ''), COALESCE(status.last_error_message, ''),
-	deployment.created_at, deployment.updated_at, deployment.delivery_snapshot` + deploymentJoins
+	deployment.created_at, deployment.updated_at, deployment.delivery_snapshot, status.applied_template` + deploymentJoins
 
 const deploymentCountQuery = `SELECT COUNT(*)` + deploymentJoins
 
@@ -460,6 +486,7 @@ func scanDeployment(source scanner) (domainmanifest.Deployment, error) {
 	var item domainmanifest.Deployment
 	var drift []byte
 	var snapshot []byte
+	var appliedTemplate []byte
 	if err := source.Scan(
 		&item.ID, &item.PackageID, &item.BindingID, &item.Generation,
 		&item.Spec.DesiredRevision, &item.Spec.DesiredDigest, &item.Spec.ReconcilePolicy,
@@ -467,9 +494,14 @@ func scanDeployment(source scanner) (domainmanifest.Deployment, error) {
 		&item.Status.AppliedRevision, &item.Status.AppliedDigest, &item.Status.LastKnownGoodRevision,
 		&item.Status.Phase, &item.Status.LastReconciledAt, &item.Status.LastExecutionTaskID, &drift,
 		&item.Status.LastErrorCode,
-		&item.Status.LastErrorMessage, &item.CreatedAt, &item.UpdatedAt, &snapshot,
+		&item.Status.LastErrorMessage, &item.CreatedAt, &item.UpdatedAt, &snapshot, &appliedTemplate,
 	); err != nil {
 		return domainmanifest.Deployment{}, err
+	}
+	if len(appliedTemplate) > 0 {
+		if err := json.Unmarshal(appliedTemplate, &item.Status.AppliedTemplate); err != nil {
+			return item, fmt.Errorf("decode applied template: %w", err)
+		}
 	}
 	item.Status.Conditions = []domainmanifest.Condition{}
 	if len(snapshot) > 0 {
@@ -496,6 +528,15 @@ func (r *Repository) loadDeploymentDetails(ctx context.Context, item *domainmani
 	inventory, err := r.listInventory(ctx, item.ID, item.Generation)
 	if err != nil {
 		return err
+	}
+	// Selecting a Plan advances desired generation before any new observation.
+	// Retain the last observed identities until this generation returns inventory;
+	// their original generation and timestamps do not claim new rollout health.
+	if len(inventory) == 0 && item.Spec.DeliverySnapshot != nil && item.Status.ObservedGeneration > 0 && item.Status.ObservedGeneration < item.Generation {
+		inventory, err = r.listInventory(ctx, item.ID, item.Status.ObservedGeneration)
+		if err != nil {
+			return err
+		}
 	}
 	item.Status.Conditions = conditions
 	item.Status.Inventory = inventory
@@ -557,4 +598,14 @@ func (r *Repository) listInventory(ctx context.Context, deploymentID string, gen
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// Referenced source identity may only be removed after explicit detachment.
+func referenceLifecycleError(err error) error {
+	for _, state := range []string{"23001", "23503", "23514", "40001", "40P01"} {
+		if hasSQLState(err, state) {
+			return fmt.Errorf("%w: source identity is referenced or changed concurrently; review active consumers", apperrors.ErrConflict)
+		}
+	}
+	return err
 }

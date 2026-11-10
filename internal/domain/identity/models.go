@@ -14,7 +14,8 @@ type Principal struct {
 	Tags           []string `json:"tags"`
 	PermissionKeys []string `json:"permissionKeys,omitempty"`
 	// AccessTokenID retains revocation and permission limits across async execution.
-	AccessTokenID string `json:"-"`
+	AccessTokenID string             `json:"-"`
+	GovernedAI    *GovernedAIBinding `json:"-"`
 }
 
 // User is the persistence-neutral identity record used by authentication services.
@@ -107,23 +108,30 @@ type PasswordChange struct {
 }
 
 type AccessContext struct {
-	TokenID     string         `json:"tokenId"`
-	TokenKind   string         `json:"tokenKind,omitempty"`
-	TokenPrefix string         `json:"tokenPrefix,omitempty"`
-	SessionID   string         `json:"sessionId,omitempty"`
-	SubjectType string         `json:"subjectType,omitempty"`
-	SubjectID   string         `json:"subjectId,omitempty"`
-	Scopes      []string       `json:"scopes,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
-	ExpiresAt   time.Time      `json:"expiresAt"`
+	// AuthzVersion freezes the session authorization epoch for bounded streams.
+	AuthzVersion int64          `json:"-"`
+	TokenID      string         `json:"tokenId"`
+	TokenKind    string         `json:"tokenKind,omitempty"`
+	TokenPrefix  string         `json:"tokenPrefix,omitempty"`
+	SessionID    string         `json:"sessionId,omitempty"`
+	SubjectType  string         `json:"subjectType,omitempty"`
+	SubjectID    string         `json:"subjectId,omitempty"`
+	Scopes       []string       `json:"scopes,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	ExpiresAt    time.Time      `json:"expiresAt"`
 }
 
 type TokenSet struct {
-	AccessToken  string    `json:"accessToken"`
-	RefreshToken string    `json:"refreshToken"`
-	TokenType    string    `json:"tokenType"`
-	ExpiresIn    int64     `json:"expiresIn"`
-	ExpiresAt    time.Time `json:"expiresAt"`
+	CredentialKind           string     `json:"credentialKind,omitempty"`
+	ProtocolVersion          int        `json:"protocolVersion,omitempty"`
+	RefreshExpiresAt         *time.Time `json:"refreshExpiresAt,omitempty"`
+	SessionAbsoluteExpiresAt *time.Time `json:"sessionAbsoluteExpiresAt,omitempty"`
+	SessionID                string     `json:"sessionId,omitempty"`
+	AccessToken              string     `json:"accessToken"`
+	RefreshToken             string     `json:"refreshToken"`
+	TokenType                string     `json:"tokenType"`
+	ExpiresIn                int64      `json:"expiresIn"`
+	ExpiresAt                time.Time  `json:"expiresAt"`
 }
 
 type AuthResult struct {

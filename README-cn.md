@@ -114,7 +114,7 @@ PostgreSQL + Kubernetes 集群
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Go 1.27.2、Gin、PostgreSQL、Kubernetes `client-go` |
+| 后端 | Go 1.27.3、Gin、PostgreSQL、Kubernetes `client-go` |
 | 前端 | React 18、TypeScript 5、Vite 6、React Router 6、TanStack Query 5、Zustand 5、Ant Design 6、Tailwind CSS 4 |
 | 文档 | sibling `soha-docs` 仓库中的 Next.js 16 与 Nextra 4 |
 | 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML；Helm Chart 在 `soha-helm` 维护 |
@@ -137,7 +137,7 @@ PostgreSQL + Kubernetes 集群
 
 ### 环境要求
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Node.js 20+
 - 只有运行本机容器栈时才需要 Docker 与 Docker Compose
 - 外部数据库使用 PostgreSQL 18.4，并安装 pgvector 0.8.5
@@ -275,6 +275,14 @@ make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 ```
 
+Compose 默认使用仓库中的 `configs/config.example.yaml`。如需沿用私有的
+`configs/config.yaml`，请在 shell 或 Compose 环境文件中设置
+`SOHA_COMPOSE_CONFIG_FILE=../configs/config.yaml`。相对路径以 `deploy/` 为基准。
+
+使用支持 dsh 的 Core 运行新 Chat 和 Heya 时，部署配套的 dsh 镜像并启用受保护的检查点存储。
+已有安装升级前请按 [运行时部署与切换说明](deploy/dsh-hindsight/README-cn.md) 执行。
+Core readiness 只检查 PostgreSQL，开放流量前分别验证 Chat 和 Heya。
+
 网络运行时在 Compose 中通过 profile 显式开启，因为 mTLS 私钥不能提交到仓库。
 分别准备包含 `tls.crt`、`tls.key` 和 `ca.crt` 的服务端与客户端身份目录，将私钥权限设为 `0440` 或 `0600`，然后启动：
 
@@ -359,10 +367,13 @@ docker compose -f deploy/docker-compose.yaml --profile network-access \
 
 ```bash
 make deploy-image
-docker build --build-context contracts=../soha-contracts \
+docker build \
   --target network-gateway-runtime -f deploy/Dockerfile \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
+
+默认镜像构建使用 `GOWORK=off` 解析 `go.mod` 中的不可变 contracts 依赖，不需要相邻 contracts checkout。Task115 使用已审查的 Git 源提交，无需发布 SDK 包；干净的远端构建前需确保该源提交可下载。
+
 
 本地构建后，将镜像导入每个目标集群节点并将 `deploy/kustomization.yaml`
 中两个 tag 改为 `local`，或推送到自有镜像仓库后替换两种镜像引用。server、network-control 和 ingest

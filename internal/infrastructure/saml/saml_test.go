@@ -10,12 +10,15 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"math/big"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/beevik/etree"
+	crewjam "github.com/openctemio/saml"
 	appidentityprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
@@ -45,9 +48,7 @@ func TestLoginRuntimeMetadataUsesEntityIDAndACSSeparately(t *testing.T) {
 		EntityID:    "https://sp.example.test/metadata",
 		RedirectURL: "https://sp.example.test/acs",
 	})
-	if err != nil {
-		t.Fatalf("Metadata returned error: %v", err)
-	}
+	require.NoError(t, err, "Metadata returned error: %v", err)
 	text := string(metadata)
 	if !strings.Contains(text, `entityID="https://sp.example.test/metadata"`) || !strings.Contains(text, `Location="https://sp.example.test/acs"`) {
 		t.Fatalf("metadata does not separate entity ID and ACS: %s", text)
@@ -79,9 +80,7 @@ func TestProviderRuntimeValidatesRegisteredServiceProvider(t *testing.T) {
 		RelayState: "opaque", ServiceProvider: serviceProvider,
 	}
 	validated, err := runtime.ValidateRequest(material, input)
-	if err != nil {
-		t.Fatalf("validate registered request: %v", err)
-	}
+	require.NoError(t, err, "validate registered request: %v", err)
 	if validated.ID != "request-1" || validated.Issuer != serviceProvider.EntityID || validated.ACSURL != serviceProvider.AssertionConsumerServiceURLs[0] || validated.RelayState != "opaque" {
 		t.Fatalf("unexpected request: %#v", validated)
 	}
@@ -109,26 +108,18 @@ func TestSignedResponseRoundTrip(t *testing.T) {
 	key, certificate := testCertificate(t, now)
 	idp := mustIdentityProvider(t, key, certificate, now)
 	metadataXML, err := idp.MetadataXML()
-	if err != nil {
-		t.Fatalf("marshal metadata: %v", err)
-	}
+	require.NoError(t, err, "marshal metadata: %v", err)
 	metadata, err := ParseMetadata(metadataXML, now)
-	if err != nil {
-		t.Fatalf("parse metadata: %v", err)
-	}
+	require.NoError(t, err, "parse metadata: %v", err)
 	sp, err := NewServiceProvider(ServiceProviderConfig{
 		EntityID: "https://sp.example.test/metadata", MetadataURL: "https://sp.example.test/metadata",
 		ACSURL: "https://sp.example.test/acs", IDPMetadata: metadata,
 		SigningKey: key, SigningCertificate: certificate, Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatalf("create SP: %v", err)
-	}
+	require.NoError(t, err, "create SP: %v", err)
 
 	redirect, err := sp.BuildAuthnRequest(BindingRedirect, "return=/identity&tab=apps")
-	if err != nil {
-		t.Fatalf("build Redirect request: %v", err)
-	}
+	require.NoError(t, err, "build Redirect request: %v", err)
 	redirectURL, err := url.Parse(redirect.RedirectURL)
 	if err != nil || redirect.ID == "" || redirectURL.Query().Get("RelayState") != "return=/identity&tab=apps" || redirectURL.Query().Get("Signature") == "" {
 		t.Fatalf("invalid Redirect request: id=%q url=%q err=%v", redirect.ID, redirect.RedirectURL, err)
@@ -142,16 +133,16 @@ func TestSignedResponseRoundTrip(t *testing.T) {
 		RequestID: redirect.ID, SPEntityID: "https://sp.example.test/metadata", ACSURL: "https://sp.example.test/acs",
 		NameID: "subject-123", SessionIndex: "session-123", Attributes: map[string][]string{"email": {"user@example.test"}},
 	})
-	if err != nil {
-		t.Fatalf("sign response: %v", err)
-	}
+	require.NoError(t, err, "sign response: %v", err)
 	assertion, err := sp.ValidateResponse(base64.StdEncoding.EncodeToString(rawResponse), redirect.ID)
-	if err != nil {
-		t.Fatalf("validate response: %v", err)
-	}
+	require.NoError(t, err, "validate response: %v", err)
 	if assertion.ID == "" || assertion.ResponseID == "" || assertion.Subject != "subject-123" || assertion.SessionIndex != "session-123" || len(assertion.Attributes["email"]) != 1 {
 		t.Fatalf("unexpected assertion: %#v", assertion)
 	}
+
+	t.Run("assertion shape", func(t *testing.T) {
+		testSignedResponseShapes(t, sp, rawResponse, redirect.ID)
+	})
 
 	t.Run("destination", func(t *testing.T) {
 		wrong, signErr := idp.SignResponse(ResponseInput{
@@ -198,6 +189,74 @@ func TestSignedResponseRoundTrip(t *testing.T) {
 			t.Fatalf("expected weak algorithm rejection, got %v", validateErr)
 		}
 	})
+}
+
+func testSignedResponseShapes(t *testing.T, sp *ServiceProvider, rawResponse []byte, requestID string) {
+	t.Helper()
+	signer, err := crewjam.GetSigningContext(sp.provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remove := func(element *etree.Element) { element.Parent().RemoveChild(element) }
+	foreign := func(element *etree.Element) {
+		element.Space = "other"
+		element.CreateAttr("xmlns:other", "urn:example:other")
+	}
+	const subject = "./saml:Subject"
+	const confirmation = subject + "/saml:SubjectConfirmation"
+	const conditions = "./saml:Conditions"
+	for _, test := range []struct {
+		name   string
+		path   string
+		change func(*etree.Element)
+	}{
+		{name: "valid"},
+		{name: "missing issuer", path: "./saml:Issuer", change: remove},
+		{name: "missing subject", path: subject, change: remove},
+		{name: "missing conditions", path: conditions, change: remove},
+		{name: "missing confirmation data", path: confirmation + "/saml:SubjectConfirmationData", change: remove},
+		{name: "foreign name ID", path: subject + "/saml:NameID", change: foreign},
+		{name: "foreign confirmation", path: confirmation, change: foreign},
+		{name: "foreign audience restriction", path: conditions + "/saml:AudienceRestriction", change: foreign},
+		{name: "non-bearer confirmation", path: confirmation, change: func(element *etree.Element) {
+			element.CreateAttr("Method", "urn:oasis:names:tc:SAML:2.0:cm:holder-of-key")
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			document := etree.NewDocument()
+			if err := document.ReadFromBytes(rawResponse); err != nil {
+				t.Fatal(err)
+			}
+			response := document.Root()
+			assertion := response.FindElement("./saml:Assertion")
+			// Re-sign the modified response so validation reaches the assertion.
+			remove(response.FindElement("./ds:Signature"))
+			remove(assertion.FindElement("./ds:Signature"))
+			if test.change != nil {
+				element := assertion.FindElement(test.path)
+				if element == nil {
+					t.Fatalf("fixture missing %s", test.path)
+				}
+				test.change(element)
+			}
+			signed, err := signer.SignEnveloped(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := elementBytes(signed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := sp.ValidateResponse(base64.StdEncoding.EncodeToString(raw), requestID)
+			if test.change == nil {
+				if err != nil || result == nil || result.Subject != "subject-123" {
+					t.Fatalf("valid signed response = %#v, error = %v", result, err)
+				}
+			} else if err == nil || result != nil {
+				t.Fatalf("invalid signed response = %#v, error = %v", result, err)
+			}
+		})
+	}
 }
 
 func TestXMLSecurityLimits(t *testing.T) {
@@ -295,9 +354,7 @@ func mustIdentityProvider(t *testing.T, key *rsa.PrivateKey, certificate *x509.C
 		MetadataURL: "https://idp.example.test/metadata", SSOURL: "https://idp.example.test/sso",
 		SigningKey: key, Certificate: certificate, Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatalf("create IdP: %v", err)
-	}
+	require.NoError(t, err, "create IdP: %v", err)
 	return idp
 }
 

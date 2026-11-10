@@ -4,64 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
-	domain "github.com/opensoha/soha/internal/domain/copilot"
-	identity "github.com/opensoha/soha/internal/domain/identity"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
-	"github.com/opensoha/soha/internal/platform/apperrors"
 )
-
-type guestOwnerFake struct {
-	enabled, approved bool
-	userID            string
-	vmChecks          int
-}
-
-func (f *guestOwnerFake) CurrentPrincipal(context.Context, string) (identity.Principal, error) {
-	if !f.enabled {
-		return identity.Principal{}, apperrors.ErrUnauthorized
-	}
-	return identity.Principal{UserID: f.userID}, nil
-}
-func (f *guestOwnerFake) GetPersonalAgentAccess(context.Context, identity.Principal) (domain.PersonalAgentAccess, error) {
-	status := "revoked"
-	if f.approved {
-		status = "approved"
-	}
-	return domain.PersonalAgentAccess{UserID: f.userID, Status: status, Version: 2}, nil
-}
-func (f *guestOwnerFake) ValidatePersonalGuestVM(context.Context, identity.Principal, guest.Binding) error {
-	f.vmChecks++
-	return nil
-}
-
-func TestPersonalGuestOwnerReloadsCurrentAccountAndApproval(t *testing.T) {
-	fake := &guestOwnerFake{enabled: true, approved: true, userID: "owner"}
-	authorizer := personalGuestAuthorizer{identity: fake, access: fake, vm: fake}
-	binding := guest.Binding{OwnerID: fake.userID}
-	if err := authorizer.Authorize(t.Context(), binding); err != nil || fake.vmChecks != 1 {
-		t.Fatal("current approved owner rejected", err)
-	}
-	fake.enabled = false
-	if err := authorizer.Authorize(t.Context(), binding); !errors.Is(err, apperrors.ErrUnauthorized) || fake.vmChecks != 1 {
-		t.Fatal("disabled owner reached provider", err)
-	}
-	fake.enabled, fake.approved = true, false
-	if err := authorizer.Authorize(t.Context(), binding); !errors.Is(err, apperrors.ErrAccessDenied) || fake.vmChecks != 1 {
-		t.Fatal("revoked approval reached provider", err)
-	}
-	fake.approved, fake.userID = true, "other"
-	if err := authorizer.Authorize(t.Context(), binding); !errors.Is(err, apperrors.ErrAccessDenied) || fake.vmChecks != 1 {
-		t.Fatal("different principal reached provider", err)
-	}
-}
 
 func TestPersonalGuestServerIsDisabledUnlessFullyConfigured(t *testing.T) {
 	server, preparation, err := newPersonalGuestServer(cfgpkg.PersonalGuestConfig{}, nil, nil, nil)

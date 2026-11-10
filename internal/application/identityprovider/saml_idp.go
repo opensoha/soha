@@ -146,7 +146,10 @@ func (s *Service) SAMLSSO(ctx context.Context, issuer, providerID, sessionID str
 	if err != nil {
 		return SAMLSSOResult{}, fmt.Errorf("%w: invalid SAML AuthnRequest", apperrors.ErrInvalidArgument)
 	}
-	repository := s.repo.(samlProviderRepository)
+	repository, ok := s.repo.(samlProviderRepository)
+	if !ok {
+		return SAMLSSOResult{}, fmt.Errorf("%w: SAML provider repository is not configured", apperrors.ErrUnsupportedOperation)
+	}
 	if err := repository.ConsumeSAMLReplayKey(ctx, provider.ID, "request", request.ID, time.Now().UTC().Add(10*time.Minute)); err != nil {
 		return SAMLSSOResult{}, fmt.Errorf("%w: SAML AuthnRequest was already consumed", apperrors.ErrUnauthorized)
 	}

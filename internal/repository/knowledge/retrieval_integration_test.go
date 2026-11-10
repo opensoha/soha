@@ -17,7 +17,9 @@ import (
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	testpostgres "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 func TestKnowledgeRetrievalWithPostgres(t *testing.T) {
@@ -29,10 +31,30 @@ func TestKnowledgeRetrievalWithPostgres(t *testing.T) {
 	t.Run("explicit_source_tombstone", func(t *testing.T) { knowledgeRetrievalExplicitSourceTombstone(t, repo, store, ctx) })
 	t.Run("immutable_current_version", func(t *testing.T) { knowledgeRetrievalImmutableCurrentVersion(t, repo, store, ctx) })
 	t.Run("model_dimension_isolation", func(t *testing.T) { knowledgeRetrievalModelDimensionIsolation(t, repo, store, ctx) })
+	t.Run("legacy_embedding_source_reindex", func(t *testing.T) { knowledgeLegacyEmbeddingSourceReindex(t, repo, ctx) })
 	t.Run("failed_publication_atomic", func(t *testing.T) { knowledgeRetrievalFailedPublicationAtomic(t, repo, store, ctx) })
 	t.Run("legacy_writer_compatibility", func(t *testing.T) { knowledgeRetrievalLegacyWriterCompatibility(t, repo, store, ctx) })
-	t.Run("ingestion_staging_takeover", func(t *testing.T) { knowledgeRetrievalIngestionStagingTakeover(t, repo, store, ctx) })
+	t.Run("ingestion_staging_takeover", func(t *testing.T) {
+		// Job times are stored as UTC timestamps without a time zone.
+		err := store.DB().WithContext(ctx).Connection(func(conn *gorm.DB) error {
+			if err := conn.Exec(`SET TIME ZONE 'Asia/Shanghai'`).Error; err != nil {
+				return err
+			}
+			defer func() {
+				if err := conn.Exec(`RESET TIME ZONE`).Error; err != nil {
+					t.Error(err)
+				}
+			}()
+			knowledgeRetrievalIngestionStagingTakeover(t, New(conn), store, ctx)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 }
+
+var fixtureEmbeddingSource = domainknowledge.EmbeddingSource{UpstreamID: "fixture-upstream", ProviderKind: "openai", UpstreamModel: "fixture-model"}
 
 func seedRetrievalDocument(t *testing.T, repo *Repository, ctx context.Context, count int) (domainknowledge.Document, []domainknowledge.Chunk, domainknowledge.PrincipalScope) {
 	t.Helper()
@@ -49,7 +71,7 @@ func seedRetrievalDocument(t *testing.T, repo *Repository, ctx context.Context, 
 	doc := domainknowledge.Document{ID: uuid.NewString(), KnowledgeBaseID: base.ID, SourceID: source.ID, ExternalID: "fixture", Title: "Runbook", Version: "v1", ContentHash: "hash:v1", ACL: scope, Status: "indexed", ChunkCount: count, CreatedAt: now, UpdatedAt: now}
 	chunks := make([]domainknowledge.Chunk, count)
 	for i := range chunks {
-		chunks[i] = domainknowledge.Chunk{ID: uuid.NewString(), KnowledgeBaseID: base.ID, DocumentID: doc.ID, DocumentTitle: doc.Title, Ordinal: i, Content: fmt.Sprintf("unrelated operational entry %d", i), ContentHash: fmt.Sprintf("hash:%d", i), ACL: scope, CreatedAt: now, EmbeddingModel: "fixture", Embedding: []float64{0, 1, 0}}
+		chunks[i] = domainknowledge.Chunk{ID: uuid.NewString(), KnowledgeBaseID: base.ID, DocumentID: doc.ID, DocumentTitle: doc.Title, Ordinal: i, Content: fmt.Sprintf("unrelated operational entry %d", i), ContentHash: fmt.Sprintf("hash:%d", i), ACL: scope, CreatedAt: now, EmbeddingModel: "fixture", EmbeddingSource: fixtureEmbeddingSource, Embedding: []float64{0, 1, 0}}
 	}
 	chunks[0].Content, chunks[0].Embedding, chunks[0].CreatedAt = "ancient deployment needle", []float64{1, 0, 0}, now.Add(-time.Hour)
 	if err := repo.UpsertDocument(ctx, doc, chunks); err != nil {
@@ -68,6 +90,12 @@ func assertNoKnowledgeHits(t *testing.T, repo *Repository, ctx context.Context, 
 
 func newKnowledgePostgresRepository(t *testing.T) (*Repository, *dbstore.Store, context.Context) {
 	t.Helper()
+	store, _, ctx := newKnowledgePostgresDatabase(t)
+	return New(store.DB()), store, ctx
+}
+
+func newKnowledgePostgresDatabase(t *testing.T) (*dbstore.Store, config.DatabaseConfig, context.Context) {
+	t.Helper()
 	portText := os.Getenv("SOHA_APPLICATION_TEST_POSTGRES_PORT")
 	if portText == "" {
 		t.Skip("set SOHA_APPLICATION_TEST_POSTGRES_PORT to an isolated PostgreSQL instance")
@@ -76,7 +104,7 @@ func newKnowledgePostgresRepository(t *testing.T) (*Repository, *dbstore.Store, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 12, MaxIdleConns: 4}
+	cfg := testpostgres.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 12, MaxIdleConns: 4})
 	admin, err := dbstore.New(cfg, zap.NewNop())
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +129,7 @@ func newKnowledgePostgresRepository(t *testing.T) (*Repository, *dbstore.Store, 
 	if err := store.MigrateFromFile(ctx, filepath.Join("..", "..", "..", "migrations", "postgres")); err != nil {
 		t.Fatal(err)
 	}
-	return New(store.DB()), store, ctx
+	return store, cfg, ctx
 }
 
 func knowledgeRetrievalCandidateWindow(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context) {
@@ -116,7 +144,7 @@ func knowledgeRetrievalCandidateWindow(t *testing.T, repo *Repository, store *db
 			t.Fatal("fixture target lies inside old candidate window")
 		}
 	}
-	hits, err := repo.SearchAuthorizedChunks(ctx, p, request, domainknowledge.EmbeddingBatch{Model: "fixture", Vectors: [][]float64{{1, 0, 0}}}, 10)
+	hits, err := repo.SearchAuthorizedChunks(ctx, p, request, domainknowledge.EmbeddingBatch{Model: "fixture", Source: fixtureEmbeddingSource, Vectors: [][]float64{{1, 0, 0}}}, 10)
 	if err != nil || len(hits) == 0 || hits[0].Content != chunks[0].Content || hits[0].DocumentVersionID == "" || hits[0].VectorScore < 0.99 {
 		t.Fatalf("hybrid recall: %v %+v", err, hits)
 	}
@@ -265,13 +293,43 @@ func knowledgeRetrievalImmutableCurrentVersion(t *testing.T, repo *Repository, s
 func knowledgeRetrievalModelDimensionIsolation(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context) {
 	doc, _, p := seedRetrievalDocument(t, repo, ctx, 1)
 	request := domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{doc.KnowledgeBaseID}, Query: "unmatched words"}
-	for _, batch := range []domainknowledge.EmbeddingBatch{{Model: "different-model", Vectors: [][]float64{{1, 0, 0}}}, {Model: "fixture", Vectors: [][]float64{{1, 0}}}} {
+	for _, batch := range []domainknowledge.EmbeddingBatch{{Model: "different-model", Source: fixtureEmbeddingSource, Vectors: [][]float64{{1, 0, 0}}}, {Model: "fixture", Source: fixtureEmbeddingSource, Vectors: [][]float64{{1, 0}}}} {
 		hits, err := repo.SearchAuthorizedChunks(ctx, p, request, batch, 10)
 		if err != nil || len(hits) != 0 {
 			t.Fatalf("embedding space crossed: %v %v", err, hits)
 		}
 	}
 
+}
+
+func knowledgeLegacyEmbeddingSourceReindex(t *testing.T, repo *Repository, ctx context.Context) {
+	t.Helper()
+	doc, chunks, p := seedRetrievalDocument(t, repo, ctx, 1)
+	batch := domainknowledge.EmbeddingBatch{Model: chunks[0].EmbeddingModel, Route: chunks[0].EmbeddingRoute, Source: chunks[0].EmbeddingSource, Vectors: [][]float64{chunks[0].Embedding}}
+	// An unchanged document version and content must allow replacement of an unknown-source vector.
+	chunks[0].EmbeddingSource = domainknowledge.EmbeddingSource{}
+	if err := repo.UpsertDocument(ctx, doc, chunks); err != nil {
+		t.Fatal(err)
+	}
+	request := domainknowledge.SearchRequest{KnowledgeBaseIDs: []string{doc.KnowledgeBaseID}, Query: chunks[0].Content}
+	hits, err := repo.SearchAuthorizedChunks(ctx, p, request, batch, 10)
+	if err != nil || len(hits) != 1 || hits[0].LexicalScore == 0 || hits[0].VectorScore != 0 || hits[0].EmbeddingSource.Known() {
+		t.Fatalf("legacy content must remain lexical: %v %+v", err, hits)
+	}
+	legacyVersion := hits[0].DocumentVersionID
+	chunks[0].EmbeddingSource = batch.Source
+	if err := repo.UpsertDocument(ctx, doc, chunks); err != nil {
+		t.Fatal(err)
+	}
+	hits, err = repo.SearchAuthorizedChunks(ctx, p, request, batch, 10)
+	if err != nil || len(hits) != 1 || hits[0].VectorScore < 0.99 || hits[0].DocumentVersionID == legacyVersion {
+		t.Fatalf("same-content reindex must restore vector search: %v %+v", err, hits)
+	}
+	batch.Source = domainknowledge.EmbeddingSource{}
+	hits, err = repo.SearchAuthorizedChunks(ctx, p, request, batch, 10)
+	if err != nil || len(hits) != 1 || hits[0].VectorScore != 0 {
+		t.Fatalf("unknown query source must stay lexical: %v %+v", err, hits)
+	}
 }
 
 func knowledgeRetrievalFailedPublicationAtomic(t *testing.T, repo *Repository, store *dbstore.Store, ctx context.Context) {
@@ -336,7 +394,7 @@ func knowledgeRetrievalIngestionStagingTakeover(t *testing.T, repo *Repository, 
 		t.Fatalf("second claim: %+v %v", second, err)
 	}
 	restored, err := repo.LoadIngestionDocument(ctx, job.ID, second.LeaseToken, doc)
-	if err != nil || len(restored) != 2 || len(restored[0].Embedding) != 3 || len(restored[1].Embedding) != 0 {
+	if err != nil || len(restored) != 2 || len(restored[0].Embedding) != 3 || restored[0].EmbeddingSource != chunks[0].EmbeddingSource || len(restored[1].Embedding) != 0 {
 		t.Fatalf("partial vectors lost: %+v %v", restored, err)
 	}
 	if err := repo.StageIngestionDocument(ctx, job.ID, first.LeaseToken, doc, chunks); !errors.Is(err, domainknowledge.ErrIngestionConflict) {

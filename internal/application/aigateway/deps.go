@@ -2,12 +2,12 @@ package aigateway
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/opensoha/soha/internal/platform/keyring"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsecret "github.com/opensoha/soha/internal/domain/secret"
@@ -35,6 +35,14 @@ type ServiceAccountTokenStore interface {
 type ServiceAccountRepository interface {
 	ServiceAccountStore
 	ServiceAccountTokenStore
+}
+
+// TokenRotationRepository commits replacement, revocation and recovery record
+// together. Implementations must serialize competing rotations of the old Key.
+type TokenRotationRepository interface {
+	RotatePersonalToken(context.Context, string, domainaigateway.PersonalAccessToken, domainaigateway.TokenRotationRecord) (domainaigateway.PersonalAccessToken, error)
+	RotateServiceToken(context.Context, string, domainaigateway.ServiceAccountToken, domainaigateway.TokenRotationRecord) (domainaigateway.ServiceAccountToken, error)
+	GetTokenRotation(context.Context, string) (domainaigateway.TokenRotationRecord, error)
 }
 
 type AIClientRepository interface {
@@ -141,8 +149,6 @@ type LLMRelayConfig struct {
 	HealthCheckEnabled          bool
 	HealthCheckInterval         time.Duration
 	MaxRequestBodyBytes         int64
-	AllowInsecureUpstreamHTTP   bool
-	AllowPrivateUpstreamHosts   bool
 	IncludeUsageForOpenAIStream bool
 	CredentialEncryptionKey     string
 	CredentialEncryptionKeys    keyring.Ring
@@ -154,6 +160,7 @@ type ServiceDeps struct {
 	Audit       AuditRecorder
 
 	PersonalTokens  PersonalAccessTokenRepository
+	TokenRotations  TokenRotationRepository
 	ServiceAccounts ServiceAccountRepository
 	Clients         AIClientRepository
 	ToolGrants      ToolGrantRepository
@@ -164,10 +171,12 @@ type ServiceDeps struct {
 	Approvals       ApprovalRepository
 	LLMRelay        LLMRelayRepository
 	Secrets         SecretReferenceResolver
+	// Enabled only after every durable worker can read the encrypted format.
+	ProtectedDurableStorage bool
 
 	RateLimitBackend RateLimitBackend
 	RelayConfig      LLMRelayConfig
-	HTTPClient       *http.Client
+	RelayTransport   relayport.Transport
 }
 
 type CurrentPrincipalReader interface {

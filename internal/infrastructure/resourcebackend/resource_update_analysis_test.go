@@ -18,7 +18,9 @@ func TestAnalyzeResourceUpdateMapsChangedFieldsToManagers(t *testing.T) {
 		FieldsType: "FieldsV1", FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`),
 	}})
 	desired := live.DeepCopy()
-	desired.Object["spec"].(map[string]any)["replicas"] = int64(2)
+	if err := unstructured.SetNestedField(desired.Object, int64(2), "spec", "replicas"); err != nil {
+		t.Fatal(err)
+	}
 
 	analysis := analyzeResourceUpdate(live, desired)
 	if len(analysis.ChangedFields) != 1 || analysis.ChangedFields[0] != "/spec/replicas" {
@@ -35,7 +37,7 @@ func TestAnalyzeResourceUpdateIncludesRemovedFields(t *testing.T) {
 		"metadata": map[string]any{"name": "api", "namespace": "team-a", "labels": map[string]any{"obsolete": "true"}},
 	}}
 	desired := live.DeepCopy()
-	delete(desired.Object["metadata"].(map[string]any)["labels"].(map[string]any), "obsolete")
+	unstructured.RemoveNestedField(desired.Object, "metadata", "labels", "obsolete")
 
 	analysis := analyzeResourceUpdate(live, desired)
 	if len(analysis.ChangedFields) != 1 || analysis.ChangedFields[0] != "/metadata/labels/obsolete" {

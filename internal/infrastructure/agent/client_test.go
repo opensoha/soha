@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/yamux"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha-contracts/helmrelease"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -39,6 +40,43 @@ func TestHelmMutationPreservesAgentConflict(t *testing.T) {
 	_, err = client.ExecuteHelmDelivery(context.Background(), sohaapi.HelmExecutionTaskPayload{Action: sohaapi.Observe})
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("observe conflict = %v", err)
+	}
+}
+
+func TestHelmValuesConditionalAgentNeverFallsBack(t *testing.T) {
+	const legacyPath = "/api/v1/platform/helm/releases/app/values"
+	for _, tc := range []struct {
+		name   string
+		status int
+		want   error
+	}{
+		{name: "old Agent", status: http.StatusNotFound, want: apperrors.ErrUnsupportedOperation},
+		{name: "legacy redirect", status: http.StatusTemporaryRedirect, want: apperrors.ErrUnsupportedOperation},
+		{name: "stale revision", status: http.StatusConflict, want: apperrors.ErrConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPut || r.URL.Path != legacyPath+"/conditional" || r.URL.Query().Get("namespace") != "test" {
+					t.Errorf("unexpected request %s %s", r.Method, r.URL)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				var body helmrelease.ValuesUpdateRequest
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ExpectedRevision != 3 || body.Content != "replicaCount: 2\n" {
+					t.Errorf("guarded payload = %+v, error = %v", body, err)
+				}
+				if tc.status == http.StatusTemporaryRedirect {
+					w.Header().Set("Location", legacyPath)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			defer server.Close()
+			client := &Client{baseURL: server.URL, httpClient: server.Client()}
+			_, err := client.UpdateHelmReleaseValues(context.Background(), "test", "app", "replicaCount: 2\n", 3)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -91,7 +129,7 @@ func TestReverseSessionCarriesAgentHTTPRequests(t *testing.T) {
 		t.Fatalf("yamux.Client() error = %v", err)
 	}
 	defer func() { _ = agentSession.Close() }()
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/platform/summary" || r.Header.Get("Authorization") != "Bearer agent-token" {
 			t.Errorf("unexpected tunneled request %s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
 		}
@@ -189,10 +227,13 @@ func TestClientStreamPodLogsCopiesAgentStream(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer agent-token" {
 			t.Fatalf("Authorization = %q, want bearer token", r.Header.Get("Authorization"))
 		}
-		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/platform/workloads/pods/api-0/logs/stream" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/platform/workloads/pods/api-0/uid-bound/logs/stream" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
 		query := r.URL.Query()
+		if query.Get("expectedUid") != "uid-a" {
+			t.Error("expected UID was not forwarded")
+		}
 		if query.Get("namespace") != "platform" || query.Get("container") != "app" || query.Get("tailLines") != "10" || query.Get("sinceSeconds") != "5" {
 			t.Fatalf("query = %s, want namespace/container/tail/since", r.URL.RawQuery)
 		}
@@ -212,7 +253,7 @@ func TestClientStreamPodLogsCopiesAgentStream(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := client.StreamPodLogs(context.Background(), "platform", "api-0", "app", 10, 5, &out); err != nil {
+	if err := client.StreamPodLogs(context.Background(), "platform", "api-0", "app", 10, 5, &out, "uid-a"); err != nil {
 		t.Fatalf("StreamPodLogs() error = %v", err)
 	}
 	if out.String() != "line 1\nline 2\n" {
@@ -243,7 +284,7 @@ func TestClientQueriesAndStreamsAggregatePodLogs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewRegistry(10 * time.Millisecond).ClientFor(domaincluster.Connection{
+	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
 		Summary: domaincluster.Summary{ID: "cluster-a"}, Metadata: map[string]any{"endpoint": server.URL},
 	})
 	if err != nil {
@@ -254,6 +295,8 @@ func TestClientQueriesAndStreamsAggregatePodLogs(t *testing.T) {
 	if err != nil || len(page.Entries) != 1 || page.Entries[0].Message != "snapshot" {
 		t.Fatalf("QueryPodLogs() page=%#v error=%v", page, err)
 	}
+	// Only the stream must outlive the ordinary HTTP request timeout.
+	client.httpClient.Timeout = 10 * time.Millisecond
 	var events []domainresource.LogStreamEvent
 	if err := client.StreamPodLogEvents(context.Background(), query, func(event domainresource.LogStreamEvent) error {
 		events = append(events, event)
@@ -268,7 +311,12 @@ func TestClientQueriesAndStreamsAggregatePodLogs(t *testing.T) {
 
 func TestClientStreamPodTerminalBridgesWebSocketMessages(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
-	server := httptest.NewServer(terminalTestHandler(t, upgrader))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("expectedUid") != "uid-a" {
+			t.Error("expected UID was not forwarded")
+		}
+		terminalTestHandler(t, upgrader).ServeHTTP(w, r)
+	}))
 	defer server.Close()
 
 	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
@@ -284,12 +332,67 @@ func TestClientStreamPodTerminalBridgesWebSocketMessages(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err = client.StreamPodTerminal(context.Background(), "platform", "api-0", "app", "/bin/sh", strings.NewReader("whoami\n"), &stdout, &stderr, &oneShotTerminalSizeQueue{})
+	err = client.StreamPodTerminal(context.Background(), "platform", "api-0", "app", "/bin/sh", strings.NewReader("whoami\n"), &stdout, &stderr, &oneShotTerminalSizeQueue{}, "uid-a")
 	if err != nil {
 		t.Fatalf("StreamPodTerminal() error = %v", err)
 	}
 	if stdout.String() != "root\n" || stderr.String() != "warn\n" {
 		t.Fatalf("stdout=%q stderr=%q, want bridged terminal output", stdout.String(), stderr.String())
+	}
+}
+
+func TestClientUIDBoundPodSessionsNeverUseLegacyRoutes(t *testing.T) {
+	const podPath = "/api/v1/platform/workloads/pods/api-0/"
+	for _, session := range []struct {
+		path string
+		run  func(context.Context, *Client) error
+	}{
+		{"logs", func(ctx context.Context, client *Client) error {
+			_, err := client.GetPodLogs(ctx, "platform", "api-0", "app", 10, 5, true, "uid-a")
+			return err
+		}},
+		{"logs/stream", func(ctx context.Context, client *Client) error {
+			return client.StreamPodLogs(ctx, "platform", "api-0", "app", 10, 5, io.Discard, "uid-a")
+		}},
+		{"terminal", func(ctx context.Context, client *Client) error {
+			return client.StreamPodTerminal(ctx, "platform", "api-0", "app", "/bin/sh", strings.NewReader(""), io.Discard, io.Discard, nil, "uid-a")
+		}},
+	} {
+		for _, tc := range []struct {
+			name, contentType string
+			status            int
+			want              error
+		}{
+			{"older Agent", "text/plain", http.StatusNotFound, apperrors.ErrUnsupportedOperation},
+			{"redirect to legacy", "text/html", http.StatusTemporaryRedirect, apperrors.ErrUnsupportedOperation},
+			{"pod gone", "application/json", http.StatusNotFound, apperrors.ErrNotFound},
+			{"pod replaced", "application/json", http.StatusConflict, apperrors.ErrConflict},
+		} {
+			t.Run(session.path+"/"+tc.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method != http.MethodGet || r.URL.Path != podPath+"uid-bound/"+session.path || r.URL.Query().Get("expectedUid") != "uid-a" {
+						t.Errorf("unexpected request %s %s", r.Method, r.URL.String())
+						http.NotFound(w, r)
+						return
+					}
+					w.Header().Set("Content-Type", tc.contentType)
+					if tc.status == http.StatusTemporaryRedirect {
+						w.Header().Set("Location", podPath+session.path)
+					}
+					w.WriteHeader(tc.status)
+				}))
+				t.Cleanup(server.Close)
+				client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
+					Summary: domaincluster.Summary{ID: "cluster-a"}, Metadata: map[string]any{"endpoint": server.URL},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := session.run(t.Context(), client); !errors.Is(err, tc.want) {
+					t.Fatalf("error = %v, want %v", err, tc.want)
+				}
+			})
+		}
 	}
 }
 
@@ -353,7 +456,7 @@ func handleResourceDelete(t *testing.T, w http.ResponseWriter, r *http.Request) 
 func terminalTestHandler(t *testing.T, upgrader websocket.Upgrader) http.HandlerFunc {
 	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer agent-token" || r.URL.Path != "/api/v1/platform/workloads/pods/api-0/terminal" {
+		if r.Header.Get("Authorization") != "Bearer agent-token" || r.URL.Path != "/api/v1/platform/workloads/pods/api-0/uid-bound/terminal" {
 			t.Fatalf("unexpected terminal request %s authorization=%q", r.URL.String(), r.Header.Get("Authorization"))
 		}
 		query := r.URL.Query()
@@ -433,7 +536,7 @@ func helmMutationTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"name": "edge", "namespace": "platform", "revision": "1", "status": "deployed"}})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/helm/releases/edge/values":
-			var req helmReleaseValuesRequest
+			var req helmrelease.ValuesUpdateRequest
 			if r.URL.Query().Get("namespace") != "platform" || json.NewDecoder(r.Body).Decode(&req) != nil || req.Content != "replicaCount: 2\n" {
 				t.Fatalf("unexpected values request: query=%s body=%#v", r.URL.RawQuery, req)
 			}
@@ -713,7 +816,7 @@ func TestClientHelmMutationMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	if installed.Name != "edge" || installed.Revision != "1" {
 		t.Fatalf("installed = %#v, want edge revision 1", installed)
 	}
-	values, err := client.UpdateHelmReleaseValues(context.Background(), "platform", "edge", "replicaCount: 2\n")
+	values, err := client.UpdateHelmReleaseValues(context.Background(), "platform", "edge", "replicaCount: 2\n", 0)
 	if err != nil {
 		t.Fatalf("UpdateHelmReleaseValues() error = %v", err)
 	}
@@ -824,5 +927,58 @@ func TestDrainUsesLongRequestTimeoutWithoutChangingSharedClient(t *testing.T) {
 	cancel()
 	if err := client.DrainNode(ctx, "node", domainresource.NodeDrainInput{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled drain: %v", err)
+	}
+}
+
+func TestAgentTerminalCancellationClosesUpstreamSocket(t *testing.T) {
+	opened := make(chan struct{})
+	released := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := (&websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}).Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		defer close(released)
+		close(opened)
+		for {
+			var message terminalMessage
+			if err := conn.ReadJSON(&message); err != nil || message.Type == "close" {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{Summary: domaincluster.Summary{ID: "cluster-a"}, Metadata: map[string]any{"endpoint": server.URL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stdin, writer := io.Pipe()
+	defer func() { _ = stdin.Close() }()
+	defer func() { _ = writer.Close() }()
+	done := make(chan error, 1)
+	go func() {
+		done <- client.StreamPodTerminal(ctx, "test", "api", "main", "/bin/sh", stdin, io.Discard, io.Discard, nil, "uid-a")
+	}()
+	select {
+	case <-opened:
+	case <-time.After(2 * time.Second):
+		t.Fatal("not opened")
+	}
+	cancel()
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Agent socket not released")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Core caller not released")
 	}
 }

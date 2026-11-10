@@ -13,8 +13,10 @@ import (
 	"github.com/gin-gonic/gin"
 	apierrors "github.com/opensoha/soha/internal/api/errors"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	"github.com/opensoha/soha/internal/api/relaywebsocket"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
+	"github.com/opensoha/soha/internal/application/aigateway/relayport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
@@ -27,6 +29,7 @@ type AIGatewayCapabilityService interface {
 }
 
 type AIGatewayPersonalTokenService interface {
+	GetTokenRotation(context.Context, domainidentity.Principal, string) (domainaigateway.TokenRotationRecord, error)
 	ListPersonalAccessTokens(context.Context, domainidentity.Principal, domainaigateway.PersonalAccessTokenListRequest) ([]domainaigateway.PersonalAccessToken, error)
 	CreatePersonalAccessToken(context.Context, domainidentity.Principal, domainaigateway.PersonalAccessTokenInput) (domainaigateway.CreatedPersonalAccessToken, error)
 	RevokePersonalAccessToken(context.Context, domainidentity.Principal, string) error
@@ -107,7 +110,7 @@ type AIGatewayRelayObservabilityService interface {
 type AIGatewayRelayService interface {
 	LLMRelayMaxRequestBodyBytes() int64
 	RelayLLMHTTP(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, http.ResponseWriter) error
-	RelayLLMWebSocket(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, http.ResponseWriter, *http.Request) error
+	RelayLLMWebSocket(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, relayport.UpgradeWebSocket) error
 }
 
 type AIGatewayService interface {
@@ -343,6 +346,7 @@ func (h *aiGatewayPersonalTokenHandler) CreatePersonalAccessToken(c *gin.Context
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid personal access token payload")
 		return
 	}
+	req.GovernedOnly = strings.Contains(c.FullPath(), "/ai-gateway/governed-credentials/")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.CreatePersonalAccessToken(c.Request.Context(), principal, req)
 	if err != nil {
@@ -367,6 +371,7 @@ func (h *aiGatewayPersonalTokenHandler) RotatePersonalAccessToken(c *gin.Context
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid personal access token rotation payload")
 		return
 	}
+	req.GovernedOnly = strings.Contains(c.FullPath(), "/ai-gateway/governed-credentials/")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.RotatePersonalAccessToken(c.Request.Context(), principal, c.Param("tokenID"), req)
 	if err != nil {
@@ -417,6 +422,7 @@ func (h *aiGatewayServiceAccountHandler) CreateServiceAccountToken(c *gin.Contex
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid service account token payload")
 		return
 	}
+	req.GovernedOnly = strings.Contains(c.FullPath(), "/ai-gateway/governed-credentials/")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.CreateServiceAccountToken(c.Request.Context(), principal, c.Param("serviceAccountID"), req)
 	if err != nil {
@@ -441,6 +447,7 @@ func (h *aiGatewayServiceAccountHandler) RotateServiceAccountToken(c *gin.Contex
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid service account token rotation payload")
 		return
 	}
+	req.GovernedOnly = strings.Contains(c.FullPath(), "/ai-gateway/governed-credentials/")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.RotateServiceAccountToken(c.Request.Context(), principal, c.Param("tokenID"), req)
 	if err != nil {
@@ -1149,7 +1156,7 @@ func (h *aiGatewayRelayHandler) relayLLMWebSocket(c *gin.Context, providerKind, 
 		RequestID:    c.GetString("request_id"),
 		SourceIP:     c.ClientIP(),
 		UserAgent:    c.Request.UserAgent(),
-	}, c.Writer, c.Request)
+	}, relaywebsocket.Upgrader(c.Writer, c.Request))
 	if err != nil {
 		relayNativeServiceError(c, err)
 	}

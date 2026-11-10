@@ -8,13 +8,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -25,19 +23,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkprotocol"
 )
 
 func TestFailedConfigurationReasonSurvivesObservation(t *testing.T) {
-	runner := &Runner{
-		engine:      &engine{},
-		lastAttempt: &domain.Applied{Status: "rejected", ReasonCode: "validation_failed"},
-	}
+	config, _ := lifecycleFixture(t, "")
+	runner := &Runner{config: config, engine: newEngine(config, "a-secret-for-tests")}
+	defer runner.engine.stop()
+	t.Setenv("SOHA_PROXY_FIXTURE_VALIDATION_FAIL", "1")
+	runner.applyConfiguration(context.Background(), lifecycleDesired(1, 7890))
 	observation, _ := runner.observe(context.Background())
-	if observation.ReasonCode != "validation_failed" {
-		t.Fatalf("reason code = %q", observation.ReasonCode)
+	if observation.ReasonCode != "validation_failed" || observation.Health != "degraded" || runner.engine.process != nil {
+		t.Fatalf("failed configuration observation = %+v", observation)
 	}
 }
 
@@ -222,24 +220,19 @@ func enrollmentTestCertificate(t *testing.T, key ed25519.PrivateKey, id string, 
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
-func TestFailedConfigurationDegradesHealthyOldEngine(t *testing.T) {
-	controller := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/version" {
-			_, _ = fmt.Fprint(writer, `{"version":"test"}`)
-			return
-		}
-		_, _ = fmt.Fprint(writer, `{"uploadTotal":1,"downloadTotal":2,"connections":[]}`)
-	}))
-	defer controller.Close()
-	runner := &Runner{
-		config: Config{Engine: domain.EngineMihomo},
-		engine: &engine{controller: newClashController(controller.URL, "test-secret"),
-			process: &exec.Cmd{}, startedAt: time.Now().Add(-time.Second)},
-		enabled:     true,
-		lastAttempt: &domain.Applied{Status: "rejected", ReasonCode: "validation_failed"},
+func TestFailedConfigurationStopsHealthyOldEngine(t *testing.T) {
+	config, _ := lifecycleFixture(t, "")
+	runner := &Runner{config: config, engine: newEngine(config, "a-secret-for-tests")}
+	defer runner.engine.stop()
+	runner.applyConfiguration(context.Background(), lifecycleDesired(1, 7890))
+	before, _ := runner.observe(context.Background())
+	if before.Health != "healthy" || before.DownloadTotal != 2 {
+		t.Fatalf("healthy control missing: %+v", before)
 	}
+	t.Setenv("SOHA_PROXY_FIXTURE_VALIDATION_FAIL", "1")
+	runner.applyConfiguration(context.Background(), lifecycleDesired(2, 7890))
 	observation, _ := runner.observe(context.Background())
-	if observation.Health != "degraded" || observation.ReasonCode != "validation_failed" || observation.DownloadTotal != 2 {
-		t.Fatalf("observation = %+v", observation)
+	if observation.Health != "degraded" || observation.ReasonCode != "validation_failed" || observation.DownloadTotal != 0 || runner.enabled || runner.engine.process != nil || runner.engine.egress != nil {
+		t.Fatalf("rejected replacement left a healthy predecessor: %+v", observation)
 	}
 }

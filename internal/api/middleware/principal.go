@@ -41,8 +41,22 @@ type StreamTicketParser interface {
 	ParseStreamTicket(context.Context, string, string) (domainidentity.Principal, domainidentity.AccessContext, error)
 }
 
-func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) gin.HandlerFunc {
+func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser, configuredBasePath ...string) gin.HandlerFunc {
+	basePath := "/api/v1"
+	if len(configuredBasePath) > 0 {
+		basePath = "/" + strings.Trim(configuredBasePath[0], "/")
+		if basePath == "/" {
+			basePath = ""
+		}
+	}
 	return func(c *gin.Context) {
+		// These exact internal callbacks authenticate their service credential in the
+		// owning handler, independently from user sessions and PATs.
+		if isDSHServiceCallback(c.Request, basePath) {
+			c.Next()
+			return
+		}
+
 		token, validHeader := accessTokenFromRequest(c)
 		if !validHeader {
 			_ = c.Error(errors.New("request contains multiple authorization headers"))
@@ -62,8 +76,14 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 					return
 				}
 				_ = c.Error(err)
+				// This marker is emitted before any protected handler runs. Clients may
+				// safely renew authentication and replay the original request once.
+				c.Header("WWW-Authenticate", `Bearer realm="soha", error="invalid_token"`)
 				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid authentication token")
 				c.Abort()
+				return
+			}
+			if !allowGovernedAIRequest(c, principal, basePath) {
 				return
 			}
 			c.Set(principalKey, principal)
@@ -79,11 +99,18 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 				c.Abort()
 				return
 			}
-			principal, accessCtx, err := streamParser.ParseStreamTicket(c.Request.Context(), ticket, c.Request.URL.Path)
+			requestTarget := c.Request.URL.Path
+			if c.Request.URL.Query().Has("expectedUid") {
+				requestTarget = c.Request.URL.RequestURI()
+			}
+			principal, accessCtx, err := streamParser.ParseStreamTicket(c.Request.Context(), ticket, requestTarget)
 			if err != nil {
 				_ = c.Error(err)
 				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid stream ticket")
 				c.Abort()
+				return
+			}
+			if !allowGovernedAIRequest(c, principal, basePath) {
 				return
 			}
 			c.Set(principalKey, principal)
@@ -103,6 +130,21 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 			c.Set(principalKey, principal)
 		}
 		c.Next()
+	}
+}
+
+func isDSHServiceCallback(r *http.Request, basePath string) bool {
+	if r.Method == http.MethodGet {
+		return r.URL.Path == basePath+"/copilot/dsh/personal-stdio"
+	}
+	if r.Method != http.MethodPost {
+		return false
+	}
+	switch strings.TrimPrefix(r.URL.Path, basePath) {
+	case "/copilot/dsh/model/v1/chat/completions", "/copilot/dsh/tools", "/copilot/dsh/assembly", "/copilot/dsh/plugin-tools/authorize", "/copilot/dsh/plugin-tools/settle":
+		return strings.HasPrefix(r.URL.Path, basePath+"/")
+	default:
+		return false
 	}
 }
 

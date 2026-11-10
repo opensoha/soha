@@ -30,6 +30,8 @@ const (
 )
 
 type Config struct {
+	DSHRuntime         DSHRuntimeConfig         `mapstructure:"dsh_runtime"`
+	Hindsight          HindsightConfig          `mapstructure:"hindsight"`
 	App                AppConfig                `mapstructure:"app"`
 	HTTP               HTTPConfig               `mapstructure:"http"`
 	Logger             LoggerConfig             `mapstructure:"logger"`
@@ -310,6 +312,8 @@ type DocsAssetsConfig struct {
 }
 
 type SecurityConfig struct {
+	ProtectedDurableStorage  bool           `mapstructure:"protected_durable_storage"`
+	DockerRuntimeIdentityV1  bool           `mapstructure:"docker_runtime_identity_v1"`
 	CredentialEncryptionKey  string         `mapstructure:"credential_encryption_key"`
 	CredentialEncryptionKeys keyring.Ring   `mapstructure:"-"`
 	SecretProvider           string         `mapstructure:"secret_provider"`
@@ -449,6 +453,9 @@ func (c *AIGatewayConnectorRuntimeConfig) expandEnv() {
 }
 
 func (c Config) Validate() error {
+	if err := c.Auth.CLI.Validate(); err != nil {
+		return fmt.Errorf("auth.cli: %w", err)
+	}
 	problems := c.staticProblems()
 	if len(problems) > 0 {
 		return fmt.Errorf("config validation failed: %s", strings.Join(problems, "; "))
@@ -458,6 +465,8 @@ func (c Config) Validate() error {
 
 func (c Config) staticProblems() []string {
 	problems := make([]string, 0)
+	problems = append(problems, c.DSHRuntime.problems()...)
+	problems = append(problems, c.Hindsight.problems()...)
 	var logLevel zapcore.Level
 	if err := logLevel.UnmarshalText([]byte(strings.ToLower(strings.TrimSpace(c.Logger.Level)))); err != nil {
 		problems = append(problems, fmt.Sprintf("logger.level %q is invalid", c.Logger.Level))
@@ -774,6 +783,16 @@ var configDefaults = []struct {
 	key   string
 	value any
 }{
+	{"dsh_runtime.enabled", false},
+	{"dsh_runtime.base_url", ""},
+	{"dsh_runtime.service_token_file", ""},
+	{"dsh_runtime.timeout", "30s"},
+	{"dsh_runtime.allow_insecure_http", false},
+	{"hindsight.enabled", false},
+	{"hindsight.base_url", ""},
+	{"hindsight.token_file", ""},
+	{"hindsight.instance_namespace", ""},
+	{"hindsight.timeout", "15s"},
 	{"app.name", "soha"},
 	{"http.addr", ":8080"},
 	{"http.access_url", ""},
@@ -823,6 +842,19 @@ var configDefaults = []struct {
 	{"auth.dev_principal.password", "opensoha"},
 	{"auth.dev_principal.roles", []string{"admin", "ops", "auditor"}},
 	{"auth.jwt.issuer", "soha"},
+	{"auth.cli.enabled", false},
+	{"auth.cli.public_url", ""},
+	{"auth.cli.allow_password", true},
+	{"auth.cli.device_ttl", "5m"},
+	{"auth.cli.poll_interval", "5s"},
+	{"auth.cli.access_ttl", "15m"},
+	{"auth.cli.idle_ttl", "168h"},
+	{"auth.cli.absolute_ttl", "720h"},
+	{"auth.cli.create_limit", 10},
+	{"auth.cli.source_pending_limit", 5},
+	{"auth.cli.active_grant_limit", 1000},
+	{"auth.cli.source_attempt_limit", 20},
+	{"auth.cli.user_attempt_limit", 5},
 	{"auth.jwt.secret", defaultSystemSecret},
 	{"auth.jwt.access_ttl", "15m"},
 	{"auth.jwt.refresh_ttl", "168h"},
@@ -891,6 +923,7 @@ var configDefaults = []struct {
 	{"assets.docs.proxy_url", "http://localhost:3000"},
 	{"assets.docs.external_url", "https://docs.opensoha.dev/"},
 	{"security.credential_encryption_key", defaultSystemSecret},
+	{"security.docker_runtime_identity_v1", false},
 	{"security.secret_provider", ""},
 	{"security.vault_kv2.address", ""},
 	{"security.vault_kv2.token", ""},

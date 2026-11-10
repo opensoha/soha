@@ -585,11 +585,13 @@ def recreate(s, mode, expected_run, expected_id, expected_uid):
 
 def test(s, mode, role, flow):
     target = LAB / f'target-{mode}-{role}.json'
+    task_id = 'quality-lab-' + hashlib.sha256(s['runId'].encode()).hexdigest()[:32]
+    execution_id = uuid.uuid4().hex
     env = dict(ENV, SOHA_E2E_TARGET_FILE=str(target), SOHA_E2E_LOGIN=s['accounts'][mode + '-' + role]['username'],
-               SOHA_E2E_PASSWORD=s['secrets'][role], SOHA_E2E_MUTATIONS='1' if role == 'writer' else '0')
+               SOHA_E2E_PASSWORD=s['secrets'][role], SOHA_E2E_MUTATIONS='1' if role == 'writer' else '0',
+               SOHA_E2E_TASK_ID=task_id, SOHA_E2E_EXECUTION_ID=execution_id)
     args = ['npm', 'run', 'test:flow:real' if flow else 'test:api:real']
-    output = ROOT / 'soha-web/test-results/run-manifest.json'
-    output.unlink(missing_ok=True)
+    output = ROOT / 'soha-web/test-results/tasks' / task_id / execution_id / 'run-manifest.json'
     result = subprocess.run(args, cwd=ROOT / 'soha-web', env=env, timeout=300)
     if result.returncode:
         raise RuntimeError(f'Real {mode}/{role} test failed ({result.returncode})')
@@ -599,6 +601,7 @@ def test(s, mode, role, flow):
     private(LAB / f'result-{mode}-{role}-{"flow" if flow else "api"}.json', manifest)
     expected = {'disposable': True, 'containerId': s['coreId'], 'imageDigest': s['coreImage']}
     if (manifest.get('result') != 'PASS' or manifest.get('runId') != s['runId'] or
+            manifest.get('taskId') != task_id or manifest.get('executionId') != execution_id or
             manifest.get('mode') != 'e2e-' + mode or manifest.get('environment') != expected or
             manifest.get('sources') != s['sources'] or len(manifest.get('tests', [])) != (2 if flow else 4) or
             any(item.get('result') != 'passed' for item in manifest.get('tests', []))):

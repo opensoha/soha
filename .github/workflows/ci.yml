@@ -21,19 +21,20 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: soha
+          fetch-depth: 0
       - name: Checkout contracts
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
-          ref: ${{ inputs.latest_siblings && 'main' || '9d23081036491f629d69be9ac78a14d5ff5db929' }}
+          ref: ${{ inputs.latest_siblings && 'main' || '7911c05328e704ca8bb490042fa3a25be29f273e' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Checkout web
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-web
           path: soha-web
-          ref: ${{ inputs.latest_siblings && 'main' || '9f724cabdc5014f4836da37fa9ac6f3efeb1da7b' }}
+          ref: ${{ inputs.latest_siblings && 'main' || '55a66959a3d268f34062374090282aecfe01ffce' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Record actual source combination
         env:
@@ -64,6 +65,8 @@ jobs:
         run: GOWORK=off go mod verify
       - name: Build web artifact
         working-directory: soha-web
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           npm ci
           npm run build
@@ -88,14 +91,26 @@ jobs:
       - name: Govulncheck
         working-directory: soha
         run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Prepare PR lint patch
+        if: github.event_name == 'pull_request'
+        working-directory: soha
+        env:
+          LINT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$LINT_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "${LINT_BASE_SHA}^{commit}"
+          git merge-base --is-ancestor "$LINT_BASE_SHA" HEAD
+          git diff --no-ext-diff --no-textconv --no-color --binary "$LINT_BASE_SHA" HEAD > "${RUNNER_TEMP}/soha-pr-lint.patch"
+          test -s "${RUNNER_TEMP}/soha-pr-lint.patch"
       - name: Golangci-lint
         if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0
           working-directory: soha
-          only-new-issues: true
-          args: --timeout=5m
+          # Keep the PR patch filter without the GitHub API's diff-size limits.
+          args: --timeout=5m --new-from-patch=${{ runner.temp }}/soha-pr-lint.patch
       - name: Build application binaries
         working-directory: soha
         run: |
@@ -108,16 +123,19 @@ jobs:
           sh deploy/network-test/generate-eap-test-pki_test.sh
           sh deploy/network-test/eapol-test_test.sh
           docker compose -f deploy/docker-compose.yaml --profile network-access --profile network-test config --quiet
+      - name: Validate optional runtime Compose profiles
+        working-directory: soha
+        run: docker compose -f deploy/dsh-hindsight/compose.yaml --profile dsh --profile hindsight config --quiet
       - name: Docker build
         working-directory: soha
         run: |
-          docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
-          docker build --build-context contracts=../soha-contracts --target network-gateway-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-network-gateway:test .
+          docker build -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
+          docker build --target network-gateway-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-network-gateway:test .
           docker build --target radius-eap-test-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-radius-eap-test:test .
-          docker build --build-context contracts=../soha-contracts --target proxy-runtime-mihomo -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-mihomo:test .
-          docker build --build-context contracts=../soha-contracts --target proxy-runtime-sing-box -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-sing-box:test .
-          docker build --platform linux/amd64 --build-context contracts=../soha-contracts --target proxy-runtime-v2ray -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-v2ray:test .
-          docker build --platform linux/amd64 --build-context contracts=../soha-contracts --target radius-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-radius:test .
+          docker build --target proxy-runtime-mihomo -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-mihomo:test .
+          docker build --target proxy-runtime-sing-box -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-sing-box:test .
+          docker build --platform linux/amd64 --target proxy-runtime-v2ray -f deploy/Dockerfile -t ghcr.io/opensoha/soha-proxy-v2ray:test .
+          docker build --platform linux/amd64 --target radius-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-radius:test .
       - name: Verify container storage permissions
         run: >-
           docker run --rm --entrypoint sh ghcr.io/opensoha/soha:test -ec
@@ -125,5 +143,6 @@ jobs:
           test -x /app/soha &&
           test -x /app/network-control &&
           test -x /app/ingest &&
+          test -x /app/runtime-upgrade &&
           mkdir -p "$SOHA_PLUGINS_COMPANION_STORAGE_DIR" &&
           touch "$SOHA_PLUGINS_COMPANION_STORAGE_DIR/.writable"'
