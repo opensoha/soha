@@ -1090,6 +1090,17 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 				return dbtx.Within(ctx, infra.databaseStore.DB(), apply)
 			},
 			Authorize: core.clusterService.ValidatePersonalExecutionAccess,
+			OpenMCPStdio: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.PersonalMCPStdioRequest) (appcopilot.DSHPersonalStdioPeer, error) {
+				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
+				if err != nil {
+					return nil, err
+				}
+				client, err := infra.agentRegistry.ClientFor(connection)
+				if err != nil {
+					return nil, err
+				}
+				return client.OpenPersonalMCPStdio(ctx, request)
+			},
 			Preflight: func(ctx context.Context, principal domainidentity.Principal, nodeID string, quota contractenv.Quota) error {
 				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
 				if err != nil {
@@ -1142,6 +1153,8 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		NativeTaskParents:   repos.copilotRepository,
 	},
 		appcopilot.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), mcptracesinfra.DefaultRegistry()),
+		appcopilot.WithRuntimeProfiles(repos.copilotRepository),
+		appcopilot.WithRuntimeAssets(repos.copilotRepository),
 	)
 	copilotService.SetMCPRegistry(infra.mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
@@ -1403,9 +1416,6 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	if err := delivery.copilotService.ValidateRuntimeDependencies(); err != nil {
 		return nil, fmt.Errorf("validate Copilot runtime: %w", err)
 	}
-	if core.runtimeConfigService.ModuleEnabled("ai") {
-		delivery.copilotService.Start(ctx)
-	}
 	aiGatewayService.StartRelayHealthChecks(ctx)
 	return &gatewayServices{
 		aiGatewayService: aiGatewayService,
@@ -1568,7 +1578,9 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			DataSources: delivery.copilotService, AnalysisProfiles: delivery.copilotService,
 			Automation: delivery.copilotService, RootCause: delivery.copilotService,
 			AgentRuns: delivery.copilotService, InspectionTasks: delivery.copilotService,
-			InspectionRuns: delivery.copilotService,
+			InspectionRuns:  delivery.copilotService,
+			RuntimeProfiles: delivery.copilotService,
+			RuntimeAssets:   delivery.copilotService,
 		}, cfg.Runtime.ExecutionRunnerKeys),
 		Knowledge:    apiHandlers.NewKnowledgeHandler(delivery.knowledgeService, delivery.contextBuilder),
 		Evaluation:   apiHandlers.NewEvaluationHandler(delivery.evaluationService, core.permissionResolver),

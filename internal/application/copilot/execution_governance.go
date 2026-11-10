@@ -24,7 +24,6 @@ import (
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/redaction"
-	"go.uber.org/zap"
 )
 
 // A cohesive storage state machine includes renewal and cancellation, not independent queues.
@@ -65,7 +64,16 @@ type nativeCheckpoint struct {
 	CleanupToolCalls int                                  `json:"cleanupToolCalls,omitempty"`
 }
 
-func (s *Service) queueNativeMessage(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, input domaincopilot.WorkbenchSendMessageInput, locale string) (domaincopilot.WorkbenchStreamResult, error) {
+func (s *Service) queueNativeMessage(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, input domaincopilot.WorkbenchSendMessageInput, locale string) (result domaincopilot.WorkbenchStreamResult, err error) {
+	beforeSubmission := true
+	defer func() {
+		if beforeSubmission {
+			err = rejectBeforeWorkbenchSubmission(err)
+		}
+	}()
+	if s.dshRuntime == nil || s.dshRuns == nil {
+		return domaincopilot.WorkbenchStreamResult{}, fmt.Errorf("%w: dsh runtime is unavailable", apperrors.ErrUnsupportedOperation)
+	}
 	if err := s.validateNativeRuntime(s.runtime); err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
 	}
@@ -74,12 +82,53 @@ func (s *Service) queueNativeMessage(ctx context.Context, principal domainidenti
 		return domaincopilot.WorkbenchStreamResult{}, err
 	}
 	metadata.Mode = "general"
-	if _, err := s.buildChatContext(ctx, principal, session.ID, metadata, input.Content); err != nil {
+	metadata.AgentProviderID = agentProviderInternal
+	fingerprint := ""
+	if s.runtimeProfiles != nil && input.RequestID != "" {
+		fingerprint = dshHash(input)
+		existing, lookupErr := s.findProfiledDSHRetry(ctx, principal.UserID, session.ID, input.RequestID, fingerprint)
+		if lookupErr != nil || existing != nil {
+			beforeSubmission = false
+			if lookupErr != nil {
+				return domaincopilot.WorkbenchStreamResult{}, lookupErr
+			}
+			return queuedNativeMessageResult(*existing, input, nil), nil
+		}
+	}
+	submission, err := s.prepareQueuedDSHRequest(ctx, principal, session, metadata, input, locale, fingerprint)
+	if err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
+	}
+	beforeSubmission = false
+	run, err := s.nativeRuns.CreateNativeRun(ctx, submission.run, submission.message, submission.key, submission.hash)
+	if err != nil {
+		return domaincopilot.WorkbenchStreamResult{}, err
+	}
+	return s.acceptedNativeMessageResult(ctx, principal, session, run, input)
+}
+
+type queuedDSHRequest struct {
+	run       domaincopilot.AgentRun
+	message   domaincopilot.Message
+	key, hash string
+}
+
+func (s *Service) prepareQueuedDSHRequest(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, input domaincopilot.WorkbenchSendMessageInput, locale, fingerprint string) (queuedDSHRequest, error) {
+	if _, err := s.buildChatContext(ctx, principal, session.ID, metadata, input.Content); err != nil {
+		return queuedDSHRequest{}, err
+	}
+	profile, err := s.resolveRuntimeProfile(ctx, principal, session, metadata)
+	if err != nil {
+		return queuedDSHRequest{}, err
+	}
+	requestMetadata := metadata
+	if profile != nil {
+		metadata.ModelPreferences.PublicModel = firstNonEmpty(metadata.ModelPreferences.PublicModel, profile.ModelPreferences.PublicModel)
+		metadata.ModelPreferences.ReasoningEffort = firstNonEmpty(metadata.ModelPreferences.ReasoningEffort, profile.ModelPreferences.ReasoningEffort)
 	}
 	settings, err := s.resolveNativeModelSettings(ctx, metadata)
 	if err != nil {
-		return domaincopilot.WorkbenchStreamResult{}, err
+		return queuedDSHRequest{}, err
 	}
 	key := input.RequestID
 	if key == "" {
@@ -89,21 +138,18 @@ func (s *Service) queueNativeMessage(ctx context.Context, principal domainidenti
 		Request     domaincopilot.WorkbenchSendMessageInput `json:"request"`
 		Metadata    domaincopilot.SessionMetadata           `json:"metadata"`
 		ModelPolicy map[string]string                       `json:"modelPolicy"`
-	}{input, metadata, map[string]string{"publicModel": settings.DefaultPublicModel, "routeId": settings.DefaultRouteID, "endpoint": settings.DefaultEndpoint}})
+	}{input, requestMetadata, map[string]string{"publicModel": settings.DefaultPublicModel, "routeId": settings.DefaultRouteID, "endpoint": settings.DefaultEndpoint}})
 	if err != nil {
-		return domaincopilot.WorkbenchStreamResult{}, err
+		return queuedDSHRequest{}, err
 	}
 	hash := sha256.Sum256(raw)
 	permissions, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
 	if err != nil {
-		return domaincopilot.WorkbenchStreamResult{}, err
+		return queuedDSHRequest{}, err
 	}
 	bindings := chatAgentToolBindings(metadata)
 	bindings = append(bindings, nativeProfessionalBindings()...)
 	if isPersonalSession(session) {
-		if err := s.requirePersonalAgent(ctx, principal); err != nil {
-			return domaincopilot.WorkbenchStreamResult{}, err
-		}
 		bindings = append(bindings, nativePersonalEnvironmentBindings()...)
 	}
 	bindings = append(bindings, domaincopilot.AgentToolBinding{ID: "harness.request_input", ToolName: "harness.request_input", ToolKind: "internal_api", AdapterID: "harness", PermissionKey: appaccess.PermObserveAIChatUse})
@@ -112,39 +158,100 @@ func (s *Service) queueNativeMessage(ctx context.Context, principal domainidenti
 	})
 	bindings, err = s.filterAgentToolBindingsByPrincipal(ctx, principal, bindings)
 	if err != nil {
-		return domaincopilot.WorkbenchStreamResult{}, err
+		return queuedDSHRequest{}, err
 	}
 	bindings, catalog, err := s.freezeNativeCatalog(ctx, principal, session.ID, bindings, input.TaskIntent, metadata.Toolset.DisabledToolNames)
 	if err != nil {
-		return domaincopilot.WorkbenchStreamResult{}, err
+		return queuedDSHRequest{}, err
 	}
 	bindings = appendNativeTaskBindings(bindings, catalog.Tasks)
 	authorization, gatewayAuthorization, err := s.freezeNativeAuthorizationCeilings(ctx, principal)
 	if err != nil {
-		return domaincopilot.WorkbenchStreamResult{}, err
+		return queuedDSHRequest{}, err
 	}
 	now := time.Now().UTC()
 	runID := "agent:" + uuid.NewString()
 	messageID := runID + ":request"
-	run := domaincopilot.AgentRun{ID: runID, ProviderID: agentProviderInternal, ProviderKind: "native", CapabilityID: "general", CreatedBy: principal.UserID, SessionID: session.ID, Status: "queued", Scope: mergeSessionScope(metadata.Scope, metadata.Toolset.ScopeOverrides), Toolset: metadata.Toolset, ToolBindings: bindings, TimeoutSeconds: 600, CallbackToken: uuid.NewString(), QueuedAt: now, CreatedAt: now, UpdatedAt: now,
+	run := domaincopilot.AgentRun{ID: runID, ProviderID: agentProviderInternal, ProviderKind: "dsh", CapabilityID: "general", CreatedBy: principal.UserID, SessionID: session.ID, Status: "queued", Scope: mergeSessionScope(metadata.Scope, metadata.Toolset.ScopeOverrides), Toolset: metadata.Toolset, ToolBindings: bindings, TimeoutSeconds: 600, CallbackToken: uuid.NewString(), QueuedAt: now, CreatedAt: now, UpdatedAt: now,
 		Input: map[string]any{"question": input.Content, "locale": normalizeLocale(locale), "requestMessageId": messageID, "metadata": sessionMetadataMap(metadata), "contextSelection": input.ContextSelection, "modelPolicy": map[string]any{"publicModel": settings.DefaultPublicModel, "routeId": settings.DefaultRouteID, "endpoint": settings.DefaultEndpoint}, "taskIntent": input.TaskIntent, "_sohaKnowledgeBaseIds": chatKnowledgeBaseIDs(metadata), "_sohaPrincipal": map[string]any{"userId": principal.UserID, "userName": principal.UserName, "accessTokenId": principal.AccessTokenID, "roles": principal.Roles, "teams": principal.Teams, "projects": principal.Projects, "tags": principal.Tags, "permissionKeys": permissions}}, Output: map[string]any{"phase": "queued", "usageKnown": false}}
+	if profile != nil {
+		run.Input["runtimeProfile"] = profile
+		run.Output["runtimeAssembly"] = domaincopilot.RuntimeAssembly{ProfileID: profile.ID, Revision: profile.Revision, Status: "preparing", Assets: []domaincopilot.RuntimeAssetStatus{}}
+	}
+	if fingerprint != "" {
+		run.Input["runtimeRequestFingerprint"] = fingerprint
+	}
+	run.Input["_sohaExecutionOwner"] = "dsh-core"
+	run.Input["_sohaReadOnlyTasks"] = !isPersonalSession(session)
 	run.Input["_sohaNativeCatalog"] = catalog
 	run.Input["_sohaAuthorizationCeiling"] = authorization
 	run.Input["_sohaGatewayAuthorizationCeiling"] = gatewayAuthorization
-	run, err = s.nativeRuns.CreateNativeRun(ctx, run, domaincopilot.Message{ID: messageID, SessionID: session.ID, Role: "user", Content: input.Content, CreatedAt: now, Metadata: chatUserMetadata(map[string]any{"mode": "general", "agentRunId": runID}, input.ContextSelection)}, key, hex.EncodeToString(hash[:]))
-	if err != nil {
-		return domaincopilot.WorkbenchStreamResult{}, err
+	message := domaincopilot.Message{ID: messageID, SessionID: session.ID, Role: "user", Content: input.Content, CreatedAt: now, Metadata: chatUserMetadata(map[string]any{"mode": "general", "agentRunId": runID}, input.ContextSelection)}
+	return queuedDSHRequest{run: run, message: message, key: key, hash: hex.EncodeToString(hash[:])}, nil
+}
+
+func (s *Service) acceptedNativeMessageResult(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, run domaincopilot.AgentRun, input domaincopilot.WorkbenchSendMessageInput) (domaincopilot.WorkbenchStreamResult, error) {
+	if legacyExecutionReadOnly(run) {
+		return queuedNativeMessageResult(run, input, nil), nil
 	}
-	event := domaincopilot.WorkbenchStreamEvent{Type: "agent.status", RunID: run.ID, ProviderID: run.ProviderID, ProviderKind: "native", Status: run.Status}
+	memoryMode := "chat"
+	if isPersonalSession(session) {
+		memoryMode = "heya"
+	}
+	memoryErr := s.RememberChatUserMessage(ctx, principal, session.ID, stringValue(run.Input["requestMessageId"]), memoryMode)
+	if memoryErr != nil {
+		if err := s.persistQueuedMemoryDegradation(ctx, run); err != nil {
+			return domaincopilot.WorkbenchStreamResult{}, err
+		}
+	}
+	s.recordGlobalAssistantAudit(ctx, principal, domaincopilot.WorkbenchGlobalAssistantEventInput{Action: "send", SessionID: session.ID, Source: parseSessionMetadata(session.Metadata).Source, LaunchContext: input.LaunchContext, SelectionContext: input.SelectionContext, Prompt: input.Content}, parseSessionMetadata(session.Metadata), "success")
+	return queuedNativeMessageResult(run, input, memoryErr), nil
+}
+
+func (s *Service) persistQueuedMemoryDegradation(ctx context.Context, run domaincopilot.AgentRun) error {
+	message, err := s.memorySourceMessage(ctx, run.SessionID, stringValue(run.Input["requestMessageId"]))
+	if err != nil {
+		return err
+	}
+	if message.Role != "user" || message.SessionID != run.SessionID || message.ID != stringValue(run.Input["requestMessageId"]) {
+		return apperrors.ErrConflict
+	}
+	metadata := maps.Clone(message.Metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["memoryStatus"] = "degraded"
+	metadata["memoryWarning"] = "长期记忆暂不可用，对话仍可继续。"
+	_, err = s.messages.UpdateMessageMetadata(ctx, run.SessionID, message.ID, metadata)
+	return err
+}
+
+func queuedNativeMessageResult(run domaincopilot.AgentRun, input domaincopilot.WorkbenchSendMessageInput, memoryErr error) domaincopilot.WorkbenchStreamResult {
+	event := domaincopilot.WorkbenchStreamEvent{Type: "agent.status", RunID: run.ID, ProviderID: run.ProviderID, ProviderKind: run.ProviderKind, Status: run.Status}
+	if assembly, ok := run.Output["runtimeAssembly"]; ok {
+		event.Metadata = map[string]any{"runtimeAssembly": assembly}
+	}
+	if memoryErr != nil {
+		if event.Metadata == nil {
+			event.Metadata = map[string]any{}
+		}
+		event.Metadata["memoryStatus"] = "degraded"
+		event.Metadata["memoryWarning"] = "长期记忆暂不可用，对话仍可继续。"
+	}
 	if input.EventSink != nil {
 		input.EventSink(event)
 	}
 	userMessage := domaincopilot.Message{ID: stringValue(run.Input["requestMessageId"]), SessionID: run.SessionID, Role: "user", Content: stringValue(run.Input["question"]), CreatedAt: run.QueuedAt}
 	result := domaincopilot.WorkbenchStreamResult{Envelope: domaincopilot.SessionMessageEnvelope{Messages: []domaincopilot.Message{userMessage}, SessionPatch: map[string]any{"agentRunId": run.ID, "agentProviderId": run.ProviderID}}}
+	if memoryErr != nil {
+		result.Envelope.Messages[0].Metadata = map[string]any{"memoryStatus": "degraded", "memoryWarning": "长期记忆暂不可用，对话仍可继续。"}
+		result.Envelope.SessionPatch["memoryStatus"] = "degraded"
+		result.Envelope.SessionPatch["memoryWarning"] = "长期记忆暂不可用，对话仍可继续。"
+	}
 	if input.EventSink == nil {
 		result.Events = []domaincopilot.WorkbenchStreamEvent{event}
 	}
-	return result, nil
+	return result
 }
 
 func (s *Service) resolveNativeModelSettings(ctx context.Context, metadata domaincopilot.SessionMetadata) (domainsettings.AIWorkbenchModelSettings, error) {
@@ -181,103 +288,8 @@ func nativeLegacyIntent(metadata domaincopilot.SessionMetadata, input domaincopi
 	return input
 }
 
-func (s *Service) runNativeWorker(ctx context.Context) {
-	store := s.nativeRuns
-	worker := "native:" + uuid.NewString()
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			lease, err := store.ClaimNativeRun(ctx, worker)
-			if errors.Is(err, apperrors.ErrNotFound) {
-				continue
-			}
-			if err == nil {
-				err = s.processNativeRun(ctx, store, lease)
-			}
-			if err != nil && ctx.Err() == nil {
-				s.logWarnCtx(ctx, "Native run stopped", zap.String("run_id", lease.Run.ID), zap.String("error", redaction.LogText(err.Error(), 512)))
-			}
-		}
-	}
-}
-
 func initialNativeCheckpoint(run domaincopilot.AgentRun) nativeCheckpoint {
 	return nativeCheckpoint{Budget: agentharness.Budget{MaxSteps: 16, MaxTokens: 32768, MaxToolCalls: domaincopilot.NativeWorkToolCallLimit, MaxCost: 1, Deadline: run.QueuedAt.Add(time.Duration(run.TimeoutSeconds) * time.Second)}, UsageKnown: true, Tracker: agentharness.ProgressTracker{MaxIdenticalActions: 3}}
-}
-
-func (s *Service) processNativeRun(ctx context.Context, store NativeRunStore, lease domaincopilot.NativeLease) error {
-	cp := initialNativeCheckpoint(lease.Run)
-	if len(lease.Checkpoint) > 2 {
-		if err := json.Unmarshal(lease.Checkpoint, &cp); err != nil {
-			return err
-		}
-	}
-	if lease.Phase == "model" {
-		cp.UsageKnown = false
-		// A lost model attempt keeps its reservation: it may already have been billed.
-		cp.ModelReservation = 0
-	}
-	cp.BudgetTokens = max(cp.BudgetTokens, cp.Usage.Tokens)
-	// ponytail: one loop per Core worker; add configured workers after measured queue demand.
-	for ctx.Err() == nil {
-		current, err := store.ReadNativeLease(ctx, "", lease.Run.ID)
-		if err != nil {
-			return err
-		}
-		if current.Fence != lease.Fence {
-			return fmt.Errorf("%w: native lease changed", apperrors.ErrConflict)
-		}
-		cp.Usage.ToolCalls = current.ToolUsage.WorkCalls
-		cp.CleanupToolCalls = current.ToolUsage.CleanupCalls
-		cp.Budget.MaxToolCalls = min(cp.Budget.MaxToolCalls, current.ToolUsage.WorkLimit)
-		if current.CancelRequested {
-			return s.finishNativeRun(ctx, store, current, cp, "canceled", "user_cancelled", "已取消本次任务。")
-		}
-		if lease.Phase == "cancelling" && cp.StopReason != "" {
-			status, content := cp.StopStatus, cp.StopContent
-			if status == "" {
-				status, content = "failed", "任务已停止，领域取消仍在核对。"
-			}
-			return s.finishNativeRun(ctx, store, lease, cp, status, cp.StopReason, content)
-		}
-		if agentRunStatusTerminal(current.Run.Status) {
-			return nil
-		}
-		budget := agentharness.Run{State: agentharness.RunRunning, Budget: cp.Budget, Usage: cp.Usage}
-		budget.Usage.Tokens = cp.BudgetTokens
-		if err = budget.ApplyUsage(agentharness.Usage{}, time.Now()); err != nil {
-			return s.finishNativeRun(ctx, store, lease, cp, "failed", string(budget.StopReason), "任务已达到运行预算，尚未完成。")
-		}
-		principal, err := s.nativePrincipal(ctx, lease.Run)
-		if err == nil {
-			ctx, err = s.nativeAuthorizationContext(ctx, principal, lease.Run, false)
-		}
-		if err != nil {
-			return s.finishNativeRun(ctx, store, lease, cp, "failed", "policy_denied", "任务授权已失效。")
-		}
-		if len(cp.Pending) > 0 {
-			lease, err = s.nativeToolStep(ctx, store, lease, &cp, principal)
-			if err != nil {
-				return s.nativeStepError(ctx, store, lease, cp, err, "policy_denied", "工具准入或执行失败，任务尚未完成。")
-			}
-			if nativeWaitingPhase(lease.Phase) {
-				return err
-			}
-			continue
-		}
-		lease, err = s.nativeModelStep(ctx, store, lease, &cp, principal)
-		if err != nil {
-			return s.nativeStepError(ctx, store, lease, cp, err, "provider_stop", "模型调用失败，请查看任务状态。")
-		}
-		if agentRunStatusTerminal(lease.Run.Status) {
-			return nil
-		}
-	}
-	return ctx.Err()
 }
 
 func nativeWaitingPhase(phase string) bool {
@@ -298,6 +310,9 @@ func (s *Service) nativeStepError(ctx context.Context, store NativeRunStore, lea
 	if current.CancelRequested {
 		// Cancellation advances the version, but does not transfer this worker's fence.
 		cp.Usage.ToolCalls, cp.CleanupToolCalls = current.ToolUsage.WorkCalls, current.ToolUsage.CleanupCalls
+		if assembly, ok := lease.Run.Output["runtimeAssembly"]; ok {
+			current.Run.Output["runtimeAssembly"] = assembly
+		}
 		return s.finishNativeRun(ctx, store, current, cp, "canceled", "user_cancelled", "已取消本次任务。")
 	}
 	if errors.Is(cause, apperrors.ErrConflict) {
@@ -331,96 +346,19 @@ func (s *Service) nativePrincipal(ctx context.Context, run domaincopilot.AgentRu
 	return principal, nil
 }
 
-func (s *Service) nativeModelStep(ctx context.Context, store NativeRunStore, lease domaincopilot.NativeLease, cp *nativeCheckpoint, principal domainidentity.Principal) (domaincopilot.NativeLease, error) {
-	input, err := s.nativeModelContext(ctx, lease, cp, principal)
-	if err != nil {
-		return lease, err
-	}
-	tools, err := s.nativeModelTools(ctx, principal, lease.Run)
-	if err != nil {
-		return lease, err
-	}
-	request, err := s.nativeModelRequest(ctx, lease.Run, input.Metadata, input.Messages, tools)
-	if err != nil {
-		return lease, err
-	}
-	if err = reserveNativeModelBudget(cp, &request); err != nil {
-		return lease, s.finishNativeRun(ctx, store, lease, *cp, "failed", "max_tokens", "任务已达到模型预算，尚未完成。")
-	}
-	cp.Usage.Steps++
-	if err := recordNativeModelContext(cp, request, input.Snapshot); err != nil {
-		return lease, err
-	}
-	cp.ModelContext.Lineage = input.Lineage
-	lease.Run.Output["contextSnapshot"] = input.Snapshot
-	lease.Run.Output["contextUsage"] = nil
-	lease, err = saveNativeCheckpoint(ctx, store, lease, *cp, "model", nil)
-	if err != nil {
-		return lease, err
-	}
-	modelCtx, cancel := context.WithDeadline(ctx, cp.Budget.Deadline)
-	defer cancel()
-	heartbeatDone := s.nativeHeartbeat(modelCtx, cancel, store, lease)
-	defer func() { cancel(); <-heartbeatDone }()
-	var saveErr error
-	filtered := reactionStream{send: func(content string) bool {
-		lease, saveErr = saveNativeCheckpoint(modelCtx, store, lease, *cp, "model", []domaincopilot.WorkbenchStreamEvent{{Type: "message.delta", Role: "assistant", MessageID: fmt.Sprintf("%s:model:%d", lease.Run.ID, cp.Usage.Steps), ContentDelta: content}})
-		return saveErr == nil
-	}}
-	response, err := s.runtime.Stream.InvokeWorkbenchModelStream(modelCtx, principal, request, func(delta appaigateway.WorkbenchRelayStreamDelta) bool {
-		// A model can mention arguments before emitting its tool call. Buffer
-		// public text until the protected call is known; never stream a prefix
-		// that can expose a private argument across delta boundaries.
-		if nativeHasProtectedCapability(lease.Run) {
-			return modelCtx.Err() == nil
-		}
-		return delta.ContentDelta == "" || filtered.push(delta.ContentDelta)
-	})
-	if err == nil {
-		filtered.flush()
-	}
-	if saveErr != nil {
-		err = errors.Join(err, saveErr)
-	}
-	if err != nil {
-		cp.UsageKnown = false
-		cp.ModelContext.Status = "outcome_unknown"
-		return lease, err
-	}
-	cp.acceptReaction(&response)
-	if err = settleNativeModelBudget(cp, response); err != nil {
-		cp.ModelContext.Status = "response_received_usage_invalid"
-		return lease, err
-	}
-	cp.ModelContext.receive(response, *cp)
-	lease.Run.Output["contextUsage"] = cp.ModelContext.Usage
-	lease.Run.Output["model"] = response.PublicModel
-	lease.Run.Output["usageKnown"] = cp.UsageKnown
-	lease.Run.Output["usage"] = nativeUsageProjection(*cp)
-	if cp.BudgetTokens > cp.Budget.MaxTokens {
-		return lease, s.finishNativeRun(ctx, store, lease, *cp, "failed", "max_tokens", "任务已达到模型预算，尚未完成。")
-	}
-	if len(response.ToolCalls) == 0 {
-		if strings.TrimSpace(response.Content) == "" {
-			return lease, fmt.Errorf("%w: empty model result", apperrors.ErrInvalidArgument)
-		}
-		err = s.finishNativeRun(ctx, store, lease, *cp, "completed", "answer_accepted", response.Content)
-		lease.Run.Status = "completed"
-		return lease, err
-	}
-	if err := s.queueNativeModelToolCalls(ctx, principal, cp, lease, response); err != nil {
-		return lease, err
-	}
-	return saveNativeCheckpoint(ctx, store, lease, *cp, "tools", nil)
-}
-
-func (s *Service) queueNativeModelToolCalls(ctx context.Context, principal domainidentity.Principal, cp *nativeCheckpoint, lease domaincopilot.NativeLease, response appaigateway.WorkbenchRelayResponse) error {
+func (s *Service) queueNativeModelToolCalls(ctx context.Context, principal domainidentity.Principal, cp *nativeCheckpoint, lease domaincopilot.NativeLease, response appaigateway.WorkbenchRelayResponse, pluginTools ...domaincopilot.DSHNativeTool) error {
 	// Validate the complete batch before adding arguments to either checkpoint
 	// copy. A rejected call must not survive as a pending call or model message.
 	calls := make([]appaigateway.WorkbenchToolCall, 0, len(response.ToolCalls))
 	pending := make([]nativeCall, 0, len(response.ToolCalls))
 	for _, call := range response.ToolCalls {
 		name := ""
+		if slices.ContainsFunc(pluginTools, func(tool domaincopilot.DSHNativeTool) bool { return tool.Name == call.Name }) {
+			call.Arguments = append(json.RawMessage(nil), call.Arguments...)
+			calls = append(calls, call)
+			pending = append(pending, nativeCall{Call: call, ToolName: call.Name, State: "plugin_prepared"})
+			continue
+		}
 		for _, binding := range lease.Run.ToolBindings {
 			if nativeFunctionName(binding.ToolName) == call.Name {
 				name = binding.ToolName
@@ -561,7 +499,7 @@ func (s *Service) nativeToolStep(ctx context.Context, store NativeRunStore, leas
 		return lease, err
 	}
 	if reason != "" {
-		return lease, s.finishNativeRun(ctx, store, lease, *cp, "failed", string(reason), "重复调用没有取得新进展，任务已停止。")
+		return s.stopRepeatedNativeTool(ctx, store, lease, cp, string(reason))
 	}
 	pending.State = "dispatching"
 	if err := reserveNativeWorkCall(ctx, store, lease, cp); err != nil {
@@ -602,6 +540,20 @@ func (s *Service) nativeToolStep(ctx context.Context, store NativeRunStore, leas
 		execution.Output = map[string]any{"error": execution.Summary}
 	}
 	return completeNativeTool(ctx, store, lease, cp, pending.Call.ID, execution, callErr)
+}
+
+func (s *Service) stopRepeatedNativeTool(ctx context.Context, store NativeRunStore, lease domaincopilot.NativeLease, cp *nativeCheckpoint, reason string) (domaincopilot.NativeLease, error) {
+	const message = "重复调用没有取得新进展，任务已停止。"
+	if lease.Run.ProviderKind != "dsh" {
+		return lease, s.finishNativeRun(ctx, store, lease, *cp, "failed", reason, message)
+	}
+	// The worker confirms the runtime has stopped before committing a result.
+	cp.StopStatus, cp.StopReason, cp.StopContent = "failed", reason, message
+	saved, err := saveNativeCheckpoint(ctx, store, lease, *cp, "cancelling", nil)
+	if err != nil {
+		return lease, err
+	}
+	return saved, apperrors.ErrConflict
 }
 
 func completeNativeTool(ctx context.Context, store NativeRunStore, lease domaincopilot.NativeLease, cp *nativeCheckpoint, callID string, execution domaincopilot.ToolExecution, callErr error) (domaincopilot.NativeLease, error) {
@@ -667,8 +619,17 @@ func (s *Service) commitNativeResult(ctx context.Context, store NativeRunStore, 
 		run.Output["contextUsage"] = cp.ModelContext.Usage
 	}
 	run.Output["capabilityTaskIds"] = nativeTaskIDs(cp.Tasks)
-	metadata := finalWorkbenchMessageMetadata(map[string]any{"mode": "general", "source": "native-harness", "agentRunId": run.ID, "requestMessageId": run.Input["requestMessageId"], "contextSnapshot": run.Output["contextSnapshot"], "contextUsage": run.Output["contextUsage"], "usage": run.Output["usage"], "usageKnown": cp.UsageKnown}, run.ToolExecutions, run.AnalysisArtifacts, map[string]any{"status": status, "providerId": run.ProviderID, "providerKind": "native", "runId": run.ID, "stopReason": reason})
+	source := "native-harness"
+	if run.ProviderKind == "dsh" {
+		source = "dsh-runtime"
+	}
+	metadata := finalWorkbenchMessageMetadata(map[string]any{"mode": "general", "source": source, "agentRunId": run.ID, "requestMessageId": run.Input["requestMessageId"], "contextSnapshot": run.Output["contextSnapshot"], "contextUsage": run.Output["contextUsage"], "usage": run.Output["usage"], "usageKnown": cp.UsageKnown}, run.ToolExecutions, run.AnalysisArtifacts, map[string]any{"status": status, "providerId": run.ProviderID, "providerKind": run.ProviderKind, "runId": run.ID, "stopReason": reason})
 	metadata["capabilityTaskIds"] = run.Output["capabilityTaskIds"]
+	for _, key := range []string{"runtimeAssembly", "runtimeHooks"} {
+		if value, ok := run.Output[key]; ok {
+			metadata[key] = value
+		}
+	}
 	if status == "completed" && cp.Reaction != "" {
 		metadata["assistantReaction"] = cp.Reaction
 	}
@@ -681,7 +642,7 @@ func (s *Service) commitNativeResult(ctx context.Context, store NativeRunStore, 
 	if err != nil {
 		return err
 	}
-	_, err = store.AdvanceNativeRun(ctx, lease, domaincopilot.NativeAdvance{Run: run, Phase: status, StopReason: reason, Checkpoint: raw, FinalMessage: &message, Events: []domaincopilot.WorkbenchStreamEvent{{Type: "message.done", MessageID: message.ID, Role: message.Role, Content: content, Metadata: metadata}, {Type: "agent.status", ProviderID: run.ProviderID, ProviderKind: "native", Status: nativeStreamStatus(status)}}})
+	_, err = store.AdvanceNativeRun(ctx, lease, domaincopilot.NativeAdvance{Run: run, Phase: status, StopReason: reason, Checkpoint: raw, FinalMessage: &message, Events: []domaincopilot.WorkbenchStreamEvent{{Type: "message.done", MessageID: message.ID, Role: message.Role, Content: content, Metadata: metadata}, {Type: "agent.status", ProviderID: run.ProviderID, ProviderKind: run.ProviderKind, Status: nativeStreamStatus(status)}}})
 	return err
 }
 
@@ -720,6 +681,9 @@ func (s *Service) ResumeAgentRun(ctx context.Context, principal domainidentity.P
 	}
 	if _, err := s.ownedSession(ctx, principal, lease.Run.SessionID); err != nil {
 		return domaincopilot.AgentRun{}, err
+	}
+	if lease.Run.ProviderKind != "dsh" || legacyExecutionReadOnly(lease.Run) {
+		return domaincopilot.AgentRun{}, fmt.Errorf("%w: legacy run requires migration, drain or reconciliation; checkpoint resume is disabled", apperrors.ErrConflict)
 	}
 	run, err := store.ResumeNativeRun(ctx, principal.UserID, id, input)
 	run.CallbackToken = ""

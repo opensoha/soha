@@ -95,6 +95,7 @@ type AgentCapability struct {
 }
 
 type AgentRun struct {
+	RuntimeAssembly    *RuntimeAssembly           `json:"runtimeAssembly,omitempty" gorm:"-"`
 	ExecutionOwner     string                     `json:"executionOwner,omitempty" gorm:"-"`
 	Phase              string                     `json:"phase,omitempty" gorm:"-"`
 	StopReason         string                     `json:"stopReason,omitempty" gorm:"-"`
@@ -295,6 +296,12 @@ func SanitizeWorkbenchStreamEvents(events []WorkbenchStreamEvent) []WorkbenchStr
 func WithOperationState(run AgentRun, now time.Time) AgentRun {
 	run.ParentRunID, _ = run.Input["_sohaParentRunId"].(string)
 	run.OperationState = BuildOperationState(run, now)
+	if value, exists := run.Output["runtimeAssembly"]; run.ProviderKind == "dsh" && run.Input["_sohaExecutionOwner"] == "dsh-core" && exists {
+		var assembly RuntimeAssembly
+		if raw, err := json.Marshal(value); err == nil && json.Unmarshal(raw, &assembly) == nil && assembly.ProfileID != "" {
+			run.RuntimeAssembly = &assembly
+		}
+	}
 	if run.CapabilityID == "general" && run.Chat == nil {
 		if data, err := json.Marshal(run.Input["chat"]); err == nil {
 			var chat sohaapi.AgentChatInput

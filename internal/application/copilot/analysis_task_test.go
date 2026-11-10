@@ -31,26 +31,27 @@ func TestAnalysisTaskPreservesConversationDefaults(t *testing.T) {
 						Scope: domaincopilot.SessionScope{ClusterID: "cluster-a", TimeRangeMinutes: 30},
 					}),
 				}
+				capture := attachDSHQueueFixture(t, service, repo)
 				principal := domainidentity.Principal{UserID: "user-1", Roles: []string{"chat"}}
 				result, err := service.StreamMessage(context.Background(), principal, repo.session.ID,
 					domaincopilot.WorkbenchSendMessageInput{Content: "Investigate the incident", Mode: task.mode, AgentProviderID: task.provider}, "en-US")
 				if err != nil {
 					t.Fatalf("analysis task: %v", err)
 				}
+				metadata := parseSessionMetadata(repo.session.Metadata)
 				wantMode, wantProvider := "general", "internal"
-				if kind == "" {
+				if kind == "" && task.provider == "hermes" {
 					wantMode, wantProvider = task.mode, task.provider
 				}
-				metadata := parseSessionMetadata(repo.session.Metadata)
 				if metadata.Mode != wantMode || metadata.AgentProviderID != wantProvider || metadata.ConversationKind != kind {
-					t.Fatalf("conversation defaults changed: mode=%s provider=%s kind=%s", metadata.Mode, metadata.AgentProviderID, metadata.ConversationKind)
+					t.Fatalf("conversation defaults changed: %+v", metadata)
 				}
-				if result.Envelope.SessionPatch["mode"] != wantMode {
-					t.Fatalf("session patch must match stored defaults: %#v", result.Envelope.SessionPatch)
-				}
-				assistant := result.Envelope.Messages[len(result.Envelope.Messages)-1]
-				if assistant.Metadata["mode"] != task.mode {
-					t.Fatalf("task lost its analysis type: %#v", assistant.Metadata)
+				if task.provider == "internal" {
+					if capture.run.ProviderKind != "dsh" || capture.run.Input["taskIntent"] == nil {
+						t.Fatal("analysis intent did not queue dsh")
+					}
+				} else if len(result.Envelope.Messages) == 0 {
+					t.Fatal("external task lost its receipt")
 				}
 				if kind != "" {
 					_, err = service.StreamMessage(context.Background(), principal, repo.session.ID,

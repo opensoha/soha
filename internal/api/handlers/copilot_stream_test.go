@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -262,5 +263,24 @@ func TestStreamMessageExplainsUnavailableContext(t *testing.T) {
 	event := publicWorkbenchStreamError(apperrors.ErrNotFound)
 	if event.Code != "context_unavailable" || !strings.Contains(event.Message, "移除") || event.Retryable == nil || *event.Retryable {
 		t.Fatalf("unavailable context recovery: %+v", event)
+	}
+}
+
+func TestStreamMessageDistinguishesRejectedAndUncertainSubmission(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"rejected", errors.Join(appcopilot.ErrWorkbenchRequestNotAccepted, apperrors.ErrNotFound), "request_not_accepted"},
+		{"uncertain", errors.New("connection lost while committing"), "agent_failed"},
+		{"unsupported_without_submission_proof", apperrors.ErrUnsupportedOperation, "agent_failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := performStreamMessageRequest(t, &streamHandlerService{err: tc.err}, `{"content":"hi","requestId":"request-1","mode":"general"}`)
+			if len(events) != 2 || events[0].Code != tc.code {
+				t.Fatalf("events = %#v, want %s", events, tc.code)
+			}
+		})
 	}
 }

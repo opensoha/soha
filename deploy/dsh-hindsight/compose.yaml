@@ -1,0 +1,84 @@
+# Standalone opt-in services. Does not alter the main Soha Compose project.
+name: soha-optional-runtimes
+services:
+  dsh:
+    profiles: [dsh]
+    image: ${DSH_IMAGE:-soha-dsh:unbuilt}
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 2
+    ports: ["127.0.0.1:8097:8097"]
+    tmpfs: [/tmp:rw,noexec,nosuid,size=128m,uid=1000,gid=1000]
+    volumes: [dsh-data:/var/lib/soha-dsh]
+    secrets: [dsh-service-token]
+    environment:
+      SOHA_DSH_HOST: 0.0.0.0
+      SOHA_DSH_SERVICE_TOKEN_FILE: /run/secrets/dsh-service-token
+      SOHA_DSH_MODEL_AUTH_MODE: core
+      SOHA_DSH_GATEWAY_URL: ${DSH_CORE_BASE_URL:-}/api/v1/copilot/dsh/model/v1
+      SOHA_DSH_CORE_CALLBACK_URL: ${DSH_CORE_BASE_URL:-}/api/v1/copilot/dsh/tools
+      SOHA_DSH_MODELS: soha-workbench
+  hindsight-gateway:
+    profiles: [hindsight]
+    image: ghcr.io/vectorize-io/hindsight:1.2.0@sha256:19d0c08f3df79acac29384826419a1ca158129e81ec527cdcbd8c97ff4ef76da
+    user: "1000:1000"
+    entrypoint: [/app/api/.venv/bin/python, /run/deploy/gateway.py]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    ports: ["127.0.0.1:8889:8889"]
+    configs:
+      - source: hindsight-gateway
+        target: /run/deploy/gateway.py
+    secrets: [hindsight-service-token]
+    environment:
+      SOHA_HINDSIGHT_TOKEN_FILE: /run/secrets/hindsight-service-token
+  hindsight-api:
+    profiles: [hindsight]
+    image: ghcr.io/vectorize-io/hindsight:1.2.0@sha256:19d0c08f3df79acac29384826419a1ca158129e81ec527cdcbd8c97ff4ef76da
+    user: "1000:1000"
+    network_mode: service:hindsight-gateway
+    depends_on: [hindsight-gateway]
+    entrypoint: [/app/api/.venv/bin/python, /run/deploy/start.py]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+    tmpfs: [/tmp:rw,noexec,nosuid,size=256m,uid=1000,gid=1000]
+    configs:
+      - source: hindsight-start
+        target: /run/deploy/start.py
+    secrets: [hindsight-database-url, gateway-pat]
+    environment:
+      SOHA_HINDSIGHT_DATABASE_URL_FILE: /run/secrets/hindsight-database-url
+      SOHA_HINDSIGHT_GATEWAY_PAT_FILE: /run/secrets/gateway-pat
+      SOHA_HINDSIGHT_GATEWAY_URL: ${HINDSIGHT_GATEWAY_URL:-}
+      SOHA_HINDSIGHT_EMBEDDING_GATEWAY_URL: ${HINDSIGHT_EMBEDDING_GATEWAY_URL:-}
+      SOHA_HINDSIGHT_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-}
+      SOHA_HINDSIGHT_EMBEDDING_MODEL: ${HINDSIGHT_EMBEDDING_MODEL:-}
+      SOHA_HINDSIGHT_EMBEDDING_DIMENSIONS: ${HINDSIGHT_EMBEDDING_DIMENSIONS:-}
+configs:
+  hindsight-start:
+    file: ./start.py
+  hindsight-gateway:
+    file: ./gateway.py
+secrets:
+  dsh-service-token:
+    file: ${DSH_SERVICE_TOKEN_FILE:-./secrets/dsh-service-token}
+  gateway-pat:
+    file: ${GATEWAY_PAT_FILE:-./secrets/gateway-pat}
+  hindsight-service-token:
+    file: ${HINDSIGHT_SERVICE_TOKEN_FILE:-./secrets/hindsight-service-token}
+  hindsight-database-url:
+    file: ${HINDSIGHT_DATABASE_URL_FILE:-./secrets/hindsight-database-url}
+volumes:
+  dsh-data: {}

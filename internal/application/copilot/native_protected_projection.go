@@ -37,7 +37,7 @@ func nativePublicEvent(event domaincopilot.WorkbenchStreamEvent) domaincopilot.W
 }
 
 func nativePublicRun(run domaincopilot.AgentRun) domaincopilot.AgentRun {
-	if run.ProviderKind != "native" {
+	if run.ProviderKind != "native" && run.ProviderKind != "dsh" {
 		return run
 	}
 	run.ToolExecutions = slices.Clone(run.ToolExecutions)

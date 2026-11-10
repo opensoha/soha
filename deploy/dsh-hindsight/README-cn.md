@@ -1,0 +1,34 @@
+# 可选 dsh / Hindsight 部署（B3）
+
+本目录默认关闭，详细参数、安全边界与 Core 启动配置见[完整说明](README.md)
+和 `core.env.example`。接入前先应用 Core 迁移至 0145。新生产 Chat/Heya 固定使用 dsh；
+禁用或不可用时明确返回 unavailable，绝不回退 Native。升级前须用原运行时排空 Native 在途任务，
+本候选不会恢复已删除的旧循环。B4 维护工具已实现，业务数据迁移尚未执行；部署模板不等于端到端验收通过。
+
+- dsh 固定 Node 24.14.0、SDK/runtime 0.2.2-rc.1，镜像见 Agent deploy/Dockerfile.dsh-runtime。
+- Hindsight 固定 1.2.0/source 34a1386/index sha256:19d0c08f3df79acac29384826419a1ca158129e81ec527cdcbd8c97ff4ef76da。
+- 为 Hindsight 单独准备数据库、角色、pgvector/pg_trgm 及迁移权限，禁止共享 Core 数据库或 schema，不自动迁移业务数据。
+- Node 生产模式 `SOHA_DSH_MODEL_AUTH_MODE=core`，无需 PAT，模型固定虚拟名 `soha-workbench`；由 Core 选择用户实际路由。配置 `DSH_CORE_BASE_URL` 后派生 `/api/v1/copilot/dsh/model/v1` 与 `/api/v1/copilot/dsh/tools`，不得指向 Agent 集群代理路径。Core/Node 共享同一服务 token。
+- Hindsight 仍须显式指定 Gateway OpenAI-compatible URL、LLM/embedding 模型和向量维度，PAT/服务 token/数据库 URL 使用只读密钥文件；不提供公有 provider 默认值。
+- `HINDSIGHT_EMBEDDING_GATEWAY_URL` 可单独指定向量入口，空值沿用 `HINDSIGHT_GATEWAY_URL`。本次完整资格组合均走 `/api/v1/ai-gateway/llm/qwen/v1`：抽取模型 `Qwen/Qwen3-30B-A3B-Instruct-2507`，向量模型 `Qwen/Qwen3-Embedding-0.6B`、1024 维。Hindsight 协议 provider 仍为 `openai`，`qwen` 是 Gateway 路线类型；也可显式选独立 OpenAI 抽取入口。启动脚本通过官方 extra-body 设置请求 float 向量，输入保持原始文本；PAT 仅授权所选模型/provider。
+- Core 的 dsh/Hindsight ENABLED 默认 false；现有 Core 容器仅挂载对应服务 token。私有隔离 HTTP 链路须显式开启 dsh ALLOW_INSECURE_HTTP；namespace 必须稳定且由服务端持有。
+- 上游 API 默认无 Bearer 保护；gateway.py 校验服务 token，仅放行 Core adapter 所需 raw API。原始 API 绑定共享网络命名空间的 loopback，不发布管理 API；reflect/config/model 覆写被拒绝。
+- start.py 禁用自动 consolidation 和下载，使用 rrf，不启动额外 worker/UI；部署网络仍须限制出站仅到私有 Gateway/独立数据库。已有 bank 覆写与派生计划的数据库不能直接接入。
+- 模型与反思单次请求超时均为 95 秒，官方模型重试限定一次；固定 provider 对 HTTP400/429 和 JSON 解析错误也会重试一次，不会放宽格式校验及 Soha 来源检查。这只重试模型请求，不重提未知结果的 retain operation；Core 继续对账原操作并维持删除依赖屏障。
+- 文档删除会通过内部 loopback API 清除同 bank 全部 mental models（含手工模型和知识页承载模型），并由固定 PostgreSQL schema 的外键级联删除刷新历史；其他 raw 文档保留。只适用于 Soha 独占 bank、新建独立 PostgreSQL 和默认检索索引；Soha 未开放 Hindsight 手工模型/知识页编辑。这不是共享 Hindsight 数据库或外部索引存储的通用清理代理，也不能同时接受管理员、UI/MCP、模板或导入写入。服务 token 和路径格式本身不能证明任意已有 bank 归属。
+- 对已尝试的 retain，Core 用持久 outbox 的操作 ID 发起文档删除。保护网关核对 bank、文档及操作终态，先删除含原始载荷的子操作，再删除父操作。Core 要求成功或原始文档 404 响应附带匹配的清理回执。恢复记忆同步前部署配套网关。
+- raw 文档已不存在（404）时仍须完成上述清理才确认。内部反复取第一页 metadata（不排除知识页），校验 bank/模型 ID；单次最多删除 1000 个模型，整个流程限时 20 秒，失败返回脱敏 502，由 Core durable delete 重试续清；并发删除直接 503，不无界排队。建议 Core Hindsight timeout 为 30 秒；较短调用超时仍须持久重试，不能当作删除成功。外部 MM/history/refresh 管理 API 继续拒绝。
+- 固定版 late refresh 只 UPDATE 已有模型，不 upsert；删除模型和历史外键阻止其回写复活，但不能封住管理员重新创建模型或旧 retain 重放。生产必须保持独占写入、无旧计划/模板、关闭自动 consolidation，并保留 Core 原 retain 回执与删除依赖。默认 PostgreSQL 检索中的旧索引命中无法 hydrate 已删模型；不据此宣称其他外部索引已完成存储擦除。
+- 所有容器非 root、只读根文件系统，不挂 Docker socket/宿主工作区；dsh 单写者独立持久卷，Hindsight 持久数据在独立数据库。
+
+在 Core 仓执行 `opensoha-verify run -- docker compose -f deploy/dsh-hindsight/compose.yaml --profile dsh --profile hindsight config --quiet` 可离线校验配置。
+只有在真实镜像、密钥、独立 DB、Gateway 和 B3 前置全部验证后，才按英文说明显式启用 profiles。
+当前机器无可用本机 Docker daemon。用户已授权 remote 数据库 Docker 主机的隔离检查，dsh 原生 amd64 镜像真实构建通过，临时镜像/builder 已清理，已有服务与卷保留；该授权不等于部署本服务。
+固定 Hindsight 容器启动、只读文件系统/UID、镜像健康和完整部署验收，仍须与原生 slim 包/独立 PostgreSQL/Gateway 资格区分，后者结果以任务实际证据为准。渲染或单测通过不代表上线或业务数据迁移完成。
+
+
+### 离线升级工具
+
+镜像构建配方包含显式维护入口 `/app/runtime-upgrade`，Server entrypoint不会调用它。先停止并排空执行和同步worker，将schema迁移到0144，再审核只读清单。通过受控进程环境提供 `SOHA_UPGRADE_DATABASE_URL`；apply还要求已审核digest和挂载的非空0600备份，DSN及凭据不放命令参数。`-mode rollback -digest CHECKPOINT`仅执行已说明的条件补偿，不复活旧引擎、审批或墓碑。
+
+配方变更不代表已发布镜像包含工具。Task123候选仍需真实镜像构建及兼容的已发布contracts，满足前提后才能部署。匹配源码的构建入口为 `GOWORK=off go build -o runtime-upgrade ./cmd/runtime-upgrade`，同样须先满足依赖前提。

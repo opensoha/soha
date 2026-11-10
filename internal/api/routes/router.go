@@ -32,6 +32,7 @@ const (
 )
 
 type Dependencies struct {
+	DSHRuntime                 *apiHandlers.DSHRuntimeHandler
 	CLIAuth                    *apiHandlers.CLIAuthHandler
 	ManagedContentDestinations *apiHandlers.ManagedContentDestinationsHandler
 	ManagedContentTransfers    *apiHandlers.ManagedContentTransfersHandler

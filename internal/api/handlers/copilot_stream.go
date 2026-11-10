@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/opensoha/soha/internal/platform/apperrors"
 	"net/http"
 	"time"
 
@@ -12,7 +11,9 @@ import (
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func (h *copilotStreamHandler) StreamMessage(c *gin.Context) {
@@ -74,7 +75,12 @@ func (h *copilotStreamHandler) StreamMessage(c *gin.Context) {
 	}, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		_ = c.Error(err)
-		emit(publicWorkbenchStreamError(err))
+		event := publicWorkbenchStreamError(err)
+		if req.RequestID != "" && event.Code == "agent_unsupported" {
+			// Older clients interpret this code as proof of non-submission.
+			event = publicWorkbenchStreamError(nil)
+		}
+		emit(event)
 		emit(domaincopilot.WorkbenchStreamEvent{Type: "agent.status", ProviderID: "internal", ProviderKind: "internal", Status: "failed"})
 		return
 	}
@@ -114,6 +120,9 @@ func publicWorkbenchStreamError(err error) domaincopilot.WorkbenchStreamEvent {
 		code, message, retryable = "agent_unsupported", "所选助手不支持当前任务。", false
 	case errors.Is(err, apperrors.ErrClusterUnready):
 		code, message, retryable = "agent_unavailable", "助手暂不可用，请检查插件配置和运行器状态。", true
+	}
+	if errors.Is(err, appcopilot.ErrWorkbenchRequestNotAccepted) {
+		code = "request_not_accepted"
 	}
 	return domaincopilot.WorkbenchStreamEvent{Type: "error", Code: code, Message: message, Retryable: &retryable}
 }

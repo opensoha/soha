@@ -16,9 +16,16 @@ type NativeTaskParentStore interface {
 }
 
 func (s *Service) ReserveNativeTaskToolCall(ctx context.Context, parent domaincopilot.NativeTaskParent, cancellation bool) error {
-	store, _, err := s.nativeTaskStore()
+	store, runs, err := s.nativeTaskStore()
 	if err != nil {
 		return err
+	}
+	lease, err := runs.ReadNativeLease(ctx, parent.OwnerID, parent.RunID)
+	if err != nil {
+		return err
+	}
+	if legacyExecutionReadOnly(lease.Run) {
+		return apperrors.ErrAccessDenied
 	}
 	return store.ReserveNativeChildToolCall(ctx, parent, cancellation)
 }
@@ -39,6 +46,9 @@ func (s *Service) WithNativeTaskCreation(ctx context.Context, expected domaincop
 		lease, err := runs.ReadNativeLease(txCtx, parent.OwnerID, parent.RunID)
 		if err != nil {
 			return err
+		}
+		if legacyExecutionReadOnly(lease.Run) {
+			return apperrors.ErrAccessDenied
 		}
 		principal, err := s.nativePrincipal(txCtx, lease.Run)
 		if err != nil {
@@ -71,6 +81,9 @@ func (s *Service) NativeTaskStopReason(ctx context.Context, parent domaincopilot
 	if err != nil {
 		return "", err
 	}
+	if legacyExecutionReadOnly(lease.Run) {
+		return "legacy_reconciliation_required", nil
+	}
 	principal, err := s.nativePrincipal(ctx, lease.Run)
 	if err == nil {
 		ctx, err = s.nativeAuthorizationContext(ctx, principal, lease.Run, true)
@@ -96,6 +109,9 @@ func (s *Service) WithNativeTaskParent(ctx context.Context, parent domaincopilot
 		lease, err := runs.ReadNativeLease(boundedCtx, parent.OwnerID, parent.RunID)
 		if err != nil {
 			return err
+		}
+		if legacyExecutionReadOnly(lease.Run) {
+			return apperrors.ErrAccessDenied
 		}
 		principal, err := s.nativePrincipal(boundedCtx, lease.Run)
 		if err != nil {

@@ -13,24 +13,33 @@ import (
 var ErrNotFound = fmt.Errorf("memory record not found: %w", apperrors.ErrNotFound)
 
 type Record struct {
-	PolicyID   string     `json:"policyId,omitempty"`
-	ID         string     `json:"id"`
-	OwnerType  string     `json:"ownerType"`
-	OwnerID    string     `json:"ownerId"`
-	ScopeHash  string     `json:"scopeHash"`
-	Fact       string     `json:"fact"`
-	SourceType string     `json:"sourceType"`
-	SourceRefs []string   `json:"sourceRefs"`
-	Confidence float64    `json:"confidence"`
-	ValidFrom  time.Time  `json:"validFrom"`
-	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
-	PolicyVer  string     `json:"policyVersion"`
-	Status     string     `json:"status"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	DeletedAt  *time.Time `json:"deletedAt,omitempty"`
+	Quarantined      bool              `json:"quarantined,omitempty"`
+	QuarantineReason string            `json:"quarantineReason,omitempty"`
+	SyncStatus       string            `json:"syncStatus,omitempty"`
+	SourceHashes     map[string]string `json:"sourceHashes,omitempty"`
+	Revision         int64             `json:"-"`
+	PolicyID         string            `json:"policyId,omitempty"`
+	ID               string            `json:"id"`
+	OwnerType        string            `json:"ownerType"`
+	OwnerID          string            `json:"ownerId"`
+	ScopeHash        string            `json:"scopeHash"`
+	Fact             string            `json:"fact"`
+	SourceType       string            `json:"sourceType"`
+	SourceRefs       []string          `json:"sourceRefs"`
+	Confidence       float64           `json:"confidence"`
+	ValidFrom        time.Time         `json:"validFrom"`
+	ExpiresAt        *time.Time        `json:"expiresAt,omitempty"`
+	PolicyVer        string            `json:"policyVersion"`
+	Status           string            `json:"status"`
+	CreatedAt        time.Time         `json:"createdAt"`
+	DeletedAt        *time.Time        `json:"deletedAt,omitempty"`
 }
 
 type Policy struct {
+	OwnerID           string        `json:"ownerId,omitempty"`
+	Mode              string        `json:"mode,omitempty"`
+	ReadEnabled       *bool         `json:"readEnabled,omitempty"`
+	WriteEnabled      *bool         `json:"writeEnabled,omitempty"`
 	ID                string        `json:"id"`
 	Version           string        `json:"version"`
 	OwnerTypes        []string      `json:"ownerTypes"`
@@ -52,8 +61,9 @@ type Store interface {
 }
 
 type Service struct {
-	store Store
-	now   func() time.Time
+	store   Store
+	now     func() time.Time
+	backend *BackendService
 }
 
 func NewService(store Store) (*Service, error) {
@@ -68,6 +78,9 @@ func (s *Service) PutPolicy(ctx context.Context, policy Policy) error {
 	policy.Version = strings.TrimSpace(policy.Version)
 	if policy.ID == "" || policy.Version == "" || policy.MaximumTTL <= 0 || policy.DefaultTTL <= 0 || policy.DefaultTTL > policy.MaximumTTL {
 		return fmt.Errorf("%w: invalid memory policy", apperrors.ErrInvalidArgument)
+	}
+	if policy.Mode != "" && policy.Mode != "chat" && policy.Mode != "heya" {
+		return fmt.Errorf("%w: invalid memory mode", apperrors.ErrInvalidArgument)
 	}
 	if policy.MinimumConfidence < 0 || policy.MinimumConfidence > 1 {
 		return fmt.Errorf("%w: invalid memory policy confidence", apperrors.ErrInvalidArgument)
@@ -94,20 +107,15 @@ func (s *Service) PutRecord(ctx context.Context, record Record, policy Policy) (
 	record.Fact = strings.TrimSpace(record.Fact)
 	record.PolicyVer = strings.TrimSpace(record.PolicyVer)
 	record.SourceType = strings.TrimSpace(record.SourceType)
-	if record.ID == "" || record.OwnerID == "" || record.Fact == "" || len(record.Fact) > 8_000 || !strings.HasPrefix(record.ScopeHash, "sha256:") {
-		return Record{}, fmt.Errorf("%w: invalid memory record", apperrors.ErrInvalidArgument)
+	if err := validateMemoryWrite(record, policy); err != nil {
+		return Record{}, err
 	}
-	if !slices.Contains(policy.OwnerTypes, record.OwnerType) || !policy.Enabled || record.PolicyVer != policy.Version {
-		return Record{}, fmt.Errorf("%w: memory policy does not allow owner or version", apperrors.ErrInvalidArgument)
+	consented, err := LegacyChatConsent(ctx, s.store, policy, record.OwnerID, true)
+	if err != nil {
+		return Record{}, err
 	}
-	if record.SourceType != "explicit_user" && record.SourceType != "curated_extractor" {
-		return Record{}, fmt.Errorf("%w: memory source must be explicit or curated", apperrors.ErrInvalidArgument)
-	}
-	if policy.ExplicitWriteOnly && record.SourceType != "explicit_user" {
-		return Record{}, fmt.Errorf("%w: memory policy requires explicit user writes", apperrors.ErrInvalidArgument)
-	}
-	if record.Confidence < policy.MinimumConfidence || record.Confidence > 1 {
-		return Record{}, fmt.Errorf("%w: memory confidence is outside policy", apperrors.ErrInvalidArgument)
+	if !consented {
+		return Record{}, fmt.Errorf("%w: personal Chat memory writes are disabled", apperrors.ErrAccessDenied)
 	}
 	record.SourceRefs = normalizeStrings(record.SourceRefs, 32)
 	now := s.now().UTC()
@@ -123,11 +131,13 @@ func (s *Service) PutRecord(ctx context.Context, record Record, policy Policy) (
 	}
 	record.PolicyID = policy.ID
 	record.Status = "active"
+	record.SyncStatus = ""
+	record.DeletedAt = nil
 	record.CreatedAt = now
 	if err := s.store.PutRecord(ctx, cloneRecord(record)); err != nil {
 		return Record{}, err
 	}
-	return cloneRecord(record), nil
+	return s.GetRecord(ctx, record.ID)
 }
 
 func (s *Service) ListRecords(ctx context.Context, ownerType, ownerID string) ([]Record, error) {
@@ -136,13 +146,17 @@ func (s *Service) ListRecords(ctx context.Context, ownerType, ownerID string) ([
 		return nil, err
 	}
 	for i := range items {
-		items[i] = cloneRecord(items[i])
+		items[i] = s.recordState(ctx, cloneRecord(items[i]))
 	}
 	return items, nil
 }
 
 func (s *Service) GetRecord(ctx context.Context, id string) (Record, error) {
-	return s.store.GetRecord(ctx, strings.TrimSpace(id))
+	record, err := s.store.GetRecord(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return Record{}, err
+	}
+	return s.recordState(ctx, record), nil
 }
 
 func (s *Service) DeleteRecord(ctx context.Context, id string) error {
@@ -175,6 +189,13 @@ func normalizeStrings(items []string, limit int) []string {
 
 func cloneRecord(record Record) Record {
 	record.SourceRefs = slices.Clone(record.SourceRefs)
+	if record.SourceHashes != nil {
+		hashes := make(map[string]string, len(record.SourceHashes))
+		for k, v := range record.SourceHashes {
+			hashes[k] = v
+		}
+		record.SourceHashes = hashes
+	}
 	if record.ExpiresAt != nil {
 		expiresAt := *record.ExpiresAt
 		record.ExpiresAt = &expiresAt
@@ -184,4 +205,36 @@ func cloneRecord(record Record) Record {
 		record.DeletedAt = &deletedAt
 	}
 	return record
+}
+
+func clonePolicy(p Policy) Policy {
+	p.OwnerTypes = slices.Clone(p.OwnerTypes)
+	if p.ReadEnabled != nil {
+		value := *p.ReadEnabled
+		p.ReadEnabled = &value
+	}
+	if p.WriteEnabled != nil {
+		value := *p.WriteEnabled
+		p.WriteEnabled = &value
+	}
+	return p
+}
+
+func validateMemoryWrite(record Record, policy Policy) error {
+	if record.ID == "" || record.OwnerID == "" || record.Fact == "" || len(record.Fact) > 8_000 || !strings.HasPrefix(record.ScopeHash, "sha256:") {
+		return fmt.Errorf("%w: invalid memory record", apperrors.ErrInvalidArgument)
+	}
+	if !WriteAllowed(policy) || (policy.OwnerID != "" && policy.OwnerID != record.OwnerID) || !slices.Contains(policy.OwnerTypes, record.OwnerType) || !policy.Enabled || record.PolicyVer != policy.Version {
+		return fmt.Errorf("%w: memory policy does not allow owner or version", apperrors.ErrInvalidArgument)
+	}
+	if record.SourceType != "explicit_user" && record.SourceType != "curated_extractor" {
+		return fmt.Errorf("%w: memory source must be explicit or curated", apperrors.ErrInvalidArgument)
+	}
+	if policy.ExplicitWriteOnly && record.SourceType != "explicit_user" {
+		return fmt.Errorf("%w: memory policy requires explicit user writes", apperrors.ErrInvalidArgument)
+	}
+	if record.Confidence < policy.MinimumConfidence || record.Confidence > 1 {
+		return fmt.Errorf("%w: memory confidence is outside policy", apperrors.ErrInvalidArgument)
+	}
+	return nil
 }
