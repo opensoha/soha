@@ -181,7 +181,7 @@ func logSampleLimit(limit int) int {
 }
 
 func logEvidenceSourceEnabled(source domaincopilot.DataSource, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, adapterID string) bool {
-	if !source.Enabled || source.SourceKind != "logs" || source.MCPAdapter != adapterID {
+	if !source.Enabled || source.RetiredBackend() || source.SourceKind != "logs" || source.MCPAdapter != adapterID {
 		return false
 	}
 	if !toolsetAllowsAdapter(toolset, source.MCPAdapter) {

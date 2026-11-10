@@ -100,6 +100,10 @@ func (s *monitoringTelemetryStub) RangeQuery(ctx context.Context, _ string, _ st
 	return nil, nil, errMonitoringTelemetry
 }
 
+func (*monitoringTelemetryStub) SupportsTraceSource(context.Context, domaincopilot.DataSource) (bool, error) {
+	return true, nil
+}
+
 func (s *monitoringTelemetryStub) FindSlowSpans(ctx context.Context, _ string, _ string, _ map[string]any, query telemetry.TraceQuery) (telemetry.TraceResult, error) {
 	s.context = ctx
 	s.query = query

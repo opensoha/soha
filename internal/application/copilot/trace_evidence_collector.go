@@ -162,7 +162,7 @@ func traceHotspotHypothesis(locale, sourceID string, hotServices []string, evide
 }
 
 func traceEvidenceSourceEnabled(source domaincopilot.DataSource, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, adapterID string) bool {
-	if !source.Enabled || source.SourceKind != "traces" || source.MCPAdapter != adapterID || !toolsetAllowsAdapter(toolset, source.MCPAdapter) {
+	if !source.Enabled || source.RetiredBackend() || source.SourceKind != "traces" || source.MCPAdapter != adapterID || !toolsetAllowsAdapter(toolset, source.MCPAdapter) {
 		return false
 	}
 	return len(profile.EnabledSources) == 0 || containsString(profile.EnabledSources, source.ID) || containsString(profile.EnabledSources, "traces")

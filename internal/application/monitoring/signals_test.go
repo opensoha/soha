@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	apierrors "github.com/opensoha/soha/internal/api/errors"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -48,6 +49,10 @@ type stubTraceTelemetry struct {
 	called *bool
 }
 
+func (stubTraceTelemetry) SupportsTraceSource(_ context.Context, source domaincopilot.DataSource) (bool, error) {
+	return source.BackendType == "external-trace-fixture", nil
+}
+
 func (s stubTraceTelemetry) FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error) {
 	if s.called != nil {
 		*s.called = true
@@ -63,6 +68,10 @@ func (s stubTraceTelemetry) FindSlowSpans(context.Context, string, string, map[s
 }
 
 type stubServiceTelemetry struct{}
+
+func (stubServiceTelemetry) SupportsServiceSource(_ context.Context, source domaincopilot.DataSource, capability ServiceCapability) (bool, error) {
+	return source.BackendType == "external-trace-fixture" && capability == ServiceCatalogCapability, nil
+}
 
 func (stubServiceTelemetry) ListServices(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceResult, error) {
 	return telemetry.ServiceResult{Services: []telemetry.Service{{ID: "svc-1", Name: "orders", Instances: []telemetry.ServiceInstance{}, Endpoints: []telemetry.ServiceEndpoint{}}}}, nil
@@ -142,7 +151,7 @@ func TestQueryMetricsRejectsScopeNotIsolatedByDataSource(t *testing.T) {
 func TestQueryTracesReturnsSortedUniqueServices(t *testing.T) {
 	service := &Service{
 		dataSources: stubSignalDataSources{items: []domaincopilot.DataSource{{
-			ID: "traces", BackendType: "jaeger", Enabled: true, Config: map[string]any{"endpoint": "http://jaeger:16686"},
+			ID: "traces", SourceKind: "traces", BackendType: "external-trace-fixture", Enabled: true,
 		}}},
 		permissions: monitoringCompatPermissions(appaccess.PermObserveMonitoringView),
 		traces:      stubTraceTelemetry{},
@@ -172,9 +181,8 @@ func TestQueryTracesRejectsScopeNotIsolatedByDataSource(t *testing.T) {
 	called := false
 	service := &Service{
 		dataSources: stubSignalDataSources{items: []domaincopilot.DataSource{{
-			ID: "traces", BackendType: "skywalking", Enabled: true,
-			Config: map[string]any{"endpoint": "http://oap:12800/graphql"},
-			Scope:  map[string]any{"clusterIds": []string{"cluster-a"}, "namespaces": []string{"team-a"}},
+			ID: "traces", SourceKind: "traces", BackendType: "external-trace-fixture", Enabled: true,
+			Scope: map[string]any{"clusterIds": []string{"cluster-a"}, "namespaces": []string{"team-a"}},
 		}}},
 		permissions: monitoringCompatPermissions(appaccess.PermObserveMonitoringView),
 		traces:      stubTraceTelemetry{called: &called},
@@ -217,7 +225,7 @@ func TestMetricCatalogAndServiceScopeReflectConfiguredBackends(t *testing.T) {
 	service := &Service{
 		dataSources: stubSignalDataSources{items: []domaincopilot.DataSource{
 			{ID: "metrics", BackendType: "prometheus", Enabled: true, Config: map[string]any{"endpoint": "http://prometheus:9090"}},
-			{ID: "oap", BackendType: "skywalking", Enabled: true, Config: map[string]any{"endpoint": "http://oap:12800/graphql"}, Scope: map[string]any{"clusterIds": []string{"cluster-a"}}},
+			{ID: "service-catalog", SourceKind: "traces", BackendType: "external-trace-fixture", Enabled: true, Scope: map[string]any{"clusterIds": []string{"cluster-a"}}},
 		}},
 		permissions: monitoringCompatPermissions(appaccess.PermObserveMonitoringView),
 		services:    stubServiceTelemetry{},
@@ -229,13 +237,55 @@ func TestMetricCatalogAndServiceScopeReflectConfiguredBackends(t *testing.T) {
 	result, err := service.ListServices(context.Background(), monitoringCompatPrincipal(), "", telemetry.ServiceQuery{
 		Scope: telemetry.TraceScope{ClusterID: "cluster-a"}, TimeFrom: now.Add(-time.Hour), TimeTo: now,
 	})
-	if err != nil || len(result.Items) != 1 || result.Meta.State != "success" || len(result.Meta.Warnings) == 0 {
+	if err != nil || len(result.Items) != 1 || result.Meta.State != "success" {
 		t.Fatalf("ListServices() = %#v, %v", result, err)
+	}
+	_, err = service.GetServiceTopology(t.Context(), monitoringCompatPrincipal(), "", telemetry.ServiceQuery{
+		Scope: telemetry.TraceScope{ClusterID: "cluster-a"}, TimeFrom: now.Add(-time.Hour), TimeTo: now,
+	})
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("catalog capability must not imply topology support: %v", err)
 	}
 	_, err = service.ListServices(context.Background(), monitoringCompatPrincipal(), "", telemetry.ServiceQuery{
 		Scope: telemetry.TraceScope{ClusterID: "cluster-b"}, TimeFrom: now.Add(-time.Hour), TimeTo: now,
 	})
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("expected unsupported scope error, got %v", err)
+	}
+}
+
+func TestTraceAndServicesWithoutExecutableProviders(t *testing.T) {
+	service := &Service{
+		dataSources: stubSignalDataSources{items: []domaincopilot.DataSource{
+			{ID: "legacy", SourceKind: "traces", BackendType: "skywalking", Enabled: true},
+		}},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveMonitoringView),
+	}
+	to := time.Now().UTC()
+	from := to.Add(-time.Hour)
+	for _, sourceID := range []string{"", "legacy"} {
+		_, err := service.QueryTraces(t.Context(), monitoringCompatPrincipal(), sourceID, telemetry.TraceQuery{
+			TimeFrom: from, TimeTo: to,
+		})
+		if !errors.Is(err, apperrors.ErrNotFound) || apierrors.Code(err) != "observability_provider_unavailable" {
+			t.Fatalf("QueryTraces(%q) error = %v", sourceID, err)
+		}
+		_, err = service.ListServices(t.Context(), monitoringCompatPrincipal(), sourceID, telemetry.ServiceQuery{
+			TimeFrom: from, TimeTo: to,
+		})
+		if !errors.Is(err, apperrors.ErrNotFound) || apierrors.Code(err) != "observability_provider_unavailable" {
+			t.Fatalf("ListServices(%q) error = %v", sourceID, err)
+		}
+	}
+}
+
+func TestDefaultRuleSourceSelectionSkipsDisabledSources(t *testing.T) {
+	sources := []domaincopilot.DataSource{
+		{ID: "old-log", SourceKind: "logs", BackendType: "es"},
+		{ID: "loki", SourceKind: "logs", BackendType: "loki", Enabled: true},
+	}
+	selected := filterDataSources(sources, nil)
+	if len(selected) != 1 || selected[0].ID != "loki" {
+		t.Fatalf("filterDataSources() = %#v, want the enabled Loki source", selected)
 	}
 }
