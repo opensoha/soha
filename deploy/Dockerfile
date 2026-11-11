@@ -2,7 +2,7 @@ FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS go-toolchain
 
 FROM --platform=$BUILDPLATFORM node:22.23.4-alpine AS web-build
 COPY --from=go-toolchain /usr/local/go /usr/local/go
-ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local GOWORK=off NODE_OPTIONS=--max-old-space-size=3072
+ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local GOWORK=off NODE_OPTIONS=--max-old-space-size=4096
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY contracts/package.json ./contracts/package.json
