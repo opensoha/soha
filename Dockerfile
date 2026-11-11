@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS cli-build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS cli-build
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG GOPROXY=https://proxy.golang.org,direct
