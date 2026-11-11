@@ -314,7 +314,7 @@ async function setup(
   const evidence = await installMocks(context, page, (url, method, request) => {
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data) || !body.data.permissionKeys)
+      if (!body.data || !('permissionKeys' in body.data) || !body.data.permissionKeys)
         throw new Error('Missing baseline permissions')
       body.data.permissionKeys.push(
         ...owners.flatMap((owner) =>

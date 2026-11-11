@@ -111,7 +111,8 @@ async function setupRBAC(context: BrowserContext, page: Page, root: RBACRoot) {
     }
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission snapshot')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission snapshot')
       body.data.permissionKeys!.push(
         ...rbacRoots.map((entry) => `platform.access-control.${entry.permission}.view`),
       )
@@ -321,7 +322,8 @@ test('CRD definition relationship root uses apiextensions GVK and exact cluster 
     }
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission snapshot')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission snapshot')
       body.data.permissionKeys!.push('platform.extensions.view')
       body.data.visibleMenuIds = [...(body.data.visibleMenuIds ?? []), 'extensions']
       return { body }
@@ -429,7 +431,8 @@ test('CRD instance relationship root uses served plural GVK, namespace and block
     }
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission snapshot')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission snapshot')
       body.data.permissionKeys!.push('platform.extensions.view')
       body.data.visibleMenuIds = [...(body.data.visibleMenuIds ?? []), 'extensions']
       return { body }
@@ -511,9 +514,7 @@ test('CRD instance relationship root uses served plural GVK, namespace and block
     }
     if (url.pathname === `${apiRoot}/extensions/crds`) return { body: { data: [crd] } }
     if (url.pathname === `${apiRoot}/extensions/crds/${crd.name}/access` && method === 'GET') {
-      if (
-        url.searchParams.has('namespace') || url.searchParams.get('version') !== crd.version
-      ) {
+      if (url.searchParams.has('namespace') || url.searchParams.get('version') !== crd.version) {
         evidence.missing.push(`unexpected CRD access scope: ${url.search}`)
         return {
           status: 400,

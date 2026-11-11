@@ -103,7 +103,7 @@ async function setup(
       return { body: { data: { ticket: 'test-stream-ticket', expiresAt: '2099-01-01T00:00:00Z' } } }
     if (path === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(path)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing fixture')
+      if (!body.data || !('permissionKeys' in body.data)) throw new Error('Missing fixture')
       body.data.permissionKeys!.push(
         'platform.nodes.view',
         'platform.pods.view',

@@ -189,7 +189,7 @@ async function setup(
   const evidence = await installMocks(context, page, (url, method) => {
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw Error('missing permissions')
+      if (!body.data || !('permissionKeys' in body.data)) throw Error('missing permissions')
       body.data.permissionKeys = state.denied
         ? []
         : [
@@ -353,7 +353,7 @@ async function forwardSetup(context: BrowserContext, page: Page, readonly = fals
   const evidence = await installMocks(context, page, (url, method, request) => {
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw Error('missing permissions')
+      if (!body.data || !('permissionKeys' in body.data)) throw Error('missing permissions')
       body.data.permissionKeys = [
         ...body.data.permissionKeys!.filter(
           (p) => !p.startsWith('platform.network.port-forwards.'),

@@ -135,18 +135,6 @@ export function useRunRequestRecovery(
         changed = true
         return
       }
-      if (isReadOnlyAgentRun(run)) {
-        try {
-          acknowledgeReadOnlyRunRequest(scope, entry.sessionId, entry.requestId)
-          applyRun(run)
-          changed = true
-        } catch {
-          // Storage failure retains the unresolved journal and prevents dispatch.
-        }
-        return
-      }
-      if (cancellationConfirmed(run) && forgetRunRequest(scope, entry.sessionId, entry.requestId))
-        changed = true
       const receipt = JSON.stringify([
         scope,
         entry.sessionId,
@@ -156,6 +144,21 @@ export function useRunRequestRecovery(
         query.dataUpdatedAt,
       ])
       const key = JSON.stringify([scope, entry.sessionId, entry.requestId])
+      if (isReadOnlyAgentRun(run)) {
+        if (applied.current.get(key) === receipt) return
+        try {
+          acknowledgeReadOnlyRunRequest(scope, entry.sessionId, entry.requestId)
+          // Cache updates may render again before the journal refresh commits.
+          applied.current.set(key, receipt)
+          applyRun(run)
+          changed = true
+        } catch {
+          // Storage failure retains the unresolved journal and prevents dispatch.
+        }
+        return
+      }
+      if (cancellationConfirmed(run) && forgetRunRequest(scope, entry.sessionId, entry.requestId))
+        changed = true
       if (applied.current.get(key) === receipt || inFlight.current.has(key)) return
       applied.current.set(key, receipt)
       applyRun(run)

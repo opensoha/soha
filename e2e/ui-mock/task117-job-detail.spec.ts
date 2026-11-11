@@ -70,7 +70,8 @@ async function setup(context: BrowserContext, page: Page, { readonly = false, co
     if (method === 'GET') state.reads.push(endpoint + url.search)
     if (endpoint === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(endpoint)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys = body.data.permissionKeys!.filter(
         (k) => !k.startsWith('platform.workloads.jobs.') && !k.startsWith('delivery.'),
       )

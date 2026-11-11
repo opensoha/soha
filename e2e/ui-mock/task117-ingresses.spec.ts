@@ -154,7 +154,7 @@ async function setup(
     })
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('permissions missing')
+      if (!body.data || !('permissionKeys' in body.data)) throw new Error('permissions missing')
       body.data.permissionKeys = body.data.permissionKeys!.filter(
         (p) =>
           !p.startsWith('platform.network.ingresses.') &&

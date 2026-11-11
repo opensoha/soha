@@ -77,7 +77,7 @@ for (const width of [1440, 390])
               skillsRegistry: [],
               modelOptions: [],
               agentProviders: [
-                { id: 'internal', kind: 'internal', name: 'Soha', enabled: true, default: true },
+                { id: 'dsh', kind: 'dsh', name: 'Soha', enabled: true, default: true },
               ],
             },
           },

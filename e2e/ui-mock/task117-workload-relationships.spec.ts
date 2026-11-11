@@ -96,7 +96,8 @@ async function setup(context: BrowserContext, page: Page, workload: Workload = d
     reads.push(url.pathname + url.search)
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys!.push(
         permission,
         'platform.configuration.config-maps.view',

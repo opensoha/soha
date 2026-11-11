@@ -15,7 +15,8 @@ for (const theme of ['light', 'dark']) {
     const evidence = await installMocks(context, page, (url, method) => {
       if (url.pathname === '/api/v1/access/permission-snapshot') {
         const result = baselineResponse(url.pathname)!
-        if (!('permissionKeys' in result.data)) throw new Error('Missing permission fixture')
+        if (!result.data || !('permissionKeys' in result.data))
+          throw new Error('Missing permission fixture')
         result.data.permissionKeys!.push('platform.pods.view', 'platform.pods.logs')
         result.data.visibleMenuIds!.push('workloads-pods')
         result.data.visibleMenus!.push({

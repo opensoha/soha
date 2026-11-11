@@ -47,7 +47,8 @@ async function setup(
       state.writes.push({ method, path, body: request.postDataJSON() || {} })
     if (path === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(path)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys!.push(
         'platform.nodes.view',
         ...(readonly

@@ -976,15 +976,47 @@ test('monitoring combines compact scope trends and a node comparison table', asy
   expect((await row.boundingBox())!.height).toBeLessThan(210)
   expect((await row.boundingBox())!.width).toBeGreaterThan(800)
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await row.getByRole('button', { name: '更多操作：cluster-a-worker', exact: true }).press('Enter')
+  const actions = row.getByRole('button', { name: '更多操作：cluster-a-worker', exact: true })
+  await actions.press('Enter')
   await page.getByRole('menuitem', { name: '聚焦 连接跟踪趋势', exact: true }).press('Enter')
+  await expect(page).toHaveURL(/rangeMinutes=15#monitoring-conntrack$/)
+  await expect(
+    page.getByRole('menu', { name: 'Node 操作：cluster-a-worker', exact: true }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: /连接跟踪$/ })).toBeFocused()
+  await page.getByRole('tab', { name: /总览$/ }).click()
+  await expect(page.getByRole('tabpanel', { name: /总览$/ })).toBeVisible()
+  await actions.press('Enter')
+  await expect(page.getByRole('menuitem', { name: '聚焦 CPU趋势', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(
+    page.getByRole('menu', { name: 'Node 操作：cluster-a-worker', exact: true }),
+  ).toHaveCount(0)
+  await expect(actions).toBeFocused()
+  await actions.press('ArrowDown')
+  await expect(page.getByRole('menuitem', { name: '聚焦 CPU趋势', exact: true })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(
+    page.getByRole('menu', { name: 'Node 操作：cluster-a-worker', exact: true }),
+  ).toHaveCount(0)
+  await expect(actions).not.toBeFocused()
+  await actions.press('Enter')
+  await expect(page.getByRole('menuitem', { name: '聚焦 CPU趋势', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('menuitem', { name: '聚焦 连接跟踪趋势', exact: true })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(
+    page.getByRole('menu', { name: 'Node 操作：cluster-a-worker', exact: true }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: /连接跟踪$/ })).toBeFocused()
   await expect(page).toHaveURL(/rangeMinutes=15#monitoring-conntrack$/)
   await expect(
     active.getByRole('img', { name: /^conntrack\.entries: cluster-a-worker\./ }),
   ).toBeVisible()
   await expect(active.getByRole('columnheader', { name: 'drop /s', exact: true })).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await page.getByRole('tab', { name: '总览', exact: true }).click()
+  await page.getByRole('tab', { name: /总览$/ }).click()
   await expect(page).toHaveURL(/rangeMinutes=15#monitoring-overview$/)
   verifyBrowserEvidence(evidence)
 })

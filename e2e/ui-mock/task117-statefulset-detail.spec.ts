@@ -73,7 +73,8 @@ status:
     else if (endpoint.startsWith('/api/v1/clusters/')) state.writes.push(endpoint)
     if (endpoint === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(endpoint)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys = body.data.permissionKeys!.filter(
         (key) =>
           !key.startsWith('platform.workloads.stateful-sets.') && !key.startsWith('delivery.'),

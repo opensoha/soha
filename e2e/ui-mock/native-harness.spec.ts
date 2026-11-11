@@ -1,10 +1,10 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 import type { WorkbenchStreamEvent } from '@opensoha/contracts/gen/ts/sohaapi'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { verifyGeometry } from '../fixtures/geometry'
 
 for (const width of [1440, 390]) {
-  test(`Native professional task: ${width}px capability combination and explicit inputs`, async ({
+  test(`DSH professional task: ${width}px capability combination and explicit inputs`, async ({
     page,
     context,
   }) => {
@@ -20,6 +20,20 @@ for (const width of [1440, 390]) {
       },
     }
     const requests: Array<Record<string, unknown>> = []
+    const messages: unknown[] = []
+    const receipt = (request: Record<string, unknown>) => ({
+      id: `mixed-run-${request.requestId}`,
+      sessionId: session.id,
+      providerId: 'dsh',
+      providerKind: 'dsh',
+      executionOwner: 'external',
+      capabilityId: 'general',
+      status: 'completed',
+      phase: 'completed',
+      input: { requestId: request.requestId, requestMessageId: `user-${request.requestId}` },
+      createdAt: session.updatedAt,
+      completedAt: session.updatedAt,
+    })
     const evidence = await installMocks(context, page, (url, method) => {
       const path = url.pathname
       if (method === 'GET' && path === `/api/v1/copilot/sessions/${session.id}/native-request`) {
@@ -29,19 +43,7 @@ for (const width of [1440, 390]) {
         return request
           ? {
               body: {
-                data: {
-                  id: `mixed-run-${request.requestId}`,
-                  sessionId: session.id,
-                  providerId: 'internal',
-                  providerKind: 'native',
-                  executionOwner: 'native',
-                  capabilityId: 'general',
-                  status: 'completed',
-                  phase: 'completed',
-                  input: { requestId: request.requestId },
-                  createdAt: session.updatedAt,
-                  completedAt: session.updatedAt,
-                },
+                data: receipt(request),
               },
             }
           : {
@@ -86,11 +88,12 @@ for (const width of [1440, 390]) {
       )
         return { body: { data: session } }
       if (path === '/api/v1/copilot/sessions') return { body: { data: [session] } }
+      if (path === `/api/v1/copilot/sessions/${session.id}/messages`)
+        return { body: { data: messages } }
+      if (path === '/api/v1/copilot/agent-runs') return { body: { data: requests.map(receipt) } }
       if (
         path === '/api/v1/copilot/assistant/tasks' ||
-        path === '/api/v1/copilot/assistant/artifacts' ||
-        path === '/api/v1/copilot/agent-runs' ||
-        path === `/api/v1/copilot/sessions/${session.id}/messages`
+        path === '/api/v1/copilot/assistant/artifacts'
       )
         return { body: { data: [] } }
       if (path === '/api/v1/observability/metrics/catalog')
@@ -159,7 +162,7 @@ for (const width of [1440, 390]) {
               skillsRegistry: [],
               modelOptions: [],
               agentProviders: [
-                { id: 'internal', kind: 'internal', name: 'Soha', enabled: true, default: true },
+                { id: 'dsh', kind: 'dsh', name: 'Soha', enabled: true, default: true },
               ],
             },
           },
@@ -167,10 +170,29 @@ for (const width of [1440, 390]) {
       return undefined
     })
     await page.route(`**/api/v1/copilot/sessions/${session.id}/messages/stream`, async (route) => {
-      requests.push(route.request().postDataJSON())
+      const request = route.request().postDataJSON()
+      requests.push(request)
+      const run = receipt(request)
+      const user = {
+        id: run.input.requestMessageId,
+        sessionId: session.id,
+        role: 'user',
+        content: request.content,
+        createdAt: session.updatedAt,
+        metadata: { requestId: request.requestId, agentRunId: run.id },
+      }
+      const reply = {
+        id: `${run.id}:reply`,
+        sessionId: session.id,
+        role: 'assistant',
+        content: '调查完成',
+        createdAt: session.updatedAt,
+        metadata: { agentRunId: run.id, requestMessageId: user.id },
+      }
+      messages.push(user, reply)
       await route.fulfill({
         contentType: 'text/event-stream',
-        body: `data: ${JSON.stringify({ type: 'message.done', role: 'assistant', messageId: 'reply', content: '调查完成', metadata: {} })}\n\n`,
+        body: `data: ${JSON.stringify({ id: `${run.id}:done`, sequence: 1, sessionId: session.id, runId: run.id, type: 'message.done', role: 'assistant', messageId: reply.id, content: reply.content, metadata: reply.metadata })}\n\n`,
       })
     })
     await page.setViewportSize({ width, height: 900 })
@@ -239,28 +261,37 @@ for (const width of [1440, 390]) {
     verifyBrowserEvidence(evidence)
   })
 
-  test(`Native Harness: ${width}px cursor recovery, same-run resume, approval and cancel acknowledgement`, async ({
-    page,
-    context,
-  }) => {
+  async function verifyRunGovernance(
+    { page, context }: { page: Page; context: BrowserContext },
+    historical: boolean,
+  ) {
     const session = {
       id: 'native-session',
       title: '主聊天',
       updatedAt: '2026-10-08T00:00:00Z',
-      metadata: { conversationKind: 'personal_main', mode: 'general', agentProviderId: 'internal' },
+      metadata: {
+        conversationKind: 'personal_main',
+        mode: 'general',
+        agentProviderId: 'internal',
+      },
     }
+    // Fresh DSH waiting_input is resumable; Native checkpoint history is never executed.
     const run = {
       id: 'native-run',
       sessionId: session.id,
-      providerId: 'internal',
-      providerKind: 'native',
-      executionOwner: 'native',
+      providerId: historical ? 'internal' : 'dsh',
+      providerKind: historical ? 'native' : 'dsh',
+      executionOwner: historical ? 'native' : 'external',
       capabilityId: 'general',
       status: 'running',
       phase: 'paused',
       stopReason: 'waiting_input',
       queuedAt: session.updatedAt,
-      input: { question: '检查发布窗口' },
+      input: {
+        question: '检查发布窗口',
+        requestId: 'window-request',
+        requestMessageId: 'native-run:request',
+      },
       output: {
         pendingQuestion: '请补充发布窗口。',
         approvalRequestIds: [] as string[],
@@ -378,8 +409,8 @@ for (const width of [1440, 390]) {
                       metadata: {
                         agentRunId: run.id,
                         agentStatus: {
-                          providerId: 'internal',
-                          providerKind: 'native',
+                          providerId: historical ? 'internal' : 'dsh',
+                          providerKind: historical ? 'native' : 'dsh',
                           status: 'canceled',
                         },
                       },
@@ -450,7 +481,7 @@ for (const width of [1440, 390]) {
               skillsRegistry: [],
               modelOptions: [],
               agentProviders: [
-                { id: 'internal', kind: 'internal', name: 'Soha', enabled: true, default: true },
+                { id: 'dsh', kind: 'dsh', name: 'Soha', enabled: true, default: true },
               ],
             },
           },
@@ -476,6 +507,19 @@ for (const width of [1440, 390]) {
       .getByRole('button', { name: /^查看动态：/ })
       .click()
     const input = page.getByRole('textbox', { name: '任务 native-run 的补充信息', exact: true })
+    if (historical) {
+      await expect(input).toHaveCount(0)
+      await expect(page.getByRole('button', { name: '补充并继续', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: '取消任务', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: '停止回复', exact: true })).toHaveCount(0)
+      await expect(page.locator('body')).not.toContainText('已取消本次任务。')
+      expect(run.status).toBe('running')
+      expect(
+        posts.filter(({ path }) => /\/(resume|cancel|messages\/stream)$/.test(path)),
+      ).toHaveLength(0)
+      await verifyBrowserEvidence(evidence)
+      return
+    }
     await expect(input).toBeVisible()
     await input.click()
     await input.fill('今晚 22:00 至 23:00')
@@ -496,6 +540,7 @@ for (const width of [1440, 390]) {
     await expect
       .poll(() => posts.find((request) => request.path.endsWith('/native-run/resume'))?.body)
       .toEqual({ input: '今晚 22:00 至 23:00' })
+    expect(posts.filter((request) => request.path.endsWith('/native-run/resume'))).toHaveLength(1)
     await expect(input).toHaveCount(0)
     await expect(page.locator('body')).toContainText('等待变更审批')
     await page.getByRole('button', { name: '查看批准', exact: true }).click()
@@ -540,5 +585,10 @@ for (const width of [1440, 390]) {
       fullPage: true,
     })
     verifyBrowserEvidence(evidence)
-  })
+  }
+  for (const historical of [false, true])
+    test(`${historical ? 'Native read-only history' : 'DSH Run'}: ${width}px cursor recovery, same-run resume, approval and cancel acknowledgement`, ({
+      page,
+      context,
+    }) => verifyRunGovernance({ page, context }, historical))
 }

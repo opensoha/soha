@@ -86,9 +86,22 @@ function storageGraph(root: Root): KubernetesResourceGraph {
       : root.kind === 'PersistentVolume'
         ? boundVolume
         : storageClass
-  const duplicateClaim = resource('duplicate', 'PersistentVolumeClaim', name, 'production', 'unresolved')
+  const duplicateClaim = resource(
+    'duplicate',
+    'PersistentVolumeClaim',
+    name,
+    'production',
+    'unresolved',
+  )
   const unresolvedVolume = resource('unbound-pv', 'PersistentVolume', 'pv-unbound')
-  const nodes = [monitorClaim, monitorPod, boundVolume, storageClass, duplicateClaim, unresolvedVolume]
+  const nodes = [
+    monitorClaim,
+    monitorPod,
+    boundVolume,
+    storageClass,
+    duplicateClaim,
+    unresolvedVolume,
+  ]
   const edges: KubernetesResourceGraph['edges'] = [
     { id: 'mount', sourceId: 'pod', targetId: monitorClaim.id, relation: 'mounts' },
     { id: 'binding', sourceId: monitorClaim.id, targetId: boundVolume.id, relation: 'binds-to' },
@@ -152,7 +165,8 @@ async function setup(context: BrowserContext, page: Page, root: Root) {
 
     if (url.pathname === '/api/v1/access/permission-snapshot' && method === 'GET') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys = [
         ...(body.data.permissionKeys || []),
         ...roots.map((item) => item.permission),
@@ -163,7 +177,8 @@ async function setup(context: BrowserContext, page: Page, root: Root) {
     if (url.pathname === graphPath && method === 'GET') {
       state.graphReads.push(url.search)
       const expectedNamespace = root.scope === 'namespace' ? namespace : null
-      const expectedKeys = root.scope === 'namespace' ? ['kind', 'name', 'namespace'] : ['kind', 'name']
+      const expectedKeys =
+        root.scope === 'namespace' ? ['kind', 'name', 'namespace'] : ['kind', 'name']
       if (
         url.searchParams.get('kind') !== root.kind ||
         url.searchParams.get('name') !== name ||
@@ -261,12 +276,18 @@ async function setup(context: BrowserContext, page: Page, root: Root) {
     }
     return undefined
   })
-  await context.addInitScript(({ selectedCluster, selectedNamespace }) => {
-    localStorage.setItem(
-      'soha-scope',
-      JSON.stringify({ state: { clusterId: selectedCluster, namespace: selectedNamespace }, version: 0 }),
-    )
-  }, { selectedCluster: clusterId, selectedNamespace: namespace })
+  await context.addInitScript(
+    ({ selectedCluster, selectedNamespace }) => {
+      localStorage.setItem(
+        'soha-scope',
+        JSON.stringify({
+          state: { clusterId: selectedCluster, namespace: selectedNamespace },
+          version: 0,
+        }),
+      )
+    },
+    { selectedCluster: clusterId, selectedNamespace: namespace },
+  )
   return { state, evidence }
 }
 
@@ -326,7 +347,9 @@ test('PVC graph preserves relationship direction, duplicate namespace identity, 
   await expect(
     panel(page).locator('.soha-unresolved-storage-binding .react-flow__edge-path'),
   ).toHaveCSS('stroke-dasharray', '5px, 4px')
-  await expect(inspector(page).getByRole('button', { name: '查看详情', exact: true })).toBeDisabled()
+  await expect(
+    inspector(page).getByRole('button', { name: '查看详情', exact: true }),
+  ).toBeDisabled()
 
   await panel(page).locator('.react-flow__node[data-id="root"]').click()
   await inspector(page)
@@ -335,7 +358,11 @@ test('PVC graph preserves relationship direction, duplicate namespace identity, 
   await inspector(page).getByRole('button', { name: '查看详情', exact: true }).click()
   await expect.poll(() => new URL(page.url()).pathname).toBe('/storage/persistentvolumes/pv-data')
   await expect
-    .poll(() => fixture.state.detailReads.includes('/api/v1/clusters/cluster-a/storage/persistentvolumes/pv-data/detail'))
+    .poll(() =>
+      fixture.state.detailReads.includes(
+        '/api/v1/clusters/cluster-a/storage/persistentvolumes/pv-data/detail',
+      ),
+    )
     .toBe(true)
   await expect(page.getByRole('heading', { name: 'pv-data', exact: true })).toBeVisible()
   await expect(page.getByText('monitoring/data', { exact: true })).toBeVisible()
@@ -358,11 +385,11 @@ test('PVC graph preserves relationship direction, duplicate namespace identity, 
   await expect(panel(page).locator('tr[data-row-key="class"]')).toContainText(
     '存储类被引用于 PersistentVolumeClaim production/data',
   )
-  await productionClaimRow
-    .getByRole('button', { name: 'data', exact: true })
-    .click()
+  await productionClaimRow.getByRole('button', { name: 'data', exact: true }).click()
   await expect(inspector(page)).toContainText('production')
-  await expect(inspector(page).getByRole('button', { name: '查看详情', exact: true })).toBeDisabled()
+  await expect(
+    inspector(page).getByRole('button', { name: '查看详情', exact: true }),
+  ).toBeDisabled()
   expect(fixture.state.writes).toEqual([])
   verifyBrowserEvidence(fixture.evidence)
 })

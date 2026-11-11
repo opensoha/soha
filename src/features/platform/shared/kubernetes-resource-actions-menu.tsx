@@ -32,6 +32,7 @@ export function KubernetesResourceActionsMenu({
     // Cancel pending menu focus when a quick Escape closes it before the next frame.
     const frame = requestAnimationFrame(() => {
       const menu = document.getElementById(menuId)
+      if (document.activeElement !== menu && menu?.contains(document.activeElement)) return
       const firstItem = menu?.querySelector<HTMLElement>(
         '[role="menuitem"]:not([aria-disabled="true"])',
       )
@@ -58,6 +59,15 @@ export function KubernetesResourceActionsMenu({
         menu={{
           id: menuId,
           onKeyDownCapture: (event) => {
+            if (
+              event.key === 'Enter' &&
+              event.target instanceof Element &&
+              event.target.closest('a[href]')
+            ) {
+              // Let the native link click close the menu without selecting twice.
+              event.stopPropagation()
+              return
+            }
             if (event.key !== 'Escape' && event.key !== 'Tab') return
             if (event.key === 'Escape') event.preventDefault()
             event.stopPropagation()
@@ -69,7 +79,9 @@ export function KubernetesResourceActionsMenu({
               ? `${resourceLabel} 操作：${name}`
               : `${resourceLabel} actions: ${name}`,
           items,
-          onClick: ({ key }) => {
+          onClick: ({ key, domEvent }) => {
+            // Enter must not activate the trigger after focus returns to it.
+            if ('key' in domEvent && domEvent.key === 'Enter') domEvent.preventDefault()
             setOpen(false)
             triggerRef.current?.focus()
             onSelect(key)

@@ -43,7 +43,8 @@ async function setup(
         : undefined
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys!.push(...permissions)
       return { body }
     }
@@ -873,7 +874,9 @@ test('Helm Charts keeps server pagination while its actions use the shared menu'
   context,
   page,
 }) => {
+  const artifactHubUrl = 'https://artifacthub.io/packages/helm/example/sample-chart'
   const chart = {
+    artifactHubUrl,
     packageId: 'chart-package',
     name: 'sample-chart',
     repositoryName: 'example',
@@ -905,13 +908,34 @@ test('Helm Charts keeps server pagination while its actions use the shared menu'
       },
     },
   )
+  let hubNavigations = 0
+  await context.route(artifactHubUrl, async (route) => {
+    hubNavigations += 1
+    await route.fulfill({ contentType: 'text/html', body: '<h1>Synthetic Artifact Hub</h1>' })
+  })
   await page.goto('/helm/charts')
   await expect(page.getByRole('status').filter({ hasText: '31 个 Charts' })).toBeVisible()
   await page.locator('.ant-pagination-item-2').click()
   await expect
     .poll(() => reads.some((path) => path.includes('/helm/charts?limit=15&offset=15')))
     .toBe(true)
-  await page.getByRole('button', { name: '更多操作：sample-chart', exact: true }).press('ArrowDown')
+  const actions = page.getByRole('button', { name: '更多操作：sample-chart', exact: true })
+  await actions.press('ArrowDown')
+  await expect(page.getByRole('menuitem', { name: '查看详情', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('link', { name: 'Artifact Hub', exact: true })).toBeFocused()
+  const popupOpened = context.waitForEvent('page')
+  await page.keyboard.press('Enter')
+  const popup = await popupOpened
+  await expect(popup).toHaveURL(artifactHubUrl)
+  await expect(popup.getByRole('heading', { name: 'Synthetic Artifact Hub' })).toBeVisible()
+  expect(hubNavigations).toBe(1)
+  await popup.close()
+  await expect(
+    page.getByRole('menu', { name: 'Helm Chart 操作：sample-chart', exact: true }),
+  ).toHaveCount(0)
+  await expect(actions).toBeFocused()
+  await actions.press('ArrowDown')
   await expect(page.getByRole('menuitem', { name: '安装 Chart', exact: true })).toBeVisible()
   await page.getByRole('menuitem', { name: '查看详情', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('Chart: example/sample-chart')

@@ -523,14 +523,18 @@ export function AIWorkbenchController() {
   const currentSession =
     sessionDetailQuery.data?.data ?? visibleSessions.find((item) => item.id === requestedSessionId)
   const runtimeProfilesQuery = useQuery(
-    workbenchQueries.runtimeProfiles(owner, canUseChat && matchesWorkspace && !conversationDenied && !feedView),
+    workbenchQueries.runtimeProfiles(
+      owner,
+      canUseChat && matchesWorkspace && !conversationDenied && !feedView,
+    ),
   )
   const runtimeProfiles = readableQueryData(runtimeProfilesQuery)?.data
   const runtimeScope = personal ? 'heya' : 'chat'
   const runtimeProfileId = currentSession?.metadata?.runtimeProfileId ?? ''
   const runtimeProfile = runtimeProfiles?.find(
     (profile) =>
-      profile.enabled && profile.scope === runtimeScope &&
+      profile.enabled &&
+      profile.scope === runtimeScope &&
       profile.id === (runtimeProfileId || `${runtimeScope}-default`),
   )
   const runsById = useMemo(
@@ -620,22 +624,18 @@ export function AIWorkbenchController() {
         ? []
         : [
             ...runningAgentRuns,
-            ...readOnlyAgentRuns.filter(
-              (run) => !run.parentRunId && !finalAgentRunIds.has(run.id),
-            ),
+            ...readOnlyAgentRuns.filter((run) => !run.parentRunId && !finalAgentRunIds.has(run.id)),
           ],
     [conversationDenied, runningAgentRuns, readOnlyAgentRuns, finalAgentRunIds],
   )
   const runEventPages = useQueries({
-    queries: replayAgentRuns
-      .filter(usesRunEventJournal)
-      .map((run) => ({
-        ...workbenchQueries.agentRuns.events(
-          run.id,
-          externalRunReplayRef.current[run.id]?.afterSequence ?? 0,
-        ),
-        ...(readOnlyRunIds.has(run.id) ? { refetchInterval: false } : {}),
-      })),
+    queries: replayAgentRuns.filter(usesRunEventJournal).map((run) => ({
+      ...workbenchQueries.agentRuns.events(
+        run.id,
+        externalRunReplayRef.current[run.id]?.afterSequence ?? 0,
+      ),
+      ...(readOnlyRunIds.has(run.id) ? { refetchInterval: false } : {}),
+    })),
     combine: combineRunEventPages,
   })
   const legacyPlatformMessages = useMemo(
@@ -962,7 +962,9 @@ export function AIWorkbenchController() {
       },
       onSettled: async (_response, _error, input) => {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: workbenchKeys.sessions.detail(input.sessionId, owner) }),
+          queryClient.invalidateQueries({
+            queryKey: workbenchKeys.sessions.detail(input.sessionId, owner),
+          }),
           queryClient.invalidateQueries({ queryKey: workbenchKeys.sessions.all(personal, owner) }),
           queryClient.invalidateQueries({ queryKey: workbenchKeys.runtimeProfiles(owner) }),
         ])
@@ -2423,7 +2425,9 @@ export function AIWorkbenchController() {
               />
             ) : null}
 
-            {lastRetryableInput ? (
+            {lastRetryableInput &&
+            !requestRecovery.error &&
+            requestRecovery.canRetry(lastRetryableInput.request.requestId) ? (
               <Alert
                 type="warning"
                 showIcon
@@ -2912,19 +2916,29 @@ export function AIWorkbenchController() {
                               profileId={runtimeProfileId}
                               selected={runtimeProfile}
                               disabled={
-                                !canUseChat || runtimeProfilesQuery.isError || !runtimeProfilesQuery.isSuccess ||
-                                currentStreamPending || runningAgentRuns.length > 0 ||
-                                requestRecovery.pending || Boolean(requestRecovery.error) ||
-                                Boolean(currentSession.metadata?.archivedAt || currentSession.activity) ||
+                                !canUseChat ||
+                                runtimeProfilesQuery.isError ||
+                                !runtimeProfilesQuery.isSuccess ||
+                                currentStreamPending ||
+                                runningAgentRuns.length > 0 ||
+                                requestRecovery.pending ||
+                                Boolean(requestRecovery.error) ||
+                                Boolean(
+                                  currentSession.metadata?.archivedAt || currentSession.activity,
+                                ) ||
                                 selectRuntimeProfile.blocked
                               }
                               loading={runtimeProfilesQuery.isPending || runtimeProfilePending}
                               onChange={(profileId) =>
-                                selectRuntimeProfile.mutate({ sessionId: currentSession.id, profileId })
+                                selectRuntimeProfile.mutate({
+                                  sessionId: currentSession.id,
+                                  profileId,
+                                })
                               }
                             />
                             <ReadFeedback label="运行配置" query={runtimeProfilesQuery} />
-                            {selectRuntimeProfile.variables?.sessionId === currentSession.id && selectRuntimeProfile.feedback}
+                            {selectRuntimeProfile.variables?.sessionId === currentSession.id &&
+                              selectRuntimeProfile.feedback}
                           </>
                         )}
                         {contextSelection.feedItemId ? (
@@ -2981,7 +2995,11 @@ export function AIWorkbenchController() {
                     requestRecovery.pending ||
                     cancelAgentRunsMutation.isPending
                   }
-                  readOnly={requestRecovery.pending || Boolean(requestRecovery.error) || runtimeProfilePending}
+                  readOnly={
+                    requestRecovery.pending ||
+                    Boolean(requestRecovery.error) ||
+                    runtimeProfilePending
+                  }
                   disabled={!canUseChat || !currentSession}
                   contextParsing={contextParsing}
                   value={senderValue}
@@ -4010,7 +4028,9 @@ export function AIWorkbenchController() {
                 ) : null}
               </Space>
             ) : null}
-            {defaultAnalysis && analysisCapabilities.includes('trace') && traceSources.length > 0 ? (
+            {defaultAnalysis &&
+            analysisCapabilities.includes('trace') &&
+            traceSources.length > 0 ? (
               <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                 <Text strong>链路分析参数</Text>
                 <Select

@@ -289,7 +289,36 @@ async function mocks(context: BrowserContext, page: Page) {
         },
       }
     const item = cases.find(([, endpoint]) => endpoint === path)
-    if (item) return { body: { data: [row(item[2])] } }
+    if (item) {
+      if (path === '/ai/memory')
+        return {
+          body: {
+            data: [
+              {
+                ...row(item[2]),
+                fact: item[2],
+                ownerType: 'user',
+                ownerId: 'user-1',
+                sourceType: 'explicit_user',
+                sourceRefs: ['explicit:qa-memory'],
+                status: 'active',
+                syncStatus: 'synced',
+                policyId: 'qa-personal',
+                policyVersion: '1',
+              },
+              {
+                ...row('deleted-private-memory'),
+                id: 'deleted-memory',
+                fact: 'PRIVATE DELETED FACT',
+                sourceRefs: ['PRIVATE DELETED SOURCE'],
+                status: 'deleted',
+                syncStatus: 'delete_pending',
+              },
+            ],
+          },
+        }
+      return { body: { data: [row(item[2])] } }
+    }
     if (extras.includes(path)) return { body: { data: [] } }
     return undefined
   })
@@ -319,6 +348,14 @@ for (const theme of ['light', 'dark']) {
         .first()
         .click()
       await expect(page.getByText(name, { exact: false }).first()).toBeVisible()
+      if (route === '/ai-workbench/memory') {
+        await expect(page.getByText('explicit:qa-memory', { exact: true })).toBeVisible()
+        await expect(page.getByText('已同步', { exact: true })).toBeVisible()
+        await expect(page.getByText('已删除的记忆', { exact: true })).toBeVisible()
+        await expect(page.getByText('已禁用，删除传播中', { exact: true })).toBeVisible()
+        await expect(page.getByText('PRIVATE DELETED FACT', { exact: false })).toHaveCount(0)
+        await expect(page.getByText('PRIVATE DELETED SOURCE', { exact: false })).toHaveCount(0)
+      }
       await verifyGeometry(page, page.locator('.soha-pro-content-host').first())
       verifyBrowserEvidence(evidence)
     })

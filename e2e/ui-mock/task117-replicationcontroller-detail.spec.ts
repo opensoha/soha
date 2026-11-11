@@ -79,7 +79,8 @@ async function setup(context: BrowserContext, page: Page, { readonly = false } =
     if (method === 'GET') state.reads.push(endpoint + url.search)
     if (endpoint === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(endpoint)!
-      if (!('permissionKeys' in body.data)) throw new Error('Permission fixture missing')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Permission fixture missing')
       body.data.permissionKeys = body.data.permissionKeys!.filter(
         (k) =>
           !k.startsWith('platform.workloads.replication-controllers.') &&

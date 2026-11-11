@@ -74,7 +74,7 @@ async function setup(context: BrowserContext, page: Page, readonly = false, noIn
   const evidence = await installMocks(context, page, (url, method) => {
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permissions')
+      if (!body.data || !('permissionKeys' in body.data)) throw new Error('Missing permissions')
       body.data.permissionKeys = [
         ...body.data.permissionKeys!.filter(
           (p) =>

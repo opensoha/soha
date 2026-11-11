@@ -48,7 +48,8 @@ async function setup(
     state.reads.push(endpoint)
     if (endpoint === '/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys = body.data.permissionKeys!.filter(
         (key) =>
           !key.startsWith('platform.deployment.') &&

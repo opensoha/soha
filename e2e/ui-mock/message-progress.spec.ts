@@ -3,7 +3,7 @@ import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
 import { verifyGeometry } from '../fixtures/geometry'
 
 for (const width of [1440, 390]) {
-  test(`Native processing and confirmed stop ${width}px`, async ({ page, context }, info) => {
+  test(`DSH processing and confirmed stop ${width}px`, async ({ page, context }, info) => {
     const session = {
       id: 'progress-chat',
       title: '主聊天',
@@ -16,13 +16,14 @@ for (const width of [1440, 390]) {
     const run = () => ({
       id: 'progress-run',
       sessionId: session.id,
-      providerId: 'internal',
-      providerKind: 'native',
+      providerId: 'dsh',
+      providerKind: 'dsh',
+      executionOwner: 'external',
       capabilityId: 'general',
       status,
       phase,
       queuedAt: '2026-10-08T08:00:00Z',
-      input: { question: 'hi' },
+      input: { question: 'hi', requestId: 'progress-request', requestMessageId: 'request' },
     })
     const evidence = await installMocks(context, page, (url, method) => {
       const path = url.pathname
@@ -40,7 +41,7 @@ for (const width of [1440, 390]) {
               skillsRegistry: [],
               modelOptions: [],
               agentProviders: [
-                { id: 'internal', kind: 'internal', name: 'Soha', enabled: true, default: true },
+                { id: 'dsh', kind: 'dsh', name: 'Soha', enabled: true, default: true },
               ],
             },
           },
@@ -83,6 +84,7 @@ for (const width of [1440, 390]) {
                 sessionId: session.id,
                 role: 'user',
                 content: 'hi',
+                metadata: { agentRunId: 'progress-run', requestId: 'progress-request' },
                 createdAt: '2026-10-08T08:00:00Z',
               },
               ...(status === 'canceled'
@@ -96,8 +98,8 @@ for (const width of [1440, 390]) {
                       metadata: {
                         agentRunId: 'progress-run',
                         agentStatus: {
-                          providerId: 'internal',
-                          providerKind: 'native',
+                          providerId: 'dsh',
+                          providerKind: 'dsh',
                           status: 'cancelled',
                         },
                       },

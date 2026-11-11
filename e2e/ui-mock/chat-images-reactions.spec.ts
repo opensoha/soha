@@ -8,12 +8,19 @@ for (const width of [1440, 390])
     const messages: unknown[] = []
     const requests: Record<string, any>[] = []
     let allowReadReceipt = false
+    const successfulRuns: unknown[] = []
     const session = {
       id: 'main-chat',
       title: '主聊天',
       metadata: { conversationKind: 'main', mode: 'general', agentProviderId: 'internal' },
     }
     const evidence = await installMocks(context, page, (url) => {
+      if (
+        url.pathname.endsWith('/native-request') &&
+        url.searchParams.get('requestId') === requests[1]?.requestId
+      )
+        return { body: { data: successfulRuns[0] } }
+
       if (
         url.pathname.endsWith('/native-request') &&
         allowReadReceipt &&
@@ -24,12 +31,12 @@ for (const width of [1440, 390])
             data: {
               id: 'image-failed-run',
               sessionId: 'main-chat',
-              providerId: 'internal',
-              providerKind: 'native',
-              executionOwner: 'native',
+              providerId: 'dsh',
+              providerKind: 'dsh',
+              executionOwner: 'external',
               capabilityId: 'general',
               status: 'failed',
-              input: { requestId: requests[0].requestId },
+              input: { requestId: requests[0].requestId, requestMessageId: 'failed-user-image' },
               errorMessage: '图片请求执行失败',
               createdAt: '2026-10-09T01:00:00Z',
             },
@@ -74,7 +81,7 @@ for (const width of [1440, 390])
               skillsRegistry: [],
               modelOptions: [],
               agentProviders: [
-                { id: 'internal', kind: 'internal', name: 'Soha', enabled: true, default: true },
+                { id: 'dsh', kind: 'dsh', name: 'Soha', enabled: true, default: true },
               ],
             },
           },
@@ -82,6 +89,7 @@ for (const width of [1440, 390])
       if (url.pathname === '/api/v1/copilot/assistant')
         return { body: { data: { id: 'assistant', name: 'Soha', mainSessionId: 'main-chat' } } }
       if (url.pathname.endsWith('/messages')) return { body: { data: messages } }
+      if (url.pathname === '/api/v1/copilot/agent-runs') return { body: { data: successfulRuns } }
       if (
         [
           '/api/v1/copilot/assistant/tasks',
@@ -108,7 +116,11 @@ for (const width of [1440, 390])
         sessionId: 'main-chat',
         role: 'user',
         content: body.content,
-        metadata: { images: body.contextSelection.images },
+        metadata: {
+          images: body.contextSelection.images,
+          requestId: body.requestId,
+          agentRunId: 'image-success-run',
+        },
         createdAt: '2026-10-09T01:00:00Z',
       }
       const reply = {
@@ -116,10 +128,26 @@ for (const width of [1440, 390])
         sessionId: 'main-chat',
         role: 'assistant',
         content: '这是红色与蓝色的色块。',
-        metadata: { requestMessageId: user.id, assistantReaction: '👀' },
+        metadata: {
+          requestMessageId: user.id,
+          agentRunId: 'image-success-run',
+          assistantReaction: '👀',
+        },
         createdAt: '2026-10-09T01:00:01Z',
       }
       messages.push(user, reply)
+      successfulRuns.push({
+        id: 'image-success-run',
+        sessionId: session.id,
+        providerId: 'dsh',
+        providerKind: 'dsh',
+        executionOwner: 'external',
+        capabilityId: 'general',
+        status: 'completed',
+        phase: 'completed',
+        createdAt: user.createdAt,
+        input: { requestId: body.requestId, requestMessageId: user.id },
+      })
       await route.fulfill({
         contentType: 'text/event-stream',
         body: `data: ${JSON.stringify({ id: 'done', type: 'message.done', sequence: 1, sessionId: 'main-chat', messageId: reply.id, role: 'assistant', content: reply.content, metadata: reply.metadata })}\n\ndata: ${JSON.stringify({ id: 'status', type: 'agent.status', sequence: 2, sessionId: 'main-chat', status: 'succeeded' })}\n\n`,
@@ -148,6 +176,14 @@ for (const width of [1440, 390])
     await expect(page.getByText('任务提交结果未确认', { exact: false }).first()).toBeVisible()
     await composer.press('Enter')
     expect(requests).toHaveLength(1)
+    messages.push({
+      id: 'failed-user-image',
+      sessionId: session.id,
+      role: 'user',
+      content: requests[0].content,
+      createdAt: '2026-10-09T00:59:00Z',
+      metadata: { requestId: requests[0].requestId, agentRunId: 'image-failed-run' },
+    })
     allowReadReceipt = true
     await page.getByRole('button', { name: '重新读取', exact: true }).click()
     await expect(page.getByText('任务提交结果未确认', { exact: false })).toHaveCount(0)

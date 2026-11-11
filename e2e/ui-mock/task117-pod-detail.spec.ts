@@ -42,7 +42,8 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
   const evidence = await installMocks(context, page, (url, method, request) => {
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys!.push(
         'platform.pods.view',
         'platform.pods.update',
@@ -870,10 +871,22 @@ test('Pod expanded containers share a server configuration read and retain exit 
   await expect(migrate).toContainText('Exit Code 0')
   expect(state.yamlReads).toBe(2)
   expect(state.terminalTickets).toBe(0)
+  const waitForSidebarViewport = async (width: number) => {
+    const sidebar = page.locator('.soha-sider')
+    // AppLayout's md breakpoint collapses below 768px; globals.css hides that collapsed sidebar.
+    if (width < 768) {
+      await expect(sidebar).toHaveClass(/ant-layout-sider-collapsed/)
+      await expect(sidebar).toBeHidden()
+    } else {
+      await expect(sidebar).not.toHaveClass(/ant-layout-sider-collapsed/)
+      await expect(sidebar).toBeVisible()
+    }
+  }
   for (const theme of ['light', 'dark']) {
     if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
     for (const width of [1373, 900, 320]) {
       await page.setViewportSize({ width, height: 1502 })
+      await waitForSidebarViewport(width)
       expect(
         await page.locator('.soha-pod-detail').evaluate((el) => el.scrollWidth - el.clientWidth),
       ).toBeLessThanOrEqual(1)
@@ -881,6 +894,7 @@ test('Pod expanded containers share a server configuration read and retain exit 
     }
   }
   await page.setViewportSize({ width: 1373, height: 1502 })
+  await waitForSidebarViewport(1373)
   await details.screenshot({
     path: testInfo.outputPath('pod-container-details-dark.png'),
     animations: 'disabled',

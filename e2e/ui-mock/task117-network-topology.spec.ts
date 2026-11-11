@@ -129,7 +129,8 @@ async function setup(
       state.writes.push(url.pathname)
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
+      if (!body.data || !('permissionKeys' in body.data))
+        throw new Error('Missing permission fixture')
       body.data.permissionKeys = [
         'workbench.platform.view',
         'workspace.resource.view',

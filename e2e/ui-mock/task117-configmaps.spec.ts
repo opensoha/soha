@@ -28,7 +28,9 @@ async function setup(context: BrowserContext, page: Page, readonly = false) {
     if (path === '/api/v1/clusters') {
       const body = baselineResponse(path)!
       if (!Array.isArray(body.data)) throw new Error('Missing cluster list')
-      return { body: { data: [...body.data, { ...body.data[0], id: 'cluster-b', name: 'stage-cluster' }] } }
+      return {
+        body: { data: [...body.data, { ...body.data[0], id: 'cluster-b', name: 'stage-cluster' }] },
+      }
     }
     if (path === '/api/v1/clusters/cluster-b/namespaces') {
       return { body: { data: [{ name: 'staging', status: 'Active', labels: {} }] } }
@@ -36,13 +38,15 @@ async function setup(context: BrowserContext, page: Page, readonly = false) {
     if (path === '/api/v1/clusters/cluster-b/configuration/configmaps') {
       return { body: { data: [{ name: detail.name, namespace: 'staging', dataEntries: 0 }] } }
     }
-    if (path === '/api/v1/clusters/cluster-b/configuration/configmaps/application-settings/detail') {
+    if (
+      path === '/api/v1/clusters/cluster-b/configuration/configmaps/application-settings/detail'
+    ) {
       expect(requestUrl.searchParams.get('namespace')).toBe('staging')
       return { body: { data: { ...detail, namespace: 'staging', data: {} } } }
     }
     if (path === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(path)!
-      if (!('permissionKeys' in body.data)) throw new Error('Missing permissions')
+      if (!body.data || !('permissionKeys' in body.data)) throw new Error('Missing permissions')
       body.data.permissionKeys = body.data.permissionKeys!.filter(
         (permission) => !permission.startsWith('platform.configuration.config-maps.'),
       )
@@ -262,7 +266,10 @@ test('ConfigMap YAML draft survives tab switches', async ({ context, page }) => 
   verifyBrowserEvidence(evidence)
 })
 
-test('an explicit header cluster switch replaces the pinned ConfigMap scope', async ({ context, page }) => {
+test('an explicit header cluster switch replaces the pinned ConfigMap scope', async ({
+  context,
+  page,
+}) => {
   const { evidence } = await setup(context, page)
   await page.goto(url + '&tab=data')
   await expect(page.getByRole('heading', { name: 'application-settings' })).toBeVisible()

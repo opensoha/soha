@@ -31,7 +31,9 @@ describe.each(['native', 'dsh'])('durable %s replay', (providerKind) => {
     const message = agentRunReplayMessage({ ...run, status: 'running', phase: 'cancelling' }, state)
     expect(message.content).toBe('')
     expect(message.metadata?.agentPhase).toBe('cancelling')
-    expect(message.deliveryStatus).toBe('loading')
+    expect(message.deliveryStatus).toBe(providerKind === 'native' ? 'success' : 'loading')
+    expect(message.metadata?.executionReadOnly).toBe(providerKind === 'native' ? true : undefined)
+    expect(message.metadata?.agentStatus).toMatchObject({ status: 'running' })
     state.message.content = '已经输出的正文'
     expect(
       agentRunReplayMessage({ ...run, status: 'running', phase: 'cancelling' }, state).content,

@@ -64,6 +64,19 @@ const report = {
       '# 本周运维摘要\n\n测试数据：本周完成了资源清点与发布准备。\n\n## 下一步\n\n- 核对发布清单\n- 安排下一次巡检',
   },
 }
+// Preserve Native history separately from the current DSH conversation actions.
+const currentReplyRun = {
+  id: 'current-reply-task',
+  sessionId: main.id,
+  providerId: 'dsh',
+  providerKind: 'dsh',
+  executionOwner: 'external',
+  capabilityId: 'general',
+  status: 'completed',
+  input: { requestId: 'current-dsh-request', requestMessageId: 'current-dsh-user' },
+  queuedAt: '2026-10-08T08:01:00Z',
+  completedAt: '2026-10-08T08:02:00Z',
+}
 const messages = [
   {
     id: 'main-user',
@@ -107,6 +120,31 @@ const messages = [
       ],
     },
   },
+]
+const currentDSHReply = {
+  id: 'current-dsh-reply',
+  sessionId: main.id,
+  role: 'assistant',
+  content: '当前 DSH 对话：继续讨论本周报告。',
+  createdAt: '2026-10-08T08:02:00Z',
+  metadata: {
+    agentRunId: currentReplyRun.id,
+    requestMessageId: 'current-dsh-user',
+    contextUsage: messages[1].metadata!.contextUsage,
+    contextEnvelope: messages[1].metadata!.contextEnvelope,
+  },
+}
+const currentMessages = [
+  ...messages,
+  {
+    id: 'current-dsh-user',
+    sessionId: main.id,
+    role: 'user',
+    content: '继续讨论本周报告',
+    createdAt: '2026-10-08T08:01:00Z',
+    metadata: { requestId: 'current-dsh-request', agentRunId: currentReplyRun.id },
+  },
+  currentDSHReply,
 ]
 const completedTask = {
   id: 'main-task',
@@ -372,7 +410,7 @@ for (const theme of ['light', 'dark'])
           return { body: { data: { ...side, id: 'new-side', title: '发布方案' } } }
         if (path === '/api/v1/copilot/sessions/main-chat') return { body: { data: main } }
         if (path === '/api/v1/copilot/sessions/main-chat/messages')
-          return { body: { data: messages } }
+          return { body: { data: currentMessages } }
         if (path === '/api/v1/copilot/sessions/new-side')
           return { body: { data: { ...side, id: 'new-side', title: '发布方案' } } }
         if (path === '/api/v1/copilot/sessions/new-side/messages') return { body: { data: [] } }
@@ -380,7 +418,9 @@ for (const theme of ['light', 'dark'])
           return {
             body: {
               data:
-                url.searchParams.get('sessionId') === main.id ? [completedTask, delegatedStep] : [],
+                url.searchParams.get('sessionId') === main.id
+                  ? [completedTask, delegatedStep, currentReplyRun]
+                  : [],
             },
           }
         if (path === '/api/v1/copilot/workbench/catalog')
@@ -394,8 +434,8 @@ for (const theme of ['light', 'dark'])
                 modelOptions: [],
                 agentProviders: [
                   {
-                    id: 'internal',
-                    kind: 'internal',
+                    id: 'dsh',
+                    kind: 'dsh',
                     name: 'Soha AI Chat',
                     enabled: true,
                     default: true,
@@ -411,6 +451,15 @@ for (const theme of ['light', 'dark'])
       await expect(page).toHaveURL(/session=main-chat/)
       const composer = page.getByPlaceholder('消息')
       await expect(composer).toBeVisible()
+      const historicalReply = page.locator('.ant-bubble').filter({ hasText: '周报已经准备好了 📄' })
+      const currentReply = page.locator('.ant-bubble').filter({ hasText: currentDSHReply.content })
+      await expect(historicalReply).toHaveCount(1)
+      await expect(
+        historicalReply.getByRole('button', { name: '引用回复', exact: true }),
+      ).toHaveCount(0)
+      await expect(
+        historicalReply.getByRole('button', { name: '回复表情', exact: true }),
+      ).toHaveCount(0)
       await expect(page.locator('.soha-ai-main-chat-hint')).toHaveCount(0)
       if (width >= 992) {
         const mainEntry = page.getByRole('button', { name: '主要聊天', exact: true })
@@ -431,8 +480,48 @@ for (const theme of ['light', 'dark'])
         await verifyGeometry(page, page.locator('.soha-ai-rail-actions'))
       }
       await verifyGeometry(page, composer)
+      const contextTools = page.locator('.ant-sender .soha-ai-workbench__composer-context')
+      await expect(
+        contextTools.getByRole('combobox', { name: '运行配置', exact: true }),
+      ).toBeVisible()
+      await expect(contextTools).toContainText('Heya 默认配置')
       const initialHeight = (await page.locator('.ant-sender').boundingBox())!.height
-      expect(initialHeight).toBeLessThan(65)
+      const contextGeometry = await contextTools.evaluate((row) => {
+        const box = row.getBoundingClientRect()
+        const style = getComputedStyle(row)
+        const controls = [...row.querySelectorAll('.ant-select, button, .ant-tag')]
+          .map((control) => control.getBoundingClientRect())
+          .filter((rect) => rect.width > 0 && rect.height > 0)
+        return {
+          height: box.height,
+          contentHeight:
+            box.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+          maxControlHeight: Math.max(...controls.map((rect) => rect.height)),
+          controls: controls.length,
+          fitsViewport:
+            box.left >= -1 &&
+            box.right <= innerWidth + 1 &&
+            box.top >= -1 &&
+            box.bottom <= innerHeight + 1,
+          controlsFit: controls.every(
+            (rect) => rect.left >= box.left - 1 && rect.right <= box.right + 1,
+          ),
+        }
+      })
+      expect(contextGeometry.controls).toBeGreaterThan(0)
+      expect(contextGeometry.fitsViewport).toBe(true)
+      expect(contextGeometry.controlsFit).toBe(true)
+      // Task124 adds a required runtime configuration row. Keep the original input budget.
+      expect(initialHeight - contextGeometry.height).toBeLessThan(65)
+      expect(contextGeometry.height).toBeLessThanOrEqual(32 + 1)
+      expect(contextGeometry.contentHeight).toBeLessThanOrEqual(
+        contextGeometry.maxControlHeight + 1,
+      )
+      await verifyGeometry(page, contextTools.locator('.ant-select'))
+      await info.attach('initial-composer-geometry', {
+        body: JSON.stringify({ initialHeight, ...contextGeometry }),
+        contentType: 'application/json',
+      })
       await composer.fill('菜单测试草稿')
       const modelTrigger = page.getByRole('button', { name: '模型与思考强度', exact: true })
       await expect(modelTrigger.locator('.soha-ai-workbench__model-effort')).toHaveText('自动')
@@ -493,7 +582,6 @@ for (const theme of ['light', 'dark'])
       await contextPopover.getByRole('tab', { name: '最近实际使用' }).press('Escape')
       await expect(contextPopover).toBeHidden()
       await expect(composer).toBeFocused()
-      const contextTools = page.locator('.ant-sender .soha-ai-workbench__composer-context')
       await page.getByRole('button', { name: '添加内容', exact: true }).press('Enter')
       const addMenu = page.locator('.soha-ai-workbench__add-menu')
       await verifyMenuGeometry(page, addMenu)
@@ -622,7 +710,7 @@ for (const theme of ['light', 'dark'])
         await expect(feed.locator('details, .ant-tag')).toHaveCount(0)
         await expect(task.getByRole('button')).toHaveCount(1)
         await expect(feed.getByRole('button', { name: '取消任务', exact: true })).toHaveCount(0)
-        await expect(task.locator('.soha-ai-activity-summary')).toHaveText(/^只读核验已完成。.*…$/)
+        await expect(task.locator('.soha-ai-activity-summary')).toHaveText('旧版任务记录，仅供查看')
         const icon = task.getByRole('button', { name: /^查看动态：/ })
         await icon.click()
         const detail = page
@@ -849,13 +937,15 @@ for (const theme of ['light', 'dark'])
       }
       await page.screenshot({ path: info.outputPath(`assistant-${theme}-${width}.png`) })
       if (width >= 992) {
-        await page.getByRole('button', { name: '引用回复', exact: true }).click()
-        await expect(contextTools.getByText(/回复 · 周报已经准备好了/)).toBeVisible()
-        await page.getByRole('button', { name: '回复表情', exact: true }).click()
+        await currentReply.getByRole('button', { name: '引用回复', exact: true }).click()
+        await expect(
+          contextTools.locator('.ant-tag').filter({ hasText: '回复 · ' + currentDSHReply.content }),
+        ).toBeVisible()
+        await currentReply.getByRole('button', { name: '回复表情', exact: true }).click()
         await page.getByRole('button', { name: '标记 ❤️', exact: true }).click()
-        await expect(page.getByRole('button', { name: '回复表情', exact: true })).toContainText(
-          '❤️',
-        )
+        await expect(
+          currentReply.getByRole('button', { name: '回复表情', exact: true }),
+        ).toContainText('❤️')
         await expect(page.getByRole('button', { name: '标记 ❤️', exact: true })).not.toBeVisible()
         await composer.click()
         await page.getByRole('button', { name: '查看报告', exact: true }).click()

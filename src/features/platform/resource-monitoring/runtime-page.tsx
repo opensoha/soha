@@ -208,6 +208,8 @@ export function ResourceMonitoringRuntimePage() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const pageRef = useRef<HTMLDivElement>(null)
+  const focusView = useRef<string | null>(null)
   const { clusterId: scopedClusterId, setClusterId } = usePlatformScopeStore()
   const lastScope = useRef(scopedClusterId)
   const requestedClusterId = params.get('clusterId')
@@ -294,6 +296,13 @@ export function ResourceMonitoringRuntimePage() {
   const requestedView =
     location.hash.replace('#monitoring-', '') || location.pathname.split('/').pop()
   const activeView = views.find((view) => view.key === requestedView)?.key ?? views[0]?.key
+  useLayoutEffect(() => {
+    if (focusView.current !== activeView) return
+    focusView.current = null
+    pageRef.current
+      ?.querySelector<HTMLElement>('.soha-monitoring-tabs [role="tab"][aria-selected="true"]')
+      ?.focus()
+  }, [activeView])
   const openView = (key: string) =>
     navigate(`/resource-monitoring${location.search}#monitoring-${key}`, { replace: true })
   const fetching = views.some((item) => item.query.isFetching)
@@ -332,7 +341,7 @@ export function ResourceMonitoringRuntimePage() {
       { replace: true },
     )
   return (
-    <div className="soha-page soha-monitoring-page">
+    <div ref={pageRef} className="soha-page soha-monitoring-page">
       <h1 className="soha-monitoring-screen-reader">
         {localeText(localeCode, '资源监控', 'Resource monitoring')}
       </h1>
@@ -506,6 +515,8 @@ export function ResourceMonitoringRuntimePage() {
                   snapshot={snapshot}
                   historical={Boolean(input.to)}
                   onFocus={(name, view) => {
+                    // Switching panels hides the menu trigger; continue at the selected tab.
+                    if (view !== activeView) focusView.current = view
                     selectNames([name])
                     openView(view)
                   }}

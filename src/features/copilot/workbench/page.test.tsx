@@ -650,8 +650,20 @@ const apiGetMock = vi.hoisted(() =>
             agentRunId: 'old-run',
             runtimeAssembly: { profileId: 'ops', revision: 3, status: 'confirmed', assets: [] },
             runtimeHooks: [
-              { id: 'tool-audit', version: '1', callId: 'call-1', toolName: 'metrics.read', outcome: 'unknown' },
-              { id: 'tool-audit', version: '1', callId: 'call-2', toolName: 'private upstream payload', outcome: 'completed' },
+              {
+                id: 'tool-audit',
+                version: '1',
+                callId: 'call-1',
+                toolName: 'metrics.read',
+                outcome: 'unknown',
+              },
+              {
+                id: 'tool-audit',
+                version: '1',
+                callId: 'call-2',
+                toolName: 'private upstream payload',
+                outcome: 'completed',
+              },
             ],
           },
         })
@@ -700,7 +712,11 @@ const apiGetMock = vi.hoisted(() =>
           modelOptions: [
             { publicModel: 'reasoning-model', reasoningEfforts: ['low', 'medium', 'high'] },
             { publicModel: 'plain-model', reasoningEfforts: [] },
-            { publicModel: 'profile-model', reasoningEfforts: ['high'], contextWindowTokens: 65536 },
+            {
+              publicModel: 'profile-model',
+              reasoningEfforts: ['high'],
+              contextWindowTokens: 65536,
+            },
           ],
           adapters: [
             {
@@ -1363,35 +1379,64 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(document.body.textContent).not.toContain('个人配置')
   })
 
-  it.each([false, true])('shows historical system reply runtime evidence (authoritative Run=%s)', async (hasRun) => {
-    testState.messageScenario = 'historical-system-runtime'
-    if (hasRun) {
-      testState.agentRuns = [{
-        id: 'old-run', sessionId: 'session-1', status: 'completed', providerId: 'dsh', providerKind: 'dsh',
-        capabilityId: 'general', timeoutSeconds: 10, createdAt: '2026-05-12T10:06:00Z', updatedAt: '2026-05-12T10:06:00Z',
-        output: {
-          runtimeHooks: [{ id: 'tool-audit', version: '1', callId: 'call-1', toolName: 'metrics.read', outcome: 'completed' }],
-        },
-      }]
-    }
-    const container = await renderPage('/ai-workbench/chat?session=session-1')
-    await waitForWorkbenchText(container, 'ops · v3 · 1 条 Hook 记录')
-    const button = container.querySelector<HTMLButtonElement>('[aria-label="查看本轮装配详情"]')!
-    expect(button).toBeTruthy()
-    await act(async () => {
-      button.click()
-      await flushAsyncWork()
-    })
-    expect(document.body.textContent).toContain(`tool-audit @ 1 · metrics.read · ${hasRun ? '已完成' : '结果未知'}`)
-    expect(document.body.textContent).not.toContain('private upstream payload')
-  })
+  it.each([false, true])(
+    'shows historical system reply runtime evidence (authoritative Run=%s)',
+    async (hasRun) => {
+      testState.messageScenario = 'historical-system-runtime'
+      if (hasRun) {
+        testState.agentRuns = [
+          {
+            id: 'old-run',
+            sessionId: 'session-1',
+            status: 'completed',
+            providerId: 'dsh',
+            providerKind: 'dsh',
+            capabilityId: 'general',
+            timeoutSeconds: 10,
+            createdAt: '2026-05-12T10:06:00Z',
+            updatedAt: '2026-05-12T10:06:00Z',
+            output: {
+              runtimeHooks: [
+                {
+                  id: 'tool-audit',
+                  version: '1',
+                  callId: 'call-1',
+                  toolName: 'metrics.read',
+                  outcome: 'completed',
+                },
+              ],
+            },
+          },
+        ]
+      }
+      const container = await renderPage('/ai-workbench/chat?session=session-1')
+      await waitForWorkbenchText(container, 'ops · v3 · 1 条 Hook 记录')
+      const button = container.querySelector<HTMLButtonElement>('[aria-label="查看本轮装配详情"]')!
+      expect(button).toBeTruthy()
+      await act(async () => {
+        button.click()
+        await flushAsyncWork()
+      })
+      expect(document.body.textContent).toContain(
+        `tool-audit @ 1 · metrics.read · ${hasRun ? '已完成' : '结果未知'}`,
+      )
+      expect(document.body.textContent).not.toContain('private upstream payload')
+    },
+  )
 
   it('uses the effective Chat profile model, effort and capacity until overridden', async () => {
     testState.sessionMode = 'general'
-    testState.runtimeProfiles = [{
-      id: 'chat-default', name: '排障配置', scope: 'chat', revision: 2, enabled: true, assets: [],
-      modelPreferences: { publicModel: 'profile-model', reasoningEffort: 'high' },
-    }]
+    testState.runtimeProfiles = [
+      {
+        id: 'chat-default',
+        name: '排障配置',
+        scope: 'chat',
+        revision: 2,
+        enabled: true,
+        assets: [],
+        modelPreferences: { publicModel: 'profile-model', reasoningEffort: 'high' },
+      },
+    ]
     const container = await renderPage('/ai-workbench/chat?session=session-1')
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="模型与思考强度"]')!
     await waitForWorkbenchText(container, 'profile-model')
@@ -2382,6 +2427,22 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     )
     expect(latestRoute).toBe('/ai-workbench/chat?session=session-1')
     expect(apiPatchMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('任务提交结果未确认')
+    testState.recoveryRequest = streamWorkbenchMessageMock.mock.calls[0][1].requestId as string
+    testState.recoveredRun = {
+      ...externalAgentRun([], 'completed'),
+      id: 'professional-task-completed',
+      providerId: 'dsh',
+      providerKind: 'dsh',
+      sessionId: 'session-1',
+    }
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('重新读取'))!
+        .click()
+      await flushAsyncWork()
+    })
+    expect(container.textContent).not.toContain('任务提交结果未确认')
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="模型与思考强度"]')!.click()
       await flushAsyncWork()
@@ -3372,11 +3433,11 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     },
   )
 
-  it('offers retry for retryable stream errors and resubmits the last input', async () => {
+  it('retries an explicitly unaccepted request with the original request ID', async () => {
     testState.sessionMode = 'general'
     testState.streamError = {
-      message: 'provider overloaded',
-      code: 'provider_busy',
+      message: 'request rejected before acceptance',
+      code: 'request_not_accepted',
       retryable: true,
     }
     const container = await renderPage('/ai-workbench/chat?session=session-1')
@@ -3390,7 +3451,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
       expect.any(AbortSignal),
     )
     expect(container.textContent).toContain('上一次 Workbench 流式调用可重试')
-    expect(container.textContent).toContain('provider overloaded')
+    expect(container.textContent).toContain('request rejected before acceptance')
 
     testState.streamError = undefined
     testState.sendMessageEnvelope = {
@@ -3427,7 +3488,42 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     expect(container.textContent).toContain('retry ok')
   })
 
-  it('renders Sources from source.updated stream snapshots', async () => {
+  it('keeps an unconfirmed retryable submission behind the readback action', async () => {
+    testState.sessionMode = 'general'
+    testState.streamError = {
+      message: 'provider overloaded',
+      code: 'provider_busy',
+      retryable: true,
+    }
+    const container = await renderPage('/ai-workbench/chat?session=session-1')
+    await submitSenderMessage(container, '请确认原请求')
+    const requestId = streamWorkbenchMessageMock.mock.calls[0][1].requestId
+    expect(container.textContent).toContain('任务提交结果未确认')
+    expect(container.textContent).not.toContain('上一次 Workbench 流式调用可重试')
+    expect(senderInput(container)?.readOnly).toBe(true)
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('重新读取'))!
+        .click()
+      await flushAsyncWork()
+    })
+    expect(apiGetMock).toHaveBeenCalledWith(
+      `/copilot/sessions/session-1/native-request?requestId=${requestId}`,
+    )
+    expect(streamWorkbenchMessageMock).toHaveBeenCalledTimes(1)
+    expect(senderInput(container)?.readOnly).toBe(true)
+  })
+
+  it('renders Sources from source.updated snapshots while the stream remains open', async () => {
+    const streamImplementation = streamWorkbenchMessageMock.getMockImplementation()!
+    let finishStream!: () => void
+    const completion = new Promise<void>((resolve) => {
+      finishStream = resolve
+    })
+    streamWorkbenchMessageMock.mockImplementation(async (...args) => {
+      await streamImplementation(...args)
+      await completion
+    })
     testState.streamEvents = [
       {
         type: 'source.updated',
@@ -3455,36 +3551,44 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
         status: 'succeeded',
       },
     ]
-    const container = await renderPage()
+    try {
+      const container = await renderPage()
 
-    await submitSenderMessage(container, '请收集实时来源')
-    await openWorkbenchPanel(container, '查看结果')
+      await submitSenderMessage(container, '请收集实时来源')
+      await openWorkbenchPanel(container, '查看结果')
 
-    const streamArtifactButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('stream source artifact'),
-    )
-    expect(streamArtifactButton).toBeTruthy()
+      const streamArtifactButton = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('stream source artifact'),
+      )
+      expect(streamArtifactButton).toBeTruthy()
 
-    await act(async () => {
-      streamArtifactButton?.click()
-      await flushAsyncWork()
-    })
+      await act(async () => {
+        streamArtifactButton?.click()
+        await flushAsyncWork()
+      })
 
-    const evidenceButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(
-        '.soha-ai-workbench__message-results button, .soha-ai-workbench__message-activity button',
-      ),
-    )
-      .reverse()
-      .find((button) => button.textContent?.replace(/\s/g, '').includes('来源'))
-    expect(evidenceButton).toBeTruthy()
+      const evidenceButton = Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          '.soha-ai-workbench__message-results button, .soha-ai-workbench__message-activity button',
+        ),
+      )
+        .reverse()
+        .find((button) => button.textContent?.replace(/\s/g, '').includes('来源'))
+      expect(evidenceButton).toBeTruthy()
 
-    await act(async () => {
-      evidenceButton?.click()
-      await flushAsyncWork()
-    })
+      await act(async () => {
+        evidenceButton?.click()
+        await flushAsyncWork()
+      })
 
-    expect(document.body.textContent).toContain('Prometheus stream source')
+      expect(document.body.textContent).toContain('Prometheus stream source')
+    } finally {
+      streamWorkbenchMessageMock.mockImplementation(streamImplementation)
+      await act(async () => {
+        finishStream()
+        await flushAsyncWork()
+      })
+    }
   })
 
   it('replays final message metadata for tools, sources, thinking, and agent status', async () => {
@@ -3503,7 +3607,7 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
 
     expect(document.body.textContent).toContain('1 个工具调用，1 成功，0 失败')
     expect(document.body.textContent).toContain('从 final message metadata 恢复来源。')
-    expect(document.body.textContent).toContain('Agent: internal / succeeded')
+    expect(document.body.textContent).toContain('Agent: dsh / succeeded')
     expect(document.body.textContent).toContain('docs.lookup')
 
     const evidenceButton = Array.from(
@@ -3733,7 +3837,10 @@ describe('AIWorkbenchPage', { timeout: 15_000 }, () => {
     await waitForWorkbenchText(container, '旧版审批仅供查看，无法继续原任务')
     expect(container.querySelector('.soha-ai-approval')?.querySelectorAll('button')).toHaveLength(0)
     expect(container.querySelector('button[aria-label="有帮助"]')).toBeNull()
-    for (const [run, after] of [['native', 3], ['dsh', 2]]) {
+    for (const [run, after] of [
+      ['native', 3],
+      ['dsh', 2],
+    ]) {
       expect(apiGetMock).toHaveBeenCalledWith(
         `/copilot/agent-runs/${run}%3Arun/events?afterSequence=0`,
       )
