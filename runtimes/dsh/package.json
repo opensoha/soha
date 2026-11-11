@@ -18,10 +18,16 @@
     "@deepseek-ai/dsh-sdk-client": "0.2.2-rc.1",
     "@deepseek-ai/dsh-skill": "0.2.2-rc.1",
     "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
-    "@modelcontextprotocol/client": "2.2.0",
+    "@modelcontextprotocol/client": "2.3.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "ipaddr.js": "2.5.0",
-    "undici": "8.11.2"
+    "undici": "8.12.2"
+  },
+  "overrides": {
+    "@modelcontextprotocol/client@>=2.0.0 <2.3.0": "2.3.0",
+    "undici@>=8.0.0 <8.12.2": "8.12.2",
+    "zod@>=4.0.0 <4.6.6": "4.6.7",
+    "fflate@>=0.8.0 <0.8.3": "0.8.3"
   }
 }

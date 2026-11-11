@@ -14,35 +14,27 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: soha-agent
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+          cache-dependency-path: soha-agent/go.sum
+      - name: Test contracts dependency resolution
+        working-directory: soha-agent
+        run: python3 deploy/test_resolve_contracts.py
       - name: Resolve pinned contracts version
         id: contracts
         working-directory: soha-agent
-        run: |
-          set -euo pipefail
-          contracts_ref="$(awk '$1 == "github.com/opensoha/soha-contracts" {print $2}' go.mod)"
-          [[ "${contracts_ref}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          echo "ref=${contracts_ref}" >> "$GITHUB_OUTPUT"
-      - name: Checkout contracts
-        uses: actions/checkout@v7
-        with:
-          repository: opensoha/soha-contracts
-          ref: refs/tags/${{ steps.contracts.outputs.ref }}
-          path: soha-contracts
-          token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
-          persist-credentials: false
+        run: python3 deploy/resolve_contracts.py
       - name: Validate pinned dsh schema
         env:
           CONTRACTS_REF: ${{ steps.contracts.outputs.ref }}
+          CONTRACTS_DIR: ${{ steps.contracts.outputs.dir }}
         run: |
-          if ! test -s soha-contracts/agent/dsh-runtime.schema.json; then
+          if ! test -s "$CONTRACTS_DIR/agent/dsh-runtime.schema.json"; then
             echo "::error::soha-contracts ${CONTRACTS_REF} is missing agent/dsh-runtime.schema.json"
             exit 1
           fi
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.27.3"
-          cache: true
-          cache-dependency-path: soha-agent/go.sum
       - name: Check Go module state
         working-directory: soha-agent
         run: |
@@ -98,7 +90,9 @@ jobs:
         run: docker build --target buildpacks-daemonless-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:daemonless-test .
       - name: dsh runtime Docker build
         working-directory: soha-agent
-        run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile.dsh-runtime -t ghcr.io/opensoha/soha-dsh:test .
+        env:
+          CONTRACTS_DIR: ${{ steps.contracts.outputs.dir }}
+        run: docker build --build-context "contracts=$CONTRACTS_DIR" -f deploy/Dockerfile.dsh-runtime -t ghcr.io/opensoha/soha-dsh:test .
       - name: Smoke test dsh runtime startup
         run: |
           set -euo pipefail

@@ -1,8 +1,8 @@
 # dsh qualification (Task123 B1-U1a)
 
-This directory is an isolated qualification fixture, not a production runtime
-service or a change to the Go Agent route. Core will call the independent runtime
-service directly. Nothing here enables a default Chat/Heya route.
+This directory contains the SDK qualification fixtures and the standalone runtime
+service. Core calls the service directly; it is not routed through the Go Agent.
+Configuration and default Chat/Heya routing remain owned by Core.
 
 ## Fixed input and reproduction
 
@@ -15,10 +15,20 @@ service directly. Nothing here enables a default Chat/Heya route.
   A source snapshot is not proof that an npm tarball was built from that commit.
   Installed package versions and tarball integrity are the runnable input.
 
+The dsh/SDK pins stay at `0.2.2-rc.1`. The lock uses MCP client/core `2.3.0`
+and undici `8.12.2`; range-scoped overrides replace vulnerable transitive Zod
+4.x with `4.6.7` and fflate 0.8.x with `0.8.3`. The same MCP client and undici
+overrides cover upstream exact pins. Recheck these overrides when updating dsh.
+The fixes follow the [MCP redirect advisory](https://github.com/advisories/GHSA-6prh-2h8m-c8cw),
+[undici TLS advisory](https://github.com/advisories/GHSA-2m5v-pch6-74hx),
+[Zod collection advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), and
+[fflate ZIP64 advisory](https://github.com/advisories/GHSA-px8p-9vwx-vf98).
+
 From the soha-agent repository:
 
 ```sh
 opensoha-verify run -- npm --prefix runtimes/dsh ci --ignore-scripts --no-audit --no-fund
+opensoha-verify run -- npm --prefix runtimes/dsh audit --omit=dev --audit-level=high
 opensoha-verify run -- npm --prefix runtimes/dsh run qualify
 ```
 
