@@ -1053,6 +1053,14 @@ func newVirtualizationService(lifecycleCtx context.Context, cfg cfgpkg.Config, i
 	return virtualizationService
 }
 
+func personalEnvironmentClient(ctx context.Context, principal domainidentity.Principal, nodeID string, infra *infrastructure, core *coreServices) (*agentinfra.Client, error) {
+	connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	return infra.agentRegistry.ClientFor(connection)
+}
+
 func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices) *deliveryServices {
 	cfg = runtimeEffectiveConfig(cfg, core.runtimeConfigService.Current())
 	runtimeResources := core.resourceService.Runtime()
@@ -1089,22 +1097,14 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 			},
 			Authorize: core.clusterService.ValidatePersonalExecutionAccess,
 			OpenMCPStdio: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.PersonalMCPStdioRequest) (appcopilot.DSHPersonalStdioPeer, error) {
-				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
-				if err != nil {
-					return nil, err
-				}
-				client, err := infra.agentRegistry.ClientFor(connection)
+				client, err := personalEnvironmentClient(ctx, principal, nodeID, infra, core)
 				if err != nil {
 					return nil, err
 				}
 				return client.OpenPersonalMCPStdio(ctx, request)
 			},
 			Preflight: func(ctx context.Context, principal domainidentity.Principal, nodeID string, quota contractenv.Quota) error {
-				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
-				if err != nil {
-					return err
-				}
-				client, err := infra.agentRegistry.ClientFor(connection)
+				client, err := personalEnvironmentClient(ctx, principal, nodeID, infra, core)
 				if err != nil {
 					return err
 				}
@@ -1112,22 +1112,14 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 				return err
 			},
 			Invoke: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.Request) (contractenv.Result, error) {
-				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
-				if err != nil {
-					return contractenv.Result{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
-				}
-				client, err := infra.agentRegistry.ClientFor(connection)
+				client, err := personalEnvironmentClient(ctx, principal, nodeID, infra, core)
 				if err != nil {
 					return contractenv.Result{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
 				}
 				return client.PersonalEnvironment(ctx, request)
 			},
 			Export: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.Request, target io.Writer) (contractenv.ExportResult, error) {
-				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
-				if err != nil {
-					return contractenv.ExportResult{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
-				}
-				client, err := infra.agentRegistry.ClientFor(connection)
+				client, err := personalEnvironmentClient(ctx, principal, nodeID, infra, core)
 				if err != nil {
 					return contractenv.ExportResult{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
 				}

@@ -13,7 +13,11 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 
 	required := []string{
 		"contracts_ref:",
-		"WEB_REF: ${{ inputs.web_ref || 'v0.1.12' }}",
+		"WEB_REF: ${{ inputs.web_ref || github.ref_name }}",
+		"- name: Verify release version",
+		"if: startsWith(github.ref, 'refs/tags/v')",
+		`if [ "${WEB_REF}" != "${GITHUB_REF_NAME}" ]; then`,
+		"The Web release tag must match the Core release tag.",
 		"CONTRACTS_REF: ${{ inputs.contracts_ref }}",
 		"WEB_SHA256: ${{ inputs.web_sha256 }}",
 		"go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts",
@@ -50,6 +54,9 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("release workflow is missing %q", want)
 		}
+	}
+	if strings.Contains(workflow, "inputs.web_ref || 'v0.1.12'") {
+		t.Fatal("release workflow must not fall back to an unrelated Web release")
 	}
 }
 

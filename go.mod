@@ -1,6 +1,6 @@
 module github.com/opensoha/soha
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -24,7 +24,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/openctemio/saml v0.5.2-openctem.2
-	github.com/opensoha/soha-contracts v0.1.29
+	github.com/opensoha/soha-contracts v0.1.30-0.20261110173546-4aef3ea31f6a
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/russellhaering/goxmldsig v1.6.1

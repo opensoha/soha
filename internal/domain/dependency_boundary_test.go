@@ -55,6 +55,7 @@ func domainImportAllowed(path string) bool {
 		strings.HasPrefix(path, "github.com/opensoha/soha-contracts/") ||
 		path == "github.com/opensoha/soha/internal/networkprotocol" ||
 		path == "github.com/opensoha/soha/internal/platform/apperrors" ||
+		path == "go.yaml.in/yaml/v3" ||
 		path == "github.com/google/uuid" || path == "github.com/santhosh-tekuri/jsonschema/v6"
 }
 
@@ -65,6 +66,10 @@ func TestDomainImportBoundaryRules(t *testing.T) {
 	}{
 		{"net/netip", true},
 		{"github.com/opensoha/soha-contracts/gen/go/sohaapi", true},
+		{"go.yaml.in/yaml/v3", true},
+		{"go.yaml.in/yaml/v3/decoder", false},
+		{"gopkg.in/yaml.v3", false},
+		{"sigs.k8s.io/yaml", false},
 		{"net/http/httputil", false},
 		{"crypto/tls", false},
 		{"database/sql", false},

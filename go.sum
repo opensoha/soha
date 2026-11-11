@@ -381,8 +381,8 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/openctemio/saml v0.5.2-openctem.2 h1:VeNCEVcLSEMtkV63MX5+CZ+mwdNJDZ0GrwOFc1Z5JuE=
 github.com/openctemio/saml v0.5.2-openctem.2/go.mod h1:To9dqWRREBzeE5b/GRHcie5LlAOdJe2nO4Sjy7F4Prs=
-github.com/opensoha/soha-contracts v0.1.29 h1:OCGHpdYJVbk0nxeZ65wBV+Yi54mEq9xd1E9DAwbagOU=
-github.com/opensoha/soha-contracts v0.1.29/go.mod h1:OaGAbIeuZAFhYorTrJ7kgTRAg4ciQtTA93V2vYQ9KLs=
+github.com/opensoha/soha-contracts v0.1.30-0.20261110173546-4aef3ea31f6a h1:wQuW9V56dc9MReFReBhOxr8BxfTTdQ6ECbVMB7iRYt4=
+github.com/opensoha/soha-contracts v0.1.30-0.20261110173546-4aef3ea31f6a/go.mod h1:oK73bgv1NnwMkHQCMglHZaLE50Ax5z/TBbUdP5pwsEE=
 github.com/pelletier/go-toml/v2 v2.4.3 h1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=
 github.com/pelletier/go-toml/v2 v2.4.3/go.mod h1:2gIqNv+qfxSVS7cM2xJQKtLSTLUE9V8t9Stt+h56mCY=
 github.com/peterbourgon/diskv v2.0.1+incompatible h1:UBdAOUP5p4RWqPBg048CAvpKN+vxiaj6gdUUzhl4XmI=
