@@ -57,7 +57,7 @@ test('active root release builds same-source Web and blocks absent or different 
   assert.ok(workflow.includes('"webRef": "${GITHUB_SHA}"'))
   assert.ok(!workflow.includes('--repo opensoha/soha-web'))
   assert.ok(!workflow.includes('git describe --tags'))
-  const script = workflow.match(/node - "\$package_dir" <<'NODE'\n([\s\S]*?)\n          NODE/)?.[1]
+  const script = workflow.match(/node - "\$package_dir" <<'NODE'\n([\s\S]*?)\n {10}NODE/)?.[1]
   assert.ok(script)
   const root = mkdtempSync(join(tmpdir(), 'soha-release-source-'))
   const content = Buffer.from('same source package')
