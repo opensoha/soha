@@ -119,6 +119,30 @@ export function assertTrustedDispatch(ref, sha, approved) {
     throw new Error('BLOCKED: trusted main SHA and explicit approval required')
 }
 
+export function assertTrustedWorkflow(file, approvedVariable, environment) {
+  if (
+    Object.keys(file.on ?? {}).join() !== 'workflow_dispatch' ||
+    file.permissions?.contents !== 'read' ||
+    Object.keys(file.permissions).length !== 1
+  )
+    throw new Error('Unsafe enhanced trigger/permissions')
+  if (!file.jobs || Object.keys(file.jobs).length === 0) throw new Error('Protected job required')
+  for (const job of Object.values(file.jobs)) {
+    if (job.environment !== environment || !job['timeout-minutes'])
+      throw new Error('Protected environment and job timeout required')
+    if (
+      job.steps[0].with?.ref !== '${{ vars.' + approvedVariable + ' }}' ||
+      job.steps[0].with?.['persist-credentials'] !== false ||
+      !job.if?.includes("github.ref == 'refs/heads/main'") ||
+      !job.if.includes(`vars.${approvedVariable} != ''`)
+    )
+      throw new Error('Approved source checkout required before executing scripts')
+    for (const step of job.steps)
+      if (step.uses && !/@[a-f0-9]{40}$/.test(step.uses))
+        throw new Error('Exact action SHA required')
+  }
+}
+
 export function redact(value, sensitiveValues = []) {
   if (Array.isArray(value)) return value.map((item) => redact(item, sensitiveValues))
   if (value && typeof value === 'object')

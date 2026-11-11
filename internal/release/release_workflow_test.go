@@ -13,21 +13,31 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 
 	required := []string{
 		"contracts_ref:",
-		"WEB_REF: ${{ inputs.web_ref || github.ref_name }}",
+		"RELEASE_VERSION: ${{ inputs.version || github.ref_name }}",
 		"- name: Verify release version",
 		"if: startsWith(github.ref, 'refs/tags/v')",
-		`if [ "${WEB_REF}" != "${GITHUB_REF_NAME}" ]; then`,
-		"The Web release tag must match the Core release tag.",
+		`"$RELEASE_VERSION" != "$GITHUB_REF_NAME"`,
+		"Core version must match the exact root release tag.",
 		"CONTRACTS_REF: ${{ inputs.contracts_ref }}",
-		"WEB_SHA256: ${{ inputs.web_sha256 }}",
+		"npm run build:web",
+		"python3 scripts/source-workspace.py check-go",
+		".tmp/embedded-web.json",
+		"same-source SDK differs from published npm package",
 		"go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts",
 		"contracts input differs from the reviewed go.mod dependency",
 		`[[ "${reviewed_ref}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]`,
 		"GOWORK=off go mod download",
 		"GOWORK=off go mod verify",
+		"published contracts module must not use a replacement",
+		"published contracts module requires an unreplaced checksum",
+		"published contracts version/checksum mismatch",
+		"Qualify Core against the published Go SDK",
+		"export GOWORK=off GOFLAGS=-mod=readonly",
+		"${RUNNER_TEMP:?}/soha-published-sdk.XXXXXX",
+		`CGO_ENABLED=0 go build -tags embedassets -trimpath -o "$qualification_dir/soha-server" ./cmd/server`,
 		"go list -m github.com/opensoha/soha-contracts",
-		"GOWORK=off go test ./...",
-		"GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build",
+		"run: go test ./...",
+		"CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build",
 		"target: network-gateway-runtime",
 		"target: proxy-runtime-mihomo",
 		"ghcr.io/opensoha/soha-proxy-mihomo:${{ github.ref_name }}",
@@ -38,9 +48,9 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 		"target: radius-runtime",
 		"ghcr.io/opensoha/soha-radius:${{ github.ref_name }}",
 		"ghcr.io/opensoha/soha-network-gateway:${{ github.ref_name }}",
-		"soha-web-dist-${WEB_REF}.tar.gz.sha256",
+		"soha-web-dist.tar.gz",
 		"soha-web-dist.sha256",
-		"sha256sum -c -",
+		"sha256sum ../soha-web-dist.tar.gz",
 		"soha-linux-amd64.sha256",
 		"soha-release-manifest.json",
 		"gh release download \"${GITHUB_REF_NAME}\"",
@@ -55,8 +65,8 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 			t.Fatalf("release workflow is missing %q", want)
 		}
 	}
-	if strings.Contains(workflow, "inputs.web_ref || 'v0.1.12'") {
-		t.Fatal("release workflow must not fall back to an unrelated Web release")
+	if strings.Contains(workflow, "inputs.web_ref") || strings.Contains(workflow, "--repo opensoha/soha-web") || strings.Contains(workflow, "git describe --tags") {
+		t.Fatal("release workflow must build Web from its own commit and extract the exact Core version")
 	}
 }
 
@@ -84,6 +94,38 @@ func TestReleaseWorkflowDoesNotUseSiblingContractsCheckout(t *testing.T) {
 		if strings.Contains(workflow, value) {
 			t.Fatalf("release workflow still contains local contracts wiring %q", value)
 		}
+	}
+}
+
+func TestPublicGoQualificationPrecedesPublication(t *testing.T) {
+	workflow := readReleaseWorkflow(t)
+	start := strings.Index(workflow, "      - name: Qualify Core against the published Go SDK\n")
+	if start < 0 {
+		t.Fatal("required independent published Go SDK qualification is missing")
+	}
+	end := strings.Index(workflow[start:], "\n      - ")
+	if end < 0 {
+		t.Fatal("release publication steps must remain after public qualification")
+	}
+	qualification := workflow[start : start+end]
+	for _, required := range []string{"export GOWORK=off GOFLAGS=-mod=readonly", "go test ./...", "go build -tags embedassets", "./cmd/server"} {
+		if !strings.Contains(qualification, required) {
+			t.Fatalf("public qualification is missing %q", required)
+		}
+	}
+	if strings.Contains(qualification, "if:") || strings.Contains(qualification, "continue-on-error:") {
+		t.Fatal("public Go qualification must be an unconditional blocking release step")
+	}
+	if web := strings.Index(workflow, "Build Web and SDK from the same release commit"); web < 0 || web > start {
+		t.Fatal("same-source Web must be staged before published SDK embed compilation")
+	}
+	for _, publication := range []string{"Login to GHCR", "Publish Soha image to GHCR", "Publish GitHub release asset"} {
+		if index := strings.Index(workflow, publication); index < start {
+			t.Fatalf("%s must follow successful public qualification", publication)
+		}
+	}
+	if strings.Index(workflow, "SDK_IDENTITY") > strings.Index(workflow, "GOWORK=off go mod download") {
+		t.Fatal("module replacement must be rejected before download/public qualification")
 	}
 }
 

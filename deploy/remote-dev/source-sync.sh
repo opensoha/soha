@@ -38,8 +38,6 @@ sync_repository() {
 }
 
 while :; do
-	sync_repository soha-contracts "$SOHA_CONTRACTS_REPOSITORY" "$SOHA_CONTRACTS_REF" || printf 'failed to sync soha-contracts; retrying\n' >&2
 	sync_repository soha "$SOHA_REPOSITORY" "$SOHA_REF" || printf 'failed to sync soha; retrying\n' >&2
-	sync_repository soha-web "$SOHA_WEB_REPOSITORY" "$SOHA_WEB_REF" || printf 'failed to sync soha-web; retrying\n' >&2
 	sleep "$interval"
 done

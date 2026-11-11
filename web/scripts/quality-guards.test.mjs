@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import YAML from 'yaml'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -10,8 +11,52 @@ import {
   validateTarget,
   validateVersions,
   assertTrustedDispatch,
+  assertTrustedWorkflow,
   sourceEvidence,
 } from './quality-guards.mjs'
+
+it('active root manual workflows reject unsafe trigger, source and action changes', () => {
+  for (const [name, variable] of [
+    ['quality-ai', 'SOHA_APPROVED_AI_SHA'],
+    ['quality-ocr', 'SOHA_OCR_APPROVED_CODE_SHA'],
+  ]) {
+    const workflow = YAML.parse(
+      readFileSync(new URL(`../../.github/workflows/${name}.yml`, import.meta.url), 'utf8'),
+    )
+    expect(() => assertTrustedWorkflow(workflow, variable, name)).not.toThrow()
+    const invalid = [
+      (file) => {
+        file.on.pull_request = {}
+      },
+      (file) => {
+        file.permissions.contents = 'write'
+      },
+      (file) => {
+        Object.values(file.jobs)[0].environment = undefined
+      },
+      (file) => {
+        Object.values(file.jobs)[0]['timeout-minutes'] = undefined
+      },
+      (file) => {
+        Object.values(file.jobs)[0].steps[0].with.ref = 'main'
+      },
+      (file) => {
+        Object.values(file.jobs)[0].steps[0].with['persist-credentials'] = true
+      },
+      (file) => {
+        Object.values(file.jobs)[0].steps[0].uses = 'actions/checkout@v7'
+      },
+      (file) => {
+        Object.values(file.jobs)[0].if = 'always()'
+      },
+    ]
+    for (const mutate of invalid) {
+      const changed = structuredClone(workflow)
+      mutate(changed)
+      expect(() => assertTrustedWorkflow(changed, variable, name)).toThrow()
+    }
+  }
+})
 
 it('records source evidence for a dirty diff larger than 1 MiB', () => {
   const repo = mkdtempSync(join(tmpdir(), 'soha-source-evidence-'))

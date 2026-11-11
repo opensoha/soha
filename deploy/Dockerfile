@@ -1,8 +1,25 @@
-FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS go-source
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS go-toolchain
+
+FROM --platform=$BUILDPLATFORM node:22.23.4-alpine AS web-build
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:$PATH GOTOOLCHAIN=local GOWORK=off
+WORKDIR /src
+COPY package.json package-lock.json ./
+COPY contracts/package.json ./contracts/package.json
+COPY web/package.json ./web/package.json
+RUN npm ci
+COPY contracts ./contracts
+COPY web ./web
+RUN npm run check:generated --workspace contracts && \
+    npm run generate --workspace contracts && \
+    npm run build --workspace web && \
+    rm -rf contracts/node_modules
+
+FROM go-toolchain AS go-source
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG GOPROXY=https://proxy.golang.org,direct
-ENV GOPROXY=$GOPROXY GOWORK=off
+ENV GOPROXY=$GOPROXY GOWORK=/src/soha/go.work
 WORKDIR /src
 RUN for attempt in 1 2 3; do \
       timeout 120 apk add --no-cache git ca-certificates && exit 0; \
@@ -10,7 +27,8 @@ RUN for attempt in 1 2 3; do \
       sleep 2; \
     done; \
     exit 1
-COPY go.mod go.sum ./soha/
+COPY go.mod go.sum go.work ./soha/
+COPY contracts/go.mod contracts/go.sum ./soha/contracts/
 RUN for attempt in 1 2 3; do \
       (cd soha && timeout 180 go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
@@ -18,8 +36,10 @@ RUN for attempt in 1 2 3; do \
     done; \
     exit 1
 COPY . ./soha
+COPY --from=web-build /src/contracts ./soha/contracts
 
 FROM go-source AS go-build
+COPY --from=web-build /src/web/dist ./soha/internal/staticassets/web/dist
 ARG GOMAXPROCS=4
 ENV GOMAXPROCS=$GOMAXPROCS
 ARG SOHA_BUILD_VERSION=0.1.0

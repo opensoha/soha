@@ -1,4 +1,5 @@
-import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -10,14 +11,20 @@ const sourceScript = join(projectRoot, 'scripts/check-frontend-boundaries.mjs')
 
 let fixtureRoot
 let fixtureScript
+let fixtureProjectRoot
 
 beforeEach(async () => {
   fixtureRoot = await mkdtemp(join(tmpdir(), 'soha-web-boundaries-'))
-  fixtureScript = join(fixtureRoot, 'scripts/check-frontend-boundaries.mjs')
+  fixtureProjectRoot = fixtureRoot
+  fixtureScript = join(fixtureProjectRoot, 'scripts/check-frontend-boundaries.mjs')
 
   await mkdir(dirname(fixtureScript), { recursive: true })
   await copyFile(sourceScript, fixtureScript)
-  await symlink(join(projectRoot, 'node_modules'), join(fixtureRoot, 'node_modules'), 'dir')
+  await symlink(
+    dirname(dirname(createRequire(import.meta.url).resolve('typescript/package.json'))),
+    join(fixtureRoot, 'node_modules'),
+    'dir',
+  )
   await writeBaseline('empty-baseline.json', {})
 })
 
@@ -133,10 +140,52 @@ export const queryKey = ['orders', 'legacy']
     expect(report.newViolations).toHaveLength(3)
     expect(report.newViolations.every(({ file }) => file.endsWith('orders-queries.ts'))).toBe(true)
   })
+  it('retains real Git debt and detects untracked additions under a hoisted web/ prefix', async () => {
+    fixtureProjectRoot = join(fixtureRoot, 'web')
+    fixtureScript = join(fixtureProjectRoot, 'scripts/check-frontend-boundaries.mjs')
+    await mkdir(dirname(fixtureScript), { recursive: true })
+    await copyFile(sourceScript, fixtureScript)
+    const git = (...args) =>
+      execFileSync('git', args, {
+        cwd: fixtureRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim()
+    git('init', '-b', 'main')
+    git('config', 'user.name', 'Boundary Test')
+    git('config', 'user.email', 'boundary-test@example.invalid')
+    await writeFile(join(fixtureRoot, '.gitignore'), 'node_modules/\n')
+    await writeSource(
+      'src/features/orders/orders-page.tsx',
+      "import { api } from '@/services/api-client'\nexport const OrdersPage = () => api\n",
+    )
+    await mkdir(join(fixtureRoot, 'src/features/core'), { recursive: true })
+    await writeFile(
+      join(fixtureRoot, 'src/features/core/page.tsx'),
+      "import { api } from '@/services/api-client'\n",
+    )
+    git('add', '.')
+    git('commit', '-m', 'reviewed Web baseline')
+    const base = git('rev-parse', 'HEAD')
+    git('commit', '--allow-empty', '-m', 'candidate')
+    const unchanged = runCheck('--base', base, '--enforce', '--json')
+    expect(unchanged.status).toBe(0)
+    expect(parseReport(unchanged).baseline.existingViolations).toBe(1)
+    await writeSource(
+      'src/features/orders/new-page.tsx',
+      "import { api } from '@/services/api-client'\nexport const NewPage = () => api\n",
+    )
+    const changed = runCheck('--base', base, '--enforce', '--json')
+    expect(changed.status).toBe(1)
+    expect(parseReport(changed).newViolations.map(({ file }) => file)).toEqual([
+      'src/features/orders/new-page.tsx',
+    ])
+    expect(runCheck('--base', 'nonexistent-reviewed-ref', '--enforce', '--json').status).not.toBe(0)
+  })
 })
 
 async function writeSource(path, source) {
-  const destination = join(fixtureRoot, path)
+  const destination = join(fixtureProjectRoot, path)
   await mkdir(dirname(destination), { recursive: true })
   await writeFile(destination, source, 'utf8')
 }
@@ -151,7 +200,7 @@ async function writeBaseline(path, counts) {
 
 function runCheck(...args) {
   return spawnSync(process.execPath, [fixtureScript, ...args], {
-    cwd: fixtureRoot,
+    cwd: fixtureProjectRoot,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })

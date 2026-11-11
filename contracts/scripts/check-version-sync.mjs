@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 
 const packagePath = "package.json";
-const packageLockPath = "package-lock.json";
+const packageLockPath = "../package-lock.json";
 const openapiPath = "openapi/soha-api.yaml";
 const openapiJsonPath = "openapi/soha-api.json";
 const goModPath = "go.mod";
@@ -22,10 +22,10 @@ const errors = [];
 expect(/^0\.1\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version), `${packagePath} version must stay on the 0.1.x stream: ${version}`);
 expect(openapi?.info?.version === version, `${openapiPath} info.version (${openapi?.info?.version}) must match ${packagePath} version (${version})`);
 expect(openapiJson?.info?.version === version, `${openapiJsonPath} info.version (${openapiJson?.info?.version}) must match ${packagePath} version (${version})`);
-expect(packageLock.version === version, `${packageLockPath} version (${packageLock.version}) must match ${packagePath} version (${version})`);
+expect(packageJson.name === "@opensoha/contracts", `${packagePath} must name @opensoha/contracts`);
 expect(
-  packageLock.packages?.[""]?.version === version,
-  `${packageLockPath} packages[""].version (${packageLock.packages?.[""]?.version}) must match ${packagePath} version (${version})`,
+  packageLock.packages?.contracts?.name === packageJson.name && packageLock.packages?.contracts?.version === version,
+  `${packageLockPath} packages["contracts"] must match SDK name ${packageJson.name} and version ${version}`,
 );
 expect(goMod.startsWith(`module ${modulePath}\n`), `${goModPath} must declare module ${modulePath}`);
 expect(
@@ -46,7 +46,7 @@ if (errors.length > 0) {
 }
 
 const tagText = releaseTag ? ` and release tag ${releaseTag}` : "";
-console.log(`version sync ok: npm/OpenAPI YAML+JSON/package-lock/Go module/Go client all use ${version}${tagText}`);
+console.log(`version sync ok: npm/OpenAPI YAML+JSON/root workspace lock/Go module/Go client all use ${version}${tagText}`);
 
 function currentReleaseTag() {
   const refName = process.env.GITHUB_REF_NAME?.trim();

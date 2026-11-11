@@ -170,6 +170,25 @@ npm run check:openapi-breaking:update
 Do not update the baseline just to silence an unexpected breaking-change
 failure.
 
+## Same-repository source workspace
+
+Install once from the repository root with `npm ci`; the root `package-lock.json`
+is the only installation input for `contracts/` and `web/`. Run component scripts
+with `npm run <script> --workspace contracts`, or from `contracts/` after that install.
+Public Go module and npm package identities remain unchanged during this transition.
+
+```sh
+npm run check:consumers --workspace contracts -- --internal-source --out /path/to/internal-source.json
+```
+
+This checks Core at the root with the exact root `go.work`, and Web through the
+local npm workspace SDK link. It does not install packages, rewrite manifests or
+prove that an SDK version has been published. Reports label this `internal-source`
+and bind the source revision plus workspace input digests. Use `--consumer soha`
+or `--consumer soha-web` to select one; `--declared` cannot be combined with this mode.
+The executable workflow is [root Contracts CI](../.github/workflows/contracts-ci.yml).
+Nested legacy publishing workflows are inert; publisher migration remains a separate B4/B5 stage.
+
 ## Consumer Matrix
 
 Network runtime schemas and network-access DTOs require `0.1.17` or later;
@@ -178,7 +197,9 @@ use the local consumer matrix below: it packs this checkout for Web/App and
 supplies an isolated Go workspace. After publishing, update consumer versions
 and lockfiles and verify them without the local override.
 
-The cross-repository consumer gate is:
+The external compatibility gate retains all six consumers in two separate modes.
+Place their checkouts outside the source npm workspace and set `SOHA_CONSUMER_ROOT`.
+The external candidate gate is:
 
 ```sh
 npm run check:consumers

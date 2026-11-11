@@ -3,97 +3,86 @@ name: soha-ci
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      latest_siblings:
-        description: 'Explicit latest-branch integration instead of the fixed sibling build inputs'
-        type: boolean
-        default: false
-        required: true
+
+permissions:
+  contents: read
 
 jobs:
-  verify:
+  route:
     runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.impact.outputs.core }}
+      web: ${{ steps.impact.outputs.web }}
+      contracts: ${{ steps.impact.outputs.contracts }}
+      deletion: ${{ steps.impact.outputs.deletion }}
     steps:
-      - name: Checkout soha
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
-          path: soha
           fetch-depth: 0
-      - name: Checkout contracts
-        uses: actions/checkout@v7
+          persist-credentials: false
+      - name: Impact selector and summary counterexamples
+        run: python3 -m unittest discover -s scripts -p 'test_ci_impact.py'
+      - name: Route actual source changes
+        id: impact
+        run: python3 scripts/ci-impact.py route
+  core:
+    needs: route
+    if: needs.route.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: ${{ github.workspace }}/go.work
+    steps:
+      - uses: actions/checkout@v7
         with:
-          repository: opensoha/soha-contracts
-          path: soha-contracts
-          ref: ${{ inputs.latest_siblings && 'main' || '7911c05328e704ca8bb490042fa3a25be29f273e' }}
-          token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
-      - name: Checkout web
-        uses: actions/checkout@v7
-        with:
-          repository: opensoha/soha-web
-          path: soha-web
-          ref: ${{ inputs.latest_siblings && 'main' || '55a66959a3d268f34062374090282aecfe01ffce' }}
-          token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
-      - name: Record actual source combination
-        env:
-          MODE: ${{ inputs.latest_siblings && 'latest integration' || 'fixed build inputs' }}
-        run: |
-          printf '### Source combination (%s)\n' "$MODE" >> "$GITHUB_STEP_SUMMARY"
-          for repo in soha soha-contracts soha-web; do
-            printf '%s: `%s`\n' "$repo" "$(git -C "$repo" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          done
-          printf 'Package/Go dependencies remain owned by their checked-in manifests and locks.\n' >> "$GITHUB_STEP_SUMMARY"
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: soha-web/package-lock.json
+          cache-dependency-path: package-lock.json
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27.4"
           cache: true
-          cache-dependency-path: soha/go.sum
-      - name: Check Go module state
-        working-directory: soha
+          cache-dependency-path: |
+            go.sum
+            contracts/go.sum
+      - name: Record same-commit source combination
         run: |
-          GOWORK=off go mod tidy
-          git diff --exit-code -- go.mod go.sum
-      - name: Verify Go module checksums
-        working-directory: soha
-        run: GOWORK=off go mod verify
-      - name: Build web artifact
-        working-directory: soha-web
+          printf '### Source combination (internal-source)\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Core, Web, Contracts: `%s`\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          sha256sum package-lock.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify same-source Go workspace and module state
+        run: |
+          python3 scripts/source-workspace.py check-go
+          python3 scripts/source-workspace.py tidy
+          go mod verify
+      - name: Embedded artifact ownership counterexamples
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_source_workspace.py'
+          python3 -m unittest discover -s scripts -p 'test_remote_source.py'
+          python3 -m unittest discover -s scripts -p 'test_release_dependency.py'
+      - name: Install source workspace
+        run: npm ci
+      - name: Build and stage same-source Web and SDK
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-        run: |
-          npm ci
-          npm run build
-      - name: Stage embedded web artifact
-        working-directory: soha
-        run: |
-          rm -rf internal/staticassets/web/dist
-          mkdir -p internal/staticassets/web/dist
-          cp -R ../soha-web/dist/. internal/staticassets/web/dist/
+        run: npm run build:web
       - name: Test
-        working-directory: soha
-        run: GOWORK=off go test ./...
+        run: go test ./...
       - name: Race test
-        working-directory: soha
-        run: GOWORK=off go test -race ./...
+        run: go test -race ./...
       - name: Vet
-        working-directory: soha
-        run: GOWORK=off go vet ./...
+        run: go vet ./...
       - name: Production complexity gate
-        working-directory: soha
         run: make complexity-check
       - name: Govulncheck
-        working-directory: soha
-        run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
       - name: Prepare PR lint patch
         if: github.event_name == 'pull_request'
-        working-directory: soha
         env:
           LINT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -108,26 +97,21 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0
-          working-directory: soha
           # Keep the PR patch filter without the GitHub API's diff-size limits.
           args: --timeout=5m --new-from-patch=${{ runner.temp }}/soha-pr-lint.patch
       - name: Build application binaries
-        working-directory: soha
         run: |
-          GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
-          GOWORK=off CGO_ENABLED=0 go build -o /tmp/network-control ./cmd/network-control
-          GOWORK=off CGO_ENABLED=0 go build -o /tmp/ingest ./cmd/ingest
+          CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
+          CGO_ENABLED=0 go build -o /tmp/network-control ./cmd/network-control
+          CGO_ENABLED=0 go build -o /tmp/ingest ./cmd/ingest
       - name: Verify network test assets
-        working-directory: soha
         run: |
           sh deploy/network-test/generate-eap-test-pki_test.sh
           sh deploy/network-test/eapol-test_test.sh
           docker compose -f deploy/docker-compose.yaml --profile network-access --profile network-test config --quiet
       - name: Validate optional runtime Compose profiles
-        working-directory: soha
         run: docker compose -f deploy/dsh-hindsight/compose.yaml --profile dsh --profile hindsight config --quiet
       - name: Docker build
-        working-directory: soha
         run: |
           docker build -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
           docker build --target network-gateway-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-network-gateway:test .
@@ -146,3 +130,28 @@ jobs:
           test -x /app/runtime-upgrade &&
           mkdir -p "$SOHA_PLUGINS_COMPANION_STORAGE_DIR" &&
           touch "$SOHA_PLUGINS_COMPANION_STORAGE_DIR/.writable"'
+
+  web:
+    needs: route
+    if: needs.route.outputs.web == 'true'
+    uses: ./.github/workflows/web-ci.yml
+  contracts:
+    needs: route
+    if: needs.route.outputs.contracts == 'true'
+    uses: ./.github/workflows/contracts-ci.yml
+  deletion:
+    needs: route
+    if: needs.route.outputs.deletion == 'true'
+    uses: ./.github/workflows/deletion-integration.yml
+  summary:
+    if: always()
+    needs: [route, core, web, contracts, deletion]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require every selected gate to succeed
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci-impact.py summary

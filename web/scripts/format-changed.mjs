@@ -1,18 +1,12 @@
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const mode = process.argv.includes('--write') ? '--write' : '--check'
 const supportedExtension = /\.(?:css|html|js|json|md|mjs|ts|tsx|ya?ml)$/i
 const ignoredPrefixes = ['.codex-tmp/', '.tmp/', 'dist/', 'node_modules/']
-
-function gitPaths(args) {
-  const output = execFileSync('git', args, { cwd: root, encoding: 'buffer' })
-  return output.toString('utf8').split('\0').filter(Boolean)
-}
 
 const trackedAllowlist = new Set([
   '.github/workflows/ci.yml',
@@ -58,28 +52,67 @@ const trackedAllowedPrefixes = [
   'src/features/identity/applications/',
   'src/features/identity/shared/',
 ]
-const tracked = gitPaths(['diff', '--name-only', '-z', 'HEAD']).filter(
-  (file) =>
-    trackedAllowlist.has(file) || trackedAllowedPrefixes.some((prefix) => file.startsWith(prefix)),
-)
-const untracked = gitPaths(['ls-files', '--others', '--exclude-standard', '-z'])
-const candidates = new Set([...tracked, ...untracked])
-
-const files = [...candidates]
-  .filter((file) => supportedExtension.test(file))
-  .filter((file) => !ignoredPrefixes.some((prefix) => file.startsWith(prefix)))
-  .filter((file) => {
-    const absolutePath = path.join(root, file)
-    return existsSync(absolutePath) && statSync(absolutePath).isFile()
-  })
-  .sort()
-
-if (files.length === 0) {
-  console.log('No changed files require formatting.')
-  process.exit(0)
+export function changedFiles(root) {
+  root = realpathSync(root)
+  const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim()
+  const prefix = path.relative(gitRoot, root).split(path.sep).join('/')
+  const sourcePrefix = prefix ? `${prefix}/` : ''
+  const gitPaths = (args) =>
+    execFileSync('git', args, { cwd: gitRoot, encoding: 'utf8' })
+      .split('\0')
+      .filter((file) => file && file.startsWith(sourcePrefix))
+      .map((file) => file.slice(sourcePrefix.length))
+  const tracked = gitPaths(['diff', '--name-only', '-z', 'HEAD', '--', prefix || '.']).filter(
+    (file) =>
+      trackedAllowlist.has(file) ||
+      trackedAllowedPrefixes.some((allowed) => file.startsWith(allowed)),
+  )
+  const untracked = gitPaths([
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+    '-z',
+    '--',
+    prefix || '.',
+  ])
+  return [...new Set([...tracked, ...untracked])]
+    .filter((file) => supportedExtension.test(file))
+    .filter((file) => !ignoredPrefixes.some((ignored) => file.startsWith(ignored)))
+    .filter((file) => {
+      const absolutePath = path.join(root, file)
+      return existsSync(absolutePath) && statSync(absolutePath).isFile()
+    })
+    .sort()
 }
 
-console.log(`${mode === '--write' ? 'Formatting' : 'Checking'} ${files.length} changed files.`)
-const prettier = path.join(root, 'node_modules', '.bin', 'prettier')
-const result = spawnSync(prettier, [mode, ...files], { cwd: root, stdio: 'inherit' })
-process.exit(result.status ?? 1)
+function main() {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  const mode = process.argv.includes('--write') ? '--write' : '--check'
+  const files = changedFiles(root)
+  if (files.length === 0) {
+    console.log('No changed files require formatting.')
+    return
+  }
+  console.log(`${mode === '--write' ? 'Formatting' : 'Checking'} ${files.length} changed files.`)
+  // Resolve from this script so npm's hoisted workspace installation is supported.
+  const require = createRequire(import.meta.url)
+  const prettier = path.join(
+    path.dirname(require.resolve('prettier/package.json')),
+    'bin/prettier.cjs',
+  )
+  const result = spawnSync(process.execPath, [prettier, mode, ...files], {
+    cwd: root,
+    stdio: 'inherit',
+  })
+  process.exitCode = result.status ?? 1
+}
+
+if (
+  process.argv[1] &&
+  existsSync(process.argv[1]) &&
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+)
+  main()

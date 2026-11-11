@@ -55,3 +55,6 @@ scripts/__pycache__/
 
 # Air (Go hot reload)
 .air.toml
+
+# Same-source build receipts and isolated temporary outputs.
+.tmp/

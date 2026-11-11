@@ -59,27 +59,28 @@ Run focused package tests during development. Documentation-only edits need meta
 For incremental lint, set `SOHA_LINT_BASE_REF` to the verified PR target or actual configured upstream; an arbitrary feature-branch tracking ref is not a substitute for the integration target.
 
 ```bash
-GOWORK=off go mod tidy
-git diff -- go.mod go.sum
-GOWORK=off go mod verify
-GOWORK=off go test ./...
-GOWORK=off go test -race ./...
-GOWORK=off go vet ./...
+export GOWORK="$PWD/go.work"
+python3 scripts/source-workspace.py tidy
+go mod verify
+go test ./...
+go test -race ./...
+go vet ./...
 make complexity-check
 : "${SOHA_LINT_BASE_REF:?set the verified PR base or upstream ref}"
 BASE_REV="$(git merge-base HEAD "$SOHA_LINT_BASE_REF")"
 golangci-lint run --new-from-rev="$BASE_REV" ./...
-GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
 git diff --check
 ```
 
+- Internal source hygiene uses a temporary modfile with the local SDK, and preserves checked-in manifests. External declared-dependency/publication checks use `GOWORK=off` without local replacements; source success cannot certify a published version.
 - Do not accept a `go mod tidy` diff accidentally. Review dependency and checksum changes before keeping them. CI must run tidy on a clean checkout and fail if it produces a diff.
 - Keep the existing incremental lint baseline: changed code must introduce zero new issues. Resolve the baseline from the actual PR base or configured upstream; do not assume `origin/main` exists or is current.
 - Use table-driven named subtests for behavior matrices. Test observable contracts, failure paths, boundary rejection, cancellation, terminal states, retry, stale callbacks, and typed-nil construction where relevant.
 - Existing Go test discovery runs recursive import checks in `internal/application/dependency_boundary_test.go` and `internal/domain/dependency_boundary_test.go`. The application check freezes pre-existing SDK imports and selected connector HTTP symbols at exact file/dependency pairs; each has an owner and must disappear when its source dependency does. These are migration debt, not permission for new imports or directory-wide exceptions.
 - Gateway/console transport and VM Handler checks cover their named production families. Handler capability checks follow the actual consumer fields and embedded interfaces. These static checks do not prove authorization, transaction, replay, startup or protocol behavior; run the affected owner's semantic tests and report uncovered paths rather than claiming a universal architecture gate.
 - Run `go test -race` for all concurrency, cache, stream, runner, lease, and lifecycle changes even when the focused package test passes.
-- Stage the built `soha-web/dist` artifact before the `embedassets` build. For release or image changes, use the real multi-stage Docker build rather than treating an unstaged backend-only build as equivalent.
+- Stage the built `web/dist` artifact before the `embedassets` build. For release or image changes, use the real multi-stage Docker build rather than treating an unstaged backend-only build as equivalent.
 - For broad structural or dependency changes, query the existing `graphify-out` first. Refresh only after source changes are stable and worktree contents are understood; follow the repository Graphify runbook and shrink guards without defaulting to `--force`. Compare concrete ownership paths rather than only God Node degree.
 - For image or deployment changes, also follow `$soha-deploy`; a successful Go build alone is not deployment verification.

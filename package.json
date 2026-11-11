@@ -1,0 +1,17 @@
+{
+  "name": "soha-source-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "workspaces": [
+    "contracts",
+    "web"
+  ],
+  "scripts": {
+    "check:workspace": "python3 scripts/source-workspace.py check-npm",
+    "build:web": "npm run check:workspace && npm run check:generated --workspace contracts && npm run generate --workspace contracts && npm run build --workspace web && python3 scripts/source-workspace.py stage-web",
+    "check:go-source": "python3 scripts/source-workspace.py check-go && python3 scripts/source-workspace.py tidy",
+    "check:internal-consumers": "node contracts/scripts/check-consumers.mjs --internal-source --require-all",
+    "test:workspace": "python3 -m unittest discover -s scripts -p test_source_workspace.py"
+  }
+}

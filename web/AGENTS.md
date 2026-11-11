@@ -2,7 +2,7 @@
 
 ## 所有权与规则加载
 
-- 本仓负责 React/Vite/Ant Design 控制台源码；公开协议以 `soha-contracts` 为源，API 调用遵循现有 api-client 和 feature 所有权边界。
+- 本目录是主仓 `web/` npm workspace，负责 React/Vite/Ant Design 控制台源码；公开协议以同提交 `../contracts/` 为源，API 调用遵循现有 api-client 和 feature 所有权边界。
 - 在已确认的 OpenSoha 多仓工作区中读取 `../AGENTS.md` 一次；独立克隆使用本仓规则，不要求相邻仓库或工作区规划工具。根技能符号链接只是发现入口，未自动加载时直接读取本仓真实源。
 - 实现或实质审查前读取 [soha-frontend](.agents/skills/soha-frontend/SKILL.md)；UI 工作读取 [产品体验规范](.agents/skills/soha-frontend/references/product-experience.md) 与 [主题规范](.agents/skills/soha-frontend/references/theme-system.md) 的相关部分；路由、数据、状态、CSS 所有权或共享边界变化读取 [架构规范](.agents/skills/soha-frontend/references/architecture-development.md)。只读查询按需定位，不遍历所有规范。
 - 同一任务中已读且未变化的内容可以复用；新任务、交接后缺少关键约束或文件变化时补读必要部分。读取技能不授权安装、发布、修改其他仓库或恢复历史任务。
@@ -19,7 +19,7 @@
 
 ## 验证与完成
 
-- 命令和版本以 [package.json](package.json) 与 [CI](.github/workflows/ci.yml) 为准。局部维护选择相关组件测试、Lint/格式及必要浏览器检查；新增或重构页面另验证数据接入、权限、加载/空/错状态、类型及适用路由行为。
+- 组件命令以 [package.json](package.json) 为准，安装与 CI 入口在[主仓](../package.json)及[根 Web CI](../.github/workflows/web-ci.yml)。从根目录执行 `npm ci`、`npm run check:workspace`；Web 通过 `file:../contracts` 消费同提交 SDK，这不是已发布包验证。局部维护选择相关组件测试、Lint/格式及必要浏览器检查；新增或重构页面另验证数据接入、权限、加载/空/错状态、类型及适用路由行为。
 - 开发/UI 实现者负责最小有效自测；复杂权限、异步状态和跨模块流程在实现前或早期明确成功、失败及边界场景，按需由 `qa_designer` 协助。独立测试与只读审查在约定批次完成、准备正式提交/合入或用户明确要求时进行，不因每次局部调整或预览启动全套收尾。
 - 主入口为 `npm run lint`、`npm run typecheck`、`npm test`、`npm run build`，这是入口索引，不是每次小改的执行清单；定向命令和浏览器资源限制见 [测试入口](docs/testing.md)。全量回归按实际影响及必需门禁选择，提交本身不触发全量；路由、共享边界、依赖或发布修改执行适用完整门禁，不用定向测试替代 CI 必需检查。
 - 视觉完成需要实际页面与交互状态验证，构建和类型成功不能替代设计验收。共享组件通过也不代表页面接入通过；不自行代签用户认可。
@@ -30,6 +30,6 @@
 
 ## Graphify
 
-- 跨模块依赖、共享能力影响、模块迁移或跨仓任务，先查询已有图谱并核对源码；在已确认的多仓工作区按 [Graphify 开发手册](../docs/guides/graphify-development/runbook.md)检查新鲜度、查询和刷新。
+- 跨模块依赖、共享能力影响、模块迁移或跨仓任务，先查询已有图谱并核对源码；在已确认的多仓工作区按 `工作区 docs/guides/graphify-development/runbook.md`（按实际外层工作区位置读取）检查新鲜度、查询和刷新。
 - 结构变更稳定后显式刷新受影响仓库及跨仓图；普通小修改、文案和局部样式不自动建图。刷新失败先诊断，不默认使用 `--force`。
 - 独立克隆时使用本仓 `graphify-out/graph.json` 与原生 Graphify 命令；缺少工具或图谱时直接查源码并说明缺口，不要求补齐相邻仓库。

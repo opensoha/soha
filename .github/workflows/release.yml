@@ -6,15 +6,12 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      web_ref:
-        description: "soha-web release tag to embed (must match the Core tag for a tagged release)"
+      version:
+        description: "Exact Core vX.Y.Z version (must equal the tag for tagged releases)"
         required: true
+        type: string
       contracts_ref:
         description: "Optional assertion of the contracts version pinned in go.mod"
-        required: false
-        default: ""
-      web_sha256:
-        description: "Optional expected sha256 for the soha-web dist tarball; checked against the release checksum asset when provided"
         required: false
         default: ""
 
@@ -26,85 +23,126 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      WEB_REF: ${{ inputs.web_ref || github.ref_name }}
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
       CONTRACTS_REF: ${{ inputs.contracts_ref }}
-      WEB_SHA256: ${{ inputs.web_sha256 }}
+      GOWORK: ${{ github.workspace }}/soha/go.work
     steps:
       - name: Checkout soha
         uses: actions/checkout@v7
         with:
           path: soha
           fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: soha/package-lock.json
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27.4"
           cache: true
           cache-dependency-path: soha/go.sum
       - name: Verify release version
-        if: startsWith(github.ref, 'refs/tags/v')
         working-directory: soha
         run: |
           set -euo pipefail
-          if [ "${WEB_REF}" != "${GITHUB_REF_NAME}" ]; then
-            echo "The Web release tag must match the Core release tag." >&2
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$GITHUB_REF" == refs/tags/* && "$RELEASE_VERSION" != "$GITHUB_REF_NAME" ]]; then
+            echo "Core version must match the exact root release tag." >&2
             exit 1
           fi
-          grep -Fx -A 1 '  - name: ghcr.io/opensoha/soha' deploy/kustomization.yaml | grep -Fx "    newTag: ${GITHUB_REF_NAME}"
-          grep -Fx "          image: ghcr.io/opensoha/soha:${GITHUB_REF_NAME}" deploy/deployment.yaml
+          grep -Fx -A 1 '  - name: ghcr.io/opensoha/soha' deploy/kustomization.yaml | grep -Fx "    newTag: ${RELEASE_VERSION}"
+          grep -Fx "          image: ghcr.io/opensoha/soha:${RELEASE_VERSION}" deploy/deployment.yaml
       - name: Resolve runtime version
         working-directory: soha
         run: |
-          release_version="$(git describe --tags --abbrev=0)"
-          echo "SOHA_BUILD_VERSION=${release_version#v}" >> "$GITHUB_ENV"
+          echo "SOHA_BUILD_VERSION=${RELEASE_VERSION#v}" >> "$GITHUB_ENV"
+      - name: Build Web and SDK from the same release commit
+        working-directory: soha
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          set -euo pipefail
+          npm ci
+          python3 scripts/source-workspace.py check-go
+          npm run build:web
+          test -f internal/staticassets/web/dist/index.html
+          tar -czf ../soha-web-dist.tar.gz -C web/dist .
+          sha256sum ../soha-web-dist.tar.gz | cut -d ' ' -f1 > ../soha-web-dist.sha256
+          cp .tmp/embedded-web.json ../soha-web-source-manifest.json
       - name: Verify pinned contracts module
         working-directory: soha
         run: |
           set -euo pipefail
-          reviewed_ref="$(GOWORK=off go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts)"
+          module_dir="$(mktemp -d "${RUNNER_TEMP:?}/soha-release-module.XXXXXX")"
+          trap 'rm -rf "$module_dir"' EXIT
+          GOFLAGS=-mod=readonly GOWORK=off go list -m -json github.com/opensoha/soha-contracts > "$module_dir/module.json"
+          python3 - "$module_dir/module.json" <<'SDK_IDENTITY'
+          import json, sys
+          module = json.load(open(sys.argv[1]))
+          if module.get("Replace") is not None:
+              raise SystemExit("published contracts module must not use a replacement")
+          SDK_IDENTITY
+          reviewed_ref="$(GOFLAGS=-mod=readonly GOWORK=off go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts)"
           [[ "${reviewed_ref}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           if [ -n "${CONTRACTS_REF}" ] && [ "${CONTRACTS_REF}" != "${reviewed_ref}" ]; then
             echo "contracts input differs from the reviewed go.mod dependency" >&2
             exit 1
           fi
           echo "CONTRACTS_REF=${reviewed_ref}" >> "$GITHUB_ENV"
-          GOWORK=off go mod download
-          GOWORK=off go mod verify
-          GOWORK=off go list -m github.com/opensoha/soha-contracts | tee ../soha-contracts-module.txt
-      - name: Download web artifact
-        env:
-          GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
+          GOFLAGS=-mod=readonly GOWORK=off go mod download
+          GOFLAGS=-mod=readonly GOWORK=off go mod verify
+          GOFLAGS=-mod=readonly GOWORK=off go list -m -json github.com/opensoha/soha-contracts > "$module_dir/module.json"
+          GOFLAGS=-mod=readonly GOWORK=off go mod download -json github.com/opensoha/soha-contracts > "$module_dir/download.json"
+          python3 - "$module_dir/module.json" "$module_dir/download.json" <<'SDK_CHECKSUM'
+          import json, sys
+          module = json.load(open(sys.argv[1]))
+          downloaded = json.load(open(sys.argv[2]))
+          if module.get("Replace") is not None or not module.get("Sum"):
+              raise SystemExit("published contracts module requires an unreplaced checksum")
+          if downloaded.get("Version") != module.get("Version") or downloaded.get("Sum") != module["Sum"] or not downloaded.get("GoModSum"):
+              raise SystemExit("published contracts version/checksum mismatch")
+          SDK_CHECKSUM
+          GOFLAGS=-mod=readonly GOWORK=off go list -m github.com/opensoha/soha-contracts | tee ../soha-contracts-module.txt
+      - name: Qualify Core against the published Go SDK
+        working-directory: soha
         run: |
           set -euo pipefail
-          mkdir -p /tmp/soha-web-dist
-          gh release download "${WEB_REF}" \
-            --repo opensoha/soha-web \
-            --pattern "soha-web-dist-${WEB_REF}.tar.gz" \
-            --pattern "soha-web-dist-${WEB_REF}.tar.gz.sha256" \
-            --dir /tmp/soha-web-dist
-          tarball="/tmp/soha-web-dist/soha-web-dist-${WEB_REF}.tar.gz"
-          checksum_file="${tarball}.sha256"
-          checksum="$(grep -Eo '[A-Fa-f0-9]{64}' "${checksum_file}" | head -n1)"
-          if [ -z "${checksum}" ]; then
-            echo "No sha256 digest found in ${checksum_file}" >&2
-            exit 1
-          fi
-          if [ -n "${WEB_SHA256}" ] && [ "${WEB_SHA256}" != "${checksum}" ]; then
-            echo "Input web_sha256 does not match ${checksum_file}" >&2
-            exit 1
-          fi
-          printf '%s\n' "${checksum}" > soha-web-dist.sha256
-          printf '%s  %s\n' "${checksum}" "${tarball}" | sha256sum -c -
-          rm -rf soha/internal/staticassets/web/dist
-          mkdir -p soha/internal/staticassets/web/dist
-          tar -xzf "${tarball}" -C soha/internal/staticassets/web/dist
-          test -f soha/internal/staticassets/web/dist/index.html
+          export GOWORK=off GOFLAGS=-mod=readonly
+          qualification_dir="$(mktemp -d "${RUNNER_TEMP:?}/soha-published-sdk.XXXXXX")"
+          trap 'rm -rf "$qualification_dir"' EXIT
+          go test ./...
+          CGO_ENABLED=0 go build -tags embedassets -trimpath -o "$qualification_dir/soha-server" ./cmd/server
+      - name: Verify public npm SDK source before publishing a product release
+        working-directory: soha
+        run: |
+          set -euo pipefail
+          # Internal workspace success does not prove the SDK is publicly available.
+          npm_version="${CONTRACTS_REF#v}"
+          test "$(node -p "require('./contracts/package.json').version")" = "$npm_version"
+          package_dir="$(mktemp -d)"
+          trap 'rm -rf "$package_dir"' EXIT
+          npm pack --workspace @opensoha/contracts --pack-destination "$package_dir" --json > "$package_dir/local.json"
+          npm view "@opensoha/contracts@$npm_version" dist --json --registry https://registry.npmjs.org > "$package_dir/registry.json"
+          node - "$package_dir" <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const path = require('node:path');
+          const dir = process.argv[2];
+          const dist = JSON.parse(fs.readFileSync(path.join(dir, 'registry.json')));
+          if (!dist.tarball?.startsWith('https://registry.npmjs.org/') || !dist.integrity) throw new Error('registry-backed SDK proof required');
+          const [local] = JSON.parse(fs.readFileSync(path.join(dir, 'local.json')));
+          const integrity = 'sha512-' + crypto.createHash('sha512').update(fs.readFileSync(path.join(dir, local.filename))).digest('base64');
+          if (integrity !== dist.integrity) throw new Error('same-source SDK differs from published npm package');
+          NODE
       - name: Test
         working-directory: soha
-        run: GOWORK=off go test ./...
+        run: go test ./...
       - name: Build linux amd64 binary
         working-directory: soha
         run: |
-          GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o ../soha-linux-amd64 ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o ../soha-linux-amd64 ./cmd/server
           cd ..
           sha256sum soha-linux-amd64 > soha-linux-amd64.sha256
       - name: Set up QEMU
@@ -204,12 +242,12 @@ jobs:
           generated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           cat > soha-release-manifest.json <<EOF
           {
-            "version": "${GITHUB_REF_NAME}",
+            "version": "${RELEASE_VERSION}",
             "commit": "${GITHUB_SHA}",
             "generatedAt": "${generated_at}",
             "contractsRef": "${CONTRACTS_REF}",
             "contractsModule": "${contracts_module}",
-            "webRef": "${WEB_REF}",
+            "webRef": "${GITHUB_SHA}",
             "webSha256": "${web_sha256}",
             "binary": {
               "name": "soha-linux-amd64",
@@ -229,6 +267,8 @@ jobs:
             soha-contracts-module.txt
             soha-release-manifest.json
             soha-web-dist.sha256
+            soha-web-dist.tar.gz
+            soha-web-source-manifest.json
           if-no-files-found: error
       - name: Publish GitHub release asset
         if: startsWith(github.ref, 'refs/tags/v')

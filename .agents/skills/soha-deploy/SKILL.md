@@ -12,7 +12,7 @@ Use the `deploy/` assets to run soha as a single-project runtime: one applicatio
 ## Workflow
 
 1. Confirm the target is a single-project deployment, not a multi-service platform split.
-2. Read `references/security-and-build.md`, then start from `deploy/Dockerfile`; stage `../soha-web/dist` into `internal/staticassets/web/dist` before embed builds.
+2. Read `references/security-and-build.md`, then start from `deploy/Dockerfile`; use `npm run build:web` to generate/check the SDK, build `web/`, and stage the exact artifact before native embed builds.
 3. Reuse `configs/config.yaml` for local and container defaults, or provide overrides through environment variables or mounted config files when deployment needs differ.
 4. Choose one delivery form:
    - raw `docker run` with an existing reachable PostgreSQL service
@@ -60,10 +60,10 @@ Use the `deploy/` assets to run soha as a single-project runtime: one applicatio
 Deployment, Dockerfile, dependency, or release changes require the full `soha-backend` gate plus the production-context image build:
 
 ```bash
-docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
+docker build -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
 ```
 
-The image must contain the built `soha-web` artifact and the `embedassets` server. A missing local Docker daemon is not a pass; use the successful GitHub Actions Docker job as the required evidence.
+The image must contain the built same-checkout `web/` artifact and the `embedassets` server. A missing local Docker daemon is not a pass; use the successful GitHub Actions Docker job as the required evidence.
 
 ## Done Criteria
 

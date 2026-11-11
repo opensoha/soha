@@ -14,22 +14,22 @@ stop_web() {
 }
 
 start_web() {
-	(cd /workspace/soha-web && exec npm run dev -- --host 0.0.0.0) &
+	(cd /workspace/soha && exec npm run dev --workspace web -- --host 0.0.0.0) &
 	web_pid="$!"
 }
 
 current_lock_revision() {
-	cksum /workspace/soha-web/package-lock.json 2>/dev/null | awk '{print $1 ":" $2}'
+	cksum /workspace/soha/package-lock.json 2>/dev/null | awk '{print $1 ":" $2}'
 }
 
 install_web() {
-	(cd /workspace/soha-web && npm ci --registry=https://registry.npmmirror.com --no-audit --no-fund)
+	(cd /workspace/soha && npm ci --registry=https://registry.npmmirror.com --no-audit --no-fund)
 	lock_revision="$(current_lock_revision)"
 }
 
 trap 'stop_web; exit 0' INT TERM
 
-until [ -f /workspace/soha-web/package-lock.json ]; do
+until [ -f /workspace/soha/package-lock.json ]; do
 	printf 'waiting for web sources\n'
 	sleep "$interval"
 done

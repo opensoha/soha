@@ -1,9 +1,7 @@
 name: deletion-integration
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -35,11 +33,13 @@ jobs:
         with:
           go-version: "1.27.4"
           cache: true
+      - name: Verify same-source workspace
+        run: python3 scripts/source-workspace.py check-go
       - name: Dedicated lab guards without deployment or models
         run: python3 -m unittest discover -s scripts -p 'test_quality_lab.py'
       - name: Run actual PostgreSQL deletion scenarios
         env:
-          GOWORK: "off"
+          GOWORK: ${{ github.workspace }}/go.work
           SOHA_APPLICATION_TEST_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
           SOHA_CATALOG_TEST_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
           SOHA_MANIFEST_TEST_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}

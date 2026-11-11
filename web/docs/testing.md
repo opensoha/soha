@@ -6,18 +6,22 @@ Playwright、稳定性重复测试或构建；提交动作本身不扩大范围�
 重试和集成行为应覆盖对应成功、失败和边界场景，按需在实现前或早期设计。真实 CI、共享影响、
 架构、依赖和发布门禁仍保留，以下定向入口不代替阶段必需检查。
 
-本地命令遵循工作区 `opensoha-verify run --` 入口；路径替换为实际受影响文件：
+依赖从主仓根目录以唯一根 `package-lock.json` 执行 `npm ci`，再执行 `npm run check:workspace`；
+`web/` 通过 `file:../contracts` 使用同提交 SDK，不再维护组件 lockfile。下表组件命令在 `web/` 执行，
+或从根使用 `npm run <script> --workspace web`；本地验证继续经 `opensoha-verify run --`。
+定向工具使用当前 workspace 的 npm 解析（兼容本地或根目录提升安装），Git 守卫的 baseline 必须含已评审的 `web/` 前缀树，
+不能以重写基线隐藏迁移前违规。路径替换为实际受影响文件：
 
-| 范围 | 入口与边界 |
-| --- | --- |
-| 相关单元/组件行为 | `npm test -- <spec-path>`；确认实际收集了目标用例，零匹配不算通过 |
-| 相关源码 Lint | `./node_modules/.bin/eslint <changed-path> --max-warnings=0`；`npm run lint` 内含 `eslint .`，追加路径仍会扫全仓 |
-| 相关浏览器场景 | `npm run test:e2e -- e2e/<spec-path>`；需要当前受测版本对应的构建产物与浏览器，记录产物来源 |
-| E2E 源码/fixtures 改动 | `npm run typecheck:e2e`，再选相关 specs；guard 行为变更加 `npm run test:guards` |
-| 适用的完整浏览器回归 | `npm run typecheck:e2e && npm run test:guards && npm run test:e2e`；按实际影响或必需门禁执行 |
+| 范围                   | 入口与边界                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 相关单元/组件行为      | `npm test -- <spec-path>`；确认实际收集了目标用例，零匹配不算通过                                             |
+| 相关源码 Lint          | `npm exec --no -- eslint <changed-path> --max-warnings=0`；`npm run lint` 内含 `eslint .`，追加路径仍会扫全仓 |
+| 相关浏览器场景         | `npm run test:e2e -- e2e/<spec-path>`；需要当前受测版本对应的构建产物与浏览器，记录产物来源                   |
+| E2E 源码/fixtures 改动 | `npm run typecheck:e2e`，再选相关 specs；guard 行为变更加 `npm run test:guards`                               |
+| 适用的完整浏览器回归   | `npm run typecheck:e2e && npm run test:guards && npm run test:e2e`；按实际影响或必需门禁执行                  |
 
 浏览器入口依赖 `npm run build` 的 preview 产物；源码变化后先更新对应构建，避免验证旧页面。
-缺依赖/浏览器时才按项目入口准备 `npm ci` / `npx playwright install chromium`，不每轮重装。
+缺依赖时在主仓根目录准备 `npm ci`；缺浏览器时从 `web/` 执行 `npx playwright install chromium`，不每轮重装。
 `npm run test:e2e:stable` 连续3次、retries=0，用于建立稳定性证据或调查不稳定行为，不是每轮必跑。
 Vitest 排除 `e2e/**`，普通 Playwright 只收集 `ui-mock/` 与 `visual/`，不加载 Midscene。
 现有 lint、格式、覆盖率、route、boundary、bundle 与 release 门禁继续由 package/CI 维护。

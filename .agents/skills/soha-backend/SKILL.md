@@ -16,7 +16,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 3. Keep authorization, scope semantics, audit, and operation logging aligned with the behavior change.
 4. For capability-facing work, identify the unique owner and capability declaration, plus the durable approval/receipt path where required by the operation; make unsupported or degraded paths explicit. Ordinary reads retain authorization, scope, and applicable audit without adding an execution workflow. For Kubernetes work, preserve the intended informer/cache, live fallback, and agent routing.
 5. For external or long-running work, identify the existing durable task, operation, session, run, lease, or callback state machine before adding another execution path.
-6. When public behavior changes, update `../soha-contracts` first, then the affected consumer, docs, permissions, menus, config, and tests.
+6. When public behavior changes, update `contracts/` first, then the affected consumer, docs, permissions, menus, config, and tests.
 7. Use `graphify-out/graph.json` for broad ownership or dependency questions. Refresh it only after structural changes are stable and the worktree contents are understood; follow the Graphify workflow in the repository AGENTS.md and run diagnostics. Do not bypass shrink guards with `--force` by default.
 8. Run focused tests while iterating, then apply the verification tier from `references/go-engineering-standards.md`; architecture, dependency, security, module, or release changes require the full gate.
 
@@ -37,7 +37,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - Keep `internal/api/routes/router.go` thin. It should assemble the Gin engine, global middleware, compatibility paths, static assets, and top-level groups only. Add or change business routes in same-package route files such as `routes_platform.go`, `routes_delivery.go`, `routes_monitoring.go`, `routes_runtime.go`, or `routes_governance.go`.
 - Public, runner, and callback routes belong in `routes_public.go` unless they require user-session authentication. Authenticated routes should be connected from `registerProtectedRoutes`; module-gated domains should keep their `cfg.Modules.*.Enabled` checks inside their domain registration function.
 - Keep `internal/bootstrap/app.go` focused on dependency graph assembly. Put lifecycle methods in `lifecycle.go`, narrow cross-module adapters in dedicated files, and seed concerns in focused files such as `database_menus.go` instead of growing `database.go`.
-- When adding menus or permissions, update the domain seed file, role permission keys, visible-menu behavior, and public docs together. Frontend route metadata lives in `soha-web`.
+- When adding menus or permissions, update the domain seed file, role permission keys, visible-menu behavior, and public docs together. Frontend route metadata lives in `web/`.
 - Do not create routes, entrypoints, integrations, or abstractions for planned products that do not have a current executable owner.
 
 ## Go Hotspot Refactor Rules
@@ -98,23 +98,23 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## CI Gate
 
-Use the toolchain and tool versions declared by [go.mod](../../../go.mod), [CI](../../../.github/workflows/ci.yml), and the [release workflow](../../../.github/workflows/release.yml). Run the release-sensitive gate with the root workspace disabled; local execution uses the workspace verification wrapper and its temporary output paths:
+Use the toolchain and tool versions declared by [go.mod](../../../go.mod), [CI](../../../.github/workflows/ci.yml), and the [release workflow](../../../.github/workflows/release.yml). Internal source checks use this checkout's root workspace; distributed-dependency and publication checks separately use `GOWORK=off` without local replacements. Local execution uses the workspace verification wrapper and its temporary output paths:
 
 ```bash
-GOWORK=off go mod tidy
-git diff --exit-code -- go.mod go.sum
-GOWORK=off go mod verify
-GOWORK=off go test ./...
-GOWORK=off go test -race ./...
-GOWORK=off go vet ./...
+export GOWORK="$PWD/go.work"
+python3 scripts/source-workspace.py tidy
+go mod verify
+go test ./...
+go test -race ./...
+go vet ./...
 make complexity-check
-GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
-docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test .
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
+docker build -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test .
 git diff --check
 ```
 
-CI also runs `golangci-lint v2.14.0` with only-new-issues semantics on pull requests and builds the sibling `soha-web` artifact before the embed and image checks. Dependency, Dockerfile, workflow, or release changes require this full gate; a missing local Docker daemon must be covered by a successful GitHub Actions Docker job.
+CI also runs `golangci-lint v2.14.0` with only-new-issues semantics on pull requests and builds the same-checkout `web/` artifact before the embed and image checks. Dependency, Dockerfile, workflow, or release changes require this full gate; a missing usable Docker engine must be covered by a successful GitHub Actions Docker job; an explicitly isolated remote engine build must retain source and cleanup evidence.
 
 ## Done Criteria
 

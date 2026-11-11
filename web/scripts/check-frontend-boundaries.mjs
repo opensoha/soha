@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -40,7 +47,7 @@ function isComputeRouteLeafImport(sourcePath, targetPath, referenceKind) {
 }
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
-const projectRoot = resolve(scriptDirectory, '..')
+const projectRoot = realpathSync(resolve(scriptDirectory, '..'))
 
 function printHelp() {
   console.log(`Usage: node scripts/check-frontend-boundaries.mjs [options]
@@ -183,12 +190,27 @@ function resolveAutomaticBase() {
 }
 
 function loadGitSources(commit) {
-  const output = git(['ls-tree', '-r', '--name-only', commit, '--', 'src/features', 'src/routes'])
-  const files = output ? output.split('\n').filter(isProductionSource) : []
+  const gitRoot = git(['rev-parse', '--show-toplevel'])
+  const prefix = relative(gitRoot, projectRoot).split(sep).join(posix.sep)
+  const sourcePrefix = prefix ? `${prefix}/` : ''
+  const fromRoot = (args) => git(['-C', gitRoot, ...args])
+  const output = fromRoot([
+    'ls-tree',
+    '-r',
+    '--name-only',
+    '-z',
+    commit,
+    '--',
+    `${sourcePrefix}src/features`,
+    `${sourcePrefix}src/routes`,
+  ])
+  const files = output ? output.split('\0').filter((file) => file.startsWith(sourcePrefix)) : []
   const sources = new Map()
 
   for (const filePath of files) {
-    sources.set(filePath, git(['show', `${commit}:${filePath}`]))
+    const localPath = filePath.slice(sourcePrefix.length)
+    if (isProductionSource(localPath))
+      sources.set(localPath, fromRoot(['show', `${commit}:${filePath}`]))
   }
 
   return sources

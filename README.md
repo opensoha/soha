@@ -93,8 +93,9 @@ See the published docs for current public architecture and API behavior.
 
 ### Frontend
 
-- Source repository: `github.com/opensoha/soha-web`
-- Build artifact: `dist`
+- Source directory: `web/` in this repository
+- Shared protocol and generated SDK source: `contracts/`
+- Build artifact: `web/dist`
 - `soha` release staging path: `internal/staticassets/web/dist`
 - Runtime modes: `embed`, `dir`, and `proxy`
 
@@ -168,7 +169,11 @@ different database or administrator credentials.
 This installs Go dependencies and prepares the configuration without starting Docker.
 The default `DEV_DB_MODE=external` uses your configured PostgreSQL service.
 Use `make init DEV_DB_MODE=local` to start PostgreSQL from `deploy/docker-compose.yaml`.
-Frontend dependencies are managed in the sibling `../soha-web` repository.
+Install the shared npm workspace from the repository root with `npm ci`.
+The root lockfile owns both `contracts/` and `web/`; no sibling checkout or new
+SDK release is required for source development. `go.work` selects the Core and
+Contracts modules from this checkout. Public module identities and external
+declared-dependency checks remain separate from this source workspace.
 
 MinIO exposes its S3 API at `http://127.0.0.1:9000` and console at `http://127.0.0.1:9001`, with persistent data in `opensoha-minio-data`. Its local defaults are `minioadmin` / `minioadmin`; override `SOHA_MINIO_ROOT_USER` and `SOHA_MINIO_ROOT_PASSWORD` in the environment or an untracked `deploy/.env` to preserve existing credentials. Change these defaults before exposing MinIO beyond loopback. Start it separately with `docker compose -f deploy/docker-compose.yaml up -d minio`; `make init` and `make dev` do not start MinIO.
 
@@ -260,10 +265,7 @@ reuses the existing `opensoha` PostgreSQL database, `soha-config` Secret, and
 To develop from pushed branches or refs:
 
 ```bash
-make remote-dev-up \
-  REMOTE_DEV_SOHA_REF=my-branch \
-  REMOTE_DEV_WEB_REF=my-branch \
-  REMOTE_DEV_CONTRACTS_REF=my-branch
+make remote-dev-up REMOTE_DEV_SOHA_REF=my-branch
 ```
 
 The workload polls those refs inside the cluster. Backend source changes trigger
@@ -547,7 +549,7 @@ compatibility boundary. NGINX Ingress and Traefik ForwardAuth examples live in
 - Keep central startup and route files thin. Add domain route files under `internal/api/routes` and concern-specific bootstrap files under `internal/bootstrap` instead of growing one monolithic file.
 - Split oversized Go files by stable behavior domains first. Platform handlers, platform resource services, and AI Gateway are organized into focused same-package files; protect execution-plane state transitions with unit tests.
 - Long-running work is task-backed. Build, release, Docker, Compose, VM control, and provider execution run through durable tasks and callback paths.
-- Frontend work belongs in `github.com/opensoha/soha-web`. Routes, metadata, permissions, backend menus, and tests should stay aligned across the artifact boundary.
+- Frontend work belongs in `web/`; public schemas and generated SDKs belong in `contracts/`. Routes, metadata, permissions, backend menus, and tests should stay aligned across the artifact boundary.
 - Platform APIs return Soha DTOs, not raw Kubernetes objects, except YAML or explicit passthrough routes.
 - Module visibility, menu visibility, and backend authorization are separate gates.
 - Generated artifacts should not be hand-edited. Update source files and rebuild instead.
@@ -562,8 +564,18 @@ Useful validation commands:
 
 ```bash
 make test
-cd ../soha-web && npm run typecheck && npm run build
+npm ci
+npm run typecheck --workspace web
+npm run build:web
+npm run check:internal-consumers
 ```
+
+`npm run build:web` records the exact embedded paths, modes, and hashes in
+`.tmp/embedded-web.json`. Docker builds generate the SDK and Web artifact inside
+the same source context; they do not download a separate Web release. The
+`embed`, `dir`, and `proxy` runtime modes are unchanged. External compatibility
+uses the separately pinned consumer matrix; source builds do not prove public
+SDK availability or release eligibility.
 
 ## Project Status
 

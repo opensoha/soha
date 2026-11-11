@@ -1,20 +1,18 @@
 # Soha Web
 
-This repository owns the Soha web console source. It is a React 18 + Vite +
+This `web/` workspace owns the Soha web console source within the main repository. It is a React 18 + Vite +
 TypeScript + Ant Design application for the OpenSoha operator console.
 
-The `soha` core repository consumes the built `dist` artifact only. Release
-builds copy this artifact into `soha/internal/staticassets/web/dist` before
-building the embedded Go binary.
+Core remains at the repository root and consumes the built `web/dist` artifact only.
+The root build stages it into `internal/staticassets/web/dist` before building the embedded Go binary.
 
 ## Repository Layout
 
 - `src/`: application shell, routes, feature pages, shared components, stores,
   services, theme, and i18n.
 - `public/`: static browser assets copied by Vite, including `/logo.svg`.
-- `.github/workflows/ci.yml`: pull request and main branch verification.
-- `.github/workflows/release.yml`: tagged release artifact packaging.
-- `@opensoha/contracts`: exact published npm dependency recorded in the lockfile.
+- `../.github/workflows/`: executable root CI and artifact workflows; nested historical workflows are not GitHub entry points.
+- `@opensoha/contracts`: same-checkout `../contracts` source workspace; the root lockfile owns installation.
 
 ## Development
 
@@ -22,12 +20,19 @@ Prerequisites:
 
 - Node.js 22, matching CI.
 - npm 10+.
-- Registry access to the exact `@opensoha/contracts` version in `package-lock.json`.
+- Registry access for the dependencies in the root `../package-lock.json`; the SDK itself resolves to local `contracts/` source.
+
+From the monorepo root (the parent of `web/`):
 
 ```sh
 npm ci
-npm run dev
+npm run check:workspace
+npm run dev --workspace web
 ```
+
+Use only the root lockfile. Do not install or create locks in `web/` or `contracts/`.
+Other component scripts can still run from `web/`, or with `npm run <script> --workspace web`
+from the root. Workspace source verification does not prove that the SDK is published.
 
 By default the Vite dev server starts on `http://localhost:5173`.
 
@@ -94,6 +99,9 @@ feature files in unrelated changes.
 
 ## Release Artifact
 
+The standalone distribution procedure below describes the legacy published-artifact chain.
+B2 source-workspace builds use the root commands above; publisher migration is a separate release stage.
+
 Tagged releases and manual workflow dispatches run `.github/workflows/release.yml`.
 The workflow:
 
@@ -114,22 +122,17 @@ The workflow:
 
 ## Embedding Into `soha`
 
-`soha-web` does not edit or publish files inside the core `soha` repository.
-The embedding boundary is the built Vite artifact:
+Web source is in `web/`; Core consumes its built `dist` artifact. From the monorepo root:
 
 ```sh
-npm ci
-npm run build
-rm -rf ../soha/internal/staticassets/web/dist
-mkdir -p ../soha/internal/staticassets/web
-cp -R dist ../soha/internal/staticassets/web/dist
+npm run build:web
 ```
 
-After copying, build the `soha` binary from the core repository so the Go
-embed/static asset packaging includes the new web console. Release automation
-should pin the exact `soha-web` tag or tarball used by a `soha` release, download
-the matching `.sha256` file, run `sha256sum -c` before extracting, and fail before
-the Go build if checksum verification or `dist/index.html` validation fails.
+This generates the same-checkout SDK, builds Web and stages the verified artifact into
+`internal/staticassets/web/dist` through `scripts/source-workspace.py stage-web`.
+The helper records file hashes and modes; build the Core binary only after staging succeeds.
+Do not copy an old sibling checkout's `dist` or an old Web release into this source build.
+The public SDK module and package identities remain unchanged during the B2 transition.
 
 ## License
 
