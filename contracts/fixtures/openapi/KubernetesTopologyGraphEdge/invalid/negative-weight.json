@@ -1,0 +1,8 @@
+{
+  "id": "edge-1",
+  "source": "a",
+  "target": "b",
+  "relation": "weights",
+  "resolutionState": "resolved",
+  "weight": -1
+}

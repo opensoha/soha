@@ -1,0 +1,47 @@
+{
+  "expectedRevision": 0,
+  "configuration": {
+    "name": "Office service protection",
+    "enabled": true,
+    "siteIds": [
+      "site-lab"
+    ],
+    "nasBindingIds": [
+      "nas-lab"
+    ],
+    "deviceIds": [
+      "endpoint-lab"
+    ],
+    "subjects": {
+      "users": [],
+      "teams": [],
+      "tags": []
+    },
+    "signal": "service_unavailable",
+    "requireHealthyForAdmission": true,
+    "heartbeatIntervalSeconds": 30,
+    "missedHeartbeats": 3,
+    "gracePeriodSeconds": 30,
+    "accountingFreshnessSeconds": 120,
+    "restoreHeartbeats": 3,
+    "restoreObservationSeconds": 60,
+    "autoRestore": false,
+    "steps": [
+      {
+        "afterSeconds": 0,
+        "action": "notify"
+      },
+      {
+        "afterSeconds": 60,
+        "action": "restrict",
+        "targetAccessProfile": "restricted"
+      },
+      {
+        "afterSeconds": 180,
+        "action": "disconnect"
+      }
+    ],
+    "failureAction": "disconnect",
+    "notificationPolicyId": "notifications-lab"
+  }
+}

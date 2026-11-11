@@ -1,0 +1,23 @@
+{
+  "id": "pkg-01j9z3m4w8n2",
+  "softwareId": "soha-cli",
+  "name": "Soha CLI",
+  "description": "Command-line client for Soha.",
+  "publisher": "OpenSoha",
+  "category": "Developer Tools",
+  "tenantId": "default",
+  "workspaceId": "default",
+  "visibility": "workspace",
+  "status": "ready",
+  "version": "0.1.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "fileName": "soha-cli-0.1.0-darwin-arm64.pkg",
+  "sizeBytes": 1048576,
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "downloadPath": "/api/v1/software/packages/pkg-01j9z3m4w8n2/download",
+  "downloadCount": 12,
+  "storageIntegrationId": "software-object-storage",
+  "createdAt": "2026-08-08T00:00:00Z",
+  "updatedAt": "2026-08-08T00:00:00Z"
+}

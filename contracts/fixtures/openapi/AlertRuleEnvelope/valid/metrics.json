@@ -1,0 +1,11 @@
+{
+  "data": {
+    "id": "rule-checkout-errors",
+    "name": "Checkout error rate",
+    "ruleType": "metrics",
+    "forSeconds": 120,
+    "enabled": true,
+    "createdAt": "2026-08-31T00:00:00Z",
+    "updatedAt": "2026-08-31T00:05:00Z"
+  }
+}

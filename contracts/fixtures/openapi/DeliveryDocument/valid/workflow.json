@@ -1,0 +1,20 @@
+{
+  "apiVersion": "delivery.soha.io/v1alpha1",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "app-release"
+  },
+  "spec": {
+    "definition": {
+      "name": "App build",
+      "targets": [
+        {
+          "id": "app",
+          "applicationId": "app-1",
+          "serviceId": "api",
+          "action": "build"
+        }
+      ]
+    }
+  }
+}

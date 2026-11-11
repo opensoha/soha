@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/knowledge-base.schema.json",
+  "title": "Knowledge Base",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "status", "ownerId", "scope", "retrievalPolicy", "createdAt", "updatedAt"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "tenantId": { "type": "string" },
+    "workspaceId": { "type": "string" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "description": { "type": "string", "maxLength": 4000 },
+    "status": { "enum": ["active", "disabled"] },
+    "ownerId": { "type": "string", "minLength": 1 },
+    "scope": { "$ref": "#/$defs/accessScope" },
+    "retrievalPolicy": { "$ref": "#/$defs/retrievalPolicy" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "stringSet": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "accessScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visibility"],
+      "properties": {
+        "visibility": { "enum": ["private", "restricted", "public"] },
+        "users": { "$ref": "#/$defs/stringSet" },
+        "roles": { "$ref": "#/$defs/stringSet" },
+        "teams": { "$ref": "#/$defs/stringSet" },
+        "projects": { "$ref": "#/$defs/stringSet" }
+      }
+    },
+    "retrievalPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defaultTopK", "maxTopK", "lexicalWeight", "vectorWeight", "minScore"],
+      "properties": {
+        "defaultTopK": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "maxTopK": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "lexicalWeight": { "type": "number", "minimum": 0, "maximum": 1 },
+        "vectorWeight": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minScore": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

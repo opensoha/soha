@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/multi-agent-plan/v1","id":"plan-1","coordinatorRef":"coordinator:v1","subtasks":[{"id":"research","agentProfileRef":"researcher:v1","input":"research","permissionKeys":["knowledge.search"],"status":"pending"}],"sharedBudget":{"maxSteps":20,"maxTokens":20000,"maxCost":2,"deadlineSeconds":600},"status":"running","createdAt":"2026-07-15T00:00:00Z"}

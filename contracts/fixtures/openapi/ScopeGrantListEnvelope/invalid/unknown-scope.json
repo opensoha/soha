@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": "grant-123",
+      "subjectType": "user",
+      "subjectId": "user-123",
+      "businessLineId": "payments",
+      "scopeType": "global",
+      "role": "developer",
+      "effect": "allow",
+      "enabled": true,
+      "createdAt": "2026-08-13T08:00:00Z",
+      "updatedAt": "2026-08-13T08:00:00Z"
+    }
+  ]
+}

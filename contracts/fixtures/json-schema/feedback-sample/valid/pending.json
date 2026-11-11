@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/evaluation-feedback-sample/v1","id":"feedback-1","traceRef":"trace-1","scopeHash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","redactedInput":"question","redactedOutput":"answer","licenseRef":"internal-evaluation","decision":"pending","createdAt":"2026-07-15T00:00:00Z"}

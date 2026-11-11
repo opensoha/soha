@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/agent-provider-runtime-event.schema.json",
+  "title": "Agent Provider Runtime Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventType", "runnerId", "revision", "observedAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/agent-provider-runtime-event/v1" },
+    "eventType": { "enum": ["registry_ack", "registry_nack", "provider_health", "provider_draining"] },
+    "runnerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "activeRevision": { "type": "integer", "minimum": 0 },
+    "providerId": { "type": "string", "maxLength": 128 },
+    "providerVersion": { "type": "string", "maxLength": 64 },
+    "health": { "enum": ["healthy", "degraded", "unhealthy"] },
+    "draining": { "type": "boolean" },
+    "activeRuns": { "type": "integer", "minimum": 0 },
+    "reason": { "type": "string", "maxLength": 2048 },
+    "observedAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    { "if": { "properties": { "eventType": { "enum": ["registry_ack", "registry_nack"] } } }, "then": { "required": ["activeRevision"] } },
+    { "if": { "properties": { "eventType": { "enum": ["provider_health", "provider_draining"] } } }, "then": { "required": ["providerId", "providerVersion", "health", "draining", "activeRuns"] } }
+  ]
+}

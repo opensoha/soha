@@ -1,0 +1,19 @@
+{
+  "operationId": "op-delivery-123",
+  "operationKind": "delivery",
+  "runnerId": "runner-us-west-1",
+  "agentId": "agent-prod-1",
+  "tenantId": "tenant-acme",
+  "workspaceId": "workspace-prod",
+  "state": "heartbeat",
+  "sequence": 3,
+  "occurredAt": "2026-06-12T00:00:00.000Z",
+  "deadlineAt": "2026-06-12T00:05:00.000Z",
+  "heartbeat": {
+    "intervalSeconds": 30,
+    "nextDueAt": "2026-06-12T00:00:30.000Z"
+  },
+  "metadata": {
+    "providerKind": "github-actions"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "builderImage": "registry.example/builder:latest",
+  "runImage": "registry.example/run@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "platform": "linux/arm64"
+}

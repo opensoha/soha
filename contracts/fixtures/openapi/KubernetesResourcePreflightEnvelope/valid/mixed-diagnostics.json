@@ -1,0 +1,83 @@
+{
+  "data": {
+    "ready": false,
+    "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "items": [
+      {
+        "document": {
+          "index": 0,
+          "apiVersion": "rbac.authorization.k8s.io/v1",
+          "kind": "ClusterRole",
+          "name": "reader",
+          "namespace": "minio",
+          "scopeMode": "cluster",
+          "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "warnings": [
+          {
+            "code": "cluster_scoped_namespace_ignored",
+            "message": "metadata.namespace is ignored for this cluster-scoped resource.",
+            "field": "metadata.namespace"
+          }
+        ],
+        "authorization": {
+          "allowed": true,
+          "allowedActions": ["create"],
+          "resourceScope": {
+            "clusterIds": ["cluster-a"],
+            "namespaces": [],
+            "resourceGroups": ["access_control"],
+            "resourceKinds": ["ClusterRole"]
+          }
+        },
+        "capability": {
+          "key": "resource.yaml.apply",
+          "status": "available",
+          "mode": "direct"
+        },
+        "dryRun": { "status": "passed" },
+        "errors": []
+      },
+      {
+        "document": {
+          "index": 1,
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "api",
+          "namespace": "ops",
+          "scopeMode": "namespace",
+          "contentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "resolvedNamespace": "ops",
+        "warnings": [],
+        "authorization": {
+          "allowed": false,
+          "reason": "Create access is not granted in namespace ops.",
+          "allowedActions": ["list", "view"],
+          "resourceScope": {
+            "clusterIds": ["cluster-a"],
+            "namespaces": ["minio"],
+            "resourceGroups": ["workloads"],
+            "resourceKinds": []
+          },
+          "error": {
+            "code": "resource_create_denied",
+            "message": "Create access is not granted in namespace ops."
+          }
+        },
+        "capability": {
+          "key": "resource.yaml.apply",
+          "status": "available",
+          "mode": "direct"
+        },
+        "dryRun": { "status": "skipped" },
+        "errors": [
+          {
+            "code": "resource_create_denied",
+            "message": "Create access is not granted in namespace ops."
+          }
+        ]
+      }
+    ]
+  }
+}

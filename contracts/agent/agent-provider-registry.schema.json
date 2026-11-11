@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/agent-provider-registry.schema.json",
+  "title": "Agent Provider Registry Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "digest", "issuedAt", "providers"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/agent-provider-registry/v1" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "providers": { "type": "array", "maxItems": 256, "items": { "$ref": "agent-provider-definition.schema.json" } },
+    "fleetTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environments": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 64 } },
+        "platforms": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 32 } },
+        "architectures": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 32 } },
+        "labels": { "type": "object", "maxProperties": 32, "additionalProperties": { "type": "string", "maxLength": 128 } }
+      }
+    }
+  }
+}

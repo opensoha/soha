@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "opensoha.dev/personal-guest-binding/v1",
+  "id": "00000000-0000-4000-8000-000000000001",
+  "version": 1,
+  "assistantId": "00000000-0000-4000-8000-000000000002",
+  "ownerId": "00000000-0000-4000-8000-000000000003",
+  "provider": "pve",
+  "computeRef": "00000000-0000-4000-8000-000000000004",
+  "computeGeneration": 1,
+  "dataRef": "00000000-0000-4000-8000-000000000005",
+  "dataDiskSerial": "soha49data01",
+  "dataDiskBytes": 8589934592,
+  "policyRevision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "issuedAt": "2026-10-11T10:00:00Z",
+  "expiresAt": "2026-10-11T11:00:00Z",
+  "providerIdentityHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

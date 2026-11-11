@@ -1,0 +1,22 @@
+{
+  "version": "v1",
+  "signal": "metrics",
+  "dataSourceId": "prometheus-main",
+  "backendType": "prometheus",
+  "context": {
+    "version": "v1",
+    "scope": {
+      "workspaceId": "default",
+      "clusterId": "cluster-1",
+      "namespace": "payments",
+      "service": "checkout-api"
+    },
+    "timeRange": {
+      "from": "2026-08-13T00:00:00Z",
+      "to": "2026-08-13T01:00:00Z"
+    }
+  },
+  "queryLanguage": "promql",
+  "query": "rate(http_server_request_duration_seconds_count[5m])",
+  "createdAt": "2026-08-13T01:00:01Z"
+}

@@ -1,0 +1,36 @@
+{
+  "from": "2026-09-03T00:00:00Z",
+  "to": "2026-09-03T01:00:00Z",
+  "eventCount": 8,
+  "heartbeatCount": 4,
+  "radiusAccountingCount": 1,
+  "networkFlowCount": 0,
+  "connectionSummaryCount": 1,
+  "proxyFlowCount": 2,
+  "uploadBytes": 1024,
+  "downloadBytes": 4096,
+  "activeConnections": 3,
+  "producers": [
+    {
+      "producerId": "endpoint-shanghai-01",
+      "producerKind": "endpoint",
+      "lastSeenAt": "2026-09-03T00:59:00Z",
+      "gapCount": 0,
+      "regressionCount": 0
+    }
+  ],
+  "proxyFlows": [
+    {
+      "producerId": "endpoint-shanghai-01",
+      "engine": "mihomo",
+      "profileId": "profile-01",
+      "profileRevision": 2,
+      "mode": "app_subscription",
+      "selectedProxy": "edge-a",
+      "uploadBytes": 1024,
+      "downloadBytes": 4096,
+      "activeConnections": 3,
+      "lastOccurredAt": "2026-09-03T00:59:00Z"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "references": [
+    {
+      "kind": "pod",
+      "clusterId": "cluster-1",
+      "namespace": "apps",
+      "name": "api"
+    }
+  ],
+  "attachments": [
+    {
+      "id": "file-1",
+      "name": "incident.log",
+      "content": "maintenance 03:00"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "data": {
+    "connectionId": "directory-feishu-primary",
+    "callbackUrl": "/api/v1/integrations/directory/directory-feishu-primary/events",
+    "callbackConfigured": true,
+    "callbackStatus": "verified",
+    "callbackVerifiedAt": "2026-07-28T08:05:00Z",
+    "lastEventAt": "2026-07-28T08:08:00Z",
+    "queuedEvents": 1,
+    "failedEvents": 0,
+    "needsFullReconcile": false,
+    "lastIncrementalRun": {
+      "id": "directory-run-incremental-42",
+      "connectionId": "directory-feishu-primary",
+      "trigger": "directory-webhook",
+      "mode": "incremental",
+      "status": "succeeded",
+      "startedAt": "2026-07-28T08:08:01Z",
+      "finishedAt": "2026-07-28T08:08:02Z"
+    },
+    "lastFullRun": {
+      "id": "directory-run-full-7",
+      "connectionId": "directory-feishu-primary",
+      "trigger": "scheduled-reconcile",
+      "mode": "full",
+      "status": "succeeded",
+      "startedAt": "2026-07-28T00:00:00Z",
+      "finishedAt": "2026-07-28T00:02:12Z"
+    }
+  }
+}

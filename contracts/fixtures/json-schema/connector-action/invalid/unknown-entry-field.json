@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "opensoha.dev/connector-action/v1",
+  "action": "knowledge.connector.http.fetch",
+  "input": {
+    "cursor": ""
+  },
+  "credentials": {
+    "expiresAt": "2026-10-10T00:00:10Z",
+    "entries": {
+      "SOURCE": {
+        "reference": "soha://secrets/source-fixture/versions/2",
+        "value": "synthetic-fixture-value",
+        "role": "admin"
+      }
+    }
+  }
+}

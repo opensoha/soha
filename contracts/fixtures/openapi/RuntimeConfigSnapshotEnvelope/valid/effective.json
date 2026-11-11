@@ -1,0 +1,34 @@
+{
+  "data": {
+    "version": 4,
+    "activeRevisionId": "cfgrev_4",
+    "items": [
+      {
+        "key": "modules.ai.features.assistant.global",
+        "category": "ai",
+        "label": "Global AI assistant",
+        "description": "Enables the assistant launcher and contextual actions.",
+        "valueType": "boolean",
+        "effectiveValue": true,
+        "defaultValue": false,
+        "source": "runtime_override",
+        "applyMode": "hot",
+        "editable": true,
+        "sensitive": false,
+        "pendingRestart": false
+      },
+      {
+        "key": "database.password",
+        "category": "database",
+        "label": "Database password",
+        "valueType": "string",
+        "source": "secret",
+        "applyMode": "restart",
+        "editable": false,
+        "sensitive": true,
+        "pendingRestart": false
+      }
+    ],
+    "pendingRestart": false
+  }
+}

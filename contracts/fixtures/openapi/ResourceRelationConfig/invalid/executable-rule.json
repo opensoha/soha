@@ -1,0 +1,17 @@
+{
+  "version": "v1",
+  "rootUid": "root",
+  "sources": [],
+  "rules": [
+    {
+      "id": "bad",
+      "type": "script",
+      "target": {
+        "apiVersion": "v1",
+        "resource": "pods",
+        "kind": "Pod",
+        "namespace": "team"
+      }
+    }
+  ]
+}

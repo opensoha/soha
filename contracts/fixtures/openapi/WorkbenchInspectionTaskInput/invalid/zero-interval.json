@@ -1,0 +1,28 @@
+{
+  "id": "inspect-project",
+  "title": "Deployment inspection",
+  "scopeType": "platform",
+  "enabled": false,
+  "intervalMinutes": 0,
+  "capabilityPlan": {
+    "goal": "Assess current deployment",
+    "steps": [
+      {
+        "id": "assess",
+        "call": {
+          "toolName": "docker.projects.assess",
+          "capabilityVersion": "1",
+          "input": {
+            "projectId": "project"
+          }
+        }
+      }
+    ],
+    "verificationSteps": [
+      "assess"
+    ]
+  },
+  "trigger": {
+    "kind": "schedule"
+  }
+}

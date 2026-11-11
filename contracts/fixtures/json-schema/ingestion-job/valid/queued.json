@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/knowledge-ingestion-job/v1","id":"job-1","sourceId":"source-1","targetRevision":"revision-2","stage":"discovering","status":"queued","attempt":0,"createdAt":"2026-07-15T00:00:00Z"}

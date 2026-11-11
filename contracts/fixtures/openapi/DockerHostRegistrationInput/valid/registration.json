@@ -1,0 +1,6 @@
+{
+  "idempotencyKey": "original-request-1",
+  "host": {
+    "name": "Worker"
+  }
+}

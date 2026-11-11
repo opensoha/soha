@@ -1,0 +1,7 @@
+{
+  "data": {
+    "clusterId": "cluster-1",
+    "manifestUrl": "https://soha.example.com/api/v1/kubernetes/agent-installations/dGlja2V0.manifest/manifest.yaml",
+    "expiresAt": "2026-08-08T10:15:00Z"
+  }
+}

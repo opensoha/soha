@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/agent/provider-rollout.schema.json",
+  "title": "Agent Provider Rollout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "desiredRevision", "previousRevision", "target", "status", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/agent-provider-rollout/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "desiredRevision": { "type": "integer", "minimum": 1 },
+    "previousRevision": { "type": "integer", "minimum": 0 },
+    "target": { "type": "object" },
+    "status": { "enum": ["draft", "validating", "canary", "rolling_out", "paused", "converged", "rolling_back", "rolled_back", "failed"] },
+    "batchSize": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "ackTimeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

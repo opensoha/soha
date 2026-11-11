@@ -1,0 +1,24 @@
+{
+  "expectedRevision": 0,
+  "configuration": {
+    "name": "Office network",
+    "siteId": "site-1",
+    "networkSpaceId": "space-1",
+    "mode": "external_vpn",
+    "resourceIds": [],
+    "gatewayIds": [
+      "gateway-a",
+      "gateway-b"
+    ],
+    "selectionPolicyId": "policy-1",
+    "allowManualSelection": true,
+    "enabled": true,
+    "assignments": {
+      "userIds": [
+        "user-1"
+      ],
+      "teamIds": [],
+      "deviceIds": []
+    }
+  }
+}

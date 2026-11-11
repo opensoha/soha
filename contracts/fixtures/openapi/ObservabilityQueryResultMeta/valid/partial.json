@@ -1,0 +1,15 @@
+{
+  "state": "partial",
+  "scopeRestricted": true,
+  "observedAt": "2026-08-13T01:00:02Z",
+  "durationMs": 42,
+  "warnings": ["One data source timed out."],
+  "errors": [
+    {
+      "code": "query_timeout",
+      "message": "The secondary source did not respond before the deadline.",
+      "retryable": true,
+      "sourceId": "secondary"
+    }
+  ]
+}

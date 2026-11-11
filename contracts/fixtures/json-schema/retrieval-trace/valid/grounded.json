@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/knowledge-retrieval-trace/v1","traceId":"trace-1","queryHash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","indexRevision":"revision-2","routeRef":"embedding-default","candidateCount":10,"hitCount":3,"noAnswer":false,"timingMs":25}

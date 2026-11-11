@@ -1,0 +1,6 @@
+{
+  "id": "web-build",
+  "applicationId": "app-web",
+  "serviceId": "web",
+  "action": "build"
+}

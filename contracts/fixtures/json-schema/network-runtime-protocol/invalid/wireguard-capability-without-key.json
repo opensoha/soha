@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-enroll-wireguard-no-key",
+  "messageType": "runtime.enroll.request",
+  "producerId": "endpoint-alice",
+  "runtimeId": "endpoint-alice",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "payload": {
+    "enrollmentId": "enrollment-alice",
+    "challengeId": "challenge-alice",
+    "deviceId": "device-alice-laptop",
+    "devicePublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA7qY8R9gAwRQmJau0p7uB8mVJwA6m3i3zYvRrV7lIl1E=\n-----END PUBLIC KEY-----",
+    "platform": "windows",
+    "clientVersion": "0.2.0",
+    "capabilities": ["wireguard"]
+  }
+}

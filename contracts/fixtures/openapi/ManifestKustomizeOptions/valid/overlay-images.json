@@ -1,0 +1,7 @@
+{
+  "entryPath": "overlays/prod",
+  "images": [
+    { "name": "api", "newName": "registry.example.com/team/api", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    { "name": "worker", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "appTitle": "Soha",
+  "sidebarTitle": "Soha",
+  "loginLogoUrl": "/logo.svg",
+  "expandedLogoUrl": "/logo.svg",
+  "collapsedLogoUrl": "/logo.svg",
+  "faviconUrl": "/logo.svg",
+  "darkExpandedLogoUrl": "/brand-dark.svg",
+  "darkCollapsedLogoUrl": "/mark-dark.svg"
+}

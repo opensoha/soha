@@ -1,0 +1,13 @@
+{
+  "name": "web",
+  "namespace": "default",
+  "type": "ClusterIP",
+  "ageSeconds": 60,
+  "portMappings": [
+    {
+      "protocol": "TCP",
+      "targetPort": "",
+      "port": 80
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "decision": "allow",
+  "path": "bypass",
+  "policyVersion": 7,
+  "protected": true,
+  "networkLeaseRequired": false,
+  "resourceLeaseRequired": false,
+  "reasons": []
+}

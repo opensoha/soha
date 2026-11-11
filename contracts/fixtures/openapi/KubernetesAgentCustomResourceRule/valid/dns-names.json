@@ -1,0 +1,1 @@
+{"apiGroup":"apps--demo.example.io","resources":["widget-sets"],"verbs":["get","list"],"namespaces":["apps"]}

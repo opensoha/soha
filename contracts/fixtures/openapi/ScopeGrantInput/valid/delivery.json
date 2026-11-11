@@ -1,0 +1,11 @@
+{
+  "subjectType": "user",
+  "subjectId": "user-123",
+  "businessLineId": "payments",
+  "environmentIds": ["production"],
+  "applicationIds": ["checkout-api"],
+  "scopeType": "delivery",
+  "role": "developer",
+  "effect": "allow",
+  "enabled": true
+}

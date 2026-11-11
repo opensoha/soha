@@ -1,0 +1,56 @@
+{
+  "id": "approval-01HZW9WJQ3Y7QH3QZW2KN4T4GX",
+  "status": "pending",
+  "strategy": "role_quorum",
+  "policyId": "policy-prod-mutate",
+  "approvalPolicyRef": "gateway.prod-mutate",
+  "actorType": "user",
+  "actorId": "user-123",
+  "actorName": "Ada",
+  "actorRoles": ["sre"],
+  "actorTeams": ["platform"],
+  "aiClientId": "codex-local",
+  "aiClientName": "Codex",
+  "skillId": "k8s-sre",
+  "toolName": "k8s.deployments.restart",
+  "riskLevel": "high",
+  "requiresApproval": true,
+  "resourceScope": {
+    "clusterId": "cluster-prod",
+    "namespace": "payments"
+  },
+  "toolInput": {
+    "deployment": "checkout-api"
+  },
+  "relatedIds": {
+    "requestId": "req-approval-123"
+  },
+  "approvalTrace": {
+    "approvalMode": "role_quorum",
+    "currentStageIndex": 0,
+    "currentStageName": "platform-sre",
+    "stageCount": 1,
+    "approvedCount": 0,
+    "requiredApprovals": 1,
+    "pendingRequirements": ["role:sre"],
+    "candidateRoles": ["sre"]
+  },
+  "timelineEvents": [
+    {
+      "id": "approval-event-1",
+      "kind": "approval",
+      "action": "created",
+      "result": "pending",
+      "summary": "Approval request created.",
+      "actorType": "user",
+      "actorId": "user-123",
+      "createdAt": "2026-06-12T02:30:00Z"
+    }
+  ],
+  "summary": "Restart checkout-api deployment in payments namespace.",
+  "requestId": "req-approval-123",
+  "sourceIp": "203.0.113.10",
+  "expiresAt": "2026-06-12T03:00:00Z",
+  "createdAt": "2026-06-12T02:30:00Z",
+  "updatedAt": "2026-06-12T02:30:00Z"
+}

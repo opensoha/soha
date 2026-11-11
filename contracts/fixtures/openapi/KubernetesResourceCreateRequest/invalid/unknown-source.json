@@ -1,0 +1,5 @@
+{
+  "source": "admin_bypass",
+  "defaultNamespace": "minio",
+  "content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n"
+}

@@ -1,0 +1,12 @@
+{
+  "application": {
+    "name": "Example",
+    "slug": "example",
+    "providerType": "link",
+    "status": "enabled",
+    "portalVisible": true,
+    "featured": false,
+    "sortOrder": 0,
+    "launchUrl": "https://app.example.com"
+  }
+}

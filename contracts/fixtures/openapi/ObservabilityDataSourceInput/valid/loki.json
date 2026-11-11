@@ -1,0 +1,33 @@
+{
+  "name": "Production Loki",
+  "backendType": "loki",
+  "enabled": true,
+  "scope": {
+    "clusterIds": ["cluster-a"],
+    "namespaces": ["payments"]
+  },
+  "queryBudget": {
+    "maxEntries": 500,
+    "maxRangeSeconds": 86400,
+    "timeoutSeconds": 10
+  },
+  "redactionPolicy": {
+    "dropAttributeKeys": ["authorization"]
+  },
+  "config": {
+    "endpoint": "https://loki.example.com",
+    "tenantId": "workspace-default",
+    "labelKeys": {
+      "cluster": "cluster",
+      "namespace": "namespace",
+      "workload": "workload",
+      "severity": "level"
+    }
+  },
+  "credentials": [
+    {
+      "key": "bearer_token",
+      "value": "write-only-token"
+    }
+  ]
+}

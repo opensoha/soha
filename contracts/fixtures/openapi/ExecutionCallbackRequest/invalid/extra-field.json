@@ -1,0 +1,6 @@
+{
+  "callbackToken": "task-callback-token",
+  "status": "succeeded",
+  "payload": {},
+  "runnerId": "runner-1"
+}

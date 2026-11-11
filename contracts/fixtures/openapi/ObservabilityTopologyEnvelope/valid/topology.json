@@ -1,0 +1,22 @@
+{
+  "data": {
+    "nodes": [
+      {"serviceId": "checkout-api", "name": "checkout-api", "status": "degraded"},
+      {"serviceId": "payment-api", "name": "payment-api", "status": "healthy"}
+    ],
+    "edges": [
+      {
+        "sourceServiceId": "checkout-api",
+        "targetServiceId": "payment-api",
+        "status": "degraded",
+        "requestRate": 88,
+        "errorRate": 0.031,
+        "latencyP95Ms": 510
+      }
+    ],
+    "beta": true,
+    "meta": {
+      "state": "success"
+    }
+  }
+}

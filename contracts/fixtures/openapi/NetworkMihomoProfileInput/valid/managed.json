@@ -1,0 +1,16 @@
+{
+  "deviceId": "device-alice-laptop",
+  "name": "Corporate egress",
+  "mode": "managed_follow",
+  "sourceType": "managed_subscription",
+  "status": "active",
+  "subscriptionUrl": "https://subscriptions.example.com/mihomo/token-value",
+  "mixedPort": 7890,
+  "controllerPort": 9090,
+  "dnsMode": "disabled",
+  "selectorGroup": "SOHA",
+  "selectedProxy": "corporate-hk",
+  "bypassCidrs": ["10.20.0.0/16"],
+  "bypassHosts": ["network-control.example.com"],
+  "failClosed": true
+}

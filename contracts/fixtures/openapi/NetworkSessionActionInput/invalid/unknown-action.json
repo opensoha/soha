@@ -1,0 +1,5 @@
+{
+  "action": "vendor-coa",
+  "targetAccessProfile": "restricted",
+  "reasonCode": "device_posture_changed"
+}

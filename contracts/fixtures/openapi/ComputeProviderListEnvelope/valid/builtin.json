@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "providerKey": "docker",
+      "domain": "container_runtime",
+      "displayName": "Docker",
+      "version": "builtin",
+      "source": "builtin",
+      "contractVersion": "0.1.2",
+      "activationLevel": "write",
+      "resourceKinds": ["runtime_host", "container", "project", "service", "port", "template"],
+      "capabilities": [
+        {
+          "id": "inventory.discover",
+          "level": "read",
+          "resourceKinds": ["runtime_host", "container"],
+          "enabled": true
+        }
+      ],
+      "runtimeMode": "builtin",
+      "generation": 1,
+      "health": {
+        "domain": "container_runtime",
+        "providerKey": "docker",
+        "status": "healthy",
+        "generation": 1
+      }
+    }
+  ]
+}

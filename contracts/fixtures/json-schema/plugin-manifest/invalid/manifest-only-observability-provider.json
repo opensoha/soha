@@ -1,0 +1,26 @@
+{
+  "id": "opensoha.invalid-observability-provider",
+  "name": "Invalid Observability Provider",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "observability-provider",
+  "runtime": {
+    "mode": "manifest-only"
+  },
+  "extensionPoints": {
+    "observability": {
+      "providers": [
+        {
+          "providerKey": "invalid",
+          "displayName": "Invalid",
+          "protocolVersion": "v1",
+          "signals": ["logs"],
+          "capabilities": ["logs.query"],
+          "actionRefs": {
+            "logs.query": "logs-query"
+          }
+        }
+      ]
+    }
+  }
+}

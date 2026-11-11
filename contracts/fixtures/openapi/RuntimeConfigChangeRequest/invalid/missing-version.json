@@ -1,0 +1,8 @@
+{
+  "changes": [
+    {
+      "key": "modules.ai.enabled",
+      "value": true
+    }
+  ]
+}

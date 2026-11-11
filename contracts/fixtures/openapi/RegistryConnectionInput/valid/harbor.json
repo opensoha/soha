@@ -1,0 +1,9 @@
+{
+  "name": "Harbor Production",
+  "registryType": "harbor",
+  "endpoint": "https://harbor.example.com",
+  "namespace": "delivery",
+  "username": "robot$delivery",
+  "secret": "fixture-only-token",
+  "insecure": false
+}

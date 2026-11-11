@@ -1,0 +1,25 @@
+{
+  "operationId": "resource-create-01",
+  "documents": [
+    {
+      "document": {
+        "index": 0,
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "name": "app",
+        "namespace": "minio",
+        "scopeMode": "namespace",
+        "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "resourceRef": {
+        "clusterId": "cluster-a",
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "name": "app",
+        "namespace": "minio",
+        "scopeMode": "namespace"
+      },
+      "content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: minio\n"
+    }
+  ]
+}

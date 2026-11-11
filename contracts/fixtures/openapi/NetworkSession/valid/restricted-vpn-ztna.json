@@ -1,0 +1,16 @@
+{
+  "id": "session-01",
+  "subjectId": "user-01",
+  "deviceId": "device-01",
+  "siteId": "site-shanghai",
+  "gatewayId": "gateway-shanghai",
+  "mode": "external_vpn_ztna",
+  "path": "wireguard_ztna",
+  "accessProfile": "restricted",
+  "status": "restricted",
+  "policyVersion": 9,
+  "networkLeaseIds": ["network-lease-01"],
+  "resourceLeaseIds": ["resource-lease-01"],
+  "startedAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T09:00:00Z"
+}

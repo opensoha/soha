@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "timestamp": "2026-07-31T08:14:59Z",
+      "message": "request failed",
+      "sourceMode": "runtime"
+    }
+  ],
+  "partial": false,
+  "truncated": false,
+  "scopeRestricted": false
+}

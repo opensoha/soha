@@ -1,0 +1,17 @@
+{
+  "data": {
+    "samlLoginSource": { "available": true },
+    "samlApplicationProvider": { "available": true, "status": "available" },
+    "totp": { "available": true, "status": "available" },
+    "webauthn": { "available": false, "status": "unavailable" },
+    "recoveryCodes": { "available": true, "status": "available" },
+    "stepUp": { "available": true, "status": "available" },
+    "outpost": {
+      "controlPlane": { "available": true, "status": "available" },
+      "embeddedRuntime": { "available": true, "status": "available" },
+      "agentRuntime": { "available": true, "status": "available" },
+      "kubernetesArtifact": { "available": false, "status": "unavailable" },
+      "externalProtocol": { "available": true, "status": "available" }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "target": "/data",
+  "type": "bind",
+  "readOnly": false,
+  "browseSupported": true,
+  "source": "/host/private"
+}

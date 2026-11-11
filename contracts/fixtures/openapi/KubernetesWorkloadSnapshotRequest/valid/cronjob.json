@@ -1,0 +1,9 @@
+{
+  "namespace": "default",
+  "sourceKind": "Deployment",
+  "sourceName": "reports",
+  "targetKind": "CronJob",
+  "targetName": "reports-schedule",
+  "restartPolicy": "Never",
+  "schedule": "0 * * * *"
+}

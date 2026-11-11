@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/index-publish.schema.json",
+  "title": "Knowledge Index Publish Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "knowledgeBaseId", "revisionId", "expectedActiveRevision", "decision", "decidedAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/knowledge-index-publish/v1" },
+    "knowledgeBaseId": { "type": "string", "minLength": 1 },
+    "revisionId": { "type": "string", "minLength": 1 },
+    "expectedActiveRevision": { "type": "string" },
+    "decision": { "enum": ["publish", "reject", "rollback"] },
+    "verificationRefs": { "type": "array", "maxItems": 64, "items": { "type": "string" } },
+    "decidedAt": { "type": "string", "format": "date-time" }
+  }
+}

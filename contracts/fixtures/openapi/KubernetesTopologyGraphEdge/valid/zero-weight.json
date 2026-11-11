@@ -1,0 +1,20 @@
+{
+  "id": "edge-1",
+  "source": "rule:route-uid:0",
+  "target": "service-1",
+  "relation": "weights",
+  "resolutionState": "resolved",
+  "port": "http",
+  "weight": 0,
+  "totalWeight": 100,
+  "sourceRef": {
+    "clusterId": "cluster-a",
+    "apiVersion": "traefik.io/v1alpha1",
+    "kind": "IngressRoute",
+    "name": "api",
+    "namespace": "team-a",
+    "scopeMode": "namespace",
+    "uid": "route-uid",
+    "resourceVersion": "7"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "opensoha.dev/personal-guest-enrollment/v1",
+  "enrollmentId": "00000000-0000-4000-8000-000000000001",
+  "capabilities": [
+    "docker.host_sync"
+  ]
+}

@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/agent-provider-runtime-event/v1","eventType":"provider_health","runnerId":"runner-1","revision":4,"health":"healthy","draining":false,"activeRuns":0,"observedAt":"2026-07-14T08:00:00Z"}

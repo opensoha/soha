@@ -1,0 +1,19 @@
+{
+  "id": "client-2",
+  "providerId": "provider-1",
+  "clientId": "tenant-app",
+  "clientType": "public",
+  "redirectUris": [],
+  "grantTypes": ["authorization_code"],
+  "redirectUriRegexes": ["https://tenant-[a-z0-9]+\\.example\\.com/callback"],
+  "postLogoutRedirectUris": ["https://app.example.com/logout/callback"],
+  "allowedScopes": ["openid", "profile"],
+  "allowedGrantTypes": ["authorization_code"],
+  "requirePkce": true,
+  "accessTokenTtlSeconds": 900,
+  "idTokenTtlSeconds": 900,
+  "refreshTokenTtlSeconds": 0,
+  "status": "active",
+  "createdAt": "2026-08-01T00:00:00Z",
+  "updatedAt": "2026-08-01T00:00:00Z"
+}

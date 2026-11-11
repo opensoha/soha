@@ -1,0 +1,9 @@
+{
+  "type": "changed",
+  "observedAt": "2026-08-23T08:00:00Z",
+  "clusterId": "cluster-a",
+  "namespace": "team-a",
+  "eventId": "alert-1",
+  "eventStatus": "firing",
+  "resyncRequired": false
+}

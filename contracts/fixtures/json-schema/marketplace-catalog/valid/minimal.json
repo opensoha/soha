@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "marketplace.opensoha.io/v1",
+  "generatedAt": "2026-06-28T00:00:00Z",
+  "sourceId": "opensoha-official",
+  "sourceUrl": "https://marketplace.opensoha.com/marketplace/index.json",
+  "plugins": [
+    {
+      "id": "opensoha.k8s-sre",
+      "name": "Kubernetes SRE Pack",
+      "version": "0.1.0",
+      "publisher": "opensoha",
+      "type": "skill-pack",
+      "summary": "Read-only Kubernetes troubleshooting skills.",
+      "source": "marketplace:opensoha/k8s-sre",
+      "sourceId": "opensoha-official",
+      "riskLevel": "read",
+      "latestVersion": "0.1.0",
+      "categories": ["ai", "sre"],
+      "verified": true,
+      "publisherInfo": {
+        "id": "opensoha",
+        "name": "OpenSoha",
+        "verified": true,
+        "verificationLevel": "official"
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "manifestUrl": "https://marketplace.opensoha.com/plugins/opensoha.k8s-sre/0.1.0/plugin.manifest.json",
+          "checksum": "sha256:placeholder",
+          "signature": "sigstore:placeholder",
+          "publishedAt": "2026-06-28T00:00:00Z"
+        }
+      ],
+      "manifest": {
+        "id": "opensoha.k8s-sre",
+        "name": "Kubernetes SRE Pack",
+        "version": "0.1.0",
+        "publisher": "opensoha",
+        "type": "skill-pack"
+      }
+    }
+  ]
+}

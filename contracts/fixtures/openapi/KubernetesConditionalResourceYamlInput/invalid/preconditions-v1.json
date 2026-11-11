@@ -1,0 +1,3 @@
+{
+  "content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: example\n  namespace: test\ndata:\n  example: value\n"
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/network/network-radius-accounting.schema.json",
+  "title": "OpenSoha FreeRADIUS Accounting Adapter Request",
+  "description": "A strict credential-free request converted by soha-ingest into telemetry. When submitted to network-control with an enrolled NAS identity, its NAS and session binding are independently verified before updating admission evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventTimestamp",
+    "statusType",
+    "accountingSessionId",
+    "nasId",
+    "sessionTimeSeconds"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "network-radius-accounting/v1alpha1" },
+    "eventTimestamp": { "type": "integer", "minimum": 1, "maximum": 253402300799 },
+    "statusType": { "enum": ["start", "interim-update", "stop", "accounting-on", "accounting-off"] },
+    "accountingSessionId": { "$ref": "#/$defs/Identifier" },
+    "sessionId": { "$ref": "#/$defs/Identifier" },
+    "nasId": { "$ref": "#/$defs/Identifier" },
+    "accountingDelaySeconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
+    "observedVlanId": { "type": "integer", "minimum": 1, "maximum": 4094 },
+    "observedFilterId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "nasPortId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "userId": { "$ref": "#/$defs/Identifier" },
+    "deviceId": { "$ref": "#/$defs/Identifier" },
+    "sessionTimeSeconds": { "type": "integer", "minimum": 0 },
+    "inputOctets": { "type": "integer", "minimum": 0 },
+    "outputOctets": { "type": "integer", "minimum": 0 },
+    "inputPackets": { "type": "integer", "minimum": 0 },
+    "outputPackets": { "type": "integer", "minimum": 0 },
+    "terminationCause": { "type": "string", "minLength": 1, "maxLength": 128 }
+  },
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    }
+  }
+}

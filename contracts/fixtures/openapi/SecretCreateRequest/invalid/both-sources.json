@@ -1,0 +1,12 @@
+{
+  "name": "registry-token",
+  "value": "opaque-token",
+  "vaultKv2": {
+    "mount": "secret",
+    "path": "demo/registry",
+    "key": "token",
+    "version": 3
+  },
+  "scopeType": "project",
+  "scopeId": "demo"
+}

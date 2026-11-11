@@ -1,0 +1,8 @@
+{
+  "references": [
+    {
+      "kind": "secret",
+      "name": "credentials"
+    }
+  ]
+}

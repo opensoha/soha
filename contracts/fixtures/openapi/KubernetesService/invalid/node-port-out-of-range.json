@@ -1,0 +1,14 @@
+{
+  "name": "web",
+  "namespace": "default",
+  "type": "NodePort",
+  "ageSeconds": 0,
+  "portMappings": [
+    {
+      "protocol": "TCP",
+      "targetPort": "8080",
+      "port": 80,
+      "nodePort": 70000
+    }
+  ]
+}

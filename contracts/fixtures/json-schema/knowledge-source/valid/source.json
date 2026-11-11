@@ -1,0 +1,1 @@
+{"id":"source-1","knowledgeBaseId":"base-1","name":"Runbooks","kind":"git","configRef":"secret://git","syncPolicy":{"mode":"manual"},"status":"pending","createdAt":"2026-07-14T00:00:00Z","updatedAt":"2026-07-14T00:00:00Z"}

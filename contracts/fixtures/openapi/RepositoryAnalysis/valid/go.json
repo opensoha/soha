@@ -1,0 +1,29 @@
+{
+  "applicationId": "app",
+  "repositoryId": "repo",
+  "projectPath": ".",
+  "resolvedCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "ruleVersion": "1",
+  "status": "identified",
+  "candidates": [
+    {
+      "projectPath": ".",
+      "language": "go",
+      "packageManager": "go",
+      "versionRange": "1.26",
+      "buildMethods": [
+        "repo_dockerfile",
+        "repo_buildpacks"
+      ],
+      "evidencePaths": [
+        "go.mod",
+        "Dockerfile"
+      ]
+    }
+  ],
+  "evidencePaths": [
+    "go.mod",
+    "Dockerfile"
+  ],
+  "warnings": []
+}

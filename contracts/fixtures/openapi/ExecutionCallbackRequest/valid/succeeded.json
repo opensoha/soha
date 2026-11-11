@@ -1,0 +1,7 @@
+{
+  "callbackToken": "task-callback-token",
+  "status": "succeeded",
+  "payload": {
+    "artifactId": "artifact-1"
+  }
+}

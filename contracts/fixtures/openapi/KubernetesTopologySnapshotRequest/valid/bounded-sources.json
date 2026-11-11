@@ -1,0 +1,11 @@
+{
+  "queries": [
+    {
+      "sourceId": "traefik.ingressroutes",
+      "namespace": "team-a"
+    },
+    {
+      "sourceId": "kubernetes.ingressclasses"
+    }
+  ]
+}

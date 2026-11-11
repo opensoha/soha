@@ -1,0 +1,7 @@
+{
+  "id": "web",
+  "applicationId": "app-web",
+  "serviceId": "web",
+  "action": "deploy",
+  "releaseBundleId": "bundle"
+}

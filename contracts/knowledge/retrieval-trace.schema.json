@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/retrieval-trace.schema.json",
+  "title": "Production Retrieval Trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "traceId", "queryHash", "indexRevision", "routeRef", "candidateCount", "hitCount", "noAnswer", "timingMs"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/knowledge-retrieval-trace/v1" },
+    "traceId": { "type": "string", "minLength": 1 },
+    "queryHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "indexRevision": { "type": "string", "minLength": 1 },
+    "routeRef": { "type": "string", "minLength": 1 },
+    "providerRef": { "type": "string" },
+    "candidateCount": { "type": "integer", "minimum": 0 },
+    "hitCount": { "type": "integer", "minimum": 0 },
+    "noAnswer": { "type": "boolean" },
+    "degraded": { "type": "boolean" },
+    "timingMs": { "type": "integer", "minimum": 0 }
+  }
+}

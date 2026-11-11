@@ -1,0 +1,4 @@
+{
+  "clientId": "tenant-app",
+  "redirectUriRegexes": ["https://tenant-[a-z0-9]+\\.example\\.com/callback"]
+}

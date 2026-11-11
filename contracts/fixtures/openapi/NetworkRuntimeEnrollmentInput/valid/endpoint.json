@@ -1,0 +1,7 @@
+{
+  "runtimeId": "endpoint-shanghai-001",
+  "runtimeKind": "endpoint",
+  "deviceId": "device-shanghai-001",
+  "subjectId": "f7f87a34-077d-4601-af8d-c142a34755f2",
+  "ttlSeconds": 600
+}

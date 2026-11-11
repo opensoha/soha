@@ -1,0 +1,7 @@
+{
+  "subjectType": "user",
+  "subjectId": "user-123",
+  "scopeType": "delivery",
+  "role": "developer",
+  "enabled": true
+}

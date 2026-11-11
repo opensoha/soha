@@ -1,0 +1,13 @@
+{
+  "name": "registry-token",
+  "value": "opaque-secret-value",
+  "description": "Registry credential for project demos",
+  "scopeType": "project",
+  "scopeId": "demo",
+  "bindings": [
+    {
+      "targetType": "capability",
+      "targetRef": "docker.project.deploy"
+    }
+  ]
+}

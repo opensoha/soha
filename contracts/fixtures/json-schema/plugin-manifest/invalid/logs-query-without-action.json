@@ -1,0 +1,28 @@
+{
+  "id": "opensoha.invalid-logs-provider",
+  "name": "Invalid Logs Provider",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "observability-provider",
+  "runtime": {
+    "mode": "external-http",
+    "endpoint": "https://logs-provider.example.com",
+    "actionPath": "/v1/actions/{action}"
+  },
+  "extensionPoints": {
+    "observability": {
+      "providers": [
+        {
+          "providerKey": "invalid-logs",
+          "displayName": "Invalid Logs",
+          "protocolVersion": "v1",
+          "signals": ["logs"],
+          "capabilities": ["logs.query"],
+          "actionRefs": {
+            "metrics.query": "metrics-query"
+          }
+        }
+      ]
+    }
+  }
+}

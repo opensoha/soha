@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "sessionId": "own",
+      "sessionTitle": "主要聊天",
+      "messageId": "m101",
+      "role": "assistant",
+      "snippet": "飞牛电视客户端",
+      "createdAt": "2026-10-09T08:00:00Z"
+    }
+  ]
+}

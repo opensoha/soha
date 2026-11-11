@@ -1,0 +1,8 @@
+{
+  "data": {
+    "assistantId": "assistant-a",
+    "state": "unprovisioned",
+    "version": 0,
+    "dataInitialized": false
+  }
+}

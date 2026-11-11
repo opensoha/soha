@@ -1,0 +1,11 @@
+{
+  "id": "evt:run-1:1",
+  "sessionId": "session-1",
+  "runId": "run-1",
+  "messageId": "message-1",
+  "sequence": 1,
+  "createdAt": "2026-10-25T04:00:00Z",
+  "type": "message.done",
+  "role": "system",
+  "content": "Task canceled."
+}

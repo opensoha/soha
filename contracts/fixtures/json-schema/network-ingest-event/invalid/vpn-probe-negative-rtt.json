@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "network-ingest/v1alpha1",
+  "batchId": "probe-batch-1",
+  "producerId": "endpoint-1",
+  "producerKind": "endpoint",
+  "sentAt": "2026-09-09T10:00:05Z",
+  "events": [
+    {
+      "id": "probe-event-1",
+      "sequence": 1,
+      "type": "vpn.probe.batch",
+      "occurredAt": "2026-09-09T10:00:04Z",
+      "payload": {
+        "intentId": "intent-1",
+        "profileId": "profile-1",
+        "profileRevision": 1,
+        "selectionPolicyRevision": 1,
+        "batchId": "probe-batch-1",
+        "networkEpoch": "net-1",
+        "windowStartedAt": "2026-09-09T10:00:00Z",
+        "windowEndedAt": "2026-09-09T10:00:04Z",
+        "results": [
+          {
+            "gatewayId": "gateway-a",
+            "sentCount": 3,
+            "rttSamplesMs": [
+              -1
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "credential-runtime",
+  "guestAccess": {
+    "username": "soha",
+    "publicKeyRefs": [
+      "soha://secrets/lab/versions/1"
+    ]
+  }
+}

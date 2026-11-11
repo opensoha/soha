@@ -1,0 +1,10 @@
+{
+  "dataSourceId": "metrics-dev",
+  "metricKey": "error_rate",
+  "scope": { "clusterId": "dev", "namespace": "web", "service": "api" },
+  "windowStart": "2026-09-15T10:05:00Z",
+  "windowEnd": "2026-09-15T10:10:00Z",
+  "notBefore": "2026-09-15T10:00:00Z",
+  "unit": "ratio",
+  "threshold": { "operator": "lte", "value": 0.01 }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "opensoha.podman",
+  "name": "Podman Provider",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "resource-extension",
+  "runtime": {
+    "mode": "managed-container"
+  },
+  "extensionPoints": {
+    "compute": {
+      "containerRuntimeProviders": [
+        {
+          "providerKey": "podman",
+          "displayName": "Podman",
+          "activationLevel": "read",
+          "resourceKinds": ["runtime_host", "container"],
+          "capabilities": ["runtime.validate", "inventory.discover"],
+          "configSchemaRef": "schemas/podman-host.json",
+          "actionRefs": {}
+        }
+      ]
+    }
+  }
+}

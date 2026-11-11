@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/agent-environment-template/v1","id":"eval-container","version":"v1","backend":"container","isolationMode":"disposable-write","quota":{"cpuUnits":1000,"memoryBytes":1073741824,"diskBytes":1073741824,"maxProcesses":32},"ttlSeconds":3600,"enabled":true}

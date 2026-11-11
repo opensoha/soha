@@ -1,0 +1,14 @@
+{
+  "expectedVersion": 4,
+  "changes": [
+    {
+      "key": "modules.ai.features.assistant.global",
+      "value": false
+    },
+    {
+      "key": "modules.monitoring.enabled",
+      "value": true
+    }
+  ],
+  "reason": "Enable monitoring and temporarily disable global assistant access."
+}

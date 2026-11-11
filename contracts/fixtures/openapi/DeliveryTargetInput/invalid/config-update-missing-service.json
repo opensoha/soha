@@ -1,0 +1,7 @@
+{
+  "id": "adopt1",
+  "applicationId": "retail",
+  "serviceId": "",
+  "applicationEnvironmentId": "retail-test",
+  "action": "config_update"
+}

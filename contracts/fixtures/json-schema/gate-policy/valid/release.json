@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/evaluation-gate-policy/v1","id":"release","version":"v1","minimumScores":{"fact_recall":0.8},"enabled":true}

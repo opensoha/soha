@@ -1,0 +1,9 @@
+{
+  "data": {
+    "leaseId": "lease-01",
+    "values": {
+      "REGISTRY_TOKEN": "opaque-secret-value"
+    },
+    "expiresAt": "2026-08-03T11:05:00Z"
+  }
+}

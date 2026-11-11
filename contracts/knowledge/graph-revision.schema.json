@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/graph-revision.schema.json",
+  "title": "Knowledge Graph Revision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "knowledgeBaseId", "sourceIndexRef", "extractorVersion", "status", "entityCount", "relationCount", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/knowledge-graph-revision/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "knowledgeBaseId": { "type": "string", "minLength": 1 },
+    "sourceIndexRef": { "type": "string", "minLength": 1 },
+    "extractorVersion": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["building", "verified", "active", "failed", "superseded"] },
+    "entityCount": { "type": "integer", "minimum": 0 },
+    "relationCount": { "type": "integer", "minimum": 0 },
+    "provenanceRoot": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "publishedAt": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "authorization.opensoha.io/v1",
+  "catalogVersion": "1.0.0",
+  "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "permissions": [
+    {
+      "key": "virtualization.vms.view",
+      "domain": "virtualization",
+      "resource": "vms",
+      "action": "view",
+      "displayName": "View virtual machines",
+      "riskLevel": "read",
+      "scopeKinds": ["workspace", "resource"],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    }
+  ]
+}

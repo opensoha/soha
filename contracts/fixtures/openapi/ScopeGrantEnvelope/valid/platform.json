@@ -1,0 +1,15 @@
+{
+  "data": {
+    "id": "grant-123",
+    "subjectType": "team",
+    "subjectId": "platform-team",
+    "businessLineId": "",
+    "scopeType": "platform",
+    "clusterIds": ["cluster-prod"],
+    "role": "readonly",
+    "effect": "allow",
+    "enabled": true,
+    "createdAt": "2026-08-13T08:00:00Z",
+    "updatedAt": "2026-08-13T08:00:00Z"
+  }
+}

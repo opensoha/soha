@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/agent/conformance-run.schema.json",
+  "title": "Agent Provider Conformance Run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "providerRef", "environmentRef", "suiteVersion", "status", "results", "startedAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/agent-conformance-run/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "providerRef": { "type": "string", "minLength": 1 },
+    "environmentRef": { "type": "string", "minLength": 1 },
+    "suiteVersion": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["queued", "running", "passed", "failed", "cancelled"] },
+    "results": { "type": "array", "maxItems": 128, "items": { "type": "object", "required": ["name", "passed"], "properties": { "name": { "type": "string" }, "passed": { "type": "boolean" }, "evidenceRef": { "type": "string" } }, "additionalProperties": false } },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "source": "global_yaml",
+  "defaultNamespace": "minio",
+  "content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api\n  namespace: ops\n"
+}

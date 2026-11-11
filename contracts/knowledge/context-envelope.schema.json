@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/context-envelope.schema.json",
+  "title": "Context Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "requestId", "principal", "task", "budgets", "budgetUsage", "policySnapshot", "contentHash", "createdAt"],
+  "properties": {
+    "version": { "const": "v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "requestId": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string" },
+    "agentRunId": { "type": "string" },
+    "principal": { "type": "object", "additionalProperties": false, "required": ["userId"], "properties": { "userId": { "type": "string", "minLength": 1 } } },
+    "task": { "type": "object", "additionalProperties": false, "required": ["goal"], "properties": { "mode": { "type": "string" }, "goal": { "type": "string", "minLength": 1 } } },
+    "prompt": { "$ref": "#/$defs/versionRef" },
+    "skills": { "type": "array", "items": { "$ref": "#/$defs/versionRef" } },
+    "session": { "type": "object" },
+    "evidence": { "type": "array", "items": { "type": "object", "required": ["citationId", "content", "tokenCount"], "properties": { "citationId": { "type": "string" }, "content": { "type": "string" }, "tokenCount": { "type": "integer", "minimum": 0 } } } },
+    "citations": { "type": "array", "items": { "type": "object" } },
+    "tools": { "type": "array", "items": { "type": "object" } },
+    "environment": { "type": "object" },
+    "budgets": { "type": "object" },
+    "budgetUsage": { "type": "object" },
+    "truncations": { "type": "array", "items": { "type": "string" } },
+    "policySnapshot": { "$ref": "#/$defs/versionRef" },
+    "contentHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "versionRef": { "type": "object", "additionalProperties": false, "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "version": { "type": "string" } } }
+  }
+}

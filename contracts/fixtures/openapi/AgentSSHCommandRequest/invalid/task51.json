@@ -1,0 +1,24 @@
+{
+  "session": {
+    "sessionId": "session-one",
+    "agentId": "agent-one",
+    "executionClusterId": "cluster-one",
+    "address": "10.0.0.30",
+    "port": 22,
+    "username": "soha",
+    "trustedHostKey": "ssh-ed25519 test-fixture",
+    "credentialKind": "ssh_keypair",
+    "lease": {
+      "id": "lease-one",
+      "token": "test-lease-token-long",
+      "expiresAt": "2026-10-11T00:00:30Z"
+    },
+    "controlPlaneEndpoint": "https://control.example",
+    "expiresAt": "2026-10-11T00:30:00Z",
+    "cols": 80,
+    "rows": 24
+  },
+  "command": "printf marker",
+  "timeoutSeconds": 60,
+  "unrecognizedPrivateValue": "must reject"
+}

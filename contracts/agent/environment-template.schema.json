@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/agent/environment-template.schema.json",
+  "title": "Agent Environment Template",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "version", "backend", "isolationMode", "quota", "ttlSeconds", "enabled"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/agent-environment-template/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "backend": { "enum": ["local-process", "container", "kubernetes"] },
+    "isolationMode": { "enum": ["observe-only", "restricted-write", "disposable-write"] },
+    "quota": { "type": "object", "required": ["cpuUnits", "memoryBytes", "diskBytes", "maxProcesses"], "properties": { "cpuUnits": { "type": "integer", "minimum": 1, "description": "CPU millicores; 1000 is one CPU." }, "memoryBytes": { "type": "integer", "minimum": 1 }, "diskBytes": { "type": "integer", "minimum": 1, "description": "Maximum charged persistent storage bytes; memory-backed temporary mounts count against memoryBytes." }, "maxProcesses": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
+    "networkEgress": { "type": "boolean" },
+    "ttlSeconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+    "enabled": { "type": "boolean" }
+  }
+}

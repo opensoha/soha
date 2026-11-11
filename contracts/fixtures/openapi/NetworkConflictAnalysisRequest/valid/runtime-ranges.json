@@ -1,0 +1,15 @@
+{
+  "runtimeRanges": [
+    {
+      "cidr": "100.96.0.0/12",
+      "name": "WireGuard overlay",
+      "sourceId": "gateway-hq",
+      "sourceType": "wireguard_overlay"
+    },
+    {
+      "cidr": "198.18.0.0/15",
+      "name": "mihomo fake IP",
+      "sourceType": "mihomo_fake_ip"
+    }
+  ]
+}

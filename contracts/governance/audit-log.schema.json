@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/governance/audit-log.schema.json",
+  "title": "OpenSoha Audit Log",
+  "description": "Public audit log contract for Gateway, platform, connector, plugin, skill, and Cloud extension point actions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "actorType", "actorId", "action", "result", "summary", "createdAt"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "actorType": { "type": "string", "minLength": 1 },
+    "actorId": { "type": "string", "minLength": 1 },
+    "actorName": { "type": "string" },
+    "aiClientId": { "type": "string" },
+    "aiClientName": { "type": "string" },
+    "skillId": { "type": "string" },
+    "toolName": { "type": "string" },
+    "riskLevel": {
+      "type": "string",
+      "enum": ["read", "analyze", "mutate", "execute", "high"]
+    },
+    "resourceScope": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "action": { "type": "string", "minLength": 1 },
+    "result": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "requestId": { "type": "string" },
+    "sourceIp": { "type": "string" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

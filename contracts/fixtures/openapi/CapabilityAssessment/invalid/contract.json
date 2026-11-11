@@ -1,0 +1,16 @@
+{
+  "verdict": "healthy",
+  "summary": "Execution status is not a health assessment",
+  "evidence": [
+    {
+      "kind": "operation.state",
+      "source": "docker.operations.get",
+      "observedAt": "2026-09-15T10:00:00Z",
+      "summary": "Operation state observed",
+      "resource": {
+        "kind": "docker.operation",
+        "id": "operation-1"
+      }
+    }
+  ]
+}

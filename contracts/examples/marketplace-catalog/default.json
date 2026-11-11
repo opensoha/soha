@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "marketplace.opensoha.io/v1",
+  "generatedAt": "2026-06-28T00:00:00Z",
+  "sourceId": "opensoha-official",
+  "sourceUrl": "https://marketplace.opensoha.com/marketplace/index.json",
+  "plugins": [
+    {
+      "id": "opensoha.feishu",
+      "name": "Feishu Connector",
+      "version": "0.1.0",
+      "publisher": "opensoha",
+      "type": "connector",
+      "summary": "Feishu connector capability bundle.",
+      "source": "marketplace:opensoha/feishu",
+      "sourceId": "opensoha-official",
+      "riskLevel": "mutate",
+      "latestVersion": "0.1.0",
+      "categories": ["connector", "alert.notification"],
+      "verified": true,
+      "publisherInfo": {
+        "id": "opensoha",
+        "name": "OpenSoha",
+        "verified": true,
+        "verificationLevel": "official"
+      },
+      "compatibility": {
+        "soha": ">=0.1.0",
+        "contracts": ">=0.1.1 <1.0.0"
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "manifestUrl": "https://marketplace.opensoha.com/plugins/opensoha.feishu/0.1.0/plugin.manifest.json",
+          "checksum": "sha256:placeholder",
+          "signature": "sigstore:placeholder",
+          "publishedAt": "2026-06-28T00:00:00Z"
+        }
+      ],
+      "manifest": {
+        "id": "opensoha.feishu",
+        "name": "Feishu Connector",
+        "version": "0.1.0",
+        "publisher": "opensoha",
+        "type": "connector",
+        "runtime": {
+          "mode": "external-http",
+          "healthPath": "/healthz",
+          "manifestPath": "/manifest",
+          "actionPath": "/actions/{action}"
+        },
+        "extensionPoints": {
+          "ai": {
+            "toolProviders": [
+              {
+                "id": "feishu-message-tools",
+                "label": "Feishu Message Tools",
+                "actionRef": "feishu.message.send_text"
+              }
+            ]
+          },
+          "alerts": {
+            "notificationChannels": [
+              {
+                "id": "feishu-webhook",
+                "label": "Feishu Webhook",
+                "actionRef": "feishu.message.send_text"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "advisories": []
+}

@@ -1,0 +1,21 @@
+{
+  "id": "approval-1",
+  "status": "pending",
+  "strategy": "approval",
+  "actorType": "user",
+  "actorId": "user-1",
+  "summary": "Approve Docker deployment",
+  "createdAt": "2026-09-15T00:00:00Z",
+  "updatedAt": "2026-09-15T00:00:00Z",
+  "resourceScope": {
+    "invocationScopes": [
+      {
+        "hostId": "host-1",
+        "projectId": "project-1"
+      }
+    ]
+  },
+  "toolName": "docker.projects.deploy.trigger",
+  "riskLevel": "execute",
+  "requiresApproval": true
+}

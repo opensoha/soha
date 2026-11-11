@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/plugins/observability-log-query-v1.schema.json",
+  "title": "OpenSoha Observability Provider logs.query v1",
+  "description": "Versioned request and response contract for an observability provider logs.query action.",
+  "oneOf": [
+    { "$ref": "#/$defs/Request" },
+    { "$ref": "#/$defs/Response" }
+  ],
+  "$defs": {
+    "Request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "providerKey", "sourceId", "config", "query"],
+      "properties": {
+        "protocolVersion": { "const": "v1" },
+        "providerKey": { "type": "string", "pattern": "^[a-z][a-z0-9._-]*$" },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "config": { "type": "object", "additionalProperties": true },
+        "credentials": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9._-]*$" },
+          "additionalProperties": { "type": "string" }
+        },
+        "query": { "$ref": "#/$defs/Query" }
+      }
+    },
+    "Query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "timeFrom", "timeTo", "limit", "direction"],
+      "properties": {
+        "scope": { "$ref": "#/$defs/Scope" },
+        "timeFrom": { "type": "string", "format": "date-time" },
+        "timeTo": { "type": "string", "format": "date-time" },
+        "query": { "type": "string" },
+        "terms": { "type": "array", "items": { "type": "string" } },
+        "severities": { "type": "array", "items": { "type": "string" } },
+        "limit": { "type": "integer", "minimum": 1 },
+        "direction": { "type": "string", "enum": ["forward", "backward"] },
+        "pageToken": { "type": "string" }
+      }
+    },
+    "Scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clusterId": { "type": "string" },
+        "namespace": { "type": "string" },
+        "service": { "type": "string" },
+        "workload": { "type": "string" },
+        "pod": { "type": "string" },
+        "container": { "type": "string" },
+        "containers": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+      }
+    },
+    "Response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["records", "truncated"],
+      "properties": {
+        "sourceId": { "type": "string" },
+        "records": { "type": "array", "items": { "$ref": "#/$defs/Record" } },
+        "nextPageToken": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "queryCost": { "type": "object", "additionalProperties": true },
+        "errorKind": { "type": "string" }
+      }
+    },
+    "Record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timestamp", "message"],
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "severity": { "type": "string" },
+        "message": { "type": "string" },
+        "service": { "type": "string" },
+        "workload": { "type": "string" },
+        "namespace": { "type": "string" },
+        "clusterId": { "type": "string" },
+        "pod": { "type": "string" },
+        "container": { "type": "string" },
+        "attributes": { "type": "object", "additionalProperties": true }
+      }
+    }
+  }
+}

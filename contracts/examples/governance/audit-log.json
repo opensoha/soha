@@ -1,0 +1,14 @@
+{
+  "id": "audit-01HZW9WJQ3Y7QH3QZW2KN4T4GX",
+  "actorType": "user",
+  "actorId": "user-123",
+  "actorName": "Ada",
+  "skillId": "k8s-sre",
+  "toolName": "k8s.deployments.restart",
+  "riskLevel": "high",
+  "action": "tool.invoke",
+  "result": "denied",
+  "summary": "High-risk deployment restart was denied because approval is required.",
+  "requestId": "req-audit-123",
+  "createdAt": "2026-06-12T02:31:00Z"
+}

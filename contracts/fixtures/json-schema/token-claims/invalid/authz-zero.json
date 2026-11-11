@@ -1,0 +1,23 @@
+{
+  "iss": "soha",
+  "sub": "user-1",
+  "aud": [
+    "soha-api"
+  ],
+  "exp": 1781006400,
+  "iat": 1781002800,
+  "tokenId": "session-access-1",
+  "tokenKind": "session",
+  "subjectType": "user",
+  "subjectId": "user-1",
+  "tenantId": "default",
+  "workspaceId": "default",
+  "permissionKeys": [
+    "ai.gateway.view"
+  ],
+  "scopes": [
+    "ai:read"
+  ],
+  "sessionId": "session-1",
+  "authzVersion": 0
+}

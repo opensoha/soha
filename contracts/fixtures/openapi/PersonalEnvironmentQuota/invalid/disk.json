@@ -1,0 +1,7 @@
+{
+  "diskBytes": 1,
+  "memoryBytes": 67108864,
+  "cpuUnits": 250,
+  "maxProcesses": 16,
+  "networkEgress": false
+}

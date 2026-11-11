@@ -1,0 +1,21 @@
+{
+  "id": "profile-corporate-egress",
+  "deviceId": "device-alice-laptop",
+  "name": "Corporate egress",
+  "mode": "managed_follow",
+  "sourceType": "managed_subscription",
+  "status": "active",
+  "subscriptionConfigured": true,
+  "manualNodeConfigured": false,
+  "revision": 4,
+  "mixedPort": 7890,
+  "controllerPort": 9090,
+  "dnsMode": "disabled",
+  "selectorGroup": "SOHA",
+  "selectedProxy": "corporate-hk",
+  "bypassCidrs": ["10.20.0.0/16"],
+  "bypassHosts": ["network-control.example.com"],
+  "failClosed": true,
+  "createdAt": "2026-09-03T08:00:00Z",
+  "updatedAt": "2026-09-03T08:05:00Z"
+}

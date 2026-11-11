@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "sessionId": "own",
+      "sessionTitle": "主要聊天",
+      "messageId": "m101",
+      "role": "system",
+      "snippet": "x",
+      "createdAt": "2026-10-09T08:00:00Z"
+    }
+  ]
+}

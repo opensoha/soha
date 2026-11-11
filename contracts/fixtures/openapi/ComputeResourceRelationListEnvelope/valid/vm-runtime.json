@@ -1,0 +1,33 @@
+{
+  "data": {
+    "resource": {
+      "domain": "virtualization",
+      "kind": "vm",
+      "id": "vm-101",
+      "displayName": "runtime-node-1",
+      "providerKey": "pve",
+      "providerSource": "builtin",
+      "providerInstanceRef": "connection-1",
+      "accessMode": "direct"
+    },
+    "relations": [
+      {
+        "from": {
+          "domain": "virtualization",
+          "kind": "vm",
+          "id": "vm-101",
+          "displayName": "runtime-node-1"
+        },
+        "type": "runs_on",
+        "to": {
+          "domain": "container_runtime",
+          "kind": "runtime_host",
+          "id": "host-1",
+          "displayName": "runtime-node-1"
+        },
+        "source": "derived",
+        "observedAt": "2026-07-14T02:00:00Z"
+      }
+    ]
+  }
+}

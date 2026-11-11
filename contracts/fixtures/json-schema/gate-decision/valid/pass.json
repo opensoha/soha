@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/evaluation-gate-decision/v1","id":"decision-1","policyId":"release","policyVersion":"v1","baselineRunId":"run-1","candidateRunId":"run-2","decision":"pass","reasons":[],"evidenceRefs":["evaluation-run:run-2"],"evaluatedAt":"2026-07-15T00:00:00Z"}

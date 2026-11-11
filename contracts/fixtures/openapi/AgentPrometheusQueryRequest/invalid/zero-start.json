@@ -1,0 +1,8 @@
+{
+  "endpoint": "http://prometheus.monitoring.svc:9090",
+  "query": "up",
+  "kind": "range",
+  "start": 0,
+  "end": 100,
+  "step": 1
+}

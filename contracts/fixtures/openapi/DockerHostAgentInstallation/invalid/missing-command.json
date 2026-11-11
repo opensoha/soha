@@ -1,0 +1,6 @@
+{
+  "hostId": "runtime-host-01",
+  "operationId": "host-sync-01",
+  "scriptUrl": "https://soha.example.com/api/v1/docker/agent-installations/ticket/install.sh",
+  "expiresAt": "2026-08-11T10:15:00Z"
+}

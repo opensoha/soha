@@ -1,0 +1,14 @@
+{
+  "id": "grant-payroll-01",
+  "subjectId": "f7f87a34-077d-4601-af8d-c142a34755f2",
+  "deviceId": "device-shanghai-001",
+  "siteId": "site-shanghai",
+  "networkSpaceId": "space-corp",
+  "mode": "external_direct_ztna",
+  "resourceIds": ["resource-payroll"],
+  "policyVersion": 12,
+  "status": "issued",
+  "createdBy": "f7f87a34-077d-4601-af8d-c142a34755f2",
+  "createdAt": "2026-09-03T08:00:00Z",
+  "expiresAt": "2026-09-03T08:05:00Z"
+}

@@ -1,0 +1,11 @@
+{
+  "expectedRevision": -1,
+  "draft": {
+    "enabled": true,
+    "mode": "block",
+    "detectors": [
+      "unknown"
+    ],
+    "rules": []
+  }
+}

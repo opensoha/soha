@@ -1,0 +1,42 @@
+{
+  "id": "rule:route-uid:0",
+  "type": "rule",
+  "label": "api /",
+  "provider": "traefik",
+  "protocol": "HTTP",
+  "resolutionState": "resolved",
+  "resource": {
+    "clusterId": "cluster-a",
+    "apiVersion": "traefik.io/v1alpha1",
+    "kind": "IngressRoute",
+    "name": "api",
+    "namespace": "team-a",
+    "scopeMode": "namespace",
+    "uid": "route-uid",
+    "resourceVersion": "7"
+  },
+  "rule": {
+    "index": 0,
+    "matchGroups": [
+      [
+        {
+          "type": "host",
+          "operator": "exact",
+          "value": "api.example.test"
+        },
+        {
+          "type": "path",
+          "operator": "prefix",
+          "value": "/"
+        }
+      ]
+    ],
+    "tlsMode": "terminate"
+  },
+  "properties": [
+    {
+      "name": "source",
+      "value": "configuration"
+    }
+  ]
+}

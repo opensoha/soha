@@ -1,0 +1,27 @@
+{
+  "spec": {
+    "name": "application-workers",
+    "connectionId": "pve-main",
+    "clusterId": "applications",
+    "owner": "soha-kubeadm",
+    "imageId": "trusted-worker-image",
+    "providerNode": "pve-a",
+    "storage": "vm-disks",
+    "bridge": "vmbr0",
+    "snippetStorage": "local",
+    "osProfile": "ubuntu-24.04-amd64-containerd",
+    "kubernetesVersion": "v1.35.2",
+    "cpu": 4,
+    "memoryMiB": 8192,
+    "diskGiB": 80,
+    "maxNodes": 0,
+    "enabled": false,
+    "requiredDaemonSets": [
+      {
+        "namespace": "kube-system",
+        "name": "network-agent"
+      }
+    ]
+  },
+  "expectedRevision": 0
+}

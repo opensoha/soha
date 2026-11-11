@@ -1,0 +1,13 @@
+{
+  "nasId": "nas-site-a-wifi",
+  "runtimeId": "freeradius-site-a",
+  "siteId": "site-a",
+  "name": "Site A Wi-Fi",
+  "accessMedium": "wifi",
+  "deviceType": "wireless_controller",
+  "ssid": "Soha-Staff",
+  "managementAddress": "10.0.10.2",
+  "status": "active",
+  "coaSupported": true,
+  "disconnectSupported": true
+}

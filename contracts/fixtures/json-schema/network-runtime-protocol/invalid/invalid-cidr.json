@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-invalid-cidr",
+  "messageType": "configuration.desired",
+  "producerId": "network-control-default",
+  "runtimeId": "gateway-site-a",
+  "runtimeKind": "gateway",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "payload": {
+    "configurationVersion": 12,
+    "policyVersion": 7,
+    "validUntil": "2026-09-02T08:05:00Z",
+    "accessProfile": "full",
+    "protectedResourceIds": [],
+    "networkLeases": [
+      {
+        "id": "network-lease-invalid",
+        "sessionId": "session-0001",
+        "subjectId": "user-alice",
+        "deviceId": "device-alice-laptop",
+        "networkSpaceId": "space-site-a",
+        "cidrs": ["999.999.999.999/999"],
+        "policyVersion": 7,
+        "issuedAt": "2026-09-02T08:00:00Z",
+        "expiresAt": "2026-09-02T08:05:00Z"
+      }
+    ],
+    "resourceLeases": []
+  }
+}

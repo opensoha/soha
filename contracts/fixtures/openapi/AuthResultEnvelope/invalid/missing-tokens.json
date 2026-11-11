@@ -1,0 +1,13 @@
+{
+  "data": {
+    "user": {
+      "userId": "u-1",
+      "userName": "admin",
+      "email": "admin@example.com",
+      "roles": [],
+      "teams": [],
+      "projects": [],
+      "tags": []
+    }
+  }
+}

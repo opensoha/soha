@@ -1,0 +1,28 @@
+{
+  "data": {
+    "items": [
+      {
+        "userId": "3f4b8782-566f-4b55-9b86-791bf24ca5e8",
+        "username": "ada",
+        "displayName": "Ada",
+        "email": "ada@example.test",
+        "teamNames": ["研发中心"],
+        "isRead": true,
+        "readAt": "2026-09-04T08:00:00Z"
+      },
+      {
+        "userId": "5b550b5a-f8c8-47a7-ab42-57c030d30c3e",
+        "username": "lin",
+        "displayName": "Lin",
+        "email": "lin@example.test",
+        "teamNames": [],
+        "isRead": false
+      }
+    ],
+    "total": 2,
+    "page": 1,
+    "pageSize": 15,
+    "readCount": 1,
+    "unreadCount": 1
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "version": "0.1.29",
+  "schemas": {
+    "plugins/plugin-manifest.schema.json": {
+      "rootRequired": ["id", "name", "publisher", "type", "version"],
+      "rootProperties": [
+        "assets",
+        "capabilities",
+        "compatibility",
+        "description",
+        "homepage",
+        "id",
+        "integrity",
+        "metadata",
+        "name",
+        "permissions",
+        "publisher",
+        "secrets",
+        "type",
+        "version"
+      ],
+      "enums": [
+        {
+          "path": "properties/type",
+          "values": [
+            "agent-profile",
+            "ai-provider-adapter",
+            "connector",
+            "gateway-policy-pack",
+            "mcp-preset",
+            "skill",
+            "skill-pack"
+          ]
+        }
+      ]
+    },
+    "skills/skill-manifest.schema.json": {
+      "rootRequired": ["category", "id", "name"],
+      "rootProperties": [
+        "capabilityRefs",
+        "category",
+        "description",
+        "id",
+        "metadata",
+        "name",
+        "permissionKeys",
+        "providerSkillRefs",
+        "requiredScopes",
+        "version"
+      ],
+      "enums": []
+    },
+    "connectors/connector-event-envelope.schema.json": {
+      "rootRequired": ["connectorId", "events"],
+      "rootProperties": ["connectorId", "events"],
+      "enums": []
+    }
+  }
+}

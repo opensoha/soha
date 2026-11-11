@@ -1,0 +1,7 @@
+{
+  "applicationEnvironmentId": "binding-1",
+  "environmentId": "production",
+  "requiresApproval": true,
+  "status": "offline",
+  "workloads": []
+}

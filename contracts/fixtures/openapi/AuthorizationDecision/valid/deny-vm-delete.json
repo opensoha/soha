@@ -1,0 +1,16 @@
+{
+  "status": "deny",
+  "permissionKey": "virtualization.vms.delete",
+  "action": "delete",
+  "resource": {
+    "type": "virtualization.vm",
+    "id": "vm-01",
+    "workspaceId": "default"
+  },
+  "effectiveScope": {
+    "workspaceIds": ["default"]
+  },
+  "reasonCode": "missing_permission",
+  "policyVersion": "authorization.opensoha.io/v1",
+  "allowedActions": ["view", "create", "resize"]
+}

@@ -1,0 +1,1 @@
+{"schemaVersion":"opensoha.dev/environment-lease/v1","id":"lease-1","runId":"run-1","ownerId":"runner-1","scopeHash":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","mode":"observe-only","quota":{"diskBytes":1024,"memoryBytes":2048,"cpuUnits":100,"maxProcesses":2,"networkEgress":false},"issuedAt":"2026-07-14T08:00:00Z","expiresAt":"2026-07-14T08:10:00Z"}

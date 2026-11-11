@@ -1,0 +1,39 @@
+{
+  "apiVersion": "delivery.soha.io/v1alpha1",
+  "kind": "WorkflowTemplate",
+  "metadata": {
+    "name": "old-release"
+  },
+  "spec": {
+    "definition": {
+      "schemaVersion": 2,
+      "mode": "release_dag",
+      "nodes": [
+        {
+          "id": "check",
+          "type": "check_http",
+          "name": "Ready",
+          "position": {
+            "x": 10,
+            "y": 20
+          },
+          "fanOut": {
+            "strategy": "serial",
+            "batchSize": 2,
+            "failurePolicy": "stop"
+          },
+          "config": {
+            "url": "https://example.test/health",
+            "headers": {
+              "Accept": "application/json"
+            },
+            "retry": {
+              "maxAttempts": 2
+            }
+          }
+        }
+      ],
+      "edges": []
+    }
+  }
+}

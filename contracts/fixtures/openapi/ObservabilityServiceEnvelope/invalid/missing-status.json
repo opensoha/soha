@@ -1,0 +1,12 @@
+{
+  "data": {
+    "id": "checkout-api",
+    "name": "checkout-api",
+    "clusterIds": [],
+    "instances": [],
+    "endpoints": []
+  },
+  "meta": {
+    "state": "success"
+  }
+}

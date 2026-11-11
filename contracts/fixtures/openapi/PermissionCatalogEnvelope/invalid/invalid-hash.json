@@ -1,0 +1,8 @@
+{
+  "data": {
+    "schemaVersion": "authorization.opensoha.io/v1",
+    "catalogVersion": "1.0.0",
+    "contentHash": "not-a-hash",
+    "permissions": []
+  }
+}

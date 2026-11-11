@@ -1,0 +1,22 @@
+{
+  "requestId": "stable-request",
+  "content": "Compare the evidence",
+  "mode": "general",
+  "taskIntent": {
+    "capabilities": [
+      "root_cause",
+      "performance",
+      "trace",
+      "inspection_review"
+    ],
+    "performanceDataSourceId": "metrics-prod",
+    "traceDataSourceId": "traces-prod",
+    "rootCauseProfileId": "root-profile",
+    "metricKey": "latency_p95",
+    "traceId": "trace-1",
+    "minDurationMs": 0,
+    "inspectionRunIds": [
+      "inspection-1"
+    ]
+  }
+}

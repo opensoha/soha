@@ -1,0 +1,22 @@
+{
+  "id": "k8s-sre",
+  "name": "Kubernetes SRE",
+  "version": "0.1.0",
+  "category": "ai-gateway",
+  "description": "Read-only Kubernetes troubleshooting skill.",
+  "capabilityRefs": ["k8s.pods.list"],
+  "permissionKeys": ["platform.pods.view"],
+  "requiredScopes": ["cluster", "namespace"],
+  "providerSkillRefs": [
+    {
+      "providerKind": "builtin",
+      "ref": "skills/ai-gateway/k8s-sre/SKILL.md",
+      "arguments": {
+        "mode": "diagnose"
+      }
+    }
+  ],
+  "metadata": {
+    "owner": "platform"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "protocolVersion": 2,
+  "supportedMethods": [
+    "device_code",
+    "key"
+  ],
+  "verificationOrigin": "https://example.invalid/soha",
+  "deviceCodeExpiresIn": 300,
+  "interval": 5,
+  "sessionIdleExpiresIn": 604800,
+  "sessionAbsoluteExpiresIn": 2592000,
+  "supportsGovernedAI": true
+}

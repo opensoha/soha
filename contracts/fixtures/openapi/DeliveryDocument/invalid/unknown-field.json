@@ -1,0 +1,24 @@
+{
+  "apiVersion": "delivery.soha.io/v1alpha1",
+  "kind": "WorkflowTemplate",
+  "metadata": {
+    "name": "build-release",
+    "displayName": "\u8054\u5408\u6784\u5efa\u53d1\u5e03"
+  },
+  "spec": {
+    "definition": {
+      "mode": "delivery_batch",
+      "schemaVersion": 1,
+      "stages": [
+        "build",
+        "plan",
+        "deploy",
+        "health"
+      ],
+      "executionMode": "build_all_then_deploy",
+      "stopOnFailure": true,
+      "maxConcurrency": 4
+    },
+    "publish": true
+  }
+}

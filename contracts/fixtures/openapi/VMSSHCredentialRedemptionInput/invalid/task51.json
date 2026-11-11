@@ -1,0 +1,7 @@
+{
+  "clusterId": "cluster-one",
+  "agentId": "agent-one",
+  "leaseId": "lease-one",
+  "token": "test-lease-token-long",
+  "unrecognizedPrivateValue": "must reject"
+}

@@ -1,0 +1,18 @@
+{
+  "type": "modified",
+  "clusterId": "cluster-a",
+  "observedAt": "2026-08-23T08:00:00Z",
+  "source": "informer",
+  "resourceVersion": "42",
+  "cacheStatus": "live",
+  "resyncRequired": false,
+  "resource": {
+    "clusterId": "cluster-a",
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "name": "api-1",
+    "namespace": "team-a",
+    "scopeMode": "namespace",
+    "uid": "pod-uid"
+  }
+}

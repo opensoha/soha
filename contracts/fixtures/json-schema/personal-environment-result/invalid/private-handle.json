@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "opensoha.dev/personal-environment-result/v1",
+  "leaseId": "lease-personal-1",
+  "runId": "run-personal-1",
+  "state": "released",
+  "observedAt": "2026-10-08T01:01:00Z",
+  "containerId": "private"
+}

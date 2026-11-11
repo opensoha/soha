@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.opensoha.io/runner/docker-project-identity.schema.json",
+  "title": "Docker project runtime identity v1",
+  "description": "Control-plane supplied binding. The namespace is derived from both immutable resource UIDs and checked by runtimes. Labels alone never grant authority. Old runners must not claim these operations.",
+  "type": "object",
+  "required": [
+    "protocol",
+    "hostUid",
+    "projectUid",
+    "namespace"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "docker-project-identity-v1"
+    },
+    "hostUid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f-]{36}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "projectUid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f-]{36}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^soha-[0-9a-f]{52}$"
+    }
+  },
+  "additionalProperties": false
+}

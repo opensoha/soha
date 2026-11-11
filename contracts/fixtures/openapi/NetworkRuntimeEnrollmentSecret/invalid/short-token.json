@@ -1,0 +1,15 @@
+{
+  "enrollment": {
+    "id": "enrollment-01",
+    "challengeId": "challenge-01",
+    "runtimeId": "endpoint-shanghai-001",
+    "runtimeKind": "endpoint",
+    "deviceId": "device-shanghai-001",
+    "subjectId": "f7f87a34-077d-4601-af8d-c142a34755f2",
+    "status": "pending",
+    "expiresAt": "2026-09-02T10:10:00Z",
+    "createdBy": "1f449d94-682c-4fe7-a73b-df2741380197",
+    "createdAt": "2026-09-02T10:00:00Z"
+  },
+  "token": "too-short"
+}

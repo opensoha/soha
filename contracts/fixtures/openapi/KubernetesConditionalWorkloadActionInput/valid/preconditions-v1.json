@@ -1,0 +1,8 @@
+{
+  "preconditions": {
+    "expectedUid": "reviewed",
+    "expectedResourceVersion": "opaque-rv"
+  },
+  "replicas": 2,
+  "dryRun": true
+}

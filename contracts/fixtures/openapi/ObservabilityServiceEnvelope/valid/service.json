@@ -1,0 +1,29 @@
+{
+  "data": {
+    "id": "checkout-api",
+    "name": "checkout-api",
+    "environment": "production",
+    "namespace": "payments",
+    "clusterIds": ["cluster-1"],
+    "status": "unknown",
+    "instances": [
+      {
+        "id": "checkout-api-7b8f",
+        "name": "checkout-api-7b8f",
+        "status": "unknown"
+      }
+    ],
+    "endpoints": [
+      {
+        "id": "POST /checkout",
+        "name": "/checkout",
+        "method": "POST",
+        "status": "unknown"
+      }
+    ]
+  },
+  "meta": {
+    "state": "success",
+    "observedAt": "2026-08-13T01:00:00Z"
+  }
+}

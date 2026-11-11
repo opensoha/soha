@@ -1,0 +1,11 @@
+{
+  "valid": false,
+  "digest": "sha256:example",
+  "issues": [
+    {
+      "stepId": "read",
+      "code": "version_unavailable",
+      "message": "Refresh the capability contract"
+    }
+  ]
+}

@@ -1,0 +1,152 @@
+name: contracts-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      consumer_mode:
+        description: 'Pinned compatibility baseline or explicit latest-branch integration'
+        type: choice
+        options: [pinned, latest]
+        default: pinned
+        required: true
+      contracts_sha:
+        description: 'Optional full Contracts candidate commit SHA (defaults to the event SHA; never a branch)'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Contracts candidate SHA
+        env:
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: '[[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.contracts_sha || github.sha }}
+          persist-credentials: false
+      - name: Verify checked out Contracts SHA
+        env:
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$CONTRACTS_SHA"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+      - name: Consumer dependency mode tests
+        run: node --test scripts/check-consumer-dependency-mode.checks.mjs
+      - name: Consumer revision selector tests
+        run: node --test scripts/select-consumer-revision.checks.mjs
+      - run: npm ci
+      - name: Verify staged release workflow
+        run: node --test scripts/release-workflow.checks.mjs
+      - name: Verify consumer CI independence and candidate selection
+        run: node --test scripts/ci-consumer-workflow.checks.mjs
+      - run: npm test
+      - name: Go vet
+        run: GOWORK=off go vet ./...
+      - name: Govulncheck
+        run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          only-new-issues: true
+          args: --timeout=5m
+
+  consumers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer:
+          - soha
+          - soha-web
+          - soha-app
+          - soha-cli
+          - soha-agent
+          - soha-skills
+    steps:
+      - name: Validate Contracts candidate SHA
+        env:
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: '[[ "$CONTRACTS_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v7
+        with:
+          path: soha-contracts
+          ref: ${{ inputs.contracts_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Select consumer revision without implicit fallback
+        id: consumer-ref
+        working-directory: soha-contracts
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          CONSUMER_REVISION_MODE: ${{ inputs.consumer_mode || 'pinned' }}
+        run: node scripts/select-consumer-revision.mjs
+      - uses: actions/checkout@v7
+        with:
+          repository: opensoha/${{ matrix.consumer }}
+          path: ${{ matrix.consumer }}
+          ref: ${{ steps.consumer-ref.outputs.ref }}
+          persist-credentials: false
+      - name: Record actual revision combination
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          MODE: ${{ inputs.consumer_mode || 'pinned' }}
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: |
+          test "$(git -C soha-contracts rev-parse HEAD)" = "$CONTRACTS_SHA"
+          printf '### Consumer validation (%s)\n' "$MODE" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Contracts: `%s`\n' "$(git -C soha-contracts rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s: `%s`\n' "$CONSUMER" "$(git -C "$CONSUMER" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+          cache-dependency-path: soha-contracts/go.sum
+      - run: npm ci
+        id: consumer-setup
+        working-directory: soha-contracts
+      - name: Verify declared consumer dependency without source substitution
+        id: declared
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+        run: npm run check:consumers -- --consumer "$CONSUMER" --require-all --declared --out ../consumer-reports/declared.json
+        working-directory: soha-contracts
+      - name: Verify Contracts candidate independently of declared result
+        id: candidate
+        if: ${{ !cancelled() && steps.consumer-setup.outcome == 'success' }}
+        env:
+          CONSUMER: ${{ matrix.consumer }}
+          CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
+        run: npm run check:consumers -- --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --out ../consumer-reports/candidate.json
+        working-directory: soha-contracts
+      - name: Report both dependency modes
+        if: always()
+        env:
+          DECLARED_RESULT: ${{ steps.declared.outcome }}
+          CANDIDATE_RESULT: ${{ steps.candidate.outcome }}
+        run: |
+          printf 'Declared dependency: `%s`\nCandidate source: `%s`\n' "$DECLARED_RESULT" "$CANDIDATE_RESULT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save dependency mode reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: consumer-${{ matrix.consumer }}-reports
+          path: consumer-reports/*.json
+          if-no-files-found: warn

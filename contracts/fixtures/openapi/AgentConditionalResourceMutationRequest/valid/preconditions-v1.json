@@ -1,0 +1,9 @@
+{
+  "namespace": "test",
+  "kind": "ConfigMap",
+  "name": "example",
+  "preconditions": {
+    "expectedUid": "reviewed-resource-uid",
+    "expectedResourceVersion": "opaque/version+1"
+  }
+}

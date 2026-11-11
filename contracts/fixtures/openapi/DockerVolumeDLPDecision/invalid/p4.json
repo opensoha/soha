@@ -1,0 +1,9 @@
+{
+  "eventId": "e1",
+  "mode": "block",
+  "status": "safe",
+  "allowed": true,
+  "policyVersion": 1,
+  "detectorVersion": "content-dlp-text-v1",
+  "matchedRuleIds": []
+}

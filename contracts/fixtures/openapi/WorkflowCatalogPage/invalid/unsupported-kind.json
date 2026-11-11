@@ -1,0 +1,6 @@
+{
+  "items": [{ "id": "unknown", "sourceKind": "runtime", "sourceId": "run-1", "name": "Invalid kind", "context": "", "enabled": true, "scopes": [] }],
+  "total": -1,
+  "applications": [],
+  "environments": []
+}

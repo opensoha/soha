@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "network-ingest/v1alpha1",
+  "batchId": "proxy-sample-batch-invalid",
+  "producerId": "proxy-mihomo",
+  "producerKind": "proxy",
+  "sentAt": "2026-09-27T08:00:00Z",
+  "events": [{
+    "id": "proxy-sample-invalid",
+    "type": "proxy.runtime.sample",
+    "sequence": 1,
+    "occurredAt": "2026-09-27T08:00:00Z",
+    "payload": {
+      "engine": "mihomo",
+      "uptimeSeconds": 60,
+      "uploadTotal": -1,
+      "downloadTotal": 4096
+    }
+  }]
+}

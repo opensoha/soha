@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "id": "launch-1",
+      "applicationId": "app-1",
+      "providerType": "oidc",
+      "result": "allow",
+      "createdAt": "2026-08-31T00:00:00Z"
+    }
+  ]
+}

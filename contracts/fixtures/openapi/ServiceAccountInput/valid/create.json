@@ -1,0 +1,8 @@
+{
+  "id": "sa-ci-runner",
+  "name": "CI Runner",
+  "status": "active",
+  "roleIds": ["role-runner"],
+  "teamIds": [],
+  "scopeGrantIds": []
+}

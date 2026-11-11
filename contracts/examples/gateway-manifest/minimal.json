@@ -1,0 +1,72 @@
+{
+  "name": "soha-ai-gateway",
+  "version": "0.1.0",
+  "generatedAt": "2026-06-09T12:00:00Z",
+  "principal": {
+    "userId": "u-1",
+    "userName": "admin",
+    "email": "admin@example.com",
+    "roles": ["platform-admin"],
+    "teams": [],
+    "projects": [],
+    "tags": [],
+    "permissionKeys": ["ai.gateway.view", "platform.pods.view"]
+  },
+  "caller": {
+    "identityMode": "user",
+    "source": "cli"
+  },
+  "permissionKeys": ["ai.gateway.view", "platform.pods.view"],
+  "tools": [
+    {
+      "name": "k8s.pods.list",
+      "title": "List pods",
+      "description": "List Kubernetes pods in a namespace.",
+      "domain": "kubernetes",
+      "action": "read",
+      "riskLevel": "read",
+      "permissionKeys": ["platform.pods.view"],
+      "requiredScopes": ["cluster", "namespace"],
+      "mcpAdapterId": "builtin.kubernetes",
+      "mcpToolName": "k8s.pods.list",
+      "requiresApproval": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["namespace"],
+        "properties": {
+          "namespace": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "type": "object" }
+          }
+        }
+      }
+    }
+  ],
+  "resources": [],
+  "prompts": [],
+  "skills": [
+    {
+      "id": "k8s-sre",
+      "name": "Kubernetes SRE",
+      "category": "ai-gateway",
+      "description": "Read-only cluster diagnosis skill.",
+      "capabilityRefs": ["k8s.pods.list"],
+      "permissionKeys": ["platform.pods.view"],
+      "requiredScopes": ["cluster", "namespace"]
+    }
+  ],
+  "summary": {
+    "toolCount": 1,
+    "resourceCount": 0,
+    "promptCount": 0,
+    "skillCount": 1,
+    "deniedCount": 0
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "mode": "warn",
+  "status": "matched",
+  "allowed": false,
+  "detectorVersion": "content-dlp-text-v1",
+  "matchedRuleIds": [
+    "private_key"
+  ],
+  "dataLevel": "restricted",
+  "minimumDataLevel": "public",
+  "ruleSetVersion": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "stepUpRequired": "true"
+}

@@ -1,0 +1,42 @@
+{
+  "entries": [
+    {
+      "timestamp": "2026-07-31T08:14:59.123456789Z",
+      "observedAt": "2026-07-31T08:14:59.200000000Z",
+      "message": "request failed",
+      "severity": "error",
+      "stream": "stderr",
+      "source": {
+        "domain": "kubernetes",
+        "clusterId": "cluster-a",
+        "namespace": "payments",
+        "workloadKind": "Deployment",
+        "workloadName": "checkout-api",
+        "workloadUid": "workload-uid",
+        "podName": "checkout-api-7f9d8",
+        "podUid": "pod-uid",
+        "containerName": "api"
+      },
+      "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "attributes": {
+        "restartCount": "1"
+      },
+      "sourceMode": "runtime"
+    }
+  ],
+  "partial": true,
+  "truncated": false,
+  "scopeRestricted": false,
+  "coverage": {
+    "resolvedSources": 3,
+    "successfulSources": 2,
+    "failedSources": 1
+  },
+  "warnings": [
+    {
+      "code": "source_unavailable",
+      "message": "One authorized source was unavailable."
+    }
+  ],
+  "retentionHint": "Runtime logs are limited by kubelet retention."
+}

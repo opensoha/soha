@@ -1,0 +1,7 @@
+{
+  "sessionId": "session-one",
+  "agentId": "agent-one",
+  "commandDigest": "sha256:frozen",
+  "effect": "unknown",
+  "stopped": true
+}

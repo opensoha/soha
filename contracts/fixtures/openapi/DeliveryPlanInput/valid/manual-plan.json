@@ -1,0 +1,6 @@
+{
+  "applicationId": "app",
+  "applicationEnvironmentId": "test",
+  "action": "deploy",
+  "source": "manual"
+}

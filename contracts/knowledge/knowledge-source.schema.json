@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/knowledge-source.schema.json",
+  "title": "Knowledge Source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "knowledgeBaseId", "name", "kind", "syncPolicy", "status", "createdAt", "updatedAt"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "knowledgeBaseId": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "kind": { "enum": ["inline", "http", "git", "object"] },
+    "configRef": { "type": "string" },
+    "config": { "type": "object" },
+    "syncPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": { "mode": { "enum": ["manual", "scheduled"] }, "schedule": { "type": "string" } }
+    },
+    "cursor": { "type": "string" },
+    "status": { "enum": ["pending", "ready", "syncing", "failed"] },
+    "lastError": { "type": "string" },
+    "lastSyncedAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

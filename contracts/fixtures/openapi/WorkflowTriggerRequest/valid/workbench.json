@@ -1,0 +1,9 @@
+{
+  "applicationId": "app-1",
+  "workflowName": "release",
+  "triggerBuild": false,
+  "triggerRelease": true,
+  "variables": {
+    "image": "example.test/app:1"
+  }
+}

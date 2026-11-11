@@ -1,0 +1,12 @@
+{
+  "name": "vm-login",
+  "scopeType": "workspace",
+  "scopeId": "default",
+  "bindings": [
+    {
+      "targetType": "vm",
+      "targetRef": "vm-1",
+      "purpose": "vm_auth"
+    }
+  ]
+}

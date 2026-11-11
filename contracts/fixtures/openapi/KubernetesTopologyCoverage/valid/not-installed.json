@@ -1,0 +1,6 @@
+{
+  "provider": "apisix",
+  "sourceId": "apisix.apisixroutes",
+  "state": "not_installed",
+  "reasonCode": "api_not_served"
+}

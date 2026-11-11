@@ -1,0 +1,7 @@
+{
+  "id": "evt-1",
+  "source": "soha-core",
+  "category": "audit",
+  "severity": "urgent",
+  "summary": "Plugin was installed."
+}

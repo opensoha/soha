@@ -1,0 +1,8 @@
+{
+  "url": "https://api.example.com/",
+  "serviceId": "service-1",
+  "probeLocation": "soha_control_plane",
+  "reachability": "unverified",
+  "authentication": "unknown",
+  "networkRequirement": "unknown"
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "https://opensoha.dev/schemas/personal-environment-result.schema.json",
+  "title": "Personal Environment Agent Result",
+  "description": "Agent API data envelope. Missing or stopped environments omit usage; no invented zero measurement. Active receipts include fresh hard-quota/cgroup observations. Docker handles, volume names, and provider failures are private.",
+  "required": [
+    "schemaVersion",
+    "leaseId",
+    "runId",
+    "state",
+    "observedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/personal-environment-result/v1"
+    },
+    "leaseId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$",
+      "description": "Echo the exact server-owned execute task identity when supplied. A result for another task is not a receipt for this command."
+    },
+    "state": {
+      "enum": [
+        "active",
+        "released",
+        "expired",
+        "missing",
+        "quota_exceeded",
+        "deleted"
+      ]
+    },
+    "snapshot": {
+      "$ref": "https://opensoha.dev/schemas/environment-snapshot.schema.json"
+    },
+    "output": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "exitCode": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "description": "Confirmed bounded sandbox process exit status; absent for non-execute results."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "taskId"
+        ]
+      },
+      "then": {
+        "required": [
+          "output"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "active",
+              "quota_exceeded"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "snapshot"
+        ]
+      },
+      "else": {
+        "properties": {
+          "snapshot": false,
+          "output": false,
+          "taskId": false,
+          "exitCode": false
+        }
+      }
+    }
+  ]
+}

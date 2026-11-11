@@ -1,0 +1,9 @@
+{
+  "namespace": "ops",
+  "sourceKind": "Deployment",
+  "sourceName": "api",
+  "targetKind": "Job",
+  "targetName": "report",
+  "inherit": ["everything"],
+  "restartPolicy": "Never"
+}

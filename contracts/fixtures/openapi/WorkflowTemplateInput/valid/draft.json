@@ -1,0 +1,10 @@
+{
+  "key": "service-release",
+  "name": "Service release",
+  "enabled": true,
+  "definition": {
+    "kind": "release"
+  },
+  "expectedRevision": 2,
+  "publish": false
+}

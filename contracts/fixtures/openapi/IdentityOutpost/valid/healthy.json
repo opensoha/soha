@@ -1,0 +1,17 @@
+{
+  "id": "outpost-office",
+  "name": "Office edge",
+  "mode": "agent",
+  "status": "online",
+  "configurationVersion": 3,
+  "appliedConfigurationVersion": 3,
+  "runtimeStatus": "available",
+  "protocolVersion": "v1",
+  "runtimeVersion": "0.1.17",
+  "claimedAgentId": "outpost-office",
+  "lastHeartbeatAt": "2026-09-13T00:01:00Z",
+  "configurationExpiresAt": "2026-09-13T00:10:00Z",
+  "metadata": { "site": "office" },
+  "createdAt": "2026-09-13T00:00:00Z",
+  "updatedAt": "2026-09-13T00:01:00Z"
+}

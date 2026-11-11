@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "run-1",
+      "providerId": "external-agent",
+      "providerKind": "general",
+      "capabilityId": "root-cause-analysis",
+      "sessionId": "session-1",
+      "createdBy": "user-1",
+      "status": "running",
+      "timeoutSeconds": 600,
+      "queuedAt": "2026-08-19T08:00:00Z",
+      "createdAt": "2026-08-19T08:00:00Z",
+      "updatedAt": "2026-08-19T08:01:00Z"
+    }
+  ]
+}

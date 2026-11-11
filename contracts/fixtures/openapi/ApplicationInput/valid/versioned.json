@@ -1,0 +1,6 @@
+{
+  "name": "API",
+  "key": "api",
+  "enabled": true,
+  "expectedVersion": 3
+}

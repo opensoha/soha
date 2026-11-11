@@ -1,0 +1,15 @@
+{
+  "ownerId": "00000000-0000-4000-8000-000000000049",
+  "computeRef": "00000000-0000-4000-8000-000000005049",
+  "provider": "pve",
+  "dataDiskSerial": "soha49data01",
+  "dataDiskBytes": 8589934592,
+  "quota": {
+    "diskBytes": 1073741824,
+    "memoryBytes": 67108864,
+    "cpuUnits": 250,
+    "maxProcesses": 16,
+    "networkEgress": false
+  },
+  "leaseSeconds": 600
+}

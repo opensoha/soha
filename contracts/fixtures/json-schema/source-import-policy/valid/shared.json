@@ -1,0 +1,4 @@
+{
+  "schemaVersion": "opensoha.dev/knowledge-source-import-policy/v1",
+  "scope": { "visibility": "scoped", "users": ["reader"], "roles": ["operators"], "teams": ["oncall"], "projects": ["project-1"] }
+}

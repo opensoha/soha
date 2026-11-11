@@ -1,0 +1,4 @@
+{
+  "clientId": "grafana",
+  "redirectUris": ["http://grafana.internal/login/oauth"]
+}

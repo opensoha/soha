@@ -1,0 +1,16 @@
+{
+  "data": {
+    "providers": [
+      {
+        "id": "github",
+        "name": "GitHub",
+        "type": "oauth2",
+        "enabled": true,
+        "clientId": "public-client-id",
+        "scopes": ["read:user", "user:email"]
+      }
+    ],
+    "defaultProviderId": "github",
+    "localPasswordLoginEnabled": true
+  }
+}

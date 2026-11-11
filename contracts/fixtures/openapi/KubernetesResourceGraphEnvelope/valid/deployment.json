@@ -1,0 +1,53 @@
+{
+  "data": {
+    "clusterId": "cluster-a",
+    "namespace": "team-a",
+    "generatedAt": "2026-08-23T08:00:00Z",
+    "rootId": "apps/v1:Deployment:team-a/api",
+    "nodes": [
+      {
+        "id": "apps/v1:Deployment:team-a/api",
+        "resource": {
+          "clusterId": "cluster-a",
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "api",
+          "namespace": "team-a",
+          "scopeMode": "namespace"
+        },
+        "status": "healthy"
+      },
+      {
+        "id": "v1:Pod:team-a/api-1",
+        "resource": {
+          "clusterId": "cluster-a",
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "name": "api-1",
+          "namespace": "team-a",
+          "scopeMode": "namespace"
+        },
+        "status": "Running"
+      }
+    ],
+    "edges": [
+      {
+        "id": "owns:deployment-api:pod-api-1",
+        "sourceId": "apps/v1:Deployment:team-a/api",
+        "targetId": "v1:Pod:team-a/api-1",
+        "relation": "owns"
+      }
+    ],
+    "evidence": [
+      {
+        "id": "event/team-a/api-1-scheduled",
+        "type": "kubernetes-event",
+        "severity": "info",
+        "summary": "Pod scheduled",
+        "observedAt": "2026-08-23T07:59:58Z",
+        "resourceId": "v1:Pod:team-a/api-1"
+      }
+    ],
+    "warnings": []
+  }
+}

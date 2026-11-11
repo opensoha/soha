@@ -1,0 +1,20 @@
+{
+  "id": "memory-1",
+  "ownerType": "user",
+  "ownerId": "user-1",
+  "scopeHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "fact": "prefers concise output",
+  "sourceType": "explicit_user",
+  "confidence": 1,
+  "validFrom": "2026-07-15T00:00:00Z",
+  "policyVersion": "v1",
+  "status": "active",
+  "createdAt": "2026-07-15T00:00:00Z",
+  "sourceRefs": [
+    "soha://session/s1/message/m1"
+  ],
+  "sourceHashes": {
+    "soha://session/s1/message/m1": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "syncStatus": "synced"
+}

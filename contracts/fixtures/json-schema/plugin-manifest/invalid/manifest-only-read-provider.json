@@ -1,0 +1,23 @@
+{
+  "id": "opensoha.invalid-provider",
+  "name": "Invalid Provider",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "resource-extension",
+  "runtime": {
+    "mode": "manifest-only"
+  },
+  "extensionPoints": {
+    "compute": {
+      "virtualizationProviders": [
+        {
+          "providerKey": "invalid",
+          "displayName": "Invalid",
+          "activationLevel": "read",
+          "resourceKinds": ["connection"],
+          "capabilities": ["inventory.discover"]
+        }
+      ]
+    }
+  }
+}

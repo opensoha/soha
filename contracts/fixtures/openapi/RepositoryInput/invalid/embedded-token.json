@@ -1,0 +1,8 @@
+{
+  "name": "checkout-api",
+  "provider": "gitlab",
+  "url": "https://oauth2:glpat-secret@gitlab.example.com/commerce/checkout-api.git",
+  "protocol": "https",
+  "path": "commerce/checkout-api",
+  "defaultBranch": "main"
+}

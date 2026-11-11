@@ -1,0 +1,57 @@
+{
+  "data": {
+    "id": "manifest-deployment-prod",
+    "packageId": "manifest-package-ingress",
+    "bindingId": "manifest-binding-prod",
+    "generation": 7,
+    "spec": {
+      "desiredRevision": 12,
+      "desiredDigest": "sha256:0123456789abcdef",
+      "reconcilePolicy": "continuous",
+      "driftPolicy": "report",
+      "deletionPolicy": "orphan"
+    },
+    "status": {
+      "observedGeneration": 7,
+      "appliedRevision": 12,
+      "appliedDigest": "sha256:0123456789abcdef",
+      "lastKnownGoodRevision": 11,
+      "phase": "deleting",
+      "conditions": [
+        {
+          "type": "Healthy",
+          "status": "true",
+          "reason": "ResourcesHealthy",
+          "message": "All managed resources are healthy.",
+          "observedGeneration": 7,
+          "lastTransitionAt": "2026-07-30T00:00:00Z",
+          "evidenceRefs": []
+        }
+      ],
+      "inventory": [
+        {
+          "deploymentId": "manifest-deployment-prod",
+          "generation": 7,
+          "apiVersion": "workloads.soha.io/v1alpha1",
+          "kind": "WorkloadCronJob",
+          "namespace": "test",
+          "name": "periodic",
+          "uid": "operator-uid",
+          "resourceVersion": "42",
+          "resourceGeneration": 3,
+          "observedResourceGeneration": -1,
+          "deletingAt": "2026-09-14T00:00:00Z",
+          "finalizers": [
+            "test.soha.io/cleanup"
+          ],
+          "desiredObjectDigest": "sha256:desired",
+          "observedObjectDigest": "sha256:observed",
+          "health": "degraded",
+          "lastObservedAt": "2026-09-14T00:00:00Z"
+        }
+      ]
+    },
+    "createdAt": "2026-07-30T00:00:00Z",
+    "updatedAt": "2026-07-30T00:05:00Z"
+  }
+}

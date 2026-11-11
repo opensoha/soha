@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "edge-prod",
+      "name": "Edge Production",
+      "region": "cn-east",
+      "environment": "production",
+      "labels": { "connection": "agent" },
+      "connectionMode": "agent",
+      "version": "v1.34.0+k3s1",
+      "capabilities": ["workload.read", "pod.logs"],
+      "health": {
+        "status": "healthy",
+        "lastChecked": "2026-08-10T08:00:00Z"
+      }
+    }
+  ]
+}

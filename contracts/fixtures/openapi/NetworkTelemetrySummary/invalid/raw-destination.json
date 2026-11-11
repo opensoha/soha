@@ -1,0 +1,29 @@
+{
+  "from": "2026-09-03T00:00:00Z",
+  "to": "2026-09-03T01:00:00Z",
+  "eventCount": 1,
+  "heartbeatCount": 0,
+  "radiusAccountingCount": 0,
+  "networkFlowCount": 0,
+  "connectionSummaryCount": 0,
+  "proxyFlowCount": 1,
+  "uploadBytes": 1,
+  "downloadBytes": 2,
+  "activeConnections": 1,
+  "producers": [],
+  "proxyFlows": [
+    {
+      "producerId": "endpoint-01",
+      "engine": "mihomo",
+      "profileId": "profile-01",
+      "profileRevision": 1,
+      "mode": "managed_follow",
+      "selectedProxy": "edge-a",
+      "uploadBytes": 1,
+      "downloadBytes": 2,
+      "activeConnections": 1,
+      "lastOccurredAt": "2026-09-03T00:59:00Z",
+      "destinationHost": "must-not-leave-ingest"
+    }
+  ]
+}

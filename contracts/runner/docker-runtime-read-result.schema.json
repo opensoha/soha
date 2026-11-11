@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.opensoha.io/runner/docker-runtime-read-result.schema.json",
+  "title": "Docker identity-bound runtime read result v1",
+  "type": "object",
+  "required": [
+    "protocol",
+    "action",
+    "projectId",
+    "container",
+    "sizeBytes",
+    "truncated",
+    "complete",
+    "volumes",
+    "files",
+    "returnedBytes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "docker-runtime-read-v1"
+    },
+    "action": {
+      "enum": [
+        "logs",
+        "volumes",
+        "files.list",
+        "files.read"
+      ]
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "container": {
+      "$ref": "docker-container-identity.schema.json"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 4096,
+      "pattern": "^/(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "path": {
+      "type": "string",
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]*$"
+    },
+    "content": {
+      "type": "string",
+      "maxLength": 1048576
+    },
+    "encoding": {
+      "const": "utf-8"
+    },
+    "sizeBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "For files.read: complete source file size. For logs: returned byte count. Metadata lists use zero."
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "volumes": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/volume"
+      }
+    },
+    "files": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    },
+    "returnedBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1048576
+    }
+  },
+  "$defs": {
+    "volume": {
+      "type": "object",
+      "required": [
+        "target",
+        "type",
+        "readOnly",
+        "browseSupported"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 4096,
+          "pattern": "^/(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "browseSupported": {
+          "type": "boolean"
+        },
+        "unsupportedReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "browseSupported": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "unsupportedReason"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "unsupportedReason"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "file": {
+      "type": "object",
+      "required": [
+        "name",
+        "path",
+        "kind",
+        "sizeBytes",
+        "readSupported",
+        "listSupported"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^(?!\\.{1,2}$)[^/\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f\\u007f-\\u009f]*$"
+        },
+        "kind": {
+          "enum": [
+            "file",
+            "directory",
+            "symlink",
+            "other"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modifiedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "readSupported": {
+          "type": "boolean"
+        },
+        "listSupported": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "symlink",
+                  "other"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "readSupported": {
+                "const": false
+              },
+              "listSupported": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "complete": {
+              "const": true
+            },
+            "truncated": {
+              "const": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "complete": {
+              "const": false
+            },
+            "truncated": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": [
+              "logs",
+              "files.read"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "encoding"
+        ],
+        "properties": {
+          "volumes": {
+            "maxItems": 0
+          },
+          "files": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "content": false,
+          "encoding": false,
+          "sizeBytes": {
+            "const": 0
+          },
+          "returnedBytes": {
+            "const": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "volumes"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "complete": {
+            "const": true
+          },
+          "files": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "files.list"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "volumes": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

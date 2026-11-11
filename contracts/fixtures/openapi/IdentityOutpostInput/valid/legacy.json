@@ -1,0 +1,8 @@
+{
+  "name": "Office edge",
+  "mode": "agent",
+  "status": "online",
+  "endpoint": "https://edge.example.com",
+  "version": "legacy-input-is-ignored",
+  "metadata": { "site": "office" }
+}

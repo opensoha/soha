@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "mode": "block",
+  "detectors": [
+    "private_key"
+  ],
+  "rules": [],
+  "detectorVersion": "content-dlp-unavailable"
+}

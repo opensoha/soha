@@ -1,0 +1,10 @@
+{
+  "dataSourceId": "metrics-dev",
+  "metricKey": "error_rate",
+  "scope": {},
+  "windowStart": "2026-09-15T10:05:00Z",
+  "windowEnd": "2026-09-15T10:10:00Z",
+  "unit": "ratio",
+  "threshold": { "operator": "lte", "value": 0.01 },
+  "expression": "arbitrary_expression"
+}

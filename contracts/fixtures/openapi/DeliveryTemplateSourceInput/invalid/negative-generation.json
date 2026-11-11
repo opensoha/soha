@@ -1,0 +1,15 @@
+{
+  "name": "Team delivery catalog",
+  "repositoryId": "repo-catalog",
+  "refType": "branch",
+  "refValue": "main",
+  "path": "templates",
+  "kinds": [
+    "BuildTemplate",
+    "DeploymentTemplate",
+    "WorkflowTemplate",
+    "Workflow"
+  ],
+  "enabled": true,
+  "expectedGeneration": -1
+}

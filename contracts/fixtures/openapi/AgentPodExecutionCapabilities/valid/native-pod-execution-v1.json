@@ -1,0 +1,7 @@
+{
+  "protocolVersion": "1",
+  "argvVersion": "1",
+  "ready": true,
+  "maxTimeoutSeconds": 300,
+  "maxOutputBytes": 1048576
+}

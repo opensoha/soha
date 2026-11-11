@@ -1,0 +1,1 @@
+{"apiVersion": "unknown.example/v1", "kind": "Database", "namespace": "team", "name": "db", "uid": "uid-1", "generation": 2, "crdName": "databases.unknown.example", "targetId": "target", "deliveryPlanId": "plan"}

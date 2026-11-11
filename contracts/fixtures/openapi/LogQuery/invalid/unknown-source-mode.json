@@ -1,0 +1,6 @@
+{
+  "sourceMode": "archive",
+  "selector": {
+    "namespace": "payments"
+  }
+}

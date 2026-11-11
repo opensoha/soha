@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "clusterId": "cluster-prod",
+      "namespace": "payments",
+      "workloadKind": "Pod",
+      "workloadName": "payments-api-123",
+      "desiredReplicas": 1,
+      "readyReplicas": 1,
+      "relatedResources": []
+    }
+  ],
+  "truncated": false
+}

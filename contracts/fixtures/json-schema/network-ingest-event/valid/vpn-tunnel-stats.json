@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "network-ingest/v1alpha1",
+  "batchId": "probe-batch-1",
+  "producerId": "gateway-runtime-1",
+  "producerKind": "gateway",
+  "sentAt": "2026-09-09T10:00:05Z",
+  "events": [
+    {
+      "id": "tunnel-stats-1",
+      "sequence": 1,
+      "type": "vpn.tunnel.stats",
+      "occurredAt": "2026-09-09T10:00:04Z",
+      "payload": {
+        "sessionId": "session-1",
+        "profileId": "profile-1",
+        "gatewayId": "gateway-a",
+        "endpointRuntimeId": "endpoint-1",
+        "epoch": "epoch-1",
+        "windowStartedAt": "2026-09-09T10:00:00Z",
+        "windowEndedAt": "2026-09-09T10:00:04Z",
+        "uploadBytes": 128,
+        "downloadBytes": 256
+      }
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "source": {
+    "repositoryUrl": "oci://registry.example/charts",
+    "chart": "http",
+    "version": "1.2.3",
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "values": {},
+    "secretRefs": {
+      "CHART_PASSWORD": "soha://secrets/chart-registry/versions/2"
+    }
+  },
+  "releaseName": "Other/namespace",
+  "imageMappings": [
+    {
+      "containerName": "main",
+      "path": "/workload/image",
+      "value": "image"
+    }
+  ]
+}

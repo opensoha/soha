@@ -1,0 +1,9 @@
+{
+  "capabilities": [
+    "performance",
+    "trace"
+  ],
+  "dataSourceId": "metrics-test",
+  "metricKey": "cpu_usage",
+  "minDurationMs": 10
+}

@@ -1,0 +1,32 @@
+{
+  "version": "v1",
+  "sources": [
+    {
+      "coverage": {
+        "provider": "traefik",
+        "sourceId": "traefik.ingressroutes",
+        "state": "available",
+        "namespace": "team-a",
+        "supportedKinds": [
+          "IngressRoute"
+        ],
+        "observedAt": "2026-10-19T02:00:00Z"
+      },
+      "objects": [
+        {
+          "resource": {
+            "clusterId": "cluster-a",
+            "apiVersion": "traefik.io/v1alpha1",
+            "kind": "IngressRoute",
+            "name": "api",
+            "namespace": "team-a",
+            "scopeMode": "namespace",
+            "uid": "route-uid",
+            "resourceVersion": "7"
+          },
+          "content": "{\"spec\": {\"routes\": [{\"match\": \"Host(`api.example.test`)\", \"services\": [{\"name\": \"api\", \"port\": 80}]}]}}"
+        }
+      ]
+    }
+  ]
+}

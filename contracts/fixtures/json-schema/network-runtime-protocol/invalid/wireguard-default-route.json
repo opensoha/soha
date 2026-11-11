@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-config-default-route",
+  "messageType": "configuration.desired",
+  "producerId": "network-control",
+  "runtimeId": "endpoint-alice",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "payload": {
+    "configurationVersion": 13,
+    "policyVersion": 7,
+    "validUntil": "2026-09-02T08:05:00Z",
+    "accessProfile": "full",
+    "protectedResourceIds": [],
+    "networkLeases": [],
+    "resourceLeases": [],
+    "wireguard": {
+      "role": "endpoint",
+      "interfaceName": "soha0",
+      "publicKey": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+      "addresses": ["100.96.10.2/32"],
+      "mtu": 1380,
+      "routingMode": "routed",
+      "firewallDefault": "deny",
+      "peers": [],
+      "routes": ["0.0.0.0/0"],
+      "firewallRules": []
+    }
+  }
+}

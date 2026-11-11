@@ -1,0 +1,8 @@
+{
+  "subjectType": "team",
+  "subjectId": "team-123",
+  "scopeType": "platform",
+  "clusterIds": ["cluster-123"],
+  "role": "operator",
+  "enabled": true
+}

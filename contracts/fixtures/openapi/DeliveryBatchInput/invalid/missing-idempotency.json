@@ -1,0 +1,16 @@
+{
+  "definition": {
+    "name": "Commerce release",
+    "mode": "service_serial",
+    "stopOnFailure": false,
+    "targets": [
+      {
+        "id": "web-dev",
+        "applicationId": "app-web",
+        "serviceId": "web",
+        "applicationEnvironmentId": "dev",
+        "action": "build_deploy"
+      }
+    ]
+  }
+}

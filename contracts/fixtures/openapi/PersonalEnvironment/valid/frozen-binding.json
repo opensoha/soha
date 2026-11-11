@@ -1,0 +1,13 @@
+{
+  "assistantId": "assistant-a",
+  "templateId": "personal",
+  "backend": "container",
+  "provider": "docker",
+  "policyRevision": "legacy-docker-v1",
+  "computeRef": "compute-a",
+  "computeGeneration": 1,
+  "dataRef": "personal-data:assistant-a",
+  "state": "unknown",
+  "version": 3,
+  "dataInitialized": true
+}

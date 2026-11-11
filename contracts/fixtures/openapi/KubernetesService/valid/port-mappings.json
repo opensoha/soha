@@ -1,0 +1,22 @@
+{
+  "name": "web",
+  "namespace": "default",
+  "type": "NodePort",
+  "ageSeconds": 0,
+  "ports": ["http:80/tcp (nodePort:30001)"],
+  "portMappings": [
+    {
+      "name": "http",
+      "protocol": "TCP",
+      "targetPort": "8080",
+      "port": 80,
+      "nodePort": 30001
+    },
+    {
+      "name": "metrics",
+      "protocol": "TCP",
+      "targetPort": "metrics",
+      "port": 9090
+    }
+  ]
+}

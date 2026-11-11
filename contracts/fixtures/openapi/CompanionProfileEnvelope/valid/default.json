@@ -1,0 +1,15 @@
+{
+  "data": {
+    "id": "companion:user-1",
+    "ownerId": "user-1",
+    "activePluginId": "builtin.soha-companion",
+    "activeVersion": "builtin",
+    "level": 1,
+    "xp": 0,
+    "affinity": 0,
+    "unlockedIds": [],
+    "revision": 1,
+    "createdAt": "2026-08-08T00:00:00Z",
+    "updatedAt": "2026-08-08T00:00:00Z"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": "directory-event-42",
+      "providerEventId": "feishu-event-42",
+      "eventType": "contact.user.updated_v3",
+      "status": "failed",
+      "attempts": 3,
+      "occurredAt": "2026-07-28T08:08:00Z",
+      "receivedAt": "2026-07-28T08:08:01Z",
+      "processedAt": "2026-07-28T08:08:02Z",
+      "nextAttemptAt": "2026-07-28T08:10:00Z",
+      "errorSummary": "directory object lookup failed"
+    }
+  ]
+}

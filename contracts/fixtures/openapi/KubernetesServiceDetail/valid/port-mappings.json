@@ -1,0 +1,22 @@
+{
+  "name": "web",
+  "namespace": "default",
+  "type": "ClusterIP",
+  "clusterIp": "10.43.0.10",
+  "ageSeconds": 60,
+  "ports": ["http:80/tcp"],
+  "portMappings": [
+    {
+      "name": "http",
+      "protocol": "TCP",
+      "targetPort": "http",
+      "port": 80
+    }
+  ],
+  "endpoints": [
+    {
+      "address": "10.42.0.10",
+      "ready": true
+    }
+  ]
+}

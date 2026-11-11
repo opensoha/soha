@@ -1,0 +1,21 @@
+{
+  "deviceId": "device-alice-laptop",
+  "name": "Branch proxy",
+  "mode": "managed_follow",
+  "sourceType": "manual_node",
+  "status": "active",
+  "manualNode": {
+    "protocol": "https",
+    "server": "proxy.example.com",
+    "port": 8443,
+    "username": "alice",
+    "password": "secret"
+  },
+  "mixedPort": 7890,
+  "controllerPort": 9090,
+  "dnsMode": "disabled",
+  "selectorGroup": "SOHA",
+  "bypassCidrs": ["10.20.0.0/16"],
+  "bypassHosts": ["network-control.example.com"],
+  "failClosed": true
+}

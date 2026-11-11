@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-managed-1",
+  "messageType": "vpn.managed.connect.request",
+  "producerId": "endpoint-1",
+  "runtimeId": "endpoint-1",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-09T10:00:00Z",
+  "expiresAt": "2026-09-09T10:01:00Z",
+  "payload": {
+    "requestId": "request-1",
+    "intentId": "intent-1",
+    "intentToken": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "mode": "external_vpn"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "backend": "s3",
+  "integrationId": "software-object-storage",
+  "providerType": "s3",
+  "endpoint": "https://minio.example.com",
+  "bucket": "soha-software",
+  "region": "us-east-1",
+  "healthStatus": "healthy",
+  "lastCheckedAt": "2026-08-25T00:00:00Z",
+  "objectCount": 1,
+  "totalBytes": 1048576,
+  "items": [
+    {
+      "id": "pkg-01j9z3m4w8n2",
+      "softwareId": "soha-cli",
+      "name": "Soha CLI",
+      "publisher": "OpenSoha",
+      "tenantId": "default",
+      "workspaceId": "default",
+      "visibility": "workspace",
+      "status": "ready",
+      "version": "0.1.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "fileName": "soha-cli-0.1.0-darwin-arm64.pkg",
+      "sizeBytes": 1048576,
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "downloadPath": "/api/v1/software/packages/pkg-01j9z3m4w8n2/download",
+      "storageIntegrationId": "software-object-storage",
+      "createdAt": "2026-08-08T00:00:00Z",
+      "updatedAt": "2026-08-08T00:00:00Z"
+    }
+  ]
+}

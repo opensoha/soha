@@ -1,0 +1,11 @@
+{
+  "sessionId": "session-test",
+  "question": "Analyze CPU",
+  "scope": {
+    "clusterId": "test"
+  },
+  "intent": {
+    "dataSourceId": "metrics",
+    "metricKey": "cpu"
+  }
+}

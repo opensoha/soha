@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-config-site-link-0001",
+  "messageType": "configuration.desired",
+  "producerId": "network-control-default",
+  "runtimeId": "gateway-site-b",
+  "runtimeKind": "gateway",
+  "occurredAt": "2026-09-03T08:00:00Z",
+  "expiresAt": "2026-09-03T08:05:00Z",
+  "payload": {
+    "configurationVersion": 13,
+    "policyVersion": 7,
+    "validUntil": "2026-09-03T08:05:00Z",
+    "accessProfile": "full",
+    "protectedResourceIds": [],
+    "networkLeases": [],
+    "resourceLeases": [],
+    "wireguard": {
+      "role": "gateway",
+      "interfaceName": "soha0",
+      "publicKey": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+      "addresses": ["100.97.0.1/32"],
+      "listenPort": 51821,
+      "mtu": 1380,
+      "routingMode": "routed",
+      "firewallDefault": "deny",
+      "peers": [{
+        "runtimeId": "gateway-site-a",
+        "publicKey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "endpointHost": "vpn-a.example.com",
+        "endpointPort": 51820,
+        "allowedIPs": ["100.96.0.0/24", "10.20.0.0/16", "10.30.0.0/16"],
+        "persistentKeepaliveSeconds": 25
+      }],
+      "routes": ["100.96.0.0/24", "10.20.0.0/16", "10.30.0.0/16"],
+      "firewallRules": [{
+        "id": "site-a-to-b",
+        "effect": "allow",
+        "siteLinkRuntimeId": "gateway-site-a",
+        "direction": "from_wireguard",
+        "sourceCidr": "10.20.0.0/16",
+        "destinationCidr": "10.40.0.0/16",
+        "protocol": "any",
+        "expiresAt": "2026-09-03T08:05:00Z"
+      }]
+    }
+  }
+}

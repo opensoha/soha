@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "virtualization:task-1",
+      "domain": "virtualization",
+      "sourceType": "virtualization_task",
+      "kind": "vm.create",
+      "category": "lifecycle",
+      "normalizedStatus": "running",
+      "rawStatus": "running",
+      "resources": [],
+      "attemptCount": 1,
+      "cancelable": true,
+      "retryable": false,
+      "availableActions": ["cancel"],
+      "createdAt": "2026-07-14T02:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "action": "wake",
+  "quota": {
+    "diskBytes": 33554432,
+    "memoryBytes": 67108864,
+    "cpuUnits": 250,
+    "maxProcesses": 16,
+    "networkEgress": false
+  }
+}

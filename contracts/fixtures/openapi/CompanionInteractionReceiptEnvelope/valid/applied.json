@@ -1,0 +1,22 @@
+{
+  "data": {
+    "idempotencyKey": "interaction-0001",
+    "applied": true,
+    "xpAwarded": 2,
+    "affinityAwarded": 1,
+    "unlockedIds": [],
+    "profile": {
+      "id": "companion:user-1",
+      "ownerId": "user-1",
+      "activePluginId": "opensoha.soha-companion",
+      "activeVersion": "0.1.0",
+      "level": 1,
+      "xp": 2,
+      "affinity": 1,
+      "unlockedIds": [],
+      "revision": 2,
+      "createdAt": "2026-08-08T00:00:00Z",
+      "updatedAt": "2026-08-08T00:00:01Z"
+    }
+  }
+}

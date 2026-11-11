@@ -1,0 +1,9 @@
+{
+  "mode": "warn",
+  "detectors": [
+    "private_key"
+  ],
+  "rules": [],
+  "requireStepUp": true,
+  "enabled": true
+}

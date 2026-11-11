@@ -1,0 +1,7 @@
+{
+  "data": {
+    "attemptId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "authorizationUrl": "https://soha.example.com/api/v1/auth/desktop/attempts/3fa85f64-5717-4562-b3fc-2c963f66afa6/start",
+    "expiresAt": "2026-08-20T12:00:00Z"
+  }
+}

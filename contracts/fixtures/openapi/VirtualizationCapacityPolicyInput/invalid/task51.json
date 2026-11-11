@@ -1,0 +1,12 @@
+{
+  "expectedRevision": 0,
+  "mode": "enforced",
+  "cpu": {
+    "enabled": true,
+    "percent": 0
+  },
+  "memory": {
+    "enabled": true,
+    "percent": 200
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "provider-2",
+  "applicationId": "application-2",
+  "name": "Example SAML",
+  "type": "saml",
+  "enabled": true,
+  "config": {},
+  "configuredSecretAliases": ["SIGNING_KEY"],
+  "status": "active",
+  "createdAt": "2026-08-01T00:00:00Z",
+  "updatedAt": "2026-08-01T00:00:00Z"
+}

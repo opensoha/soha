@@ -1,0 +1,38 @@
+{
+  "referenceId": "reference-a",
+  "referenceRevision": 3,
+  "applicationEnvironmentId": "test-a",
+  "environmentId": "env-a",
+  "environmentKey": "test-a",
+  "serviceId": "svc-api",
+  "sourceApplicationEnvironmentId": "test-b",
+  "sourceTargetIds": [
+    "target-b"
+  ],
+  "targets": [
+    {
+      "targetId": "target-b",
+      "clusterId": "c-b",
+      "namespace": "backend",
+      "workloadKind": "CustomResource",
+      "workloadName": "api-db",
+      "ownershipMode": "observe_only",
+      "resources": [
+        {
+          "resource": {
+            "clusterId": "c-b",
+            "namespace": "backend",
+            "apiVersion": "databases.example.com/v1",
+            "kind": "Database",
+            "name": "api-db",
+            "scopeMode": "namespace",
+            "uid": "cr-uid"
+          },
+          "specDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "crdName": "databases.databases.example.com",
+          "plural": "databases"
+        }
+      ]
+    }
+  ]
+}

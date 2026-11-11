@@ -1,0 +1,20 @@
+{
+  "data": {
+    "application": {
+      "id": "app-1",
+      "key": "payments",
+      "name": "Payments",
+      "created": false
+    },
+    "environment": {
+      "id": "env-1",
+      "key": "prod",
+      "name": "Production",
+      "created": false
+    },
+    "applicationEnvironmentId": "app-env-1",
+    "applicationEnvironmentCreated": false,
+    "services": [],
+    "targets": []
+  }
+}

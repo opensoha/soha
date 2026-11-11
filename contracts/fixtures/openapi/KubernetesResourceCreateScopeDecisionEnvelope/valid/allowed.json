@@ -1,0 +1,17 @@
+{
+  "data": {
+    "allowed": true,
+    "allowedActions": ["list", "view", "create", "update", "delete"],
+    "resourceScope": {
+      "clusterIds": ["cluster-a"],
+      "namespaces": ["minio", "ops"],
+      "resourceGroups": ["configuration"],
+      "resourceKinds": ["ConfigMap", "Secret"]
+    },
+    "capability": {
+      "key": "resource.yaml.apply",
+      "status": "available",
+      "mode": "direct"
+    }
+  }
+}

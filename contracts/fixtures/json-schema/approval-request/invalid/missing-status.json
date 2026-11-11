@@ -1,0 +1,12 @@
+{
+  "id": "approval-01HZW9WJQ3Y7QH3QZW2KN4T4GX",
+  "strategy": "role_quorum",
+  "actorType": "user",
+  "actorId": "user-123",
+  "toolName": "k8s.deployments.restart",
+  "riskLevel": "high",
+  "requiresApproval": true,
+  "summary": "Restart checkout-api deployment in payments namespace.",
+  "createdAt": "2026-06-12T02:30:00Z",
+  "updatedAt": "2026-06-12T02:30:00Z"
+}

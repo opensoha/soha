@@ -1,0 +1,5 @@
+{
+  "clusterId": "cluster-a",
+  "namespace": "team-a",
+  "podName": "app"
+}

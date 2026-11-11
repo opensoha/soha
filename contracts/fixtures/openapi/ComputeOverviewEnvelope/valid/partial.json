@@ -1,0 +1,39 @@
+{
+  "data": {
+    "virtualization": {
+      "status": "ok",
+      "summary": {
+        "connectionsTotal": 2,
+        "connectionsHealthy": 2,
+        "connectionsDegraded": 0,
+        "connectionsUnsynced": 0,
+        "vmsTotal": 8,
+        "vmsRunning": 6,
+        "vmsStopped": 2,
+        "vmsError": 0
+      }
+    },
+    "runtimes": {
+      "status": "unavailable",
+      "warnings": [{ "code": "runtime_read_timeout", "message": "Runtime data is temporarily unavailable." }]
+    },
+    "attention": [],
+    "providerHealth": [
+      {
+        "domain": "virtualization",
+        "providerKey": "pve",
+        "status": "healthy",
+        "generation": 1,
+        "checkedAt": "2026-07-14T02:00:00Z"
+      }
+    ],
+    "generatedAt": "2026-07-14T02:00:01Z",
+    "freshness": {
+      "status": "fresh",
+      "observedAt": "2026-07-14T02:00:00Z",
+      "maxAgeSeconds": 120
+    },
+    "partial": true,
+    "warnings": [{ "code": "runtime_section_unavailable" }]
+  }
+}

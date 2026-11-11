@@ -1,0 +1,8 @@
+{
+  "toolName": "docker.projects.deploy.trigger",
+  "capabilityVersion": "1",
+  "input": {
+    "projectId": "project-1",
+    "idempotencyKey": "deploy-1"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "settings-overview",
+  "parentId": null,
+  "path": "/settings/overview",
+  "labelZh": "设置总览",
+  "labelEn": "Settings Overview",
+  "iconKey": "dashboard",
+  "section": "",
+  "sortOrder": 10,
+  "enabled": true,
+  "roleIds": []
+}

@@ -1,0 +1,21 @@
+{
+  "session": {
+    "id": "01151151-1151-4151-8151-115111511151",
+    "status": "pending",
+    "clusterId": "test",
+    "target": {
+      "namespace": "test",
+      "podName": "test",
+      "uid": "pod-uid",
+      "container": "app",
+      "checkedAt": "2026-10-25T01:00:00Z"
+    },
+    "shell": "/bin/sh",
+    "createdAt": "2026-10-25T01:00:00Z",
+    "ticketExpiresAt": "2026-10-25T01:01:00Z",
+    "deadlineAt": "2026-10-25T01:05:00Z",
+    "maxInputBytes": 1048576,
+    "maxOutputBytes": 33554432
+  },
+  "ticket": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}

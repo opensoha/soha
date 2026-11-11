@@ -1,0 +1,466 @@
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+const openapiArtifacts = await Promise.all(
+  ["openapi/soha-api.yaml", "openapi/soha-api.json"].map(async (path) => {
+    const body = await readFile(join(root, path));
+    return { path, sha256: createHash("sha256").update(body).digest("hex") };
+  }),
+);
+const outDir = resolve(root, valueArg("--out-dir") ?? "dist/release");
+const consumerMatrixPath = optionalPathArg("--consumer-matrix");
+const npmCache = process.env.SOHA_NPM_CACHE ?? join(root, "dist/npm-cache");
+const verifyTarballArg = valueArg("--verify");
+
+if (process.argv.includes("--verify") && !verifyTarballArg) {
+  throw new Error("--verify requires a release tarball path");
+}
+
+if (verifyTarballArg) {
+  const verification = await verifyReleaseArtifacts(resolve(root, verifyTarballArg));
+  console.log(`release artifact verified: ${verification.tarball}`);
+  console.log(`sha256: ${verification.sha256}`);
+  console.log(`package files: ${verification.packageFiles}`);
+  process.exit(0);
+}
+
+await mkdir(outDir, { recursive: true });
+const pack = run("npm", ["pack", "--json", "--pack-destination", outDir, "--cache", npmCache]);
+const packInfo = parsePackOutput(pack.stdout);
+const tarballPath = join(outDir, packInfo.filename);
+const tarball = await readFile(tarballPath);
+const sha256 = createHash("sha256").update(tarball).digest("hex");
+const checksumPath = `${tarballPath}.sha256`;
+const manifestPath = join(outDir, "release-manifest.json");
+const sbomPath = join(outDir, `opensoha-contracts-${packageJson.version}.cyclonedx.json`);
+const sbomChecksumPath = `${sbomPath}.sha256`;
+const provenancePolicyPath = join(outDir, `opensoha-contracts-${packageJson.version}.provenance-policy.json`);
+const provenancePolicyChecksumPath = `${provenancePolicyPath}.sha256`;
+const consumerMatrixAssetPath = consumerMatrixPath ? join(outDir, "consumer-matrix.json") : undefined;
+const consumerMatrixText = consumerMatrixPath ? await readFile(consumerMatrixPath, "utf8") : "";
+const consumerMatrix = consumerMatrixText ? JSON.parse(consumerMatrixText) : undefined;
+const sbom = generateSBOM();
+const sbomText = `${JSON.stringify(sbom, null, 2)}\n`;
+const sbomSha256 = createHash("sha256").update(sbomText).digest("hex");
+const provenancePolicy = buildProvenancePolicy(packInfo.filename);
+const provenancePolicyText = `${JSON.stringify(provenancePolicy, null, 2)}\n`;
+const provenancePolicySha256 = createHash("sha256").update(provenancePolicyText).digest("hex");
+
+await writeFile(checksumPath, `${sha256}  ${packInfo.filename}\n`);
+await writeFile(sbomPath, sbomText);
+await writeFile(sbomChecksumPath, `${sbomSha256}  ${basename(sbomPath)}\n`);
+await writeFile(provenancePolicyPath, provenancePolicyText);
+await writeFile(provenancePolicyChecksumPath, `${provenancePolicySha256}  ${basename(provenancePolicyPath)}\n`);
+if (consumerMatrixAssetPath) {
+  await writeFile(consumerMatrixAssetPath, consumerMatrixText);
+}
+await writeFile(
+  manifestPath,
+  `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      packageName: packageJson.name,
+      version: packageJson.version,
+      tag: `v${packageJson.version}`,
+      goModule: "github.com/opensoha/soha-contracts",
+      npmPackage: packageJson.name,
+      openapi: {
+        version: packageJson.version,
+        artifacts: openapiArtifacts,
+      },
+      consumerMatrix: consumerMatrix
+        ? {
+            path: relative(root, consumerMatrixAssetPath),
+            checked: consumerMatrix.checked,
+            skipped: consumerMatrix.skipped,
+            results: consumerMatrix.results?.map((item) => ({
+              consumer: item.consumer,
+              status: item.status,
+            })),
+          }
+        : undefined,
+      artifacts: [
+        {
+          kind: "npm-tarball",
+          name: packInfo.filename,
+          path: relative(root, tarballPath),
+          checksumFile: relative(root, checksumPath),
+          sha256,
+          npmShasum: packInfo.shasum,
+          npmIntegrity: packInfo.integrity,
+          sizeBytes: packInfo.size,
+          fileCount: packInfo.entryCount,
+        },
+        {
+          kind: "cyclonedx-sbom",
+          name: basename(sbomPath),
+          path: relative(root, sbomPath),
+          checksumFile: relative(root, sbomChecksumPath),
+          sha256: sbomSha256,
+          format: sbom.bomFormat,
+          specVersion: sbom.specVersion,
+          componentPurl: sbom.metadata?.component?.purl,
+          componentCount: sbom.components?.length ?? 0,
+        },
+        {
+          kind: "provenance-policy",
+          name: basename(provenancePolicyPath),
+          path: relative(root, provenancePolicyPath),
+          checksumFile: relative(root, provenancePolicyChecksumPath),
+          sha256: provenancePolicySha256,
+        },
+      ],
+      sbom: {
+        name: basename(sbomPath),
+        path: relative(root, sbomPath),
+        checksumFile: relative(root, sbomChecksumPath),
+        sha256: sbomSha256,
+        format: sbom.bomFormat,
+        specVersion: sbom.specVersion,
+        componentPurl: sbom.metadata?.component?.purl,
+        componentCount: sbom.components?.length ?? 0,
+      },
+      provenance: {
+        name: basename(provenancePolicyPath),
+        path: relative(root, provenancePolicyPath),
+        checksumFile: relative(root, provenancePolicyChecksumPath),
+        sha256: provenancePolicySha256,
+        workflow: provenancePolicy.workflow.path,
+        publishCommand: provenancePolicy.npm.publishCommand,
+        requiresIdTokenPermission: provenancePolicy.githubActions.permissions["id-token"] === "write",
+        expectedAttestation: provenancePolicy.attestation.expected,
+      },
+    },
+    null,
+    2,
+  )}\n`,
+);
+
+await verifyReleaseArtifacts(tarballPath);
+await writeGithubOutputs({
+  tarball: tarballPath,
+  checksum: checksumPath,
+  manifest: manifestPath,
+  sbom: sbomPath,
+  sbom_checksum: sbomChecksumPath,
+  provenance_policy: provenancePolicyPath,
+  provenance_policy_checksum: provenancePolicyChecksumPath,
+  version: packageJson.version,
+});
+
+console.log(`release artifact: ${relative(root, tarballPath)}`);
+console.log(`sha256: ${sha256}`);
+console.log(`checksum file: ${relative(root, checksumPath)}`);
+console.log(`sbom: ${relative(root, sbomPath)}`);
+console.log(`sbom sha256: ${sbomSha256}`);
+console.log(`provenance policy: ${relative(root, provenancePolicyPath)}`);
+console.log(`provenance policy sha256: ${provenancePolicySha256}`);
+console.log(`manifest: ${relative(root, manifestPath)}`);
+
+function valueArg(name) {
+  const prefix = `${name}=`;
+  const value = process.argv.find((arg) => arg.startsWith(prefix));
+  if (value) {
+    return value.slice(prefix.length);
+  }
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+function parsePackOutput(stdout) {
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(`npm pack did not return JSON output: ${error.message}\n${stdout}`);
+  }
+  const packInfo = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!packInfo?.filename || !packInfo?.integrity || !packInfo?.shasum) {
+    throw new Error(`npm pack JSON is missing expected metadata: ${JSON.stringify(parsed)}`);
+  }
+  return packInfo;
+}
+
+async function verifyReleaseArtifacts(tarballPath) {
+  const checksumPath = `${tarballPath}.sha256`;
+  const manifestPath = join(dirname(tarballPath), "release-manifest.json");
+  const [tarball, checksumText, manifestText] = await Promise.all([
+    readFile(tarballPath),
+    readFile(checksumPath, "utf8"),
+    readFile(manifestPath, "utf8"),
+  ]);
+
+  const actualSha256 = createHash("sha256").update(tarball).digest("hex");
+  const checksumMatch = checksumText.trim().match(/^([a-f0-9]{64})\s+\*?(.+)$/);
+  if (!checksumMatch) {
+    throw new Error(`${relative(root, checksumPath)} must contain '<sha256>  <tarball>'`);
+  }
+  const [, expectedSha256, checksumFilename] = checksumMatch;
+  if (expectedSha256 !== actualSha256) {
+    throw new Error(`${relative(root, tarballPath)} sha256 mismatch: expected ${expectedSha256}, got ${actualSha256}`);
+  }
+  if (checksumFilename !== basename(tarballPath)) {
+    throw new Error(`${relative(root, checksumPath)} names ${checksumFilename}, expected ${basename(tarballPath)}`);
+  }
+
+  const manifest = JSON.parse(manifestText);
+  const artifact = manifest.artifacts?.find((item) => item.kind === "npm-tarball") ?? manifest.artifacts?.[0];
+  if (manifest.schemaVersion !== 1) {
+    throw new Error(`${relative(root, manifestPath)} schemaVersion must be 1`);
+  }
+  if (manifest.packageName !== packageJson.name || manifest.npmPackage !== packageJson.name) {
+    throw new Error(`${relative(root, manifestPath)} package name does not match package.json`);
+  }
+  if (manifest.version !== packageJson.version || manifest.tag !== `v${packageJson.version}`) {
+    throw new Error(`${relative(root, manifestPath)} version/tag does not match package.json`);
+  }
+  if (!artifact || artifact.sha256 !== actualSha256 || basename(artifact.name) !== basename(tarballPath)) {
+    throw new Error(`${relative(root, manifestPath)} artifact metadata does not match tarball`);
+  }
+
+  await verifySBOM(manifest, manifestPath, tarballPath);
+  await verifyProvenancePolicy(manifest, manifestPath, tarballPath);
+
+  if (manifest.consumerMatrix?.path) {
+    const matrixPath = await resolveConsumerMatrixPath(manifest.consumerMatrix.path, tarballPath);
+    const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+    if (matrix.contractsVersion !== packageJson.version) {
+      throw new Error(`${relative(root, matrixPath)} contractsVersion does not match package.json`);
+    }
+    if (matrix.checked !== manifest.consumerMatrix.checked || matrix.skipped !== manifest.consumerMatrix.skipped) {
+      throw new Error(`${relative(root, manifestPath)} consumer matrix summary does not match ${relative(root, matrixPath)}`);
+    }
+  }
+
+  const extractDir = await mkdtemp(join(tmpdir(), "soha-contracts-release-"));
+  try {
+    run("tar", ["-xzf", tarballPath, "-C", extractDir]);
+    const packedPackageJson = JSON.parse(await readFile(join(extractDir, "package", "package.json"), "utf8"));
+    if (packedPackageJson.name !== packageJson.name || packedPackageJson.version !== packageJson.version) {
+      throw new Error(`${relative(root, tarballPath)} packed package.json does not match root package.json`);
+    }
+    for (const requiredExport of Object.values(packageJson.exports ?? {})) {
+      const packedPath = join(extractDir, "package", requiredExport.replace(/^\.\//, ""));
+      await readFile(packedPath);
+    }
+    await verifyPackedOpenAPI(manifest, extractDir);
+  } finally {
+    await rm(extractDir, { recursive: true, force: true });
+  }
+
+  return {
+    tarball: relative(root, tarballPath),
+    sha256: actualSha256,
+    packageFiles: artifact.fileCount,
+  };
+}
+
+async function verifyPackedOpenAPI(manifest, extractDir) {
+  if (manifest.openapi?.version !== packageJson.version || manifest.openapi?.artifacts?.length !== 2) {
+    throw new Error("release manifest must include both OpenAPI formats at the package version");
+  }
+  for (const artifact of manifest.openapi.artifacts) {
+    if (!["openapi/soha-api.yaml", "openapi/soha-api.json"].includes(artifact.path)) {
+      throw new Error(`release manifest contains unexpected OpenAPI artifact ${artifact.path}`);
+    }
+    const body = await readFile(join(extractDir, "package", artifact.path));
+    const actualSha256 = createHash("sha256").update(body).digest("hex");
+    if (actualSha256 !== artifact.sha256) {
+      throw new Error(`${artifact.path} sha256 mismatch: expected ${artifact.sha256}, got ${actualSha256}`);
+    }
+  }
+}
+
+async function verifySBOM(manifest, manifestPath, tarballPath) {
+  const sbom = manifest.sbom;
+  if (!sbom?.path || !sbom?.checksumFile || !sbom?.sha256) {
+    throw new Error(`${relative(root, manifestPath)} must include SBOM metadata`);
+  }
+
+  const sbomPath = await resolveManifestAssetPath(sbom.path, tarballPath);
+  const sbomChecksumPath = await resolveManifestAssetPath(sbom.checksumFile, tarballPath);
+  const [sbomText, checksumText] = await Promise.all([
+    readFile(sbomPath, "utf8"),
+    readFile(sbomChecksumPath, "utf8"),
+  ]);
+  const actualSha256 = createHash("sha256").update(sbomText).digest("hex");
+  if (actualSha256 !== sbom.sha256) {
+    throw new Error(`${relative(root, sbomPath)} sha256 mismatch: expected ${sbom.sha256}, got ${actualSha256}`);
+  }
+  if (checksumText.trim() !== `${actualSha256}  ${basename(sbomPath)}`) {
+    throw new Error(`${relative(root, sbomChecksumPath)} does not match SBOM sha256/name`);
+  }
+
+  const parsed = JSON.parse(sbomText);
+  const component = parsed.metadata?.component;
+  if (parsed.bomFormat !== "CycloneDX" || parsed.specVersion !== "1.5") {
+    throw new Error(`${relative(root, sbomPath)} must be CycloneDX 1.5`);
+  }
+  if (component?.version !== packageJson.version || component?.purl !== `pkg:npm/%40opensoha/contracts@${packageJson.version}`) {
+    throw new Error(`${relative(root, sbomPath)} component identity does not match package.json`);
+  }
+  if (!Array.isArray(parsed.components) || parsed.components.length === 0) {
+    throw new Error(`${relative(root, sbomPath)} must include dependency components`);
+  }
+  if (sbom.componentCount !== parsed.components.length) {
+    throw new Error(`${relative(root, manifestPath)} SBOM component count does not match ${relative(root, sbomPath)}`);
+  }
+}
+
+async function verifyProvenancePolicy(manifest, manifestPath, tarballPath) {
+  const provenance = manifest.provenance;
+  if (!provenance?.path || !provenance?.checksumFile || !provenance?.sha256) {
+    throw new Error(`${relative(root, manifestPath)} must include provenance policy metadata`);
+  }
+
+  const policyPath = await resolveManifestAssetPath(provenance.path, tarballPath);
+  const policyChecksumPath = await resolveManifestAssetPath(provenance.checksumFile, tarballPath);
+  const [policyText, checksumText] = await Promise.all([
+    readFile(policyPath, "utf8"),
+    readFile(policyChecksumPath, "utf8"),
+  ]);
+  const actualSha256 = createHash("sha256").update(policyText).digest("hex");
+  if (actualSha256 !== provenance.sha256) {
+    throw new Error(`${relative(root, policyPath)} sha256 mismatch: expected ${provenance.sha256}, got ${actualSha256}`);
+  }
+  if (checksumText.trim() !== `${actualSha256}  ${basename(policyPath)}`) {
+    throw new Error(`${relative(root, policyChecksumPath)} does not match provenance policy sha256/name`);
+  }
+
+  const policy = JSON.parse(policyText);
+  if (policy.schemaVersion !== 1) {
+    throw new Error(`${relative(root, policyPath)} schemaVersion must be 1`);
+  }
+  if (policy.packageName !== packageJson.name || policy.version !== packageJson.version || policy.tag !== `v${packageJson.version}`) {
+    throw new Error(`${relative(root, policyPath)} package identity does not match package.json`);
+  }
+  if (policy.workflow?.path !== ".github/workflows/release.yml") {
+    throw new Error(`${relative(root, policyPath)} workflow path must be .github/workflows/release.yml`);
+  }
+  if (policy.githubActions?.permissions?.["id-token"] !== "write") {
+    throw new Error(`${relative(root, policyPath)} must require GitHub Actions id-token: write`);
+  }
+  if (policy.npm?.publishCommand !== `npm stage publish "${basename(tarballPath)}" --provenance --access public`) {
+    throw new Error(`${relative(root, policyPath)} npm publish command does not match the tarball`);
+  }
+  if (policy.attestation?.expected !== "npm registry provenance generated by npm stage publish --provenance") {
+    throw new Error(`${relative(root, policyPath)} must document the expected npm provenance attestation`);
+  }
+}
+
+async function writeGithubOutputs(outputs) {
+  if (!process.env.GITHUB_OUTPUT) {
+    return;
+  }
+  const lines = Object.entries(outputs).map(([key, value]) => `${key}=${value}`);
+  await appendFile(process.env.GITHUB_OUTPUT, `${lines.join("\n")}\n`);
+}
+
+function run(command, args) {
+  const result = spawnSync(command, args, {
+    cwd: root,
+    env: {
+      ...process.env,
+      npm_config_cache: npmCache,
+    },
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed\n${result.stdout}${result.stderr}`);
+  }
+  if (result.stderr.trim()) {
+    console.error(result.stderr.trim());
+  }
+  return result;
+}
+
+function generateSBOM() {
+  const result = run("npm", ["sbom", "--package-lock-only", "--sbom-format", "cyclonedx", "--sbom-type", "library"]);
+  try {
+    return JSON.parse(result.stdout);
+  } catch (error) {
+    throw new Error(`npm sbom did not return JSON output: ${error.message}\n${result.stdout}`);
+  }
+}
+
+function buildProvenancePolicy(tarballName) {
+  return {
+    schemaVersion: 1,
+    packageName: packageJson.name,
+    version: packageJson.version,
+    tag: `v${packageJson.version}`,
+    workflow: {
+      path: ".github/workflows/release.yml",
+      trigger: "push tags matching v*",
+      requiredJobs: ["verify", "consumers", "release"],
+    },
+    githubActions: {
+      runner: "ubuntu-latest",
+      permissions: {
+        contents: "write",
+        "id-token": "write",
+      },
+    },
+    npm: {
+      package: packageJson.name,
+      registry: "https://registry.npmjs.org",
+      publishCommand: `npm stage publish "${tarballName}" --provenance --access public`,
+      requiresTokenSecret: "NPM_TOKEN",
+      requiresProvenance: true,
+    },
+    attestation: {
+      expected: "npm registry provenance generated by npm stage publish --provenance",
+      localArtifactsDoNotProveRemoteAttestation: true,
+    },
+    localVerification: {
+      command: `npm run release:verify -- dist/release/${tarballName}`,
+      checks: [
+        "tarball checksum",
+        "packed package identity",
+        "exported package entrypoints",
+        "CycloneDX SBOM and checksum",
+        "provenance policy and checksum",
+        "consumer matrix summary when supplied",
+      ],
+    },
+    remoteVerification: {
+      npm: `npm view "${packageJson.name}@${packageJson.version}" version dist.tarball dist.integrity --json`,
+      goModule: `go list -m -json "github.com/opensoha/soha-contracts@v${packageJson.version}"`,
+      githubReleaseAssets: "gh release download <tag> and rerun release:verify against downloaded assets",
+    },
+  };
+}
+
+function optionalPathArg(name) {
+  const value = valueArg(name);
+  return value ? resolve(root, value) : undefined;
+}
+
+async function resolveConsumerMatrixPath(matrixPath, tarballPath) {
+  return resolveManifestAssetPath(matrixPath, tarballPath);
+}
+
+async function resolveManifestAssetPath(assetPath, tarballPath) {
+  const fromTarballDirectory = join(dirname(tarballPath), basename(assetPath));
+  try {
+    await readFile(fromTarballDirectory);
+    return fromTarballDirectory;
+  } catch {
+    // Fall through to the manifest-relative path for local release directories.
+  }
+
+  const fromManifest = resolve(root, assetPath);
+  try {
+    await readFile(fromManifest);
+    return fromManifest;
+  } catch {
+    return fromTarballDirectory;
+  }
+}

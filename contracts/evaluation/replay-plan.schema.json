@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/evaluation/replay-plan.schema.json",
+  "title": "Evaluation Replay Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "sourceTraceRefs", "candidateRefs", "executorProfileId", "readOnly", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/evaluation-replay-plan/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "sourceTraceRefs": { "type": "array", "minItems": 1, "maxItems": 500, "uniqueItems": true, "items": { "type": "string" } },
+    "candidateRefs": { "type": "object", "minProperties": 1, "maxProperties": 32, "additionalProperties": { "type": "string" } },
+    "executorProfileId": { "type": "string", "minLength": 1 },
+    "readOnly": { "type": "boolean" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

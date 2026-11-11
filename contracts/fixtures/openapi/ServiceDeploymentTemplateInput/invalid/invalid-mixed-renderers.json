@@ -1,0 +1,40 @@
+{
+  "key": "http",
+  "name": "HTTP service",
+  "source": {
+    "renderer": "raw_yaml",
+    "files": [
+      {
+        "path": "deployment.yaml",
+        "content": "kind: Deployment\napiVersion: apps/v1\n"
+      }
+    ],
+    "helm": {
+      "repositoryUrl": "https://charts.example.test",
+      "chart": "web",
+      "version": "1.0.0",
+      "values": {}
+    }
+  },
+  "parameterSchema": {
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535
+      }
+    },
+    "required": [
+      "port"
+    ]
+  },
+  "defaults": {
+    "port": 8080
+  },
+  "health": {
+    "mode": "workload_ready",
+    "timeoutSeconds": 300
+  },
+  "enabled": true
+}

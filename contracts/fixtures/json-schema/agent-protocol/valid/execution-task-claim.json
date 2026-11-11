@@ -1,0 +1,5 @@
+{
+  "agentId": "agent-build-1",
+  "providerKinds": ["github-actions"],
+  "runtimeEndpoint": "https://agent.example.internal"
+}

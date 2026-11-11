@@ -1,0 +1,9 @@
+{
+  "action": "platform.nodes.drain",
+  "implementation": "supported",
+  "configured": "denied",
+  "kubernetesRBAC": "unknown",
+  "scope": "cluster",
+  "checkedAt": "2026-10-19T01:30:00Z",
+  "reasonCode": "self_subject_access_review"
+}

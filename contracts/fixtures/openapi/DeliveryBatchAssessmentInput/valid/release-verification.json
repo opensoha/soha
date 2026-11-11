@@ -1,0 +1,8 @@
+{
+  "batchId": "batch-1",
+  "targetId": "api",
+  "http": {
+    "url": "https://api.example.com/",
+    "healthPath": "/readyz"
+  }
+}

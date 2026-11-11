@@ -1,0 +1,16 @@
+{
+  "type": "entry",
+  "entry": {
+    "timestamp": "2026-07-31T08:14:59Z",
+    "message": "ready",
+    "source": {
+      "domain": "kubernetes",
+      "clusterId": "cluster-a",
+      "namespace": "payments",
+      "podName": "checkout-api-7f9d8",
+      "containerName": "api"
+    },
+    "sourceMode": "runtime"
+  },
+  "cursor": "opaque-cursor"
+}

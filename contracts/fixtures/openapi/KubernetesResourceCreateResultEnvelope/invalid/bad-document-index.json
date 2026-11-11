@@ -1,0 +1,21 @@
+{
+  "data": {
+    "operationId": "resource-create-01",
+    "status": "failed",
+    "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "items": [
+      {
+        "document": {
+          "index": "first",
+          "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "status": "failed",
+        "warnings": [],
+        "error": {
+          "code": "resource_create_denied",
+          "message": "Create access is denied."
+        }
+      }
+    ]
+  }
+}

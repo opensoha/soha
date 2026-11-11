@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "cloud.managed-agent-fleet",
+      "name": "Managed Agent Fleet",
+      "kind": "managed-agent-fleet",
+      "boundary": "public-contract",
+      "description": "Cloud managed Agent fleet integration point built on public Agent and capability contracts.",
+      "contractRefs": [
+        "agent/agent-protocol.schema.json",
+        "capabilities/cluster-capability-matrix.schema.json",
+        "runner/operation-lifecycle.schema.json"
+      ],
+      "supportedConsumers": ["agent", "cli", "web", "cloud"],
+      "eventTypes": ["agent.registered", "agent.heartbeat", "agent.capabilities.updated"],
+      "excludedCloudOnlyDomains": ["billing", "quota", "saas-iam"]
+    }
+  ]
+}

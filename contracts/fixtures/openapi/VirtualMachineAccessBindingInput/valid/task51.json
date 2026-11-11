@@ -1,0 +1,10 @@
+{
+  "expectedRevision": 0,
+  "username": "soha",
+  "port": 22,
+  "address": "192.0.2.10",
+  "credentialRef": "soha://secrets/lab/versions/1",
+  "executionClusterId": "cluster-lab",
+  "executionAgentId": "agent-lab",
+  "trustedHostKey": "ssh-ed25519 AAAA fixture"
+}

@@ -1,0 +1,10 @@
+{
+  "data": {
+    "ruleId": "rule-checkout-errors",
+    "ruleType": "metrics",
+    "state": "clear",
+    "summary": "metrics threshold is clear",
+    "matched": false,
+    "executedAt": "2026-08-31T00:06:00Z"
+  }
+}

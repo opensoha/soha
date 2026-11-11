@@ -1,0 +1,10 @@
+{
+  "decision": "allow",
+  "path": "site_direct",
+  "policyVersion": 8,
+  "protected": false,
+  "networkProfile": "onboarding",
+  "networkLeaseRequired": false,
+  "resourceLeaseRequired": false,
+  "reasons": ["policy_allow:onboarding"]
+}

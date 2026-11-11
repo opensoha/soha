@@ -1,0 +1,9 @@
+{
+  "applicationId": "application-1",
+  "name": "Broken provider",
+  "type": "oidc",
+  "enabled": true,
+  "status": "active",
+  "createdAt": "2026-08-01T00:00:00Z",
+  "updatedAt": "2026-08-01T00:00:00Z"
+}

@@ -1,0 +1,20 @@
+{
+  "deviceId": "device-alice-laptop",
+  "name": "Invalid mixed source",
+  "mode": "managed_follow",
+  "sourceType": "manual_node",
+  "status": "active",
+  "subscriptionUrl": "https://subscriptions.example.com/mihomo/token-value",
+  "manualNode": {
+    "protocol": "socks5",
+    "server": "proxy.example.com",
+    "port": 1080
+  },
+  "mixedPort": 7890,
+  "controllerPort": 9090,
+  "dnsMode": "disabled",
+  "selectorGroup": "SOHA",
+  "bypassCidrs": [],
+  "bypassHosts": [],
+  "failClosed": true
+}

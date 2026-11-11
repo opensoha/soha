@@ -1,0 +1,6 @@
+{
+  "kind": "deployment",
+  "templateId": "web-template",
+  "toVersion": 4,
+  "targets": []
+}

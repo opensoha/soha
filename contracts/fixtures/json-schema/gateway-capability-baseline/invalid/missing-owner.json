@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "opensoha.dev/gateway-capability-catalog/v1",
+  "version": "0.1.0",
+  "source": {
+    "repository": "github.com/opensoha/soha",
+    "path": "internal/application/aigateway/catalog.go",
+    "syncStrategy": "stable-runtime entries are checked against runtime Gateway catalog output before release."
+  },
+  "tools": [
+    {
+      "name": "delivery.execution_logs.list",
+      "title": "List Execution Logs",
+      "domain": "delivery",
+      "action": "logs",
+      "riskLevel": "read",
+      "permissionKeys": ["ai.gateway.invoke", "delivery.execution-tasks.view"],
+      "requiredScopes": ["application", "environment", "executionTask"],
+      "mcpAdapterId": "delivery.v1",
+      "mcpToolName": "delivery.execution_logs.list",
+      "requiresApproval": false,
+      "status": "stable-runtime",
+      "skillRefs": ["delivery-tester"],
+      "audit": {
+        "resourceKind": "AIGatewayTool",
+        "relatedIds": ["taskId"]
+      },
+      "redaction": ["logs"],
+      "moduleId": "delivery",
+      "routeEvidence": ["registerDeliveryRoutes"]
+    }
+  ]
+}

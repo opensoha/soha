@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/personal-guest-enrollment.schema.json",
+  "title": "Personal VM Guest Enrollment",
+  "description": "New personal-guest/v1 protocol; never sent to Docker v1 or a Network Control enrollment route. A guest-specific mTLS certificate and a short one-time challenge in Authorization are required. Core derives assistant, owner, VM generation, data identity, policy and binding from the pending registration. Atomic one-time challenge consumption and current owner/access checks are server duties. This request grants registration and heartbeat only; no Docker/PVE/SSH/network management or task execution rights. POST /api/personal-guest/v1/bindings/{bindingId}/enroll returns 201 with the binding. Authorization is exactly Bearer followed by a canonical, unpadded base64url 32-byte crypto/rand challenge (43 characters), issued for 60–600 seconds and pinned to the binding plus certificate fingerprint; only its SHA256 hash is persisted. A consumed challenge cannot be replayed: 401. After a lost response, GET the same binding with the pinned certificate; this does not issue new authority. Missing/wrong certificate, challenge, enrollment or expired registration: 401; current owner/access, superseded binding or policy rejection: 403. Reject duplicate JSON keys and noncanonical field casing; no credential is accepted in a query or forwarded header.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "enrollmentId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/personal-guest-enrollment/v1"
+    },
+    "enrollmentId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    }
+  }
+}

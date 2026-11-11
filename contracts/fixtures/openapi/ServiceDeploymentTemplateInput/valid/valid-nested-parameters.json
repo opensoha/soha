@@ -1,0 +1,41 @@
+{
+  "key": "http",
+  "name": "HTTP service",
+  "source": {
+    "renderer": "raw_yaml",
+    "files": [
+      {
+        "path": "deployment.yaml",
+        "content": "kind: Deployment\napiVersion: apps/v1\n"
+      }
+    ]
+  },
+  "parameterSchema": {
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535
+      }
+    },
+    "required": [
+      "port"
+    ]
+  },
+  "defaults": {
+    "port": 8080,
+    "options": {
+      "args": [
+        "a",
+        true,
+        5
+      ]
+    }
+  },
+  "health": {
+    "mode": "workload_ready",
+    "timeoutSeconds": 300
+  },
+  "enabled": true
+}

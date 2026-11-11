@@ -1,0 +1,13 @@
+{
+  "providerId": "provider-oidc",
+  "userId": "user-1",
+  "protocol": "oidc",
+  "attributes": {
+    "sub": [
+      "user-1"
+    ],
+    "roles": [
+      "viewer"
+    ]
+  }
+}

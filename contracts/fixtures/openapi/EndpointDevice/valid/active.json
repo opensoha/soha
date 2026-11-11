@@ -1,0 +1,35 @@
+{
+  "id": "device-01",
+  "name": "Alice Windows",
+  "ownerUserId": "user-01",
+  "status": "active",
+  "platform": "windows",
+  "deviceType": "laptop",
+  "ownershipType": "company",
+  "postureStatus": "compliant",
+  "postureVersion": 3,
+  "credentialGeneration": 1,
+  "reportedFacts": {
+    "osName": "Windows",
+    "osVersion": "11 Pro",
+    "osBuild": "26100",
+    "architecture": "amd64",
+    "manufacturer": "Lenovo",
+    "model": "ThinkPad T14",
+    "serialNumber": "PF000001",
+    "agentVersion": "0.2.0",
+    "collectedAt": "2026-09-02T07:59:00Z",
+    "networkInterfaces": [
+      {
+        "name": "Ethernet",
+        "kind": "physical",
+        "status": "up",
+        "macAddress": "00:11:22:33:44:55",
+        "ipv4Addresses": ["10.0.12.44"],
+        "ipv6Addresses": ["fe80::1"]
+      }
+    ]
+  },
+  "createdAt": "2026-09-02T08:00:00Z",
+  "updatedAt": "2026-09-02T08:00:00Z"
+}

@@ -1,0 +1,11 @@
+{
+  "name": "registry-token",
+  "scopeType": "project",
+  "scopeId": "demo",
+  "vaultKv2": {
+    "mount": "team/kv",
+    "path": "demo/app",
+    "key": "token",
+    "version": 7
+  }
+}

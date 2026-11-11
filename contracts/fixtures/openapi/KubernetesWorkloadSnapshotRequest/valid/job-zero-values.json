@@ -1,0 +1,11 @@
+{
+  "namespace": "default",
+  "sourceKind": "DaemonSet",
+  "sourceName": "collector",
+  "targetKind": "Job",
+  "targetName": "collector-once",
+  "restartPolicy": "Never",
+  "parallelism": 0,
+  "completions": 0,
+  "activeDeadlineSeconds": 0
+}

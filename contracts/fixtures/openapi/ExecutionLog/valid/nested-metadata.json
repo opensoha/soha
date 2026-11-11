@@ -1,0 +1,16 @@
+{
+  "id": "log-2",
+  "executionTaskId": "task-1",
+  "logLevel": "info",
+  "message": "Fixture log metadata is data only",
+  "metadata": {
+    "phase": "build",
+    "observation": {
+      "attempt": 2,
+      "labels": [
+        "fixture"
+      ]
+    }
+  },
+  "createdAt": "2026-10-25T00:00:00Z"
+}

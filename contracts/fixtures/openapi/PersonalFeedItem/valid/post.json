@@ -1,0 +1,15 @@
+{
+  "id": "post",
+  "title": "开发工具更新",
+  "body": "来源中的简短解读",
+  "reason": "你最近讨论了开发工具",
+  "sources": [
+    {
+      "title": "发布说明",
+      "url": "https://example.com/release",
+      "excerpt": "Release notes"
+    }
+  ],
+  "liked": false,
+  "createdAt": "2026-10-09T08:00:00Z"
+}

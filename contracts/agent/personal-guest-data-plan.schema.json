@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/personal-guest-data-plan.schema.json",
+  "title": "Personal Guest Data Operation",
+  "description": "A fixed, privileged Core operation uses this plan. Core reserves operationId durably and current authorization before provider dispatch. GET /api/personal-guest/v1/bindings/{id}/data-operations/{operationId} requires registered pinned mTLS and returns a plan only while the matching task and reservation are running. Owner, current access, frozen VM/disk identity, quota, actor permissions and resource scope are rechecked; a binding GET or heartbeat grants no data mutation. The Linux initializer accepts only a root-owned plan and formats only a positively blank independent disk once. No arbitrary command, path or provider credential is accepted. XFS project 49 covers the fixed workspace; the project hard limit must be enforced and read back before a success receipt. Completed receipts follow stable workspace identity across explicit certificate renewal. Lost format results retain the original dispatch marker and cannot cause another format.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "binding",
+    "diskQuotaBytes"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/personal-guest-data-plan/v1"
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "binding": {
+      "$ref": "personal-guest-binding.schema.json"
+    },
+    "diskQuotaBytes": {
+      "type": "integer",
+      "minimum": 16777216,
+      "maximum": 1099511627775,
+      "multipleOf": 1024
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-06-12T02:00:00Z",
+  "capabilitySetVersion": "2026.06",
+  "items": [
+    {
+      "key": "kubernetes.yaml.apply",
+      "label": "Apply Kubernetes YAML",
+      "category": "yaml",
+      "riskLevel": "mutate",
+      "requiresApproval": true,
+      "direct": {
+        "status": "available",
+        "requiredScopes": ["cluster:write", "kubernetes:apply"]
+      },
+      "agent": {
+        "status": "available",
+        "requiredAgentVersion": "0.1.0",
+        "requiredScopes": ["agent:kubernetes:apply"]
+      }
+    },
+    {
+      "key": "kubernetes.port-forward",
+      "label": "Port Forward",
+      "category": "port-forward",
+      "riskLevel": "execute",
+      "requiresApproval": true,
+      "direct": {
+        "status": "available",
+        "requiredScopes": ["cluster:port-forward"]
+      },
+      "agent": {
+        "status": "partial",
+        "reason": "Agent supports single-port forwarding while multi-port sessions remain direct-only.",
+        "diagnostic": "agent_port_forward_partial",
+        "requiredAgentVersion": "0.1.0",
+        "requiredScopes": ["agent:port-forward"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"connectionId":"pve-a","provider":"pve","status":"available","reason":"placement fits observed unreserved capacity","node":"node-a","storage":"local-lvm","observedAt":"2026-09-16T00:00:00Z","validUntil":"2026-09-16T00:00:30Z"}

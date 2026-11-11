@@ -1,0 +1,33 @@
+{
+  "data": {
+    "id": "manifest-deployment-prod",
+    "packageId": "manifest-package-ingress",
+    "bindingId": "manifest-binding-prod",
+    "generation": 7,
+    "spec": {
+      "desiredRevision": 12,
+      "desiredDigest": "sha256:0123456789abcdef",
+      "reconcilePolicy": "continuous",
+      "driftPolicy": "report",
+      "deletionPolicy": "orphan"
+    },
+    "status": {
+      "observedGeneration": 7,
+      "phase": "converged",
+      "conditions": [
+        {
+          "type": "Healthy",
+          "status": "yes",
+          "reason": "ResourcesHealthy",
+          "message": "All managed resources are healthy.",
+          "observedGeneration": 7,
+          "lastTransitionAt": "2026-07-30T00:00:00Z",
+          "evidenceRefs": []
+        }
+      ],
+      "inventory": []
+    },
+    "createdAt": "2026-07-30T00:00:00Z",
+    "updatedAt": "2026-07-30T00:05:00Z"
+  }
+}

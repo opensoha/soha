@@ -1,0 +1,14 @@
+{
+  "applied": false,
+  "dryRun": true,
+  "kind": "Deployment",
+  "name": "app",
+  "namespace": "test",
+  "action": "scale",
+  "uid": "reviewed",
+  "resourceVersion": "opaque-rv",
+  "preconditions": {
+    "expectedUid": "reviewed",
+    "expectedResourceVersion": "opaque-rv"
+  }
+}

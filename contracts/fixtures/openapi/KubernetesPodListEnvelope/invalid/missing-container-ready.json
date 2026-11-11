@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "name": "api",
+      "namespace": "apps",
+      "phase": "Pending",
+      "readyContainers": "0/1",
+      "restarts": 0,
+      "ageSeconds": 60,
+      "containerStatuses": [
+        {
+          "name": "api",
+          "state": "unknown",
+          "kind": "container"
+        }
+      ]
+    }
+  ]
+}

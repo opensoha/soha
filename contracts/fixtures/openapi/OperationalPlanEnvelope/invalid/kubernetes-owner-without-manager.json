@@ -1,0 +1,29 @@
+{
+  "data": {
+    "capability": "k8s.resources.update",
+    "target": "cluster-a/team-a/Deployment/api",
+    "ready": false,
+    "riskLevel": "mutate",
+    "requiresApproval": false,
+    "changes": [
+      {
+        "action": "apply",
+        "resource": "Deployment/api",
+        "summary": "apply the reviewed manifest"
+      }
+    ],
+    "warnings": [],
+    "kubernetesResourceUpdate": {
+      "fieldManager": "opensoha-resource-edit/v1",
+      "changedFields": ["/spec/replicas"],
+      "owners": [
+        {
+          "operation": "Apply",
+          "apiVersion": "apps/v1",
+          "fields": ["/spec/template"]
+        }
+      ],
+      "conflicts": []
+    }
+  }
+}

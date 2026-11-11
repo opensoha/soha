@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/environment-lease.schema.json",
+  "title": "Agent Environment Lease",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "runId", "ownerId", "scopeHash", "mode", "quota", "issuedAt", "expiresAt"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/environment-lease/v1" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "scopeHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "mode": { "enum": ["observe-only", "restricted-write"] },
+    "workspacePath": { "type": "string", "maxLength": 2048 },
+    "quota": {
+      "type": "object", "additionalProperties": false,
+      "required": ["diskBytes", "memoryBytes", "cpuUnits", "maxProcesses", "networkEgress"],
+      "properties": {
+        "diskBytes": { "type": "integer", "minimum": 1, "description": "Maximum charged persistent storage bytes. The Docker personal backend uses a verified Btrfs subvolume quota; temporary task files use separately bounded memory-backed mounts and count against memoryBytes. Unsupported hard enforcement must fail acquisition." },
+        "memoryBytes": { "type": "integer", "minimum": 1 },
+        "cpuUnits": { "type": "integer", "minimum": 1, "description": "CPU millicores: 1000 is one CPU. Docker personal leases must hard-enforce this ceiling." },
+        "maxProcesses": { "type": "integer", "minimum": 1 },
+        "networkEgress": { "type": "boolean" }
+      }
+    },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "releasedAt": { "type": "string", "format": "date-time" }
+  }
+}

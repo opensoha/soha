@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "name": "worker-a",
+      "status": "ready",
+      "unschedulable": true,
+      "podCount": 2,
+      "ageSeconds": 3600,
+      "taints": [
+        {
+          "key": "maintenance",
+          "value": "task113",
+          "effect": "NoSchedule"
+        }
+      ],
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True"
+        },
+        {
+          "type": "DiskPressure",
+          "status": "True"
+        }
+      ]
+    }
+  ]
+}

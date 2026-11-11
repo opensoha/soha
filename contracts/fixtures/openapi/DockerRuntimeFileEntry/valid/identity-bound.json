@@ -1,0 +1,8 @@
+{
+  "name": "text",
+  "path": "text",
+  "kind": "file",
+  "sizeBytes": 9,
+  "readSupported": true,
+  "listSupported": false
+}

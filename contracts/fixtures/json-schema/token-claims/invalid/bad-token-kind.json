@@ -1,0 +1,9 @@
+{
+  "sub": "service-account:sa-1",
+  "exp": 1781006400,
+  "iat": 1781002800,
+  "tokenId": "tok-1",
+  "tokenKind": "api_key",
+  "subjectType": "service_account",
+  "subjectId": "sa-1"
+}

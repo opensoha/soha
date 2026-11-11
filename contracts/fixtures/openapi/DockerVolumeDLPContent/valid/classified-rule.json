@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "mode": "block",
+  "detectors": [
+    "private_key"
+  ],
+  "rules": [
+    {
+      "id": "internal",
+      "expression": "INTERNAL",
+      "dataLevel": "internal"
+    }
+  ],
+  "minimumDataLevel": "confidential",
+  "detectorVersion": "content-dlp-text-v1"
+}

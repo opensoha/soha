@@ -1,0 +1,525 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/mcp/gateway-manifest.schema.json",
+  "title": "Soha AI Gateway Manifest",
+  "description": "Permission-filtered capability manifest consumed by Soha CLI, MCP clients, AI agents, and web console surfaces.",
+  "type": "object",
+  "required": [
+    "name",
+    "version",
+    "generatedAt",
+    "principal",
+    "caller",
+    "permissionKeys",
+    "tools",
+    "summary"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "principal": {
+      "$ref": "#/$defs/Principal"
+    },
+    "caller": {
+      "$ref": "#/$defs/CallerContext"
+    },
+    "permissionKeys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ToolCapability"
+      }
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ResourceCapability"
+      }
+    },
+    "prompts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PromptCapability"
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SkillCapability"
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/ManifestSummary"
+    },
+    "catalogRevision": {
+      "type": "string"
+    },
+    "nextCursor": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "JSONSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "Principal": {
+      "type": "object",
+      "required": [
+        "userId",
+        "userName",
+        "email",
+        "roles",
+        "teams",
+        "projects",
+        "tags"
+      ],
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "userName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "permissionKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "CallerContext": {
+      "type": "object",
+      "required": [
+        "identityMode"
+      ],
+      "properties": {
+        "identityMode": {
+          "type": "string"
+        },
+        "aiClientId": {
+          "type": "string"
+        },
+        "aiClientName": {
+          "type": "string"
+        },
+        "skillId": {
+          "type": "string"
+        },
+        "tokenId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RiskLevel": {
+      "type": "string",
+      "enum": [
+        "read",
+        "analyze",
+        "mutate",
+        "execute",
+        "high"
+      ]
+    },
+    "ToolCapability": {
+      "type": "object",
+      "required": [
+        "name",
+        "title",
+        "description",
+        "domain",
+        "action",
+        "riskLevel",
+        "permissionKeys",
+        "requiresApproval"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "riskLevel": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "permissionKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredScopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mcpAdapterId": {
+          "type": "string"
+        },
+        "mcpToolName": {
+          "type": "string"
+        },
+        "requiresApproval": {
+          "type": "boolean"
+        },
+        "inputSchema": {
+          "$ref": "#/$defs/JSONSchema"
+        },
+        "outputSchema": {
+          "$ref": "#/$defs/JSONSchema"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "$ref": "#/$defs/ToolExecutionContract"
+        },
+        "inputSemantics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CapabilityValueSemantic"
+          }
+        },
+        "outputSemantics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CapabilityValueSemantic"
+          }
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "producesAssessment": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ToolExecutionContract": {
+      "type": "object",
+      "required": [
+        "mode",
+        "idempotent"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "sync",
+            "async"
+          ]
+        },
+        "idempotent": {
+          "type": "boolean"
+        },
+        "idempotencyKeyField": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskKind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "statusTool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cancelTool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checks": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/CapabilityCheckReference"
+          }
+        },
+        "recoveryMode": {
+          "type": "string",
+          "enum": [
+            "original_call"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResourceCapability": {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "permissionKeys"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredScopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contextSchema": {
+          "$ref": "#/$defs/JSONSchema"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PromptCapability": {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "permissionKeys"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredScopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "argumentSchema": {
+          "$ref": "#/$defs/JSONSchema"
+        },
+        "contextSchema": {
+          "$ref": "#/$defs/JSONSchema"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SkillCapability": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "category",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "capabilityRefs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "permissionKeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiredScopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestSummary": {
+      "type": "object",
+      "required": [
+        "toolCount",
+        "resourceCount",
+        "promptCount",
+        "skillCount",
+        "deniedCount"
+      ],
+      "properties": {
+        "toolCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resourceCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "promptCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skillCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deniedCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "CapabilityValueSemantic": {
+      "type": "object",
+      "required": [
+        "path",
+        "kind"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 512
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "scopePaths": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^/",
+            "maxLength": 512
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "CapabilityCheckReference": {
+      "type": "object",
+      "required": [
+        "purpose",
+        "toolName",
+        "capabilityVersion"
+      ],
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "availability",
+            "precondition",
+            "verification"
+          ]
+        },
+        "toolName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "capabilityVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "data": {
+    "protocol": "docker-native-terminal-v1",
+    "id": "2ea43caa-a36f-48a2-a625-7fb818892ec2",
+    "status": "pending",
+    "projectId": "project:owned",
+    "target": {
+      "protocol": "docker-project-identity-v1",
+      "hostUid": "6f773cfe-a522-468c-8c85-4b326d41b781",
+      "projectUid": "65b279e6-ea7c-412f-a822-228349f35585",
+      "namespace": "soha-053091eaee3bcc26ef77717cb17d63ccbc2ca8de1a37e8107aff",
+      "serviceName": "owned",
+      "containerId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "shell": "/bin/sh",
+    "createdAt": "2026-10-29T00:00:00Z",
+    "ticketExpiresAt": "2026-10-29T00:01:00Z",
+    "deadlineAt": "2026-10-29T00:05:00Z",
+    "maxInputBytes": 1048576,
+    "maxOutputBytes": 33554432
+  }
+}

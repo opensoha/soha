@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-vpn-connect-result-0001",
+  "messageType": "vpn.connect.result",
+  "producerId": "network-control",
+  "runtimeId": "endpoint-alice",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-02T08:00:00Z",
+  "expiresAt": "2026-09-02T08:05:00Z",
+  "payload": {
+    "requestId": "vpn-request-0001",
+    "decision": "allow",
+    "reasonCode": "policy_allowed",
+    "sessionId": "session-vpn-0001",
+    "gatewayId": "gateway-site-a",
+    "configurationVersion": 13,
+    "policyVersion": 7,
+    "validUntil": "2026-09-02T08:05:00Z",
+    "networkLeases": [
+      {
+        "id": "network-lease-0001",
+        "sessionId": "session-vpn-0001",
+        "subjectId": "user-alice",
+        "deviceId": "device-alice-laptop",
+        "networkSpaceId": "space-site-a",
+        "cidrs": ["10.20.0.0/16"],
+        "policyVersion": 7,
+        "issuedAt": "2026-09-02T08:00:00Z",
+        "expiresAt": "2026-09-02T08:05:00Z"
+      }
+    ],
+    "resourceLeases": []
+  }
+}

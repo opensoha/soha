@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "network-ingest/v1alpha1",
+  "batchId": "batch-mismatch-0001",
+  "producerId": "gateway-site-a",
+  "producerKind": "gateway",
+  "sentAt": "2026-09-02T08:01:00Z",
+  "events": [
+    {
+      "id": "event-mismatch-0001",
+      "type": "runtime.heartbeat",
+      "sequence": 104,
+      "occurredAt": "2026-09-02T08:01:00Z",
+      "payload": {
+        "sessionId": "session-0001",
+        "resourceId": "resource-payroll",
+        "protocol": "tcp",
+        "destinationPort": 443,
+        "state": "denied",
+        "reasonCode": "missing_resource_lease"
+      }
+    }
+  ]
+}

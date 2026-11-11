@@ -1,0 +1,7 @@
+{
+  "path": "/hostId",
+  "kind": "docker.host",
+  "scopePaths": {
+    "workspace": "/workspaceId"
+  }
+}

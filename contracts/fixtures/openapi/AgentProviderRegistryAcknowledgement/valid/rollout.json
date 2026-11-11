@@ -1,0 +1,17 @@
+{
+  "runnerId": "runner-prod-1",
+  "revision": 12,
+  "desiredRevision": 12,
+  "activeRevision": 12,
+  "lkgRevision": 11,
+  "previousRevision": 11,
+  "accepted": true,
+  "targeted": true,
+  "rolloutState": "converged",
+  "rolledBack": false,
+  "observedAt": "2026-07-15T00:00:00Z",
+  "providerStatuses": [],
+  "conformanceChecks": [
+    { "providerId": "codex", "status": "passed" }
+  ]
+}

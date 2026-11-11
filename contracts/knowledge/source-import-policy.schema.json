@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/knowledge/source-import-policy.schema.json",
+  "title": "Knowledge Source Import Policy",
+  "description": "Trusted config.importPolicy on an external knowledge connector. Core intersects returned document grants with this ceiling before persistence. Omission defaults to the stable knowledge-base owner; an explicit private empty scope denies everyone. Inline source behavior is unchanged. Finite grants intersect by the same identity category; cross-category membership does not implicitly widen a grant.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scope"],
+  "properties": {
+    "schemaVersion": { "const": "opensoha.dev/knowledge-source-import-policy/v1" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visibility"],
+      "properties": {
+        "visibility": { "enum": ["private", "scoped", "public"] },
+        "users": { "$ref": "#/$defs/grants" },
+        "roles": { "$ref": "#/$defs/grants" },
+        "teams": { "$ref": "#/$defs/grants" },
+        "projects": { "$ref": "#/$defs/grants" }
+      }
+    }
+  },
+  "$defs": {
+    "grants": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^\\S+$" }
+    }
+  }
+}

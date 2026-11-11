@@ -1,0 +1,8 @@
+{
+  "targetId": "vm-one",
+  "vmId": "vm-one",
+  "usage": "login_binding",
+  "version": 1,
+  "bindingRevision": 2,
+  "status": "active"
+}

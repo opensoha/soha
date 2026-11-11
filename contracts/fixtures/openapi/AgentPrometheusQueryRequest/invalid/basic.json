@@ -1,0 +1,5 @@
+{
+  "endpoint": "http://prometheus:9090",
+  "query": "",
+  "kind": "proxy"
+}

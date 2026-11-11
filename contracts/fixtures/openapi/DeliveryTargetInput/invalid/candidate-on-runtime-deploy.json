@@ -1,0 +1,9 @@
+{
+  "id": "adopt1",
+  "applicationId": "retail",
+  "serviceId": "api",
+  "applicationEnvironmentId": "retail-test",
+  "action": "deploy",
+  "releaseBundleId": "bundle",
+  "templateCandidateId": "candidate-1"
+}

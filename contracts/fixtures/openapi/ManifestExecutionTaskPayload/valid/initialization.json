@@ -1,0 +1,7 @@
+{
+  "action": "preflight",
+  "packageId": "pkg",
+  "generation": 1,
+  "idempotencyKey": "initialization:plan:target",
+  "initializationPlanId": "plan"
+}

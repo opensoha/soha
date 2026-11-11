@@ -1,0 +1,20 @@
+{
+  "data": {
+    "id": "sec-registry-token",
+    "name": "registry-token",
+    "description": "Registry credential for project demos",
+    "scopeType": "project",
+    "scopeId": "demo",
+    "status": "active",
+    "currentVersion": 2,
+    "bindings": [
+      {
+        "targetType": "capability",
+        "targetRef": "docker.project.deploy"
+      }
+    ],
+    "createdBy": "user-admin",
+    "createdAt": "2026-08-03T10:00:00Z",
+    "updatedAt": "2026-08-03T11:00:00Z"
+  }
+}

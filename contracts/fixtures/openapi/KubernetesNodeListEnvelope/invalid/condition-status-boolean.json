@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "name": "worker-a",
+      "status": "ready",
+      "unschedulable": true,
+      "podCount": 2,
+      "ageSeconds": 3600,
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": true
+        }
+      ]
+    }
+  ]
+}

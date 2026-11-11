@@ -1,0 +1,37 @@
+{
+  "data": {
+    "application": {
+      "id": "app-1",
+      "key": "payments",
+      "name": "Payments",
+      "created": true
+    },
+    "environment": {
+      "id": "env-1",
+      "key": "prod",
+      "name": "Production",
+      "created": false
+    },
+    "applicationEnvironmentId": "app-env-1",
+    "applicationEnvironmentCreated": true,
+    "ownershipMode": "observe_only",
+    "services": [
+      {
+        "id": "service-1",
+        "key": "k8s-deployment-payments-api",
+        "name": "payments-api",
+        "workloadKind": "Deployment",
+        "workloadName": "payments-api",
+        "created": true
+      }
+    ],
+    "targets": [
+      {
+        "id": "target-1",
+        "workloadKind": "Deployment",
+        "workloadName": "payments-api",
+        "created": true
+      }
+    ]
+  }
+}

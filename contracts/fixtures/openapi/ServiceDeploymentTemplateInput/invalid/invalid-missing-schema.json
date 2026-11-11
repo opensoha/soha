@@ -1,0 +1,21 @@
+{
+  "key": "http",
+  "name": "HTTP service",
+  "source": {
+    "renderer": "raw_yaml",
+    "files": [
+      {
+        "path": "deployment.yaml",
+        "content": "kind: Deployment\napiVersion: apps/v1\n"
+      }
+    ]
+  },
+  "defaults": {
+    "port": 8080
+  },
+  "health": {
+    "mode": "workload_ready",
+    "timeoutSeconds": 300
+  },
+  "enabled": true
+}

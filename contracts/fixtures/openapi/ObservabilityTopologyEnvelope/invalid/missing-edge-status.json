@@ -1,0 +1,10 @@
+{
+  "data": {
+    "nodes": [],
+    "edges": [
+      {"sourceServiceId": "a", "targetServiceId": "b"}
+    ],
+    "beta": true,
+    "meta": {"state": "success"}
+  }
+}

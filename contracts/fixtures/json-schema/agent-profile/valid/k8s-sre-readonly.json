@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "opensoha.dev/agent-profile/v1",
+  "id": "k8s-sre-readonly",
+  "name": "K8s SRE Readonly",
+  "version": "0.1.0",
+  "description": "Agent runtime profile for read-only Kubernetes root-cause diagnosis through Soha Gateway.",
+  "mode": "platform_resource_diagnosis",
+  "providerKind": "soha-agent-runtime",
+  "skillRefs": ["k8s-sre"],
+  "mcpPresetRefs": ["k8s-readonly"],
+  "capabilityRefs": ["platform_resource_diagnosis"],
+  "platformCapabilityRefs": ["cluster.inventory", "workload.read", "network.inventory", "storage.inventory", "pod.logs", "metrics"],
+  "requiredScopes": ["cluster", "namespace"],
+  "enabledToolRefs": [
+    "k8s.pods.list",
+    "k8s.pods.logs",
+    "k8s.pods.describe",
+    "k8s.deployments.list",
+    "k8s.deployments.rollout_status",
+    "k8s.deployments.events",
+    "k8s.services.list",
+    "k8s.services.backends",
+    "k8s.routes.context",
+    "k8s.storage.context",
+    "k8s.nodes.detail",
+    "k8s.events.list"
+  ],
+  "disabledToolRefs": ["k8s.exec", "k8s.apply", "k8s.delete", "k8s.deployments.restart"],
+  "budgets": {
+    "defaultTimeRangeMinutes": 60,
+    "timeoutSeconds": 120,
+    "maxLogLines": 500
+  },
+  "guardrails": ["read_only", "no_direct_cluster_access", "no_secret_output", "require_cluster_namespace_scope"]
+}

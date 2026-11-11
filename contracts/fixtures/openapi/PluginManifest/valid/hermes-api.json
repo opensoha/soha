@@ -1,0 +1,53 @@
+{
+  "id": "opensoha.hermes-api",
+  "name": "Hermes Chat",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "ai-provider-adapter",
+  "description": "Hermes Runs API adapter for governed chat sessions. Requires a chat-only API profile and an HTTPS endpoint.",
+  "compatibility": {
+    "soha": ">=0.1.8 <1.0.0",
+    "contracts": ">=0.1.17 <1.0.0"
+  },
+  "runtime": {
+    "mode": "manifest-only"
+  },
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "endpoint"
+    ],
+    "properties": {
+      "endpoint": {
+        "type": "string",
+        "title": "Hermes HTTPS endpoint",
+        "pattern": "^https://[^/@]+(/[^?#]*)?$"
+      }
+    },
+    "additionalProperties": false
+  },
+  "extensionPoints": {
+    "ai": {
+      "agentProviders": [
+        {
+          "id": "hermes-api",
+          "label": "Hermes Chat",
+          "metadata": {
+            "providerId": "hermes-api",
+            "kind": "hermes-api",
+            "providerVersion": "0.1.0",
+            "adapterProtocol": "opensoha.agent-provider.hermes-api/v1",
+            "capabilities": [
+              "general"
+            ],
+            "runtime": {
+              "kind": "remote",
+              "endpointConfigKey": "endpoint",
+              "healthPath": "/health/detailed"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

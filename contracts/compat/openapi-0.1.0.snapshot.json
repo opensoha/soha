@@ -1,0 +1,5076 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Soha API",
+    "version": "0.1.0"
+  },
+  "operations": {
+    "DELETE /plugins/{pluginID}": {
+      "operationId": "removeInstalledPlugin",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PluginID"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationStatus"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /ai-gateway/approval-requests": {
+      "operationId": "listAIGatewayApprovalRequests",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "id",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "actorType",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "actorId",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "aiClientId",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "skillId",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "toolName",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "riskLevel",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/RiskLevel"
+          }
+        },
+        {
+          "in": "query",
+          "name": "strategy",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalRequestListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /ai-gateway/approval-requests/{requestID}/timeline": {
+      "operationId": "getAIGatewayApprovalTimeline",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "requestID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalTimelineEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /ai-gateway/audit-logs": {
+      "operationId": "listAIGatewayAuditLogs",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "actorType",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "actorId",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "aiClientId",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "skillId",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "toolName",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "approvalRequestId",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "riskLevel",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/RiskLevel"
+          }
+        },
+        {
+          "in": "query",
+          "name": "result",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "action",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "from",
+          "required": false,
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "to",
+          "required": false,
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditLogListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /ai-gateway/capabilities": {
+      "operationId": "getAIGatewayCapabilities",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/AIClientID"
+        },
+        {
+          "$ref": "#/components/parameters/AIClientName"
+        },
+        {
+          "$ref": "#/components/parameters/SkillID"
+        },
+        {
+          "$ref": "#/components/parameters/Source"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIGatewayManifestEnvelope"
+              }
+            }
+          }
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "GET /ai-gateway/governance/status": {
+      "operationId": "getAIGatewayGovernanceStatus",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "windowHours",
+          "required": false,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GovernanceStatusEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /ai-gateway/personal-access-tokens": {
+      "operationId": "listPersonalAccessTokens",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "scope",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "userId",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalAccessTokenListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /ai-gateway/service-account-tokens": {
+      "operationId": "listServiceAccountTokens",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceAccountTokenListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /ai-gateway/service-accounts": {
+      "operationId": "listServiceAccounts",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceAccountListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /auth/bootstrap": {
+      "operationId": "getAuthBootstrap",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthBootstrapEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /auth/login-options": {
+      "operationId": "getAuthLoginOptions",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginOptionsEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /auth/login/{providerID}/callback": {
+      "operationId": "handleProviderCallback",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProviderID"
+        },
+        {
+          "$ref": "#/components/parameters/OIDCCode"
+        },
+        {
+          "$ref": "#/components/parameters/OIDCState"
+        }
+      ],
+      "responses": {
+        "302": {
+          "content": {}
+        }
+      }
+    },
+    "GET /auth/login/{providerID}/start": {
+      "operationId": "beginProviderLogin",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProviderID"
+        }
+      ],
+      "responses": {
+        "302": {
+          "content": {}
+        }
+      }
+    },
+    "GET /auth/me": {
+      "operationId": "getCurrentPrincipal",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrincipalEnvelope"
+              }
+            }
+          }
+        },
+        "401": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "GET /auth/oidc/callback": {
+      "operationId": "handleOIDCCallback",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OIDCCode"
+        },
+        {
+          "$ref": "#/components/parameters/OIDCState"
+        }
+      ],
+      "responses": {
+        "302": {
+          "content": {}
+        }
+      }
+    },
+    "GET /auth/oidc/login": {
+      "operationId": "beginOIDCLogin",
+      "parameters": [],
+      "responses": {
+        "302": {
+          "content": {}
+        }
+      }
+    },
+    "GET /auth/profile": {
+      "operationId": "getCurrentUserProfile",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /auth/providers": {
+      "operationId": "listAuthProviders",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthProviderListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /copilot/agent-runs": {
+      "operationId": "listAgentRuns",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericItemsEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /delivery/execution-tasks/{taskID}/runner-status": {
+      "operationId": "getExecutionTaskRunnerStatus",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/TaskID"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionTaskEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /docker/operations/{operationID}/runner-status": {
+      "operationId": "getDockerOperationRunnerStatus",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/OperationID"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DockerOperationEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /healthz": {
+      "operationId": "getHealthz",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /mcp/capabilities": {
+      "operationId": "listMCPCapabilities",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPCapabilityListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /plugins/{pluginID}": {
+      "operationId": "getInstalledPlugin",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PluginID"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstalledPluginEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /plugins/{pluginID}/manifest": {
+      "operationId": "getInstalledPluginManifest",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PluginID"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginManifestEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /plugins/installed": {
+      "operationId": "listInstalledPlugins",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstalledPluginListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /plugins/marketplace": {
+      "operationId": "listMarketplacePlugins",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "type",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "publisher",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketplacePluginListEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /plugins/marketplace/{pluginID}": {
+      "operationId": "getMarketplacePlugin",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PluginID"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarketplacePluginEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /readyz": {
+      "operationId": "getReadyz",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenericObject"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/approval-requests/{requestID}/{action}": {
+      "operationId": "decideAIGatewayApprovalRequest",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "requestID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "action",
+          "required": true,
+          "schema": {
+            "enum": [
+              "approve",
+              "cancel",
+              "reject"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApprovalDecisionInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionResultEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/personal-access-tokens": {
+      "operationId": "createPersonalAccessToken",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PersonalAccessTokenInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatedPersonalAccessTokenEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/personal-access-tokens/{tokenID}/revoke": {
+      "operationId": "revokePersonalAccessToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "tokenID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationStatus"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/personal-access-tokens/{tokenID}/rotate": {
+      "operationId": "rotatePersonalAccessToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "tokenID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/TokenRotationInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatedPersonalAccessTokenEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/prompts/get": {
+      "operationId": "getAIGatewayPrompt",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PromptGetRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptGetResultEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/resources/read": {
+      "operationId": "readAIGatewayResource",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ResourceReadRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceReadResultEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/service-account-tokens/{tokenID}/revoke": {
+      "operationId": "revokeServiceAccountToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "tokenID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationStatus"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/service-account-tokens/{tokenID}/rotate": {
+      "operationId": "rotateServiceAccountToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "tokenID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/TokenRotationInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatedServiceAccountTokenEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/service-accounts": {
+      "operationId": "createServiceAccount",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ServiceAccountInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceAccountEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/service-accounts/{serviceAccountID}/tokens": {
+      "operationId": "createServiceAccountToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "serviceAccountID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ServiceAccountTokenInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatedServiceAccountTokenEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /ai-gateway/tools/{toolName}/invoke": {
+      "operationId": "invokeAIGatewayTool",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ToolName"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ToolInvocationRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolInvocationResultEnvelope"
+              }
+            }
+          }
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "POST /auth/login": {
+      "operationId": "passwordLogin",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PasswordLoginRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthResultEnvelope"
+              }
+            }
+          }
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "401": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "POST /auth/logout": {
+      "operationId": "logoutAuthSession",
+      "parameters": [],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RefreshRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "204": {
+          "content": {}
+        },
+        "401": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "POST /auth/oidc/exchange": {
+      "operationId": "exchangeOIDCCode",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OIDCExchangeRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthResultEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /auth/refresh": {
+      "operationId": "refreshAuthSession",
+      "parameters": [],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RefreshRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthResultEnvelope"
+              }
+            }
+          }
+        },
+        "401": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "POST /auth/stream-ticket": {
+      "operationId": "issueStreamTicket",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/StreamTicketRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamTicketEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /copilot/agent-runs/callback": {
+      "operationId": "recordAgentRunCallback",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AgentRunCallbackRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /copilot/agent-runs/claim": {
+      "operationId": "claimAgentRun",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AgentRunClaimRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /copilot/agent-runs/tool-call": {
+      "operationId": "recordAgentRunToolCall",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AgentRunToolCallRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentToolCallResultEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /delivery/execution-callbacks": {
+      "operationId": "recordExecutionCallback",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ExecutionCallbackRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionTaskEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /delivery/execution-tasks/claim": {
+      "operationId": "claimExecutionTask",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ExecutionTaskClaimRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionTaskEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /docker/operation-callbacks": {
+      "operationId": "recordDockerOperationCallback",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DockerOperationCallbackRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DockerOperationEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /docker/operations/claim": {
+      "operationId": "claimDockerOperation",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DockerOperationClaimRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DockerOperationEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /plugins/{pluginID}/disable": {
+      "operationId": "disableInstalledPlugin",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PluginID"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstalledPluginEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /plugins/{pluginID}/enable": {
+      "operationId": "enableInstalledPlugin",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PluginID"
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstalledPluginEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /plugins/{pluginID}/upgrade": {
+      "operationId": "upgradeInstalledPlugin",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PluginID"
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PluginInstallRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstalledPluginEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "POST /plugins/install": {
+      "operationId": "installPlugin",
+      "parameters": [],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PluginInstallRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstalledPluginEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "PUT /plugins/{pluginID}/config": {
+      "operationId": "configureInstalledPlugin",
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/PluginID"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PluginConfigRequest"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstalledPluginEnvelope"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "schemas": {
+    "AgentRun": {
+      "additionalProperties": true,
+      "properties": {
+        "analysisArtifacts": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "callbackToken": {
+          "type": "string"
+        },
+        "capabilityId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "providerKind": {
+          "type": "string"
+        },
+        "scope": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "skillBindings": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "skillIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "type": "integer"
+        },
+        "toolBindings": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "toolset": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "required": [
+        "callbackToken",
+        "capabilityId",
+        "id",
+        "providerId",
+        "providerKind",
+        "status",
+        "timeoutSeconds"
+      ],
+      "type": "object"
+    },
+    "AgentRunCallbackRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "analysisArtifacts": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "callbackToken": {
+          "type": "string"
+        },
+        "errorMessage": {
+          "type": "string"
+        },
+        "externalRunId": {
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "toolExecutions": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "agentId",
+        "callbackToken",
+        "payload",
+        "runId",
+        "status"
+      ],
+      "type": "object"
+    },
+    "AgentRunClaimRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "kinds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "providerIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "agentId"
+      ],
+      "type": "object"
+    },
+    "AgentRunEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/AgentRun"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AgentRunToolCallRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterId": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "callbackToken": {
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "toolBindingId": {
+          "type": "string"
+        },
+        "toolName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId",
+        "callbackToken",
+        "runId"
+      ],
+      "type": "object"
+    },
+    "AgentToolCallResult": {
+      "additionalProperties": true,
+      "properties": {
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "toolExecution": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "required": [
+        "runId",
+        "toolExecution"
+      ],
+      "type": "object"
+    },
+    "AgentToolCallResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/AgentToolCallResult"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AIGatewayManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "caller": {
+          "$ref": "#/components/schemas/CallerContext"
+        },
+        "generatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "principal": {
+          "$ref": "#/components/schemas/Principal"
+        },
+        "prompts": {
+          "items": {
+            "$ref": "#/components/schemas/PromptCapability"
+          },
+          "type": "array"
+        },
+        "resources": {
+          "items": {
+            "$ref": "#/components/schemas/ResourceCapability"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/components/schemas/SkillCapability"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "additionalProperties": false,
+          "properties": {
+            "deniedCount": {
+              "type": "integer"
+            },
+            "promptCount": {
+              "type": "integer"
+            },
+            "resourceCount": {
+              "type": "integer"
+            },
+            "skillCount": {
+              "type": "integer"
+            },
+            "toolCount": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "deniedCount",
+            "promptCount",
+            "resourceCount",
+            "skillCount",
+            "toolCount"
+          ],
+          "type": "object"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/components/schemas/ToolCapability"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "caller",
+        "generatedAt",
+        "name",
+        "permissionKeys",
+        "principal",
+        "summary",
+        "tools",
+        "version"
+      ],
+      "type": "object"
+    },
+    "AIGatewayManifestEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/AIGatewayManifest"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AnyValue": {},
+    "ApprovalDecisionInput": {
+      "additionalProperties": false,
+      "properties": {
+        "comment": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ApprovalDecisionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "invocation": {
+          "$ref": "#/components/schemas/ToolInvocationResult"
+        },
+        "request": {
+          "$ref": "#/components/schemas/ApprovalRequest"
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "type": "object"
+    },
+    "ApprovalDecisionResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/ApprovalDecisionResult"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ApprovalDecisionTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "comment": {
+          "type": "string"
+        },
+        "decidedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "stageIndex": {
+          "type": "integer"
+        },
+        "stageName": {
+          "type": "string"
+        },
+        "teams": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "userName": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ApprovalRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "actorName": {
+          "type": "string"
+        },
+        "actorRoles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "actorTeams": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "actorType": {
+          "type": "string"
+        },
+        "aiClientId": {
+          "type": "string"
+        },
+        "aiClientName": {
+          "type": "string"
+        },
+        "approvalPolicyRef": {
+          "type": "string"
+        },
+        "approvalTrace": {
+          "$ref": "#/components/schemas/ApprovalTrace"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "decidedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "decidedBy": {
+          "type": "string"
+        },
+        "decidedByName": {
+          "type": "string"
+        },
+        "decisionComment": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "output": {
+          "$ref": "#/components/schemas/AnyValue"
+        },
+        "policyId": {
+          "type": "string"
+        },
+        "relatedIds": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "requiresApproval": {
+          "type": "boolean"
+        },
+        "resourceScope": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "riskLevel": {
+          "$ref": "#/components/schemas/RiskLevel"
+        },
+        "skillId": {
+          "type": "string"
+        },
+        "sourceIp": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "toolInput": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "toolName": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "actorType",
+        "createdAt",
+        "id",
+        "requiresApproval",
+        "riskLevel",
+        "status",
+        "strategy",
+        "summary",
+        "toolName",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ApprovalRequestListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/ApprovalRequest"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "ApprovalStageTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "completedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "result": {
+          "type": "string"
+        },
+        "stageIndex": {
+          "type": "integer"
+        },
+        "stageName": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ApprovalTimeline": {
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/components/schemas/ApprovalTimelineEvent"
+          },
+          "type": "array"
+        },
+        "request": {
+          "$ref": "#/components/schemas/ApprovalRequest"
+        },
+        "trace": {
+          "$ref": "#/components/schemas/ApprovalTrace"
+        }
+      },
+      "required": [
+        "request"
+      ],
+      "type": "object"
+    },
+    "ApprovalTimelineEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/ApprovalTimeline"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ApprovalTimelineEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "actorName": {
+          "type": "string"
+        },
+        "actorType": {
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "result": {
+          "type": "string"
+        },
+        "stageIndex": {
+          "type": "integer"
+        },
+        "stageName": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "createdAt",
+        "id",
+        "kind",
+        "result"
+      ],
+      "type": "object"
+    },
+    "ApprovalTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "approvalMode": {
+          "type": "string"
+        },
+        "approvedCount": {
+          "type": "integer"
+        },
+        "candidateRoles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "candidateTeams": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "candidateUserIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "currentStageIndex": {
+          "type": "integer"
+        },
+        "currentStageName": {
+          "type": "string"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/components/schemas/ApprovalDecisionTrace"
+          },
+          "type": "array"
+        },
+        "executionTaskId": {
+          "type": "string"
+        },
+        "onCallCandidateUserIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pendingRequirements": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "releaseBundleId": {
+          "type": "string"
+        },
+        "requiredApprovals": {
+          "type": "integer"
+        },
+        "roleApprovedCounts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "satisfiedRequirements": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "stageCount": {
+          "type": "integer"
+        },
+        "stageHistory": {
+          "items": {
+            "$ref": "#/components/schemas/ApprovalStageTrace"
+          },
+          "type": "array"
+        },
+        "teamApprovedCounts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "workflowRunId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AuditLog": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "actorName": {
+          "type": "string"
+        },
+        "actorType": {
+          "type": "string"
+        },
+        "aiClientId": {
+          "type": "string"
+        },
+        "aiClientName": {
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "resourceScope": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "result": {
+          "type": "string"
+        },
+        "riskLevel": {
+          "$ref": "#/components/schemas/RiskLevel"
+        },
+        "skillId": {
+          "type": "string"
+        },
+        "sourceIp": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "toolName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "actorId",
+        "actorType",
+        "createdAt",
+        "id",
+        "result",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "AuditLogListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/AuditLog"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "AuthBootstrapEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "properties": {
+            "branding": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "currentUser": {
+              "$ref": "#/components/schemas/Principal"
+            },
+            "permissionSnapshot": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "user": {
+              "$ref": "#/components/schemas/Principal"
+            }
+          },
+          "required": [
+            "branding",
+            "currentUser",
+            "permissionSnapshot",
+            "user"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AuthProvider": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "loginUrl": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "AuthProviderListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/AuthProvider"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "AuthResult": {
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "$ref": "#/components/schemas/TokenSet"
+        },
+        "user": {
+          "$ref": "#/components/schemas/Principal"
+        }
+      },
+      "required": [
+        "tokens",
+        "user"
+      ],
+      "type": "object"
+    },
+    "AuthResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/AuthResult"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "CallerContext": {
+      "additionalProperties": false,
+      "properties": {
+        "aiClientId": {
+          "type": "string"
+        },
+        "aiClientName": {
+          "type": "string"
+        },
+        "identityMode": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "skillId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "tokenId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "identityMode"
+      ],
+      "type": "object"
+    },
+    "CreatedPersonalAccessToken": {
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "$ref": "#/components/schemas/PersonalAccessToken"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "value"
+      ],
+      "type": "object"
+    },
+    "CreatedPersonalAccessTokenEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/CreatedPersonalAccessToken"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "CreatedServiceAccountToken": {
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "$ref": "#/components/schemas/ServiceAccountToken"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "value"
+      ],
+      "type": "object"
+    },
+    "CreatedServiceAccountTokenEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/CreatedServiceAccountToken"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "DockerOperation": {
+      "additionalProperties": true,
+      "properties": {
+        "claimedByWorkerId": {
+          "type": "string"
+        },
+        "hostId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "operationKind": {
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "serviceId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "timeoutSeconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "operationKind",
+        "payload",
+        "status",
+        "timeoutSeconds"
+      ],
+      "type": "object"
+    },
+    "DockerOperationCallbackRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "logs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "logs",
+        "operationId",
+        "payload",
+        "status",
+        "workerId"
+      ],
+      "type": "object"
+    },
+    "DockerOperationClaimRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "hostIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "operationKinds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId",
+        "workerId"
+      ],
+      "type": "object"
+    },
+    "DockerOperationEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/DockerOperation"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ErrorEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "type": "object"
+    },
+    "ExecutionCallbackRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "callbackToken": {
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "callbackToken",
+        "payload",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ExecutionTask": {
+      "additionalProperties": true,
+      "properties": {
+        "applicationEnvironmentId": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "callbackToken": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "providerKind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "taskKind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "applicationEnvironmentId",
+        "applicationId",
+        "callbackToken",
+        "id",
+        "payload",
+        "providerKind",
+        "status",
+        "taskKind"
+      ],
+      "type": "object"
+    },
+    "ExecutionTaskClaimRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "providerKinds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "runtimeEndpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId"
+      ],
+      "type": "object"
+    },
+    "ExecutionTaskEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/ExecutionTask"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "GenericDataEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/AnyValue"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "GenericItemsEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/AnyValue"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "GenericObject": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "GovernanceApprovalSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "dueSoon": {
+          "type": "integer"
+        },
+        "dueSoonRequestIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "nextDueAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "nextDueRequestId": {
+          "type": "string"
+        },
+        "oldestPendingHours": {
+          "type": "integer"
+        },
+        "oldestPendingRequestId": {
+          "type": "string"
+        },
+        "overdue": {
+          "type": "integer"
+        },
+        "overdueRequestIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pending": {
+          "type": "integer"
+        },
+        "stalePending": {
+          "type": "integer"
+        },
+        "stalePendingRequestIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "dueSoon",
+        "overdue",
+        "pending",
+        "stalePending"
+      ],
+      "type": "object"
+    },
+    "GovernanceClientSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "type": "integer"
+        },
+        "disabled": {
+          "type": "integer"
+        },
+        "pendingApproval": {
+          "type": "integer"
+        },
+        "pendingApprovalClientIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "registrationApproval": {
+          "type": "string"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "active",
+        "disabled",
+        "pendingApproval",
+        "registrationApproval",
+        "total"
+      ],
+      "type": "object"
+    },
+    "GovernanceFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "actorType": {
+          "type": "string"
+        },
+        "aiClientId": {
+          "type": "string"
+        },
+        "approvalRequestId": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "grantId": {
+          "type": "string"
+        },
+        "policyId": {
+          "type": "string"
+        },
+        "riskLevel": {
+          "$ref": "#/components/schemas/RiskLevel"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "toolName": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "summary",
+        "type"
+      ],
+      "type": "object"
+    },
+    "GovernanceHealth": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceHealthCheck"
+          },
+          "type": "array"
+        },
+        "message": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message",
+        "status"
+      ],
+      "type": "object"
+    },
+    "GovernanceHealthCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message",
+        "name",
+        "status"
+      ],
+      "type": "object"
+    },
+    "GovernanceMetricCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "count",
+        "key"
+      ],
+      "type": "object"
+    },
+    "GovernanceMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "denyCount": {
+          "type": "integer"
+        },
+        "dryRunCount": {
+          "type": "integer"
+        },
+        "failureCount": {
+          "type": "integer"
+        },
+        "pendingApprovalCount": {
+          "type": "integer"
+        },
+        "recentActionBreakdown": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "recentResultBreakdown": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "riskCounts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "successCount": {
+          "type": "integer"
+        },
+        "topActors": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "topAiClients": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "topTools": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "totalCalls": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "denyCount",
+        "dryRunCount",
+        "failureCount",
+        "pendingApprovalCount",
+        "successCount",
+        "totalCalls"
+      ],
+      "type": "object"
+    },
+    "GovernancePolicyCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "accessPolicies": {
+          "type": "integer"
+        },
+        "activeAccessPolicies": {
+          "type": "integer"
+        },
+        "activeSkillBindings": {
+          "type": "integer"
+        },
+        "activeToolGrants": {
+          "type": "integer"
+        },
+        "budgetPolicies": {
+          "type": "integer"
+        },
+        "budgetState": {
+          "type": "string"
+        },
+        "rateLimitPolicies": {
+          "type": "integer"
+        },
+        "rateLimitState": {
+          "type": "string"
+        },
+        "redactionPolicies": {
+          "type": "integer"
+        },
+        "redactionPolicyState": {
+          "type": "string"
+        },
+        "resourceScopedAccessPolicies": {
+          "type": "integer"
+        },
+        "resourceScopedToolGrants": {
+          "type": "integer"
+        },
+        "resourceScopeState": {
+          "type": "string"
+        },
+        "skillBindings": {
+          "type": "integer"
+        },
+        "toolGrants": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "accessPolicies",
+        "activeAccessPolicies",
+        "activeSkillBindings",
+        "activeToolGrants",
+        "budgetPolicies",
+        "budgetState",
+        "rateLimitPolicies",
+        "rateLimitState",
+        "redactionPolicies",
+        "redactionPolicyState",
+        "resourceScopeState",
+        "resourceScopedAccessPolicies",
+        "resourceScopedToolGrants",
+        "skillBindings",
+        "toolGrants"
+      ],
+      "type": "object"
+    },
+    "GovernanceRecommendationAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "refs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "targetKind": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "severity",
+        "summary",
+        "type"
+      ],
+      "type": "object"
+    },
+    "GovernanceRedactionSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "auditsWithRedaction": {
+          "type": "integer"
+        },
+        "fieldMatches": {
+          "type": "integer"
+        },
+        "inputAudits": {
+          "type": "integer"
+        },
+        "outputAudits": {
+          "type": "integer"
+        },
+        "secretClassifierMatches": {
+          "type": "integer"
+        },
+        "sensitiveKeyMatches": {
+          "type": "integer"
+        },
+        "sensitiveTextMatches": {
+          "type": "integer"
+        },
+        "structuredSecretMatches": {
+          "type": "integer"
+        },
+        "topClassifiers": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "topFieldPaths": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "topMatchTypes": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "topPolicies": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "topTargets": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "topTools": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceMetricCount"
+          },
+          "type": "array"
+        },
+        "totalMatches": {
+          "type": "integer"
+        },
+        "valuePatternMatches": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "auditsWithRedaction",
+        "fieldMatches",
+        "inputAudits",
+        "outputAudits",
+        "secretClassifierMatches",
+        "sensitiveKeyMatches",
+        "sensitiveTextMatches",
+        "structuredSecretMatches",
+        "totalMatches",
+        "valuePatternMatches"
+      ],
+      "type": "object"
+    },
+    "GovernanceStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "anomalies": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceFinding"
+          },
+          "type": "array"
+        },
+        "approvals": {
+          "$ref": "#/components/schemas/GovernanceApprovalSummary"
+        },
+        "clients": {
+          "$ref": "#/components/schemas/GovernanceClientSummary"
+        },
+        "generatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "health": {
+          "$ref": "#/components/schemas/GovernanceHealth"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "metrics": {
+          "$ref": "#/components/schemas/GovernanceMetrics"
+        },
+        "policyCoverage": {
+          "$ref": "#/components/schemas/GovernancePolicyCoverage"
+        },
+        "recommendationActions": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceRecommendationAction"
+          },
+          "type": "array"
+        },
+        "recommendations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "redaction": {
+          "$ref": "#/components/schemas/GovernanceRedactionSummary"
+        },
+        "tokens": {
+          "$ref": "#/components/schemas/GovernanceTokenSummary"
+        },
+        "windowHours": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "approvals",
+        "clients",
+        "generatedAt",
+        "health",
+        "metrics",
+        "policyCoverage",
+        "redaction",
+        "tokens",
+        "windowHours"
+      ],
+      "type": "object"
+    },
+    "GovernanceStatusEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/GovernanceStatus"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "GovernanceTokenCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "type": "integer"
+        },
+        "expired": {
+          "type": "integer"
+        },
+        "expiringSoon": {
+          "type": "integer"
+        },
+        "neverUsed": {
+          "type": "integer"
+        },
+        "revoked": {
+          "type": "integer"
+        },
+        "stale": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "active",
+        "expired",
+        "expiringSoon",
+        "neverUsed",
+        "revoked",
+        "stale",
+        "total"
+      ],
+      "type": "object"
+    },
+    "GovernanceTokenFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "daysUntilDue": {
+          "type": "integer"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "staleDays": {
+          "type": "integer"
+        },
+        "tokenPrefix": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "message",
+        "name",
+        "severity",
+        "tokenPrefix"
+      ],
+      "type": "object"
+    },
+    "GovernanceTokenSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "expiredActive": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceTokenFinding"
+          },
+          "type": "array"
+        },
+        "expiringSoon": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceTokenFinding"
+          },
+          "type": "array"
+        },
+        "lastUsedTrackingState": {
+          "type": "string"
+        },
+        "neverUsed": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceTokenFinding"
+          },
+          "type": "array"
+        },
+        "personalAccessTokens": {
+          "$ref": "#/components/schemas/GovernanceTokenCounts"
+        },
+        "serviceAccountTokens": {
+          "$ref": "#/components/schemas/GovernanceTokenCounts"
+        },
+        "stale": {
+          "items": {
+            "$ref": "#/components/schemas/GovernanceTokenFinding"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "lastUsedTrackingState",
+        "personalAccessTokens",
+        "serviceAccountTokens"
+      ],
+      "type": "object"
+    },
+    "InstalledPlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "checksumStatus": {
+          "type": "string"
+        },
+        "configuredSecretRefs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "disabledAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "enabledAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "installedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "installedBy": {
+          "type": "string"
+        },
+        "manifest": {
+          "$ref": "#/components/schemas/PluginManifest"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "requestedPermissions": {
+          "$ref": "#/components/schemas/PluginPermissionRequest"
+        },
+        "signatureStatus": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "disabled",
+            "enabled"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "checksumStatus",
+        "id",
+        "installedAt",
+        "installedBy",
+        "manifest",
+        "name",
+        "publisher",
+        "source",
+        "status",
+        "type",
+        "updatedAt",
+        "version"
+      ],
+      "type": "object"
+    },
+    "InstalledPluginEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/InstalledPlugin"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "InstalledPluginListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/InstalledPlugin"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "JSONSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "LoginOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "verification": {
+          "additionalProperties": false,
+          "properties": {
+            "sliderEnabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "sliderEnabled"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "verification"
+      ],
+      "type": "object"
+    },
+    "LoginOptionsEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/LoginOptions"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "MarketplacePlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "manifest": {
+          "$ref": "#/components/schemas/PluginManifest"
+        },
+        "name": {
+          "type": "string"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "riskLevel": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "manifest",
+        "name",
+        "publisher",
+        "source",
+        "type",
+        "version"
+      ],
+      "type": "object"
+    },
+    "MarketplacePluginEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/MarketplacePlugin"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "MarketplacePluginListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/MarketplacePlugin"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "MCPCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterID": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "adapterID",
+        "description",
+        "name",
+        "scopes"
+      ],
+      "type": "object"
+    },
+    "MCPCapabilityListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/MCPCapability"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "OIDCExchangeRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "OperationStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "PasswordLoginRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "login": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "login",
+        "password"
+      ],
+      "type": "object"
+    },
+    "PersonalAccessToken": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "revokedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tokenPrefix": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "createdAt",
+        "createdBy",
+        "id",
+        "name",
+        "permissionKeys",
+        "scopes",
+        "tokenPrefix",
+        "updatedAt",
+        "userId"
+      ],
+      "type": "object"
+    },
+    "PersonalAccessTokenInput": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "permissionKeys",
+        "scopes"
+      ],
+      "type": "object"
+    },
+    "PersonalAccessTokenListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/PersonalAccessToken"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "PluginAssetSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "agentProfiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "aiProviderAdapters": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "connectors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gatewayPolicyPacks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mcpPresets": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "PluginCapabilityRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "prompts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "PluginCompatibility": {
+      "additionalProperties": true,
+      "properties": {
+        "contracts": {
+          "type": "string"
+        },
+        "soha": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PluginConfigRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "secretRefs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "PluginInstallRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "enable": {
+          "type": "boolean"
+        },
+        "expectedChecksum": {
+          "type": "string"
+        },
+        "manifest": {
+          "$ref": "#/components/schemas/PluginManifest"
+        },
+        "pluginId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PluginIntegrity": {
+      "additionalProperties": false,
+      "properties": {
+        "checksum": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "PluginManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "assets": {
+          "$ref": "#/components/schemas/PluginAssetSnapshot"
+        },
+        "capabilities": {
+          "$ref": "#/components/schemas/PluginCapabilityRequest"
+        },
+        "compatibility": {
+          "$ref": "#/components/schemas/PluginCompatibility"
+        },
+        "description": {
+          "type": "string"
+        },
+        "homepage": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "integrity": {
+          "$ref": "#/components/schemas/PluginIntegrity"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissions": {
+          "$ref": "#/components/schemas/PluginPermissionRequest"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "secrets": {
+          "additionalProperties": false,
+          "properties": {
+            "required": {
+              "items": {
+                "$ref": "#/components/schemas/PluginSecretRequirement"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "agent-profile",
+            "ai-provider-adapter",
+            "connector",
+            "gateway-policy-pack",
+            "mcp-preset",
+            "skill",
+            "skill-pack"
+          ],
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "publisher",
+        "type",
+        "version"
+      ],
+      "type": "object"
+    },
+    "PluginManifestEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/PluginManifest"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "PluginPermissionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "PluginSecretRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "secretRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Principal": {
+      "additionalProperties": true,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "projects": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "teams": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "userName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email",
+        "projects",
+        "roles",
+        "tags",
+        "teams",
+        "userId",
+        "userName"
+      ],
+      "type": "object"
+    },
+    "PrincipalEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/Principal"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "PromptCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "argumentSchema": {
+          "$ref": "#/components/schemas/JSONSchema"
+        },
+        "contextSchema": {
+          "$ref": "#/components/schemas/JSONSchema"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requiredScopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "description",
+        "name",
+        "permissionKeys"
+      ],
+      "type": "object"
+    },
+    "PromptGetRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "aiClientId": {
+          "type": "string"
+        },
+        "aiClientName": {
+          "type": "string"
+        },
+        "arguments": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "context": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "skillId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "PromptGetResult": {
+      "additionalProperties": true,
+      "properties": {
+        "audit": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "description": {
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/components/schemas/PromptMessage"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "relatedIds": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "required": [
+        "description",
+        "messages",
+        "name"
+      ],
+      "type": "object"
+    },
+    "PromptGetResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/PromptGetResult"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "PromptMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "role"
+      ],
+      "type": "object"
+    },
+    "RefreshRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "refreshToken": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ResourceCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "contextSchema": {
+          "$ref": "#/components/schemas/JSONSchema"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requiredScopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "description",
+        "name",
+        "permissionKeys"
+      ],
+      "type": "object"
+    },
+    "ResourceReadRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "aiClientId": {
+          "type": "string"
+        },
+        "aiClientName": {
+          "type": "string"
+        },
+        "context": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "skillId": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ResourceReadResult": {
+      "additionalProperties": true,
+      "properties": {
+        "audit": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "data": {
+          "$ref": "#/components/schemas/AnyValue"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "relatedIds": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "text": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mimeType",
+        "name",
+        "uri"
+      ],
+      "type": "object"
+    },
+    "ResourceReadResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/ResourceReadResult"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "analyze",
+        "execute",
+        "high",
+        "mutate",
+        "read"
+      ],
+      "type": "string"
+    },
+    "ServiceAccount": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerUserId": {
+          "type": "string"
+        },
+        "roleIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopeGrantIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        },
+        "teamIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "createdAt",
+        "createdBy",
+        "id",
+        "name",
+        "roleIds",
+        "scopeGrantIds",
+        "status",
+        "teamIds",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ServiceAccountEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/ServiceAccount"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ServiceAccountInput": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerUserId": {
+          "type": "string"
+        },
+        "roleIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopeGrantIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        },
+        "teamIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ServiceAccountListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/ServiceAccount"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "ServiceAccountToken": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "revokedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "serviceAccountId": {
+          "type": "string"
+        },
+        "tokenPrefix": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "createdAt",
+        "createdBy",
+        "id",
+        "name",
+        "permissionKeys",
+        "scopes",
+        "serviceAccountId",
+        "tokenPrefix",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ServiceAccountTokenInput": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "permissionKeys",
+        "scopes"
+      ],
+      "type": "object"
+    },
+    "ServiceAccountTokenListEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/ServiceAccountToken"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "SkillCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityRefs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "category": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requiredScopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "category",
+        "description",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "StreamTicket": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "ticket": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expiresAt",
+        "ticket"
+      ],
+      "type": "object"
+    },
+    "StreamTicketEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/StreamTicket"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "StreamTicketRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "TokenRotationInput": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "TokenSet": {
+      "additionalProperties": false,
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "expiresIn": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "tokenType": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accessToken",
+        "expiresAt",
+        "expiresIn",
+        "refreshToken",
+        "tokenType"
+      ],
+      "type": "object"
+    },
+    "ToolCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "inputSchema": {
+          "$ref": "#/components/schemas/JSONSchema"
+        },
+        "mcpAdapterId": {
+          "type": "string"
+        },
+        "mcpToolName": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "outputSchema": {
+          "$ref": "#/components/schemas/JSONSchema"
+        },
+        "permissionKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requiredScopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requiresApproval": {
+          "type": "boolean"
+        },
+        "riskLevel": {
+          "$ref": "#/components/schemas/RiskLevel"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "description",
+        "domain",
+        "name",
+        "permissionKeys",
+        "requiresApproval",
+        "riskLevel",
+        "title"
+      ],
+      "type": "object"
+    },
+    "ToolInvocationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "aiClientId": {
+          "type": "string"
+        },
+        "aiClientName": {
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "skillId": {
+          "type": "string"
+        },
+        "toolName": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ToolInvocationResult": {
+      "additionalProperties": true,
+      "properties": {
+        "audit": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "output": {
+          "$ref": "#/components/schemas/AnyValue"
+        },
+        "relatedIds": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "requiresApproval": {
+          "type": "boolean"
+        },
+        "result": {
+          "type": "string"
+        },
+        "riskLevel": {
+          "$ref": "#/components/schemas/RiskLevel"
+        },
+        "toolName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requiresApproval",
+        "result",
+        "riskLevel",
+        "toolName"
+      ],
+      "type": "object"
+    },
+    "ToolInvocationResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/ToolInvocationResult"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "UserProfile": {
+      "additionalProperties": true,
+      "properties": {
+        "displayName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "identities": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "lastLoginAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "projects": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "teams": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "displayName",
+        "email",
+        "projects",
+        "roles",
+        "status",
+        "tags",
+        "teams",
+        "userId",
+        "username"
+      ],
+      "type": "object"
+    },
+    "UserProfileEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/UserProfile"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  }
+}

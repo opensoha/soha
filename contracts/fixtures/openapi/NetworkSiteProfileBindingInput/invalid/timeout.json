@@ -1,0 +1,7 @@
+{
+  "siteId": "site-a",
+  "accessProfile": "quarantine",
+  "vlanId": 90,
+  "filterId": "soha-quarantine",
+  "sessionTimeoutSeconds": 0
+}

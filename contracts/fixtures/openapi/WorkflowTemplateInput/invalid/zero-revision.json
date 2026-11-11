@@ -1,0 +1,6 @@
+{
+  "key": "service-release",
+  "name": "Service release",
+  "enabled": true,
+  "expectedRevision": 0
+}

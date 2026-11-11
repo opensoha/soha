@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/plugins/companion-pack.schema.json",
+  "title": "OpenSoha Companion Pack",
+  "type": "object",
+  "required": ["renderer", "entryAsset", "assets", "license"],
+  "properties": {
+    "renderer": {
+      "type": "string",
+      "enum": ["svg", "sprite", "live2d-cubism"]
+    },
+    "entryAsset": { "$ref": "#/$defs/safePath" },
+    "thumbnailAsset": { "$ref": "#/$defs/safePath" },
+    "modelFormatVersion": { "type": "string", "minLength": 1 },
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/asset" }
+    },
+    "animations": { "$ref": "#/$defs/animations" },
+    "interactions": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/interaction" }
+    },
+    "unlocks": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/unlock" }
+    },
+    "license": { "$ref": "#/$defs/license" }
+  },
+  "$defs": {
+    "safePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9._/-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "asset": {
+      "type": "object",
+      "required": ["path", "kind", "contentType", "sizeBytes", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/safePath" },
+        "kind": {
+          "type": "string",
+          "enum": ["entry", "model", "texture", "motion", "expression", "physics", "pose", "thumbnail", "audio"]
+        },
+        "contentType": {
+          "type": "string",
+          "enum": ["application/json", "application/octet-stream", "image/png", "image/jpeg", "image/webp", "image/svg+xml", "audio/mpeg", "audio/ogg"]
+        },
+        "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 67108864 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "animations": {
+      "type": "object",
+      "properties": {
+        "idle": { "type": "string", "minLength": 1 },
+        "listening": { "type": "string", "minLength": 1 },
+        "thinking": { "type": "string", "minLength": 1 },
+        "speaking": { "type": "string", "minLength": 1 },
+        "error": { "type": "string", "minLength": 1 },
+        "dragging": { "type": "string", "minLength": 1 },
+        "hover": { "type": "string", "minLength": 1 },
+        "tap": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "interaction": {
+      "type": "object",
+      "required": ["id", "action"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9._-]*$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "action": { "type": "string", "enum": ["tap", "pet", "feed", "play", "greet"] },
+        "animation": { "type": "string", "minLength": 1 },
+        "cooldownSeconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
+        "rewardXp": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "rewardAffinity": { "type": "integer", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "unlock": {
+      "type": "object",
+      "required": ["id", "kind", "level", "ref"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9._-]*$" },
+        "kind": { "type": "string", "enum": ["interaction", "animation", "expression", "asset"] },
+        "level": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "ref": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "license": {
+      "type": "object",
+      "required": ["name", "url", "redistributionAllowed", "commercialUseAllowed"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "spdxId": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "format": "uri" },
+        "sourceUrl": { "type": "string", "format": "uri" },
+        "attribution": { "type": "string", "maxLength": 2048 },
+        "redistributionAllowed": { "const": true },
+        "commercialUseAllowed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

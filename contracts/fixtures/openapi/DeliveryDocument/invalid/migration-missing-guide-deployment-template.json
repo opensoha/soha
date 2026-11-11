@@ -1,0 +1,30 @@
+{
+  "apiVersion": "delivery.soha.io/v1alpha1",
+  "kind": "DeploymentTemplate",
+  "metadata": {
+    "name": "http-service"
+  },
+  "spec": {
+    "source": {
+      "renderer": "raw_yaml",
+      "files": [
+        {
+          "path": "config.yaml",
+          "content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: example\ndata:\n  mode: prod\n"
+        }
+      ]
+    },
+    "parameterSchema": {
+      "type": "object"
+    },
+    "defaults": {},
+    "health": {
+      "mode": "configuration_only",
+      "timeoutSeconds": 60
+    },
+    "migrationPolicy": {
+      "sequential": true,
+      "irreversible": false
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "kind": "deployment",
+  "templateId": "web-template",
+  "toVersion": 4,
+  "targets": [
+    {
+      "targetId": "binding-test",
+      "wave": 0,
+      "useNewDefaults": [
+        "replicas"
+      ]
+    }
+  ]
+}

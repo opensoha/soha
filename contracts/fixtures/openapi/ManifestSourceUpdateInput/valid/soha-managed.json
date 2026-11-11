@@ -1,0 +1,6 @@
+{
+  "mode": "soha_managed",
+  "syncPolicy": "manual",
+  "autoPublish": false,
+  "expectedGeneration": 1
+}

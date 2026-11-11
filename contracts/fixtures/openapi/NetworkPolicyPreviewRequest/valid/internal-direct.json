@@ -1,0 +1,7 @@
+{
+  "subjectUserId": "user-01",
+  "deviceId": "device-01",
+  "resourceId": "resource-intranet",
+  "siteId": "site-shanghai",
+  "mode": "internal_direct"
+}

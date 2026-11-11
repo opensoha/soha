@@ -1,0 +1,47 @@
+{
+  "renderer": "svg",
+  "entryAsset": "model/soha.svg",
+  "thumbnailAsset": "thumbnail.png",
+  "assets": [
+    {
+      "path": "model/soha.svg",
+      "kind": "entry",
+      "contentType": "image/svg+xml",
+      "sizeBytes": 2048,
+      "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "path": "thumbnail.png",
+      "kind": "thumbnail",
+      "contentType": "image/png",
+      "sizeBytes": 1024,
+      "sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "animations": {
+    "idle": "breathe",
+    "thinking": "ponder",
+    "speaking": "talk"
+  },
+  "interactions": [
+    {
+      "id": "pet",
+      "label": "Pet",
+      "action": "pet",
+      "animation": "happy",
+      "cooldownSeconds": 5,
+      "rewardXp": 2,
+      "rewardAffinity": 1
+    }
+  ],
+  "unlocks": [
+    { "id": "happy", "kind": "animation", "level": 2, "ref": "happy" }
+  ],
+  "license": {
+    "name": "Apache License 2.0",
+    "spdxId": "Apache-2.0",
+    "url": "https://www.apache.org/licenses/LICENSE-2.0",
+    "redistributionAllowed": true,
+    "commercialUseAllowed": true
+  }
+}

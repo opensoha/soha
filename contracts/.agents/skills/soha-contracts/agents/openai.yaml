@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha Contracts"
+  short_description: "Public contracts, SDK generation, and compatibility"
+  default_prompt: "Use $soha-contracts to change or review a public Soha contract and its consumers."

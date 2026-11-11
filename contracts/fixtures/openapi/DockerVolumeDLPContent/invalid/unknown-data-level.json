@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "mode": "block",
+  "detectors": [],
+  "rules": [
+    {
+      "id": "bad",
+      "expression": "x",
+      "dataLevel": "unknown"
+    }
+  ]
+}

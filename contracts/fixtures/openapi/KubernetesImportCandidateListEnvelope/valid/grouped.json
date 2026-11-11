@@ -1,0 +1,31 @@
+{
+  "items": [
+    {
+      "clusterId": "cluster-prod",
+      "namespace": "payments",
+      "workloadKind": "Deployment",
+      "workloadName": "payments-api",
+      "desiredReplicas": 3,
+      "readyReplicas": 3,
+      "containers": ["api"],
+      "labels": {
+        "app": "payments-api"
+      },
+      "relatedResources": [
+        {
+          "kind": "Service",
+          "name": "payments-api"
+        },
+        {
+          "kind": "Ingress",
+          "name": "payments"
+        },
+        {
+          "kind": "HorizontalPodAutoscaler",
+          "name": "payments-api"
+        }
+      ]
+    }
+  ],
+  "truncated": false
+}

@@ -1,0 +1,23 @@
+{
+  "id": "opensoha.invalid-write-provider",
+  "name": "Invalid Write Provider",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "resource-extension",
+  "runtime": {
+    "mode": "external-http"
+  },
+  "extensionPoints": {
+    "compute": {
+      "containerRuntimeProviders": [
+        {
+          "providerKey": "invalid-write",
+          "displayName": "Invalid Write",
+          "activationLevel": "write",
+          "resourceKinds": ["runtime_host"],
+          "capabilities": ["runtime.delete"]
+        }
+      ]
+    }
+  }
+}

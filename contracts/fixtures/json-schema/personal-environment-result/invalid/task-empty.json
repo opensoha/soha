@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "opensoha.dev/personal-environment-result/v1",
+  "leaseId": "lease-personal-1",
+  "runId": "run-personal-1",
+  "state": "active",
+  "observedAt": "2026-10-08T01:01:00Z",
+  "snapshot": {
+    "schemaVersion": "opensoha.dev/environment-snapshot/v1",
+    "leaseId": "lease-personal-1",
+    "runId": "run-personal-1",
+    "state": "active",
+    "resourceUsage": {
+      "diskBytes": 4096,
+      "memoryBytes": 1048576,
+      "cpuTimeNanos": 1000,
+      "processes": 2
+    },
+    "observedAt": "2026-10-08T01:01:00Z"
+  },
+  "output": "fixture task output",
+  "taskId": ""
+}

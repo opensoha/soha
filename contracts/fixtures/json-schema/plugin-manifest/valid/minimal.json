@@ -1,0 +1,14 @@
+{
+  "id": "opensoha.k8s-sre",
+  "name": "Kubernetes SRE Pack",
+  "version": "0.1.0",
+  "publisher": "opensoha",
+  "type": "skill-pack",
+  "compatibility": {
+    "soha": ">=0.1.0",
+    "contracts": ">=0.1.0 <1.0.0"
+  },
+  "assets": {
+    "skills": ["skills/ai-gateway/k8s-sre/SKILL.md"]
+  }
+}

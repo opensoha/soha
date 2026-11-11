@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "endpoint-controls/v1alpha1",
+  "deviceId": "device",
+  "runtimeId": "endpoint",
+  "credentialId": "credential",
+  "policyVersion": 1,
+  "challenge": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "controls": {
+    "usb": true,
+    "print": true,
+    "clipboard": true
+  },
+  "issuedAt": "2026-10-28T00:00:00Z",
+  "validUntil": "2026-10-28T00:01:00Z",
+  "configured": true
+}

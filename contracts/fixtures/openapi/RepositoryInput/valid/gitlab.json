@@ -1,0 +1,11 @@
+{
+  "name": "checkout-api",
+  "provider": "gitlab",
+  "url": "https://gitlab.example.com/commerce/checkout-api.git",
+  "protocol": "https",
+  "gitlabProjectId": "42",
+  "path": "commerce/checkout-api",
+  "credentialRef": "credential/gitlab-build",
+  "defaultBranch": "main",
+  "applicationIds": ["checkout"]
+}

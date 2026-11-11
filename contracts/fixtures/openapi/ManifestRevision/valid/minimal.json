@@ -1,0 +1,9 @@
+{
+  "id": "revision-1",
+  "packageId": "package-1",
+  "version": 1,
+  "digest": "sha256:fixture",
+  "files": [],
+  "bindings": [],
+  "createdAt": "2026-10-25T00:00:00Z"
+}

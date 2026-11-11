@@ -1,0 +1,6 @@
+{
+  "name": "Office edge",
+  "mode": "agent",
+  "status": "offline",
+  "forwardAuthUrl": "https://edge.example.com/api/v1/outpost/forward-auth"
+}

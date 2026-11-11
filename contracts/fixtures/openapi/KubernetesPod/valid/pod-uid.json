@@ -1,0 +1,9 @@
+{
+  "name": "api-0",
+  "namespace": "test",
+  "phase": "Running",
+  "restarts": 0,
+  "uid": "uid-original",
+  "readyContainers": "1/1",
+  "ageSeconds": 60
+}

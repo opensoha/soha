@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.opensoha.dev/plugins/companion-provenance.schema.json",
+  "title": "OpenSoha Companion Provenance Statement",
+  "description": "The Ed25519 signature covers UTF-8 lines subjectSha256, builderId, sourceUri, sourceCommit, and builtAt in that order, joined with LF and without a trailing LF.",
+  "type": "object",
+  "required": ["subjectSha256", "builderId", "sourceUri", "sourceCommit", "builtAt", "signingKeyId", "signatureAlgorithm", "signature"],
+  "properties": {
+    "subjectSha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "builderId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "sourceUri": { "type": "string", "format": "uri" },
+    "sourceCommit": { "type": "string", "pattern": "^[A-Fa-f0-9]{7,64}$" },
+    "builtAt": { "type": "string", "format": "date-time" },
+    "signingKeyId": { "type": "string", "pattern": "^[a-z][a-z0-9._-]*$" },
+    "signatureAlgorithm": { "const": "ed25519" },
+    "signature": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,19 @@
+{
+  "data": {
+    "runId": "run-01",
+    "toolExecution": {
+      "toolName": "k8s.pods.list",
+      "status": "succeeded",
+      "requestId": "req-01"
+    },
+    "output": {
+      "items": [
+        {
+          "namespace": "default",
+          "name": "api-0",
+          "phase": "Running"
+        }
+      ]
+    }
+  }
+}

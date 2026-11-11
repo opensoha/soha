@@ -1,0 +1,7 @@
+{
+  "subjectType": "user",
+  "scopeType": "delivery",
+  "businessLineId": "payments",
+  "role": "developer",
+  "enabled": true
+}

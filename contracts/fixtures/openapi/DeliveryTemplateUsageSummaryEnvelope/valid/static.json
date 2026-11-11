@@ -1,0 +1,19 @@
+{
+  "data": {
+    "templateKind": "blueprint",
+    "templateId": "blueprint-1",
+    "usageCount": 0,
+    "applicationCount": 0,
+    "environmentCount": 0,
+    "productionEnvironmentCount": 0,
+    "approvalBindingCount": 0,
+    "targetCount": 0,
+    "riskLevel": "low",
+    "lastExecutionSummary": {
+      "source": "fixture",
+      "items": [],
+      "statusCounts": {},
+      "stateCounts": {}
+    }
+  }
+}

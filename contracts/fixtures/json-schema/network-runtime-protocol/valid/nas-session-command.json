@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-nas-command-0001",
+  "messageType": "nas.session.command",
+  "producerId": "network-control",
+  "runtimeId": "freeradius-site-a",
+  "runtimeKind": "nas",
+  "occurredAt": "2026-09-02T08:10:00Z",
+  "expiresAt": "2026-09-02T08:10:30Z",
+  "payload": {
+    "commandId": "coa-command-0001",
+    "sessionId": "session-0001",
+    "nasId": "nas-site-a-wifi",
+    "subjectId": "user-0001",
+    "deviceId": "device-0001",
+    "action": "coa",
+    "targetAccessProfile": "quarantine",
+    "policyVersion": 8,
+    "effectiveAt": "2026-09-02T08:10:00Z",
+    "reasonCode": "device_non_compliant",
+    "radiusAttributes": {
+      "vlanId": 90,
+      "filterId": "soha-quarantine",
+      "sessionTimeoutSeconds": 300
+    }
+  }
+}

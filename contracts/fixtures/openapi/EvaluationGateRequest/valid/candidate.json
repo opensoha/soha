@@ -1,0 +1,5 @@
+{
+  "policyId": "release",
+  "baselineRunId": "run-baseline",
+  "candidateRunId": "run-candidate"
+}
