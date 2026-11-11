@@ -1,0 +1,73 @@
+.soha-pvc-detail {
+  min-width: 0;
+}
+.soha-pvc-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-pvc-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-pvc-detail .soha-pvc-section-title,
+.soha-pvc-detail .soha-pvc-binding {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.soha-pvc-detail .soha-pvc-capacity {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 20px 0;
+}
+.soha-pvc-detail .soha-pvc-capacity dt,
+.soha-pvc-detail .soha-pvc-muted {
+  color: var(--soha-text-secondary);
+}
+.soha-pvc-detail .soha-pvc-capacity dd {
+  margin: 4px 0 0;
+  font-size: 26px;
+  line-height: 1.4;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.soha-pvc-detail .soha-pvc-overview a,
+.soha-pvc-detail .soha-pvc-overview dd {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.soha-pvc-detail .soha-pvc-overview .soha-workload-overview-config > div {
+  grid-template-columns: minmax(0, 92px) minmax(0, 1fr);
+}
+.soha-pvc-detail .soha-pvc-namespace-trigger {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.soha-pvc-detail .soha-pvc-namespace-trigger .ant-tag,
+.soha-pvc-detail .soha-pvc-namespace-trigger .ant-tag span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.soha-pvc-detail .soha-pvc-namespace-trigger:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-pvc-detail .soha-pvc-pods-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .soha-pvc-detail .soha-pvc-capacity {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+}

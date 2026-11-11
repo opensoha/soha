@@ -1,0 +1,28 @@
+.soha-read-feedback,
+.soha-operation-feedback {
+  margin-block: 8px 12px;
+}
+.soha-feedback-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 8px;
+  border-radius: 50%;
+  background: var(--soha-primary);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .soha-feedback-live-dot {
+    animation: soha-feedback-activity var(--soha-motion-activity) var(--soha-motion-ease) infinite;
+  }
+}
+.soha-operation-feedback[data-motion-paused='true'] .soha-feedback-live-dot {
+  animation-play-state: paused;
+}
+.soha-operation-feedback[data-motion-disabled='true'] .soha-feedback-live-dot {
+  animation: none;
+}
+@keyframes soha-feedback-activity {
+  50% {
+    opacity: 0.35;
+  }
+}

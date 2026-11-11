@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+test-results/
+.tmp/
+*.tsbuildinfo
+graphify-out/
+.DS_Store
+.env
+.env.local
+.env.production
+playwright-report/
+midscene_run/
+.auth/

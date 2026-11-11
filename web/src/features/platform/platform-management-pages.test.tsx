@@ -1,0 +1,775 @@
+/** @vitest-environment jsdom */
+
+import { api } from '@/services/api-client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { App as AntdApp } from 'antd'
+import type { ReactNode } from 'react'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PlatformAccessControlClusterRoleBindingsPage } from './access-control/clusterrolebindings/list-page'
+import { PlatformAccessControlClusterRolesPage } from './access-control/clusterroles/list-page'
+import { PlatformAccessControlRoleBindingsPage } from './access-control/rolebindings/list-page'
+import { PlatformAccessControlServiceAccountsPage } from './access-control/serviceaccounts/list-page'
+import { ConfigurationConfigMapsPage } from './configuration/configmaps/list-page'
+import { NetworkPortForwardPage } from './network/port-forward/page'
+
+const testState = vi.hoisted(() => ({
+  permissionKeys: [] as string[],
+  responses: {} as Record<string, unknown>,
+  scope: {
+    clusterId: 'cluster-a' as string | null,
+    namespace: 'team-a' as string | null,
+    setClusterId: vi.fn(),
+    setNamespace: vi.fn(),
+  },
+}))
+
+vi.mock('@/features/auth', () => ({
+  hasAllowedAction: (allowedActions: string[] | undefined, action: string) =>
+    allowedActions?.includes(action) ?? false,
+  hasPermission: (_snapshot: unknown, permissionKey?: string) =>
+    !permissionKey || testState.permissionKeys.includes(permissionKey),
+  usePermissionSnapshot: () => ({ data: { data: { permissionKeys: testState.permissionKeys } } }),
+}))
+
+vi.mock('@/stores/platform-scope-store', () => ({
+  usePlatformScopeStore: () => testState.scope,
+}))
+
+vi.mock('@/services/api-client', () => ({
+  api: {
+    get: vi.fn((path: string) => {
+      if (!(path in testState.responses)) {
+        return Promise.resolve({ data: [] })
+      }
+      const payload = testState.responses[path]
+      if (payload instanceof Error) {
+        return Promise.reject(payload)
+      }
+      return Promise.resolve({ data: payload })
+    }),
+    post: vi.fn(async (path: string) => ({
+      data: testState.responses[path] ?? { allowed: true, reason: '', scopeMode: 'namespace' },
+    })),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
+}))
+
+vi.mock('@/components/platform-scope-toolbar', () => ({
+  PlatformScopeToolbar: () => <div data-testid="scope-toolbar">scope-toolbar</div>,
+  ResourceWorkspaceScopeBar: () => (
+    <div data-testid="resource-workspace-scopebar">resource-workspace-scopebar</div>
+  ),
+}))
+
+vi.mock('@/components/admin-table', () => ({
+  AdminTable: ({
+    columns,
+    dataSource,
+    empty,
+    headerExtra,
+    paginationSummary,
+    title,
+    toolbar,
+    toolbarExtra,
+  }: {
+    columns: Array<Record<string, any>>
+    dataSource: Array<Record<string, any>>
+    empty?: ReactNode
+    headerExtra?: ReactNode
+    paginationSummary?: ReactNode | ((total: number, range: [number, number]) => ReactNode)
+    title?: ReactNode
+    toolbar?: ReactNode
+    toolbarExtra?: ReactNode
+  }) => (
+    <div data-testid="admin-table">
+      {title ? <div data-testid="table-title">{title}</div> : null}
+      {headerExtra ? <div data-testid="header-extra">{headerExtra}</div> : null}
+      {toolbar ? <div data-testid="toolbar">{toolbar}</div> : null}
+      {toolbarExtra ? <div data-testid="toolbar-extra">{toolbarExtra}</div> : null}
+      {paginationSummary ? (
+        <div data-testid="pagination-summary">
+          {typeof paginationSummary === 'function'
+            ? paginationSummary(dataSource.length, [1, dataSource.length])
+            : paginationSummary}
+        </div>
+      ) : null}
+      <div data-testid="row-count">{dataSource.length}</div>
+      {dataSource.length === 0 ? <div data-testid="empty">{empty}</div> : null}
+      {dataSource.map((record, rowIndex) => (
+        <div key={`${record.name || 'row'}-${rowIndex}`} data-testid={`row-${rowIndex}`}>
+          {columns.map((column, columnIndex) => {
+            const key =
+              typeof column.dataIndex === 'string' ? column.dataIndex : `col-${columnIndex}`
+            const value =
+              typeof column.dataIndex === 'string' ? record[column.dataIndex] : undefined
+            const content =
+              typeof column.render === 'function' ? column.render(value, record, rowIndex) : value
+            return (
+              <div key={`${key}-${columnIndex}`} data-testid={`cell-${rowIndex}-${columnIndex}`}>
+                {content == null ? '' : content}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  ),
+}))
+
+let containers: HTMLDivElement[] = []
+let roots: Array<ReturnType<typeof createRoot>> = []
+const getComputedStyle = window.getComputedStyle.bind(window)
+
+function setResponses(responses: Record<string, unknown>) {
+  testState.responses = responses
+}
+
+function setNativeInputValue(element: HTMLInputElement, value: string) {
+  const prototype = Object.getPrototypeOf(element)
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value')
+  descriptor?.set?.call(element, value)
+}
+
+async function renderWithProviders(
+  node: ReactNode,
+  route = '/platform-access-control/serviceaccounts',
+) {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  containers.push(container)
+
+  const root = createRoot(container)
+  roots.push(root)
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  })
+
+  await act(async () => {
+    root.render(
+      <AntdApp>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[route]}>{node}</MemoryRouter>
+        </QueryClientProvider>
+      </AntdApp>,
+    )
+  })
+
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+  })
+
+  return container
+}
+
+function installDomMocks() {
+  class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation(() => ({
+      matches: false,
+      media: '',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
+  Object.defineProperty(window, 'getComputedStyle', {
+    configurable: true,
+    value: (element: Element) => getComputedStyle(element),
+  })
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+}
+
+describe('platform RBAC list pages', () => {
+  beforeAll(() => {
+    installDomMocks()
+  })
+
+  beforeEach(() => {
+    testState.permissionKeys = [
+      'platform.access-control.cluster-role-bindings.view',
+      'platform.access-control.cluster-roles.view',
+      'platform.access-control.role-bindings.view',
+      'platform.access-control.service-accounts.view',
+    ]
+    testState.scope.clusterId = 'cluster-a'
+    testState.scope.namespace = 'team-a'
+    setResponses({})
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots) {
+        root.unmount()
+      }
+    })
+    roots = []
+    for (const container of containers) {
+      container.remove()
+    }
+    containers = []
+    vi.clearAllMocks()
+  })
+
+  it('shows the select-cluster empty state when no cluster is selected', async () => {
+    testState.scope.clusterId = null
+    testState.scope.namespace = null
+
+    const container = await renderWithProviders(<PlatformAccessControlServiceAccountsPage />)
+
+    expect(container.textContent).toContain('请选择集群查看 RBAC 资源。')
+    expect(api.get).not.toHaveBeenCalled()
+  })
+
+  it('does not render the cluster-scoped namespace hint for cluster role pages', async () => {
+    setResponses({
+      '/clusters/cluster-a/access-control/clusterroles': [
+        { name: 'viewer', rules: 3, aggregationRules: 0, ageSeconds: 60, allowedActions: ['view'] },
+      ],
+    })
+
+    const container = await renderWithProviders(
+      <PlatformAccessControlClusterRolesPage />,
+      '/platform-access-control/clusterroles',
+    )
+
+    expect(api.get).toHaveBeenCalledWith('/clusters/cluster-a/access-control/clusterroles')
+    expect(container.querySelector('[data-testid="row-0"]')?.textContent).toContain('viewer')
+    expect(container.textContent).not.toContain('命名空间筛选不会影响结果')
+  })
+
+  it('filters role bindings by local search input', async () => {
+    setResponses({
+      '/clusters/cluster-a/access-control/rolebindings?namespace=team-a': [
+        {
+          name: 'viewer-binding',
+          namespace: 'team-a',
+          roleRef: 'Role/viewer',
+          subjects: ['User:alice'],
+          ageSeconds: 60,
+          allowedActions: ['view'],
+        },
+        {
+          name: 'editor-binding',
+          namespace: 'team-a',
+          roleRef: 'Role/editor',
+          subjects: ['User:bob'],
+          ageSeconds: 120,
+          allowedActions: ['view'],
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(
+      <PlatformAccessControlRoleBindingsPage />,
+      '/platform-access-control/rolebindings',
+    )
+    const input = container.querySelector(
+      'input[placeholder="搜索 RoleBindings"]',
+    ) as HTMLInputElement | null
+    if (!input) {
+      throw new Error('search input not found')
+    }
+
+    await act(async () => {
+      setNativeInputValue(input, 'viewer')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
+    expect(container.textContent).toContain('viewer-binding')
+    expect(container.textContent).not.toContain('editor-binding')
+  })
+
+  it('keeps RBAC search controls in a query card and uses shared continuous browsing', async () => {
+    setResponses({
+      '/clusters/cluster-a/access-control/serviceaccounts?namespace=team-a': [
+        {
+          name: 'default',
+          namespace: 'team-a',
+          secrets: 0,
+          imagePullSecrets: 0,
+          ageSeconds: 60,
+          allowedActions: ['view'],
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(<PlatformAccessControlServiceAccountsPage />)
+
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('1 个 ServiceAccounts')
+    expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
+    expect(container.querySelector('input[placeholder="搜索 ServiceAccounts"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
+
+    const headerButtons = Array.from(
+      container.querySelectorAll('[data-testid="header-extra"] button'),
+    ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
+    expect(headerButtons).toEqual([
+      '新增',
+      '选择创建方式',
+      '切换表格密度',
+      '自动刷新：自动刷新正常，每 15 秒 · 关闭自动刷新',
+      '刷新 ServiceAccounts',
+    ])
+  })
+
+  it('keeps subject details out of role binding lists', async () => {
+    setResponses({
+      '/clusters/cluster-a/access-control/rolebindings?namespace=team-a': [
+        {
+          name: 'viewer-binding',
+          namespace: 'team-a',
+          roleRef: 'Role/viewer',
+          subjects: ['User:alice'],
+          ageSeconds: 60,
+          allowedActions: ['view'],
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(
+      <PlatformAccessControlRoleBindingsPage />,
+      '/platform-access-control/rolebindings',
+    )
+
+    expect(container.textContent).toContain('Role/viewer')
+    expect(container.textContent).not.toContain('User alice')
+    expect(container.textContent).not.toContain('User:alice')
+  })
+
+  it('hides destructive actions when delete is not allowed', async () => {
+    testState.permissionKeys.push('platform.access-control.cluster-role-bindings.delete')
+    setResponses({
+      '/clusters/cluster-a/access-control/clusterrolebindings': [
+        {
+          name: 'viewer-binding',
+          roleRef: 'ClusterRole/viewer',
+          subjects: ['User:alice'],
+          ageSeconds: 60,
+          allowedActions: ['view'],
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(
+      <PlatformAccessControlClusterRoleBindingsPage />,
+      '/platform-access-control/clusterrolebindings',
+    )
+
+    expect(api.get).toHaveBeenCalledWith('/clusters/cluster-a/access-control/clusterrolebindings')
+    expect(container.querySelector('[data-testid="row-0"]')?.textContent).toContain(
+      'viewer-binding',
+    )
+    expect(container.textContent).not.toContain('删除')
+    expect(container.querySelector('button[aria-label="删除"]')).toBeNull()
+  })
+
+  it('uses the capability matrix to disable RBAC YAML create and delete actions', async () => {
+    const unsupportedReason = 'Agent mode cannot apply RBAC YAML'
+    testState.permissionKeys.push('platform.access-control.service-accounts.delete')
+    setResponses({
+      '/clusters/cluster-a/resource-creation/scope-decision': {
+        allowed: false,
+        reason: unsupportedReason,
+        scopeMode: 'namespace',
+      },
+      '/clusters': [
+        {
+          id: 'cluster-a',
+          name: 'Agent Cluster',
+          region: 'dev',
+          environment: 'test',
+          labels: {},
+          connectionMode: 'agent',
+          version: 'v1.30.0',
+          health: { status: 'healthy' },
+        },
+      ],
+      '/clusters/capabilities': [
+        {
+          key: 'resource.yaml.apply',
+          label: 'YAML apply and delete',
+          category: 'configuration',
+          requiredScopes: ['cluster', 'namespace'],
+          riskLevel: 'mutate',
+          requiresApproval: true,
+          direct: { status: 'available' },
+          agent: {
+            status: 'unsupported',
+            reason: unsupportedReason,
+          },
+        },
+      ],
+      '/clusters/cluster-a/access-control/serviceaccounts?namespace=team-a': [
+        {
+          name: 'default',
+          namespace: 'team-a',
+          secrets: 0,
+          imagePullSecrets: 0,
+          ageSeconds: 60,
+          allowedActions: ['delete'],
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(<PlatformAccessControlServiceAccountsPage />)
+
+    expect(container.textContent).toContain(unsupportedReason)
+    const createButton = Array.from(
+      container.querySelectorAll('[data-testid="header-extra"] button'),
+    ).find((button) => button.textContent?.trim() === '新增')
+    expect(createButton).toBeInstanceOf(HTMLButtonElement)
+    expect((createButton as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="更多操作：default"]')!.click()
+    })
+    const menu = document.querySelector('[role="menu"]')!
+    const remove = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes('删除'),
+    )!
+    expect(remove.getAttribute('aria-disabled')).toBe('true')
+    expect(remove.textContent).toContain(unsupportedReason)
+  })
+})
+
+describe('platform configuration list pages', () => {
+  beforeAll(() => {
+    installDomMocks()
+  })
+
+  beforeEach(() => {
+    testState.permissionKeys = ['platform.configuration.config-maps.view']
+    testState.scope.clusterId = 'cluster-a'
+    testState.scope.namespace = 'team-a'
+    setResponses({})
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots) {
+        root.unmount()
+      }
+    })
+    roots = []
+    for (const container of containers) {
+      container.remove()
+    }
+    containers = []
+    vi.clearAllMocks()
+  })
+
+  it('keeps configuration query controls in a separate card and uses shared continuous browsing', async () => {
+    setResponses({
+      '/clusters/cluster-a/configuration/configmaps?namespace=team-a': [
+        {
+          name: 'app-config',
+          namespace: 'team-a',
+          dataEntries: 2,
+          binaryEntries: 0,
+          immutable: false,
+          ageSeconds: 60,
+        },
+        {
+          name: 'platform-config',
+          namespace: 'team-a',
+          dataEntries: 1,
+          binaryEntries: 0,
+          immutable: false,
+          ageSeconds: 120,
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(
+      <ConfigurationConfigMapsPage />,
+      '/configuration/configmaps',
+    )
+
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('2 个 ConfigMaps')
+    expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
+    expect(
+      container.querySelector('input[placeholder="搜索 ConfigMaps 名称 / 命名空间"]'),
+    ).not.toBeNull()
+    expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
+
+    const headerButtons = Array.from(
+      container.querySelectorAll('[data-testid="header-extra"] button'),
+    ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
+    expect(headerButtons).toEqual([
+      '新增',
+      '选择创建方式',
+      '切换表格密度',
+      '自动刷新：自动刷新正常，每 15 秒 · 关闭自动刷新',
+      '刷新 ConfigMaps',
+    ])
+
+    const input = container.querySelector(
+      'input[placeholder="搜索 ConfigMaps 名称 / 命名空间"]',
+    ) as HTMLInputElement | null
+    if (!input) {
+      throw new Error('config search input not found')
+    }
+
+    await act(async () => {
+      setNativeInputValue(input, 'app')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
+    expect(container.textContent).toContain('app-config')
+    expect(container.textContent).not.toContain('platform-config')
+  })
+})
+
+function setForwardResponses(responses: Record<string, unknown>) {
+  setResponses({
+    '/clusters': [{ id: 'cluster-a', name: 'Test Cluster', connectionMode: 'direct' }],
+    '/clusters/capabilities': [
+      {
+        key: 'port.forward',
+        label: 'Port forwarding',
+        category: 'network',
+        direct: { status: 'available' },
+        agent: { status: 'available' },
+      },
+    ],
+    ...responses,
+  })
+}
+
+describe('platform network port forward page', () => {
+  beforeAll(() => {
+    installDomMocks()
+  })
+
+  beforeEach(() => {
+    testState.permissionKeys = [
+      'platform.network.port-forwards.view',
+      'platform.network.port-forwards.create',
+      'platform.network.port-forwards.delete',
+    ]
+    testState.scope.clusterId = 'cluster-a'
+    testState.scope.namespace = 'team-a'
+    setForwardResponses({})
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots) {
+        root.unmount()
+      }
+    })
+    roots = []
+    for (const container of containers) {
+      container.remove()
+    }
+    containers = []
+    vi.clearAllMocks()
+  })
+
+  it('uses the management query card and keeps create before utility actions', async () => {
+    setForwardResponses({
+      '/clusters/cluster-a/network/port-forwards': [
+        {
+          clusterId: 'cluster-a',
+          sessionId: 'session-a',
+          namespace: 'team-a',
+          targetKind: 'Pod',
+          targetName: 'api',
+          localPort: 8080,
+          remotePort: 80,
+          status: 'active',
+          createdAt: '2026-06-02T00:00:00Z',
+        },
+        {
+          clusterId: 'cluster-a',
+          sessionId: 'session-b',
+          namespace: 'team-a',
+          targetKind: 'Service',
+          targetName: 'web',
+          localPort: 8081,
+          remotePort: 80,
+          status: 'stopped',
+          createdAt: '2026-06-02T00:01:00Z',
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(<NetworkPortForwardPage />, '/network/port-forward')
+
+    expect(container.querySelector('[data-testid="table-title"]')?.textContent).toBe(
+      '2 个 Port Forwards',
+    )
+    expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
+    expect(
+      container.querySelector('input[placeholder="搜索会话 / 目标 / 创建者 / 端口"]'),
+    ).not.toBeNull()
+    expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
+
+    const headerButtons = Array.from(
+      container.querySelectorAll('[data-testid="header-extra"] button'),
+    ).map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))
+    expect(headerButtons).toEqual([
+      '新建转发',
+      '切换表格密度',
+      '自动刷新：自动刷新正常，每 15 秒 · 关闭自动刷新',
+      '刷新 Port Forwards',
+    ])
+
+    const input = container.querySelector(
+      'input[placeholder="搜索会话 / 目标 / 创建者 / 端口"]',
+    ) as HTMLInputElement | null
+    if (!input) {
+      throw new Error('port forward search input not found')
+    }
+
+    await act(async () => {
+      setNativeInputValue(input, 'api')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
+    expect(container.querySelector('[data-testid="row-0"]')?.textContent).toContain('api')
+    expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
+  })
+
+  it('keeps registration enabled when agent port-forward parity is available', async () => {
+    setForwardResponses({
+      '/clusters': [
+        {
+          id: 'cluster-a',
+          name: 'Agent Cluster',
+          connectionMode: 'agent',
+          region: 'dev',
+          environment: 'test',
+          labels: {},
+          version: 'v1.30.0',
+          health: { status: 'healthy' },
+        },
+      ],
+      '/clusters/capabilities': [
+        {
+          key: 'port.forward',
+          label: 'Port forwarding',
+          category: 'network',
+          direct: { status: 'available' },
+          agent: {
+            status: 'available',
+            notes: ['live port-forward tunnels are available through the agent'],
+          },
+        },
+      ],
+      '/clusters/cluster-a/network/port-forwards': [
+        {
+          clusterId: 'cluster-a',
+          sessionId: 'session-a',
+          namespace: 'team-a',
+          targetKind: 'Pod',
+          targetName: 'api',
+          localPort: 8080,
+          remotePort: 80,
+          status: 'pending',
+          createdAt: '2026-06-02T00:00:00Z',
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(<NetworkPortForwardPage />, '/network/port-forward')
+    const createButton = Array.from(
+      container.querySelectorAll('[data-testid="header-extra"] button'),
+    ).find((button) => button.textContent?.trim() === '新建转发') as HTMLButtonElement | undefined
+
+    expect(container.textContent).toContain('监听位于 Core 进程的 127.0.0.1')
+    expect(createButton?.disabled).toBe(false)
+    expect(container.textContent).toContain('pending')
+  })
+
+  it('discards the create draft after cancelling the modal', async () => {
+    const container = await renderWithProviders(<NetworkPortForwardPage />, '/network/port-forward')
+    const createButton = Array.from(
+      container.querySelectorAll('[data-testid="header-extra"] button'),
+    ).find((button) => button.textContent?.trim() === '新建转发')
+
+    await act(async () => createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    const targetInput = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('.ant-modal input[id$="targetName"]'),
+    ).find((input) => input.value === '')
+    if (!targetInput) throw new Error('port forward target input not found')
+
+    await act(async () => {
+      setNativeInputValue(targetInput, 'stale-target')
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }))
+      targetInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const cancelButton = Array.from(document.body.querySelectorAll('.ant-modal button')).find(
+      (button) => /取\s*消/.test(button.textContent || ''),
+    )
+    await act(async () => cancelButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await act(async () => createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    const reopenedTargetInput = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('.ant-modal input[id$="targetName"]'),
+    ).find((input) => input.value !== 'team-a')
+    expect(reopenedTargetInput?.value).toBe('')
+  })
+
+  it('hides mutation controls from a view-only role', async () => {
+    testState.permissionKeys = ['platform.network.port-forwards.view']
+    setForwardResponses({
+      '/clusters/cluster-a/network/port-forwards': [
+        {
+          clusterId: 'cluster-a',
+          sessionId: 'session-a',
+          namespace: 'team-a',
+          targetKind: 'Pod',
+          targetName: 'api',
+          localPort: 8080,
+          remotePort: 80,
+          status: 'active',
+          createdAt: '2026-06-02T00:00:00Z',
+        },
+      ],
+    })
+
+    const container = await renderWithProviders(<NetworkPortForwardPage />, '/network/port-forward')
+
+    expect(container.textContent).not.toContain('新建转发')
+    expect(container.textContent).not.toContain('删除')
+  })
+})

@@ -1,0 +1,188 @@
+.soha-configuration-data-directory-card,
+.soha-configuration-data-content-card {
+  min-width: 0;
+  overflow: hidden;
+}
+.soha-configuration-data-directory-header [role='status'] {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+.soha-configuration-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.soha-configuration-data-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.soha-configuration-data-directory {
+  min-width: 0;
+}
+.soha-configuration-data-directory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 60px;
+  padding: 12px 16px;
+}
+.soha-configuration-data-keys {
+  display: grid;
+  gap: 8px;
+  max-height: min(62vh, 580px);
+  overflow: auto;
+  padding: 0 12px 12px;
+}
+.soha-configuration-data-key {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 10px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-bg-surface-muted);
+  color: var(--soha-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.soha-configuration-data-key > .anticon {
+  margin-top: 3px;
+  color: var(--soha-text-secondary);
+}
+.soha-configuration-data-key:hover {
+  background: var(--soha-bg-surface);
+}
+.soha-configuration-data-key[aria-current] {
+  border-color: var(--soha-primary);
+  background: var(--soha-table-row-selected-bg);
+}
+.soha-configuration-data-key:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-configuration-data-key-content {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  flex: 1;
+}
+.soha-configuration-data-key-content > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.soha-configuration-data-key-content small,
+.soha-configuration-data-identity small {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+.soha-configuration-data-key-status {
+  align-self: center;
+  color: var(--soha-primary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.soha-configuration-data-key.is-deleted .soha-configuration-data-key-content > span {
+  text-decoration: line-through;
+}
+.soha-configuration-data-key.is-deleted .soha-configuration-data-key-status {
+  color: var(--soha-danger);
+}
+.soha-configuration-data-directory-empty {
+  padding: 16px;
+  color: var(--soha-text-secondary);
+}
+.soha-configuration-data-document {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.soha-configuration-data-document-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 76px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+.soha-configuration-data-identity {
+  display: grid;
+  gap: 4px;
+  min-width: min(180px, 100%);
+  flex: 1;
+}
+.soha-configuration-data-identity > strong {
+  overflow-wrap: anywhere;
+}
+.soha-configuration-data-identity > input {
+  max-width: 320px;
+}
+.soha-configuration-data-diff-labels {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--soha-border-color);
+  background: var(--soha-bg-surface-muted);
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+.soha-configuration-data-editor {
+  position: relative;
+  min-width: 0;
+  height: clamp(360px, 57vh, 620px);
+}
+.soha-configuration-data-editor > .soha-management-state {
+  display: grid;
+  height: 100%;
+  align-content: center;
+}
+.soha-configuration-data-monaco {
+  height: 100%;
+}
+.soha-configuration-data-monaco[hidden] {
+  display: none;
+}
+.soha-configuration-data-loading {
+  display: grid;
+  height: 100%;
+  place-items: center;
+}
+.soha-configuration-data-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--soha-border-color);
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1000px) {
+  .soha-configuration-data-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .soha-configuration-data-keys {
+    max-height: 180px;
+  }
+}
+@media (max-width: 760px) {
+  .soha-configuration-data-document-header {
+    padding: 12px 16px;
+  }
+  .soha-configuration-data-identity {
+    flex-basis: 100%;
+  }
+}
+
+.soha-configuration-data-search {
+  padding: 0 12px 12px;
+}

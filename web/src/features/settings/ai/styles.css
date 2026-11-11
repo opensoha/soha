@@ -1,0 +1,114 @@
+.soha-companion-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  align-items: end;
+  gap: 16px;
+}
+
+.soha-companion-settings-grid > label {
+  display: grid;
+  gap: 7px;
+  color: var(--soha-text-secondary);
+}
+
+.soha-companion-settings-grid > label > span:first-child {
+  font-weight: 500;
+}
+
+.soha-companion-local-import {
+  display: grid;
+  gap: 7px;
+  color: var(--soha-text-secondary);
+}
+
+.soha-companion-local-import > span:first-child {
+  font-weight: 500;
+}
+
+.soha-companion-local-import__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soha-companion-local-import__status {
+  grid-column: 1 / -1;
+}
+
+.soha-companion-settings-grid > .ant-popconfirm-open,
+.soha-companion-settings-grid > .ant-btn {
+  justify-self: start;
+}
+
+.soha-skill-registry {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-skill-registry__toolbar {
+  min-height: 32px;
+  gap: 12px;
+}
+
+.soha-skill-card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.soha-skill-card.ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  box-shadow: none;
+}
+
+.soha-skill-card.ant-card:hover {
+  border-color: var(--soha-border-color-strong);
+}
+
+.soha-skill-card.ant-card .ant-card-body {
+  display: grid;
+  min-height: 92px;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(280px, 2fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+}
+
+.soha-skill-card__identity,
+.soha-skill-card__content {
+  min-width: 0;
+}
+
+.soha-skill-card__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soha-skill-card__content .ant-typography {
+  margin-bottom: 8px;
+}
+
+.soha-skill-card__actions {
+  align-self: center;
+}
+
+@media (max-width: 760px) {
+  .soha-companion-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-skill-registry__toolbar {
+    align-items: stretch !important;
+    flex-direction: column;
+  }
+
+  .soha-skill-card.ant-card .ant-card-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-skill-card__actions {
+    justify-self: end;
+  }
+}

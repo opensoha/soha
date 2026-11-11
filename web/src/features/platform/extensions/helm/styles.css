@@ -1,0 +1,35 @@
+.soha-helm-release-detail {
+  min-width: 0;
+}
+.soha-helm-release-detail.soha-workload-detail-page,
+.soha-helm-release-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-helm-release-detail .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-helm-release-detail .soha-workload-overview-config dt,
+.soha-helm-release-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-helm-release-detail .soha-helm-release-namespace {
+  display: inline-flex;
+  max-width: 100%;
+}
+.soha-helm-release-detail .soha-helm-release-namespace .soha-metadata-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.soha-helm-release-detail .soha-helm-release-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.soha-helm-release-detail .soha-helm-release-description {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

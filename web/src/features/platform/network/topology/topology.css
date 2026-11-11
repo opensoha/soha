@@ -1,0 +1,314 @@
+.soha-topology-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.soha-topology-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.soha-topology-filters > .ant-input-affix-wrapper {
+  flex: 1;
+  min-width: 200px;
+  max-width: 420px;
+}
+.soha-topology-filters > .ant-select {
+  min-width: 148px;
+}
+.soha-topology-time {
+  display: block;
+  margin-top: 12px;
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-topology-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.soha-topology-workspace.has-inspector {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 340px);
+}
+.soha-topology-canvas {
+  height: clamp(440px, calc(100dvh - 390px), 900px);
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--soha-workflow-canvas-bg);
+}
+.soha-topology-node {
+  width: 252px;
+}
+.soha-topology-node-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-left: 3px solid var(--soha-graph-scope);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+  color: var(--soha-text-primary);
+  cursor: pointer;
+  font: inherit;
+  min-height: 112px;
+}
+.soha-topology-node-card:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 3px;
+}
+.soha-topology-node.has-entry .soha-topology-node-card {
+  min-height: 128px;
+}
+.soha-topology-node.is-selected .soha-topology-node-card {
+  box-shadow: 0 0 0 2px var(--soha-workflow-node-selected-ring);
+}
+.soha-topology-node-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+  margin-bottom: 8px;
+}
+.soha-topology-node-title {
+  display: block;
+  font-size: var(--soha-font-size);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-topology-node-subtitle {
+  display: block;
+  color: var(--soha-text-tertiary);
+  font-size: var(--soha-font-size-supporting);
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-topology-node-entry {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.soha-topology-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.soha-topology-wrap,
+.soha-topology-match {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.soha-topology-match,
+.soha-topology-relation,
+.soha-topology-coverage {
+  border-top: 1px solid var(--soha-border-color);
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.soha-topology-isolated {
+  margin-top: 16px;
+}
+.soha-topology-isolated-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.soha-topology-isolated-list > button {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+@media (max-width: 767px) {
+  .soha-topology-filters > .ant-input-affix-wrapper {
+    max-width: none;
+    width: 100%;
+  }
+  .soha-topology-canvas {
+    height: 460px;
+  }
+  .soha-topology-filters > .ant-select {
+    flex: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .soha-topology-page * {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.soha-topology-resource-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+.soha-topology-resource-identity h3 {
+  margin: 0;
+  font-size: var(--soha-font-size-summary);
+  line-height: 1.5;
+}
+.soha-topology-metadata > summary,
+.soha-topology-isolated > summary {
+  cursor: pointer;
+  color: var(--soha-text-secondary);
+  margin-bottom: 8px;
+}
+.soha-topology-neighbors h4 {
+  margin: 0;
+  font-size: var(--soha-font-size);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.soha-topology-neighbor-name {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-topology-relation > .ant-btn-link {
+  align-self: flex-start;
+  height: auto;
+  max-width: 100%;
+  padding-inline: 0;
+  text-align: start;
+}
+
+.soha-topology-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.soha-topology-filter-card > .ant-card-body {
+  padding: 16px;
+}
+.soha-topology-main-card {
+  min-width: 0;
+}
+.soha-topology-main-card > .ant-card-body {
+  padding: 16px;
+}
+.soha-topology-count {
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+}
+.soha-topology-view-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-block: 14px;
+}
+.soha-topology-context {
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-topology-coverage-alert {
+  margin-bottom: 14px;
+}
+.soha-topology-read-status {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--soha-text-tertiary);
+}
+.soha-topology-read-status.is-success {
+  background: var(--soha-success);
+}
+.soha-topology-read-status.is-loading,
+.soha-topology-read-status.is-partial {
+  background: var(--soha-warning);
+}
+.soha-topology-read-status.is-error {
+  background: var(--soha-error);
+}
+.soha-topology-inspector {
+  min-width: 0;
+}
+.soha-topology-inspector > .ant-card-body {
+  max-height: calc(100dvh - 270px);
+  overflow-y: auto;
+}
+.soha-topology-coverage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.soha-topology-coverage-summary {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.soha-topology-coverage-summary > span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--soha-text-secondary);
+}
+.soha-topology-coverage-summary strong {
+  font-size: var(--soha-font-size-summary);
+  color: var(--soha-text-primary);
+}
+.soha-topology-coverage-panel .ant-select {
+  min-width: 150px;
+}
+.soha-topology-coverage-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 4px;
+}
+.soha-topology-coverage-cell .ant-typography {
+  max-width: 100%;
+}
+.soha-topology-page .ant-table-cell .ant-btn-link {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-inline: 0;
+}
+@media (max-width: 767px) {
+  .soha-topology-filter-card > .ant-card-body,
+  .soha-topology-main-card > .ant-card-body {
+    padding: 12px;
+  }
+  .soha-topology-context {
+    display: none;
+  }
+}
+
+.soha-topology-read-status:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 6px;
+}

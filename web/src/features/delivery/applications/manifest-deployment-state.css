@@ -1,0 +1,45 @@
+.manifest-deployment-state__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+.manifest-deployment-state__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+}
+.manifest-deployment-state__fact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.manifest-deployment-state__task {
+  margin-inline-start: auto;
+}
+.manifest-deployment-state__digest {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  overflow-wrap: anywhere;
+}
+.manifest-deployment-state__digest summary {
+  cursor: pointer;
+  width: fit-content;
+  max-width: 100%;
+}
+.manifest-deployment-state__digest-preview {
+  margin-inline-start: 8px;
+  font-family: monospace;
+}
+.manifest-deployment-state__digest[open] summary {
+  margin-block-end: 8px;
+}
+@media (max-width: 600px) {
+  .manifest-deployment-state__task {
+    margin-inline-start: 0;
+  }
+}

@@ -1,0 +1,84 @@
+.soha-events-timeline-shell {
+  --soha-event-time-width: 132px;
+  padding: 8px 0;
+}
+
+.soha-events-timeline-entry {
+  padding-bottom: 20px;
+}
+
+.soha-events-timeline-rail {
+  background: color-mix(in srgb, var(--soha-primary) 20%, var(--soha-border-color));
+}
+
+.soha-events-timeline-time {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 12px;
+  padding-inline-end: 12px;
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+}
+
+.soha-events-timeline-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--soha-radius-control);
+}
+
+.soha-events-timeline-item.is-warning {
+  border-color: color-mix(in srgb, var(--soha-warning) 30%, var(--soha-border-color));
+  background: color-mix(in srgb, var(--soha-warning) 6%, var(--soha-bg-surface));
+}
+
+.soha-events-timeline-item.is-error {
+  border-color: color-mix(in srgb, var(--soha-danger) 30%, var(--soha-border-color));
+  background: color-mix(in srgb, var(--soha-danger) 6%, var(--soha-bg-surface));
+}
+
+.soha-events-timeline-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soha-events-timeline-count {
+  margin-inline-start: auto;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.soha-events-timeline-reason,
+.soha-events-timeline-message {
+  overflow-wrap: anywhere;
+}
+
+.soha-events-timeline-message {
+  white-space: pre-wrap;
+}
+
+.soha-events-timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .soha-events-timeline-shell {
+    --soha-event-time-width: 84px;
+  }
+
+  .soha-events-timeline-item {
+    padding-inline: 8px;
+  }
+}

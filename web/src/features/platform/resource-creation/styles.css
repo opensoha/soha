@@ -1,0 +1,130 @@
+.soha-resource-create-page,
+.soha-resource-create-shell {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.soha-resource-create-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.soha-resource-create-toolbar .soha-resource-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.soha-resource-create-modal__body .soha-resource-create-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding-bottom: 8px;
+  background: var(--soha-bg-surface);
+}
+
+.soha-resource-create-modal__body .soha-resource-create-shell .soha-step-form__steps {
+  top: 50px;
+}
+
+.soha-resource-create-cluster-hint {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.soha-resource-create-table-section .ant-table-wrapper,
+.soha-resource-create-form {
+  border-radius: var(--soha-radius-panel);
+}
+
+.soha-resource-create-shell .ant-alert-message {
+  overflow-wrap: anywhere;
+}
+
+.soha-resource-create-form {
+  border: 1px solid var(--soha-border-color);
+  padding: 20px;
+}
+
+.soha-workload-snapshot-inheritance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  width: 100%;
+}
+
+.soha-resource-create-manifest-preview {
+  max-height: 280px;
+  margin: 0;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.soha-resource-create-loading {
+  display: grid;
+  min-height: 320px;
+  place-items: center;
+}
+
+.soha-resource-create-table-section,
+.soha-resource-create-section {
+  display: grid;
+  gap: 12px;
+}
+
+.soha-resource-create-section {
+  border-top: 1px solid var(--soha-border-color);
+  padding-top: 16px;
+}
+
+.soha-resource-create-section-heading,
+.soha-resource-create-submit,
+.soha-resource-create-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-resource-create-section-heading .ant-typography {
+  margin: 0;
+}
+
+.soha-resource-create-submit,
+.soha-resource-create-form-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .soha-resource-create-modal__body .soha-resource-create-shell .soha-step-form__steps {
+    position: static;
+  }
+
+  .soha-workload-snapshot-inheritance {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-resource-create-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .soha-resource-create-cluster-hint {
+    align-self: flex-end;
+  }
+
+  .soha-resource-create-shell .soha-yaml-toolbar-meta,
+  .soha-resource-create-shell .soha-yaml-toolbar-actions {
+    flex-basis: 100%;
+  }
+
+  .soha-resource-create-shell .soha-yaml-toolbar-actions {
+    justify-content: flex-start;
+  }
+}

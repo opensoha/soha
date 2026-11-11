@@ -1,0 +1,420 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-virtualization-overview {
+  gap: 18px;
+}
+
+.soha-vrt-commandbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 64px;
+  padding: 14px 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 14px;
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+}
+
+.soha-vrt-commandbar.is-success,
+.soha-vrt-lane.is-success,
+.soha-vrt-chip.is-success,
+.soha-vrt-provider-row.is-success {
+  border-color: color-mix(in srgb, var(--soha-success) 26%, transparent);
+}
+
+.soha-vrt-metric-card.is-success.ant-card {
+  border-color: color-mix(in srgb, var(--soha-success) 26%, transparent);
+  background: linear-gradient(
+    180deg,
+    var(--soha-bg-surface) 0%,
+    color-mix(in srgb, var(--soha-success) 7%, transparent) 100%
+  );
+}
+
+.soha-vrt-commandbar.is-warning,
+.soha-vrt-lane.is-warning,
+.soha-vrt-chip.is-warning,
+.soha-vrt-provider-row.is-warning {
+  border-color: color-mix(in srgb, var(--soha-warning) 28%, transparent);
+}
+
+.soha-vrt-metric-card.is-warning.ant-card {
+  border-color: color-mix(in srgb, var(--soha-warning) 28%, transparent);
+  background: linear-gradient(
+    180deg,
+    var(--soha-bg-surface) 0%,
+    color-mix(in srgb, var(--soha-warning) 7%, transparent) 100%
+  );
+}
+
+.soha-vrt-commandbar.is-danger,
+.soha-vrt-lane.is-danger,
+.soha-vrt-chip.is-danger,
+.soha-vrt-provider-row.is-danger {
+  border-color: color-mix(in srgb, var(--soha-danger) 28%, transparent);
+}
+
+.soha-vrt-metric-card.is-danger.ant-card {
+  border-color: color-mix(in srgb, var(--soha-danger) 28%, transparent);
+  background: linear-gradient(
+    180deg,
+    var(--soha-bg-surface) 0%,
+    color-mix(in srgb, var(--soha-danger) 7%, transparent) 100%
+  );
+}
+
+.soha-vrt-commandbar.is-default,
+.soha-vrt-lane.is-default,
+.soha-vrt-chip.is-default,
+.soha-vrt-provider-row.is-default {
+  border-color: var(--soha-border-color);
+}
+
+.soha-vrt-metric-card.is-default.ant-card {
+  border-color: var(--soha-border-color);
+  background: var(--soha-bg-surface);
+}
+
+.soha-vrt-commandbar-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-vrt-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.soha-vrt-title-row h1 {
+  margin: 0;
+  color: var(--soha-text-primary);
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.soha-vrt-commandbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-vrt-commandbar-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 6px;
+  background: var(--soha-fill-weak);
+  white-space: nowrap;
+}
+
+.soha-vrt-commandbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.soha-vrt-table.ant-table-wrapper {
+  border: 0;
+}
+
+.soha-vrt-table .soha-row-action-icons.ant-space {
+  flex-wrap: nowrap !important;
+  white-space: nowrap;
+}
+
+.soha-vrt-table .soha-row-action-icons .ant-space-item {
+  flex: 0 0 auto;
+}
+
+.soha-vrt-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.soha-vrt-metric-card.ant-card {
+  min-width: 184px;
+  overflow: hidden;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.soha-vrt-metric-card.ant-card:hover,
+.soha-vrt-metric-card.ant-card:focus-within {
+  border-color: var(--soha-primary);
+}
+
+.soha-vrt-metric-card.ant-card .ant-card-body {
+  padding: 0;
+}
+
+.soha-vrt-metric-card-button {
+  display: flex;
+  width: 100%;
+  min-height: 126px;
+  min-width: 184px;
+  box-sizing: border-box;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.soha-vrt-metric-card-button:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
+}
+
+.soha-vrt-stat-value {
+  display: block;
+  min-height: 36px;
+  color: var(--soha-text-primary);
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.soha-vrt-metric-card .soha-overview-metric-label,
+.soha-vrt-metric-card .soha-overview-metric-helper {
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
+.soha-vrt-chip-label,
+.soha-vrt-panel-caption,
+.soha-vrt-lane-description,
+.soha-vrt-attention-message,
+.soha-vrt-attention-meta,
+.soha-vrt-provider-meta {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.soha-vrt-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.62fr) minmax(320px, 0.88fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.soha-vrt-workbench-main,
+.soha-vrt-side-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-vrt-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.soha-vrt-chip-grid.is-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.soha-vrt-chip {
+  display: flex;
+  min-height: 68px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 12px;
+  background: var(--soha-fill-weak);
+}
+
+.soha-vrt-chip-value {
+  color: var(--soha-text-primary);
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+@media (max-width: 1200px) {
+  .soha-vrt-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-vrt-filter-grid,
+  .soha-vrt-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .soha-vrt-filter-grid,
+  .soha-vrt-metric-grid,
+  .soha-vrt-lane-grid,
+  .soha-vrt-chip-grid.is-compact {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-vrt-commandbar,
+  .soha-vrt-selection-bar,
+  .soha-vrt-lane-head,
+  .soha-vrt-panel-head,
+  .soha-vrt-attention-row-head {
+    flex-direction: column;
+  }
+
+  .soha-vrt-lane-items {
+    max-height: none;
+    padding-right: 0;
+  }
+
+  .soha-vrt-filterbar-main,
+  .soha-vrt-filterbar-extra {
+    width: 100%;
+  }
+
+  .soha-vrt-filterbar-extra {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+}
+
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-docker-panel-card.ant-card {
+  overflow: hidden;
+  border-color: var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+}
+
+.soha-docker-panel-card.ant-card .ant-card-body {
+  padding: 12px 14px;
+}
+
+.soha-docker-port-summary {
+  line-height: 1.45;
+}
+
+.soha-docker-port-summary-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.soha-docker-port-summary-item .ant-typography {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-docker-image-value {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.soha-docker-quick-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-docker-quick-form-section + .soha-docker-quick-form-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-docker-quick-form-section h2 {
+  margin: 0 0 12px;
+  color: var(--soha-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.soha-docker-quick-form-section .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.soha-docker-quick-form-section .ant-segmented {
+  padding: 4px;
+}
+
+.soha-runtime-host-ownership-grid,
+.soha-runtime-host-capacity-grid {
+  display: grid;
+  gap: 0 12px;
+}
+
+.soha-runtime-host-ownership-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.soha-runtime-host-capacity-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.soha-runtime-host-ownership-grid > .ant-form-item,
+.soha-runtime-host-capacity-grid > .ant-form-item,
+.soha-runtime-host-vm-field.ant-form-item {
+  min-width: 0;
+  margin-bottom: 16px;
+}
+
+.soha-runtime-host-capacity-grid .ant-input-number {
+  width: 100%;
+}
+
+.soha-docker-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
+}
+
+.soha-docker-form-grid.is-access {
+  grid-template-columns: minmax(0, 1fr) 160px 120px;
+}
+
+.soha-docker-form-grid > .ant-form-item {
+  min-width: 0;
+}
+
+@media (max-width: 576px) {
+  .soha-docker-form-grid,
+  .soha-docker-form-grid.is-access {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-runtime-host-ownership-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-runtime-host-capacity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

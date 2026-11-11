@@ -1,0 +1,52 @@
+.soha-lease-detail {
+  min-width: 0;
+}
+.soha-lease-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-lease-detail > .soha-workload-detail-page > .soha-resource-tabs > .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+.soha-lease-detail .soha-workload-overview-config dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-lease-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.soha-lease-card-title .ant-btn,
+.soha-lease-muted {
+  color: var(--soha-text-secondary);
+}
+.soha-lease-holder {
+  overflow-wrap: anywhere;
+}
+.soha-lease-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.soha-lease-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.soha-lease-summary span {
+  color: var(--soha-text-secondary);
+}
+.soha-lease-summary strong {
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.soha-lease-time {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 480px) {
+  .soha-lease-summary {
+    grid-template-columns: 1fr;
+  }
+}

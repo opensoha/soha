@@ -1,0 +1,134 @@
+.soha-server-proxy-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.soha-server-proxy-list-title,
+.soha-server-proxy-identity h1,
+.soha-server-proxy-actions h2 {
+  margin: 0;
+  color: var(--soha-text-primary);
+}
+
+.soha-server-proxy-list-title,
+.soha-server-proxy-identity h1 {
+  font-size: 22px;
+  line-height: 30px;
+}
+
+.soha-server-proxy-actions h2 {
+  font-size: var(--soha-font-size-section);
+  line-height: var(--soha-line-height-section);
+}
+
+.soha-server-proxy-head,
+.soha-server-proxy-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.soha-server-proxy-head {
+  padding: 18px 20px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+}
+
+.soha-server-proxy-identity {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.soha-server-proxy-eyebrow,
+.soha-server-proxy-picker > span {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+
+.soha-server-proxy-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soha-server-proxy-picker {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 300px);
+}
+
+.soha-server-proxy-picker .ant-select {
+  width: 100%;
+}
+
+.soha-server-proxy-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-server-proxy-metrics .ant-card-body {
+  display: grid;
+  gap: 6px;
+}
+
+.soha-server-proxy-connection-metrics strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-server-proxy-metrics span,
+.soha-server-proxy-metrics small {
+  color: var(--soha-text-secondary);
+}
+
+.soha-server-proxy-metrics strong {
+  color: var(--soha-text-primary);
+  font-size: var(--soha-font-size-summary);
+  line-height: 1.3;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.soha-server-proxy-chart-canvas {
+  height: 280px;
+  min-width: 0;
+  margin-top: 12px;
+}
+
+.soha-server-proxy-config-form,
+.soha-server-proxy-secret {
+  margin-top: 16px;
+}
+
+.soha-server-proxy-secret {
+  display: grid;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .soha-server-proxy-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .soha-server-proxy-head,
+  .soha-server-proxy-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .soha-server-proxy-picker {
+    width: 100%;
+  }
+
+  .soha-server-proxy-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

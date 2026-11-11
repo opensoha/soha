@@ -1,0 +1,674 @@
+.soha-log-explorer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.soha-log-query-card.ant-card,
+.soha-log-results-card.ant-card {
+  border-radius: var(--soha-radius);
+}
+
+.soha-log-explorer.is-embedded {
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+}
+
+.soha-log-explorer.is-embedded .soha-log-query-card.ant-card,
+.soha-log-explorer.is-embedded .soha-log-results-card.ant-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.soha-log-explorer.is-embedded .soha-log-query-card .ant-card-body,
+.soha-log-explorer.is-embedded .soha-log-results-card .ant-card-body {
+  padding: 0;
+}
+
+.soha-log-explorer.is-embedded .soha-log-filter-grid {
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+}
+
+.soha-log-explorer.is-embedded .soha-log-query-actions {
+  margin-top: 0;
+}
+
+.soha-log-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 0 12px;
+}
+
+.soha-log-filter-grid.is-standalone {
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+}
+
+.soha-log-filter-grid .ant-form-item {
+  min-width: 0;
+  margin-bottom: 12px;
+}
+
+.soha-log-provider-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.soha-log-query-mode-row {
+  margin-bottom: 12px;
+}
+
+.soha-log-query-scope {
+  min-width: 0;
+}
+
+.soha-log-query-scope-controls {
+  min-width: 0;
+}
+
+.soha-log-query-top-actions {
+  display: grid;
+  grid-template-columns: minmax(220px, 340px) 104px repeat(2, auto);
+  gap: 8px;
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+.soha-log-time-trigger.ant-btn {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.soha-log-time-trigger > span:not(.anticon) {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-log-query-top-actions .ant-select {
+  width: 100%;
+}
+
+.soha-log-time-popover-overlay .ant-popover-inner {
+  padding: 12px;
+}
+
+.soha-log-time-popover {
+  display: flex;
+  width: min(360px, calc(100vw - 32px));
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-log-time-relative-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-log-time-relative-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.soha-log-time-relative-list .ant-btn {
+  justify-content: flex-start;
+}
+
+.soha-log-time-absolute-section {
+  display: flex;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--soha-border-color);
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-log-time-absolute-toggle.ant-btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.soha-log-time-absolute-toggle > span:not(.anticon) {
+  flex: 1;
+  text-align: start;
+}
+
+.soha-log-time-absolute-section .ant-picker {
+  width: 100%;
+}
+
+.soha-log-query-editor.ant-input {
+  padding: 10px 12px;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    Liberation Mono,
+    monospace;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.soha-log-query-actions {
+  margin-top: 12px;
+}
+
+.soha-log-primary-query {
+  margin-top: 12px;
+}
+
+.soha-log-primary-search.ant-input-search {
+  width: 100%;
+}
+
+.soha-log-primary-search .ant-input-group-addon .ant-btn {
+  min-width: 120px;
+}
+
+.soha-log-results-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.soha-log-results-toolbar {
+  height: 32px;
+  min-height: 32px;
+}
+
+.soha-log-results-toolbar > .ant-tag {
+  align-self: center;
+}
+
+.soha-log-toolbar-spacer {
+  flex: 1 1 24px;
+}
+
+.soha-log-inline-alert.ant-alert {
+  padding-block: 7px;
+}
+
+.soha-log-results-explorer {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  height: clamp(440px, 58vh, 760px);
+  min-height: 440px;
+  overflow: hidden;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-bg-surface);
+}
+
+.soha-log-results-explorer.is-empty {
+  grid-template-columns: minmax(0, 1fr);
+  height: auto;
+  min-height: 0;
+}
+
+.soha-log-results-explorer.is-empty .soha-log-result-empty {
+  min-height: 120px;
+}
+
+.soha-log-results-fields {
+  min-width: 0;
+  overflow: auto;
+  padding: 12px;
+  border-inline-end: 1px solid var(--soha-border-color);
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-log-results-fields .ant-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.soha-log-results-fields .ant-checkbox-wrapper {
+  min-width: 0;
+  margin-inline-start: 0;
+}
+
+.soha-log-results-table {
+  min-width: 0;
+  overflow: auto;
+}
+
+.soha-log-connection-status {
+  display: inline-flex;
+}
+
+.soha-log-status-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.soha-log-results-end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-log-result-header,
+.soha-log-result-row > summary {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+}
+
+.soha-log-result-header {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  min-height: 34px;
+  border-bottom: 1px solid var(--soha-border-color);
+  color: var(--soha-text-secondary);
+  background: var(--soha-bg-surface-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.soha-log-result-row {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-log-result-row > summary {
+  min-height: 36px;
+  cursor: pointer;
+  list-style: none;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    Liberation Mono,
+    monospace;
+  font-size: 12px;
+}
+
+.soha-log-result-row > summary::-webkit-details-marker {
+  display: none;
+}
+
+.soha-log-result-row > summary:hover {
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-log-result-row > summary:focus-visible {
+  outline: 2px solid var(--soha-focus-ring);
+  outline-offset: -2px;
+}
+
+.soha-log-result-disclosure {
+  display: grid;
+  flex: 0 0 32px;
+  width: 32px;
+  place-items: center;
+  color: var(--soha-text-tertiary);
+}
+
+.soha-log-result-disclosure .anticon {
+  transition: transform 0.16s ease;
+}
+
+.soha-log-result-row[open] .soha-log-result-disclosure .anticon {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .soha-log-result-disclosure .anticon {
+    transition: none;
+  }
+}
+
+.soha-log-field {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-log-field.is-timestamp {
+  flex: 0 0 168px;
+  color: var(--soha-text-secondary);
+}
+
+.soha-log-field.is-severity,
+.soha-log-field.is-stream {
+  flex: 0 0 88px;
+}
+
+.soha-log-field.is-source {
+  flex: 0 0 220px;
+  color: var(--soha-text-secondary);
+}
+
+.soha-log-field.is-traceId {
+  flex: 0 0 180px;
+}
+
+.soha-log-field.is-attribute {
+  flex: 0 0 160px;
+}
+
+.soha-log-field.is-message {
+  flex: 1 1 360px;
+  min-width: 320px;
+  color: var(--soha-text-primary);
+}
+
+.soha-log-field.is-error {
+  color: var(--soha-danger);
+  font-weight: 600;
+}
+
+.soha-log-field.is-warning {
+  color: var(--soha-warning);
+  font-weight: 600;
+}
+
+.soha-log-field.is-info {
+  color: var(--soha-info);
+}
+
+.soha-log-field.is-muted {
+  color: var(--soha-text-tertiary);
+}
+
+.soha-log-result-detail {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 16px 16px 42px;
+  border-top: 1px solid var(--soha-border-color);
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-log-result-detail pre {
+  margin: 0 0 12px;
+  color: var(--soha-text-primary);
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    Liberation Mono,
+    monospace;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.soha-log-result-detail dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+
+.soha-log-result-detail dl > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.soha-log-result-detail dt {
+  min-width: 0;
+  color: var(--soha-text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.soha-log-result-detail dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--soha-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.soha-log-result-empty {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  padding: 24px;
+  color: var(--soha-text-tertiary);
+  text-align: center;
+}
+
+.soha-aggregate-log-shell {
+  height: clamp(440px, 58vh, 760px);
+  min-height: 440px;
+  overflow: auto;
+  border: 1px solid var(--soha-terminal-border);
+  border-radius: var(--soha-radius);
+  color: var(--soha-terminal-fg);
+  background: var(--soha-terminal-bg);
+}
+
+.soha-aggregate-log-row {
+  display: grid;
+  grid-template-columns: 174px 220px minmax(480px, 1fr);
+  min-width: 900px;
+  border-bottom: 1px solid var(--soha-terminal-row-divider);
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    Liberation Mono,
+    monospace;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.soha-aggregate-log-row > span {
+  min-width: 0;
+  padding: 5px 10px;
+}
+
+.soha-aggregate-log-time,
+.soha-aggregate-log-source {
+  overflow: hidden;
+  color: var(--soha-terminal-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-aggregate-log-source {
+  border-inline: 1px solid var(--soha-terminal-row-divider);
+}
+
+.soha-aggregate-log-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.soha-aggregate-log-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  padding: 24px;
+  color: var(--soha-terminal-muted);
+  text-align: center;
+}
+
+@media (max-width: 1080px) {
+  .soha-log-filter-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .soha-log-explorer.is-embedded .soha-log-filter-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .soha-log-provider-field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-log-provider-field-row .ant-btn {
+    justify-self: start;
+  }
+
+  .soha-log-filter-grid,
+  .soha-log-filter-grid.is-standalone {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-log-explorer.is-embedded {
+    padding: 12px;
+  }
+
+  .soha-log-explorer.is-embedded .soha-log-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-log-query-card .ant-card-head-wrapper {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding-block: 10px;
+  }
+
+  .soha-log-query-mode-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .soha-log-query-scope,
+  .soha-log-query-top-actions {
+    width: 100%;
+  }
+
+  .soha-log-query-top-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-log-time-trigger {
+    grid-column: 1 / -1;
+  }
+
+  .soha-log-time-relative-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .soha-log-primary-search .ant-input-group-addon .ant-btn {
+    min-width: 96px;
+  }
+
+  .soha-log-results-toolbar {
+    height: auto;
+  }
+
+  .soha-log-query-actions > .soha-log-toolbar-spacer {
+    display: none;
+  }
+
+  .soha-aggregate-log-shell {
+    height: 52vh;
+    min-height: 360px;
+  }
+
+  .soha-log-results-explorer {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 420px;
+  }
+
+  .soha-log-results-fields {
+    overflow: visible;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--soha-border-color);
+  }
+
+  .soha-log-results-fields .ant-checkbox-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .soha-log-results-table {
+    max-height: 58vh;
+    min-height: 340px;
+  }
+
+  .soha-log-result-detail {
+    padding-inline: 16px;
+  }
+
+  .soha-log-result-detail dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+[data-workbench='monitoring']
+  .soha-log-explorer:not(.is-embedded)
+  .soha-log-query-card
+  > .ant-card-body {
+  padding: 8px 16px;
+}
+
+[data-workbench='monitoring'] .soha-log-query-mode-row {
+  min-height: 32px;
+  margin-bottom: 8px;
+}
+
+[data-workbench='monitoring']
+  .soha-log-query-card
+  :is(.ant-btn, .ant-select, .ant-input-affix-wrapper, .ant-picker, .ant-segmented) {
+  min-height: 32px;
+  height: 32px;
+}
+
+[data-workbench='monitoring'] .soha-log-query-card .ant-segmented {
+  padding: 2px;
+}
+
+[data-workbench='monitoring'] .soha-log-query-card .ant-segmented-group {
+  gap: 4px;
+}
+[data-workbench='monitoring'] .soha-log-query-card .ant-segmented-item-label {
+  min-height: 28px;
+  line-height: 28px;
+  padding-inline: 10px;
+}

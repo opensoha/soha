@@ -1,0 +1,554 @@
+.soha-compute-page {
+  display: grid;
+}
+
+.soha-compute-relations {
+  min-width: 0;
+}
+.soha-compute-relations-toolbar,
+.soha-compute-relation-nodes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.soha-compute-relations-toolbar {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.soha-compute-relations-search {
+  width: 240px;
+  max-width: 100%;
+}
+.soha-compute-relation-nodes {
+  margin-block: 16px;
+}
+.soha-compute-relation-nodes button {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.soha-compute-relation-selected {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-bg-surface-muted);
+  overflow-wrap: anywhere;
+}
+.soha-compute-relation-row.is-selected {
+  border-color: var(--soha-primary);
+  background: var(--soha-bg-surface-muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .soha-compute-relations .soha-compute-relation-row {
+    transition: background-color var(--soha-motion-duration-mid) var(--soha-motion-ease);
+  }
+}
+.soha-compute-page:not(.soha-overview-page) {
+  gap: 16px;
+}
+
+.soha-compute-page-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.soha-compute-overview-page {
+  gap: 12px;
+}
+
+.soha-compute-priority-grid,
+.soha-compute-infrastructure-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.soha-compute-priority-grid > :only-child {
+  grid-column: 1 / -1;
+}
+
+.soha-compute-priority-grid {
+  align-items: stretch;
+}
+
+.soha-compute-section-heading {
+  margin: 0;
+  font-size: var(--soha-font-size-section);
+  line-height: var(--soha-line-height-section);
+}
+
+.soha-compute-overview-page
+  :is(.soha-overview-panel-card, .soha-overview-runtime-card)
+  .soha-compute-panel-header {
+  min-height: 48px;
+  padding-inline: 14px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-compute-overview-page
+  :is(.soha-overview-panel-card, .soha-overview-runtime-card)
+  .soha-compute-panel-body {
+  padding: 14px;
+}
+
+.soha-compute-overview-page .soha-overview-attention-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+}
+
+.soha-compute-overview-page .soha-overview-attention-main {
+  flex: 1 1 180px;
+  overflow-wrap: anywhere;
+}
+
+.soha-compute-overview-page .soha-overview-attention-meta {
+  gap: 8px;
+  font-size: var(--soha-font-size-supporting);
+}
+
+.soha-compute-overview-page .is-readonly .soha-compute-overview-row-action {
+  display: none;
+}
+
+.soha-compute-overview-page .is-readonly:hover {
+  background: var(--soha-overview-card-bg);
+  border-color: var(--soha-border-color);
+}
+
+.soha-compute-overview-page .is-readonly:hover > .soha-overview-metric-card,
+.soha-compute-overview-page .is-readonly:hover > .soha-overview-chip {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--soha-border-color);
+}
+
+.soha-compute-attention-row.is-critical,
+.soha-compute-attention-row.is-warning {
+  border-inline-start: 3px solid var(--soha-warning);
+}
+
+.soha-compute-attention-row.is-critical {
+  border-inline-start-color: var(--soha-danger);
+}
+
+.soha-compute-overview-page .soha-overview-chip.is-danger .soha-overview-chip-value {
+  color: var(--soha-danger);
+}
+
+.soha-compute-overview-page .soha-overview-card-link:hover > .soha-overview-chip {
+  box-shadow: none;
+  transform: none;
+}
+
+.soha-compute-overview-page .soha-overview-card-link:hover .soha-overview-chip-label {
+  color: var(--soha-primary);
+}
+
+.soha-compute-snapshot {
+  min-width: 0;
+}
+
+.soha-compute-overview-page .soha-compute-task-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.soha-compute-task-grid .soha-overview-chip-head {
+  min-height: 28px;
+}
+
+.soha-compute-task-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.soha-compute-data-notes {
+  width: min(340px, calc(100vw - 64px));
+  max-height: 60vh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.soha-compute-data-notes,
+.soha-compute-section-note {
+  font-size: var(--soha-font-size-supporting);
+  color: var(--soha-text-secondary);
+}
+
+.soha-compute-data-notes p,
+.soha-compute-data-notes ul {
+  margin-block: 8px;
+}
+
+.soha-compute-section-note {
+  margin: 12px 0 0;
+}
+
+.soha-compute-overview-page .soha-overview-metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Counts use category accents; health is expressed by the status breakdown. */
+.soha-compute-overview-page .soha-compute-metric-vms {
+  --soha-overview-accent: var(--soha-accent-blue);
+}
+
+.soha-compute-overview-page .soha-compute-metric-hosts {
+  --soha-overview-accent: var(--soha-accent-cyan);
+}
+
+.soha-compute-overview-page .soha-compute-metric-services {
+  --soha-overview-accent: var(--soha-accent-violet);
+}
+
+.soha-compute-overview-page .soha-compute-metric-tasks {
+  --soha-overview-accent: var(--soha-primary);
+}
+
+.soha-compute-overview-page .soha-compute-metric-queued {
+  --soha-overview-accent: var(--soha-text-tertiary);
+}
+
+.soha-compute-overview-page .soha-compute-metric-failed {
+  --soha-overview-accent: var(--soha-text-tertiary);
+}
+
+@media (max-width: 1100px) {
+  .soha-compute-priority-grid,
+  .soha-compute-infrastructure-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.soha-compute-task-actions-column {
+  --soha-table-actions-column-width: 96px;
+}
+
+.soha-compute-provider-instance-list {
+  display: grid;
+}
+
+.soha-compute-provider-instance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.55fr) 160px;
+  min-width: 0;
+  align-items: center;
+  gap: 24px;
+  padding-block: 16px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-compute-provider-instance-row:first-child {
+  padding-top: 0;
+}
+
+.soha-compute-provider-instance-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.soha-compute-provider-instance-main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.soha-compute-relation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-compute-relation-row:last-child {
+  border-bottom: 0;
+}
+
+.soha-compute-relation-chain {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.soha-compute-task-log-row {
+  padding-block: 10px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-compute-task-log-row:last-child {
+  border-bottom: 0;
+}
+
+.soha-compute-overview-link-row {
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--soha-motion-duration-mid) var(--soha-motion-ease),
+    background-color var(--soha-motion-duration-mid) var(--soha-motion-ease);
+}
+
+.soha-compute-overview-link-row:hover {
+  color: inherit;
+  border-color: var(--soha-primary);
+  background: color-mix(in srgb, var(--soha-primary) 4%, var(--soha-overview-card-bg));
+}
+
+.soha-compute-overview-link-row:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-compute-overview-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--soha-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .soha-compute-provider-instance-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .soha-compute-provider-instance-row .soha-compute-provider-actions {
+    justify-self: start;
+  }
+
+  .soha-compute-relation-row,
+  .soha-compute-relation-chain {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.soha-compute-snapshot .soha-overview-metric-card .soha-compute-metric-body {
+  padding: 14px;
+}
+
+.soha-compute-metric-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--soha-overview-chart-size);
+  align-items: center;
+  gap: 8px;
+}
+
+.soha-compute-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+
+.soha-compute-metric-label > .anticon {
+  color: var(--soha-overview-accent);
+}
+
+.soha-compute-metric-value {
+  display: block;
+  min-width: 0;
+  color: var(--soha-text-primary);
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-compute-metric-caption {
+  min-height: 36px;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  line-height: var(--soha-line-height-supporting);
+  overflow-wrap: anywhere;
+}
+
+.soha-compute-summary-chart,
+.soha-compute-chart-placeholder,
+.soha-compute-chart-empty {
+  position: relative;
+  width: var(--soha-overview-chart-size);
+  height: var(--soha-overview-chart-size);
+}
+
+.soha-compute-chart-empty {
+  display: grid;
+  place-items: center;
+  border: 5px solid var(--soha-fill-weak);
+  border-radius: 50%;
+  color: var(--soha-text-tertiary);
+  font-size: 10px;
+  line-height: 13px;
+  text-align: center;
+}
+
+@media (max-width: 1099px) {
+  .soha-compute-overview-page .soha-overview-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .soha-compute-overview-page .soha-overview-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Resource cards summarize scale; these rows pair state with the next available action. */
+.soha-compute-attention-reason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+}
+
+.soha-compute-resource-kind {
+  color: var(--soha-text-tertiary);
+}
+
+.soha-compute-task-grid .soha-overview-chip-value {
+  font-size: 26px;
+  line-height: 32px;
+}
+
+.soha-compute-task-grid .soha-overview-chip-label::before {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--soha-overview-accent);
+  content: '';
+}
+
+.soha-compute-task-grid .is-danger .soha-overview-chip-label::before {
+  background: var(--soha-danger);
+}
+
+.soha-compute-task-grid .soha-compute-metric-tasks .soha-overview-chip-value {
+  color: var(--soha-primary);
+}
+
+.soha-compute-access-list {
+  display: grid;
+}
+
+.soha-compute-access-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto 14px;
+  align-items: center;
+  gap: 12px;
+  padding-block: 14px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-compute-access-row:first-child {
+  padding-top: 0;
+}
+
+.soha-compute-access-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.soha-compute-source-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--soha-radius-control);
+  background: color-mix(in srgb, var(--soha-overview-accent) 9%, transparent);
+  color: var(--soha-overview-accent);
+  font-size: 16px;
+}
+
+.soha-compute-access-main {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.soha-compute-access-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+
+.soha-compute-access-counts .is-success {
+  color: var(--soha-success);
+}
+
+.soha-compute-access-counts .is-danger {
+  color: var(--soha-danger);
+}
+
+.soha-compute-access-total {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-compute-access-total strong {
+  font-size: var(--soha-font-size-summary);
+  line-height: 28px;
+  font-weight: 600;
+}
+
+.soha-compute-access-total span {
+  color: var(--soha-text-tertiary);
+  font-size: var(--soha-font-size-supporting);
+}
+
+.soha-compute-infrastructure-grid > .soha-compute-provider-instances {
+  grid-column: 1 / -1;
+}
+
+.soha-compute-provider-instance-meta,
+.soha-compute-provider-observed {
+  font-size: var(--soha-font-size-supporting);
+}
+
+.soha-compute-provider-observed {
+  display: grid;
+  gap: 4px;
+  color: var(--soha-text-secondary);
+}
+
+.soha-compute-provider-observed > span {
+  color: var(--soha-text-tertiary);
+}
+
+.soha-compute-provider-actions {
+  justify-self: end;
+}
+
+.soha-operation-feedback,
+.soha-compute-relation-selected {
+  overflow-wrap: anywhere;
+}

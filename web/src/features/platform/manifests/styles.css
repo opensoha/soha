@@ -1,0 +1,159 @@
+@import '../platform-shared.css';
+
+.soha-platform-manifests-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.soha-platform-manifest-link {
+  max-width: 260px;
+  padding-inline: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-platform-manifest-yaml {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 0 0 var(--soha-radius-control) var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+  color: var(--soha-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.soha-platform-manifest-drawer-header {
+  align-items: flex-start;
+  padding: 16px 20px;
+}
+
+.soha-platform-manifest-drawer-title {
+  min-width: 0;
+}
+
+.soha-platform-manifest-drawer-body {
+  display: flex;
+  min-height: 0;
+  padding: 0 20px 20px;
+  overflow: hidden;
+  background: var(--soha-bg-canvas);
+}
+
+.soha-platform-manifest-drawer-body > .soha-platform-manifest-detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding-top: 12px;
+}
+
+.soha-platform-manifest-tabs {
+  flex: 1;
+  min-height: 0;
+}
+
+.soha-platform-manifest-tabs-body,
+.soha-platform-manifest-file-tabs {
+  height: 100%;
+}
+
+.soha-platform-manifest-tab-content {
+  height: 100%;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.soha-platform-manifest-file-content {
+  height: 100%;
+}
+
+.soha-platform-manifest-file-panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.soha-platform-manifest-file-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--soha-border-color);
+  border-bottom: 0;
+  border-radius: var(--soha-radius-control) var(--soha-radius-control) 0 0;
+  background: var(--soha-bg-surface);
+}
+
+.soha-platform-manifest-value {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.soha-platform-manifest-identity {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.soha-platform-manifest-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 400;
+}
+
+.soha-platform-manifest-detail,
+.soha-platform-manifest-main,
+.soha-platform-manifest-sidebar {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 12px;
+}
+
+.soha-platform-manifest-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr);
+  align-items: start;
+  gap: 16px;
+  overflow-wrap: anywhere;
+}
+
+.soha-platform-manifest-resource {
+  display: grid;
+  gap: 2px;
+}
+
+.soha-platform-manifest-unknown {
+  padding: 24px 16px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .soha-platform-manifest-drawer-header {
+    padding: 12px 16px;
+  }
+  .soha-platform-manifest-drawer-body {
+    padding-inline: 16px;
+  }
+  .soha-platform-manifest-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

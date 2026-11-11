@@ -1,0 +1,112 @@
+.soha-branding-section-title {
+  margin: 24px 0 12px;
+  color: var(--soha-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.soha-branding-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.soha-branding-upload-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 0 8px;
+}
+
+.soha-branding-upload-label {
+  color: var(--soha-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.soha-branding-upload-area-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.soha-branding-upload-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(240px, 100%);
+  height: 104px;
+  overflow: hidden;
+  padding: 0;
+  border: 1.5px dashed var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-bg-surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.soha-branding-upload-area:hover:not(:disabled) {
+  border-color: var(--soha-primary);
+  background: var(--soha-primary-light-default);
+}
+
+.soha-branding-upload-area:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+/* This is an asset preview of the dark surface, independent of the editor theme. */
+.soha-branding-upload-area.is-dark-preview,
+.soha-branding-upload-area.is-dark-preview:hover:not(:disabled) {
+  background: #0f172a;
+}
+
+.soha-branding-upload-area:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.soha-branding-upload-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.soha-branding-upload-plus {
+  color: var(--soha-text-tertiary);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  user-select: none;
+}
+
+.soha-branding-upload-preview {
+  display: block;
+  object-fit: contain;
+  padding: 8px;
+}
+
+.soha-branding-upload-remove {
+  margin-top: 2px;
+}
+
+.soha-branding-upload-hint {
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .soha-branding-upload-grid {
+    grid-template-columns: 1fr;
+  }
+}

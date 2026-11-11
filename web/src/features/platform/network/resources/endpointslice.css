@@ -1,0 +1,39 @@
+.soha-endpointslice-detail > .soha-workload-detail-page {
+  gap: 0;
+}
+.soha-slice-ports {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.soha-slice-ports > .soha-slice-port {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  margin-inline-end: 0;
+}
+.soha-slice-endpoint-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.soha-slice-note {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.soha-slice-search {
+  width: min(320px, 100%);
+}
+
+.soha-slice-state-filter {
+  width: 190px;
+  max-width: 100%;
+}
+.soha-endpointslice-detail .soha-workload-overview-config dt {
+  overflow-wrap: anywhere;
+}

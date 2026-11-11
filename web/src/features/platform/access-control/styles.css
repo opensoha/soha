@@ -1,0 +1,88 @@
+@import '../platform-shared.css';
+
+/* Access Control-only RBAC table and relationship presentation. */
+
+.soha-rbac-table .ant-table-content table {
+  table-layout: fixed;
+}
+
+.soha-rbac-table .ant-table-tbody > tr > td {
+  vertical-align: middle;
+}
+
+.soha-rbac-table .ant-table-tbody > tr > td .ant-btn,
+.soha-rbac-table .ant-table-tbody > tr > td .ant-typography,
+.soha-rbac-table .ant-table-tbody > tr > td .ant-typography-link {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-rbac-table .ant-table-thead > tr > th,
+.soha-rbac-table .ant-table-tbody > tr > td {
+  vertical-align: top;
+}
+
+.soha-rbac-role-ref {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-rbac-subject-list.is-compact {
+  max-width: 260px;
+}
+
+.soha-rbac-subject-popover {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 320px;
+}
+
+.soha-rbac-subject-chip.ant-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: 0;
+  padding-inline: 7px;
+  border-color: var(--soha-border-color);
+  border-radius: 6px;
+  background: var(--soha-bg-surface-muted);
+  color: var(--soha-text-secondary);
+  line-height: 20px;
+  white-space: normal;
+}
+
+.soha-rbac-subject-chip .ant-btn {
+  height: auto;
+  padding: 0;
+  line-height: 20px;
+}
+
+.soha-rbac-scope-note {
+  max-width: 360px;
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
+  text-align: right;
+}
+
+.soha-access-control-rule-list {
+  display: grid;
+  gap: 8px;
+}
+
+.soha-access-control-rule-item {
+  padding: 10px 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  background: var(--soha-fill-weak);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .soha-rbac-scope-note {
+    max-width: none;
+    text-align: left;
+  }
+}

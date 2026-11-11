@@ -1,0 +1,59 @@
+.soha-statefulset-detail {
+  min-width: 0;
+}
+.soha-sts-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+.soha-sts-stack > .ant-card {
+  min-width: 0;
+}
+.soha-sts-template {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-block: 8px;
+  overflow-wrap: anywhere;
+}
+.soha-sts-relation-board {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background: var(--soha-bg-layout);
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  padding: 32px 20px;
+  min-height: 400px;
+}
+.soha-sts-relation-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+}
+.soha-sts-relation-node {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  width: min(240px, 100%);
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  background: var(--soha-bg-surface);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.soha-sts-relation-node.is-root {
+  border-color: var(--soha-primary);
+}
+.soha-sts-relation-node > span {
+  color: var(--soha-text-secondary);
+}
+.soha-sts-connector {
+  color: var(--soha-text-secondary);
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha Frontend"
+  short_description: "React architecture, data flow, performance, and UI"
+  default_prompt: "Use $soha-frontend to implement or review a Soha Web change."

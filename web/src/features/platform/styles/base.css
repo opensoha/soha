@@ -1,0 +1,5 @@
+@import '../platform-shared.css';
+
+/* Legacy Platform styles retained for Workloads, Clusters, and Overview until their CSS migration. */
+
+/* Styles moved from web/src/styles/globals.css; keep scoped to this shared/component or feature owner. */

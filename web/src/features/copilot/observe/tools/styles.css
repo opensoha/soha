@@ -1,0 +1,23 @@
+.soha-session-assembly-card.ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  box-shadow: none;
+}
+
+.soha-session-assembly-card.ant-card .ant-card-body {
+  padding: 12px;
+}
+
+.soha-session-assembly-card__select {
+  width: min(360px, 100%);
+}
+
+.soha-session-assembly-card .soha-management-state {
+  margin-top: 12px;
+}
+
+@media (max-width: 760px) {
+  .soha-session-assembly-card__select {
+    width: 100%;
+  }
+}

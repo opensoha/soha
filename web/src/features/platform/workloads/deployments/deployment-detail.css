@@ -1,0 +1,44 @@
+.soha-deployment-detail {
+  min-width: 0;
+}
+.soha-deployment-detail .soha-detail-card > .ant-card-head {
+  min-height: 46px;
+  padding-inline: 18px;
+}
+.soha-deployment-detail .soha-detail-card > .ant-card-body {
+  padding: 18px;
+}
+.soha-deployment-template {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.soha-deployment-template + .soha-deployment-template {
+  margin-top: 16px;
+}
+.soha-deployment-template .ant-typography {
+  font-size: 12px;
+}
+.soha-deployment-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.soha-deployment-toolbar > .ant-input-affix-wrapper {
+  width: 280px;
+  max-width: 100%;
+}
+.soha-deployment-toolbar > label {
+  margin-left: auto;
+  font-size: 12px;
+}
+.soha-deployment-warning {
+  color: var(--soha-warning);
+}
+.soha-deployment-toolbar > .ant-select {
+  flex: 1 1 220px;
+  min-width: 0;
+}

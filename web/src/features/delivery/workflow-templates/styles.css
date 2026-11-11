@@ -1,0 +1,141 @@
+@import '../styles/shared.css';
+
+.soha-workflow-template-impact-inline {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-workflow-template-impact-inline summary {
+  width: max-content;
+  cursor: pointer;
+}
+
+.soha-workflow-template-impact-inline__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.soha-workflow-template-usage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-fill-weak);
+}
+
+.soha-workflow-template-usage-chip .ant-typography {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-workflow-template-json-panel {
+  max-height: 65vh;
+  margin: 0 0 8px;
+  overflow: auto;
+}
+
+.soha-workflow-template-browser {
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+}
+
+.soha-workflow-template-node-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.soha-workflow-template-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.soha-workflow-template-settings-form .ant-form-item {
+  margin-bottom: 0;
+}
+
+.soha-workflow-template-settings-form__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 12px;
+  align-items: end;
+}
+
+.soha-workflow-template-settings-form__switch .ant-form-item-control-input-content {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.soha-workflow-template-status-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.soha-workflow-template-list__item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.soha-workflow-template-list__item-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.soha-workflow-template-list__item-main strong,
+.soha-workflow-template-list__item-main .ant-typography {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-workflow-template-list__item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.soha-workflow-template-list__item-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.soha-workflow-template-dag-editor {
+  min-height: 0;
+}
+
+.soha-flow-stage-list,
+.soha-flow-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-flow-stage-card,
+.soha-flow-step-card {
+  margin-top: 16px;
+}
+
+.soha-flow-step-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}

@@ -1,0 +1,261 @@
+.soha-identity-providers-page {
+  gap: 12px;
+}
+
+.soha-identity-providers-page .soha-identity-provider-workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.soha-identity-providers-page .soha-identity-provider-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.soha-identity-providers-page .soha-management-searchable-list-pane {
+  max-height: 680px;
+}
+
+.soha-identity-providers-page .soha-management-searchable-list-pane__items {
+  flex-basis: auto;
+}
+
+.soha-identity-providers-page .soha-management-searchable-list-pane__item {
+  flex-shrink: 0;
+}
+
+.soha-identity-providers-page .soha-management-searchable-list-pane__item-select {
+  gap: 4px;
+  padding: 10px;
+}
+
+.soha-identity-providers-page .soha-identity-provider-list-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.soha-identity-providers-page .soha-identity-provider-list-heading > .ant-typography {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.soha-identity-providers-page .soha-identity-provider-list-state {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.soha-identity-providers-page .soha-identity-provider-pagination {
+  display: flex;
+  justify-content: center;
+}
+
+.soha-identity-providers-page .soha-identity-provider-detail {
+  min-width: 0;
+  min-height: 400px;
+  padding: 16px;
+  border: 1px solid var(--soha-data-panel-border);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-data-panel-bg);
+}
+
+.soha-identity-providers-page .soha-identity-provider-detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+
+.soha-identity-providers-page .soha-identity-provider-detail-heading > .ant-space {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1000px) {
+  .soha-identity-providers-page .soha-identity-provider-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-identity-providers-page .soha-management-searchable-list-pane {
+    max-height: 320px;
+  }
+}
+
+.soha-identity-oidc-panel {
+  min-width: 0;
+}
+
+.soha-identity-provider-setup,
+.soha-identity-provider-metadata {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.soha-identity-provider-setup-summary {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.soha-identity-provider-form {
+  margin-top: 8px;
+}
+
+.soha-identity-provider-config-section {
+  margin-top: 12px;
+}
+
+.soha-identity-provider-config-json {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.soha-identity-provider-section-title {
+  margin: 14px 0 10px;
+  color: var(--soha-text-color);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.soha-identity-provider-form-grid,
+.soha-identity-provider-json-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-identity-provider-form-grid.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.soha-identity-provider-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.soha-identity-redirect-rule-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.soha-identity-redirect-rule {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) 32px;
+  align-items: start;
+  width: 100%;
+  gap: 8px;
+}
+
+.soha-identity-redirect-rule .ant-form-item {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.soha-proxy-setup-panel {
+  padding: 6px 4px 10px;
+}
+
+.soha-proxy-setup-heading,
+.soha-proxy-snippet-toolbar,
+.soha-proxy-endpoint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-proxy-setup-heading .ant-typography {
+  margin-bottom: 0;
+}
+
+.soha-proxy-endpoint-row {
+  margin: 12px 0;
+}
+
+.soha-proxy-endpoint-row .ant-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.soha-proxy-snippet {
+  min-width: 0;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.soha-proxy-snippet-toolbar {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--soha-border-color);
+  background: var(--soha-fill-weak);
+}
+
+.soha-proxy-snippet pre {
+  max-height: 420px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  color: var(--soha-text-color);
+  background: var(--soha-bg-surface);
+  font:
+    12px/1.6 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  white-space: pre;
+}
+
+.soha-identity-secret-reveal {
+  width: 100%;
+}
+
+.soha-identity-secret-value.ant-typography {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-fill-weak);
+}
+
+@media (max-width: 760px) {
+  .soha-identity-provider-form-grid,
+  .soha-identity-provider-form-grid.is-three,
+  .soha-identity-provider-json-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-identity-redirect-rule {
+    grid-template-columns: 120px minmax(0, 1fr) 32px;
+  }
+
+  .soha-proxy-setup-heading,
+  .soha-proxy-endpoint-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.soha-identity-provider-metadata .soha-json-block {
+  max-height: 520px;
+}

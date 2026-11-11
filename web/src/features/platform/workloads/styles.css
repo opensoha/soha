@@ -1,0 +1,864 @@
+@import '../styles/base.css';
+
+.soha-pods-table .ant-table-thead > tr > th,
+.soha-pods-table .ant-table-tbody > tr > td {
+  padding-left: 12px;
+  padding-right: 12px;
+  white-space: nowrap;
+}
+
+.soha-pods-table .ant-table-thead > tr > th:first-child,
+.soha-pods-table .ant-table-tbody > tr > td:first-child {
+  padding-left: 10px;
+}
+
+.soha-pods-table .ant-table-thead > tr > th:last-child,
+.soha-pods-table .ant-table-tbody > tr > td:last-child {
+  padding-right: 10px;
+}
+
+.soha-pods-table .ant-table-thead > tr > th.ant-table-selection-column,
+.soha-pods-table .ant-table-tbody > tr > td.ant-table-selection-column {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  text-align: center;
+}
+
+.soha-pods-table .ant-table-thead > tr > th:first-child .ant-table-column-title,
+.soha-pods-table .ant-table-tbody > tr > td:first-child .ant-typography {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.soha-pods-table .ant-table-cell-fix-start,
+.soha-pods-table .ant-table-cell-fix-left,
+.soha-pods-table .ant-table-cell-fix-left-first,
+.soha-pods-table .ant-table-cell-fix-left-last,
+.soha-pods-table .ant-table-cell-fix-end,
+.soha-pods-table .ant-table-cell-fix-right,
+.soha-pods-table .ant-table-cell-fix-right-first,
+.soha-pods-table .ant-table-cell-fix-right-last,
+.soha-pods-table th.ant-table-cell-fix-start,
+.soha-pods-table th.ant-table-cell-fix-left,
+.soha-pods-table th.ant-table-cell-fix-left-first,
+.soha-pods-table th.ant-table-cell-fix-left-last,
+.soha-pods-table th.ant-table-cell-fix-end,
+.soha-pods-table th.ant-table-cell-fix-right,
+.soha-pods-table th.ant-table-cell-fix-right-first,
+.soha-pods-table th.ant-table-cell-fix-right-last {
+  border-left: 1px solid var(--soha-border-color) !important;
+  box-shadow: none !important;
+  background: var(--soha-bg-surface) !important;
+  background-clip: padding-box;
+}
+
+.soha-pods-table .ant-table-cell-fix-start,
+.soha-pods-table .ant-table-cell-fix-left,
+.soha-pods-table .ant-table-cell-fix-left-first,
+.soha-pods-table .ant-table-cell-fix-left-last,
+.soha-pods-table th.ant-table-cell-fix-start,
+.soha-pods-table th.ant-table-cell-fix-left,
+.soha-pods-table th.ant-table-cell-fix-left-first,
+.soha-pods-table th.ant-table-cell-fix-left-last {
+  border-left: none !important;
+  border-right: 1px solid var(--soha-border-color) !important;
+}
+
+.soha-pods-table .ant-table-cell-fix-end-shadow::before,
+.soha-pods-table .ant-table-cell-fix-end-shadow-show::before,
+.soha-pods-table .ant-table-cell-fix-start-shadow::before,
+.soha-pods-table .ant-table-cell-fix-start-shadow-show::before {
+  box-shadow: none !important;
+}
+
+.soha-pods-table .ant-table-cell-fix-end-shadow::after,
+.soha-pods-table .ant-table-cell-fix-end-shadow-show::after,
+.soha-pods-table .ant-table-cell-fix-start-shadow::after,
+.soha-pods-table .ant-table-cell-fix-start-shadow-show::after {
+  box-shadow: none !important;
+}
+
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-start,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left-first,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left-last,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-end,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-first,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-bg) !important;
+}
+
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-start,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-left,
+.soha-pods-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-left-first,
+.soha-pods-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-left-last,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-end,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
+.soha-pods-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-right-first,
+.soha-pods-table
+  .ant-table-tbody
+  > tr.ant-table-row-selected:hover
+  > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-hover-bg) !important;
+}
+
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-start,
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-left-first,
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-left-last,
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-end,
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
+  background: var(--soha-bg-surface-muted) !important;
+}
+
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-start,
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left-first,
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left-last,
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last {
+  background: var(--soha-bg-surface) !important;
+}
+
+.soha-pods-table .ant-table-cell-fix-start::after,
+.soha-pods-table .ant-table-cell-fix-left::after,
+.soha-pods-table .ant-table-cell-fix-left-first::after,
+.soha-pods-table .ant-table-cell-fix-left-last::after,
+.soha-pods-table .ant-table-cell-fix-end::after,
+.soha-pods-table .ant-table-cell-fix-right::after,
+.soha-pods-table .ant-table-cell-fix-right-first::after,
+.soha-pods-table .ant-table-cell-fix-right-last::after {
+  box-shadow: none !important;
+}
+
+.soha-table-actions-column .soha-deployment-action-cell {
+  width: 100%;
+  justify-content: center;
+}
+
+.soha-pod-volumes-table .ant-table-thead > tr > th,
+.soha-pod-volumes-table .ant-table-tbody > tr > td {
+  vertical-align: top;
+}
+
+.soha-pod-volumes-table .ant-table-tbody > tr > td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.soha-volume-name-link,
+.soha-volume-name-text,
+.soha-volume-detail-link,
+.soha-volume-detail-value {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.soha-volume-type-tag.ant-tag,
+.soha-volume-mount-badge.ant-tag {
+  margin-inline-end: 0;
+  border-radius: 6px;
+}
+
+.soha-volume-type-tag.ant-tag {
+  color: var(--soha-text-secondary);
+  background: var(--soha-bg-surface-muted);
+  border-color: var(--soha-border-color);
+}
+
+.soha-volume-mount-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.soha-volume-mount-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.soha-volume-mount-name {
+  font-weight: 600;
+}
+
+.soha-volume-mount-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.soha-related-pod-card.ant-card .ant-card-body {
+  padding: 10px 20px 12px;
+}
+
+.soha-related-pod-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soha-related-pod-item {
+  display: block;
+  padding: 5px 0;
+}
+
+.soha-related-pod-line {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.soha-related-pod-name.ant-btn {
+  flex: 0 1 300px;
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: min(360px, 38%);
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(var(--soha-primary-rgb), 0.22);
+  border-radius: 8px;
+  background: rgba(var(--soha-primary-rgb), 0.06);
+  color: var(--soha-primary);
+  font-weight: 600;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.soha-related-pod-name.ant-btn:hover,
+.soha-related-pod-name.ant-btn:focus-visible {
+  border-color: rgba(var(--soha-primary-rgb), 0.42);
+  background: rgba(var(--soha-primary-rgb), 0.12);
+  color: var(--soha-primary-hover);
+}
+
+.soha-related-pod-name.ant-btn > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-related-pod-line .ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.soha-related-pod-tag.ant-tag {
+  max-width: 138px;
+  padding-inline: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-related-pod-tag-node.ant-tag {
+  max-width: 118px;
+}
+
+.soha-rollout-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.soha-rollout-status-section {
+  min-width: 0;
+}
+
+.soha-related-pod-cards .soha-related-pod-list {
+  gap: 8px;
+}
+
+.soha-related-pod-cards .soha-related-pod-item,
+.soha-rollout-history-row {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+}
+
+.soha-related-pod-heading,
+.soha-rollout-current-heading,
+.soha-rollout-history-heading,
+.soha-rollout-history-row-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-related-pod-heading {
+  flex-wrap: nowrap;
+}
+
+.soha-related-pod-link.ant-btn {
+  justify-content: flex-start;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.soha-related-pod-link.ant-btn > span,
+.soha-rollout-history-name,
+.soha-rollout-image-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-related-pod-heading .ant-tag {
+  flex-shrink: 0;
+  margin-inline-end: 0;
+}
+
+.soha-related-pod-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr) repeat(3, minmax(0, 0.6fr));
+  gap: 8px 20px;
+  margin: 4px 0 0;
+}
+
+.soha-related-pod-facts > div,
+.soha-rollout-counts > div {
+  min-width: 0;
+}
+
+.soha-related-pod-facts dt,
+.soha-rollout-counts dt {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.soha-related-pod-facts dd,
+.soha-rollout-counts dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-related-pod-facts .has-restarts {
+  color: var(--soha-warning);
+}
+
+.soha-rollout-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 12px 0;
+}
+
+.soha-rollout-counts dd {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+.soha-rollout-status-message {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.soha-rollout-history-section {
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-rollout-history-heading {
+  margin-bottom: 12px;
+}
+
+.soha-rollout-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-rollout-history-row-heading .ant-tag {
+  margin-inline-end: 0;
+}
+
+.soha-rollout-history-time {
+  margin-inline-start: auto;
+  font-size: 12px;
+}
+
+.soha-rollout-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 6px 0;
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-rollout-history-name {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.soha-rollout-images {
+  padding: 6px 8px;
+  background: var(--soha-fill-weak);
+  border-radius: var(--soha-radius-control);
+  font-size: 12px;
+}
+
+.soha-rollout-images summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 24px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.soha-rollout-images summary::-webkit-details-marker {
+  display: none;
+}
+
+.soha-rollout-images summary::before {
+  content: '›';
+  font-size: 18px;
+  line-height: 16px;
+}
+
+.soha-rollout-images[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.soha-rollout-images summary > span:first-of-type {
+  flex-shrink: 0;
+  color: var(--soha-text-secondary);
+}
+
+.soha-rollout-images ul {
+  max-height: 180px;
+  margin: 8px 0 0;
+  padding-inline-start: 20px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.soha-rollout-images li + li {
+  margin-top: 6px;
+}
+
+.soha-rollout-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 1100px) {
+  .soha-related-pod-facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .soha-related-pod-facts,
+  .soha-rollout-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-rollout-history-time {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .soha-related-pod-line {
+    flex-wrap: wrap;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .soha-related-pod-name.ant-btn {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+}
+
+.soha-pod-overview-stack {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  gap: 10px;
+}
+
+.soha-pod-overview-card {
+  margin-top: 0;
+}
+
+.soha-pod-overview-summary.ant-card {
+  min-height: 100%;
+}
+
+.soha-pod-overview-status.ant-card {
+  min-height: 100%;
+  border-color: color-mix(in srgb, var(--soha-primary) 24%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--soha-primary) 3%, transparent),
+      color-mix(in srgb, var(--soha-primary) 1%, transparent)
+    ),
+    var(--soha-bg-surface);
+  box-shadow: var(--soha-shadow-soft);
+}
+
+.soha-pod-overview-status.ant-card .ant-card-head {
+  background: color-mix(in srgb, var(--soha-primary) 3.5%, transparent);
+  min-height: 46px;
+  padding-inline: 18px;
+}
+
+.soha-pod-overview-status.ant-card .ant-card-head-title,
+.soha-pod-overview-status.ant-card .ant-card-extra {
+  padding-block: 10px;
+}
+
+.soha-pod-overview-status.ant-card .ant-card-head-title {
+  font-weight: 600;
+}
+
+.soha-pod-overview-conditions.ant-card,
+.soha-pod-overview-summary.ant-card {
+  width: 100%;
+}
+
+.soha-workload-name-link.ant-typography,
+.soha-workload-name-text.ant-typography {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-pods-table .ant-table-content table {
+  table-layout: fixed;
+}
+
+.soha-pods-table .ant-table-tbody > tr > td {
+  vertical-align: middle;
+}
+
+.soha-pod-table-name-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+}
+
+.soha-pod-container-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--soha-text-secondary);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.soha-pod-container-cell:focus-visible,
+.soha-pod-container-details:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-pod-container-square {
+  display: inline-block;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  background: var(--soha-text-tertiary);
+}
+
+.soha-pod-container-square.is-success {
+  background: var(--soha-success);
+}
+.soha-pod-container-square.is-warning {
+  background: var(--soha-warning);
+}
+.soha-pod-container-square.is-danger {
+  background: var(--soha-danger);
+}
+.soha-pod-container-overflow {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  background: var(--soha-fill-medium);
+  border-radius: 2px;
+  line-height: 12px;
+}
+.soha-pod-container-details {
+  max-width: min(420px, 80vw);
+  max-height: 50vh;
+  overflow: auto;
+}
+.soha-pod-container-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+  .soha-pod-container-cell {
+    min-height: 44px;
+  }
+}
+
+.soha-pod-table-name-cell > .soha-pod-table-name-link {
+  min-width: 0;
+}
+
+.soha-pod-table-name-cell > .soha-pod-table-meta {
+  flex-shrink: 0;
+}
+
+.soha-pod-table-name-link.ant-typography {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--soha-primary);
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-pod-table-name-link.ant-typography:hover,
+.soha-pod-table-name-link.ant-typography:focus-visible {
+  color: var(--soha-primary-hover);
+}
+
+.soha-pod-table-meta.ant-space,
+.soha-pod-table-resource-summary.ant-space {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.soha-pod-table-meta.ant-space .ant-space-item,
+.soha-pod-table-resource-summary.ant-space .ant-space-item {
+  min-width: 0;
+}
+
+.soha-pod-table-meta .ant-tag,
+.soha-pod-table-resource-summary .ant-tag {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-pod-table-pvc-tag.ant-tag {
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-pod-table-node-link {
+  display: block;
+  max-width: 100%;
+  color: var(--soha-primary);
+}
+
+.soha-pod-table-node-link:hover {
+  color: var(--soha-primary-hover);
+}
+
+.soha-pod-table-node-link:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-pod-table-node-text.ant-typography {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-pod-actions-column.soha-table-actions-column {
+  --soha-table-actions-column-width: 64px;
+}
+
+.soha-deployments-table .soha-workload-actions-column {
+  --soha-table-actions-column-width: 64px;
+}
+
+.soha-statefulsets-table .soha-workload-actions-column {
+  --soha-table-actions-column-width: 116px;
+}
+
+.soha-daemonsets-table .soha-workload-actions-column {
+  --soha-table-actions-column-width: 84px;
+}
+
+.soha-replica-progress-cell {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.soha-replica-progress-cell .ant-progress {
+  min-width: 96px;
+}
+
+.soha-replica-progress-cell .ant-typography {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-deployment-action-cell {
+  display: inline-flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.soha-deployments-table .soha-table-actions-column,
+.soha-statefulsets-table .soha-table-actions-column,
+.soha-daemonsets-table .soha-table-actions-column {
+  border-left: 1px solid var(--soha-border-color) !important;
+  box-shadow: none !important;
+  background: var(--soha-bg-surface);
+  background-clip: padding-box;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+.soha-workload-overview-events.ant-card {
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+  background: var(--soha-bg-surface);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.soha-workload-overview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.soha-workloads-overview-page {
+  gap: 12px;
+}
+
+.soha-workload-overview-metric-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.soha-workload-overview-metric-link {
+  display: block;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--soha-radius-panel);
+}
+
+.soha-workload-overview-metric-link .soha-overview-metric-card {
+  height: 100%;
+}
+
+.soha-workload-overview-metric-link:hover .soha-overview-metric-card {
+  border-color: rgba(var(--soha-primary-rgb), 0.45);
+}
+
+.soha-workload-overview-metric-link:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-workload-overview-event-link {
+  color: var(--soha-primary);
+  font-weight: 600;
+}
+
+.soha-workload-overview-events.ant-card .ant-card-head {
+  min-height: 56px;
+  padding-inline: 18px;
+  border-bottom-color: var(--soha-border-color);
+}
+
+.soha-workload-overview-events.ant-card .ant-card-head-title {
+  font-weight: 700;
+}
+
+.soha-workload-overview-events.ant-card .ant-card-body {
+  padding: 18px;
+}
+
+.soha-pod-action-menu-label {
+  display: grid;
+  gap: 2px;
+  max-width: 260px;
+}
+
+.soha-pod-action-menu-reason {
+  overflow-wrap: anywhere;
+  font-size: var(--soha-font-size-supporting);
+  line-height: var(--soha-line-height-supporting);
+  white-space: normal;
+}
+
+.soha-workload-overview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}

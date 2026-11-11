@@ -1,0 +1,39 @@
+.soha-template-adoption__full {
+  width: 100%;
+  min-width: 0;
+}
+.soha-template-adoption__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+}
+.soha-template-adoption__field {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+}
+.soha-template-adoption__change {
+  border-block-end: 1px solid var(--soha-border-color);
+  padding-block: 8px;
+}
+.soha-template-adoption__change summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  padding-block: 6px;
+}
+.soha-template-adoption__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.soha-template-adoption__policy {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.soha-template-adoption__policy-select {
+  min-width: 125px;
+}

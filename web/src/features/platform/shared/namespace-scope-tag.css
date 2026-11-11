@@ -1,0 +1,36 @@
+.soha-namespace-scope-button {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--soha-radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.soha-namespace-scope-button:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-namespace-scope-button:hover .soha-namespace-scope-tag {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.soha-namespace-scope-tag.ant-tag {
+  min-width: 0;
+  max-width: 100%;
+  margin-inline-end: 0;
+}
+
+.soha-namespace-scope-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
