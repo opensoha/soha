@@ -438,6 +438,16 @@ Local runs skip missing sibling checkouts by default. CI and release candidate
 validation should use `--require-all` or a specific `--consumer <name>` so a
 missing checkout is a failure.
 
+Candidate source and declared dependency validation are distinct results. CI runs
+both even when the declared step fails; either failure keeps the existing consumer
+job failed. Manual CI may select an explicit full `contracts_sha`, while consumer
+pins remain unchanged. Local candidate checks can bind `--contracts-sha` and, for
+uncommitted source, `--contracts-source-hash` before any consumer executes. Reports
+record the requested and actual Contracts identity and actual consumer source.
+Dry-run discovery is not a passed build, and candidate checks do not prove published
+package availability. See [Consumer Matrix](./README.md#consumer-matrix) for commands
+and the separately retained mode reports.
+
 ## Capability lifecycle metadata
 
 `execution.checks` adds optional version-pinned references to read-only availability,

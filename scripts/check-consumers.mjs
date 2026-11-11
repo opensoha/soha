@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,6 +55,7 @@ const dryRun = args.includes("--dry-run");
 const declaredSDK = args.includes("--declared");
 const listOnly = args.includes("--list");
 const outputPath = valueArg("--out");
+const expectedContracts = { head: valueArg("--contracts-sha"), sourceHash: valueArg("--contracts-source-hash") };
 const selected = selectedConsumers(args);
 
 if (listOnly) {
@@ -73,6 +74,14 @@ let skipped = 0;
 let failed = 0;
 const contractsRevision = revision(contractsRoot);
 const results = [];
+try {
+  verifyContractsIdentity();
+} catch (error) {
+  console.error(error.message);
+  failed = 1;
+  writeReport(error.message);
+  process.exit(1);
+}
 for (const target of targets) {
   let env = process.env;
   let packageDir;
@@ -148,7 +157,12 @@ if (requireAll && checked !== targets.length) {
 
 console.log(`consumer matrix complete: checked ${checked}, skipped ${skipped}, root ${consumerRoot}`);
 
-if (outputPath) {
+writeReport();
+
+if (failed) process.exitCode = 1;
+
+function writeReport(identityError) {
+  if (!outputPath) return;
   const resolvedOutputPath = resolve(outputPath);
   mkdirSync(dirname(resolvedOutputPath), { recursive: true });
   writeFileSync(
@@ -159,10 +173,13 @@ if (outputPath) {
         dependencyMode: declaredSDK ? "declared" : "candidate-source",
         contractsVersion: packageVersion(),
         contractsRevision,
+        expectedContracts,
+        ...(identityError ? { identityError } : {}),
         contractsRoot,
         consumerRoot,
         requireAll,
         dryRun,
+        status: failed ? "failed" : dryRun ? "dry-run" : skipped ? "incomplete" : "passed",
         checked,
         skipped,
         failed,
@@ -174,7 +191,16 @@ if (outputPath) {
   );
 }
 
-if (failed) process.exitCode = 1;
+function verifyContractsIdentity() {
+  const { head, sourceHash } = expectedContracts;
+  if (head === undefined && sourceHash === undefined) return;
+  if (!head || !/^[0-9a-f]{40}$/.test(head)) throw new Error("--contracts-sha must be a full lowercase 40-character commit SHA");
+  if (sourceHash !== undefined && !/^[0-9a-f]{64}$/.test(sourceHash)) throw new Error("--contracts-source-hash must be a SHA-256 digest");
+  if (!contractsRevision || contractsRevision.head !== head) throw new Error("contracts candidate SHA mismatch");
+  if (sourceHash !== undefined ? contractsRevision.sourceHash !== sourceHash : contractsRevision.files.length > 0) {
+    throw new Error(sourceHash === undefined ? "contracts candidate has uncommitted source; bind --contracts-source-hash as well" : "contracts candidate source hash mismatch");
+  }
+}
 
 function npmCommands() {
   return [
@@ -190,13 +216,22 @@ function revision(dir) {
   if (head.status !== 0) return null;
   const root = spawnSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).stdout.trim();
   const git = (args) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
-  const tracked = git(["diff", "HEAD", "--name-only", "-z"]);
+  const tracked = git(["-c", "core.filemode=true", "diff", "HEAD", "--name-only", "-z"]);
   const untracked = git(["ls-files", "--others", "--exclude-standard", "-z"]);
   if (tracked.status !== 0 || untracked.status !== 0) throw new Error(`cannot identify candidate source at ${dir}`);
   const paths = tracked.stdout + untracked.stdout;
   const files = [...new Set(paths.split("\0").filter(Boolean))].sort().map((path) => {
     const file = join(root, path);
-    return { path, sha256: existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : null };
+    const stat = lstatSync(file, { throwIfNoEntry: false });
+    if (!stat) return { path, type: "deleted", mode: null, sha256: null };
+    const symlink = stat.isSymbolicLink();
+    if (!symlink && !stat.isFile()) throw new Error(`unsupported candidate source entry: ${path}`);
+    return {
+      path,
+      type: symlink ? "symlink" : "file",
+      mode: symlink ? "120000" : stat.mode & 0o100 ? "100755" : "100644",
+      sha256: createHash("sha256").update(symlink ? readlinkSync(file, { encoding: "buffer" }) : readFileSync(file)).digest("hex"),
+    };
   });
   return { head: head.stdout.trim(), files, sourceHash: createHash("sha256").update(JSON.stringify({ head: head.stdout.trim(), files })).digest("hex") };
 }
@@ -222,7 +257,9 @@ function valueArg(name) {
     return value.slice(prefix.length);
   }
   const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
+  if (index < 0) return undefined;
+  if (!args[index + 1] || args[index + 1].startsWith("--")) throw new Error(`${name} requires a value`);
+  return args[index + 1];
 }
 
 function packageVersion() {

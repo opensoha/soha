@@ -221,6 +221,45 @@ run. `--dry-run` inspects discovery and commands without running consumer builds
 source substitution. Neither candidate worktree checks nor declared checks change
 the fixed revision selection in CI or prove that unpublished packages are released.
 
+Bind a clean candidate checkout to its full, lowercase Contracts commit SHA:
+
+```sh
+SOHA_CONSUMER_ROOT=/path/to/owned-consumers npm run check:consumers -- --require-all --contracts-sha <40-character-sha> --out /path/to/evidence/candidate.json
+```
+
+For an uncommitted candidate, first inspect `contractsRevision.sourceHash` in a
+`--dry-run --out /path/to/evidence/discovery.json` report, then pass both
+`--contracts-sha <40-character-sha>` and `--contracts-source-hash <64-character-sha256>`.
+The digest binds the recorded HEAD and changed/untracked source hashes, including
+deletions, entry types and normalized Git executable modes. Symlinks hash their link
+text without following external targets. A SHA alone requires a clean source checkout. Mismatched identities fail
+before any consumer command and are recorded in the output report. Store reports
+outside the source checkout and keep both inputs stable during execution.
+Dry-run reports have `status: "dry-run"`; they are discovery evidence, never a passed
+build. Omitted identity flags retain the existing local discovery behavior.
+
+The `contracts-ci` workflow can validate an explicit unpublished candidate without
+moving consumer pins or publishing anything:
+
+```sh
+gh workflow run ci.yml --repo opensoha/soha-contracts --ref <workflow-ref> -f contracts_sha=<40-character-sha> -f consumer_mode=pinned
+```
+
+Use a workflow revision and candidate containing this validation interface. The
+optional `contracts_sha` accepts only a full commit SHA; leaving it empty selects
+the workflow event's SHA, never a floating Contracts branch. Both verification and
+consumer jobs check out that SHA. CI retains the fixed consumer revision manifest
+unless `consumer_mode=latest` is explicitly selected. Each consumer job runs declared
+dependencies and candidate source separately: a declared failure still permits the
+candidate diagnostic, while either failure keeps the job failed. Step outcomes and
+separate `declared.json`/`candidate.json` artifacts remain visible. Setup failure or
+cancellation cannot count as a passed consumer run. This workflow has read-only
+repository permissions and does not load release secrets.
+
+Candidate source validation proves that exact source combination only. Declared
+validation tests the consumer's own dependency/lockfile. Published-package acceptance
+still requires checking the actual registry/proxy artifacts after publication.
+
 ## Execution task callback credentials
 
 `ExecutionTask.callbackToken` is a callback capability, not ordinary task-view data.

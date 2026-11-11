@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, copyFileSync, chmodSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -14,8 +14,8 @@ function fixture(t) {
   writeFileSync(join(root, "soha", "keep.txt"), "owned fixture\n");
   return root;
 }
-function run(root, args, extra = {}) {
-  return spawnSync(process.execPath, [script, "--require-all", "--out", join(root, "result.json"), ...args], {
+function run(root, args, extra = {}, checker = script) {
+  return spawnSync(process.execPath, [checker, "--require-all", "--out", join(root, "result.json"), ...args], {
     encoding: "utf8", env: { ...process.env, SOHA_CONSUMER_ROOT: root, ...extra },
   });
 }
@@ -56,6 +56,7 @@ test("candidate source binding remains the explicit default with its SDK tarball
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(readFileSync(join(root, "result.json")));
   assert.equal(report.dependencyMode, "candidate-source");
+  assert.equal(report.status, "dry-run");
   assert.equal(report.results[0].commands.length, 3);
   assert.ok(report.results[0].commands[0][1].includes("<contracts-tarball>"));
 });
@@ -149,6 +150,7 @@ test("candidate identity includes staged, deleted and untracked files from the A
   assert.equal(identity.head, git("rev-parse", "HEAD"));
   assert.deepEqual(identity.files.map((file) => file.path), ["deleted.txt", "frontend/source.txt", "untracked.txt"]);
   assert.equal(identity.files[0].sha256, null);
+  assert.equal(identity.files[0].type, "deleted");
   assert.match(identity.sourceHash, /^[0-9a-f]{64}$/);
 });
 test("missing required consumers produce a failing report and preserve the full matrix", (t) => {
@@ -158,4 +160,140 @@ test("missing required consumers produce a failing report and preserve the full 
   const report = JSON.parse(readFileSync(join(root, "result.json")));
   assert.equal(report.failed, 2);
   assert.equal(report.results.length, 2);
+});
+
+function candidateFixture(t) {
+  const root = fixture(t);
+  const contracts = join(root, "soha-contracts");
+  mkdirSync(join(contracts, "scripts"), { recursive: true });
+  const checker = join(contracts, "scripts/check-consumers.mjs");
+  copyFileSync(script, checker);
+  writeFileSync(join(contracts, "package.json"), '{"version":"0.1.0"}');
+  const git = (...args) => {
+    const result = spawnSync("git", ["-C", contracts, ...args], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  git("init"); git("add", ".");
+  git("-c", "user.name=Unit", "-c", "user.email=unit@example.test", "commit", "-m", "candidate baseline");
+  mkdirSync(join(root, "soha-skills/tools"), { recursive: true });
+  writeFileSync(join(root, "soha-skills/tools/validate_assets.py"), 'from pathlib import Path\nPath("ran").write_text("fixture executed")\n');
+  return { root, contracts, checker, head: git("rev-parse", "HEAD") };
+}
+
+test("full candidate SHA binds a clean checkout before executing a fixture consumer", (t) => {
+  const { root, checker, head } = candidateFixture(t);
+  const result = run(root, ["--consumer", "soha-skills", "--contracts-sha", head], {}, checker);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(readFileSync(join(root, "result.json")));
+  assert.equal(report.status, "passed");
+  assert.equal(report.contractsRevision.head, head);
+  assert.equal(report.expectedContracts.head, head);
+  assert.equal(existsSync(join(root, "soha-skills/ran")), true);
+});
+
+for (const identity of ["wrong-sha", "short-sha", "dirty-sha", "wrong-hash", "hash-without-sha"]) {
+  test(`candidate ${identity} fails before consumer execution and records actual/expected input`, (t) => {
+    const { root, contracts, checker, head } = candidateFixture(t);
+    if (identity === "dirty-sha") writeFileSync(join(contracts, "untracked.txt"), "candidate change");
+    const args = ["--consumer", "soha-skills"];
+    if (identity !== "hash-without-sha") args.push("--contracts-sha", identity === "wrong-sha" ? "0".repeat(40) : identity === "short-sha" ? head.slice(0, 7) : head);
+    if (identity.includes("hash")) args.push("--contracts-source-hash", "0".repeat(64));
+    const result = run(root, args, {}, checker);
+    assert.equal(result.status, 1);
+    assert.equal(existsSync(join(root, "soha-skills/ran")), false);
+    const report = JSON.parse(readFileSync(join(root, "result.json")));
+    assert.equal(report.status, "failed");
+    assert.equal(report.contractsRevision.head, head);
+    assert.ok(report.identityError);
+    assert.equal(report.results.length, 0);
+  });
+}
+
+test("candidate digest binds dirty content and rejects a later source change", (t) => {
+  const { root, contracts, checker, head } = candidateFixture(t);
+  writeFileSync(join(contracts, "untracked.txt"), "candidate change");
+  assert.equal(run(root, ["--consumer", "soha-skills", "--dry-run"], {}, checker).status, 0);
+  const { sourceHash } = JSON.parse(readFileSync(join(root, "result.json"))).contractsRevision;
+  const args = ["--consumer", "soha-skills", "--contracts-sha", head, "--contracts-source-hash", sourceHash];
+  assert.equal(run(root, args, {}, checker).status, 0);
+  rmSync(join(root, "soha-skills/ran"));
+  writeFileSync(join(contracts, "untracked.txt"), "changed after binding");
+  const result = run(root, args, {}, checker);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /source hash mismatch/);
+  assert.equal(existsSync(join(root, "soha-skills/ran")), false);
+});
+
+for (const flag of ["--contracts-sha", "--contracts-source-hash"]) {
+  for (const missing of [[flag], [flag, "--dry-run"], [flag + "="]]) {
+    test(`explicit missing identity value cannot disable binding: ${missing.join(" ")}`, (t) => {
+      const { root, checker } = candidateFixture(t);
+      const result = run(root, ["--consumer", "soha-skills", ...missing], {}, checker);
+      assert.notEqual(result.status, 0);
+      assert.equal(existsSync(join(root, "soha-skills/ran")), false);
+    });
+  }
+}
+
+test("candidate digest includes executable mode even when the repository ignores mode changes", (t) => {
+  const { root, contracts, checker, head } = candidateFixture(t);
+  const source = join(contracts, "candidate.txt");
+  writeFileSync(source, "unchanged bytes"); chmodSync(source, 0o644);
+  assert.equal(run(root, ["--consumer", "soha-skills", "--dry-run"], {}, checker).status, 0);
+  const before = JSON.parse(readFileSync(join(root, "result.json"))).contractsRevision;
+  assert.equal(before.files[0].mode, "100644");
+  chmodSync(source, 0o755);
+  const result = run(root, ["--consumer", "soha-skills", "--contracts-sha", head, "--contracts-source-hash", before.sourceHash], {}, checker);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /source hash mismatch/);
+  const after = JSON.parse(readFileSync(join(root, "result.json"))).contractsRevision;
+  assert.equal(after.files[0].mode, "100755");
+  assert.equal(after.files[0].sha256, before.files[0].sha256);
+  assert.equal(existsSync(join(root, "soha-skills/ran")), false);
+  const git = (...args) => assert.equal(spawnSync("git", ["-C", contracts, ...args]).status, 0);
+  git("add", "."); git("-c", "user.name=Unit", "-c", "user.email=unit@example.test", "commit", "-m", "track executable source");
+  git("config", "core.filemode", "false");
+  chmodSync(source, 0o644);
+  assert.equal(run(root, ["--consumer", "soha-skills", "--dry-run"], {}, checker).status, 0);
+  assert.equal(JSON.parse(readFileSync(join(root, "result.json"))).contractsRevision.files[0].mode, "100644");
+});
+
+test("candidate identity hashes symlink text without reading its target and distinguishes file type", (t) => {
+  const { root, contracts, checker, head } = candidateFixture(t);
+  const link = join(contracts, "candidate.txt");
+  writeFileSync(join(root, "outside.txt"), "outside bytes");
+  symlinkSync("../outside.txt", link);
+  const discover = () => {
+    const result = run(root, ["--consumer", "soha-skills", "--dry-run"], {}, checker);
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(readFileSync(join(root, "result.json"))).contractsRevision;
+  };
+  const before = discover();
+  assert.equal(before.files[0].type, "symlink");
+  assert.equal(before.files[0].mode, "120000");
+  rmSync(join(root, "outside.txt"));
+  assert.equal(discover().sourceHash, before.sourceHash, "a dangling target must not be read or treated as deletion");
+  rmSync(link); symlinkSync("../other-target.txt", link);
+  assert.notEqual(discover().sourceHash, before.sourceHash);
+  rmSync(link); writeFileSync(link, "../outside.txt"); chmodSync(link, 0o644);
+  const regular = discover();
+  assert.equal(regular.files[0].sha256, before.files[0].sha256, "same bytes still require a different entry type");
+  assert.equal(regular.files[0].type, "file");
+  assert.notEqual(regular.sourceHash, before.sourceHash);
+  const result = run(root, ["--consumer", "soha-skills", "--contracts-sha", head, "--contracts-source-hash", before.sourceHash], {}, checker);
+  assert.equal(result.status, 1);
+  assert.equal(existsSync(join(root, "soha-skills/ran")), false);
+});
+
+test("a failed consumer does not suppress the following consumer or its report", (t) => {
+  const { root, checker } = candidateFixture(t);
+  mkdirSync(join(root, "soha-agent"));
+  const env = fakeGo(root, { Version: "v0.1.0", Replace: { Dir: "/unit-only" } });
+  const result = run(root, ["--declared", "--consumer", "soha-agent", "--consumer", "soha-skills"], env, checker);
+  assert.equal(result.status, 1);
+  const report = JSON.parse(readFileSync(join(root, "result.json")));
+  assert.equal(report.failed, 1);
+  assert.deepEqual(report.results.map(({ status }) => status), ["failed", "passed"]);
+  assert.equal(existsSync(join(root, "soha-skills/ran")), true);
 });
