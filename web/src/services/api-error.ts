@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { z } from 'zod/v4/mini'
 import type { ErrorEnvelope } from '@/types'
 
 export const API_ERROR_EVENT = 'soha:api-error'
@@ -9,9 +9,9 @@ export type ApiErrorKind = 'auth' | 'forbidden' | 'server' | 'network' | 'client
 
 const errorEnvelopeSchema = z.object({
   error: z.object({
-    code: z.string().trim().min(1),
-    message: z.string().trim().min(1),
-    request_id: z.string().trim().min(1).optional(),
+    code: z.string().check(z.trim(), z.minLength(1)),
+    message: z.string().check(z.trim(), z.minLength(1)),
+    request_id: z.optional(z.string().check(z.trim(), z.minLength(1))),
   }),
 })
 
