@@ -65,7 +65,11 @@ func NewControlClient(config ClientConfiguration) (*ControlClient, error) {
 	if err != nil || !leaf.NotAfter.After(time.Now()) || leaf.NotBefore.After(time.Now()) {
 		return nil, ErrDenied
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	transport := base.Clone()
 	transport.Proxy = nil
 	transport.TLSClientConfig = tlsConfig
 	transport.MaxResponseHeaderBytes = 8192
@@ -106,7 +110,7 @@ func (c *ControlClient) request(ctx context.Context, method, suffix string, inpu
 	if err != nil {
 		return fmt.Errorf("RADIUS control request failed")
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != 200 {
 		return fmt.Errorf("RADIUS control HTTP %d", response.StatusCode)
 	}
@@ -181,6 +185,9 @@ func (c *ControlClient) Fetch(ctx context.Context, epoch string) (Lease, error) 
 	if err := c.validate(control, epoch); err != nil {
 		return Lease{}, err
 	}
+	if control.ControlRevision < 1 {
+		return Lease{}, ErrInvalid
+	}
 	c.mu.Lock()
 	c.current = control
 	c.mu.Unlock()
@@ -195,6 +202,9 @@ func (c *ControlClient) Record(ctx context.Context, observation Observation) err
 	c.mu.Lock()
 	control := c.current
 	c.mu.Unlock()
+	if control.ControlRevision < 1 {
+		return ErrDenied
+	}
 	if control.ProcessEpoch != observation.Epoch || !observation.ProcessStopped && uint64(control.ControlRevision) != observation.State.Revision {
 		return ErrDenied
 	}

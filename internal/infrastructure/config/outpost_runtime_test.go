@@ -16,7 +16,7 @@ func TestOutpostRuntimeTokenFile(t *testing.T) {
 	if token, err := credential.ReadToken(); err != nil || token != strings.Repeat("a", 32) {
 		t.Fatalf("private token: %v", err)
 	}
-	if err := os.Chmod(path, 0664); err != nil {
+	if err := os.Chmod(path, 0664); err != nil { // #nosec G302 -- Deliberately insecure fixture permissions verify credential-file rejection.
 		t.Fatal(err)
 	}
 	if _, err := credential.ReadToken(); err == nil {

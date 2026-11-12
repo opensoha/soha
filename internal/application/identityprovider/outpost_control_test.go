@@ -66,7 +66,10 @@ func TestOutpostControlPayloadOrderAndIndependentSignature(t *testing.T) {
 	ssoNoError(t, err)
 	signed, err := outpostControlPayload(*config.RuntimeControl)
 	ssoNoError(t, err)
-	publicKey := service.outpostSigningKey.Public().(ed25519.PublicKey)
+	publicKey, ok := service.outpostSigningKey.Public().(ed25519.PublicKey)
+	if !ok || len(publicKey) != ed25519.PublicKeySize {
+		t.Fatal("unexpected outpost signing public key")
+	}
 	if !ed25519.Verify(publicKey, signed, signature) {
 		t.Fatal("control signature failed")
 	}

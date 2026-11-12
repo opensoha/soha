@@ -9,7 +9,8 @@ import { randomUUID } from 'node:crypto'
 {
   const directory = mkdtempSync(join(tmpdir(), 'soha-auth-artifact-'))
   const canary = randomUUID()
-  const playwright = createRequire(import.meta.url).resolve('@playwright/test')
+  const require = createRequire(import.meta.url)
+  const playwright = require.resolve('@playwright/test')
   try {
     writeFileSync(
       join(directory, 'privacy.spec.ts'),
@@ -33,7 +34,7 @@ import { randomUUID } from 'node:crypto'
     )
     const result = spawnSync(
       process.execPath,
-      [resolve('node_modules/playwright/cli.js'), 'test', '--config', join(directory, 'config.ts')],
+      [require.resolve('@playwright/test/cli'), 'test', '--config', join(directory, 'config.ts')],
       {
         encoding: 'utf8',
         timeout: 30_000,

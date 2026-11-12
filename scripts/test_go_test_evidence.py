@@ -9,6 +9,36 @@ spec.loader.exec_module(evidence)
 
 
 class EvidenceTests(unittest.TestCase):
+    def native_events(self, parser=False):
+        scopes = [evidence.PROXY_NATIVE_PARSER_SCOPE] if parser else evidence.PROXY_NATIVE_DATAPLANE_SCOPES
+        names = [name for scope in scopes for name in [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]]
+        return [dict(Action=action, Package=evidence.PROXY_NATIVE_PACKAGE, Test=name)
+                for name in names for action in ('run', 'pass')] + [dict(Action='pass', Package=evidence.PROXY_NATIVE_PACKAGE)]
+
+    def test_native_profiles_require_every_parent_intermediate_and_leaf(self):
+        for parser, terminals in ((False, 23), (True, 3)):
+            events = self.native_events(parser)
+            raw = self.raw(events)
+            self.assertEqual(evidence.validate_proxy_native(raw, parser=parser)['terminalTests'], terminals)
+            for name in {e.get('Test') for e in events if e.get('Test')}:
+                with self.subTest(parser=parser, missing=name), self.assertRaises(ValueError):
+                    evidence.validate_proxy_native(self.raw([e for e in events if e.get('Test') != name]), parser=parser)
+
+    def test_native_profiles_reject_skip_cache_zero_exit_and_incomplete_evidence(self):
+        for parser in (False, True):
+            events = self.native_events(parser)
+            for invalid in ([], events[:-1], [e for e in events if e['Action'] != 'run'],
+                    events + [dict(Action='skip', Package='other', Test='unexpected')],
+                    events + [dict(Action='output', Package='other', Output='ok (cached)')],
+                    [{**e, 'Action': 'skip'} if e.get('Test') == events[-2].get('Test') else e for e in events],
+                    events + [dict(Action='fail', Package=evidence.PROXY_NATIVE_PACKAGE)]):
+                with self.assertRaises(ValueError):
+                    evidence.validate_proxy_native(self.raw(invalid), parser=parser)
+            with self.assertRaises(ValueError):
+                evidence.validate_proxy_native(self.raw(events), exit_code=1, parser=parser)
+            with self.assertRaises(ValueError):
+                evidence.validate_proxy_native('not-json', parser=parser)
+
     def test_cleanup_requires_exact_container_run_and_image(self):
         spec = importlib.util.spec_from_file_location("pg_runner", Path(__file__).with_name("run-deletion-integration.py"))
         runner = importlib.util.module_from_spec(spec)

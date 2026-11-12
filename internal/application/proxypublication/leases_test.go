@@ -21,7 +21,7 @@ func TestEmployeeServingLeasePrefersVerifiedRunningMembers(t *testing.T) {
 			r := f.record
 			r.Pool.Members = []domain.PoolMember{{RuntimeID: "proxy-1", Serving: true, Running: true, ServingUntil: &drainUntil}, {RuntimeID: "proxy-2", Serving: true, ServingUntil: &drainUntil}}
 			r.Readbacks["proxy-2"] = api.NetworkProxyBundleReadback{ProcessEpoch: "server-epoch", Revision: 1}
-			states := b.desired.(desiredFake)
+			states := fixtureValue[desiredFake](t, b.desired)
 			states.states[0].ConfigurationValidUntil = &activeUntil
 			second := states.states[0]
 			second.InstanceID = "proxy-2"

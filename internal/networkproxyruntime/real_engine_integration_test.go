@@ -1,3 +1,5 @@
+//go:build soha_native_integration
+
 package networkproxyruntime
 
 import (

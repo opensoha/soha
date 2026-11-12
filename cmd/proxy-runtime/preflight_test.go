@@ -29,9 +29,9 @@ func TestKernelPreflightCLIRunsBeforeNormalTLSConfig(t *testing.T) {
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "candidate")
 	config := filepath.Join(dir, "engine.conf")
-	script := []byte("#!/bin/sh\nif [ \"$1\" = -v ]; then echo 'Mihomo Meta v1.19.30'; exit 0; fi\n[ \"$1\" = -t ]\n")
+	script := []byte("#!/bin/sh\nif [ \"$1\" = -v ]; then echo 'Mihomo Meta v1.19.30'; exit 0; fi\n[ \"$#\" = 5 ] && [ \"$1\" = -d ] && [ \"$2\" = \"$PWD\" ] && [ \"$3\" = -t ] && [ \"$4\" = -f ] && [ \"$5\" = \"$PWD/engine.conf\" ]\n")
 	content := []byte("port: 0\nrules: []\n")
-	if err := os.WriteFile(binary, script, 0700); err != nil {
+	if err := os.WriteFile(binary, script, 0700); err != nil { // #nosec G306 -- owner-only executable fixture in t.TempDir; execute permission is required by preflight.
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(config, content, 0600); err != nil {
@@ -47,11 +47,11 @@ func TestKernelPreflightCLIRunsBeforeNormalTLSConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command(self, "-test.run=^TestKernelPreflightCLIHelper$")
+	command := exec.Command(self, "-test.run=^TestKernelPreflightCLIHelper$") // #nosec G204 -- current test executable from os.Executable, fixed helper selector, no shell.
 	command.Env = []string{"PATH=/usr/bin:/bin", "SOHA_PREFLIGHT_CLI_HELPER=1", "SOHA_PREFLIGHT_TEST_INPUT=" + path}
 	output, err := command.Output()
 	if err != nil {
-		t.Fatalf("CLI failed: %v", err)
+		t.Fatalf("CLI failed: %v; report: %s", err, output)
 	}
 	var report networkproxyruntime.KernelPreflightReport
 	if json.Unmarshal(output, &report) != nil || !report.Compatible || report.ActualSHA256 != input.ExpectedSHA256 {

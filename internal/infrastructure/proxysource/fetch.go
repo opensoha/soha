@@ -30,6 +30,8 @@ func NewFetcher(options Options) (*Fetcher, error) {
 	}
 	transport := companionartifact.NewPublicTransport()
 	transport.DisableCompression = true
+	// Revalidate the current protected-address policy before every fetch.
+	transport.DisableKeepAlives = true
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
@@ -97,7 +99,7 @@ func (f *Fetcher) Fetch(ctx context.Context, raw string) (string, error) {
 	if err != nil {
 		return "", domain.Invalid("source_unavailable", "url")
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != 200 || response.ContentLength > domain.MaxSourceBytes || response.Header.Get("Content-Encoding") != "" {
 		return "", domain.Invalid("invalid_source_response", "url")
 	}

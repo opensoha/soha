@@ -18,6 +18,7 @@ import (
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	pgtest "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -38,7 +39,7 @@ func TestPasswordVerifierPostgres(t *testing.T) {
 	if name == "" {
 		name = "soha"
 	}
-	store, err := dbstore.New(config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: name, User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 8, MaxIdleConns: 4, ConnMaxLifetime: time.Minute}, zap.NewNop())
+	store, err := dbstore.New(pgtest.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: name, User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 8, MaxIdleConns: 4, ConnMaxLifetime: time.Minute}), zap.NewNop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,121 +86,142 @@ func TestPasswordVerifierPostgres(t *testing.T) {
 		return domain.PasswordReceipt{TokenHash: fmt.Sprintf("%x", digest), RuntimeID: runtimeID, NASID: nasID, SiteID: site, StationID: "02:00:00:00:00:01", SubjectID: subject, PasswordUpdatedAt: version, CreatedAt: now, ExpiresAt: now.Add(30 * time.Second)}
 	}
 	t.Run("concurrent-subject-budget-and-lock", func(t *testing.T) {
-		var admitted atomic.Int32
-		var winner domain.PasswordAttempt
-		var mu sync.Mutex
-		var wg sync.WaitGroup
-		for range 8 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				attempt := domain.PasswordAttempt{ID: uuid.NewString(), RuntimeID: runtimeID, NASID: nasID, Source: source, SubjectID: subject, Now: now}
-				ok, err := r.BeginPasswordAttempt(ctx, attempt)
-				if err != nil {
-					t.Error(err)
-				}
-				if ok {
-					admitted.Add(1)
-					mu.Lock()
-					winner = attempt
-					mu.Unlock()
-				}
-			}()
-		}
-		wg.Wait()
-		if admitted.Load() != 1 {
-			t.Fatalf("admitted %d concurrent attempts", admitted.Load())
-		}
-		if err := r.FinishPasswordAttempt(ctx, winner, false, now); err != nil {
-			t.Fatal(err)
-		}
-		for index := 1; index < 5; index++ {
-			attempt := domain.PasswordAttempt{ID: uuid.NewString(), RuntimeID: runtimeID, NASID: nasID, Source: source, SubjectID: subject, Now: now.Add(time.Duration(index) * time.Second)}
-			ok, err := r.BeginPasswordAttempt(ctx, attempt)
-			if err != nil || !ok {
-				t.Fatalf("attempt %d: %v %v", index, ok, err)
-			}
-			if err := r.FinishPasswordAttempt(ctx, attempt, false, attempt.Now); err != nil {
-				t.Fatal(err)
-			}
-		}
-		ok, err := r.BeginPasswordAttempt(ctx, domain.PasswordAttempt{ID: uuid.NewString(), RuntimeID: runtimeID, NASID: nasID, Source: source, SubjectID: subject, Now: now.Add(6 * time.Second)})
-		if err != nil || ok {
-			t.Fatalf("fifth-failure lock: %v %v", ok, err)
-		}
+		assertPasswordBudgetConcurrency(t, ctx, r, runtimeID, nasID, source, subject, now)
 	})
 	t.Run("receipt-one-cross-request-consumer", func(t *testing.T) {
-		p := proof()
-		if err := r.SavePasswordReceipt(ctx, p); err != nil {
-			t.Fatal(err)
-		}
-		var successes atomic.Int32
-		var wg sync.WaitGroup
-		for range 8 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return consumePasswordReceipt(tx, p, uuid.NewString(), now) })
-				if err == nil {
-					successes.Add(1)
-				} else if !errors.Is(err, apperrors.ErrUnauthorized) {
-					t.Error(err)
-				}
-			}()
-		}
-		wg.Wait()
-		if successes.Load() != 1 {
-			t.Fatalf("proof consumed %d times", successes.Load())
-		}
+		assertOnePasswordReceiptConsumer(t, ctx, r, db, proof, now)
 	})
 	t.Run("password-change-and-disable-reject-consumption", func(t *testing.T) {
-		for _, reason := range []string{"password-change", "disabled"} {
-			p := proof()
-			if err := r.SavePasswordReceipt(ctx, p); err != nil {
-				t.Fatal(err)
-			}
-			if reason == "password-change" {
-				err = db.Exec(`UPDATE user_password_credentials SET password_updated_at=? WHERE user_id=?`, version.Add(time.Second), subject).Error
-			} else {
-				err = db.Exec(`UPDATE users SET status='disabled' WHERE id=?`, subject).Error
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return consumePasswordReceipt(tx, p, uuid.NewString(), now) })
-			if !errors.Is(err, apperrors.ErrUnauthorized) {
-				t.Fatalf("changed identity consumption: %v", err)
-			}
-			if err := db.Exec(`UPDATE user_password_credentials SET password_updated_at=? WHERE user_id=?`, version, subject).Error; err != nil {
-				t.Fatal(err)
-			}
-			if err := db.Exec(`UPDATE users SET status='active' WHERE id=?`, subject).Error; err != nil {
-				t.Fatal(err)
-			}
-		}
+		assertChangedPasswordProofRejected(t, ctx, r, db, proof, now, version, subject)
 	})
 	t.Run("rejected-authorization-rolls-back-station-and-proof", func(t *testing.T) {
+		assertRejectedPasswordProofRollsBack(t, ctx, r, db, proof, now, runtimeID, nasID, suffix, subject)
+	})
+}
+
+func assertPasswordBudgetConcurrency(t *testing.T, ctx context.Context, r *Repository, runtimeID, nasID, source, subject string, now time.Time) {
+	t.Helper()
+	var admitted atomic.Int32
+	var winner domain.PasswordAttempt
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			attempt := domain.PasswordAttempt{ID: uuid.NewString(), RuntimeID: runtimeID, NASID: nasID, Source: source, SubjectID: subject, Now: now}
+			ok, err := r.BeginPasswordAttempt(ctx, attempt)
+			if err != nil {
+				t.Error(err)
+			}
+			if ok {
+				admitted.Add(1)
+				mu.Lock()
+				winner = attempt
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if admitted.Load() != 1 {
+		t.Fatalf("admitted %d concurrent attempts", admitted.Load())
+	}
+	if err := r.FinishPasswordAttempt(ctx, winner, false, now); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index < 5; index++ {
+		attempt := domain.PasswordAttempt{ID: uuid.NewString(), RuntimeID: runtimeID, NASID: nasID, Source: source, SubjectID: subject, Now: now.Add(time.Duration(index) * time.Second)}
+		ok, err := r.BeginPasswordAttempt(ctx, attempt)
+		if err != nil || !ok {
+			t.Fatalf("attempt %d: %v %v", index, ok, err)
+		}
+		if err := r.FinishPasswordAttempt(ctx, attempt, false, attempt.Now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ok, err := r.BeginPasswordAttempt(ctx, domain.PasswordAttempt{ID: uuid.NewString(), RuntimeID: runtimeID, NASID: nasID, Source: source, SubjectID: subject, Now: now.Add(6 * time.Second)})
+	if err != nil || ok {
+		t.Fatalf("fifth-failure lock: %v %v", ok, err)
+	}
+}
+
+func assertOnePasswordReceiptConsumer(t *testing.T, ctx context.Context, r *Repository, db *gorm.DB, proof func() domain.PasswordReceipt, now time.Time) {
+	t.Helper()
+	p := proof()
+	if err := r.SavePasswordReceipt(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	var successes atomic.Int32
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return consumePasswordReceipt(tx, p, uuid.NewString(), now) })
+			if err == nil {
+				successes.Add(1)
+			} else if !errors.Is(err, apperrors.ErrUnauthorized) {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if successes.Load() != 1 {
+		t.Fatalf("proof consumed %d times", successes.Load())
+	}
+}
+
+func assertChangedPasswordProofRejected(t *testing.T, ctx context.Context, r *Repository, db *gorm.DB, proof func() domain.PasswordReceipt, now, version time.Time, subject string) {
+	t.Helper()
+	var err error
+	for _, reason := range []string{"password-change", "disabled"} {
 		p := proof()
 		if err := r.SavePasswordReceipt(ctx, p); err != nil {
 			t.Fatal(err)
 		}
-		digest := sha256.Sum256([]byte(p.RuntimeID + "\x00" + p.NASID + "\x00" + p.StationID + "\x00" + p.SubjectID))
-		deviceID := fmt.Sprintf("nas-station:%x", digest)
-		var policyVersion int
-		if err := db.Raw(`SELECT COALESCE(MAX(policy_version),0) FROM network_access_policy_snapshots`).Scan(&policyVersion).Error; err != nil {
+		if reason == "password-change" {
+			err = db.Exec(`UPDATE user_password_credentials SET password_updated_at=? WHERE user_id=?`, version.Add(time.Second), subject).Error
+		} else {
+			err = db.Exec(`UPDATE users SET status='disabled' WHERE id=?`, subject).Error
+		}
+		if err != nil {
 			t.Fatal(err)
 		}
-		_, err := r.SaveNASAuthorization(ctx, domain.NASAuthorization{PasswordProof: &p, RuntimeID: runtimeID, NASID: nasID, RequestID: "rejected-" + suffix, SubjectID: subject, DeviceID: deviceID, StationID: p.StationID, PolicyVersion: policyVersion, CreatedAt: now})
-		if !errors.Is(err, apperrors.ErrNotFound) {
-			t.Fatalf("expected missing NAS binding rejection, got %v", err)
+		err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return consumePasswordReceipt(tx, p, uuid.NewString(), now) })
+		if !errors.Is(err, apperrors.ErrUnauthorized) {
+			t.Fatalf("changed identity consumption: %v", err)
 		}
-		var count int64
-		if err := db.Table("network_access_devices").Where("id=?", deviceID).Count(&count).Error; err != nil || count != 0 {
-			t.Fatalf("rejected station survived: %d %v", count, err)
+		if err := db.Exec(`UPDATE user_password_credentials SET password_updated_at=? WHERE user_id=?`, version, subject).Error; err != nil {
+			t.Fatal(err)
 		}
-		saved, err := r.PasswordReceipt(ctx, p.TokenHash)
-		if err != nil || saved.AuthorizationRequestID != "" {
-			t.Fatalf("rejected proof consumed: %+v %v", saved, err)
+		if err := db.Exec(`UPDATE users SET status='active' WHERE id=?`, subject).Error; err != nil {
+			t.Fatal(err)
 		}
-	})
+	}
+}
+
+func assertRejectedPasswordProofRollsBack(t *testing.T, ctx context.Context, r *Repository, db *gorm.DB, proof func() domain.PasswordReceipt, now time.Time, runtimeID, nasID, suffix, subject string) {
+	t.Helper()
+	p := proof()
+	if err := r.SavePasswordReceipt(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(p.RuntimeID + "\x00" + p.NASID + "\x00" + p.StationID + "\x00" + p.SubjectID))
+	deviceID := fmt.Sprintf("nas-station:%x", digest)
+	var policyVersion int
+	if err := db.Raw(`SELECT COALESCE(MAX(policy_version),0) FROM network_access_policy_snapshots`).Scan(&policyVersion).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.SaveNASAuthorization(ctx, domain.NASAuthorization{PasswordProof: &p, RuntimeID: runtimeID, NASID: nasID, RequestID: "rejected-" + suffix, SubjectID: subject, DeviceID: deviceID, StationID: p.StationID, PolicyVersion: policyVersion, CreatedAt: now})
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("expected missing NAS binding rejection, got %v", err)
+	}
+	var count int64
+	if err := db.Table("network_access_devices").Where("id=?", deviceID).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("rejected station survived: %d %v", count, err)
+	}
+	saved, err := r.PasswordReceipt(ctx, p.TokenHash)
+	if err != nil || saved.AuthorizationRequestID != "" {
+		t.Fatalf("rejected proof consumed: %+v %v", saved, err)
+	}
 }

@@ -22,6 +22,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install source workspace
         run: npm ci
+      - name: Audit source workspace dependencies
+        run: npm run check:dependencies
       - name: Generate same-source SDK and verify npm link
         run: |
           npm run generate --workspace @opensoha/contracts
@@ -35,6 +37,10 @@ jobs:
       - name: Install deterministic browser
         working-directory: web
         run: npx playwright install --with-deps chromium
+      - name: Verify dependency security and browser compatibility
+        run: node --test web/scripts/check-dependency-compat.mjs
+      - name: Verify selector parser and bounded cache compatibility
+        run: node --test web/scripts/check-selector-compat.mjs
       - name: E2E typecheck
         working-directory: web
         run: npm run typecheck:e2e

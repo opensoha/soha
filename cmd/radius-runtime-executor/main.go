@@ -39,7 +39,7 @@ func run(path string) error {
 	if path == "" {
 		return fmt.Errorf("config file is required")
 	}
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- The local operator supplies this installation file via --config; it is not a remote task path.
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func run(path string) error {
 		cluster, err = clientcmd.BuildConfigFromFlags("", cfg.Kubeconfig)
 	}
 	if err != nil {
-		return fmt.Errorf("Kubernetes identity unavailable")
+		return fmt.Errorf("kubernetes identity unavailable")
 	}
 	cluster.Timeout = 5e9
 	kube, err := kubernetes.NewForConfig(cluster)

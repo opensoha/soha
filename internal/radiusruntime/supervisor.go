@@ -213,11 +213,11 @@ func validateEnvironment(environment map[string]string) error {
 }
 
 func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- Callers validate protected root-owned regular files before hashing; no request-supplied path is accepted.
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sum := sha256.New()
 	if _, err = io.Copy(sum, io.LimitReader(f, 128<<20)); err != nil {
 		return "", err
@@ -256,7 +256,7 @@ func configurationDigest(root string, paths pathPolicy) (string, error) {
 			return err
 		}
 		if entry.IsDir() {
-			fmt.Fprintf(sum, "dir:%s:%o\n", relative, info.Mode().Perm())
+			_, _ = fmt.Fprintf(sum, "dir:%s:%o\n", relative, info.Mode().Perm())
 			return nil
 		}
 		if !info.Mode().IsRegular() || info.Size() > 4<<20 {
@@ -270,7 +270,7 @@ func configurationDigest(root string, paths pathPolicy) (string, error) {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(sum, "file:%s:%o:%s\n", relative, info.Mode().Perm(), digest)
+		_, _ = fmt.Fprintf(sum, "file:%s:%o:%s\n", relative, info.Mode().Perm(), digest)
 		return nil
 	})
 	if err != nil {
@@ -285,7 +285,7 @@ func (s *Supervisor) verifyArtifacts(ctx context.Context) error {
 	c := s.config
 	versionCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	command := exec.CommandContext(versionCtx, c.Binary, "-v")
+	command := exec.CommandContext(versionCtx, c.Binary, "-v") // #nosec G204 -- verifyFilesystemArtifacts above pins the root-owned binary digest; arguments are fixed and no shell is used.
 	command.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin"}
 	output := &boundedOutput{}
 	command.Stdout = output
@@ -356,7 +356,7 @@ func (s *Supervisor) acquire() error {
 	if err := s.safePath(lockPath); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0600)
+	file, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0600) // #nosec G304 -- safePath above confines this fixed lock leaf beneath protected root-owned ancestors.
 	if err != nil {
 		return err
 	}
@@ -376,7 +376,7 @@ func (s *Supervisor) acquire() error {
 	if err = s.safePath(recordPath); err != nil {
 		return err
 	}
-	data, err := os.ReadFile(recordPath)
+	data, err := os.ReadFile(recordPath) // #nosec G304 -- safePath above confines this fixed owner-record leaf beneath protected root-owned ancestors.
 	if err == nil {
 		var old ownerRecord
 		if json.Unmarshal(data, &old) != nil || old.Owner != c.Owner || !old.Stopped {
@@ -391,7 +391,7 @@ func (s *Supervisor) acquire() error {
 	if err = s.host.chown(c.StateDir, 0, int(c.FreeradGID)); err != nil {
 		return err
 	}
-	return os.Chmod(c.StateDir, 0710)
+	return os.Chmod(c.StateDir, 0710) // #nosec G302 -- Root owns the directory; only the dedicated FreeRADIUS group receives traversal for its hook socket.
 }
 
 func (s *Supervisor) establishDirectory() error {
@@ -417,7 +417,7 @@ func (s *Supervisor) establishDirectory() error {
 	if err = s.safePath(marker); err != nil {
 		return err
 	}
-	data, err := os.ReadFile(marker)
+	data, err := os.ReadFile(marker) // #nosec G304 -- safePath above confines this fixed installation marker beneath protected root-owned ancestors.
 	if err == nil {
 		var owner struct {
 			Owner string `json:"owner"`
@@ -440,7 +440,7 @@ func (s *Supervisor) establishDirectory() error {
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	file, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600) // #nosec G304 -- safePath above confines this exclusive 0600 marker beneath protected root-owned ancestors.
 	if err != nil {
 		return err
 	}
@@ -461,13 +461,13 @@ func (s *Supervisor) saveRecord() error {
 		return err
 	}
 	name := file.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err = file.Write(data); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err = file.Sync(); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err = file.Close(); err != nil {
@@ -529,7 +529,7 @@ func (s *Supervisor) start(ctx context.Context) error {
 		if err = s.publish(ctx, true, "fresh_owner_no_child"); err != nil {
 			return err
 		}
-		return nilStop
+		return errControlStop
 	}
 	if err = s.verifyArtifacts(ctx); err != nil {
 		return err
@@ -569,7 +569,7 @@ func (s *Supervisor) openHook(tracker *Tracker) (*HTTP, error) {
 	if err = s.host.chown(s.config.Socket, 0, int(s.config.FreeradGID)); err != nil {
 		return nil, err
 	}
-	if err = os.Chmod(s.config.Socket, 0660); err != nil {
+	if err = os.Chmod(s.config.Socket, 0660); err != nil { // #nosec G302 -- Only root and the dedicated FreeRADIUS group can use the hook socket; hookPeer also validates UID and PID.
 		return nil, err
 	}
 	s.socketInfo, err = os.Lstat(s.config.Socket)
@@ -586,7 +586,7 @@ func (s *Supervisor) launchChild(hook *HTTP) error {
 	if err := s.safePath(s.config.Socket); err != nil {
 		return err
 	}
-	command := exec.Command(s.config.Binary, "-f", "-d", s.config.ConfigurationDir)
+	command := exec.Command(s.config.Binary, "-f", "-d", s.config.ConfigurationDir) // #nosec G204 -- verifyFilesystemArtifacts pins binary and configuration digests; fixed argv uses no shell.
 	command.Env = s.environment(s.childRecord.Epoch)
 	command.Stdout = io.Discard
 	command.Stderr = io.Discard
@@ -694,7 +694,7 @@ func (s *Supervisor) Run(ctx context.Context) (result error) {
 		return err
 	}
 	if err := s.start(ctx); err != nil {
-		if errors.Is(err, nilStop) {
+		if errors.Is(err, errControlStop) {
 			return nil
 		}
 		return err
@@ -711,7 +711,7 @@ func (s *Supervisor) Run(ctx context.Context) (result error) {
 		}
 	}()
 	err := s.monitor(ctx)
-	if errors.Is(err, nilStop) {
+	if errors.Is(err, errControlStop) {
 		return nil
 	}
 	return err
@@ -752,7 +752,7 @@ func (s *Supervisor) refresh(ctx context.Context) error {
 		return err
 	}
 	if !lease.RunProcess {
-		return nilStop
+		return errControlStop
 	}
 	if err = s.verifyMaterials(); err != nil {
 		return err
@@ -791,7 +791,7 @@ func (s *Supervisor) applyLease(lease Lease) error {
 	return nil
 }
 
-var nilStop = errors.New("control requested process stop")
+var errControlStop = errors.New("control requested process stop")
 
 func (s *Supervisor) stop() error {
 	s.stopOnce.Do(func() { s.stopError = s.stopOwned() })

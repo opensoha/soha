@@ -115,7 +115,7 @@ func TestHealthListenerIsBoundedMetadataFreeAndOwned(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw, _ := io.ReadAll(response.Body)
-		response.Body.Close()
+		_ = response.Body.Close()
 		if len(raw) != 0 {
 			t.Fatal("health endpoint exposed metadata")
 		}
@@ -127,7 +127,7 @@ func TestHealthListenerIsBoundedMetadataFreeAndOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != 405 {
 		t.Fatal("health accepted mutation")
 	}
@@ -135,13 +135,13 @@ func TestHealthListenerIsBoundedMetadataFreeAndOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 	if response.StatusCode != 404 {
 		t.Fatal("controller path exposed")
 	}
 	h.close()
 	if response, err := http.Get(endpoint + "/healthz"); err == nil {
-		response.Body.Close()
+		_ = response.Body.Close()
 		t.Fatal("owned health listener survived close")
 	}
 }

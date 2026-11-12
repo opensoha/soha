@@ -65,7 +65,7 @@ func TestRejectedProjectionReceiptOverVerifiedMTLS(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 	client := server.Client()
-	transport := client.Transport.(*http.Transport).Clone()
+	transport := fixtureValue[*http.Transport](t, client.Transport).Clone()
 	transport.TLSClientConfig = transport.TLSClientConfig.Clone()
 	transport.TLSClientConfig.Certificates = []tls.Certificate{certificate}
 	client.Transport = transport
@@ -94,7 +94,7 @@ func sendReceipt(t *testing.T, client *http.Client, base, status, hash string) (
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	raw, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatal(err)

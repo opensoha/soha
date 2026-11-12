@@ -62,28 +62,7 @@ func TestBuiltinClashAdapterObservation(t *testing.T) {
 	for _, engineID := range []string{domain.EngineMihomo, domain.EngineSingBox} {
 		t.Run(engineID, func(t *testing.T) {
 			failing := ""
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Header.Get("Authorization") != "Bearer operator-secret" {
-					t.Error("controller secret missing")
-				}
-				if r.URL.Path == failing {
-					w.WriteHeader(http.StatusServiceUnavailable)
-					return
-				}
-				switch r.URL.Path {
-				case "/version":
-					fmt.Fprint(w, `{"version":"fixture-version"}`)
-				case "/connections":
-					fmt.Fprint(w, `{"uploadTotal":123,"downloadTotal":456,"connections":[]}`)
-				case "/connections/connection":
-					if r.Method != http.MethodDelete {
-						t.Error("unexpected close method")
-					}
-					fmt.Fprint(w, `{}`)
-				default:
-					t.Errorf("unexpected controller path %s", r.URL.Path)
-				}
-			}))
+			server := clashObservationFixture(t, &failing)
 			defer server.Close()
 			e := newEngine(Config{Engine: engineID, ControllerURL: server.URL}, "operator-secret")
 			sample, connections := e.adapter.observe(context.Background())
@@ -113,7 +92,7 @@ func TestBuiltinV2RayAdapterObservation(t *testing.T) {
 	}
 	binary := filepath.Join(t.TempDir(), "v2ray-fixture")
 	fixture := "#!/bin/sh\ncase \"$1\" in\nversion) echo 'V2Ray 5.fixture' ;;\napi) echo '{\"stat\":[{\"name\":\"inbound>>>proxy>>>traffic>>>uplink\",\"value\":\"123\"},{\"name\":\"inbound>>>proxy>>>traffic>>>downlink\",\"value\":\"456\"}]}' ;;\n*) exit 1 ;;\nesac\n"
-	if err := os.WriteFile(binary, []byte(fixture), 0700); err != nil {
+	if err := os.WriteFile(binary, []byte(fixture), 0700); err != nil { // #nosec G306 -- owner-only POSIX executable fixture in t.TempDir.
 		t.Fatal(err)
 	}
 	e := newEngine(Config{Engine: domain.EngineV2Ray, EngineBinary: binary, ControllerURL: "http://127.0.0.1:9090"}, "")
@@ -128,4 +107,30 @@ func TestBuiltinV2RayAdapterObservation(t *testing.T) {
 	if sample.Health != "degraded" || sample.ReasonCode != "stats_unavailable" || len(sample.Capabilities) != 0 {
 		t.Fatalf("unexpected failure sample %+v", sample)
 	}
+}
+
+func clashObservationFixture(t *testing.T, failing *string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Error("controller secret missing")
+		}
+		if r.URL.Path == *failing {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		switch r.URL.Path {
+		case "/version":
+			_, _ = fmt.Fprint(w, `{"version":"fixture-version"}`)
+		case "/connections":
+			_, _ = fmt.Fprint(w, `{"uploadTotal":123,"downloadTotal":456,"connections":[]}`)
+		case "/connections/connection":
+			if r.Method != http.MethodDelete {
+				t.Error("unexpected close method")
+			}
+			_, _ = fmt.Fprint(w, `{}`)
+		default:
+			t.Errorf("unexpected controller path %s", r.URL.Path)
+		}
+	}))
 }

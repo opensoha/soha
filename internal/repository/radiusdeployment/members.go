@@ -236,10 +236,10 @@ func drainForState(tx *gorm.DB, state domain.State, now time.Time) (domain.Drain
 	seenRetiring, seenActive := 0, 0
 	var total int64
 	for _, record := range members {
-		if record.Member.Ordinal < int32(state.Pool.DesiredReplicas) {
+		if int(record.Member.Ordinal) < state.Pool.DesiredReplicas {
 			seenActive++
 		}
-		if record.Member.Ordinal < int32(state.Pool.DesiredReplicas) && !record.Ready(state, now) {
+		if int(record.Member.Ordinal) < state.Pool.DesiredReplicas && !record.Ready(state, now) {
 			result.Ready = false
 		}
 		if !state.Retiring(record.Member.Ordinal) {
@@ -270,7 +270,7 @@ func drainForState(tx *gorm.DB, state domain.State, now time.Time) (domain.Drain
 
 func applyControlIntent(state domain.State, record domain.MemberRecord, control *api.NetworkRADIUSRuntimeControl, old *api.NetworkRADIUSRuntimeControl, now time.Time) {
 	retiring := state.Retiring(record.Member.Ordinal)
-	control.RunProcess = record.Member.Ordinal < int32(state.Pool.DesiredReplicas) && state.Pool.Enabled || retiring
+	control.RunProcess = int(record.Member.Ordinal) < state.Pool.DesiredReplicas && state.Pool.Enabled || retiring
 	control.AcceptNewAuthentications = control.RunProcess && !retiring && state.Pool.State != "unknown" && !record.UnknownLatched
 	if retiring && state.DrainUntil != nil {
 		control.DrainUntil = state.DrainUntil
@@ -296,5 +296,5 @@ func applyControlIntent(state domain.State, record domain.MemberRecord, control 
 
 func matchesACKIdentity(state domain.State, record domain.MemberRecord, c currentCredential, ack api.NetworkRADIUSRuntimeACK, runtime string) bool {
 	control := record.Control
-	return !(ack.RuntimeID != runtime || ack.PoolID != state.Pool.PoolID || ack.MemberID != record.Member.MemberID || ack.CredentialID != c.ID || ack.CredentialID != control.CredentialID || ack.ProcessEpoch != control.ProcessEpoch || ack.OwnerEpoch != state.Pool.OwnerEpoch || int64(ack.ControlRevision) != state.ControlRevision || ack.ConfigurationRevision != state.Pool.ConfigurationRevision || ack.ConfigurationHash != state.Pool.ConfigurationHash)
+	return ack.RuntimeID == runtime && ack.PoolID == state.Pool.PoolID && ack.MemberID == record.Member.MemberID && ack.CredentialID == c.ID && ack.CredentialID == control.CredentialID && ack.ProcessEpoch == control.ProcessEpoch && ack.OwnerEpoch == state.Pool.OwnerEpoch && int64(ack.ControlRevision) == state.ControlRevision && ack.ConfigurationRevision == state.Pool.ConfigurationRevision && ack.ConfigurationHash == state.Pool.ConfigurationHash
 }

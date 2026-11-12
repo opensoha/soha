@@ -38,7 +38,7 @@ func continuityBackend(t *testing.T) *egressBackend {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = l.Close() })
-	b := &egressBackend{name: "node", user: "backend", secret: strings.Repeat("s", 40), port: l.Addr().(*net.TCPAddr).Port}
+	b := &egressBackend{name: "node", user: "backend", secret: strings.Repeat("s", 40), port: fixtureValue[*net.TCPAddr](t, l.Addr()).Port}
 	go func() {
 		for {
 			c, err := l.Accept()
@@ -46,7 +46,7 @@ func continuityBackend(t *testing.T) *egressBackend {
 				return
 			}
 			go func() {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				_ = c.SetDeadline(time.Now().Add(5 * time.Minute))
 				if !fixtureSOCKSAuth(c, fixtureListener{Users: []struct{ Username, Password string }{{b.user, b.secret}}}) {
 					return
@@ -96,68 +96,26 @@ func runnerContinuity(t *testing.T, failure string) {
 	publication.DeliveryMode, publication.Groups, publication.Rules = "mapped_nodes", []api.NetworkProxyGroup{}, []api.NetworkProxyRule{}
 	desired.Publication, e.desired.Publication = publication, publication
 	started := time.Now()
-	var observeCalls, checks atomic.Int32
-	var readinessCalls atomic.Int32
-	var p *publicationIngress
-	control := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		switch {
-		case strings.HasSuffix(req.URL.Path, "/deployment/control"):
-			now := time.Now()
-			_ = json.NewEncoder(w).Encode(api.NetworkProxyDeploymentRuntimeControl{RuntimeID: "runtime", InstanceID: "pod", ProcessEpoch: "boot", CredentialID: "credential", CredentialEpoch: 1, OwnerEpoch: 1, ControlRevision: 1, IssuedAt: now, ExpiresAt: now.Add(30 * time.Second), AcceptingRequests: true})
-		case strings.HasSuffix(req.URL.Path, "/configuration"):
-			d := desired
-			d.ValidUntil = time.Now().Add(30 * time.Second)
-			pub := *publication
-			pub.ValidUntil = d.ValidUntil
-			d.Publication = &pub
-			raw, _ := json.Marshal(d)
-			_ = json.NewEncoder(w).Encode(proxyMessage{SchemaVersion: "proxy-runtime/v1alpha1", RuntimeID: "runtime", MessageType: "configuration.desired", OccurredAt: time.Now().UTC(), Payload: raw})
-		case strings.HasSuffix(req.URL.Path, "/observations"):
-			n := observeCalls.Add(1)
-			if failure == "first-observe-400" || (failure == "single-observe-400" && n == 2) || (failure == "repeated-observe-400" && n >= 2) {
-				t.Logf("t=%v Observe call=%d HTTP400", time.Since(started).Round(time.Millisecond), n)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-		case strings.HasSuffix(req.URL.Path, "/ingress/check"):
-			var input api.NetworkProxyIngressCheckInput
-			if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
-				t.Error(err)
-				w.WriteHeader(400)
-				return
-			}
-			checks.Add(1)
-			p.mu.Lock()
-			until := p.until
-			p.mu.Unlock()
-			t.Logf("t=%v ingress check=%d epoch=%s p.until=%v", time.Since(started).Round(time.Millisecond), checks.Load(), input.ProcessEpoch, until.Sub(started).Round(time.Millisecond))
-			_ = json.NewEncoder(w).Encode(api.NetworkProxyIngressCheckResult{Allowed: true, BundleID: input.BundleID, NodeID: input.NodeID, Revision: input.Revision, CredentialEpoch: input.CredentialEpoch, ExpiresAt: time.Now().Add(5 * time.Second)})
-		case strings.HasSuffix(req.URL.Path, "/publication/ready"):
-			readinessCalls.Add(1)
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			w.WriteHeader(http.StatusNoContent)
-		}
-	}))
+	fixture := &continuityControlFixture{t: t, failure: failure, desired: desired, publication: publication, started: started}
+	control := httptest.NewTLSServer(fixture)
 	defer control.Close()
-	client := NewClient(control.URL, "runtime", control.Client().Transport.(*http.Transport).TLSClientConfig.Clone())
+	client := NewClient(control.URL, "runtime", fixtureValue[*http.Transport](t, control.Client().Transport).TLSClientConfig.Clone())
 	schemas, err := networkprotocol.CompileSchemas()
 	if err != nil {
 		t.Fatal(err)
 	}
 	client.SetSchemas(schemas)
 	scope, _ := proxytransport.NewScope([]string{}, []string{})
-	p = &publicationIngress{client: client, epoch: e.processEpoch, until: time.Now().Add(30 * time.Second), accepting: true, scope: scope, handlers: map[*proxytransport.Handler]struct{}{}, backends: map[string]*egressBackend{"node": continuityBackend(t)}, publication: *publication}
-	server := httptest.NewTLSServer(p)
+	fixture.ingress = &publicationIngress{client: client, epoch: e.processEpoch, until: time.Now().Add(30 * time.Second), accepting: true, scope: scope, handlers: map[*proxytransport.Handler]struct{}{}, backends: map[string]*egressBackend{"node": continuityBackend(t)}, publication: *publication}
+	server := httptest.NewTLSServer(fixture.ingress)
 	defer server.Close()
-	defer p.close()
-	r := &Runner{config: config, client: client, engine: e, ingress: p, hostBootEpoch: "boot", enabled: true, appliedRevision: 1, validUntil: time.Now().Add(30 * time.Second), seenRevision: 1, seenHash: desired.Digest(), seenEnabled: true, seenPolicyVersion: 1, lastAttempt: &applied, attemptReported: true, deployment: deploymentState{floor: 1, grant: &api.NetworkProxyDeploymentRuntimeControl{ControlRevision: 1, ExpiresAt: time.Now().Add(30 * time.Second), AcceptingRequests: true}}}
+	defer fixture.ingress.close()
+	r := &Runner{config: config, client: client, engine: e, ingress: fixture.ingress, hostBootEpoch: "boot", enabled: true, appliedRevision: 1, validUntil: time.Now().Add(30 * time.Second), seenRevision: 1, seenHash: desired.Digest(), seenEnabled: true, seenPolicyVersion: 1, lastAttempt: &applied, attemptReported: true, deployment: deploymentState{floor: 1, grant: &api.NetworkProxyDeploymentRuntimeControl{ControlRevision: 1, ExpiresAt: time.Now().Add(30 * time.Second), AcceptingRequests: true}}}
 	cycle := func() {
 		err := r.cycle(context.Background())
-		p.mu.Lock()
-		until := p.until
-		p.mu.Unlock()
+		fixture.ingress.mu.Lock()
+		until := fixture.ingress.until
+		fixture.ingress.mu.Unlock()
 		t.Logf("t=%v cycle err=%v control=%v config=%v publication=%v epoch=%s enabled=%v", time.Since(started).Round(time.Millisecond), err, r.deployment.grant.ExpiresAt.Sub(started).Round(time.Millisecond), r.validUntil.Sub(started).Round(time.Millisecond), until.Sub(started).Round(time.Millisecond), e.processEpoch, r.enabled)
 		if err != nil && !strings.Contains(err.Error(), "HTTP 400") {
 			t.Fatalf("unexpected cycle failure: %v", err)
@@ -166,32 +124,76 @@ func runnerContinuity(t *testing.T, failure string) {
 	if failure == "first-observe-400" {
 		r.ingress = nil
 		cycle()
-		if r.ingress != nil || readinessCalls.Load() != 0 {
+		if r.ingress != nil || fixture.readinessCalls.Load() != 0 {
 			t.Fatal("ingress creation/readiness preceded accepted observation")
 		}
 		return
 	}
 	cycle()
-	conn, err := tls.Dial("tcp", server.Listener.Addr().String(), server.Client().Transport.(*http.Transport).TLSClientConfig.Clone())
-	if err != nil {
-		t.Fatal(err)
+	conn, reader, one := openContinuityStream(t, server)
+	defer func() { _ = conn.Close() }()
+	assertRunnerContinuityEcho(t, conn, reader, one, started, config.PollInterval, cycle)
+	if fixture.checks.Load() < 20 {
+		t.Fatalf("insufficient real rechecks: %d", fixture.checks.Load())
 	}
-	defer conn.Close()
-	user, _ := proxytransport.EncodeMappedUsername("credential", "node")
-	_, err = fmt.Fprintf(conn, "CONNECT 1.1.1.1:443 HTTP/1.1\r\nHost: 1.1.1.1:443\r\nProxy-Authorization: Basic %s\r\n\r\n", base64.StdEncoding.EncodeToString([]byte(user+":"+strings.Repeat("secret", 8))))
-	if err != nil {
-		t.Fatal(err)
+	t.Logf("40s continuous flow, checks=%d observe=%d epoch=%s", fixture.checks.Load(), fixture.observeCalls.Load(), e.processEpoch)
+}
+
+type continuityControlFixture struct {
+	t                                    *testing.T
+	failure                              string
+	desired                              domain.Configuration
+	publication                          *api.NetworkProxyServerPublication
+	started                              time.Time
+	observeCalls, checks, readinessCalls atomic.Int32
+	ingress                              *publicationIngress
+}
+
+func (f *continuityControlFixture) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	switch {
+	case strings.HasSuffix(req.URL.Path, "/deployment/control"):
+		now := time.Now()
+		_ = json.NewEncoder(w).Encode(api.NetworkProxyDeploymentRuntimeControl{RuntimeID: "runtime", InstanceID: "pod", ProcessEpoch: "boot", CredentialID: "credential", CredentialEpoch: 1, OwnerEpoch: 1, ControlRevision: 1, IssuedAt: now, ExpiresAt: now.Add(30 * time.Second), AcceptingRequests: true})
+	case strings.HasSuffix(req.URL.Path, "/configuration"):
+		d := f.desired
+		d.ValidUntil = time.Now().Add(30 * time.Second)
+		pub := *f.publication
+		pub.ValidUntil = d.ValidUntil
+		d.Publication = &pub
+		raw, _ := json.Marshal(d)
+		_ = json.NewEncoder(w).Encode(proxyMessage{SchemaVersion: "proxy-runtime/v1alpha1", RuntimeID: "runtime", MessageType: "configuration.desired", OccurredAt: time.Now().UTC(), Payload: raw})
+	case strings.HasSuffix(req.URL.Path, "/observations"):
+		n := f.observeCalls.Add(1)
+		if f.failure == "first-observe-400" || (f.failure == "single-observe-400" && n == 2) || (f.failure == "repeated-observe-400" && n >= 2) {
+			f.t.Logf("t=%v Observe call=%d HTTP400", time.Since(f.started).Round(time.Millisecond), n)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case strings.HasSuffix(req.URL.Path, "/ingress/check"):
+		var input api.NetworkProxyIngressCheckInput
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			f.t.Error(err)
+			w.WriteHeader(400)
+			return
+		}
+		f.checks.Add(1)
+		f.ingress.mu.Lock()
+		until := f.ingress.until
+		f.ingress.mu.Unlock()
+		f.t.Logf("t=%v ingress check=%d epoch=%s p.until=%v", time.Since(f.started).Round(time.Millisecond), f.checks.Load(), input.ProcessEpoch, until.Sub(f.started).Round(time.Millisecond))
+		_ = json.NewEncoder(w).Encode(api.NetworkProxyIngressCheckResult{Allowed: true, BundleID: input.BundleID, NodeID: input.NodeID, Revision: input.Revision, CredentialEpoch: input.CredentialEpoch, ExpiresAt: time.Now().Add(5 * time.Second)})
+	case strings.HasSuffix(req.URL.Path, "/publication/ready"):
+		f.readinessCalls.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		w.WriteHeader(http.StatusNoContent)
 	}
-	reader := bufio.NewReader(conn)
-	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
-	if err != nil || response.StatusCode != 200 {
-		t.Fatalf("CONNECT: %v %v", response, err)
-	}
-	one := make([]byte, 1)
-	if _, err := io.ReadFull(reader, one); err != nil || string(one) != "A" {
-		t.Fatalf("backend: %q %v", one, err)
-	}
-	ticker := time.NewTicker(config.PollInterval)
+}
+
+func assertRunnerContinuityEcho(t *testing.T, conn net.Conn, reader *bufio.Reader, one []byte, started time.Time, interval time.Duration, cycle func()) {
+	t.Helper()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for time.Since(started) < 40*time.Second {
 		select {
@@ -208,8 +210,28 @@ func runnerContinuity(t *testing.T, failure string) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if checks.Load() < 20 {
-		t.Fatalf("insufficient real rechecks: %d", checks.Load())
+}
+
+func openContinuityStream(t *testing.T, server *httptest.Server) (net.Conn, *bufio.Reader, []byte) {
+	t.Helper()
+	conn, err := tls.Dial("tcp", server.Listener.Addr().String(), fixtureValue[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone())
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Logf("40s continuous flow, checks=%d observe=%d epoch=%s", checks.Load(), observeCalls.Load(), e.processEpoch)
+	t.Cleanup(func() { _ = conn.Close() })
+	user, _ := proxytransport.EncodeMappedUsername("credential", "node")
+	_, err = fmt.Fprintf(conn, "CONNECT 1.1.1.1:443 HTTP/1.1\r\nHost: 1.1.1.1:443\r\nProxy-Authorization: Basic %s\r\n\r\n", base64.StdEncoding.EncodeToString([]byte(user+":"+strings.Repeat("secret", 8))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(conn)
+	response, err := readFixtureConnectStatus(t, conn, reader)
+	if err != nil || response != 200 {
+		t.Fatalf("CONNECT: %v %v", response, err)
+	}
+	one := make([]byte, 1)
+	if _, err := io.ReadFull(reader, one); err != nil || string(one) != "A" {
+		t.Fatalf("backend: %q %v", one, err)
+	}
+	return conn, reader, one
 }

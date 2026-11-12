@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 	"time"
@@ -214,7 +215,11 @@ func (s *Service) Control(ctx context.Context, p identity.Principal, id string, 
 	if input.Action != "reconcile" {
 		state.Pool.Enabled = target > 0
 		state.RetiringFrom = target
-		state.RetiringEnd = max(state.RetiringEnd, maxObserved(state))
+		observed, err := maxObserved(state)
+		if err != nil {
+			return api.NetworkRADIUSPool{}, err
+		}
+		state.RetiringEnd = max(state.RetiringEnd, observed)
 		state.DrainUntil = nil
 		state.StopConfirmUntil = nil
 		if target < state.RetiringEnd || target == 0 {
@@ -246,18 +251,18 @@ func (s *Service) Control(ctx context.Context, p identity.Principal, id string, 
 	return s.commitFor(ctx, p, Mutation{State: state, ExpectedRevision: int64(input.ExpectedRevision), RequestID: input.RequestID, Task: &task}, input)
 }
 func controlTarget(state domain.State, input api.NetworkRADIUSControlInput) (int32, error) {
-	target := int32(0)
+	target := 0
 	switch input.Action {
 	case "start":
 		target = 1
 		if input.Replicas != nil {
-			target = int32(*input.Replicas)
+			target = *input.Replicas
 		}
 	case "scale":
 		if input.Replicas == nil {
 			return 0, apperrors.ErrInvalidArgument
 		}
-		target = int32(*input.Replicas)
+		target = *input.Replicas
 	case "stop":
 		if input.Replicas != nil && *input.Replicas != 0 {
 			return 0, apperrors.ErrInvalidArgument
@@ -266,24 +271,28 @@ func controlTarget(state domain.State, input api.NetworkRADIUSControlInput) (int
 		if input.Replicas != nil || input.DrainSeconds != 0 {
 			return 0, apperrors.ErrInvalidArgument
 		}
-		target = int32(state.Pool.DesiredReplicas)
+		target = state.Pool.DesiredReplicas
 	default:
 		return 0, apperrors.ErrInvalidArgument
 	}
-	if input.Replicas != nil && (*input.Replicas < 0 || *input.Replicas > int(state.Slot.MaxReplicas)) || target < 0 || target > state.Slot.MaxReplicas || input.Action == "start" && target == 0 {
+	if input.Replicas != nil && (*input.Replicas < 0 || *input.Replicas > int(state.Slot.MaxReplicas)) || target < 0 || target > math.MaxInt32 || target > int(state.Slot.MaxReplicas) || input.Action == "start" && target == 0 {
 		return 0, apperrors.ErrInvalidArgument
 	}
-	return target, nil
+	return int32(target), nil
 }
-func maxObserved(state domain.State) int32 {
+func maxObserved(state domain.State) (int32, error) {
 	value := int32(0)
 	if state.Pool.ObservedReplicas != nil {
-		value = int32(*state.Pool.ObservedReplicas)
+		observed := *state.Pool.ObservedReplicas
+		if observed < 0 || observed > math.MaxInt32 {
+			return 0, apperrors.ErrConflict
+		}
+		value = int32(observed)
 	}
 	if state.ObservedDesiredReplicas != nil {
 		value = max(value, *state.ObservedDesiredReplicas)
 	}
-	return value
+	return value, nil
 }
 func (s *Service) commitFor(ctx context.Context, p identity.Principal, m Mutation, i any) (api.NetworkRADIUSPool, error) {
 	v, e := s.commit(ctx, m, i)

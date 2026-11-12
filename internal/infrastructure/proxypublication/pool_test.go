@@ -5,6 +5,7 @@ import (
 	"errors"
 	proxy "github.com/opensoha/soha/internal/domain/networkproxy"
 	deployment "github.com/opensoha/soha/internal/domain/proxydeployment"
+	domain "github.com/opensoha/soha/internal/domain/proxypublication"
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"testing"
@@ -55,9 +56,7 @@ func TestProxyPoolUsesRuntimeIdentityAndInstalledEndpoint(t *testing.T) {
 			adapter := Pool{deployment: controlPoolFixture{p}, instances: instances, slots: slots}
 			got, err := adapter.ApprovedPool(context.Background(), "master")
 			if name == "valid" {
-				if err != nil || len(got.Members) != 2 || !got.Members[0].Running || got.Members[1].Running || got.Members[0].ExpectedRevision != 3 || got.Members[1].ExpectedRevision != 4 || len(got.Endpoints) != 1 || got.Endpoints[0].EndpointID != "private" || got.Members[0].ServingUntil != nil || got.Members[1].ServingUntil == nil || !got.Members[1].ServingUntil.Equal(servingUntil) {
-					t.Fatalf("pool=%+v error=%v", got, err)
-				}
+				assertInstalledPool(t, got, err, servingUntil)
 			} else if name == "unmanaged" {
 				if err != nil || len(got.Endpoints) != 0 || got.Members[0].Running {
 					t.Fatalf("unmanaged pool=%+v err=%v", got, err)
@@ -120,5 +119,12 @@ func TestProxyPoolSeparatesTargetReplicasFromDrainingMembers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func assertInstalledPool(t *testing.T, got domain.ApprovedPool, err error, servingUntil time.Time) {
+	t.Helper()
+	if err != nil || len(got.Members) != 2 || !got.Members[0].Running || got.Members[1].Running || got.Members[0].ExpectedRevision != 3 || got.Members[1].ExpectedRevision != 4 || len(got.Endpoints) != 1 || got.Endpoints[0].EndpointID != "private" || got.Members[0].ServingUntil != nil || got.Members[1].ServingUntil == nil || !got.Members[1].ServingUntil.Equal(servingUntil) {
+		t.Fatalf("pool=%+v error=%v", got, err)
 	}
 }

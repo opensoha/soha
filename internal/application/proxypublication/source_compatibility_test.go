@@ -32,7 +32,10 @@ func sourceFlowFixture(t *testing.T) (*Bundles, *bundleFake, api.NetworkProxyIng
 }
 func TestSourceCompatibilityKeepsBAndNeverAddsC(t *testing.T) {
 	b, _, input := sourceFlowFixture(t)
-	source := b.sources.(*sourceFake)
+	source := fixtureValue[*sourceFake](t, b.sources)
+	if source == nil {
+		t.Fatal("missing source fixture")
+	}
 	source.source.Public.Revision = 2
 	source.allowed = []string{"node-a", "node-b", "node-c"}
 	out, err := b.IngressCheck(context.Background(), networkidentity.Identity{ID: "proxy-1"}, "", input)
@@ -55,7 +58,10 @@ func TestSourceRevocationNarrowsCredentialWithoutRotatingB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := b.sources.(*sourceFake)
+	source := fixtureValue[*sourceFake](t, b.sources)
+	if source == nil {
+		t.Fatal("missing source fixture")
+	}
 	source.source.Public.Revision = 2
 	source.allowed = []string{"node-b"}
 	after, err := b.Projection(context.Background(), networkidentity.Identity{ID: "endpoint-1"}, "", "profile-1", "boot-1")
@@ -88,7 +94,10 @@ func TestGatewayInvalidatesWholeOriginalComposition(t *testing.T) {
 	f.record.Nodes = []string{"gateway"}
 	f.credential.NodeIDs = []string{"gateway"}
 	input.NodeID = "gateway"
-	source := b.sources.(*sourceFake)
+	source := fixtureValue[*sourceFake](t, b.sources)
+	if source == nil {
+		t.Fatal("missing source fixture")
+	}
 	source.source.Public.Revision = 2
 	source.allowed = []string{"node-b"}
 	out, err := b.IngressCheck(context.Background(), networkidentity.Identity{ID: "proxy-1"}, "", input)
@@ -98,7 +107,11 @@ func TestGatewayInvalidatesWholeOriginalComposition(t *testing.T) {
 }
 func TestSourceFullDeletionStopsBWithoutFallback(t *testing.T) {
 	b, _, input := sourceFlowFixture(t)
-	b.sources.(*sourceFake).source.Deleted = true
+	source := fixtureValue[*sourceFake](t, b.sources)
+	if source == nil {
+		t.Fatal("missing source fixture")
+	}
+	source.source.Deleted = true
 	out, err := b.IngressCheck(context.Background(), networkidentity.Identity{ID: "proxy-1"}, "", input)
 	if err != nil || out.Allowed {
 		t.Fatal("deleted source served B", err)

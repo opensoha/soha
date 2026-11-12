@@ -13,6 +13,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	proxyrepo "github.com/opensoha/soha/internal/repository/networkproxy"
 	"gorm.io/gorm"
+	"math"
 	"reflect"
 	"slices"
 	"time"
@@ -358,9 +359,13 @@ func pinDrainLease(ctx context.Context, tx *gorm.DB, state *domain.State, comman
 	if state.ObservedDesiredReplicas != nil && *state.ObservedDesiredReplicas > required {
 		required = *state.ObservedDesiredReplicas
 	}
+	memberCount := len(state.Members)
+	if memberCount < 0 || memberCount > math.MaxInt32 {
+		return apperrors.ErrConflict
+	}
 	selected := domain.ReplicaRange{End: required}
 	if state.ActualReplicas != nil && state.ObservedDesiredReplicas != nil {
-		if removed, valid := domain.RetiringRange(command.Replicas, *state.ActualReplicas, *state.ObservedDesiredReplicas, int32(len(state.Members))); valid {
+		if removed, valid := domain.RetiringRange(command.Replicas, *state.ActualReplicas, *state.ObservedDesiredReplicas, int32(memberCount)); valid {
 			selected = removed
 		}
 	}

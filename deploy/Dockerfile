@@ -7,6 +7,7 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 COPY contracts/package.json ./contracts/package.json
 COPY web/package.json ./web/package.json
+COPY web/scripts/apply-dependency-patches.mjs web/scripts/dependency-patches.json web/scripts/dependency-patches.patch ./web/scripts/
 RUN npm ci
 COPY contracts ./contracts
 COPY web ./web

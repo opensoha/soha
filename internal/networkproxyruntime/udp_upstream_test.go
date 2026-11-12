@@ -33,11 +33,11 @@ func newSOCKSUpstreamFixture(t *testing.T, bound []byte, tcp bool) *socksUpstrea
 	}
 	relay, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
-		listener.Close()
+		_ = listener.Close()
 		t.Fatal(err)
 	}
 	f := &socksUpstreamFixture{address: listener.Addr().String()}
-	t.Cleanup(func() { listener.Close(); relay.Close() })
+	t.Cleanup(func() { _ = listener.Close(); _ = relay.Close() })
 	go func() {
 		buffer := make([]byte, 65536)
 		for {
@@ -59,36 +59,12 @@ func newSOCKSUpstreamFixture(t *testing.T, bound []byte, tcp bool) *socksUpstrea
 				return
 			}
 			go func() {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				defer f.closed.Add(1)
 				_ = c.SetDeadline(time.Now().Add(4 * time.Second))
-				var greeting [3]byte
-				if _, err := io.ReadFull(c, greeting[:]); err != nil || greeting != [3]byte{5, 1, 2} {
+				if !fixtureUpstreamSOCKSAuth(c) {
 					return
 				}
-				if _, err := c.Write([]byte{5, 2}); err != nil {
-					return
-				}
-				var h [2]byte
-				if _, err := io.ReadFull(c, h[:]); err != nil || h[0] != 1 {
-					return
-				}
-				user := make([]byte, int(h[1]))
-				if _, err := io.ReadFull(c, user); err != nil {
-					return
-				}
-				var size [1]byte
-				if _, err := io.ReadFull(c, size[:]); err != nil {
-					return
-				}
-				secret := make([]byte, int(size[0]))
-				if _, err := io.ReadFull(c, secret); err != nil {
-					return
-				}
-				if string(user) != "upstream-user" || string(secret) != "short-secret" {
-					return
-				}
-				_, _ = c.Write([]byte{1, 0})
 				var request [10]byte
 				if _, err := io.ReadFull(c, request[:]); err != nil || request[0] != 5 || request[3] != 1 {
 					return
@@ -111,7 +87,7 @@ func newSOCKSUpstreamFixture(t *testing.T, bound []byte, tcp bool) *socksUpstrea
 					address = []byte{1, 0, 0, 0, 0}
 				}
 				response := append([]byte{5, 0, 0}, address...)
-				response = binary.BigEndian.AppendUint16(response, uint16(relay.LocalAddr().(*net.UDPAddr).Port))
+				response = binary.BigEndian.AppendUint16(response, fixtureValue[*net.UDPAddr](t, relay.LocalAddr()).AddrPort().Port())
 				_, _ = c.Write(response)
 				_, _ = io.Copy(io.Discard, c)
 			}()
@@ -148,7 +124,7 @@ func installFixtureSOCKSBridge(t *testing.T, f *socksUpstreamFixture) (*egressGu
 	if node["password"] == "short-secret" || node["server"] != "127.0.0.1" {
 		t.Fatal("native source retained upstream credentials")
 	}
-	return g, &egressBackend{port: node["port"].(int), user: node["username"].(string), secret: node["password"].(string)}
+	return g, &egressBackend{port: fixtureValue[int](t, node["port"]), user: fixtureValue[string](t, node["username"]), secret: fixtureValue[string](t, node["password"])}
 }
 
 func TestSOCKSUpstreamBridgePinsRelayAndSupportsDrainResume(t *testing.T) {
@@ -158,7 +134,7 @@ func TestSOCKSUpstreamBridgePinsRelayAndSupportsDrainResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	packetEcho(t, c, []byte("approved"))
 	g.accepting.Store(false)
 	packetEcho(t, c, []byte("draining"))
@@ -169,10 +145,10 @@ func TestSOCKSUpstreamBridgePinsRelayAndSupportsDrainResume(t *testing.T) {
 	_ = late.SetDeadline(time.Now().Add(75 * time.Millisecond))
 	_, _ = late.Write([]byte("blocked"))
 	if _, err := late.Read(make([]byte, 100)); err == nil {
-		late.Close()
+		_ = late.Close()
 		t.Fatal("drain forwarded a new destination")
 	}
-	late.Close()
+	_ = late.Close()
 	if f.associations.Load() != 1 {
 		t.Fatal("drain opened a new upstream association")
 	}
@@ -182,7 +158,7 @@ func TestSOCKSUpstreamBridgePinsRelayAndSupportsDrainResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resumed.Close()
+	defer func() { _ = resumed.Close() }()
 	packetEcho(t, resumed, []byte("resumed"))
 	if f.packets.Load() != 3 {
 		t.Fatal("source relay did not carry exact datagrams")
@@ -210,7 +186,7 @@ func TestSOCKSUpstreamBridgeRejectsUnapprovedRelayWithZeroWitness(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer c.Close()
+			defer func() { _ = c.Close() }()
 			_ = c.SetDeadline(time.Now().Add(100 * time.Millisecond))
 			_, _ = c.Write([]byte("must not reach relay"))
 			if _, err := c.Read(make([]byte, 100)); err == nil {
@@ -238,7 +214,7 @@ func TestSOCKSUpstreamBridgeRetainsTCPAndRejectsProtectedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	_ = c.SetDeadline(time.Now().Add(time.Second))
 	if _, err := c.Write([]byte("tcp")); err != nil {
 		t.Fatal(err)
@@ -248,7 +224,7 @@ func TestSOCKSUpstreamBridgeRetainsTCPAndRejectsProtectedTarget(t *testing.T) {
 		t.Fatal("TCP source bridge changed stream")
 	}
 	if rejected, err := dialOwnedTCP(context.Background(), b, "10.0.0.1:443"); err == nil {
-		rejected.Close()
+		_ = rejected.Close()
 		t.Fatal("protected source target accepted")
 	}
 	if f.targets.Load() != 1 {
@@ -312,4 +288,35 @@ func assertPacketClosed(t *testing.T, c net.Conn, deadline time.Time) {
 	if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
 		t.Fatal("association only closed at test timeout")
 	}
+}
+
+func fixtureUpstreamSOCKSAuth(c net.Conn) bool {
+	var greeting [3]byte
+	if _, err := io.ReadFull(c, greeting[:]); err != nil || greeting != [3]byte{5, 1, 2} {
+		return false
+	}
+	if _, err := c.Write([]byte{5, 2}); err != nil {
+		return false
+	}
+	var h [2]byte
+	if _, err := io.ReadFull(c, h[:]); err != nil || h[0] != 1 {
+		return false
+	}
+	user := make([]byte, int(h[1]))
+	if _, err := io.ReadFull(c, user); err != nil {
+		return false
+	}
+	var size [1]byte
+	if _, err := io.ReadFull(c, size[:]); err != nil {
+		return false
+	}
+	secret := make([]byte, int(size[0]))
+	if _, err := io.ReadFull(c, secret); err != nil {
+		return false
+	}
+	if string(user) != "upstream-user" || string(secret) != "short-secret" {
+		return false
+	}
+	_, _ = c.Write([]byte{1, 0})
+	return true
 }

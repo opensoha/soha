@@ -275,7 +275,7 @@ func pollingOwnedStream(t *testing.T) (*egressGuard, net.Conn) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_, _ = io.Copy(conn, conn)
 	}()
 	g, err := newEgressGuard(nil, time.Now().Add(time.Minute))
@@ -303,8 +303,8 @@ func pollingOwnedStream(t *testing.T) (*egressGuard, net.Conn) {
 		t.Fatal(err)
 	}
 	reader := bufio.NewReader(conn)
-	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
-	if err != nil || response.StatusCode != http.StatusOK {
+	response, err := readFixtureConnectStatus(t, conn, reader)
+	if err != nil || response != http.StatusOK {
 		t.Fatalf("CONNECT: %v %v", response, err)
 	}
 	if _, err := conn.Write([]byte("x")); err != nil {
@@ -375,28 +375,7 @@ func TestRunPollingBlockedControlClosesOwnedFlowAtCurrentExpiry(t *testing.T) {
 				case <-time.After(time.Second):
 					t.Fatal("initial control request missing")
 				}
-				_ = stream.SetReadDeadline(boundary.Add(150 * time.Millisecond))
-				_, err := stream.Read(make([]byte, 1))
-				if err == nil {
-					t.Fatal("flow survived hard expiry")
-				}
-				if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
-					t.Fatal("blocked control GET delayed flow closure")
-				}
-				if time.Now().Before(boundary) {
-					t.Fatal("flow closed before authorized boundary")
-				}
-				if g.accepting.Load() {
-					t.Fatal("expired guard still accepts requests")
-				}
-				conn, err := net.DialTimeout("tcp", g.listener.Addr().String(), 20*time.Millisecond)
-				if err == nil {
-					conn.Close()
-					t.Fatal("expired guard permits reconnect")
-				}
-				if n := requests.Load(); n != 1 {
-					t.Fatalf("expiry caused extra HTTP: %d", n)
-				}
+				assertBlockedControlExpiry(t, stream, g, boundary, &requests)
 				select {
 				case <-recovered:
 				case <-time.After(time.Second):
@@ -404,7 +383,7 @@ func TestRunPollingBlockedControlClosesOwnedFlowAtCurrentExpiry(t *testing.T) {
 				}
 				// State is read only after Runner has stopped.
 				cancel()
-				err = <-done
+				err := <-done
 				finished = true
 				if err != nil || r.deployment.floor != 2 || r.enabled {
 					t.Fatalf("recovery state: err=%v revision=%d enabled=%v", err, r.deployment.floor, r.enabled)
@@ -414,5 +393,31 @@ func TestRunPollingBlockedControlClosesOwnedFlowAtCurrentExpiry(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func assertBlockedControlExpiry(t *testing.T, stream net.Conn, g *egressGuard, boundary time.Time, requests *atomic.Int32) {
+	t.Helper()
+	_ = stream.SetReadDeadline(boundary.Add(150 * time.Millisecond))
+	_, err := stream.Read(make([]byte, 1))
+	if err == nil {
+		t.Fatal("flow survived hard expiry")
+	}
+	if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("blocked control GET delayed flow closure")
+	}
+	if time.Now().Before(boundary) {
+		t.Fatal("flow closed before authorized boundary")
+	}
+	if g.accepting.Load() {
+		t.Fatal("expired guard still accepts requests")
+	}
+	conn, err := net.DialTimeout("tcp", g.listener.Addr().String(), 20*time.Millisecond)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("expired guard permits reconnect")
+	}
+	if n := requests.Load(); n != 1 {
+		t.Fatalf("expiry caused extra HTTP: %d", n)
 	}
 }

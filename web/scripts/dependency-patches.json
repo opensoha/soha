@@ -1,0 +1,433 @@
+{
+  "description": "Security backport to Zod 4.6.7 bundled v3 and explicit Midscene 1.17.8 v3 imports; production Web remains on v4. Retain published nwsapi2.2.28 parser fixes while raising its finite LRU capacity to4096 for jsdom stylesheet working sets.",
+  "license": "Upstream Zod and Midscene are MIT; original package licenses remain installed unchanged. NWSAPI and its regression fixtures are MIT; fixture LICENSE is retained.",
+  "sourceFix": "https://github.com/colinhacks/zod/commit/a0ebf970f2d752e5f58527cd2942ff48be4f46bd",
+  "advisory": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+  "removal": "Remove once Midscene supports the patched Zod v4 public API, or upstream patches v3; rerun security, schema, CJS/ESM and Chromium checks before changing pins.",
+  "patchSha256": "c776f0cb0d3797ccaafd41d234c6714fed6f6d616a68f4aab64a4f7d3e709559",
+  "packages": [
+    {
+      "path": "node_modules/zod",
+      "version": "4.6.7",
+      "manifestSha256": "c2d190d9ee4e0bdb60332aaa2130a6a98d65ddb903fe1d29248b15de57832c45",
+      "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="
+    },
+    {
+      "path": "node_modules/@midscene/core",
+      "version": "1.17.8",
+      "manifestSha256": "35314adebb8577dbaab8f405019a7b39f4c211b0a8e51991100ac33904e85ff3",
+      "integrity": "sha512-RSiYUiDBbEPEoaVVVYi+w01wW/SFS4H/49GywLgoEegiIWdjm3X11S/W2rMASZ0zvLl9bE9vp1NtFuIOw4dd9w=="
+    },
+    {
+      "path": "node_modules/@midscene/shared",
+      "version": "1.17.8",
+      "manifestSha256": "f9f7b6dba53dbb39cbcb7653dd25e2afb476e0eee6fe40490458747101f4417f",
+      "integrity": "sha512-soCXYIqcoq8o2p1YlYGjd5GdEcYLBS444JKO6u2oB26d13OoP+LPwzqo7gyqJuDBkhYDYoRgkf06v1KCx4uMRA=="
+    },
+    {
+      "path": "node_modules/@midscene/web",
+      "version": "1.17.8",
+      "manifestSha256": "69a1a2dcb688c012eea5df99c07c347c25eaf9418ec1ab311cfc92f285fd2875",
+      "integrity": "sha512-XMxJFz9XV6VCrGs1XIPa0MkqbFKAA8G4YQlBQIMnV0iQVNgQmXFsPsLbNsol4WXj+92kTtp8DBpIXvo69h4i9g=="
+    },
+    {
+      "path": "node_modules/@midscene/playground",
+      "version": "1.17.8",
+      "manifestSha256": "f325008523fe67ce12b6cb25deb4040b9bcc06ffe276153ed3783aa6dd63877f",
+      "integrity": "sha512-Emfu4O0d+EMZXMOx3KK6jzSdWPX/TIwE8kMUGcVRxWg2F5Avf7u5zz6cwVVxEaxXJpWr1OIyu/vU3qBOy/4BzQ=="
+    },
+    {
+      "path": "node_modules/nwsapi",
+      "version": "2.2.28",
+      "manifestSha256": "2dff610d4e13bf38e905180901cfd2e1d9daf0914bcacf046bc896e21fc384cc",
+      "integrity": "sha512-IlVB7OS7qrOsVYlpnFIkETjMwT9jwvmocJmmM+GZU/PAB3uGi9Ezd7vcWhWBUnSc0ya4ppmQITOyP1ez9gg8cg=="
+    }
+  ],
+  "edits": {
+    "arrayLength": {
+      "before": "message: def.exactLength.message,\n                });\n                status.dirty();",
+      "after": "message: def.exactLength.message,\n                });\n                if (tooBig) return INVALID;\n                status.dirty();"
+    },
+    "arrayMax": {
+      "before": "message: def.maxLength.message,\n                });\n                status.dirty();",
+      "after": "message: def.maxLength.message,\n                });\n                return INVALID;"
+    },
+    "setMax": {
+      "before": "message: def.maxSize.message,\n                });\n                status.dirty();",
+      "after": "message: def.maxSize.message,\n                });\n                return INVALID;"
+    },
+    "importDouble": {
+      "before": "\"zod\"",
+      "after": "\"zod/v3\""
+    },
+    "importSingle": {
+      "before": "'zod'",
+      "after": "'zod/v3'"
+    },
+    "arrayLengthCjs": {
+      "before": "message: def.exactLength.message,\n                });\n                status.dirty();",
+      "after": "message: def.exactLength.message,\n                });\n                if (tooBig) return parseUtil_js_1.INVALID;\n                status.dirty();"
+    },
+    "arrayMaxCjs": {
+      "before": "message: def.maxLength.message,\n                });\n                status.dirty();",
+      "after": "message: def.maxLength.message,\n                });\n                return parseUtil_js_1.INVALID;"
+    },
+    "setMaxCjs": {
+      "before": "message: def.maxSize.message,\n                });\n                status.dirty();",
+      "after": "message: def.maxSize.message,\n                });\n                return parseUtil_js_1.INVALID;"
+    },
+    "bundleArray": {
+      "before": "expected:s.Zp.array,received:t.parsedType}),p;",
+      "after": "expected:s.Zp.array,received:t.parsedType}),p;if(null!==n.exactLength&&t.data.length>n.exactLength.value)return d(t,{code:a.eq.too_big,maximum:n.exactLength.value,type:\"array\",inclusive:!0,exact:!0,message:n.exactLength.message}),p;if(null!==n.maxLength&&t.data.length>n.maxLength.value)return d(t,{code:a.eq.too_big,maximum:n.maxLength.value,type:\"array\",inclusive:!0,exact:!1,message:n.maxLength.message}),p;"
+    },
+    "bundleArrayHtml": {
+      "before": "expected:s.Zp.array,received:t.parsedType}),p;",
+      "after": "expected:s.Zp.array,received:t.parsedType}),p;if(null!==n.exactLength&&t.data.length>n.exactLength.value)return d(t,{code:a.eq.too_big,maximum:n.exactLength.value,type:\\\"array\\\",inclusive:!0,exact:!0,message:n.exactLength.message}),p;if(null!==n.maxLength&&t.data.length>n.maxLength.value)return d(t,{code:a.eq.too_big,maximum:n.maxLength.value,type:\\\"array\\\",inclusive:!0,exact:!1,message:n.maxLength.message}),p;"
+    },
+    "bundleSet": {
+      "before": "expected:s.Zp.set,received:r.parsedType}),p;let n=this._def;",
+      "after": "expected:s.Zp.set,received:r.parsedType}),p;let n=this._def;if(null!==n.maxSize&&r.data.size>n.maxSize.value)return d(r,{code:a.eq.too_big,maximum:n.maxSize.value,type:\"set\",inclusive:!0,exact:!1,message:n.maxSize.message}),p;"
+    },
+    "bundleSetHtml": {
+      "before": "expected:s.Zp.set,received:r.parsedType}),p;let n=this._def;",
+      "after": "expected:s.Zp.set,received:r.parsedType}),p;let n=this._def;if(null!==n.maxSize&&r.data.size>n.maxSize.value)return d(r,{code:a.eq.too_big,maximum:n.maxSize.value,type:\\\"set\\\",inclusive:!0,exact:!1,message:n.maxSize.message}),p;"
+    },
+    "playgroundSourceMap": {
+      "before": "//# sourceMappingURL=208.eb5899a1.js.map",
+      "after": ""
+    },
+    "selectorCacheCapacity": {
+      "before": "CACHE_LIMIT = 1000,",
+      "after": "CACHE_LIMIT = 4096,"
+    }
+  },
+  "files": [
+    {
+      "path": "node_modules/zod/v3/types.js",
+      "before": "d7214e1dacf9e6e70c9ca80247717b4be13b240510428fef132b7da3260d1a32",
+      "after": "de43f14f82c8e8501e2b176d2cea024e784cf8696ba4f2601044c02492a38f8a",
+      "edits": ["arrayLength", "arrayMax", "setMax"]
+    },
+    {
+      "path": "node_modules/zod/v3/types.cjs",
+      "before": "7a2f06d88e280bdd198c60e0d292ed7f1e3993e877be4415de07e6abc7746dd1",
+      "after": "1fea7372e34fb34f0e0c7c9c2196d0109be74f532e807576ab016104d9c7d2c5",
+      "edits": ["arrayLengthCjs", "arrayMaxCjs", "setMaxCjs"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/ai-model/service-caller/system-one/schema.mjs",
+      "before": "e390f78bee14f50c8f7ac87e7e1802517227032911ccd20c6f71bf56e2668acb",
+      "after": "4c8bfe86fe4487f6ee1574e147b4124cc19dd30932ae7e79aeaf83bce17374aa",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/ai-model/workflows/grounding/planning-action-locate.mjs",
+      "before": "153087ae416764f36c6a84f10a435fb9600306ea464edd99d1db75e5582ee9c1",
+      "after": "320ef11b2e806305e8c81e198453805b47fc0459fda253058250cb40426df949",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/ai-model/workflows/planning/parse-planning-actions.mjs",
+      "before": "54fb4ad437ce6b58882c7b33f47f8878fc4dd12d2083f175c104688df6e69e51",
+      "after": "566acd7e56bfb2d08ebeea40a3003e164fb12f55fe61c31421e169a014d9a01d",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/common.mjs",
+      "before": "cf1da04f402cc9ca6de90fd54222aba798995da7b9e32f3de39424c3562f110f",
+      "after": "ce470af4f1faf25327693e8426a0463e3f7fc744921f94e91041d813edccef39",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/device/index.mjs",
+      "before": "54575f3e170c1ada5bca1c10f9ad3aca73bb043bae65f5a17927383de6e90009",
+      "after": "2d9507a9db88788356cfd91ece64d659c1f455acd69dc3c554e8e19eb63beaa7",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/index.mjs",
+      "before": "5850ec567fe0ae089f69c0ce87c915d8d547a9f229f78bf5c404abd4c39d6f0a",
+      "after": "28f2580ebd2734c9120a06e9414cdf31bc13d80602df2335a431b745a74b5f9f",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/report-cli.mjs",
+      "before": "9bd7914340a23d35a5a1b0d4b19207d710cbaf691dc7205e16f778882a004f09",
+      "after": "87f9a40f5d6d4f7fc026bed06f3403b97f904d651bc4272512ed8b2e469f1bbf",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/yaml/test-runner-compat.mjs",
+      "before": "c3e164cb7c903550a885e23542f6d317c5cc72089ce82b134518b75f03688b18",
+      "after": "ec3d7e9e1a46f0904b9ff0e7dbadd2d4af2db8352c636be6bac8167f4cdac656",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/ai-model/service-caller/system-one/schema.js",
+      "before": "136cbf0597b33c5a65bf7f531b3b0e0c34ef1d0f1213612adcdf5a3f9a4ae226",
+      "after": "410a213887bfb88dc1b04b19fce4afcd9dac92b4585c6b2b5fa918fe69d91959",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/ai-model/workflows/grounding/planning-action-locate.js",
+      "before": "931095b68c67482425b5e6fbbec5b39ad5710c0213b3662d80f483e1e607e32b",
+      "after": "f1beac071a946e1a09a0d6abbf0d8fdfe0e0eaa6f707838978c3c98226622083",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/ai-model/workflows/planning/parse-planning-actions.js",
+      "before": "e2a6ac93d50b235725b384779ff51973ea96e1f55e0ba0c7580f124c865e6a79",
+      "after": "f47e6000a5d48c2c6876da56d4feaf388c28f935115f9932300e322dd16bc615",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/common.js",
+      "before": "a7ff5e8c18205284f2fb5f0547b3c0e9c08b73f960cdad8391568e128908ccef",
+      "after": "ab35c00a556174dacf160453b2b015af13c5bf82c9b9d0479b707de3294f3b93",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/device/index.js",
+      "before": "777f9fe5a55ec823a19df0d054765f989e38890f6f377363c8ce803d78d7b497",
+      "after": "0c339c637f60cf0cb6e0f1bc9aa20a28b014ede633250c43ffd693bca0f08b66",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/index.js",
+      "before": "9ace82abeca75f799d19300c97525daa5ebdaa9bde724d3aa32c940a452ccff9",
+      "after": "e39922b3fda7c72c592beb07d8b9ddd809c975b46413ce3eba63e0c3f0df6625",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/report-cli.js",
+      "before": "493accfa0afd9a2b2bcc512fd6943c371538ba221dd285c8e979cf01baa1da9a",
+      "after": "1b6c249bafc056bd6b6b42816e18d966607eac439535331cb8eb0fe82d7dfb8a",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/yaml/test-runner-compat.js",
+      "before": "d781fa7eb8d2f485069d91efd8327b61e19a36fa42742afa99c08d111dc74f03",
+      "after": "2c68925f85f57115c6fc86d072d0bd5729c8d2d21675e6958a17e6d6b3b54597",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/types/ai-model/service-caller/system-one/schema.d.ts",
+      "before": "5639a0a6171811e808cb350ce04c62f5b049fed2435e531f5b46c3a927158dfa",
+      "after": "f84e502d33c5bca230ebc1386b4acbb0cfd5011c22ea2e82f44261baf70140b4",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/types/common.d.ts",
+      "before": "97f936878223985bcec3ee55445342b7d831bc48662d07ceae7fddbf379c2dac",
+      "after": "8742c9adf9d432d10a7372c29b4857a7a29c5479308fc9a88d627fab95e9f07f",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/types/device/index.d.ts",
+      "before": "d2ca8c4c5c804e01786b47363c47a975a57622f93431718b7c3e434501df1d1d",
+      "after": "aa6db3a5c4057aef955d3b0ef7e27c566b0ea7fb16a0f353536b0d653cb07c02",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/types/index.d.ts",
+      "before": "3f46bbf2faea873f615c07dee68926574eefa9725e5483d6c1e12835737b89f1",
+      "after": "137843d0184641560ec7b5fd3d8c98c0fcfc43b4568d4797b70af10859b7ce8a",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/types/report-cli.d.ts",
+      "before": "a057118bd516786d0db4afb948aefc033faad99470971cfbcdc4667892f60163",
+      "after": "f70d642f322116193da6c2dafd2e84e7aa07058b0a81cc22f7080612f6f1c559",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/types/types.d.ts",
+      "before": "f8bd8534e5662dbf4697ac288b529dbfc6442663a8f28a6f0e528f67072e7363",
+      "after": "698fae3aeecc9be1349f87ce13d008fdaa5e5c607e54c82db011f0ceed23befb",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/types/yaml/test-runner-compat.d.ts",
+      "before": "fe573eb46af4c9715eab72b71024c4d89b1cdc4dd58d835bcb8d8018c4fa03d2",
+      "after": "ab6af1e4f92a4a8e0bae232cf4675b7443fa3670d281d5cd458721c3a765bc6d",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/es/agent-tools/agent-behavior-init-args.mjs",
+      "before": "6670c1cd91b92ee10234d6e701886d9a6a1a8777cb356eaaedd12cd63f1bc54e",
+      "after": "ca9803d421af54de3937656b4461ec0cd7e4c9a5878ef04a60e8c5c067e1497e",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/es/agent-tools/observation-record.mjs",
+      "before": "6616a3c28e18bdb0c23ff275cb7c2b8ebc965f56b7bbe08367fcb161de6ecd4c",
+      "after": "1039ba2b32c8559724521cb7f51bd46a7cad7db0643873983aef399934390ddf",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/es/agent-tools/tool-generator.mjs",
+      "before": "767fef59d9ba6c5a8f10b26d3c41d42a2db5382a0133a4f15d6b9ff450ccd654",
+      "after": "39944ac5e8524be9bb6fb8e8980e3b338b9648e4e29ab225791aea57f920cfb9",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/es/agent-tools/user-prompt.mjs",
+      "before": "351a3d73cad65a65b8f46dc4d4e3677103d884a7d1f716232a0687368361299b",
+      "after": "39fedb83c22ebb499cfd0d73388713c6250495cebef7342a674701cffce6e8f2",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/es/cli/cli-args.mjs",
+      "before": "8b22d8d1ce6dba0f9b25c86252906c8b3be2f0b28a572ec36071abe37a3d147e",
+      "after": "4030e02fb9131515c6ca19214262392e63aa68b091c9f4cea4633e9db333b4c7",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/es/cli/cli-value.mjs",
+      "before": "45988ee637f2013eb40a676ddee066a24b9d64134a393415e05b0dafa107cba0",
+      "after": "52537a3e0b085da84af199345a3cbe2a482f3445e88aff5fbf9f1ec87e8ffe02",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/es/cli/record-command.mjs",
+      "before": "c83b2712aff4acd62a87ee0aa1d61801b6b2b82cf3658e09affb9e30757f319b",
+      "after": "4176c14671fd9e57070c7bf3eb1dfce220828f399aa1e15da1bec128dea5d817",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/lib/agent-tools/agent-behavior-init-args.js",
+      "before": "04fcc2292fedc072fe68593ba884dbefd283b00572ee02a051f7dcd9193f5130",
+      "after": "d73ec8e83fc985f619bd687358b791b62c27869a3f11571fa3227fe586ff5282",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/lib/agent-tools/observation-record.js",
+      "before": "d9e57eaafa05c1aa1eba2f8a69c7a76e9ccd6cdf2be3f0ff43a8ef4cbd14239d",
+      "after": "8bdbfb4729bf7d37a3265e89cf5d184a52ca09d4320314be6e215717d89f8a3d",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/lib/agent-tools/tool-generator.js",
+      "before": "d60256bcab424e638ee64be4ed8e08314025db9b62bfcd807dcd831c0553aa05",
+      "after": "9e0c04c79684b01b9dd46c95a0c299718c1c816d20ebb742fa9e80e6f8fd56d3",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/lib/agent-tools/user-prompt.js",
+      "before": "156ed00ce01c3c75636a334abec7d7a4fedc6aa7a161007e91cbacf235419f01",
+      "after": "2e8853db3f84c03e7eead6486d1468d4bacaa9723f514e1648eb90486c077ed3",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/lib/cli/cli-args.js",
+      "before": "77530726199d7d13995799d460f4dc88caf2d7fda6ba16690d7c3244afdfb6a4",
+      "after": "ffe7a7f2ff8e6be923cefcc3e0b6a2769d2e581619b1e0e666d2372dc841bb35",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/lib/cli/cli-value.js",
+      "before": "00efda16e106c204f687b16e44aeac93e0e510014caec1b0f371348bccf069e2",
+      "after": "ac17c1c7ff82df96b31959bcaf40a5b08e6b8e7ee8376b46375cca4719cffd18",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/lib/cli/record-command.js",
+      "before": "6b11cb92606fe91f8a72cfecd01cd11b8594e63b9178a9caac84df9c21417e51",
+      "after": "3d7c35cfbf0cc824b2f70586cf8183c03474920a4347d3793d26e94256fcc701",
+      "edits": ["importDouble"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/types/agent-tools/agent-behavior-init-args.d.ts",
+      "before": "b5849c3979171921755fd49635ab2e090064cff1c4d19713aa570e67a73555e6",
+      "after": "254df4ced6dcaa91c7f4adc9562e6ab4012995a3524764c5f8e473a04453e615",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/types/agent-tools/base-tools.d.ts",
+      "before": "6aaf0d6d3aafdb7fd38b483d88036d081d8c1da78916c446a508f77140a62282",
+      "after": "2dc4ede289dbef138ee6d05e84b50d48ac1780cb1b9fb1754c363070e182b84d",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/types/agent-tools/init-arg-utils.d.ts",
+      "before": "dfe1131c0ad90dd871a573a068561d8139186c4a1c93f11680f109c56099c58b",
+      "after": "be2f3046bbe5dbd711ef0401cf01bff0336bbcb5eaa379da4b5d7e4f18c7ed18",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/types/agent-tools/types.d.ts",
+      "before": "e08906247f334b449cfcd4127cbe4dd007e8061500bcb52dcc899a14955a5391",
+      "after": "3b2d461fa8a91fe85b3cc3f09cb0658d27e5d08e36a53c4a17d8dd728e2efae5",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/types/agent-tools/user-prompt.d.ts",
+      "before": "cb561d5c44e6f0e6c198a6c71a0085f3361f376e69c8ac44eef154daa2073a25",
+      "after": "af1e6105a3b085ac8335644390af604c6542ebf15b2a6770fdb2312aed39b5a0",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/types/cli/cli-value.d.ts",
+      "before": "a90be7ea780afb0666e1ff45f752efd3dbb5fead9883f667e9e130cb33fb244e",
+      "after": "c8022158934f666b21ce67c0d6922889b81521f415251fc7449fe09b45f6e646",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/shared/dist/types/zod-schema-utils.d.ts",
+      "before": "0a2d5004ae1283f48477c79051cdeef8182b19a6743efd5ab3811be5f7ae351e",
+      "after": "2341b769987cac0f995a5671cf8868be8f7f1372e894037e9414f91b8e4de939",
+      "edits": ["importSingle"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/es/report-html-template.mjs",
+      "before": "27dd694a493e5330b455ee6221c355860b038228aa25e7926258b68eebc1b652",
+      "after": "8385e6366b9c31269954970c25523329fd0ecc420bf914482fcdc2cb9a3dde32",
+      "edits": ["bundleArrayHtml", "bundleSetHtml"]
+    },
+    {
+      "path": "node_modules/@midscene/core/dist/lib/report-html-template.js",
+      "before": "7683bc0d9f3d222ffbdbd4d5df4c98958e7880f6e828a5b1a04e6ecb5283b361",
+      "after": "6f6b0f6e83089cbf31505445b999e457ab9ba362b8f20cbd47211c573c1a4094",
+      "edits": ["bundleArrayHtml", "bundleSetHtml"]
+    },
+    {
+      "path": "node_modules/@midscene/playground/static/static/js/208.eb5899a1.js",
+      "before": "32bd5a255222feac2e0eae7aa77ceca0c3d8888787e0f907150b54aaba21be53",
+      "after": "74d1ab748e493b9f7826ce7b48ba97b41adc326fd56bad5ad5f76fe77d412f90",
+      "edits": ["bundleArray", "bundleSet", "playgroundSourceMap"]
+    },
+    {
+      "path": "node_modules/nwsapi/src/nwsapi.js",
+      "before": "2a8bdd68708f6f443573a8614cb80c74efd30a01a8d277809a093478d7fb7ff2",
+      "after": "c11a635d39191085e2ec8ec6caf5ae5bac4b5e99e4dfd6447493ce2685a99853",
+      "edits": ["selectorCacheCapacity"]
+    }
+  ],
+  "bundlePatchFormat": "The three minified copies use exact byte edits in this manifest, with complete pre/post SHA256. A unified diff would copy multi-MiB single lines. dependency-patches.patch covers the 46 non-bundled runtime and declaration files.",
+  "bundleAssets": "Report templates embed scripts without external source maps. Playground retains its installed content-hash filename and loader URL (no SRI); its post-patch digest is recorded here, and the stale sourceMappingURL is removed. Upstream license files and notices remain unchanged.",
+  "scope": "Bare zod imports in all four installed Midscene packages are covered; intentional zod/v4 test-runner schemas remain on v4. Both Node v3 engines and all three identified embedded v3 copies are patched. Zod v3 Map has no maximum/size API. No other node_modules packages are audited or patched by this adapter.",
+  "nwsapiCompatibility": {
+    "reason": "Published2.2.28 fixed1000-entry LRU repeatedly evicts the observed2555-entry Antd/jsdom selector working set. A68 isolated original cases pass with only capacity4096; this is local finite tuning, not an upstream-published fix.",
+    "upstreamCacheCommit": "https://github.com/dperini/nwsapi/commit/4be8dd87629e9e6cc0204853e91523df1b765847",
+    "upstreamConfigCommit": "https://github.com/dperini/nwsapi/commit/980b0786d4c8ad47c03fcdf929d1ab5243f5029b",
+    "removal": "Remove after a published upstream/jsdom combination passes the original cases at default timeouts and all pinned parser/semantic/cache-bound regressions.",
+    "regressionCommit": "1e098b1134f5351f00acccde86421af692f66278",
+    "fixtures": {
+      "maintenance.test.mts.txt": {
+        "source": "https://raw.githubusercontent.com/dperini/nwsapi/1e098b1134f5351f00acccde86421af692f66278/test/repo/integration/maintenance.test.mts",
+        "sha256": "4faae01619afe617c87dc97822e99c67b1d78fd80d99649c6d891220dac33f87",
+        "bytes": 13021
+      },
+      "parser-stall.txt": {
+        "source": "https://raw.githubusercontent.com/dperini/nwsapi/1e098b1134f5351f00acccde86421af692f66278/test/repo/integration/fixture/parser-stall.txt",
+        "sha256": "fc7d9bd25808b473850c10555ba3d537b48c683ad0393c860ea0ce90b3ab61fc",
+        "bytes": 434
+      },
+      "LICENSE": {
+        "source": "https://raw.githubusercontent.com/dperini/nwsapi/1e098b1134f5351f00acccde86421af692f66278/LICENSE",
+        "sha256": "2aebdf8ae67777ccb2fa66b32066c1a16bd71085011bb4085dc7408e2947d2c2",
+        "bytes": 1084
+      }
+    }
+  }
+}

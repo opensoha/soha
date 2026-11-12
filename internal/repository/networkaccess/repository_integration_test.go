@@ -17,6 +17,7 @@ import (
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	networkaccessrepo "github.com/opensoha/soha/internal/repository/networkaccess"
+	pgtest "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 )
 
@@ -29,10 +30,10 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid PostgreSQL test port: %v", err)
 	}
-	store, err := dbstore.New(config.DatabaseConfig{
+	store, err := dbstore.New(pgtest.Configure(t, config.DatabaseConfig{
 		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable",
 		MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
-	}, zap.NewNop())
+	}), zap.NewNop())
 	if err != nil {
 		t.Fatalf("open PostgreSQL: %v", err)
 	}

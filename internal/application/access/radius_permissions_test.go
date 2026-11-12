@@ -15,19 +15,7 @@ func TestManagedNASCatalogRoleAssignmentAndSnapshot(t *testing.T) {
 	t.Cleanup(func() { SetRolePermissionMatrix(nil) })
 	ctx := context.Background()
 	keys := []string{PermNetworkAccessNASBindingsView, PermNetworkAccessNASBindingsCreate, PermNetworkAccessNASBindingsUpdate}
-	for _, key := range keys {
-		p, found, e := permissionDefinition(key)
-		if e != nil || !found || !p.Assignable || p.Status != "active" {
-			t.Fatalf("catalog cannot assign %s: %+v %v", key, p, e)
-		}
-		resourceScope := false
-		for _, scope := range p.ScopeKinds {
-			resourceScope = resourceScope || string(scope) == "resource"
-		}
-		if !resourceScope {
-			t.Fatalf("no site resource scope: %+v", p)
-		}
-	}
+	assertAssignableNASPermissions(t, keys)
 	canonical, e := CanonicalAssignablePermissionKeys(keys)
 	if e != nil || len(canonical) != 3 {
 		t.Fatalf("canonical assignment rejected: %v", e)
@@ -74,4 +62,22 @@ func TestManagedNASCatalogRoleAssignmentAndSnapshot(t *testing.T) {
 			t.Fatalf("legacy sites grant silently promoted to %s", key)
 		}
 	}
+}
+
+func assertAssignableNASPermissions(t *testing.T, keys []string) {
+	t.Helper()
+	for _, key := range keys {
+		p, found, e := permissionDefinition(key)
+		if e != nil || !found || !p.Assignable || p.Status != "active" {
+			t.Fatalf("catalog cannot assign %s: %+v %v", key, p, e)
+		}
+		resourceScope := false
+		for _, scope := range p.ScopeKinds {
+			resourceScope = resourceScope || string(scope) == "resource"
+		}
+		if !resourceScope {
+			t.Fatalf("no site resource scope: %+v", p)
+		}
+	}
+
 }

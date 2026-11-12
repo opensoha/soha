@@ -110,7 +110,7 @@ func (c *ownedPacketConn) Refresh(until time.Time) error {
 	if r, ok := c.Conn.(interface{ Refresh(time.Time) error }); ok {
 		return r.Refresh(until)
 	}
-	return c.Conn.SetDeadline(until)
+	return c.SetDeadline(until)
 }
 func (c *ownedPacketConn) Close() error {
 	c.once.Do(func() {

@@ -33,7 +33,7 @@ func stopStreamFixture(t *testing.T, client *Client) (*publicationIngress, net.C
 	server := httptest.NewTLSServer(p)
 	p.server, p.listener = server.Config, server.Listener
 	t.Cleanup(server.Close)
-	conn, err := tls.Dial("tcp", server.Listener.Addr().String(), server.Client().Transport.(*http.Transport).TLSClientConfig.Clone())
+	conn, err := tls.Dial("tcp", server.Listener.Addr().String(), fixtureValue[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +45,8 @@ func stopStreamFixture(t *testing.T, client *Client) (*publicationIngress, net.C
 		t.Fatal(err)
 	}
 	reader := bufio.NewReader(conn)
-	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
-	if err != nil || response.StatusCode != 200 {
+	response, err := readFixtureConnectStatus(t, conn, reader)
+	if err != nil || response != 200 {
 		t.Fatalf("CONNECT %v %v", response, err)
 	}
 	identity := make([]byte, 1)
@@ -114,9 +114,7 @@ func TestStopConfirmationReapsOwnedProcessAndPersistentIngress(t *testing.T) {
 		t.Fatal("confirmation attempted expired configuration/publication reads")
 	}
 	proof := received.Load()
-	if proof == nil || !proof.ProcessStopped || !proof.ActiveCountKnown || proof.ActiveConnections != 0 || proof.AcceptingRequests || proof.ControlRevision != 2 || proof.ProcessEpoch != "boot" {
-		t.Fatalf("incorrect stop proof %+v", proof)
-	}
+	assertConfirmedOwnedStopProof(t, proof)
 	if e.process != nil || child.ProcessState == nil {
 		t.Fatal("owned child was not reaped")
 	}
@@ -128,7 +126,7 @@ func TestStopConfirmationReapsOwnedProcessAndPersistentIngress(t *testing.T) {
 		t.Fatal("old TCP stream survived stop proof")
 	}
 	if conn, err := net.DialTimeout("tcp", p.listener.Addr().String(), time.Second); err == nil {
-		conn.Close()
+		_ = conn.Close()
 		t.Fatal("owned TLS listener survived stop proof")
 	}
 	late := grant
@@ -219,5 +217,12 @@ func TestStopConfirmationGrantCannotRenewDeadlineOrServe(t *testing.T) {
 	}
 	if r.deployment.mayApply(time.Now()) {
 		t.Fatal("stop-only grant allows configuration startup")
+	}
+}
+
+func assertConfirmedOwnedStopProof(t *testing.T, proof *api.NetworkProxyDeploymentRuntimeAck) {
+	t.Helper()
+	if proof == nil || !proof.ProcessStopped || !proof.ActiveCountKnown || proof.ActiveConnections != 0 || proof.AcceptingRequests || proof.ControlRevision != 2 || proof.ProcessEpoch != "boot" {
+		t.Fatalf("incorrect stop proof %+v", proof)
 	}
 }

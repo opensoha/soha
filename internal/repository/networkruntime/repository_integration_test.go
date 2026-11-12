@@ -25,6 +25,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	networkaccessrepo "github.com/opensoha/soha/internal/repository/networkaccess"
 	networkruntimerepo "github.com/opensoha/soha/internal/repository/networkruntime"
+	pgtest "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 )
 
@@ -40,10 +41,10 @@ func newRuntimeRepositoryScenario(t *testing.T) *runtimeRepositoryScenario {
 	if database == "" {
 		database = "soha"
 	}
-	store, err := dbstore.New(config.DatabaseConfig{
+	store, err := dbstore.New(pgtest.Configure(t, config.DatabaseConfig{
 		Driver: "postgres", Host: "127.0.0.1", Port: port, Name: database, User: "pgsql", Password: "test-only", SSLMode: "disable",
 		MaxOpenConns: 4, MaxIdleConns: 2, ConnMaxLifetime: time.Minute,
-	}, zap.NewNop())
+	}), zap.NewNop())
 	require.NoError(t, err, "open PostgreSQL: %v", err)
 	t.Cleanup(func() { _ = store.Close() })
 

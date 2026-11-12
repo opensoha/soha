@@ -30,7 +30,7 @@ func mappedBackendFixture(t *testing.T, name string) *egressBackend {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = listener.Close() })
-	b := &egressBackend{name: name, user: "backend-user", secret: strings.Repeat("s", 40), port: listener.Addr().(*net.TCPAddr).Port}
+	b := &egressBackend{name: name, user: "backend-user", secret: strings.Repeat("s", 40), port: fixtureValue[*net.TCPAddr](t, listener.Addr()).Port}
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -38,7 +38,7 @@ func mappedBackendFixture(t *testing.T, name string) *egressBackend {
 				return
 			}
 			go func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				_ = conn.SetDeadline(time.Now().Add(20 * time.Second))
 				if !fixtureSOCKSAuth(conn, fixtureListener{Users: []struct{ Username, Password string }{{b.user, b.secret}}}) {
 					return
@@ -107,55 +107,32 @@ func TestTLSMappedIngressRoutesAndRevokes(t *testing.T) {
 	server := httptest.NewTLSServer(p)
 	defer server.Close()
 	defer p.close()
-	connect := func(node, destination, password string) (net.Conn, *http.Response) {
-		t.Helper()
-		cfg := server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
-		conn, err := tls.Dial("tcp", server.Listener.Addr().String(), cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		user, err := proxytransport.EncodeMappedUsername("credential", node)
-		if err != nil {
-			t.Fatal(err)
-		}
-		auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
-		_, err = fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: Basic %s\r\n\r\n", destination, destination, auth)
-		if err != nil {
-			t.Fatal(err)
-		}
-		reader := bufio.NewReader(conn)
-		response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
-		if err != nil {
-			conn.Close()
-			t.Fatal(err)
-		}
-		return &bufferedFixtureConn{Conn: conn, reader: reader}, response
-	}
+
 	for _, test := range []struct{ node, identity string }{{"node-a", "A"}, {"node-b", "B"}} {
-		conn, response := connect(test.node, "1.1.1.1:443", secret)
-		if response.StatusCode != 200 {
-			t.Fatalf("mapping %s: HTTP %d", test.node, response.StatusCode)
+		conn, response := connectMappedFixture(t, server, test.node, "1.1.1.1:443", secret)
+		if response != 200 {
+			t.Fatalf("mapping %s: HTTP %d", test.node, response)
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 		raw := make([]byte, 1)
 		if _, err := io.ReadFull(conn, raw); err != nil || string(raw) != test.identity {
 			t.Fatalf("mapping identity %q, %v", raw, err)
 		}
-		conn.Close()
+		_ = conn.Close()
 	}
 	for _, test := range []struct {
 		node, destination, password string
 		status                      int
 	}{{"node-a", "10.0.0.1:443", secret, 502}, {"node-a", "protected.example:443", secret, 502}, {"node-a", "1.1.1.1:443", "wrong", 403}, {"node-unknown", "1.1.1.1:443", secret, 403}} {
-		conn, response := connect(test.node, test.destination, test.password)
-		if response.StatusCode != test.status {
-			t.Errorf("rejection HTTP %d; want %d", response.StatusCode, test.status)
+		conn, response := connectMappedFixture(t, server, test.node, test.destination, test.password)
+		if response != test.status {
+			t.Errorf("rejection HTTP %d; want %d", response, test.status)
 		}
-		conn.Close()
+		_ = conn.Close()
 	}
-	conn, response := connect("node-a", "1.1.1.1:443", secret)
-	if response.StatusCode != 200 {
-		t.Fatal(response.StatusCode)
+	conn, response := connectMappedFixture(t, server, "node-a", "1.1.1.1:443", secret)
+	if response != 200 {
+		t.Fatal(response)
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 	one := make([]byte, 1)
@@ -164,7 +141,7 @@ func TestTLSMappedIngressRoutesAndRevokes(t *testing.T) {
 	start := time.Now()
 	_ = conn.SetReadDeadline(time.Now().Add(9 * time.Second))
 	_, err = conn.Read(one)
-	conn.Close()
+	_ = conn.Close()
 	if err == nil {
 		t.Fatal("revoked stream remained open")
 	}
@@ -178,11 +155,11 @@ func TestTLSMappedIngressRoutesAndRevokes(t *testing.T) {
 		t.Fatal("missing online or active-flow checks")
 	}
 	p.setAccepting(false)
-	conn, response = connect("node-b", "1.1.1.1:443", secret)
-	if response.StatusCode != 503 {
+	conn, response = connectMappedFixture(t, server, "node-b", "1.1.1.1:443", secret)
+	if response != 503 {
 		t.Fatal("draining ingress admitted new request")
 	}
-	conn.Close()
+	_ = conn.Close()
 }
 
 func TestPublicationDisablesUnmanagedListenersAndRejectsWrongOutbound(t *testing.T) {
@@ -235,15 +212,49 @@ func TestGatewayPublicationPinsAggregateAndMandatoryReject(t *testing.T) {
 	if err := g.compilePublication(doc, domain.Configuration{ContentHash: "hash", ValidUntil: until, Publication: p}, domain.EngineMihomo); err != nil {
 		t.Fatal(err)
 	}
-	listeners := doc["listeners"].([]any)
-	if len(listeners) != 1 || listeners[0].(map[string]any)["proxy"] != "aggregate" || !g.backends["aggregate"].group {
+	listeners := fixtureValue[[]any](t, doc["listeners"])
+	if len(listeners) != 1 || fixtureValue[map[string]any](t, listeners[0])["proxy"] != "aggregate" || !g.backends["aggregate"].group {
 		t.Fatal("gateway not pinned to actual aggregate")
 	}
 	scope, _ := proxytransport.NewScope([]string{}, []string{})
 	p.Rules = []api.NetworkProxyRule{{RuleID: "mandatory", Source: "organization_required", Enabled: true, Matcher: api.NetworkProxyRuleMatcher{Type: "all"}, Action: api.NetworkProxyRuleAction{Type: "reject"}}}
 	ingress := &publicationIngress{scope: scope, publication: *p, backends: g.backends}
 	if conn, err := ingress.dial(context.Background(), "1.1.1.1:443", "gateway", "aggregate", g.backends["aggregate"]); err == nil {
-		conn.Close()
+		_ = conn.Close()
 		t.Fatal("mandatory rejection bypassed fixed outbound")
+	}
+}
+
+func connectMappedFixture(t *testing.T, server *httptest.Server, node, destination, password string) (net.Conn, int) {
+	t.Helper()
+	cfg := fixtureValue[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone()
+	conn, err := tls.Dial("tcp", server.Listener.Addr().String(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := proxytransport.EncodeMappedUsername("credential", node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
+	_, err = fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: Basic %s\r\n\r\n", destination, destination, auth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(conn)
+	response, err := readFixtureConnectStatus(t, conn, reader)
+	if err != nil {
+		_ = conn.Close()
+		t.Fatal(err)
+	}
+	return &bufferedFixtureConn{Conn: conn, reader: reader}, response
+}
+
+func TestPublicationSOCKSCredentialLengthsRejectOutsideWireRange(t *testing.T) {
+	for _, lengths := range [][2]int{{0, 1}, {1, 0}, {256, 1}, {1, 256}} {
+		backend := &egressBackend{user: strings.Repeat("u", lengths[0]), secret: strings.Repeat("s", lengths[1])}
+		if err := authenticateSOCKS(nil, backend); err == nil {
+			t.Fatalf("invalid credential lengths %v reached the wire", lengths)
+		}
 	}
 }

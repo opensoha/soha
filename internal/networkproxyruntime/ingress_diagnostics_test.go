@@ -46,47 +46,7 @@ func TestIngressClosureDiagnosticsWhitelistAndBehavior(t *testing.T) {
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
 			defer slog.SetDefault(previous)
 			input := api.NetworkProxyIngressCheckInput{BundleID: secret, NodeID: secret, CredentialID: secret, CredentialSecret: secret, ProcessEpoch: secret, DestinationHost: secret, Network: "udp", Revision: 1, CredentialEpoch: 1}
-			release := make(chan struct{})
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, _ = io.Copy(io.Discard, r.Body)
-				if kind == "http_status" {
-					w.WriteHeader(429)
-					_, _ = w.Write([]byte(secret))
-					return
-				}
-				if kind == "response_invalid" {
-					_, _ = w.Write([]byte(secret))
-					return
-				}
-				if kind == "timeout" {
-					select {
-					case <-r.Context().Done():
-					case <-release:
-					}
-					return
-				}
-				result := api.NetworkProxyIngressCheckResult{Allowed: true, BundleID: input.BundleID, NodeID: input.NodeID, Revision: 1, CredentialEpoch: 1, ExpiresAt: time.Now().Add(time.Second), ReasonCode: secret}
-				switch kind {
-				case "denied":
-					result.Allowed = false
-				case "identity_mismatch":
-					result.Revision++
-				case "decision_expired":
-					result.ExpiresAt = time.Now()
-				}
-				_ = json.NewEncoder(w).Encode(result)
-			}))
-			defer server.Close()
-			defer close(release)
-			client := NewClient(server.URL, secret, nil)
-			if kind == "transport" || kind == "canceled" {
-				client.http.Transport = diagnosticTransport(func(*http.Request) (*http.Response, error) {
-					if kind == "canceled" {
-						return nil, fmt.Errorf("%s: %w", secret, context.Canceled)
-					}
-					return nil, errors.New(secret)
-				})
-			}
+			client := diagnosticClientFixture(t, kind, secret, input)
 			until := time.Now().Add(180 * time.Millisecond)
 			p := &publicationIngress{client: client, until: time.Now().Add(time.Second)}
 			if kind == "local_lease_expired" {
@@ -118,44 +78,7 @@ func TestIngressClosureDiagnosticsWhitelistAndBehavior(t *testing.T) {
 				}
 			}
 			<-finished
-			if strings.Contains(output.String(), secret) {
-				t.Fatal("diagnostic leaked sensitive input/error/body")
-			}
-			if kind == "success" {
-				if output.Len() != 0 || lease.closes.Load() != 0 {
-					t.Fatal("success logged or closed")
-				}
-				return
-			}
-			if lease.closes.Load() != 1 || bytes.Count(output.Bytes(), []byte("\n")) != 1 {
-				t.Fatalf("expected one closure/log: %s", output.String())
-			}
-			var record map[string]any
-			if err := json.Unmarshal(output.Bytes(), &record); err != nil {
-				t.Fatal(err)
-			}
-			want := kind
-			if kind == "hard_expiry" {
-				want = "local_lease_expired"
-			}
-			if record["classification"] != want {
-				t.Fatalf("classification=%v want=%s", record["classification"], want)
-			}
-			decoded := kind == "denied" || kind == "identity_mismatch" || kind == "decision_expired" || kind == "local_lease_expired"
-			_, hasAllowed := record["allowed"]
-			if hasAllowed != decoded {
-				t.Fatalf("decoded Allowed presence=%v want=%v", hasAllowed, decoded)
-			}
-			if kind == "http_status" && record["status"] != float64(429) {
-				t.Fatalf("status=%v", record["status"])
-			}
-			for key := range record {
-				switch key {
-				case "time", "level", "msg", "stage", "network", "classification", "elapsedMs", "status", "allowed", "reasonCode", "httpConnReused", "httpGetConnMs", "httpGotConnMs", "httpDNSStartMs", "httpDNSDoneMs", "httpTLSStartMs", "httpTLSDoneMs", "httpWroteRequestMs", "httpFirstResponseByteMs":
-				default:
-					t.Fatalf("non-whitelisted key %s", key)
-				}
-			}
+			assertIngressClosureDiagnostic(t, kind, secret, lease, &output)
 		})
 	}
 }
@@ -238,5 +161,93 @@ func TestIngressDiagnosticBlockedLoggerDoesNotDelayClose(t *testing.T) {
 	}
 	if lease.closes.Load() != 1 || h.calls.Load() != 1 {
 		t.Fatal("logging caused duplicate closure or log")
+	}
+}
+
+func diagnosticClientFixture(t *testing.T, kind, secret string, input api.NetworkProxyIngressCheckInput) *Client {
+	t.Helper()
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		if kind == "http_status" {
+			w.WriteHeader(429)
+			_, _ = w.Write([]byte(secret))
+			return
+		}
+		if kind == "response_invalid" {
+			_, _ = w.Write([]byte(secret))
+			return
+		}
+		if kind == "timeout" {
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+			return
+		}
+		result := api.NetworkProxyIngressCheckResult{Allowed: true, BundleID: input.BundleID, NodeID: input.NodeID, Revision: 1, CredentialEpoch: 1, ExpiresAt: time.Now().Add(time.Second), ReasonCode: secret}
+		switch kind {
+		case "denied":
+			result.Allowed = false
+		case "identity_mismatch":
+			result.Revision++
+		case "decision_expired":
+			result.ExpiresAt = time.Now()
+		}
+		_ = json.NewEncoder(w).Encode(result)
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+	client := NewClient(server.URL, secret, nil)
+	if kind == "transport" || kind == "canceled" {
+		client.http.Transport = diagnosticTransport(func(*http.Request) (*http.Response, error) {
+			if kind == "canceled" {
+				return nil, fmt.Errorf("%s: %w", secret, context.Canceled)
+			}
+			return nil, errors.New(secret)
+		})
+	}
+	return client
+}
+
+func assertIngressClosureDiagnostic(t *testing.T, kind, secret string, lease *diagnosticLease, output *bytes.Buffer) {
+	t.Helper()
+	if strings.Contains(output.String(), secret) {
+		t.Fatal("diagnostic leaked sensitive input/error/body")
+	}
+	if kind == "success" {
+		if output.Len() != 0 || lease.closes.Load() != 0 {
+			t.Fatal("success logged or closed")
+		}
+		return
+	}
+	if lease.closes.Load() != 1 || bytes.Count(output.Bytes(), []byte("\n")) != 1 {
+		t.Fatalf("expected one closure/log: %s", output.String())
+	}
+	var record map[string]any
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatal(err)
+	}
+	want := kind
+	if kind == "hard_expiry" {
+		want = "local_lease_expired"
+	}
+	if record["classification"] != want {
+		t.Fatalf("classification=%v want=%s", record["classification"], want)
+	}
+	decoded := kind == "denied" || kind == "identity_mismatch" || kind == "decision_expired" || kind == "local_lease_expired"
+	_, hasAllowed := record["allowed"]
+	if hasAllowed != decoded {
+		t.Fatalf("decoded Allowed presence=%v want=%v", hasAllowed, decoded)
+	}
+	if kind == "http_status" && record["status"] != float64(429) {
+		t.Fatalf("status=%v", record["status"])
+	}
+	for key := range record {
+		switch key {
+		case "time", "level", "msg", "stage", "network", "classification", "elapsedMs", "status", "allowed", "reasonCode", "httpConnReused", "httpGetConnMs", "httpGotConnMs", "httpDNSStartMs", "httpDNSDoneMs", "httpTLSStartMs", "httpTLSDoneMs", "httpWroteRequestMs", "httpFirstResponseByteMs":
+		default:
+			t.Fatalf("non-whitelisted key %s", key)
+		}
 	}
 }

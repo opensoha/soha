@@ -36,7 +36,7 @@ func preflightFixture(t *testing.T, engine string) (KernelPreflightInput, string
 		content = `{"inbounds":[],"outbounds":[],"secret":"native-config-secret"}`
 	}
 	script := "#!/bin/sh\nset -eu\nif [ \"$1\" = " + quoteKernelFixture(versionFlag) + " ]; then\n echo version >> " + quoteKernelFixture(marker) + "\n echo " + quoteKernelFixture(line) + "\n exit 0\nfi\n" + check + "\ncase \"$config\" in \"$PWD\"/*) ;; *) exit 7 ;; esac\n[ \"$HOME\" = \"$PWD\" ]\n[ \"$XDG_CONFIG_HOME\" = \"$PWD\" ]\necho check >> " + quoteKernelFixture(marker) + "\necho parser-private-output >&2\necho candidate-only > \"$HOME/native-state\"\nexit 0\n"
-	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil { // #nosec G306 -- owner-only executable parser fixture in t.TempDir.
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(config, []byte(content), 0600); err != nil {
@@ -83,7 +83,7 @@ func TestKernelPreflightBuiltinCompatibilityAndLiveFilesUnchanged(t *testing.T) 
 			if _, err := os.Stat(filepath.Join(dir, "native-state")); !os.IsNotExist(err) {
 				t.Fatal("native parser wrote into live artifact directory")
 			}
-			calls, _ := os.ReadFile(marker)
+			calls, _ := os.ReadFile(marker) // #nosec G304 -- fixture-owned execution marker in t.TempDir; verifies exact version/check invocation sequence.
 			if string(calls) != "version\ncheck\n" {
 				t.Fatalf("native commands %q", calls)
 			}
@@ -163,7 +163,7 @@ func TestKernelPreflightVersionMismatchTimeoutAndNativeFailureAreRedacted(t *tes
 
 func replacePreflightScript(t *testing.T, input *KernelPreflightInput, script string) {
 	t.Helper()
-	if err := os.WriteFile(input.Binary, []byte(script), 0700); err != nil {
+	if err := os.WriteFile(input.Binary, []byte(script), 0700); err != nil { // #nosec G306 -- overwrite the owner-only parser fixture while retaining execute permission.
 		t.Fatal(err)
 	}
 	input.ExpectedSHA256 = fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(script)))
@@ -180,7 +180,7 @@ func TestKernelPreflightRejectsUnsafeFilesAndUnknownFields(t *testing.T) {
 		t.Fatalf("symlink report %+v", report)
 	}
 	input, _, _ = preflightFixture(t, domain.EngineMihomo)
-	if err := os.Chmod(input.Binary, 0777); err != nil {
+	if err := os.Chmod(input.Binary, 0777); err != nil { // #nosec G302 -- deliberate unsafe fixture mode; the next assertion requires preflight rejection before execution.
 		t.Fatal(err)
 	}
 	if report := RunKernelPreflight(context.Background(), writePreflightInput(t, input)); report.Reason != "artifact_unavailable" {
@@ -207,7 +207,7 @@ func TestKernelArtifactDiagnosticsMeasuredAndDriftFailsClosed(t *testing.T) {
 	if !strings.Contains(string(raw), input.ExpectedSHA256) || !strings.Contains(string(raw), input.ExpectedVersion) || !strings.Contains(string(raw), "installer-owned-local-binary") {
 		t.Fatalf("diagnostics %s", raw)
 	}
-	if err := os.WriteFile(input.Binary, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+	if err := os.WriteFile(input.Binary, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil { // #nosec G306 -- alter the owner-only executable fixture to verify drift rejection.
 		t.Fatal(err)
 	}
 	if e.verifyKernelArtifactDrift() == nil {
@@ -222,7 +222,7 @@ func TestKernelArtifactDiagnosticsMeasuredAndDriftFailsClosed(t *testing.T) {
 func TestKernelPreflightPrivateBoundsAndNonlocalConfig(t *testing.T) {
 	input, marker, _ := preflightFixture(t, domain.EngineMihomo)
 	path := writePreflightInput(t, input)
-	if err := os.Chmod(path, 0644); err != nil {
+	if err := os.Chmod(path, 0644); err != nil { // #nosec G302 -- deliberate public input fixture; the next assertion requires private-input rejection.
 		t.Fatal(err)
 	}
 	if report := RunKernelPreflight(context.Background(), path); report.Reason != "invalid_input" {

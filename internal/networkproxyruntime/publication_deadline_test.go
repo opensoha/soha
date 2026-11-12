@@ -118,7 +118,7 @@ func TestExistingIngressDeadlineStillClosesRealFlowOnCoreDeny(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(api.NetworkProxyIngressCheckResult{Allowed: !deny.Load(), BundleID: input.BundleID, NodeID: input.NodeID, Revision: input.Revision, CredentialEpoch: input.CredentialEpoch, ExpiresAt: time.Now().Add(5 * time.Second)})
 	}))
 	defer control.Close()
-	client := NewClient(control.URL, "runtime", control.Client().Transport.(*http.Transport).TLSClientConfig.Clone())
+	client := NewClient(control.URL, "runtime", fixtureValue[*http.Transport](t, control.Client().Transport).TLSClientConfig.Clone())
 	p, stream := stopStreamFixture(t, client)
 	defer p.close()
 	r := deadlineRunner(time.Now())
@@ -167,7 +167,7 @@ func TestExistingIngressDeadlineHardExpiryClosesRealFlow(t *testing.T) {
 			case "drain":
 				r.deployment.drainLease = boundary
 			}
-			p.client = NewClient(control.URL, "runtime", control.Client().Transport.(*http.Transport).TLSClientConfig.Clone())
+			p.client = NewClient(control.URL, "runtime", fixtureValue[*http.Transport](t, control.Client().Transport).TLSClientConfig.Clone())
 			p.scope, _ = proxytransport.NewScope([]string{}, []string{})
 			p.backends = map[string]*egressBackend{"node": continuityBackend(t)}
 			p.handlers = map[*proxytransport.Handler]struct{}{}
@@ -175,11 +175,11 @@ func TestExistingIngressDeadlineHardExpiryClosesRealFlow(t *testing.T) {
 			server := httptest.NewTLSServer(p)
 			defer server.Close()
 			defer p.close()
-			conn, err := tls.Dial("tcp", server.Listener.Addr().String(), server.Client().Transport.(*http.Transport).TLSClientConfig.Clone())
+			conn, err := tls.Dial("tcp", server.Listener.Addr().String(), fixtureValue[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone())
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			_ = conn.SetDeadline(boundary.Add(200 * time.Millisecond))
 			user, _ := proxytransport.EncodeMappedUsername("credential", "node")
 			_, err = fmt.Fprintf(conn, "CONNECT 1.1.1.1:443 HTTP/1.1\r\nHost: 1.1.1.1:443\r\nProxy-Authorization: Basic %s\r\n\r\n", base64.StdEncoding.EncodeToString([]byte(user+":"+strings.Repeat("secret", 8))))
@@ -187,8 +187,8 @@ func TestExistingIngressDeadlineHardExpiryClosesRealFlow(t *testing.T) {
 				t.Fatal(err)
 			}
 			reader := bufio.NewReader(conn)
-			response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
-			if err != nil || response.StatusCode != 200 {
+			response, err := readFixtureConnectStatus(t, conn, reader)
+			if err != nil || response != 200 {
 				t.Fatalf("CONNECT: %v %v", response, err)
 			}
 			one := make([]byte, 1)

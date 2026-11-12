@@ -17,6 +17,7 @@ import (
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	pgtest "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"os"
@@ -45,7 +46,7 @@ func TestRadiusDeploymentPostgres(t *testing.T) {
 	if name == "" {
 		name = "soha"
 	}
-	store, e := dbstore.New(config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: name, User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 8, MaxIdleConns: 4, ConnMaxLifetime: time.Minute}, zap.NewNop())
+	store, e := dbstore.New(pgtest.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: name, User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 8, MaxIdleConns: 4, ConnMaxLifetime: time.Minute}), zap.NewNop())
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -85,133 +86,16 @@ func TestRadiusDeploymentPostgres(t *testing.T) {
 		}
 	}
 	t.Run("concurrent-uid-claim", func(t *testing.T) {
-		uid := "test-radius-" + uuid.NewString()
-		t.Cleanup(func() { db.Exec(`DELETE FROM runtime_slot_owners WHERE workload_uid=?`, uid) })
-		var won atomic.Int32
-		var wg sync.WaitGroup
-		start := make(chan struct{})
-		for _, kind := range []string{"radius", "proxy"} {
-			wg.Add(1)
-			go func(kind string) {
-				defer wg.Done()
-				<-start
-				e := db.Transaction(func(tx *gorm.DB) error {
-					return tx.Exec(`SELECT reserve_runtime_slot_uid(?,?,?)`, uid, kind, "test-owner").Error
-				})
-				if e == nil {
-					won.Add(1)
-				} else if !errors.Is(conflict(e), apperrors.ErrConflict) {
-					t.Error(e)
-				}
-			}(kind)
-		}
-		close(start)
-		wg.Wait()
-		if won.Load() != 1 {
-			t.Fatalf("concurrent winners=%d", won.Load())
-		}
+		assertConcurrentRadiusUIDClaim(t, db)
 	})
 	t.Run("bootstrap-idempotent-and-failure-rolls-back", func(t *testing.T) {
-		rollbackTest(t, db, func(tx *gorm.DB) error {
-			id := uuid.NewString()
-			site := "site-" + id
-			binding := "binding-" + id
-			if e := tx.Exec(`INSERT INTO network_access_sites(id,name,status) VALUES(?,?,'active')`, site, site).Error; e != nil {
-				return e
-			}
-			slot := domain.Slot{ExecutorID: "test-radius", ID: "slot-" + id, UID: "uid-" + id, SiteID: site, NASBindingID: binding, NASID: "nas-" + id, NASName: "Test NAS", AccessMedium: "wired"}
-			state := domain.State{Slot: slot, SlotHash: slot.Hash(), Pool: api.NetworkRADIUSPool{PoolID: id, SiteID: site, NASBindingID: binding, LogicalRuntimeID: domain.PoolPrefix + id, SlotID: slot.ID, ObjectUID: slot.UID, Revision: 1, OwnerEpoch: 1, ConfigurationRevision: 1, State: "stopped"}}
-			m := app.Mutation{State: state, Create: true, CreateApprovedBinding: true, RequestID: "bootstrap", Fingerprint: "fingerprint"}
-			r := New(tx)
-			first, e := r.Commit(ctx, m)
-			if e != nil {
-				return e
-			}
-			m.State.Pool.PoolID = uuid.NewString()
-			again, e := r.Commit(ctx, m)
-			if e != nil || again.Pool.PoolID != first.Pool.PoolID {
-				return fmt.Errorf("bootstrap replay lost identity: %w", e)
-			}
-
-			updated := first
-			updated.Pool.Revision = 2
-			updated.Pool.DesiredReplicas = 1
-			updated.Pool.Enabled = true
-			command := domain.Command{PoolID: first.Pool.PoolID, Slot: slot, SlotHash: first.SlotHash, Revision: 2, OwnerEpoch: 1, Action: "start", Replicas: 1, Deadline: time.Now().Add(time.Minute)}
-			task := delivery.ExecutionTask{ID: uuid.NewString(), TaskKind: domain.TaskKind, ProviderKind: slot.ProviderKind(), TargetKind: "radius_slot", QueueKey: slot.ID, LockKey: "radius-slot/" + slot.ID, Status: "queued", TimeoutSeconds: 60, CallbackToken: uuid.NewString(), Payload: map[string]any{"radiusDeployment": command}, CreatedAt: time.Now(), UpdatedAt: time.Now()}
-			updated.Pool.OperationID = task.ID
-			if _, e := r.Commit(ctx, app.Mutation{State: updated, ExpectedRevision: 1, RequestID: "start", Fingerprint: "start", Task: &task}); e != nil {
-				return fmt.Errorf("private Radius execution ownership constraint: %w", e)
-			}
-			if _, e := r.Commit(ctx, app.Mutation{State: updated, ExpectedRevision: 1, RequestID: "stale", Fingerprint: "stale"}); !errors.Is(e, apperrors.ErrConflict) {
-				return fmt.Errorf("stale parent CAS was accepted: %v", e)
-			}
-			m.RequestID = "new-request"
-			m.Fingerprint = "new-input"
-			m.State.Pool.NASBindingID = "rollback-" + binding
-			m.State.Slot.NASBindingID = m.State.Pool.NASBindingID
-			m.State.Slot.NASID = "another-" + id
-			m.State.SlotHash = m.State.Slot.Hash()
-			// Existing UID owner fails only after an approved binding insertion; the
-			// nested mutation must roll back that binding and leave no second pool.
-			if _, e := r.Commit(ctx, m); !errors.Is(e, apperrors.ErrConflict) {
-				return fmt.Errorf("UID claim expected conflict, got %v", e)
-			}
-			var count int64
-			if e := tx.Raw(`SELECT count(*) FROM network_access_nas_bindings WHERE id=?`, m.State.Pool.NASBindingID).Scan(&count).Error; e != nil {
-				return e
-			}
-			if count != 0 {
-				return fmt.Errorf("failed bootstrap leaked binding")
-			}
-			return nil
-		})
+		assertRadiusBootstrapRollback(t, ctx, db)
 	})
 	t.Run("managed-proof-rechecks-current-transaction-time", func(t *testing.T) {
 		rollbackTest(t, db, func(tx *gorm.DB) error { return managedProofTransaction(ctx, tx) })
 	})
 	t.Run("migration-backfill-dual-owner-fails", func(t *testing.T) {
-		raw, e := os.ReadFile("../../../migrations/postgres/0151_radius_deployment.sql")
-		if e != nil {
-			t.Fatal(e)
-		}
-		source := string(raw)
-		start := strings.Index(source, "DO $$\nDECLARE row record;")
-		end := strings.Index(source, "CREATE TRIGGER radius_parent_slot_owner")
-		if start < 0 || end < start {
-			t.Fatal("backfill source not found")
-		}
-		e = db.Transaction(func(tx *gorm.DB) error {
-			suffix := uuid.NewString()
-			a, b := uuid.NewString(), uuid.NewString()
-			if e := seedParent(tx, "proxy", a, "first-"+suffix); e != nil {
-				return e
-			}
-			if e := seedParent(tx, "outpost", b, "second-"+suffix); e != nil {
-				return e
-			}
-			for _, q := range []string{`DROP TRIGGER proxy_parent_slot_owner ON network_proxy_deployments`, `DROP TRIGGER outpost_parent_slot_owner ON identity_outpost_runtime_deployments`} {
-				if e := tx.Exec(q).Error; e != nil {
-					return e
-				}
-			}
-			encoded := `{"workloadUid":"duplicate-` + suffix + `"}`
-			if e := tx.Exec(`UPDATE network_proxy_deployments SET state=?::jsonb WHERE proxy_id=?`, encoded, a).Error; e != nil {
-				return e
-			}
-			if e := tx.Exec(`UPDATE identity_outpost_runtime_deployments SET state=?::jsonb WHERE outpost_id=?`, encoded, b).Error; e != nil {
-				return e
-			}
-			return tx.Exec(source[start:end]).Error
-		})
-		var pg *pgconn.PgError
-		if !errors.As(e, &pg) || pg.Code != "23505" || !strings.Contains(pg.Message, "runtime_slot_owner_conflict") {
-			t.Fatalf("duplicate migration backfill=%v", e)
-		}
-		var count int64
-		if e := db.Raw(`SELECT count(*) FROM pg_trigger WHERE tgname IN ('proxy_parent_slot_owner','outpost_parent_slot_owner') AND NOT tgisinternal`).Scan(&count).Error; e != nil || count != 2 {
-			t.Fatalf("rollback did not restore parent triggers: %d %v", count, e)
-		}
+		assertRadiusMigrationDualOwnerFails(t, db)
 	})
 }
 func rollbackTest(t *testing.T, db *gorm.DB, f func(*gorm.DB) error) {
@@ -313,4 +197,136 @@ func managedProofTransaction(ctx context.Context, tx *gorm.DB) error {
 		return fmt.Errorf("stale lease accepted using application timestamp: %v", e)
 	}
 	return nil
+}
+
+func assertConcurrentRadiusUIDClaim(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	uid := "test-radius-" + uuid.NewString()
+	t.Cleanup(func() { db.Exec(`DELETE FROM runtime_slot_owners WHERE workload_uid=?`, uid) })
+	var won atomic.Int32
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for _, kind := range []string{"radius", "proxy"} {
+		wg.Add(1)
+		go func(kind string) {
+			defer wg.Done()
+			<-start
+			e := db.Transaction(func(tx *gorm.DB) error {
+				return tx.Exec(`SELECT reserve_runtime_slot_uid(?,?,?)`, uid, kind, "test-owner").Error
+			})
+			if e == nil {
+				won.Add(1)
+			} else if !errors.Is(conflict(e), apperrors.ErrConflict) {
+				t.Error(e)
+			}
+		}(kind)
+	}
+	close(start)
+	wg.Wait()
+	if won.Load() != 1 {
+		t.Fatalf("concurrent winners=%d", won.Load())
+	}
+}
+
+func assertRadiusBootstrapRollback(t *testing.T, ctx context.Context, db *gorm.DB) {
+	t.Helper()
+	rollbackTest(t, db, func(tx *gorm.DB) error {
+		id := uuid.NewString()
+		site := "site-" + id
+		binding := "binding-" + id
+		if e := tx.Exec(`INSERT INTO network_access_sites(id,name,status) VALUES(?,?,'active')`, site, site).Error; e != nil {
+			return e
+		}
+		slot := domain.Slot{ExecutorID: "test-radius", ID: "slot-" + id, UID: "uid-" + id, SiteID: site, NASBindingID: binding, NASID: "nas-" + id, NASName: "Test NAS", AccessMedium: "wired"}
+		state := domain.State{Slot: slot, SlotHash: slot.Hash(), Pool: api.NetworkRADIUSPool{PoolID: id, SiteID: site, NASBindingID: binding, LogicalRuntimeID: domain.PoolPrefix + id, SlotID: slot.ID, ObjectUID: slot.UID, Revision: 1, OwnerEpoch: 1, ConfigurationRevision: 1, State: "stopped"}}
+		m := app.Mutation{State: state, Create: true, CreateApprovedBinding: true, RequestID: "bootstrap", Fingerprint: "fingerprint"}
+		r := New(tx)
+		first, e := r.Commit(ctx, m)
+		if e != nil {
+			return e
+		}
+		m.State.Pool.PoolID = uuid.NewString()
+		again, e := r.Commit(ctx, m)
+		if e != nil || again.Pool.PoolID != first.Pool.PoolID {
+			return fmt.Errorf("bootstrap replay lost identity: %w", e)
+		}
+
+		updated := first
+		updated.Pool.Revision = 2
+		updated.Pool.DesiredReplicas = 1
+		updated.Pool.Enabled = true
+		command := domain.Command{PoolID: first.Pool.PoolID, Slot: slot, SlotHash: first.SlotHash, Revision: 2, OwnerEpoch: 1, Action: "start", Replicas: 1, Deadline: time.Now().Add(time.Minute)}
+		task := delivery.ExecutionTask{ID: uuid.NewString(), TaskKind: domain.TaskKind, ProviderKind: slot.ProviderKind(), TargetKind: "radius_slot", QueueKey: slot.ID, LockKey: "radius-slot/" + slot.ID, Status: "queued", TimeoutSeconds: 60, CallbackToken: uuid.NewString(), Payload: map[string]any{"radiusDeployment": command}, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+		updated.Pool.OperationID = task.ID
+		if _, e := r.Commit(ctx, app.Mutation{State: updated, ExpectedRevision: 1, RequestID: "start", Fingerprint: "start", Task: &task}); e != nil {
+			return fmt.Errorf("private Radius execution ownership constraint: %w", e)
+		}
+		if _, e := r.Commit(ctx, app.Mutation{State: updated, ExpectedRevision: 1, RequestID: "stale", Fingerprint: "stale"}); !errors.Is(e, apperrors.ErrConflict) {
+			return fmt.Errorf("stale parent CAS was accepted: %v", e)
+		}
+		m.RequestID = "new-request"
+		m.Fingerprint = "new-input"
+		m.State.Pool.NASBindingID = "rollback-" + binding
+		m.State.Slot.NASBindingID = m.State.Pool.NASBindingID
+		m.State.Slot.NASID = "another-" + id
+		m.State.SlotHash = m.State.Slot.Hash()
+		// Existing UID owner fails only after an approved binding insertion; the
+		// nested mutation must roll back that binding and leave no second pool.
+		if _, e := r.Commit(ctx, m); !errors.Is(e, apperrors.ErrConflict) {
+			return fmt.Errorf("UID claim expected conflict, got %v", e)
+		}
+		var count int64
+		if e := tx.Raw(`SELECT count(*) FROM network_access_nas_bindings WHERE id=?`, m.State.Pool.NASBindingID).Scan(&count).Error; e != nil {
+			return e
+		}
+		if count != 0 {
+			return fmt.Errorf("failed bootstrap leaked binding")
+		}
+		return nil
+	})
+}
+
+func assertRadiusMigrationDualOwnerFails(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	raw, e := os.ReadFile("../../../migrations/postgres/0151_radius_deployment.sql")
+	if e != nil {
+		t.Fatal(e)
+	}
+	source := string(raw)
+	start := strings.Index(source, "DO $$\nDECLARE row record;")
+	end := strings.Index(source, "CREATE TRIGGER radius_parent_slot_owner")
+	if start < 0 || end < start {
+		t.Fatal("backfill source not found")
+	}
+	e = db.Transaction(func(tx *gorm.DB) error {
+		suffix := uuid.NewString()
+		a, b := uuid.NewString(), uuid.NewString()
+		if e := seedParent(tx, "proxy", a, "first-"+suffix); e != nil {
+			return e
+		}
+		if e := seedParent(tx, "outpost", b, "second-"+suffix); e != nil {
+			return e
+		}
+		for _, q := range []string{`DROP TRIGGER proxy_parent_slot_owner ON network_proxy_deployments`, `DROP TRIGGER outpost_parent_slot_owner ON identity_outpost_runtime_deployments`} {
+			if e := tx.Exec(q).Error; e != nil {
+				return e
+			}
+		}
+		encoded := `{"workloadUid":"duplicate-` + suffix + `"}`
+		if e := tx.Exec(`UPDATE network_proxy_deployments SET state=?::jsonb WHERE proxy_id=?`, encoded, a).Error; e != nil {
+			return e
+		}
+		if e := tx.Exec(`UPDATE identity_outpost_runtime_deployments SET state=?::jsonb WHERE outpost_id=?`, encoded, b).Error; e != nil {
+			return e
+		}
+		return tx.Exec(source[start:end]).Error
+	})
+	var pg *pgconn.PgError
+	if !errors.As(e, &pg) || pg.Code != "23505" || !strings.Contains(pg.Message, "runtime_slot_owner_conflict") {
+		t.Fatalf("duplicate migration backfill=%v", e)
+	}
+	var count int64
+	if e := db.Raw(`SELECT count(*) FROM pg_trigger WHERE tgname IN ('proxy_parent_slot_owner','outpost_parent_slot_owner') AND NOT tgisinternal`).Scan(&count).Error; e != nil || count != 2 {
+		t.Fatalf("rollback did not restore parent triggers: %d %v", count, e)
+	}
 }

@@ -61,7 +61,7 @@ func TestProxyRuntimeReadToken(t *testing.T) {
 	if _, err := c.ReadToken(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(p, 0644); err != nil {
+	if err := os.Chmod(p, 0644); err != nil { // #nosec G302 -- Deliberately insecure fixture permissions verify credential-file rejection.
 		t.Fatal(err)
 	}
 	if _, err := c.ReadToken(); err == nil {

@@ -95,14 +95,14 @@ func (g *egressGuard) installSOCKSBridge(node map[string]any, until time.Time, c
 	}
 	gate, err := proxytransport.NewSOCKS5Gate(map[string]string{localUser: localSecret}, func(ctx context.Context, _ string, target string) (net.Conn, error) { return dial(ctx, target, false) }, func(ctx context.Context, _ string, target string) (net.Conn, error) { return dial(ctx, target, true) }, authorize, until)
 	if err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return err
 	}
 	bridge := &socksUpstreamBridge{gate: gate, owned: owner}
 	g.upstreamBridges = append(g.upstreamBridges, bridge)
 	bridge.serving.Store(true)
 	go func() {
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 		defer bridge.serving.Store(false)
 		_ = gate.Serve(listener)
 		_ = gate.Close()
@@ -237,7 +237,7 @@ func upstreamSOCKSFactory(node map[string]any, scope *proxytransport.Scope) (pro
 		}
 		secure := tls.Client(c, tlsConfig.Clone())
 		if err := secure.HandshakeContext(ctx); err != nil {
-			c.Close()
+			_ = c.Close()
 			return nil, errors.New("upstream TLS verification failed")
 		}
 		return secure, nil

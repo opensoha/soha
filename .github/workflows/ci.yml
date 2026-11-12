@@ -65,6 +65,9 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_source_workspace.py'
           python3 -m unittest discover -s scripts -p 'test_remote_source.py'
           python3 -m unittest discover -s scripts -p 'test_release_dependency.py'
+          python3 -m unittest discover -s scripts -p 'test_proxy_test_engines.py'
+          python3 -m unittest discover -s scripts -p 'test_proxy_native_tests.py'
+          python3 -m unittest discover -s scripts -p 'test_go_test_evidence.py'
       - name: Install source workspace
         run: npm ci
       - name: Build and stage same-source Web and SDK
@@ -75,6 +78,15 @@ jobs:
         run: go test ./...
       - name: Race test
         run: go test -race ./...
+      - name: Require isolated native proxy integration
+        run: python3 scripts/run-proxy-native-tests.py --sdk-mode source --out "$RUNNER_TEMP/proxy-native-source.json"
+      - name: Save native proxy evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-native-proxy-source
+          path: ${{ runner.temp }}/proxy-native-source*
+          if-no-files-found: warn
       - name: Vet
         run: go vet ./...
       - name: Production complexity gate

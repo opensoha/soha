@@ -54,12 +54,12 @@ func TestIngressRenewsAcrossShortGrantWindowsAndClosesAtFailedLease(t *testing.T
 	server := httptest.NewTLSServer(p)
 	defer server.Close()
 	defer p.close()
-	config := server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	config := fixtureValue[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone()
 	conn, err := tls.Dial("tcp", server.Listener.Addr().String(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	username, err := proxytransport.EncodeMappedUsername("credential", "node")
 	if err != nil {
 		t.Fatal(err)
@@ -70,25 +70,15 @@ func TestIngressRenewsAcrossShortGrantWindowsAndClosesAtFailedLease(t *testing.T
 		t.Fatal(err)
 	}
 	reader := bufio.NewReader(conn)
-	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
-	if err != nil || response.StatusCode != 200 {
+	response, err := readFixtureConnectStatus(t, conn, reader)
+	if err != nil || response != 200 {
 		t.Fatalf("CONNECT response %v, %v", response, err)
 	}
 	identity := make([]byte, 1)
 	if _, err := io.ReadFull(reader, identity); err != nil || string(identity) != "A" {
 		t.Fatalf("backend identity %q %v", identity, err)
 	}
-	started := time.Now()
-	for time.Since(started) < 2*window+500*time.Millisecond {
-		_ = conn.SetDeadline(time.Now().Add(time.Second))
-		if _, err := conn.Write([]byte("x")); err != nil {
-			t.Fatalf("stream closed while authorization renews: %v", err)
-		}
-		if _, err := io.ReadFull(reader, identity); err != nil || string(identity) != "x" {
-			t.Fatalf("stream failed before two grant windows: %q %v", identity, err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	assertIngressRenewalContinuity(t, conn, reader, window)
 	if checks.Load() < 5 {
 		t.Fatalf("too few genuine lease renewals: %d", checks.Load())
 	}
@@ -119,5 +109,21 @@ func TestIngressRenewalScheduleLeavesControlBudget(t *testing.T) {
 		if delay <= 0 || delay > 2*time.Second || delay >= lease {
 			t.Fatalf("invalid renewal delay %s for %s lease", delay, lease)
 		}
+	}
+}
+
+func assertIngressRenewalContinuity(t *testing.T, conn net.Conn, reader *bufio.Reader, window time.Duration) {
+	t.Helper()
+	identity := make([]byte, 1)
+	started := time.Now()
+	for time.Since(started) < 2*window+500*time.Millisecond {
+		_ = conn.SetDeadline(time.Now().Add(time.Second))
+		if _, err := conn.Write([]byte("x")); err != nil {
+			t.Fatalf("stream closed while authorization renews: %v", err)
+		}
+		if _, err := io.ReadFull(reader, identity); err != nil || string(identity) != "x" {
+			t.Fatalf("stream failed before two grant windows: %q %v", identity, err)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }

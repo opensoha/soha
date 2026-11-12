@@ -2,7 +2,7 @@
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from 'antd'
-import { beforeEach, afterEach, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, expect, it, vi, type Mock } from 'vitest'
 import {
   useKubernetesResourceActions,
   kubernetesDeleteConfirmation,
@@ -15,7 +15,7 @@ vi.mock('@/i18n', async (original) => ({
 }))
 type Row = { name: string; namespace: string; uid: string }
 let records: Row[], allowed: boolean, disabled: boolean, visible: boolean
-let run: ReturnType<typeof vi.fn>
+let run: Mock<(row: Row) => Promise<void>>
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>
 function Harness() {
   const result = useKubernetesResourceActions({
@@ -92,7 +92,7 @@ beforeEach(() => {
   allowed = true
   disabled = false
   visible = true
-  run = vi.fn().mockResolvedValue(undefined)
+  run = vi.fn<(row: Row) => Promise<void>>().mockResolvedValue(undefined)
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)

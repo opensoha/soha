@@ -37,6 +37,34 @@ HTTP黑盒/真实UI归 Web real入口；数据库与持久化冲突/副作用归
 
 安全和OCR的实际用法见 [OCR与信任边界](../.agents/skills/soha-security/references/ocr.md)。
 
+## 真实代理内核隔离门禁
+
+完整 Core 验收取普通 `go test ./...`、`go test -race ./...` 与此必需门禁的并集。
+两个真实内核测试文件使用 `soha_native_integration` tag；`make test` 只验证 host unit 层。
+CI、同源 consumer 检查和 release 均执行隔离门禁，不能以普通 Go 测试通过代替。
+
+```bash
+mkdir -p .tmp/quality
+opensoha-verify run -- python3 scripts/run-proxy-native-tests.py --sdk-mode source --out .tmp/quality/proxy-native-source.json
+```
+
+输出路径须尚不存在；receipt 和同名前缀的准备日志、原始 Go JSON/错误日志记录本轮源码摘要、
+SDK 身份及清理结果。`source` 使用根 `go.work` 的同源 SDK；`declared` 使用 `GOWORK=off`，
+验证无 replace 的声明版本及 checksum。release 分别验证两种身份，不相互替代。
+固定外部 Core 输入没有这两个测试文件时，consumer 报告明确记录不适用；仅缺一个文件则失败。
+
+helper 在 Linux amd64 Docker 中准备 Go 1.27.4 和固定三内核，下载、编译结束后才执行
+`-race -count=1 -json`：TCP/UDP 使用本轮独占 internal `172.16/12` bridge，parser 使用
+`network=none`。不发布端口、不使用 host network、不挂载宿主目录或 Docker socket。
+测试仍保护 `10.0.0.0/8`，不依赖或改变宿主网络；23 个数据面和3个 parser 终端子测试及其
+全部父项必须实际 run/pass，遗漏、skip、缓存、非零退出均失败。
+
+默认仅接受本机 Docker。已授权的远端隔离验证须显式传 `--allow-remote-docker`，并满足既有
+远端容量与归属保护；CI/release 不允许此例外。资源按本轮 label 和精确容器、镜像、网络 ID
+清理，身份不符会失败并保留交接信息。此用例不证明真实 VPN、硬件、站点或发布验收通过。
+离线反例入口为 `test_proxy_native_tests.py`、`test_proxy_test_engines.py` 与
+`test_go_test_evidence.py` 的 unittest discover。
+
 ## 专用真实验收环境
 
 `scripts/quality-lab.py` 仅用于明确获准的专用 middleware 环境，不复用开发库或用户认证。

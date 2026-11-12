@@ -37,7 +37,7 @@ func udpBackendFixture(t *testing.T, name string) *egressBackend {
 		t.Fatal(err)
 	}
 	go func() { _ = gate.Serve(listener) }()
-	t.Cleanup(func() { gate.Close() })
+	t.Cleanup(func() { _ = gate.Close() })
 	return b
 }
 
@@ -63,7 +63,7 @@ func newUDPIngressFixture(t *testing.T) *udpIngressFixture {
 		if input.Network != "udp" {
 			t.Error("UDP authorization mislabeled TCP")
 		}
-		_ = json.NewEncoder(w).Encode(api.NetworkProxyIngressCheckResult{Allowed: !(input.NodeID == "node-a" && f.revokedA.Load()) && !(input.NodeID == "gateway" && f.revokedGateway.Load()), BundleID: input.BundleID, NodeID: input.NodeID, Revision: input.Revision, CredentialEpoch: input.CredentialEpoch, ExpiresAt: time.Now().Add(5 * time.Second)})
+		_ = json.NewEncoder(w).Encode(api.NetworkProxyIngressCheckResult{Allowed: (input.NodeID != "node-a" || !f.revokedA.Load()) && (input.NodeID != "gateway" || !f.revokedGateway.Load()), BundleID: input.BundleID, NodeID: input.NodeID, Revision: input.Revision, CredentialEpoch: input.CredentialEpoch, ExpiresAt: time.Now().Add(5 * time.Second)})
 	}))
 	t.Cleanup(control.Close)
 	pub := &api.NetworkProxyServerPublication{BundleID: "bundle", Revision: 1, CredentialEpoch: 1, Nodes: []api.NetworkProxyServerPublicationNode{{NodeID: "node-a", OutboundID: "node-a"}, {NodeID: "node-b", OutboundID: "node-b"}, {NodeID: "http", OutboundID: "http"}}}
@@ -79,7 +79,7 @@ func newUDPIngressFixture(t *testing.T) *udpIngressFixture {
 
 func (f *udpIngressFixture) dial(t *testing.T, node, target string) (net.Conn, error) {
 	t.Helper()
-	conn, err := tls.Dial("tcp", f.server.Listener.Addr().String(), f.server.Client().Transport.(*http.Transport).TLSClientConfig.Clone())
+	conn, err := tls.Dial("tcp", f.server.Listener.Addr().String(), fixtureValue[*http.Transport](t, f.server.Client().Transport).TLSClientConfig.Clone())
 	if err != nil {
 		return nil, err
 	}
@@ -110,20 +110,20 @@ func TestUDPTLSMappedPinsNodesPreservesPacketsAndRejectsHTTP(t *testing.T) {
 		for _, payload := range [][]byte{{}, []byte("one"), {0, 1, 0, 2}} {
 			packetEcho(t, c, payload)
 		}
-		c.Close()
+		_ = c.Close()
 		if f.p.backends[node].udpProbes.Load() != 3 {
 			t.Fatal("selected node did not handle its packets")
 		}
 	}
 	for _, target := range []string{"10.0.0.1:443", "protected.example:443"} {
 		if c, err := f.dial(t, "node-a", target); err == nil {
-			c.Close()
+			_ = c.Close()
 			t.Fatal("protected UDP destination accepted")
 		}
 	}
 	if c, err := f.dial(t, "http", "1.1.1.1:443"); !errors.Is(err, proxytransport.ErrPacketUnsupported) {
 		if c != nil {
-			c.Close()
+			_ = c.Close()
 		}
 		t.Fatalf("TCP-only node was not typed unsupported: %v", err)
 	}
@@ -145,12 +145,12 @@ func TestUDPNodeRevocationOnlyClosesAAndDrainUsesFixedBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer func() { _ = a.Close() }()
 	b, err := f.dial(t, "node-b", "1.1.1.1:443")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	packetEcho(t, a, []byte("A"))
 	packetEcho(t, b, []byte("B"))
 	f.revokedA.Store(true)
@@ -171,7 +171,7 @@ func TestUDPNodeRevocationOnlyClosesAAndDrainUsesFixedBound(t *testing.T) {
 	f.p.capPacketLeases()
 	packetEcho(t, b, []byte("draining"))
 	if c, err := f.dial(t, "node-b", "1.1.1.1:443"); err == nil {
-		c.Close()
+		_ = c.Close()
 		t.Fatal("drain admitted association")
 	}
 	_ = b.SetReadDeadline(bound.Add(time.Second))
@@ -193,7 +193,7 @@ func TestUDPStopConfirmationClosesAssociationsBeforeZeroProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	packetEcho(t, c, []byte("active"))
 	config, _ := lifecycleFixture(t, "")
 	e := newEngine(config, "fixture-controller-secret")
@@ -240,14 +240,14 @@ func TestUDPGatewayPinsNativeSelectionAndAggregateRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	defer func() { _ = a.Close() }()
 	packetEcho(t, a, []byte("A"))
 	selected.Store(&bName)
 	b, err := f.dial(t, "gateway", "1.1.1.1:443")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	packetEcho(t, b, []byte("B"))
 	packetEcho(t, a, []byte("still-A"))
 	if f.p.backends["node-a"].udpProbes.Load() != 2 || f.p.backends["node-b"].udpProbes.Load() != 1 {
@@ -323,7 +323,7 @@ func packetGuardFixture(t *testing.T, policy domain.Configuration, backends map[
 	}
 	buffer := make([]byte, 100)
 	n, err := c.Read(buffer)
-	c.Close()
+	_ = c.Close()
 	if err != nil || string(buffer[:n]) != "proof" {
 		t.Fatalf("guard fixture proof %q %v", buffer[:n], err)
 	}
@@ -340,7 +340,7 @@ func TestUDPCertificateHardBoundAndMissingGuardFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	packetEcho(t, c, []byte("certificate bound"))
 	f.p.mu.Lock()
 	f.p.certificateUntil = time.Now().Add(150 * time.Millisecond)
@@ -353,7 +353,7 @@ func TestUDPCertificateHardBoundAndMissingGuardFailClosed(t *testing.T) {
 	missing.p.udpGuard = nil
 	if c, err := missing.dial(t, "node-b", "1.1.1.1:443"); !errors.Is(err, proxytransport.ErrPacketUnsupported) {
 		if c != nil {
-			c.Close()
+			_ = c.Close()
 		}
 		t.Fatalf("missing verified guard accepted UDP: %v", err)
 	}

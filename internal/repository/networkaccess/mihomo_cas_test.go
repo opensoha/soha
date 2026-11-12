@@ -19,7 +19,7 @@ func TestMihomoProfileUpdateCASRejectsConcurrentRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	g, err := gorm.Open(postgres.New(postgres.Config{Conn: db}), &gorm.Config{DisableAutomaticPing: true})
 	if err != nil {
 		t.Fatal(err)

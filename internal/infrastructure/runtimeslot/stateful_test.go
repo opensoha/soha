@@ -48,7 +48,11 @@ func TestStatefulSlotUsesOnlyPinnedStatefulScaleAndRequiresParallelRetain(t *tes
 				if action.GetSubresource() != "scale" {
 					t.Fatal("wrote stateful spec")
 				}
-				return true, action.(ktesting.UpdateAction).GetObject(), nil
+				update, ok := action.(ktesting.UpdateAction)
+				if !ok || update == nil {
+					t.Fatalf("unexpected update action %T", action)
+				}
+				return true, update.GetObject(), nil
 			})
 			scaler, _ := NewScaleClient(client)
 			observed, err := scaler.Observe(context.Background(), slot)

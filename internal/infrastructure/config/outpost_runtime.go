@@ -62,12 +62,12 @@ func (c OutpostRuntimeExecutorConfig) ReadToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open Outpost executor token file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	// A dedicated Pod fsGroup may read a projected Secret; writable groups or
 	// any world access are not acceptable for executor credentials.
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0037 != 0 {
-		return "", fmt.Errorf("Outpost executor token file must be a private regular file")
+		return "", fmt.Errorf("outpost executor token file must be a private regular file")
 	}
 	const maxTokenBytes = 8192
 	data, err := io.ReadAll(io.LimitReader(file, maxTokenBytes+1))
@@ -76,7 +76,7 @@ func (c OutpostRuntimeExecutorConfig) ReadToken() (string, error) {
 	}
 	token := strings.TrimSpace(string(data))
 	if len(token) < 32 || strings.ContainsAny(token, " \t\r\n") {
-		return "", fmt.Errorf("Outpost executor token must contain at least 32 non-whitespace bytes")
+		return "", fmt.Errorf("outpost executor token must contain at least 32 non-whitespace bytes")
 	}
 	return token, nil
 }

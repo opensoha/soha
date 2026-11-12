@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { aiPreflight } from './quality-guards.mjs'
 import { createModelProxy } from './model-proxy.mjs'
@@ -44,7 +45,7 @@ try {
     const child = spawn(
       process.execPath,
       [
-        'node_modules/@playwright/test/cli.js',
+        createRequire(import.meta.url).resolve('@playwright/test/cli'),
         'test',
         '--config',
         'playwright.ai.config.ts',

@@ -73,18 +73,18 @@ func (p *publicationIngress) serveUDP(w http.ResponseWriter, r *http.Request) {
 	until, allowed := p.until, p.accepting && !p.closed
 	p.mu.Unlock()
 	if !allowed || !until.After(time.Now()) {
-		http.Error(w, "proxy unavailable", 503)
+		http.Error(w, "proxy unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	if !p.packetEnabled || !p.packetGuardReady() {
 		w.Header().Set(proxytransport.PacketTransportHeader, proxytransport.PacketTransportVersion)
-		http.Error(w, "UDP transport unsupported", 501)
+		http.Error(w, "UDP transport unsupported", http.StatusNotImplemented)
 		return
 	}
 	user, secret, ok := ingressCredential(r)
 	credential, node, err := proxytransport.DecodeMappedUsername(user)
 	if !ok || err != nil {
-		http.Error(w, "proxy authentication required", 407)
+		http.Error(w, "proxy authentication required", http.StatusProxyAuthRequired)
 		return
 	}
 	host, port, err := net.SplitHostPort(r.Host)
@@ -98,23 +98,29 @@ func (p *publicationIngress) serveUDP(w http.ResponseWriter, r *http.Request) {
 	decision, err := p.client.CheckIngress(ctx, input)
 	cancel()
 	if err != nil {
-		http.Error(w, "proxy authorization denied", 403)
+		http.Error(w, "proxy authorization denied", http.StatusForbidden)
 		return
 	}
 	until = minTime(until, decision.ExpiresAt)
 	state := &udpIngressAssociation{p: p, input: input, requested: node, until: until}
 	handler, err := proxytransport.NewPacketHandler(map[string]string{user: secret}, state.dial, state.authorize, until)
 	if err != nil {
-		http.Error(w, "proxy unavailable", 503)
+		http.Error(w, "proxy unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	lease := &packetIngressLease{PacketHandler: handler, state: state}
 	if !p.admitPacket(lease) {
-		handler.Close()
-		http.Error(w, "proxy draining", 503)
+		_ = handler.Close()
+		http.Error(w, "proxy draining", http.StatusServiceUnavailable)
 		return
 	}
-	defer func() { handler.Close(); p.mu.Lock(); delete(p.packetHandlers, lease); p.active.Add(-1); p.mu.Unlock() }()
+	defer func() {
+		_ = handler.Close()
+		p.mu.Lock()
+		delete(p.packetHandlers, lease)
+		p.active.Add(-1)
+		p.mu.Unlock()
+	}()
 	done := make(chan struct{})
 	defer close(done)
 	go p.recheck(done, lease, input, until)

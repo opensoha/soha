@@ -54,7 +54,8 @@ test("existing required consumer jobs and pinned selection remain; neither mode 
   assert.equal(summary.if, "always()");
   const artifacts = steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
   assert.equal(artifacts.if, "always()");
-  assert.equal(artifacts.with.path, "consumer-reports/*.json");
+  assert.deepEqual(artifacts.with.path.trim().split("\n"), ["consumer-reports/*.json", "${{ runner.temp }}/opensoha-consumer-native-*/**"]);
+  for (const step of [declared, candidate]) assert.equal(step.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS, "1");
 });
 
 for (const failures of [[true, false], [false, true], [true, true], [false, false]]) {
@@ -118,4 +119,34 @@ test("active router waits for every selected workflow and preserves the original
   assert.ok(deletion.jobs["postgres-deletion"].steps.find((step) => step.name === "Run actual PostgreSQL deletion scenarios").run.includes("scripts/check-go-test-evidence.py"));
   assert.equal(source.includes("npm test"), true);
   assert.equal(workflow.jobs.verify.steps.find((step) => step.run === "npm test").env.GOWORK, "off");
+});
+
+
+test("native proxy gate is mandatory in Core, both release SDK modes and internal consumers", () => {
+  const readWorkflow = (name) => YAML.parse(readFileSync(join(root, `../.github/workflows/${name}.yml`), "utf8"));
+  const ci = readWorkflow("ci");
+  const release = readWorkflow("release");
+  for (const [job, modes] of [[ci.jobs.core, ["source"]], [release.jobs.release, ["declared", "source"]]]) {
+    const native = job.steps.filter((step) => step.run?.includes("scripts/run-proxy-native-tests.py"));
+    assert.equal(native.length, modes.length);
+    native.forEach((step, i) => {
+      assert.equal(step.if, undefined);
+      assert.equal(step["continue-on-error"], undefined);
+      assert.equal(step.run, `python3 scripts/run-proxy-native-tests.py --sdk-mode ${modes[i]} --out "$RUNNER_TEMP/proxy-native-${modes[i]}.json"`);
+    });
+    const artifacts = job.steps.find((step) => step.with?.name?.includes("native-proxy"));
+    assert.equal(artifacts.if, "always()");
+    assert.ok(artifacts.with.path.includes("proxy-native-"));
+    assert.equal(job.steps.some((step) => step.env?.SOHA_REAL_ENGINE_DIR || step.run?.includes("prepare-proxy-test-engines.py")), false);
+  }
+  assert.equal(ci.jobs.core.steps.find((step) => step.name === "Test").run, "go test ./...");
+  assert.equal(ci.jobs.core.steps.find((step) => step.name === "Race test").run, "go test -race ./...");
+  const internal = workflow.jobs["internal-source"];
+  const consumer = internal.steps.find((step) => step.run?.includes("--internal-source --require-all"));
+  assert.equal(consumer.if, undefined);
+  assert.equal(consumer["continue-on-error"], undefined);
+  assert.equal(consumer.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS, "1");
+  const artifacts = internal.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+  assert.equal(artifacts.if, "always()");
+  assert.deepEqual(artifacts.with.path.trim().split("\n"), ["internal-source-report.json", "${{ runner.temp }}/opensoha-consumer-native-*/**"]);
 });

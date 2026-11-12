@@ -228,7 +228,7 @@ func TestCatalogRejectsAmbiguousBindingsAndUnsafeEitherSnapshot(t *testing.T) {
 				if kind == "unsafe-B" {
 					index = 1
 				}
-				if err := os.Chmod(c.ConfigurationCatalog[index].Directory, 0770); err != nil {
+				if err := os.Chmod(c.ConfigurationCatalog[index].Directory, 0770); err != nil { // #nosec G302 -- Deliberately writable fixture verifies that unsafe configuration snapshots are rejected.
 					t.Fatal(err)
 				}
 			}

@@ -50,8 +50,8 @@ func startTestProcessGroup(t *testing.T) (leader, worker *exec.Cmd) {
 
 func testReleasedProcessGroup(t *testing.T) {
 	leader, worker := startTestProcessGroup(t)
-	defer worker.Wait()
-	defer worker.Process.Kill()
+	defer func() { _ = worker.Wait() }()
+	defer func() { _ = worker.Process.Kill() }()
 	if err := leader.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}

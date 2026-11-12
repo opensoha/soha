@@ -42,13 +42,13 @@ func openKernelArtifact(path string) (*os.File, error) {
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0022 != 0 || info.Mode().Perm()&0111 == 0 || !approvedBinaryOwner(info) {
 		return nil, errors.New("kernel artifact permissions invalid")
 	}
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- absolute installer artifact; Lstat validates owner/mode and SameFile checks opened identity.
 	if err != nil {
 		return nil, errors.New("kernel artifact unavailable")
 	}
 	actual, err := file.Stat()
 	if err != nil || !os.SameFile(info, actual) || actual.Size() > maxKernelBytes {
-		file.Close()
+		_ = file.Close()
 		return nil, errors.New("kernel artifact identity invalid")
 	}
 	return file, nil
@@ -59,7 +59,7 @@ func hashKernelArtifact(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	hash := sha256.New()
 	n, err := io.Copy(hash, io.LimitReader(file, maxKernelBytes+1))
 	if err != nil || n > maxKernelBytes {
@@ -204,7 +204,7 @@ func (e *engine) measureKernelArtifact(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	defer os.RemoveAll(directory)
+	defer func(path string) { _ = os.RemoveAll(path) }(directory)
 	directory, err = filepath.EvalSymlinks(directory)
 	if err != nil {
 		return

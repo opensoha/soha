@@ -9,7 +9,7 @@ func waitOwnedProcessExit(pid int) error {
 	if err != nil {
 		return err
 	}
-	defer unix.Close(queue)
+	defer func() { _ = unix.Close(queue) }()
 	var event unix.Kevent_t
 	unix.SetKevent(&event, pid, unix.EVFILT_PROC, unix.EV_ADD|unix.EV_ONESHOT)
 	event.Fflags = unix.NOTE_EXIT

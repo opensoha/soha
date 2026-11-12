@@ -70,10 +70,15 @@ func TestSnapshotFreshnessRouter(t *testing.T) {
 				}
 				return
 			}
-			v := stub.snapshot
-			if stub.calls != before+1 || v.ProcessEpoch != "e1" || v.SampleSequence != 0 || v.TotalActive == nil || *v.TotalActive != len(connections) || v.ReturnedCount == nil || *v.ReturnedCount != len(connections) || v.Truncated == nil || *v.Truncated || len(v.Connections) != len(connections) || v.Freshness != tc.freshness {
-				t.Fatalf("snapshot=%+v", v)
-			}
+			assertFreshSnapshot(t, stub, before, len(connections), tc.freshness)
 		})
+	}
+}
+
+func assertFreshSnapshot(t *testing.T, stub *freshnessStub, before, count int, freshness string) {
+	t.Helper()
+	v := stub.snapshot
+	if stub.calls != before+1 || v.ProcessEpoch != "e1" || v.SampleSequence != 0 || v.TotalActive == nil || *v.TotalActive != count || v.ReturnedCount == nil || *v.ReturnedCount != count || v.Truncated == nil || *v.Truncated || len(v.Connections) != count || v.Freshness != freshness {
+		t.Fatalf("snapshot=%+v", v)
 	}
 }

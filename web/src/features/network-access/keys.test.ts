@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { networkAccessKeys } from './keys'
+import { QueryClient } from '@tanstack/react-query'
+import { networkAccessKeys, radiusKeys } from './keys'
 
 describe('network access query keys', () => {
+  it('preserves RADIUS cache identity and invalidates pools and options together', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } })
+    try {
+      client.setQueryData(['network-access', 'radius-pools'], { items: [] })
+      client.setQueryData(['network-access', 'radius-pools', 'options'], { slots: [] })
+      client.setQueryData(networkAccessKeys.policySnapshot, {})
+      expect(client.getQueryData(radiusKeys.all)).toEqual({ items: [] })
+      expect(client.getQueryData(radiusKeys.options())).toEqual({ slots: [] })
+      await client.invalidateQueries({ queryKey: radiusKeys.all })
+      expect(client.getQueryState(radiusKeys.all)?.isInvalidated).toBe(true)
+      expect(client.getQueryState(radiusKeys.options())?.isInvalidated).toBe(true)
+      expect(client.getQueryState(networkAccessKeys.policySnapshot)?.isInvalidated).toBe(false)
+    } finally {
+      client.clear()
+    }
+  })
+
   it('normalizes list filters into stable keys', () => {
     expect(
       networkAccessKeys.devices.list({ search: ' Laptop ', ownerUserId: ' user-1 ', limit: 200 }),

@@ -27,7 +27,7 @@ type config struct {
 }
 
 func run(ctx context.Context, path string) error {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 G703 -- Only main supplies this path from installer-owned SOHA_OUTPOST_EXECUTOR_CONFIG or its fixed /etc default; no request/task input.
 	if err != nil {
 		return fmt.Errorf("open Outpost executor installation config")
 	}
@@ -48,7 +48,7 @@ func run(ctx context.Context, path string) error {
 	}
 	kubeConfig, err := rest.InClusterConfig()
 	if err != nil {
-		return fmt.Errorf("Outpost executor requires its installer-authorized in-cluster service account")
+		return fmt.Errorf("outpost executor requires its installer-authorized in-cluster service account")
 	}
 	kubeClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {

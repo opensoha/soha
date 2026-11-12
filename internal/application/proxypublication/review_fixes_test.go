@@ -22,7 +22,7 @@ func (disclosureEngine) Export(ir domain.IR) (string, error) {
 	return disclosureEngine{}.ExportDirect(ir)
 }
 func (disclosureEngine) ExportDirect(ir domain.IR) (string, error) {
-	b, err := json.Marshal(ir.Nodes)
+	b, err := json.Marshal(ir.Nodes) // #nosec G117 -- Disclosure regression fixture intentionally serializes synthetic node secrets to test redaction.
 	return string(b), err
 }
 func directScopeFixture(t *testing.T) (*Bundles, *bundleFake) {

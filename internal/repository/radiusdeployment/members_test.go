@@ -50,12 +50,7 @@ func TestControlBootstrapRenewDrainAndUnknown(t *testing.T) {
 	if _, e := nextControl(s, &m, c, "new-epoch", "nas", now); e == nil {
 		t.Fatal("unproven prior child replaced")
 	}
-	m.UnknownLatched = true
-	m.Control = &stopped
-	u, e := nextControl(s, &m, c, "epoch", "nas", until.Add(2*time.Second))
-	if e != nil || !u.StopRequired || u.AcceptNewAuthentications {
-		t.Fatal("unknown reenabled")
-	}
+	assertUnknownRadiusCannotReenable(t, s, m, c, stopped, until)
 }
 func TestACKPresenceAndProofFences(t *testing.T) {
 	s, m, c, now := runtimeFixture()
@@ -98,5 +93,15 @@ func TestACKPresenceAndProofFences(t *testing.T) {
 		if validRuntimeProof(s, m, c.ID, &copy, now) == nil {
 			t.Fatalf("stale proof accepted: %+v", copy)
 		}
+	}
+}
+
+func assertUnknownRadiusCannotReenable(t *testing.T, s domain.State, m domain.MemberRecord, c currentCredential, stopped api.NetworkRADIUSRuntimeControl, until time.Time) {
+	t.Helper()
+	m.UnknownLatched = true
+	m.Control = &stopped
+	u, e := nextControl(s, &m, c, "epoch", "nas", until.Add(2*time.Second))
+	if e != nil || !u.StopRequired || u.AcceptNewAuthentications {
+		t.Fatal("unknown reenabled")
 	}
 }

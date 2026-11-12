@@ -51,6 +51,7 @@ import (
 	runtimerepo "github.com/opensoha/soha/internal/repository/networkruntime"
 	deployrepo "github.com/opensoha/soha/internal/repository/proxydeployment"
 	pubrepo "github.com/opensoha/soha/internal/repository/proxypublication"
+	pgtest "github.com/opensoha/soha/internal/testsupport/postgres"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -136,7 +137,7 @@ func newPublicationPG(t *testing.T) *publicationPG {
 	port, err := strconv.Atoi(portText)
 	pgRequire(t, err)
 	// Never log connection errors containing the private connection string.
-	store, err := dbstore.New(config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: os.Getenv("SOHA_PROXY_PUBLICATION_TEST_POSTGRES_DATABASE"), User: os.Getenv("SOHA_PROXY_PUBLICATION_TEST_POSTGRES_USER"), Password: os.Getenv("SOHA_TEST_POSTGRES_PASSWORD"), SSLMode: "disable", MaxOpenConns: 2, MaxIdleConns: 2}, zap.NewNop())
+	store, err := dbstore.New(pgtest.Configure(t, config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: os.Getenv("SOHA_PROXY_PUBLICATION_TEST_POSTGRES_DATABASE"), User: os.Getenv("SOHA_PROXY_PUBLICATION_TEST_POSTGRES_USER"), Password: os.Getenv("SOHA_TEST_POSTGRES_PASSWORD"), SSLMode: "disable", MaxOpenConns: 2, MaxIdleConns: 2}), zap.NewNop())
 	if err != nil {
 		t.Fatal("cannot open disposable PostgreSQL")
 	}
@@ -175,67 +176,11 @@ func newPublicationPG(t *testing.T) *publicationPG {
 	for _, m := range members {
 		f.sql(t, "INSERT INTO network_proxy_deployment_members(runtime_id,proxy_id,instance_id,ordinal) VALUES(?,'px-master',?,?)", m.RuntimeID, m.InstanceID, m.Ordinal)
 	}
-	f.proxies = proxyrepo.New(db)
-	f.proxies.SetBatchFence(deployrepo.New(db))
-	f.store = pubrepo.New(db)
-	f.management, err = proxyapp.NewManagement(f.proxies, nil, access.NewPermissionResolver(publicationPGRoles{}), publicationPGScope{}, publicationPGAudit{}, publicationPGOperations{}, keys)
-	pgRequire(t, err)
-	authority := publicationPGAuthority{f.management}
-	compiler := proxysource.NewCompiler()
-	fetcher, err := proxysource.NewFetcher(proxysource.Options{Protected: func(context.Context, netip.Addr) bool { return true }, ProtectedHost: func(context.Context, string) bool { return true }})
-	pgRequire(t, err)
-	f.sources, err = publication.NewSources(f.store, authority, authority, compiler, fetcher, keys)
-	pgRequire(t, err)
-	f.pool = &publicationPGPool{pool: pubdomain.ApprovedPool{MasterID: "px-master", OwnerEpoch: 1, MemberSetHash: hash, Members: []pubdomain.PoolMember{{RuntimeID: "px-a", Running: true, Serving: true}, {RuntimeID: "px-b", Running: true, Serving: true}}, Endpoints: []api.NetworkProxyEmployeeEndpoint{{EndpointID: "px-entry", URL: "https://entry.example.test"}}}}
-	runtimeStore := runtimerepo.New(db, appnetworkaccess.VPNGovernancePolicy{})
-	schemas, err := networkprotocol.CompileSchemas()
-	pgRequire(t, err)
-	service, err := control.New(runtimeStore, schemas, control.Options{MaxClockSkew: time.Minute, ConfigurationTTL: 5 * time.Minute, LeaseTTL: 5 * time.Minute})
-	pgRequire(t, err)
-	endpoint, err := control.NewProjectionAuthorizer(service, runtimeStore)
-	pgRequire(t, err)
-	destination, err := publication.NewDestinationPolicy(f.store, proxysource.Resolver{})
-	pgRequire(t, err)
-	f.bundles, err = publication.NewBundles(f.store, f.store, f.store, authority, authority, f.pool, f.management, compiler, service, endpoint, runtimeStore, destination, keys)
-	pgRequire(t, err)
-	gin.SetMode(gin.TestMode)
-	f.router = gin.New()
-	f.router.Use(func(c *gin.Context) {
-		role := "admin"
-		if c.GetHeader("X-Test-Role") == "profiles-only" {
-			role = "profiles-only"
-		}
-		if c.GetHeader("X-Test-Role") == "viewer" {
-			role = "viewer"
-		}
-		c.Set("principal", identity.Principal{UserID: f.user, Roles: []string{role}})
-	})
-	sh := NewProxyPublicationSourcesHandler(f.sources)
-	bh := NewProxyPublicationBundlesHandler(f.bundles)
-	f.router.PUT("/instances/:instanceID/sources/:sourceID", sh.Put)
-	f.router.GET("/instances/:instanceID/sources/:sourceID", sh.Get)
-	f.router.DELETE("/instances/:instanceID/sources/:sourceID", sh.Delete)
-	f.router.POST("/instances/:instanceID/preview", sh.Preview)
-	f.router.PUT("/instances/:instanceID/bundles/:bundleID", bh.Prepare)
-	f.router.POST("/instances/:instanceID/bundles/:bundleID/activate", bh.Activate)
-	rules, err := publication.NewRules(f.store, authority, authority)
-	pgRequire(t, err)
-	rh := NewProxyPublicationRulesHandler(rules, f.sources)
-	f.router.GET("/instances/:instanceID/rules", rh.Get)
-	f.router.PUT("/instances/:instanceID/rules", rh.Put)
-	ch, err := controlhttp.NewPublicationHandler(f.bundles, controlhttp.Options{MaxBodyBytes: 1 << 20, RequestsPerMinute: 1000})
-	pgRequire(t, err)
-	f.control = gin.New()
-	f.control.POST("/proxies/:runtimeID/ready", ch.ServerReady)
-	f.control.POST("/proxies/:runtimeID/check", ch.IngressCheck)
-	f.control.GET("/profiles/:profileID/projection", ch.Projection)
-	f.control.POST("/profiles/:profileID/receipt", ch.ProjectionReceipt)
-	f.control.GET("/profiles/:profileID/direct", ch.DirectProjection)
-	f.setupTLS(t)
-	f.installProfileHandlers(t, keys)
+	f.setupPublicationServices(t, keys, hash)
+	f.setupPublicationRoutes(t, keys)
 	f.source = api.NetworkProxySourceInput{Name: "Synthetic source", Format: "manual", DeliveryMode: "mapped_nodes", Nodes: []api.NetworkProxyNode{{NodeID: "node-a", Label: "private alias", Protocol: "http", Server: "upstream.example.test", Port: 8080, Username: "private-user", Secret: "private-upstream-secret"}}}
 	f.source.Nodes = append(f.source.Nodes, api.NetworkProxyNode{Protocol: "http", Server: "surviving-upstream.example.test", Port: 8081, Secret: "surviving-secret"})
-	ir, err := compiler.Compile(f.source)
+	ir, err := proxysource.NewCompiler().Compile(f.source)
 	pgRequire(t, err)
 	f.node = ir.Nodes[0].NodeID
 	for _, n := range ir.Nodes {
@@ -600,7 +545,11 @@ func (f *publicationPG) setupTLS(t *testing.T) {
 		pgRequire(t, err)
 		ident, err := networkidentity.ParseCertificate(cert, networkidentity.ScopeNetworkControl)
 		pgRequire(t, err)
-		transport := f.server.Client().Transport.(*http.Transport).Clone()
+		base, ok := f.server.Client().Transport.(*http.Transport)
+		if !ok || base == nil {
+			t.Fatal("unexpected test TLS transport")
+		}
+		transport := base.Clone()
 		transport.TLSClientConfig = transport.TLSClientConfig.Clone()
 		transport.TLSClientConfig.Certificates = []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: ck}}
 		f.clients[id] = &http.Client{Transport: transport, Timeout: 10 * time.Second}
@@ -617,7 +566,7 @@ func (f *publicationPG) controlRequest(t *testing.T, id, method, path string, in
 	req.Header.Set("Content-Type", "application/json")
 	res, err := f.clients[id].Do(req)
 	pgRequire(t, err)
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(res.Body)
 	pgRequire(t, err)
 	if res.StatusCode != status {
@@ -632,4 +581,75 @@ func (f *publicationPG) controlRequest(t *testing.T, id, method, path string, in
 		}
 	}
 	return body
+}
+
+func (f *publicationPG) setupPublicationServices(t *testing.T, keys keyring.Ring, hash string) {
+	t.Helper()
+	var err error
+	db := f.db
+	f.proxies = proxyrepo.New(db)
+	f.proxies.SetBatchFence(deployrepo.New(db))
+	f.store = pubrepo.New(db)
+	f.management, err = proxyapp.NewManagement(f.proxies, nil, access.NewPermissionResolver(publicationPGRoles{}), publicationPGScope{}, publicationPGAudit{}, publicationPGOperations{}, keys)
+	pgRequire(t, err)
+	authority := publicationPGAuthority{f.management}
+	compiler := proxysource.NewCompiler()
+	fetcher, err := proxysource.NewFetcher(proxysource.Options{Protected: func(context.Context, netip.Addr) bool { return true }, ProtectedHost: func(context.Context, string) bool { return true }})
+	pgRequire(t, err)
+	f.sources, err = publication.NewSources(f.store, authority, authority, compiler, fetcher, keys)
+	pgRequire(t, err)
+	f.pool = &publicationPGPool{pool: pubdomain.ApprovedPool{MasterID: "px-master", OwnerEpoch: 1, MemberSetHash: hash, Members: []pubdomain.PoolMember{{RuntimeID: "px-a", Running: true, Serving: true}, {RuntimeID: "px-b", Running: true, Serving: true}}, Endpoints: []api.NetworkProxyEmployeeEndpoint{{EndpointID: "px-entry", URL: "https://entry.example.test"}}}}
+	runtimeStore := runtimerepo.New(db, appnetworkaccess.VPNGovernancePolicy{})
+	schemas, err := networkprotocol.CompileSchemas()
+	pgRequire(t, err)
+	service, err := control.New(runtimeStore, schemas, control.Options{MaxClockSkew: time.Minute, ConfigurationTTL: 5 * time.Minute, LeaseTTL: 5 * time.Minute})
+	pgRequire(t, err)
+	endpoint, err := control.NewProjectionAuthorizer(service, runtimeStore)
+	pgRequire(t, err)
+	destination, err := publication.NewDestinationPolicy(f.store, proxysource.Resolver{})
+	pgRequire(t, err)
+	f.bundles, err = publication.NewBundles(f.store, f.store, f.store, authority, authority, f.pool, f.management, compiler, service, endpoint, runtimeStore, destination, keys)
+	pgRequire(t, err)
+
+}
+
+func (f *publicationPG) setupPublicationRoutes(t *testing.T, keys keyring.Ring) {
+	t.Helper()
+	authority := publicationPGAuthority{f.management}
+	gin.SetMode(gin.TestMode)
+	f.router = gin.New()
+	f.router.Use(func(c *gin.Context) {
+		role := "admin"
+		if c.GetHeader("X-Test-Role") == "profiles-only" {
+			role = "profiles-only"
+		}
+		if c.GetHeader("X-Test-Role") == "viewer" {
+			role = "viewer"
+		}
+		c.Set("principal", identity.Principal{UserID: f.user, Roles: []string{role}})
+	})
+	sh := NewProxyPublicationSourcesHandler(f.sources)
+	bh := NewProxyPublicationBundlesHandler(f.bundles)
+	f.router.PUT("/instances/:instanceID/sources/:sourceID", sh.Put)
+	f.router.GET("/instances/:instanceID/sources/:sourceID", sh.Get)
+	f.router.DELETE("/instances/:instanceID/sources/:sourceID", sh.Delete)
+	f.router.POST("/instances/:instanceID/preview", sh.Preview)
+	f.router.PUT("/instances/:instanceID/bundles/:bundleID", bh.Prepare)
+	f.router.POST("/instances/:instanceID/bundles/:bundleID/activate", bh.Activate)
+	rules, err := publication.NewRules(f.store, authority, authority)
+	pgRequire(t, err)
+	rh := NewProxyPublicationRulesHandler(rules, f.sources)
+	f.router.GET("/instances/:instanceID/rules", rh.Get)
+	f.router.PUT("/instances/:instanceID/rules", rh.Put)
+	ch, err := controlhttp.NewPublicationHandler(f.bundles, controlhttp.Options{MaxBodyBytes: 1 << 20, RequestsPerMinute: 1000})
+	pgRequire(t, err)
+	f.control = gin.New()
+	f.control.POST("/proxies/:runtimeID/ready", ch.ServerReady)
+	f.control.POST("/proxies/:runtimeID/check", ch.IngressCheck)
+	f.control.GET("/profiles/:profileID/projection", ch.Projection)
+	f.control.POST("/profiles/:profileID/receipt", ch.ProjectionReceipt)
+	f.control.GET("/profiles/:profileID/direct", ch.DirectProjection)
+	f.setupTLS(t)
+	f.installProfileHandlers(t, keys)
+
 }

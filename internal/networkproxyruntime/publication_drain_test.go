@@ -33,7 +33,7 @@ func TestOrdinaryDrainPreservesHandlersPastServeGrantWithoutExtendingOriginalLea
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer handler.Close()
+	defer func() { _ = handler.Close() }()
 	p := &publicationIngress{accepting: true, until: oldServeExpiry, client: client, handlers: map[*proxytransport.Handler]struct{}{handler: {}}}
 	p.active.Store(1)
 	e := newEngine(Config{Engine: domain.EngineMihomo}, "")

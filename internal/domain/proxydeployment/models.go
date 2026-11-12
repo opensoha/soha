@@ -193,7 +193,7 @@ func ValidatePolicy(slot Slot) error {
 		return fmt.Errorf("invalid proxy workload kind")
 	}
 	if slot.WorkloadKind != "StatefulSet" && slot.MaxReplicas != 1 {
-		return fmt.Errorf("Deployment requires one independent runtime")
+		return fmt.Errorf("deployment requires one independent runtime")
 	}
 	return validateMembers(slot)
 }

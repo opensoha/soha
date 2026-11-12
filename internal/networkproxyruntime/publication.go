@@ -288,9 +288,8 @@ func (p *publicationIngress) serveTCP(w http.ResponseWriter, request *http.Reque
 		http.Error(w, "proxy authorization denied", http.StatusForbidden)
 		return
 	}
-	host, port, err := net.SplitHostPort(request.Host)
-	number, portErr := strconv.Atoi(port)
-	if err != nil || portErr != nil || number < 1 || number > 65535 {
+	host, number, err := ingressDestination(request.Host)
+	if err != nil {
 		http.Error(w, "invalid destination", http.StatusBadRequest)
 		return
 	}
@@ -311,16 +310,11 @@ func (p *publicationIngress) serveTCP(w http.ResponseWriter, request *http.Reque
 		http.Error(w, "proxy unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	p.mu.Lock()
-	if p.closed || !p.accepting {
-		p.mu.Unlock()
+	if !p.registerTCPHandler(handler) {
 		_ = handler.Close()
 		http.Error(w, "proxy draining", http.StatusServiceUnavailable)
 		return
 	}
-	p.handlers[handler] = struct{}{}
-	p.active.Add(1)
-	p.mu.Unlock()
 	defer func() { _ = handler.Close(); p.mu.Lock(); delete(p.handlers, handler); p.active.Add(-1); p.mu.Unlock() }()
 	done := make(chan struct{})
 	defer close(done)
@@ -412,22 +406,9 @@ func (p *publicationIngress) dial(ctx context.Context, address, nodeID, outbound
 	if err != nil {
 		return nil, err
 	}
-	ip, err := p.scope.Resolve(ctx, host)
+	ip, addresses, err := p.resolveDestination(ctx, host)
 	if err != nil {
 		return nil, err
-	}
-	addresses := []netip.Addr{ip}
-	if _, err := netip.ParseAddr(host); err != nil {
-		addresses, err = net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-		if err != nil || len(addresses) == 0 || len(addresses) > 32 {
-			return nil, errors.New("destination DNS unavailable")
-		}
-		for _, addr := range addresses {
-			if _, err := p.scope.Resolve(ctx, addr.String()); err != nil {
-				return nil, err
-			}
-		}
-		ip = addresses[0]
 	}
 	action, matched, err := proxypolicy.EvaluateMandatory(p.publication.Rules, host, addresses)
 	if err != nil {
@@ -486,6 +467,10 @@ func verifyPublicationListeners(p *api.NetworkProxyServerPublication, backends m
 	return nil
 }
 func authenticateSOCKS(conn net.Conn, b *egressBackend) error {
+	userLength, secretLength := len(b.user), len(b.secret)
+	if userLength < 1 || userLength > 255 || secretLength < 1 || secretLength > 255 {
+		return errors.New("publication listener credentials invalid")
+	}
 	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	if _, err := conn.Write([]byte{5, 1, 2}); err != nil {
 		return err
@@ -494,8 +479,8 @@ func authenticateSOCKS(conn net.Conn, b *egressBackend) error {
 	if _, err := io.ReadFull(conn, reply); err != nil || reply[0] != 5 || reply[1] != 2 {
 		return errors.New("publication listener authentication unavailable")
 	}
-	auth := append([]byte{1, byte(len(b.user))}, []byte(b.user)...)
-	auth = append(auth, byte(len(b.secret)))
+	auth := append([]byte{1, byte(userLength)}, []byte(b.user)...)
+	auth = append(auth, byte(secretLength))
 	auth = append(auth, []byte(b.secret)...)
 	if _, err := conn.Write(auth); err != nil {
 		return err
@@ -589,4 +574,45 @@ func (p *publicationIngress) capCertificate(until time.Time) time.Time {
 		return minTime(until, p.certificateUntil)
 	}
 	return until
+}
+
+func ingressDestination(address string) (string, int, error) {
+	host, port, err := net.SplitHostPort(address)
+	number, portErr := strconv.Atoi(port)
+	if err != nil || portErr != nil || number < 1 || number > 65535 {
+		return "", 0, errors.New("invalid destination")
+	}
+	return host, number, nil
+}
+
+func (p *publicationIngress) resolveDestination(ctx context.Context, host string) (netip.Addr, []netip.Addr, error) {
+	ip, err := p.scope.Resolve(ctx, host)
+	if err != nil {
+		return netip.Addr{}, nil, err
+	}
+	addresses := []netip.Addr{ip}
+	if _, err := netip.ParseAddr(host); err != nil {
+		addresses, err = net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+		if err != nil || len(addresses) == 0 || len(addresses) > 32 {
+			return netip.Addr{}, nil, errors.New("destination DNS unavailable")
+		}
+		for _, addr := range addresses {
+			if _, err := p.scope.Resolve(ctx, addr.String()); err != nil {
+				return netip.Addr{}, nil, err
+			}
+		}
+		ip = addresses[0]
+	}
+	return ip, addresses, nil
+}
+
+func (p *publicationIngress) registerTCPHandler(handler *proxytransport.Handler) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || !p.accepting {
+		return false
+	}
+	p.handlers[handler] = struct{}{}
+	p.active.Add(1)
+	return true
 }

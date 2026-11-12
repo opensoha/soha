@@ -24,7 +24,8 @@ import { StatusTag } from '@/components/status-tag'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { readableQueryData, queryAccessDenied } from '@/utils/query-feedback'
 import { radiusApi } from './api'
-import { radiusKeys, canScale, memberFresh, stateCount, stopped, type RadiusCommand } from './model'
+import { radiusKeys } from '../keys'
+import { canScale, memberFresh, stateCount, stopped, type RadiusCommand } from './model'
 
 export function RadiusServicesPanel({
   canRead,
@@ -38,7 +39,7 @@ export function RadiusServicesPanel({
   const client = useQueryClient()
   const pools = useQuery({ queryKey: radiusKeys.all, queryFn: radiusApi.list, enabled: canRead })
   const options = useQuery({
-    queryKey: [...radiusKeys.all, 'options'],
+    queryKey: radiusKeys.options(),
     queryFn: radiusApi.options,
     enabled: canRead && (canCreate || canUpdate),
   })

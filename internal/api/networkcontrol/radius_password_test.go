@@ -81,13 +81,18 @@ func TestRadiusPasswordWireAndRejections(t *testing.T) {
 				}
 				return
 			}
-			var attributes map[string]radiusReplyAttribute
-			if err := json.Unmarshal(response.Body.Bytes(), &attributes); err != nil {
-				t.Fatal(err)
-			}
-			if len(attributes) != 2 || attributes["control:Tmp-String-4"].DoXLAT || attributes["control:Tmp-String-5"].Value[0] != "user-1" || verifier.source != "192.0.2.2" {
-				t.Fatalf("unsafe RADIUS response: %+v", attributes)
-			}
+			assertRadiusPasswordAttributes(t, response, verifier)
 		})
+	}
+}
+
+func assertRadiusPasswordAttributes(t *testing.T, response *httptest.ResponseRecorder, verifier *radiusPasswordStub) {
+	t.Helper()
+	var attributes map[string]radiusReplyAttribute
+	if err := json.Unmarshal(response.Body.Bytes(), &attributes); err != nil {
+		t.Fatal(err)
+	}
+	if len(attributes) != 2 || attributes["control:Tmp-String-4"].DoXLAT || attributes["control:Tmp-String-5"].Value[0] != "user-1" || verifier.source != "192.0.2.2" {
+		t.Fatalf("unsafe RADIUS response: %+v", attributes)
 	}
 }

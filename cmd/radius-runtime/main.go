@@ -25,11 +25,11 @@ func load(path string) (configuration, error) {
 	if err := runtime.ApprovedRootFile(path); err != nil {
 		return configuration{}, err
 	}
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- ApprovedRootFile above enforces a root-owned 0600 regular file and protected ancestors.
 	if err != nil {
 		return configuration{}, fmt.Errorf("open approved runtime configuration")
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > 32768 {
 		return configuration{}, runtime.ErrDenied
@@ -120,7 +120,7 @@ func main() {
 	defer stop()
 	options, err := parseCommandOptions(os.Args[1:])
 	if errors.Is(err, flag.ErrHelp) {
-		fmt.Fprintln(os.Stdout, "Usage: radius-runtime [--config <private runtime.json>] | --configuration-digest <protected directory>")
+		_, _ = fmt.Fprintln(os.Stdout, "Usage: radius-runtime [--config <private runtime.json>] | --configuration-digest <protected directory>")
 		return
 	}
 	if err == nil {

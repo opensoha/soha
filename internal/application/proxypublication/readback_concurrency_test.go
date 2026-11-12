@@ -125,69 +125,7 @@ func TestServerReadyRejectsInvalidStateInitiallyAndAfterCAS(t *testing.T) {
 			t.Run(fmt.Sprintf("retry=%v/%s", retry, fault), func(t *testing.T) {
 				b, store, input := readbackRetryFixture()
 				now := b.now()
-				mutate := func() {
-					switch fault {
-					case "runtime revoked":
-						b.runtime = runtimeFake{err: apperrors.ErrAccessDenied}
-					case "revoked", "failed":
-						store.record.Public.State = api.NetworkProxyBundleState(fault)
-					case "unknown state":
-						store.record.Public.State = "unexpected"
-					case "prepared expired":
-						store.record.Public.ValidUntil = now.Add(-time.Second)
-					case "pool owner":
-						b.pool.(*poolFake).pool.OwnerEpoch++
-					case "pool hash":
-						b.pool.(*poolFake).pool.MemberSetHash = "other"
-					case "member removed":
-						b.pool.(*poolFake).pool.Members = nil
-					case "member stopped":
-						b.pool.(*poolFake).pool.Members[0].Running = false
-					case "protection floor":
-						b.destination = readbackProtection{value: &access.ProtectedDestinations{PolicyVersion: 2}}
-					case "protection missing":
-						b.destination = readbackProtection{}
-					case "protection zero":
-						b.destination = readbackProtection{value: &access.ProtectedDestinations{}}
-					case "protection unavailable":
-						b.destination = readbackProtection{err: apperrors.ErrServiceUnavailable}
-					case "source changed":
-						store.policyError = apperrors.ErrAccessDenied
-					case "org changed":
-						store.policyError = apperrors.ErrConflict
-					case "public revision":
-						store.record.Public.Revision++
-					case "version not advanced":
-						store.record.Version = 1
-					case "second CAS":
-						store.beforeSave = func(s *concurrentReadbackStore) { s.record.Version++ }
-					default:
-						state := b.desired.(desiredFake)
-						current := &state.states[0]
-						switch fault {
-						case "configuration revision":
-							current.DesiredRevision++
-							current.AppliedRevision++
-						case "hash drift":
-							current.AppliedHash = "drift"
-						case "native epoch":
-							current.ProcessEpoch = "different-boot"
-						case "lease missing":
-							current.ConfigurationValidUntil = nil
-						case "lease expired":
-							current.ConfigurationValidUntil = &now
-						case "last seen missing":
-							current.LastSeenAt = nil
-						case "last seen stale":
-							old := now.Add(-31 * time.Second)
-							current.LastSeenAt = &old
-						case "last seen future":
-							future := now.Add(6 * time.Second)
-							current.LastSeenAt = &future
-						}
-						b.desired = state
-					}
-				}
+				mutate := func() { mutateReadbackState(t, fault, b, store, now) }
 				if retry {
 					store.beforeSave = func(s *concurrentReadbackStore) {
 						if s.saveCalls == 1 {
@@ -249,8 +187,8 @@ func TestServerReadyConcurrentMembersPreserveBothReadbacks(t *testing.T) {
 			base.record.Public.ServerHash = "sha256:" + strings.Repeat("a", 64)
 			base.record.Readbacks = map[string]api.NetworkProxyBundleReadback{}
 			base.record.Pool.Members = []domain.PoolMember{{RuntimeID: "proxy-1", Running: true, Serving: true}, {RuntimeID: "proxy-2", Running: true, Serving: true}}
-			b.pool.(*poolFake).pool = base.record.Pool
-			states := b.desired.(desiredFake)
+			fixtureValue[*poolFake](t, b.pool).pool = base.record.Pool
+			states := fixtureValue[desiredFake](t, b.desired)
 			first := states.states[0]
 			first.ContentHash = base.record.Public.ServerHash
 			first.ProcessEpoch = "server-1"
@@ -292,4 +230,74 @@ func TestServerReadyConcurrentMembersPreserveBothReadbacks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mutateReadbackState(t *testing.T, fault string, b *Bundles, store *concurrentReadbackStore, now time.Time) {
+	t.Helper()
+	switch fault {
+	case "runtime revoked":
+		b.runtime = runtimeFake{err: apperrors.ErrAccessDenied}
+	case "revoked", "failed":
+		store.record.Public.State = api.NetworkProxyBundleState(fault)
+	case "unknown state":
+		store.record.Public.State = "unexpected"
+	case "prepared expired":
+		store.record.Public.ValidUntil = now.Add(-time.Second)
+	case "pool owner":
+		fixtureValue[*poolFake](t, b.pool).pool.OwnerEpoch++
+	case "pool hash":
+		fixtureValue[*poolFake](t, b.pool).pool.MemberSetHash = "other"
+	case "member removed":
+		fixtureValue[*poolFake](t, b.pool).pool.Members = nil
+	case "member stopped":
+		fixtureValue[*poolFake](t, b.pool).pool.Members[0].Running = false
+	case "protection floor":
+		b.destination = readbackProtection{value: &access.ProtectedDestinations{PolicyVersion: 2}}
+	case "protection missing":
+		b.destination = readbackProtection{}
+	case "protection zero":
+		b.destination = readbackProtection{value: &access.ProtectedDestinations{}}
+	case "protection unavailable":
+		b.destination = readbackProtection{err: apperrors.ErrServiceUnavailable}
+	case "source changed":
+		store.policyError = apperrors.ErrAccessDenied
+	case "org changed":
+		store.policyError = apperrors.ErrConflict
+	case "public revision":
+		store.record.Public.Revision++
+	case "version not advanced":
+		store.record.Version = 1
+	case "second CAS":
+		store.beforeSave = func(s *concurrentReadbackStore) { s.record.Version++ }
+	default:
+		mutateReadbackConfiguration(t, fault, b, now)
+	}
+}
+
+func mutateReadbackConfiguration(t *testing.T, fault string, b *Bundles, now time.Time) {
+	t.Helper()
+	state := fixtureValue[desiredFake](t, b.desired)
+	current := &state.states[0]
+	switch fault {
+	case "configuration revision":
+		current.DesiredRevision++
+		current.AppliedRevision++
+	case "hash drift":
+		current.AppliedHash = "drift"
+	case "native epoch":
+		current.ProcessEpoch = "different-boot"
+	case "lease missing":
+		current.ConfigurationValidUntil = nil
+	case "lease expired":
+		current.ConfigurationValidUntil = &now
+	case "last seen missing":
+		current.LastSeenAt = nil
+	case "last seen stale":
+		old := now.Add(-31 * time.Second)
+		current.LastSeenAt = &old
+	case "last seen future":
+		future := now.Add(6 * time.Second)
+		current.LastSeenAt = &future
+	}
+	b.desired = state
 }

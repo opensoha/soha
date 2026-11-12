@@ -77,7 +77,7 @@ func TestOutpostManagedControlHTTPWithPostgres(t *testing.T) {
 	session, err := f.providers.IssueProxySession(ctx, f.principal, domainidentity.AccessContext{TokenKind: "session_access", SessionID: sessionID})
 	ssoNoError(t, err)
 	directory := t.TempDir()
-	ssoNoError(t, os.Chmod(directory, 0700))
+	ssoNoError(t, os.Chmod(directory, 0700)) // #nosec G302 -- Fixture directory needs owner traversal; 0700 grants no group or world access.
 	config := fmt.Sprintf("app:\n  env: development\nhttp:\n  addr: :%d\n  base_path: /api/v1\nauth:\n  bearer_token_file: %s\nlogger:\n  level: error\nkubernetes:\n  enabled: false\ncontrol_plane:\n  enabled: true\n  base_url: %s\n  bearer_token_file: %s\n  outpost:\n    enabled: true\n    agent_id: %s\n    instance_id: fixture-instance\n    runtime_control_enabled: true\n    state_dir: %s\n    protocol_version: v1\n    trust_key_id: managed-test\n    trust_public_key: %s\n    poll_interval: 200ms\n    heartbeat_interval: 200ms\n", port, filepath.Join(directory, "agent-token"), f.server.URL, filepath.Join(directory, "control-token"), outpost.ID, filepath.Join(directory, "state"), base64.StdEncoding.EncodeToString(publicKey))
 	serviceToken := "managed-protocol-test-service-token"
 	stop := startSSOTestAgent(t, binary, directory, config, serviceToken, outpost.Token)

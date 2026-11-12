@@ -266,30 +266,7 @@ func TestShrinkExemptionRejectsUntrustedStateAndTask(t *testing.T) {
 	for _, name := range []string{"unknown", "degraded", "conflict", "external", "no pin", "no lease pin", "no actual", "no desired", "no observation", "wrong roster", "wrong hash", "invalid range"} {
 		t.Run(name, func(t *testing.T) {
 			state := memberShrinkState(now, 2, 1)
-			switch name {
-			case "unknown", "degraded", "conflict":
-				state.Phase = name
-			case "external":
-				state.Owner = name
-			case "no pin":
-				state.Slot = nil
-			case "no lease pin":
-				state.DrainLeasePinned = false
-			case "no actual":
-				state.ActualReplicas = nil
-			case "no desired":
-				state.ObservedDesiredReplicas = nil
-			case "no observation":
-				state.ObservedAt = nil
-			case "wrong roster":
-				state.Members = append([]domain.Member(nil), state.Members...)
-				state.Members[0].RuntimeID = "foreign"
-			case "wrong hash":
-				state.MemberSetHash = "foreign"
-			case "invalid range":
-				x := int32(3)
-				state.ActualReplicas = &x
-			}
+			mutateUntrustedShrink(name, &state)
 			if !memberRequiresDrain(state, "p0", "pool-0") {
 				t.Fatal("untrusted survivor bypassed drain")
 			}
@@ -356,23 +333,7 @@ func TestShrinkDrainStatusCountsOnlyExactRemovedMembers(t *testing.T) {
 				}
 				for _, name := range []string{"stale", "old revision", "unknown count", "expired", "missing"} {
 					t.Run(name, func(t *testing.T) {
-						invalid := append([]api.NetworkProxyDeploymentMember(nil), views...)
-						m := &invalid[target]
-						switch name {
-						case "stale":
-							m.ObservedAt = now.Add(-11 * time.Second)
-						case "old revision":
-							m.AckRevision--
-						case "unknown count":
-							m.ActiveCountKnown = false
-						case "expired":
-							m.ControlExpiresAt = &now
-						case "missing":
-							invalid = invalid[:target]
-						}
-						if aggregateDrainStatus(state, invalid, now).CountKnown {
-							t.Fatal("invalid removed proof counted")
-						}
+						assertInvalidRemovedProof(t, name, views, target, state, now)
 					})
 				}
 			})
@@ -396,5 +357,53 @@ func TestFirstTrustedShrinkObservationScopesDrainBeforePin(t *testing.T) {
 	state.DrainLeasePinned = true
 	if memberRequiresDrain(state, "p0", "pool-0") || !memberRequiresDrain(state, "p1", "pool-1") {
 		t.Fatal("trusted first observation did not isolate removal")
+	}
+}
+
+func mutateUntrustedShrink(name string, state *domain.State) {
+	switch name {
+	case "unknown", "degraded", "conflict":
+		state.Phase = name
+	case "external":
+		state.Owner = name
+	case "no pin":
+		state.Slot = nil
+	case "no lease pin":
+		state.DrainLeasePinned = false
+	case "no actual":
+		state.ActualReplicas = nil
+	case "no desired":
+		state.ObservedDesiredReplicas = nil
+	case "no observation":
+		state.ObservedAt = nil
+	case "wrong roster":
+		state.Members = append([]domain.Member(nil), state.Members...)
+		state.Members[0].RuntimeID = "foreign"
+	case "wrong hash":
+		state.MemberSetHash = "foreign"
+	case "invalid range":
+		x := int32(3)
+		state.ActualReplicas = &x
+	}
+}
+
+func assertInvalidRemovedProof(t *testing.T, name string, views []api.NetworkProxyDeploymentMember, target int32, state domain.State, now time.Time) {
+	t.Helper()
+	invalid := append([]api.NetworkProxyDeploymentMember(nil), views...)
+	m := &invalid[target]
+	switch name {
+	case "stale":
+		m.ObservedAt = now.Add(-11 * time.Second)
+	case "old revision":
+		m.AckRevision--
+	case "unknown count":
+		m.ActiveCountKnown = false
+	case "expired":
+		m.ControlExpiresAt = &now
+	case "missing":
+		invalid = invalid[:target]
+	}
+	if aggregateDrainStatus(state, invalid, now).CountKnown {
+		t.Fatal("invalid removed proof counted")
 	}
 }

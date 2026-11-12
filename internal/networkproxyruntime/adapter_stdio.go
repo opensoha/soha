@@ -80,11 +80,11 @@ func verifyApprovedBinary(path, digest string) error {
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0022 != 0 || info.Mode().Perm()&0111 == 0 || !approvedBinaryOwner(info) {
 		return errors.New("adapter binary permissions are invalid")
 	}
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- absolute installer path; Lstat rejects symlinks, unsafe mode and unapproved owners; bytes must match pin.
 	if err != nil {
 		return errors.New("adapter binary unavailable")
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	hash := sha256.New()
 	if _, err := io.Copy(hash, io.LimitReader(file, 128<<20)); err != nil || info.Size() > 128<<20 || fmt.Sprintf("sha256:%x", hash.Sum(nil)) != digest {
 		return errors.New("adapter binary digest mismatch")

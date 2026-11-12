@@ -46,7 +46,7 @@ func (c udpCloseFailure) Close() error {
 func TestUDPOwnedCloseFailureCannotBecomeSuccessfulZeroProof(t *testing.T) {
 	owner := newOwnedPackets()
 	left, right := net.Pipe()
-	defer right.Close()
+	defer func() { _ = right.Close() }()
 	if _, err := owner.dial(context.Background(), func(context.Context) (net.Conn, error) { return udpCloseFailure{left}, nil }, func(context.Context) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestUDPOwnedCloseRetainsLateSocketFailure(t *testing.T) {
 	owner := newOwnedPackets()
 	entered, release := make(chan struct{}), make(chan struct{})
 	left, right := net.Pipe()
-	defer right.Close()
+	defer func() { _ = right.Close() }()
 	returned := make(chan struct{})
 	go func() {
 		defer close(returned)

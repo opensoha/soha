@@ -100,7 +100,7 @@ func bootstrapRefreshFixture(t *testing.T, source string) (*Runner, net.Conn, ne
 	p.listener = server.Listener
 	t.Cleanup(func() { p.close(); server.Close() })
 	dial := func(node string) net.Conn {
-		c, err := tls.Dial("tcp", server.Listener.Addr().String(), server.Client().Transport.(*http.Transport).TLSClientConfig.Clone())
+		c, err := tls.Dial("tcp", server.Listener.Addr().String(), fixtureValue[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,8 +111,8 @@ func bootstrapRefreshFixture(t *testing.T, source string) (*Runner, net.Conn, ne
 	user, _ := proxytransport.EncodeMappedUsername("credential", "node")
 	_, _ = fmt.Fprintf(c, "CONNECT 1.1.1.1:443 HTTP/1.1\r\nHost: 1.1.1.1:443\r\nProxy-Authorization: Basic %s\r\n\r\n", base64.StdEncoding.EncodeToString([]byte(user+":"+strings.Repeat("secret", 8))))
 	reader := bufio.NewReader(c)
-	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
-	if err != nil || response.StatusCode != 200 {
+	response, err := readFixtureConnectStatus(t, c, reader)
+	if err != nil || response != 200 {
 		t.Fatalf("CONNECT: %v %v", response, err)
 	}
 	if _, err := io.ReadFull(reader, make([]byte, 1)); err != nil {
@@ -199,7 +199,7 @@ func bootstrapDNS(t *testing.T) (*atomic.Uint32, *atomic.Int32) {
 			_ = builder.StartAnswers()
 			if q.Type == dnsmessage.TypeA && ip.Load() != 0 {
 				calls.Add(1)
-				_ = builder.AResource(dnsmessage.ResourceHeader{Name: q.Name, Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET}, dnsmessage.AResource{A: [4]byte{1, 1, 1, byte(ip.Load())}})
+				_ = builder.AResource(dnsmessage.ResourceHeader{Name: q.Name, Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET}, dnsmessage.AResource{A: [4]byte{1, 1, 1, byte(ip.Load() & 0xff)}})
 			}
 			raw, err := builder.Finish()
 			if err == nil {
@@ -331,7 +331,7 @@ func TestBootstrapFingerprintBindsMaterialAndIgnoresOnlyRenewableLeases(t *testi
 
 func TestBootstrapFingerprintBindsBinaryBytesAtSamePath(t *testing.T) {
 	binary := t.TempDir() + "/binary"
-	if err := os.WriteFile(binary, []byte("first operator binary"), 0700); err != nil {
+	if err := os.WriteFile(binary, []byte("first operator binary"), 0700); err != nil { // #nosec G306 -- owner-only executable fixture in t.TempDir; fingerprint binds its bytes.
 		t.Fatal(err)
 	}
 	e := newEngine(Config{Engine: domain.EngineMihomo, EngineBinary: binary, ControllerURL: "http://127.0.0.1:9090"}, "secret")
@@ -340,7 +340,7 @@ func TestBootstrapFingerprintBindsBinaryBytesAtSamePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(binary, []byte("new operator binary"), 0700); err != nil {
+	if err := os.WriteFile(binary, []byte("new operator binary"), 0700); err != nil { // #nosec G306 -- replace the owner-only executable fixture to test same-path drift.
 		t.Fatal(err)
 	}
 	after, _, err := e.prepareBootstrap(context.Background(), d)

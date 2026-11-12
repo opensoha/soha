@@ -76,7 +76,7 @@ func validRuntimeProof(state domain.State, record domain.MemberRecord, credentia
 	if proof.PoolID != state.Pool.PoolID || proof.MemberID != record.Member.MemberID || proof.CredentialID != credentialID || proof.CredentialID != control.CredentialID || proof.ProcessEpoch != control.ProcessEpoch || proof.OwnerEpoch != int64(state.Pool.OwnerEpoch) || proof.ControlRevision != state.ControlRevision || proof.ConfigurationRevision != int64(state.Pool.ConfigurationRevision) || proof.ConfigurationHash != state.Pool.ConfigurationHash {
 		return apperrors.ErrUnauthorized
 	}
-	if !control.RunProcess || control.StopRequired || !control.ServeExistingUntil.After(now) || record.Member.Ordinal >= int32(state.Pool.DesiredReplicas) && !state.Retiring(record.Member.Ordinal) {
+	if !control.RunProcess || control.StopRequired || !control.ServeExistingUntil.After(now) || int(record.Member.Ordinal) >= state.Pool.DesiredReplicas && !state.Retiring(record.Member.Ordinal) {
 		return apperrors.ErrUnauthorized
 	}
 	return nil

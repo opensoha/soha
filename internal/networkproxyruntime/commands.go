@@ -116,21 +116,7 @@ func (r *Runner) runCommand(ctx context.Context, command api.NetworkProxyRuntime
 	}
 	switch string(command.Kind) {
 	case "logs":
-		limit := command.Limit
-		if limit <= 0 || limit > 200 {
-			limit = 200
-		}
-		cursor, _ := strconv.ParseInt(command.Cursor, 10, 64)
-		logs := []hostLog{}
-		for _, entry := range r.logs {
-			if entry.Sequence > cursor {
-				logs = append(logs, entry)
-			}
-			if len(logs) >= limit {
-				break
-			}
-		}
-		return commandResult(map[string]any{"logs": logs}), "succeeded", ""
+		return r.commandLogs(command), "succeeded", ""
 	case "diagnostics":
 		state := "available"
 		if r.engine.health(ctx) != nil {
@@ -291,7 +277,7 @@ func (r *Runner) probeProfile(ctx context.Context, command api.NetworkProxyRunti
 	if err != nil {
 		return nil, "unavailable", "probe_failed"
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 16<<10))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, "unavailable", "probe_response_rejected"
@@ -314,4 +300,22 @@ func (r *Runner) dnsStatus(ctx context.Context) (*api.NetworkProxyRuntimeCommand
 		values = append(values, map[string]any{"name": id, "addresses": []string{ip.String()}, "expiresAt": time.Now().Add(10 * time.Second)})
 	}
 	return commandResult(map[string]any{"dns": values}), "succeeded", ""
+}
+
+func (r *Runner) commandLogs(command api.NetworkProxyRuntimeCommandInput) *api.NetworkProxyRuntimeCommandResult {
+	limit := command.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 200
+	}
+	cursor, _ := strconv.ParseInt(command.Cursor, 10, 64)
+	logs := []hostLog{}
+	for _, entry := range r.logs {
+		if entry.Sequence > cursor {
+			logs = append(logs, entry)
+		}
+		if len(logs) >= limit {
+			break
+		}
+	}
+	return commandResult(map[string]any{"logs": logs})
 }

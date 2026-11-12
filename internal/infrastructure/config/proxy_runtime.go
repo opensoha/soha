@@ -44,7 +44,7 @@ type ProxyRuntimeExecutorConfig struct {
 }
 
 func (c ProxyRuntimeExecutorConfig) ReadToken() (string, error) {
-	return (OutpostRuntimeExecutorConfig{ExecutorID: c.ExecutorID, TokenFile: c.TokenFile}).ReadToken()
+	return OutpostRuntimeExecutorConfig(c).ReadToken()
 }
 func (c ProxyRuntimeSlotConfig) Slot() domain.Slot {
 	s := domain.Slot{ID: c.ID, ProxyID: c.ProxyID, ExecutorID: c.ExecutorID, WorkloadKind: c.WorkloadKind, Namespace: c.Namespace, Name: c.Name, UID: c.UID, TemplateDigest: c.TemplateDigest, MaxReplicas: c.MaxReplicas, AllowAdoption: c.AllowAdoption, PreviousOwnerStopped: c.PreviousOwnerStopped}

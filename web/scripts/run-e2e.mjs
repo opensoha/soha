@@ -1,4 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -132,7 +133,7 @@ try {
     kind === 'ai' && !listOnly
       ? ['scripts/run-ai.mjs', ...args]
       : [
-          'node_modules/@playwright/test/cli.js',
+          createRequire(import.meta.url).resolve('@playwright/test/cli'),
           'test',
           '--config',
           kind === 'real'

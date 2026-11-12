@@ -29,11 +29,11 @@ func NewHTTPClient(baseURL, executorID, token string) (*HTTPClient, error) {
 		return nil, fmt.Errorf("invalid Proxy control plane URL")
 	}
 	ip := net.ParseIP(u.Hostname())
-	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || ip != nil && ip.IsLoopback())) {
-		return nil, fmt.Errorf("Proxy executor requires HTTPS outside loopback")
+	if u.Scheme != "https" && (u.Scheme != "http" || u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
+		return nil, fmt.Errorf("proxy executor requires HTTPS outside loopback")
 	}
 	if executorID == "" || len(token) < 32 {
-		return nil, fmt.Errorf("Proxy executor identity and dedicated credential are required")
+		return nil, fmt.Errorf("proxy executor identity and dedicated credential are required")
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
 	if !strings.HasSuffix(u.Path, "/api/v1") {
@@ -75,7 +75,7 @@ func (c *HTTPClient) request(ctx context.Context, method, path string, input any
 		return delivery.ExecutionTask{}, apperrors.ErrNotFound
 	}
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusAccepted {
-		return delivery.ExecutionTask{}, fmt.Errorf("Proxy executor request rejected (HTTP %d)", response.StatusCode)
+		return delivery.ExecutionTask{}, fmt.Errorf("proxy executor request rejected (HTTP %d)", response.StatusCode)
 	}
 	var envelope struct {
 		Data delivery.ExecutionTask `json:"data"`
@@ -105,7 +105,7 @@ func (c *HTTPClient) requestWithRateLimit(ctx context.Context, method, path stri
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			return nil, fmt.Errorf("Proxy executor control plane unavailable")
+			return nil, fmt.Errorf("proxy executor control plane unavailable")
 		}
 		if response.StatusCode != http.StatusTooManyRequests {
 			return response, nil

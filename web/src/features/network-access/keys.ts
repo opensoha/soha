@@ -253,6 +253,11 @@ export const vpnKeys = {
     [...vpnKeys.documents(kind), 'revisions', id] as const,
 }
 
+export const radiusKeys = {
+  all: ['network-access', 'radius-pools'] as const,
+  options: () => [...radiusKeys.all, 'options'] as const,
+}
+
 export const endpointControlKeys = {
   project: (id: string) => ['network-access', 'endpoint-controls', id] as const,
   detail: (id: string, viewer: string, scope: string) =>

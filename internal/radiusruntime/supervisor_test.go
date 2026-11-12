@@ -36,14 +36,12 @@ func TestMain(m *testing.M) {
 	if os.Getenv("SOHA_RADIUS_H1_FIXTURE") == "true" && len(os.Args) > 1 && os.Args[1] == "-f" {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Interrupt)
-		if conn, err := net.DialTimeout("unix", os.Getenv("SOHA_RADIUS_HOOK_SOCKET"), time.Second); err == nil {
+		if conn, err := net.DialTimeout("unix", os.Getenv("SOHA_RADIUS_HOOK_SOCKET"), time.Second); err == nil { // #nosec G704 -- Fixture dials only a local Unix socket inherited from the test supervisor; no HTTP or remote address is used.
 			_ = conn.Close()
 		}
 		if os.Getenv("SOHA_RADIUS_FIXTURE_IGNORE_INTERRUPT") == "true" {
-			select {
-			case <-time.After(12 * time.Second):
-				os.Exit(0)
-			}
+			<-time.After(12 * time.Second)
+			os.Exit(0)
 		}
 		select {
 		case <-signals:

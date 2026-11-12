@@ -21,6 +21,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 func (f *publicationPG) installProfileHandlers(t *testing.T, keys keyring.Ring) {
@@ -274,70 +276,9 @@ func (f *publicationPG) concurrentSourceScenario(t *testing.T) {
 		t.Fatal("HTTP outer transaction did not rollback")
 	}
 	owned := map[string][]map[string]any{}
-	cleanup := func() {
-		for i := len(seed.tables) - 1; i >= 0; i-- {
-			table := seed.tables[i]
-			for _, row := range owned[table] {
-				query := db.Table(table)
-				switch table {
-				case "network_proxy_credential_scopes":
-					query = query.Where("identity_key=?", row["identity_key"])
-				case "network_access_policy_snapshots":
-					query = query.Where("policy_version=?", row["policy_version"])
-				case "network_proxy_sources":
-					query = query.Where("instance_id=? AND source_id=?", row["instance_id"], row["source_id"])
-				case "network_proxy_node_invalidations":
-					query = query.Where("instance_id=? AND source_id=? AND node_id=? AND invalidated_source_revision=?", row["instance_id"], row["source_id"], row["node_id"], row["invalidated_source_revision"])
-				case "network_proxy_bundles":
-					query = query.Where("instance_id=? AND bundle_id=?", row["instance_id"], row["bundle_id"])
-				case "network_runtime_configurations":
-					query = query.Where("runtime_id=? AND configuration_version=?", row["runtime_id"], row["configuration_version"])
-				default:
-					query = query.Where("id=?", row["id"])
-				}
-				if err := query.Delete(map[string]any{}).Error; err != nil {
-					t.Errorf("cleanup owned %s failed: %v", table, err)
-				}
-			}
-		}
-	}
+	cleanup := func() { cleanupPublicationRace(t, db, seed, owned) }
 	t.Cleanup(cleanup)
-	for _, table := range seed.tables {
-		for _, original := range seed.rows[table] {
-			raw, _ := json.Marshal(original)
-			var row map[string]any
-			pgRequire(t, json.Unmarshal(raw, &row))
-			raceReplace(row, seed.ids)
-			raw, _ = json.Marshal(row)
-			pgRequire(t, db.Exec("INSERT INTO "+table+" SELECT * FROM jsonb_populate_record(NULL::"+table+",?::jsonb)", string(raw)).Error)
-			owned[table] = append(owned[table], row)
-		}
-	}
-	remap := func(input, out any) {
-		raw, _ := json.Marshal(input)
-		var value any
-		pgRequire(t, json.Unmarshal(raw, &value))
-		raw, _ = json.Marshal(raceReplace(value, seed.ids))
-		pgRequire(t, json.Unmarshal(raw, out))
-	}
-	var source domain.SourceRecord
-	remap(seed.source, &source)
-	var credential domain.Credential
-	remap(seed.credential, &credential)
-	// The identity ceiling is keyed by a digest rather than an ID; move it to the
-	// remapped credential identity before exercising the production transaction.
-	oldKey := domain.CredentialIdentity(seed.credential)
-	newKey := domain.CredentialIdentity(credential)
-	pgRequire(t, db.Exec("UPDATE network_proxy_credential_scopes SET identity_key=? WHERE identity_key=?", newKey, oldKey).Error)
-	for _, row := range owned["network_proxy_credential_scopes"] {
-		if row["identity_key"] == oldKey {
-			row["identity_key"] = newKey
-		}
-	}
-	source.Public.Revision++
-	for node := range source.NodeMaterial {
-		source.NodeMaterial[node] = "changed-material"
-	}
+	source, credential := preparePublicationRace(t, db, seed, owned)
 	tx := db.Begin()
 	pgRequire(t, tx.Error)
 	defer tx.Rollback()
@@ -379,4 +320,74 @@ func (f *publicationPG) concurrentSourceScenario(t *testing.T) {
 		owned["network_proxy_node_invalidations"] = append(owned["network_proxy_node_invalidations"], map[string]any{"instance_id": source.InstanceID, "source_id": source.Public.SourceID, "node_id": node, "invalidated_source_revision": source.Public.Revision})
 	}
 	t.Logf("committed race fixture %s: advisory wait observed, source committed before denied renewal", source.InstanceID)
+}
+
+func cleanupPublicationRace(t *testing.T, db *gorm.DB, seed *publicationRaceSeed, owned map[string][]map[string]any) {
+	t.Helper()
+	for i := len(seed.tables) - 1; i >= 0; i-- {
+		table := seed.tables[i]
+		for _, row := range owned[table] {
+			query := db.Table(table)
+			switch table {
+			case "network_proxy_credential_scopes":
+				query = query.Where("identity_key=?", row["identity_key"])
+			case "network_access_policy_snapshots":
+				query = query.Where("policy_version=?", row["policy_version"])
+			case "network_proxy_sources":
+				query = query.Where("instance_id=? AND source_id=?", row["instance_id"], row["source_id"])
+			case "network_proxy_node_invalidations":
+				query = query.Where("instance_id=? AND source_id=? AND node_id=? AND invalidated_source_revision=?", row["instance_id"], row["source_id"], row["node_id"], row["invalidated_source_revision"])
+			case "network_proxy_bundles":
+				query = query.Where("instance_id=? AND bundle_id=?", row["instance_id"], row["bundle_id"])
+			case "network_runtime_configurations":
+				query = query.Where("runtime_id=? AND configuration_version=?", row["runtime_id"], row["configuration_version"])
+			default:
+				query = query.Where("id=?", row["id"])
+			}
+			if err := query.Delete(map[string]any{}).Error; err != nil {
+				t.Errorf("cleanup owned %s failed: %v", table, err)
+			}
+		}
+	}
+}
+
+func preparePublicationRace(t *testing.T, db *gorm.DB, seed *publicationRaceSeed, owned map[string][]map[string]any) (domain.SourceRecord, domain.Credential) {
+	t.Helper()
+	for _, table := range seed.tables {
+		for _, original := range seed.rows[table] {
+			raw, _ := json.Marshal(original)
+			var row map[string]any
+			pgRequire(t, json.Unmarshal(raw, &row))
+			raceReplace(row, seed.ids)
+			raw, _ = json.Marshal(row)
+			pgRequire(t, db.Exec("INSERT INTO "+table+" SELECT * FROM jsonb_populate_record(NULL::"+table+",?::jsonb)", string(raw)).Error)
+			owned[table] = append(owned[table], row)
+		}
+	}
+	remap := func(input, out any) {
+		raw, _ := json.Marshal(input)
+		var value any
+		pgRequire(t, json.Unmarshal(raw, &value))
+		raw, _ = json.Marshal(raceReplace(value, seed.ids))
+		pgRequire(t, json.Unmarshal(raw, out))
+	}
+	var source domain.SourceRecord
+	remap(seed.source, &source)
+	var credential domain.Credential
+	remap(seed.credential, &credential)
+	// The identity ceiling is keyed by a digest rather than an ID; move it to the
+	// remapped credential identity before exercising the production transaction.
+	oldKey := domain.CredentialIdentity(seed.credential)
+	newKey := domain.CredentialIdentity(credential)
+	pgRequire(t, db.Exec("UPDATE network_proxy_credential_scopes SET identity_key=? WHERE identity_key=?", newKey, oldKey).Error)
+	for _, row := range owned["network_proxy_credential_scopes"] {
+		if row["identity_key"] == oldKey {
+			row["identity_key"] = newKey
+		}
+	}
+	source.Public.Revision++
+	for node := range source.NodeMaterial {
+		source.NodeMaterial[node] = "changed-material"
+	}
+	return source, credential
 }

@@ -15,7 +15,6 @@ type pathPolicy struct {
 
 func nativePaths() pathPolicy       { return pathPolicy{os.Lstat, ownership} }
 func (h hostOps) paths() pathPolicy { return pathPolicy{h.lstat, h.ownership} }
-func safePath(path string) error    { return nativePaths().check(path) }
 
 // check permits a missing leaf (new state files/directories), never a missing
 // ancestor. Root-owned leaves under a replaceable parent are not trusted.

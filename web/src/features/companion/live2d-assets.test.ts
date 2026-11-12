@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, type Mock } from 'vitest'
 import { loadLive2DAssetBundle } from './live2d-assets'
 import type { CompanionPackSelection } from './types'
 
@@ -6,7 +6,7 @@ const sha256 = '0'.repeat(64)
 
 function pack(model: unknown): {
   selection: CompanionPackSelection
-  fetchAsset: ReturnType<typeof vi.fn>
+  fetchAsset: Mock<(pluginId: string, assetPath: string) => Promise<Blob>>
 } {
   const entryAsset = 'models/avatar.model3.json'
   const files = new Map<string, Blob>([

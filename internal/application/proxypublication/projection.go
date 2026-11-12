@@ -255,11 +255,11 @@ func populateEmployeeTopology(out *api.NetworkProxyEmployeeProjection, r domain.
 }
 
 func ingressCredentialMatches(c domain.Credential, r domain.BundleRecord, input api.NetworkProxyIngressCheckInput, now time.Time) bool {
-	return !(c.InstanceID != r.InstanceID || c.BundleID != input.BundleID || c.Revision != input.Revision || c.Epoch != input.CredentialEpoch || c.Epoch != r.Public.CredentialEpoch || !c.ExpiresAt.After(now) || !slices.Contains(c.NodeIDs, input.NodeID) || !slices.Contains(r.Scope.NodeIDs, input.NodeID) || !slices.Contains(r.Scope.UserIDs, c.UserID) || !slices.Contains(r.Scope.DeviceIDs, c.DeviceID))
+	return c.InstanceID == r.InstanceID && c.BundleID == input.BundleID && c.Revision == input.Revision && c.Epoch == input.CredentialEpoch && c.Epoch == r.Public.CredentialEpoch && c.ExpiresAt.After(now) && slices.Contains(c.NodeIDs, input.NodeID) && slices.Contains(r.Scope.NodeIDs, input.NodeID) && slices.Contains(r.Scope.UserIDs, c.UserID) && slices.Contains(r.Scope.DeviceIDs, c.DeviceID)
 }
 
 func ingressEndpointMatches(endpoint domain.EndpointContext, c domain.Credential, r domain.BundleRecord) bool {
-	return !(endpoint.UserID != c.UserID || endpoint.DeviceID != c.DeviceID || endpoint.RuntimeID != c.RuntimeID || endpoint.BundleID != c.BundleID || endpoint.OrgRevision != r.Public.OrgRevision || endpoint.SourceRevision != r.Public.SourceRevision)
+	return endpoint.UserID == c.UserID && endpoint.DeviceID == c.DeviceID && endpoint.RuntimeID == c.RuntimeID && endpoint.BundleID == c.BundleID && endpoint.OrgRevision == r.Public.OrgRevision && endpoint.SourceRevision == r.Public.SourceRevision
 }
 
 func (b *Bundles) currentSourceBundle(ctx context.Context, r domain.BundleRecord) (domain.BundleRecord, error) {

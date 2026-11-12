@@ -54,6 +54,7 @@ const requireAll = args.includes("--internal-source") || args.includes("--requir
 const dryRun = args.includes("--dry-run");
 const declaredSDK = args.includes("--declared");
 const internalSource = args.includes("--internal-source");
+const allowRemoteNativeDocker = args.includes("--allow-remote-native-docker");
 const consumerRoot = internalSource ? workspaceRoot : resolve(process.env.SOHA_CONSUMER_ROOT ?? dirname(contractsRoot));
 const availableConsumers = internalSource ? [
   { name: "soha", path: ".", kind: "go", commands: [["go", ["test", "./..."]]] },
@@ -96,6 +97,7 @@ for (const target of targets) {
   let env = process.env;
   let packageDir;
   let ownedGoWorkspace;
+  let ownedNativeDirectory;
   let manifests;
   let entry;
   try {
@@ -135,11 +137,21 @@ for (const target of targets) {
         }
       }
     }
-    entry = { consumer: consumer.name, path: dir, commands: consumer.commands, revision: revision(dir) };
+    entry = { consumer: consumer.name, path: dir, commands: [...consumer.commands], revision: revision(dir) };
     if (dryRun) {
       console.log(`[dry-run] ${consumer.name}: ${dir}`);
       for (const [command, commandArgs] of consumer.commands) {
         console.log(`[dry-run]   ${command} ${commandArgs.join(" ")}`);
+      }
+      if (consumer.name === "soha") {
+        entry.nativeQualification = { status: "failed" };
+        const native = nativePlan(dir);
+        entry.nativeQualification = native.qualification;
+        if (native.helper) {
+          const command = nativeCommand(native, "<native-output-dir>/receipt.json");
+          entry.commands.push(command);
+          console.log(`[dry-run]   ${command[0]} ${command[1].join(" ")}`);
+        }
       }
       results.push({
         ...entry,
@@ -170,6 +182,48 @@ for (const target of targets) {
       );
       run(command, resolvedArgs, internalSource && consumer.kind === "npm" ? workspaceRoot : dir, env);
     }
+    if (consumer.name === "soha") {
+      entry.nativeQualification = { status: "failed" };
+      const native = nativePlan(dir);
+      entry.nativeQualification = native.qualification;
+      if (native.helper) {
+        let temporaryRoot = realpathSync(process.env.RUNNER_TEMP || tmpdir());
+        if (process.env.OPENSOHA_VERIFY_DIR) {
+          const automaticRoot = realpathSync(process.env.OPENSOHA_VERIFY_DIR);
+          const path = relative(automaticRoot, temporaryRoot);
+          if (path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path))) {
+            temporaryRoot = dirname(automaticRoot);
+          }
+        }
+        for (const source of [dir, workspaceRoot]) {
+          const path = relative(realpathSync(source), temporaryRoot);
+          if (path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path))) {
+            throw new Error("native qualification artifacts must be outside source checkouts");
+          }
+        }
+        ownedNativeDirectory = await mkdtemp(join(temporaryRoot, "opensoha-consumer-native-"));
+        const receiptPath = join(ownedNativeDirectory, "receipt.json");
+        const command = nativeCommand(native, receiptPath);
+        entry.commands.push(command);
+        Object.assign(entry.nativeQualification, { receiptPath, artifactDirectory: ownedNativeDirectory,
+          artifactsRetained: process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS === "1" });
+        let invocationError;
+        try {
+          run(command[0], command[1], dir, env);
+        } catch (error) {
+          invocationError = error;
+          entry.nativeQualification.invocationError = error.message;
+        }
+        entry.nativeQualification.status = "failed";
+        const receiptStat = lstatSync(receiptPath, { throwIfNoEntry: false });
+        if (!receiptStat?.isFile()) throw invocationError ?? new Error("native qualification did not produce a fresh regular receipt");
+        const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+        entry.nativeQualification.receipt = receipt;
+        if (invocationError) throw invocationError;
+        verifyNativeReceipt(receipt, native.mode, receiptPath, entry.revision);
+        entry.nativeQualification.status = "passed";
+      }
+    }
     results.push({
       ...entry,
       status: "passed",
@@ -177,10 +231,19 @@ for (const target of targets) {
     checked += 1;
   } catch (error) {
     console.error(error.message);
+    if (entry?.nativeQualification?.status === "failed") entry.nativeQualification.reason = error.message;
     results.push({ ...entry, consumer: target.name, status: "failed", reason: error.message });
     failed += 1;
   } finally {
     if (manifests) for (const file of manifests) writeFileSync(file.path, file.contents);
+    if (ownedNativeDirectory) {
+      const qualification = entry.nativeQualification;
+      const confirmed = qualification.status === "passed" && confirmedNativeCleanup(qualification.receipt);
+      qualification.artifactsRetained = process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS === "1" || !confirmed;
+      qualification.recoveryRequired = !confirmedNativeCleanup(qualification.receipt);
+      if (qualification.artifactsRetained) console.error(`[native] retained qualification artifacts: ${ownedNativeDirectory}`);
+      else await rm(ownedNativeDirectory, { recursive: true, force: true });
+    }
     if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1") {
       if (ownedGoWorkspace) await rm(ownedGoWorkspace, { recursive: true, force: true });
       if (packageDir) await rm(packageDir, { recursive: true, force: true });
@@ -247,6 +310,65 @@ function npmCommands() {
     ["npm", ["ci"]],
     ["npm", ["run", "build"]],
   ];
+}
+
+function nativePlan(dir) {
+  const files = ["real_engine_integration_test.go", "real_udp_integration_test.go"]
+    .map((name) => lstatSync(join(dir, "internal/networkproxyruntime", name), { throwIfNoEntry: false }));
+  if (files.every((file) => !file)) return { qualification: { status: "not-applicable", reason: "fixed source has no native suite" } };
+  if (!files.every((file) => file?.isFile())) throw new Error("Core native suite is partial or not regular source files");
+  if (!internalSource && !declaredSDK) throw new Error("external candidate Core native qualification is unsupported: refusing to substitute its embedded SDK for the producer");
+  const helper = join(dir, "scripts/run-proxy-native-tests.py");
+  if (!lstatSync(helper, { throwIfNoEntry: false })?.isFile()) throw new Error("Core native suite requires its owning run-proxy-native-tests.py helper");
+  const mode = internalSource ? "source" : "declared";
+  return { helper, mode, qualification: { status: dryRun ? "dry-run" : "pending", sdkMode: mode } };
+}
+
+function nativeCommand(native, receiptPath) {
+  return ["python3", [native.helper, "--sdk-mode", native.mode, "--out", receiptPath,
+    ...(allowRemoteNativeDocker ? ["--allow-remote-docker"] : [])]];
+}
+
+function verifyNativeReceipt(receipt, mode, receiptPath, sourceRevision) {
+  if (receipt?.schemaVersion !== "proxy-native-gate/v1" || receipt.result !== "PASS" || receipt.sdk?.mode !== mode
+      || receipt.terminalTests !== 26 || !/^[a-f0-9]{32}$/.test(receipt.runId ?? "")
+      || !sourceRevision || receipt.head !== sourceRevision.head
+      || !/^[a-f0-9]{64}$/.test(receipt.sourceArchiveSHA256 ?? "")
+      || !/^[a-f0-9]{64}$/.test(receipt.workingTreeSHA256 ?? "")) {
+    throw new Error("native qualification receipt identity/mode/result/26-scenario mismatch");
+  }
+  if (!confirmedNativeCleanup(receipt)) throw new Error("native qualification cleanup is incomplete or has unaccounted resource intents");
+  for (const [profile, count, scopes] of [
+    ["dataplane", 23, [["TestRealEngineIntegration", 22], ["TestRealUDPIntegration", 6]]],
+    ["parser", 3, [["TestRealKernelPreflightIntegration", 3]]],
+  ]) {
+    const value = receipt.profiles?.[profile];
+    if (!value || value.exitCode !== 0 || value.attachExitCode !== 0 || value.evidence?.result !== "PASS"
+        || value.evidence.terminalTests !== count || !Array.isArray(value.evidence.scopes)
+        || value.evidence.scopes.length !== scopes.length
+        || scopes.some(([parent, children]) => !value.evidence.scopes.some((scope) =>
+          scope.result === "PASS" && scope.parent === parent && scope.children === children))) {
+      throw new Error(`native qualification ${profile} receipt is missing complete required scenarios`);
+    }
+    for (const [field, suffix] of [["log", ".go.json"], ["stderr", ".stderr.log"]]) {
+      const expected = join(dirname(receiptPath), `receipt.${profile}${suffix}`);
+      if (value[field] !== expected || !lstatSync(expected, { throwIfNoEntry: false })?.isFile()) {
+        throw new Error(`native qualification ${profile} ${field} must be this run's owned artifact`);
+      }
+    }
+  }
+}
+
+function confirmedNativeCleanup(receipt) {
+  const resources = receipt?.resources;
+  const cleanup = receipt?.cleanup;
+  return Array.isArray(resources) && resources.length > 0 && Array.isArray(cleanup) && cleanup.length === resources.length
+    && !receipt.cleanupError && !receipt.receiptWriteErrors?.length
+    && resources.every((resource) => ["container", "network", "image"].includes(resource.kind)
+      && typeof resource.name === "string" && /^(sha256:)?[a-f0-9]{64}$/.test(resource.id ?? "")
+      && cleanup.filter((entry) => entry.kind === resource.kind && entry.name === resource.name && entry.id === resource.id
+        && entry.image === resource.image && entry.network === resource.network
+        && ["PASS", "ALREADY_ABSENT"].includes(entry.result)).length === 1);
 }
 
 // Include uncommitted source: a HEAD alone does not identify a candidate worktree.

@@ -104,7 +104,7 @@ func TestSupervisorStateDirectoryCreationRechecksProtection(t *testing.T) {
 	if err := s.establishDirectory(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(filepath.Dir(s.config.StateDir), 0770); err != nil {
+	if err := os.Chmod(filepath.Dir(s.config.StateDir), 0770); err != nil { // #nosec G302 -- Deliberately writable parent verifies ancestor confinement rejection.
 		t.Fatal(err)
 	}
 	if err := s.establishDirectory(); err == nil {
@@ -135,7 +135,7 @@ func TestControlMaterialHashesAndPathsAreVerifiedBeforeTLSRead(t *testing.T) {
 		t.Fatal("unapproved bytes reached TLS loading")
 	}
 	c.ApprovedMaterials[file] = hash
-	if err := os.Chmod(base, 0770); err != nil {
+	if err := os.Chmod(base, 0770); err != nil { // #nosec G302 -- Deliberately writable parent verifies TLS-material confinement rejection.
 		t.Fatal(err)
 	}
 	if verifyControlFiles(c, paths) == nil {

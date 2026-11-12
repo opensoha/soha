@@ -12,7 +12,7 @@ type RadiusRuntimeExecutorConfig struct {
 }
 
 func (c RadiusRuntimeExecutorConfig) ReadToken() (string, error) {
-	return (OutpostRuntimeExecutorConfig{ExecutorID: c.ExecutorID, TokenFile: c.TokenFile}).ReadToken()
+	return OutpostRuntimeExecutorConfig(c).ReadToken()
 }
 
 type RadiusRuntimeMemberConfig struct {

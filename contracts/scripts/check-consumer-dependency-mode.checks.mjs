@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, copyFileSync, chmodSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, copyFileSync, chmodSync, symlinkSync, realpathSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -18,6 +18,11 @@ function run(root, args, extra = {}, checker = script) {
   return spawnSync(process.execPath, [checker, "--require-all", "--out", join(root, "result.json"), ...args], {
     encoding: "utf8", env: { ...process.env, SOHA_CONSUMER_ROOT: root, ...extra },
   });
+}
+function nativeArtifactRoot() {
+  const root = realpathSync(process.env.RUNNER_TEMP || tmpdir());
+  const automaticRoot = process.env.OPENSOHA_VERIFY_DIR && realpathSync(process.env.OPENSOHA_VERIFY_DIR);
+  return automaticRoot && (root === automaticRoot || root.startsWith(automaticRoot + sep)) ? dirname(automaticRoot) : root;
 }
 // This isolated child-process preload is a portable unit stub, never a real consumer gate.
 function fakeGo(root, module, downloaded = { Version: "v0.1.0", Sum: "h1:unit-only" }) {
@@ -64,6 +69,7 @@ test("declared Go mode disables workspaces and preserves the consumer directory"
   const root = fixture(t); const env = fakeGo(root, { Version: "v0.1.0", Sum: "h1:unit-only" });
   const result = run(root, ["--declared", "--consumer", "soha"], env);
   assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(readFileSync(join(root, "result.json"))).results[0].nativeQualification.status, "not-applicable");
   assert.equal(existsSync(join(root, "soha/keep.txt")), true);
   const calls = readFileSync(join(root, "trace.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
   assert.deepEqual(calls.map((args) => args[0]), ["list", "mod", "test"]);
@@ -366,7 +372,7 @@ function internalFixture(t) {
   };
   git("init"); git("add", ".");
   git("-c", "user.name=Unit", "-c", "user.email=unit@example.invalid", "commit", "-m", "source fixture");
-  return { root, write, writeJSON, checker: join(root, "contracts/scripts/check-consumers.mjs"), head: git("rev-parse", "HEAD") };
+  return { root, write, writeJSON, checker: join(root, "contracts/scripts/check-consumers.mjs"), head: git("rev-parse", "HEAD"), test: t };
 }
 function frozenInputs(root) {
   return Object.fromEntries(["package.json", "package-lock.json", "go.work", "go.mod", "go.sum", "contracts/package.json", "contracts/go.mod", "contracts/go.sum", "web/package.json"].map((name) => [name,
@@ -383,6 +389,8 @@ test("internal source compiles unpublished Go and Web SDK imports offline withou
   assert.equal(report.dependencyMode, "internal-source");
   assert.equal(report.status, "passed");
   assert.deepEqual(report.results.map(({ consumer, status }) => [consumer, status]), [["soha", "passed"], ["soha-web", "passed"]]);
+  assert.equal(report.results[0].nativeQualification.status, "not-applicable");
+  assert.equal(report.results[0].nativeQualification.reason, "fixed source has no native suite");
   assert.equal(report.contractsRevision.head, f.head);
   assert.match(report.workspaceInputs["package-lock.json"], /^[a-f0-9]{64}$/);
   assert.deepEqual(frozenInputs(f.root), before);
@@ -454,3 +462,253 @@ test("external declared and candidate never install inside the producer npm work
     assert.deepEqual(frozenInputs(f.root), before);
   }
 });
+
+function nativeSuite(f, { partial = false, helper = true, core = f.root } = {}) {
+  const write = (name, body) => {
+    const path = join(core, name);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, body);
+  };
+  for (const name of partial ? ["real_engine_integration_test.go"] : ["real_engine_integration_test.go", "real_udp_integration_test.go"]) {
+    write(`internal/networkproxyruntime/${name}`, "//go:build soha_native_integration\n\npackage networkproxyruntime\n");
+  }
+  if (helper) write("scripts/run-proxy-native-tests.py", "raise RuntimeError('fixture native helper must only run through the explicit subprocess mock')\n");
+}
+
+// Fixture-only subprocess boundary: canonical checker/workspace checks and ordinary
+// Go/npm fixture commands remain real. This never executes or proves native kernels.
+function fakeNative(f, variant = "pass", extra = {}) {
+  const preload = join(f.root, "fixture-native-preload.mjs");
+  const nativeRoot = mkdtempSync(join(tmpdir(), "native-caller-artifacts-unit-"));
+  const untouched = join(nativeRoot, "unrelated.txt");
+  writeFileSync(untouched, "preserve unrelated output");
+  f.test.after(() => rmSync(nativeRoot, { recursive: true, force: true }));
+  writeFileSync(preload, `
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import { existsSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+const original = childProcess.spawnSync;
+childProcess.spawnSync = (command, args, options) => {
+  if (command !== "python3" || !args[0].endsWith("/scripts/run-proxy-native-tests.py")) return original(command, args, options);
+  const receipt = args[args.indexOf("--out") + 1];
+  if (existsSync(receipt)) throw Error("native receipt was reused");
+  const mode = args[args.indexOf("--sdk-mode") + 1];
+  const profile = (name, count, scopes) => {
+    const log = join(dirname(receipt), "receipt." + name + ".go.json");
+    const stderr = join(dirname(receipt), "receipt." + name + ".stderr.log");
+    writeFileSync(log, "explicit fixture-only mock, no native runtime proof\\n");
+    writeFileSync(stderr, "");
+    return { log, stderr, exitCode: 0, attachExitCode: 0, evidence: { result: "PASS", terminalTests: count,
+      scopes: scopes.map(([parent, children]) => ({ result: "PASS", parent, children })) } };
+  };
+  const head = original("git", ["-C", options.cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  const value = { schemaVersion: "proxy-native-gate/v1", result: "PASS", runId: "a".repeat(32), sdk: { mode },
+    head, sourceArchiveSHA256: "b".repeat(64), workingTreeSHA256: "c".repeat(64), terminalTests: 26,
+    profiles: { dataplane: profile("dataplane", 23, [["TestRealEngineIntegration", 22], ["TestRealUDPIntegration", 6]]),
+      parser: profile("parser", 3, [["TestRealKernelPreflightIntegration", 3]]) }, fixtureInvocation: args };
+  value.resources = [{ kind: "container", name: "fixture-owned-container", id: "d".repeat(64), image: "sha256:" + "e".repeat(64), network: "none" }];
+  value.cleanup = value.resources.map((resource) => ({ ...resource, result: "PASS" }));
+  const variant = ${JSON.stringify(variant)};
+  if (variant === "missing-receipt") return { status: 0 };
+  if (variant === "failed-result") value.result = "FAIL";
+  if (variant === "wrong-mode") value.sdk.mode = "declared";
+  if (variant === "wrong-count") value.terminalTests = 25;
+  if (variant === "wrong-head") value.head = "f".repeat(40);
+  if (variant === "missing-parser") delete value.profiles.parser;
+  if (variant === "missing-tcp-branch") value.profiles.dataplane.evidence.scopes[0].children = 21;
+  if (variant === "wrong-profile-count") value.profiles.dataplane.evidence.terminalTests = 22;
+  if (variant === "failed-profile") value.profiles.parser.exitCode = 1;
+  if (variant === "foreign-log") value.profiles.parser.log = "/unrelated/old-go.json";
+  if (variant === "cleanup-fail") value.cleanup[0].result = "FAIL";
+  if (variant === "unaccounted-intent") value.cleanup = [];
+  if (variant === "exception-with-intent") {
+    value.result = "FAIL";
+    value.resources[0].id = null;
+    value.cleanup = [];
+  }
+  writeFileSync(receipt, variant === "malformed-receipt" ? "invalid JSON" : JSON.stringify(value));
+  return { status: ["exit-fail", "exception-with-intent"].includes(variant) ? 17 : 0 };
+};
+syncBuiltinESMExports();
+`);
+  // Preserve the canonical wrapper directory/token so real nested Go/npm checks share its lock.
+  return { sentinelDirectory: nativeRoot, environment: { ...extra,
+    NODE_OPTIONS: [extra.NODE_OPTIONS, "--import=" + pathToFileURL(preload).href].filter(Boolean).join(" ") } };
+}
+
+for (const invalid of ["partial-suite", "missing-helper"]) test(`native caller ${invalid} fails Core while Web still runs`, (t) => {
+  const f = internalFixture(t);
+  nativeSuite(f, { partial: invalid === "partial-suite", helper: invalid !== "missing-helper" });
+  const result = internalRun(f);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  const report = JSON.parse(readFileSync(join(f.root, "result.json")));
+  assert.deepEqual(report.results.map(({ status }) => status), ["failed", "passed"]);
+  assert.equal(report.results[0].nativeQualification.status, "failed");
+  assert.match(report.results[0].reason, invalid === "partial-suite" ? /partial/ : /owning.*helper/);
+});
+
+for (const remote of [false, true]) test(`native caller mock records mandatory source command and explicit remote=${remote}`, (t) => {
+  const f = internalFixture(t);
+  nativeSuite(f);
+  const mock = fakeNative(f, "pass", { OPENSOHA_KEEP_VERIFY_ARTIFACTS: "1" });
+  const env = mock.environment;
+  const result = run(f.root, ["--internal-source", ...(remote ? ["--allow-remote-native-docker"] : [])],
+    { ...env, GOPROXY: "off", GOSUMDB: "off", GOTOOLCHAIN: "local", npm_config_offline: "true" }, f.checker);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const entry = JSON.parse(readFileSync(join(f.root, "result.json"))).results[0];
+  assert.equal(entry.nativeQualification.status, "passed");
+  assert.equal(entry.nativeQualification.receipt.sdk.mode, "source");
+  assert.equal(entry.nativeQualification.receipt.terminalTests, 26);
+  const command = entry.commands.at(-1);
+  assert.equal(command[0], "python3");
+  assert.deepEqual(command[1], [join(realpathSync(f.root), "scripts/run-proxy-native-tests.py"), "--sdk-mode", "source", "--out", entry.nativeQualification.receiptPath,
+    ...(remote ? ["--allow-remote-docker"] : [])]);
+  const base = nativeArtifactRoot();
+  assert.ok(entry.nativeQualification.artifactDirectory.startsWith(base + "/opensoha-consumer-native-"));
+  assert.equal(existsSync(entry.nativeQualification.receiptPath), true);
+  assert.equal(existsSync(join(mock.sentinelDirectory, "unrelated.txt")), true);
+  t.after(() => rmSync(entry.nativeQualification.artifactDirectory, { recursive: true, force: true }));
+});
+
+for (const variant of ["exit-fail", "missing-receipt", "malformed-receipt", "failed-result", "wrong-mode", "wrong-count", "wrong-head",
+  "missing-parser", "missing-tcp-branch", "wrong-profile-count", "failed-profile", "foreign-log", "cleanup-fail", "unaccounted-intent", "exception-with-intent"]) {
+  test(`native caller mock rejects ${variant}, retains exact recovery output and preserves Web result`, (t) => {
+    const f = internalFixture(t);
+    nativeSuite(f);
+    const mock = fakeNative(f, variant);
+    const env = mock.environment;
+    const result = run(f.root, ["--internal-source"], { ...env, GOPROXY: "off", GOSUMDB: "off", GOTOOLCHAIN: "local", npm_config_offline: "true" }, f.checker);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    const report = JSON.parse(readFileSync(join(f.root, "result.json")));
+    assert.deepEqual(report.results.map(({ status }) => status), ["failed", "passed"]);
+    const qualification = report.results[0].nativeQualification;
+    t.after(() => rmSync(qualification.artifactDirectory, { recursive: true, force: true }));
+    assert.equal(qualification.status, "failed");
+    assert.equal(existsSync(qualification.artifactDirectory), true);
+    assert.equal(qualification.artifactsRetained, true);
+    assert.match(result.stderr, /retained qualification artifacts:/);
+    assert.equal(existsSync(join(mock.sentinelDirectory, "unrelated.txt")), true);
+    if (variant === "exit-fail") assert.match(qualification.invocationError, /status 17/);
+    if (["cleanup-fail", "unaccounted-intent", "exception-with-intent", "missing-receipt", "malformed-receipt"].includes(variant)) {
+      assert.equal(qualification.recoveryRequired, true);
+    }
+  });
+}
+
+test("native caller reports and preserves durable unknown intent even without a consumer report output", (t) => {
+  const f = internalFixture(t);
+  nativeSuite(f);
+  const { environment } = fakeNative(f, "exception-with-intent");
+  const result = spawnSync(process.execPath, [f.checker, "--internal-source", "--consumer", "soha"], {
+    encoding: "utf8", env: { ...process.env, SOHA_CONSUMER_ROOT: f.root, ...environment,
+      GOPROXY: "off", GOSUMDB: "off", GOTOOLCHAIN: "local" },
+  });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  const directory = result.stderr.match(/\[native\] retained qualification artifacts: (.+)/)?.[1];
+  assert.ok(directory);
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const receipt = JSON.parse(readFileSync(join(directory, "receipt.json")));
+  assert.equal(receipt.resources[0].id, null);
+  assert.equal(receipt.resources[0].name, "fixture-owned-container");
+  assert.deepEqual(receipt.cleanup, []);
+});
+
+test("native dry-run prints the planned command without creating native output or running the helper", (t) => {
+  const f = internalFixture(t);
+  nativeSuite(f);
+  const mock = fakeNative(f, "exit-fail");
+  const env = mock.environment;
+  const before = readdirSync(nativeArtifactRoot()).filter((name) => name.startsWith("opensoha-consumer-native-"));
+  const result = run(f.root, ["--internal-source", "--dry-run", "--allow-remote-native-docker"], env, f.checker);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /--sdk-mode source --out <native-output-dir>\/receipt.json --allow-remote-docker/);
+  const entry = JSON.parse(readFileSync(join(f.root, "result.json"))).results[0];
+  assert.equal(entry.nativeQualification.status, "dry-run");
+  assert.equal(entry.nativeQualification.receiptPath, undefined);
+  assert.deepEqual(readdirSync(nativeArtifactRoot()).filter((name) => name.startsWith("opensoha-consumer-native-")), before);
+});
+
+test("external candidate Core with native source fails clearly instead of substituting its embedded SDK", (t) => {
+  const root = fixture(t);
+  nativeSuite({ root }, { core: join(root, "soha") });
+  const result = run(root, ["--consumer", "soha", "--dry-run"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /external candidate Core native qualification is unsupported/);
+});
+
+test("external declared Core native caller mock uses only its own helper and declared SDK mode", (t) => {
+  const root = fixture(t);
+  const core = join(root, "soha");
+  nativeSuite({ root }, { core });
+  for (const args of [["init"], ["add", "."], ["-c", "user.name=Unit", "-c", "user.email=unit@example.invalid", "commit", "-m", "native fixture"]]) {
+    const result = spawnSync("git", ["-C", core, ...args], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const { environment: env } = fakeNative({ root, test: t }, "pass", fakeGo(root, { Version: "v0.1.0", Sum: "h1:unit-only" }));
+  const result = run(root, ["--consumer", "soha", "--declared"], env);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const entry = JSON.parse(readFileSync(join(root, "result.json"))).results[0];
+  assert.equal(entry.nativeQualification.receipt.sdk.mode, "declared");
+  assert.equal(entry.nativeQualification.artifactsRetained, false);
+  assert.equal(existsSync(entry.nativeQualification.artifactDirectory), false);
+  assert.equal(entry.commands.at(-1)[1][0], join(core, "scripts/run-proxy-native-tests.py"));
+  assert.equal(entry.commands.at(-1)[1].includes("source"), false);
+});
+
+for (const rootMode of ["runner-outside", "runner-equal", "runner-nested", "tmp-nested"]) {
+  test(`native unknown recovery survives actual outer TemporaryDirectory exit with ${rootMode}`, (t) => {
+    const root = fixture(t);
+    const core = join(root, "soha");
+    nativeSuite({ root }, { core });
+    for (const args of [["init"], ["add", "."], ["-c", "user.name=Unit", "-c", "user.email=unit@example.invalid", "commit", "-m", "native fixture"]]) {
+      const result = spawnSync("git", ["-C", core, ...args], { encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+    }
+    const canonical = { directory: process.env.OPENSOHA_VERIFY_DIR, active: process.env.OPENSOHA_VERIFY_ACTIVE };
+    const mock = fakeNative({ root, test: t }, "exception-with-intent", fakeGo(root, { Version: "v0.1.0", Sum: "h1:unit-only" }));
+    // This one non-nested child simulates a different external automatic wrapper.
+    // Every Go/native command is stubbed; ordinary fixtures retain the real lease.
+    const wrapper = spawnSync("python3", ["-c", `
+import json, os, pathlib, subprocess, sys, tempfile
+root, node, checker, mode = sys.argv[1:]
+env = dict(os.environ)
+env.pop("OPENSOHA_VERIFY_ACTIVE", None)
+with tempfile.TemporaryDirectory(prefix="automatic-native-unit-", dir=root) as automatic:
+    nested = pathlib.Path(automatic) / "runner" / "nested"
+    nested.mkdir(parents=True)
+    env["OPENSOHA_VERIFY_DIR"] = automatic
+    if mode == "tmp-nested":
+        env.pop("RUNNER_TEMP", None)
+        env["TMPDIR"] = str(nested)
+    else:
+        env["RUNNER_TEMP"] = root if mode == "runner-outside" else automatic if mode == "runner-equal" else str(nested)
+    child = subprocess.run([node, checker, "--declared", "--consumer", "soha", "--require-all", "--out", str(pathlib.Path(root) / "result.json")], env=env, text=True, capture_output=True)
+automatic_removed = not pathlib.Path(automatic).exists()
+print(json.dumps({"exitCode": child.returncode, "stdout": child.stdout, "stderr": child.stderr, "automaticRoot": automatic, "automaticRemoved": automatic_removed}))
+`, root, process.execPath, script, rootMode], {
+      encoding: "utf8", env: { ...process.env, ...mock.environment, SOHA_CONSUMER_ROOT: root },
+    });
+    assert.equal(wrapper.status, 0, wrapper.stderr);
+    const outer = JSON.parse(wrapper.stdout);
+    assert.equal(outer.exitCode, 1, outer.stdout + outer.stderr);
+    assert.equal(outer.automaticRemoved, true);
+    assert.equal(existsSync(outer.automaticRoot), false);
+    const report = JSON.parse(readFileSync(join(root, "result.json")));
+    const qualification = report.results[0].nativeQualification;
+    t.after(() => rmSync(qualification.artifactDirectory, { recursive: true, force: true }));
+    assert.ok(qualification.artifactDirectory.startsWith(realpathSync(root) + sep + "opensoha-consumer-native-"));
+    assert.equal(qualification.artifactsRetained, true);
+    assert.equal(qualification.recoveryRequired, true);
+    const receipt = JSON.parse(readFileSync(qualification.receiptPath));
+    assert.equal(receipt.resources[0].id, null);
+    assert.deepEqual(receipt.cleanup, []);
+    assert.equal(existsSync(receipt.profiles.dataplane.log), true);
+    assert.equal(existsSync(receipt.profiles.parser.stderr), true);
+    assert.equal(existsSync(join(mock.sentinelDirectory, "unrelated.txt")), true);
+    assert.equal(process.env.OPENSOHA_VERIFY_DIR, canonical.directory);
+    assert.equal(process.env.OPENSOHA_VERIFY_ACTIVE, canonical.active);
+    const calls = readFileSync(join(root, "trace.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+    assert.deepEqual(calls.map((args) => args[0]), ["list", "mod", "test"]);
+  });
+}

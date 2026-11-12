@@ -39,7 +39,7 @@ func newOutpostRuntimeServices(cfg cfgpkg.Config, infra *infrastructure, permiss
 			return nil, nil, fmt.Errorf("load Outpost executor credential: %w", err)
 		}
 		if token == cfg.Runtime.ExecutionRunnerToken {
-			return nil, nil, fmt.Errorf("Outpost executor requires a dedicated credential")
+			return nil, nil, fmt.Errorf("outpost executor requires a dedicated credential")
 		}
 		credentials = append(credentials, appoutpostruntime.ExecutorCredential{ExecutorID: item.ExecutorID, Token: token})
 	}

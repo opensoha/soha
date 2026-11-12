@@ -101,7 +101,15 @@ func TestScaleUnknownWriteIsNotRetried(t *testing.T) {
 				if action.GetSubresource() != "scale" || action.GetNamespace() != slot.Namespace {
 					t.Fatalf("wrong scale target: %v", action)
 				}
-				scale := action.(ktesting.UpdateAction).GetObject().(*autoscalingv1.Scale).DeepCopy()
+				update, ok := action.(ktesting.UpdateAction)
+				if !ok || update == nil {
+					t.Fatalf("unexpected update action %T", action)
+				}
+				current, ok := update.GetObject().(*autoscalingv1.Scale)
+				if !ok || current == nil {
+					t.Fatalf("unexpected scale fixture %T", update.GetObject())
+				}
+				scale := current.DeepCopy()
 				if scale.Name != slot.Name || scale.UID != types.UID(slot.UID) || scale.ResourceVersion != observation.ResourceVersion || scale.Spec.Replicas != 2 {
 					t.Fatalf("unfenced scale write: %+v", scale)
 				}
@@ -137,7 +145,11 @@ func TestObserveRejectsDeletingWorkload(t *testing.T) {
 		if err != nil {
 			return true, nil, err
 		}
-		deployment := obj.(*appsv1.Deployment).DeepCopy()
+		current, ok := obj.(*appsv1.Deployment)
+		if !ok || current == nil {
+			t.Fatalf("unexpected deployment fixture %T", obj)
+		}
+		deployment := current.DeepCopy()
 		at := metav1.Now()
 		deployment.DeletionTimestamp = &at
 		return true, deployment, nil

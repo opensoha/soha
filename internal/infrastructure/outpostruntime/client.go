@@ -27,11 +27,11 @@ func NewHTTPClient(baseURL, executorID, token string) (*HTTPClient, error) {
 		return nil, fmt.Errorf("invalid Outpost control plane URL")
 	}
 	ip := net.ParseIP(u.Hostname())
-	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || ip != nil && ip.IsLoopback())) {
-		return nil, fmt.Errorf("Outpost executor requires HTTPS outside loopback")
+	if u.Scheme != "https" && (u.Scheme != "http" || u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
+		return nil, fmt.Errorf("outpost executor requires HTTPS outside loopback")
 	}
 	if executorID == "" || len(token) < 32 {
-		return nil, fmt.Errorf("Outpost executor identity and dedicated credential are required")
+		return nil, fmt.Errorf("outpost executor identity and dedicated credential are required")
 	}
 	u.Path = strings.TrimRight(u.Path, "/")
 	if !strings.HasSuffix(u.Path, "/api/v1") {
@@ -70,14 +70,14 @@ func (c *HTTPClient) request(ctx context.Context, method, path string, input any
 	req.Header.Set("Content-Type", "application/json")
 	response, err := c.client.Do(req)
 	if err != nil {
-		return delivery.ExecutionTask{}, fmt.Errorf("Outpost executor control plane unavailable")
+		return delivery.ExecutionTask{}, fmt.Errorf("outpost executor control plane unavailable")
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusNoContent {
 		return delivery.ExecutionTask{}, apperrors.ErrNotFound
 	}
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusAccepted {
-		return delivery.ExecutionTask{}, fmt.Errorf("Outpost executor request rejected (HTTP %d)", response.StatusCode)
+		return delivery.ExecutionTask{}, fmt.Errorf("outpost executor request rejected (HTTP %d)", response.StatusCode)
 	}
 	var envelope struct {
 		Data delivery.ExecutionTask `json:"data"`

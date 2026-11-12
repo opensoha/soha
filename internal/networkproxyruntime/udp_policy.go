@@ -78,6 +78,10 @@ func (s *udpPolicySnapshot) check(ctx context.Context, host string, pinned netip
 	if _, err := scope.Resolve(ctx, pinned.String()); err != nil {
 		return err
 	}
+	return s.checkMandatory(host, pinned, node)
+}
+
+func (s *udpPolicySnapshot) checkMandatory(host string, pinned netip.Addr, node string) error {
 	if s.publication == nil {
 		return nil
 	}

@@ -12,6 +12,7 @@ import (
 	appidentity "github.com/opensoha/soha/internal/application/identity"
 	access "github.com/opensoha/soha/internal/domain/networkaccess"
 	domain "github.com/opensoha/soha/internal/domain/networkruntime"
+	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -117,8 +118,13 @@ func TestTTLSVerifierOriginalPasswordAndBoundProof(t *testing.T) {
 			}
 		})
 	}
+	assertTTLSInputRejections(t, service, identity, request, proofs)
+}
+
+func assertTTLSInputRejections(t *testing.T, service *Service, identity networkidentity.Identity, request networkprotocol.RadiusPasswordRequest, proofs *passwordStoreStub) {
+	t.Helper()
 	request.PasswordBase64 = "Zh=="
-	raw, _ = json.Marshal(request)
+	raw, _ := json.Marshal(request)
 	if _, err := service.VerifyNASPassword(context.Background(), identity, "192.0.2.2", raw); !errors.Is(err, apperrors.ErrUnauthorized) {
 		t.Fatalf("noncanonical Base64: %v", err)
 	}

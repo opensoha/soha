@@ -13,7 +13,7 @@ type ScaleClient struct{ client *runtimeslot.ScaleClient }
 
 func NewScaleClient(client kubernetes.Interface) (*ScaleClient, error) {
 	if client == nil {
-		return nil, fmt.Errorf("Proxy scale client is required")
+		return nil, fmt.Errorf("proxy scale client is required")
 	}
 	scaler, err := runtimeslot.NewScaleClient(client)
 	if err != nil {

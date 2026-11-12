@@ -1,0 +1,531 @@
+diff --git a/node_modules/zod/v3/types.js b/node_modules/zod/v3/types.js
+--- a/node_modules/zod/v3/types.js
++++ b/node_modules/zod/v3/types.js
+@@ -1771,6 +1771,7 @@
+                     exact: true,
+                     message: def.exactLength.message,
+                 });
++                if (tooBig) return INVALID;
+                 status.dirty();
+             }
+         }
+@@ -1797,7 +1798,7 @@
+                     exact: false,
+                     message: def.maxLength.message,
+                 });
+-                status.dirty();
++                return INVALID;
+             }
+         }
+         if (ctx.common.async) {
+@@ -2820,7 +2821,7 @@
+                     exact: false,
+                     message: def.maxSize.message,
+                 });
+-                status.dirty();
++                return INVALID;
+             }
+         }
+         const valueType = this._def.valueType;
+diff --git a/node_modules/zod/v3/types.cjs b/node_modules/zod/v3/types.cjs
+--- a/node_modules/zod/v3/types.cjs
++++ b/node_modules/zod/v3/types.cjs
+@@ -1792,6 +1792,7 @@
+                     exact: true,
+                     message: def.exactLength.message,
+                 });
++                if (tooBig) return parseUtil_js_1.INVALID;
+                 status.dirty();
+             }
+         }
+@@ -1818,7 +1819,7 @@
+                     exact: false,
+                     message: def.maxLength.message,
+                 });
+-                status.dirty();
++                return parseUtil_js_1.INVALID;
+             }
+         }
+         if (ctx.common.async) {
+@@ -2849,7 +2850,7 @@
+                     exact: false,
+                     message: def.maxSize.message,
+                 });
+-                status.dirty();
++                return parseUtil_js_1.INVALID;
+             }
+         }
+         const valueType = this._def.valueType;
+diff --git a/node_modules/@midscene/core/dist/es/ai-model/service-caller/system-one/schema.mjs b/node_modules/@midscene/core/dist/es/ai-model/service-caller/system-one/schema.mjs
+--- a/node_modules/@midscene/core/dist/es/ai-model/service-caller/system-one/schema.mjs
++++ b/node_modules/@midscene/core/dist/es/ai-model/service-caller/system-one/schema.mjs
+@@ -1,4 +1,4 @@
+-import { z } from "zod";
++import { z } from "zod/v3";
+ const probability = z.number().min(0).max(1);
+ const systemOneAnswerSchema = z.discriminatedUnion('type', [
+     z.object({
+diff --git a/node_modules/@midscene/core/dist/es/ai-model/workflows/grounding/planning-action-locate.mjs b/node_modules/@midscene/core/dist/es/ai-model/workflows/grounding/planning-action-locate.mjs
+--- a/node_modules/@midscene/core/dist/es/ai-model/workflows/grounding/planning-action-locate.mjs
++++ b/node_modules/@midscene/core/dist/es/ai-model/workflows/grounding/planning-action-locate.mjs
+@@ -1,6 +1,6 @@
+ import { getDebug } from "@midscene/shared/logger";
+ import { assert } from "@midscene/shared/utils";
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { getMidsceneLocationSchema } from "../../../common.mjs";
+ import { ScreenshotItem } from "../../../screenshot-item.mjs";
+ import { AIResponseParseError } from "../../service-caller/index.mjs";
+diff --git a/node_modules/@midscene/core/dist/es/ai-model/workflows/planning/parse-planning-actions.mjs b/node_modules/@midscene/core/dist/es/ai-model/workflows/planning/parse-planning-actions.mjs
+--- a/node_modules/@midscene/core/dist/es/ai-model/workflows/planning/parse-planning-actions.mjs
++++ b/node_modules/@midscene/core/dist/es/ai-model/workflows/planning/parse-planning-actions.mjs
+@@ -1,6 +1,6 @@
+ import { TUserPromptSchema, findActionInActionSpaceOrThrow, findAllMidsceneLocatorField, parseActionParam, validateRequiredLocateFields } from "../../../common.mjs";
+ import { isPlainObject } from "@midscene/shared/utils";
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { normalizePlanningLocateParameter } from "./locate-normalization.mjs";
+ function parsePlanningActions(actions, { actionSpace, parseRawLocateParameter, ...normalizationOptions }) {
+     for (const action of actions){
+diff --git a/node_modules/@midscene/core/dist/es/common.mjs b/node_modules/@midscene/core/dist/es/common.mjs
+--- a/node_modules/@midscene/core/dist/es/common.mjs
++++ b/node_modules/@midscene/core/dist/es/common.mjs
+@@ -1,5 +1,5 @@
+ import { isPlainObject } from "@midscene/shared/utils";
+-import { z } from "zod";
++import { z } from "zod/v3";
+ function findActionInActionSpaceOrThrow(planType, actionSpace) {
+     const action = actionSpace.find((item)=>item.name === planType);
+     if (!action) {
+diff --git a/node_modules/@midscene/core/dist/es/device/index.mjs b/node_modules/@midscene/core/dist/es/device/index.mjs
+--- a/node_modules/@midscene/core/dist/es/device/index.mjs
++++ b/node_modules/@midscene/core/dist/es/device/index.mjs
+@@ -1,6 +1,6 @@
+ import { getMidsceneLocationSchema } from "../common.mjs";
+ import { getDebug } from "@midscene/shared/logger";
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { inputStrategies, resolveInputStrategy, resolveTextInputOptions, sendTextSequentially, shouldInputSequentially } from "./input-strategy.mjs";
+ import { resolveDefaultMobileScroll } from "./mobile-scroll.mjs";
+ function _define_property(obj, key, value) {
+diff --git a/node_modules/@midscene/core/dist/es/index.mjs b/node_modules/@midscene/core/dist/es/index.mjs
+--- a/node_modules/@midscene/core/dist/es/index.mjs
++++ b/node_modules/@midscene/core/dist/es/index.mjs
+@@ -1,4 +1,4 @@
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import service from "./service/index.mjs";
+ import { TaskRunner } from "./task-runner.mjs";
+ import { getVersion } from "./utils.mjs";
+diff --git a/node_modules/@midscene/core/dist/es/report-cli.mjs b/node_modules/@midscene/core/dist/es/report-cli.mjs
+--- a/node_modules/@midscene/core/dist/es/report-cli.mjs
++++ b/node_modules/@midscene/core/dist/es/report-cli.mjs
+@@ -1,6 +1,6 @@
+ import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+ import { basename, dirname, extname, join, resolve } from "node:path";
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { readReportRunnerDump, streamReportDumpScripts } from "./dump/report-artifact-reader.mjs";
+ import { ReportImageExporter } from "./dump/report-image-export.mjs";
+ import { deriveCaseStatus } from "./dump/task-status.mjs";
+diff --git a/node_modules/@midscene/core/dist/es/yaml/test-runner-compat.mjs b/node_modules/@midscene/core/dist/es/yaml/test-runner-compat.mjs
+--- a/node_modules/@midscene/core/dist/es/yaml/test-runner-compat.mjs
++++ b/node_modules/@midscene/core/dist/es/yaml/test-runner-compat.mjs
+@@ -1,4 +1,4 @@
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { buildDetailedLocateParam, buildDetailedLocateParamAndRestParams } from "./utils.mjs";
+ const isStringParamSchema = (schema)=>{
+     if (!schema) return false;
+diff --git a/node_modules/@midscene/core/dist/lib/ai-model/service-caller/system-one/schema.js b/node_modules/@midscene/core/dist/lib/ai-model/service-caller/system-one/schema.js
+--- a/node_modules/@midscene/core/dist/lib/ai-model/service-caller/system-one/schema.js
++++ b/node_modules/@midscene/core/dist/lib/ai-model/service-caller/system-one/schema.js
+@@ -27,7 +27,7 @@
+     systemOneResponseSchema: ()=>systemOneResponseSchema,
+     systemOneAnswerSchema: ()=>systemOneAnswerSchema
+ });
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const probability = external_zod_namespaceObject.z.number().min(0).max(1);
+ const systemOneAnswerSchema = external_zod_namespaceObject.z.discriminatedUnion('type', [
+     external_zod_namespaceObject.z.object({
+diff --git a/node_modules/@midscene/core/dist/lib/ai-model/workflows/grounding/planning-action-locate.js b/node_modules/@midscene/core/dist/lib/ai-model/workflows/grounding/planning-action-locate.js
+--- a/node_modules/@midscene/core/dist/lib/ai-model/workflows/grounding/planning-action-locate.js
++++ b/node_modules/@midscene/core/dist/lib/ai-model/workflows/grounding/planning-action-locate.js
+@@ -28,7 +28,7 @@
+ });
+ const logger_namespaceObject = require("@midscene/shared/logger");
+ const utils_namespaceObject = require("@midscene/shared/utils");
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const external_common_js_namespaceObject = require("../../../common.js");
+ const external_screenshot_item_js_namespaceObject = require("../../../screenshot-item.js");
+ const index_js_namespaceObject = require("../../service-caller/index.js");
+diff --git a/node_modules/@midscene/core/dist/lib/ai-model/workflows/planning/parse-planning-actions.js b/node_modules/@midscene/core/dist/lib/ai-model/workflows/planning/parse-planning-actions.js
+--- a/node_modules/@midscene/core/dist/lib/ai-model/workflows/planning/parse-planning-actions.js
++++ b/node_modules/@midscene/core/dist/lib/ai-model/workflows/planning/parse-planning-actions.js
+@@ -28,7 +28,7 @@
+ });
+ const external_common_js_namespaceObject = require("../../../common.js");
+ const utils_namespaceObject = require("@midscene/shared/utils");
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const external_locate_normalization_js_namespaceObject = require("./locate-normalization.js");
+ function parsePlanningActions(actions, { actionSpace, parseRawLocateParameter, ...normalizationOptions }) {
+     for (const action of actions){
+diff --git a/node_modules/@midscene/core/dist/lib/common.js b/node_modules/@midscene/core/dist/lib/common.js
+--- a/node_modules/@midscene/core/dist/lib/common.js
++++ b/node_modules/@midscene/core/dist/lib/common.js
+@@ -43,7 +43,7 @@
+     userPromptToMultimodalPrompt: ()=>userPromptToMultimodalPrompt
+ });
+ const utils_namespaceObject = require("@midscene/shared/utils");
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ function findActionInActionSpaceOrThrow(planType, actionSpace) {
+     const action = actionSpace.find((item)=>item.name === planType);
+     if (!action) {
+diff --git a/node_modules/@midscene/core/dist/lib/device/index.js b/node_modules/@midscene/core/dist/lib/device/index.js
+--- a/node_modules/@midscene/core/dist/lib/device/index.js
++++ b/node_modules/@midscene/core/dist/lib/device/index.js
+@@ -75,7 +75,7 @@
+ });
+ const external_common_js_namespaceObject = require("../common.js");
+ const logger_namespaceObject = require("@midscene/shared/logger");
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const external_input_strategy_js_namespaceObject = require("./input-strategy.js");
+ const external_mobile_scroll_js_namespaceObject = require("./mobile-scroll.js");
+ function _define_property(obj, key, value) {
+diff --git a/node_modules/@midscene/core/dist/lib/index.js b/node_modules/@midscene/core/dist/lib/index.js
+--- a/node_modules/@midscene/core/dist/lib/index.js
++++ b/node_modules/@midscene/core/dist/lib/index.js
+@@ -92,7 +92,7 @@
+     ReportActionDump: ()=>external_types_js_namespaceObject.ReportActionDump,
+     reportFileToMarkdown: ()=>external_report_cli_js_namespaceObject.reportFileToMarkdown
+ });
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const index_js_namespaceObject = require("./service/index.js");
+ var index_js_default = /*#__PURE__*/ __webpack_require__.n(index_js_namespaceObject);
+ const external_task_runner_js_namespaceObject = require("./task-runner.js");
+diff --git a/node_modules/@midscene/core/dist/lib/report-cli.js b/node_modules/@midscene/core/dist/lib/report-cli.js
+--- a/node_modules/@midscene/core/dist/lib/report-cli.js
++++ b/node_modules/@midscene/core/dist/lib/report-cli.js
+@@ -31,7 +31,7 @@
+ });
+ const external_node_fs_namespaceObject = require("node:fs");
+ const external_node_path_namespaceObject = require("node:path");
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const report_artifact_reader_js_namespaceObject = require("./dump/report-artifact-reader.js");
+ const report_image_export_js_namespaceObject = require("./dump/report-image-export.js");
+ const task_status_js_namespaceObject = require("./dump/task-status.js");
+diff --git a/node_modules/@midscene/core/dist/lib/yaml/test-runner-compat.js b/node_modules/@midscene/core/dist/lib/yaml/test-runner-compat.js
+--- a/node_modules/@midscene/core/dist/lib/yaml/test-runner-compat.js
++++ b/node_modules/@midscene/core/dist/lib/yaml/test-runner-compat.js
+@@ -29,7 +29,7 @@
+     collectLegacyYamlTaskDocument: ()=>collectLegacyYamlTaskDocument,
+     collectLegacyYamlDocument: ()=>collectLegacyYamlDocument
+ });
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const external_utils_js_namespaceObject = require("./utils.js");
+ const isStringParamSchema = (schema)=>{
+     if (!schema) return false;
+diff --git a/node_modules/@midscene/core/dist/types/ai-model/service-caller/system-one/schema.d.ts b/node_modules/@midscene/core/dist/types/ai-model/service-caller/system-one/schema.d.ts
+--- a/node_modules/@midscene/core/dist/types/ai-model/service-caller/system-one/schema.d.ts
++++ b/node_modules/@midscene/core/dist/types/ai-model/service-caller/system-one/schema.d.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v3';
+ export interface SystemOneRequest {
+     state: Record<string, unknown>;
+     images?: Record<string, string>;
+diff --git a/node_modules/@midscene/core/dist/types/common.d.ts b/node_modules/@midscene/core/dist/types/common.d.ts
+--- a/node_modules/@midscene/core/dist/types/common.d.ts
++++ b/node_modules/@midscene/core/dist/types/common.d.ts
+@@ -1,5 +1,5 @@
+ import type { DeviceAction, MidsceneYamlFlowItem, PlanningAction } from './types';
+-import { z } from 'zod';
++import { z } from 'zod/v3';
+ export declare function findActionInActionSpaceOrThrow(planType: string, actionSpace: DeviceAction<any>[]): DeviceAction<any>;
+ export declare function buildYamlFlowFromPlans(plans: PlanningAction[], actionSpace: DeviceAction<any>[]): MidsceneYamlFlowItem[];
+ export declare const PointSchema: z.ZodObject<{
+diff --git a/node_modules/@midscene/core/dist/types/device/index.d.ts b/node_modules/@midscene/core/dist/types/device/index.d.ts
+--- a/node_modules/@midscene/core/dist/types/device/index.d.ts
++++ b/node_modules/@midscene/core/dist/types/device/index.d.ts
+@@ -1,7 +1,7 @@
+ import type { ModelRuntime } from '../ai-model/models';
+ import type { ActionScrollParam, DeviceAction, ExecutorContext, LocateResultElement } from '../types';
+ import type { ElementNode } from '@midscene/shared/extractor';
+-import { z } from 'zod';
++import { z } from 'zod/v3';
+ import type { ElementCacheFeature, Rect, Size, UITreeSnapshot } from '../types';
+ import { type InputStrategy } from './input-strategy';
+ export interface FileChooserHandler {
+diff --git a/node_modules/@midscene/core/dist/types/index.d.ts b/node_modules/@midscene/core/dist/types/index.d.ts
+--- a/node_modules/@midscene/core/dist/types/index.d.ts
++++ b/node_modules/@midscene/core/dist/types/index.d.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v3';
+ import Service from './service/index';
+ import { TaskRunner } from './task-runner';
+ import { getVersion } from './utils';
+diff --git a/node_modules/@midscene/core/dist/types/report-cli.d.ts b/node_modules/@midscene/core/dist/types/report-cli.d.ts
+--- a/node_modules/@midscene/core/dist/types/report-cli.d.ts
++++ b/node_modules/@midscene/core/dist/types/report-cli.d.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v3';
+ type ReportCliToolResult = {
+     isError: boolean;
+     content: Array<{
+diff --git a/node_modules/@midscene/core/dist/types/types.d.ts b/node_modules/@midscene/core/dist/types/types.d.ts
+--- a/node_modules/@midscene/core/dist/types/types.d.ts
++++ b/node_modules/@midscene/core/dist/types/types.d.ts
+@@ -4,7 +4,7 @@
+ import type { CreateOpenAIClientFn, TModelConfig } from '@midscene/shared/env';
+ import type { BaseElement, LocateResultElement, Rect, Size } from '@midscene/shared/types';
+ import type OpenAI from 'openai';
+-import type { z } from 'zod';
++import type { z } from 'zod/v3';
+ import type { TUserPrompt } from './common';
+ import type { ScreenshotItem } from './screenshot-item';
+ import type { DetailedLocateParam, MidsceneYamlFlowItem, ServiceExtractOption } from './yaml';
+diff --git a/node_modules/@midscene/core/dist/types/yaml/test-runner-compat.d.ts b/node_modules/@midscene/core/dist/types/yaml/test-runner-compat.d.ts
+--- a/node_modules/@midscene/core/dist/types/yaml/test-runner-compat.d.ts
++++ b/node_modules/@midscene/core/dist/types/yaml/test-runner-compat.d.ts
+@@ -1,5 +1,5 @@
+ import type { MidsceneYamlFlowItem, MidsceneYamlScript, MidsceneYamlTask } from '../types';
+-import { type ZodTypeAny } from 'zod';
++import { type ZodTypeAny } from 'zod/v3';
+ import type { CollectedCase, CollectedWorkflowDocument, NormalizedStep } from '../test-runner';
+ export interface LegacyYamlActionIdentity {
+     name: string;
+diff --git a/node_modules/@midscene/shared/dist/es/agent-tools/agent-behavior-init-args.mjs b/node_modules/@midscene/shared/dist/es/agent-tools/agent-behavior-init-args.mjs
+--- a/node_modules/@midscene/shared/dist/es/agent-tools/agent-behavior-init-args.mjs
++++ b/node_modules/@midscene/shared/dist/es/agent-tools/agent-behavior-init-args.mjs
+@@ -1,4 +1,4 @@
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { AGENT_AI_CONTEXT_KEYS, isAgentAIContextKey } from "./agent-context.mjs";
+ const agentBehaviorInitArgShape = {
+     aiContexts: z.record(z["enum"](AGENT_AI_CONTEXT_KEYS), z.string()).optional().describe('Additional AI guidance such as business facts, rules, constraints, or output requirements. aiContexts.default is used only when neither the call nor its API key provides a context. Values override rather than automatically merge.'),
+diff --git a/node_modules/@midscene/shared/dist/es/agent-tools/observation-record.mjs b/node_modules/@midscene/shared/dist/es/agent-tools/observation-record.mjs
+--- a/node_modules/@midscene/shared/dist/es/agent-tools/observation-record.mjs
++++ b/node_modules/@midscene/shared/dist/es/agent-tools/observation-record.mjs
+@@ -1,7 +1,7 @@
+ import { createHash } from "node:crypto";
+ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { getMidsceneRunSubDir } from "../common.mjs";
+ function _define_property(obj, key, value) {
+     if (key in obj) Object.defineProperty(obj, key, {
+diff --git a/node_modules/@midscene/shared/dist/es/agent-tools/tool-generator.mjs b/node_modules/@midscene/shared/dist/es/agent-tools/tool-generator.mjs
+--- a/node_modules/@midscene/shared/dist/es/agent-tools/tool-generator.mjs
++++ b/node_modules/@midscene/shared/dist/es/agent-tools/tool-generator.mjs
+@@ -1,5 +1,5 @@
+ import { parseBase64 } from "@midscene/shared/img";
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { attachCliVerboseDumpListener, emitCliVerboseEvent } from "../cli/verbose.mjs";
+ import { getZodDescription, getZodTypeName, isMidsceneLocatorField, unwrapZodField } from "../zod-schema-utils.mjs";
+ import { getErrorMessage } from "./error-formatter.mjs";
+diff --git a/node_modules/@midscene/shared/dist/es/agent-tools/user-prompt.mjs b/node_modules/@midscene/shared/dist/es/agent-tools/user-prompt.mjs
+--- a/node_modules/@midscene/shared/dist/es/agent-tools/user-prompt.mjs
++++ b/node_modules/@midscene/shared/dist/es/agent-tools/user-prompt.mjs
+@@ -1,4 +1,4 @@
+-import { z } from "zod";
++import { z } from "zod/v3";
+ function normalizeStringList(raw, fieldName) {
+     if (null == raw) return [];
+     if ('string' == typeof raw) {
+diff --git a/node_modules/@midscene/shared/dist/es/cli/cli-args.mjs b/node_modules/@midscene/shared/dist/es/cli/cli-args.mjs
+--- a/node_modules/@midscene/shared/dist/es/cli/cli-args.mjs
++++ b/node_modules/@midscene/shared/dist/es/cli/cli-args.mjs
+@@ -1,4 +1,4 @@
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { getKeyAliases } from "../key-alias-utils.mjs";
+ import { CLIError } from "./cli-error.mjs";
+ import { parseCliValue, parseValue } from "./cli-value.mjs";
+diff --git a/node_modules/@midscene/shared/dist/es/cli/cli-value.mjs b/node_modules/@midscene/shared/dist/es/cli/cli-value.mjs
+--- a/node_modules/@midscene/shared/dist/es/cli/cli-value.mjs
++++ b/node_modules/@midscene/shared/dist/es/cli/cli-value.mjs
+@@ -1,4 +1,4 @@
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { unwrapZodField } from "../zod-schema-utils.mjs";
+ const cliNumberPattern = /^-?\d+(\.\d+)?$/;
+ function getFieldDef(field) {
+diff --git a/node_modules/@midscene/shared/dist/es/cli/record-command.mjs b/node_modules/@midscene/shared/dist/es/cli/record-command.mjs
+--- a/node_modules/@midscene/shared/dist/es/cli/record-command.mjs
++++ b/node_modules/@midscene/shared/dist/es/cli/record-command.mjs
+@@ -1,4 +1,4 @@
+-import { z } from "zod";
++import { z } from "zod/v3";
+ import { getErrorMessage } from "../agent-tools/error-formatter.mjs";
+ import { resolveObservationArtifactAdapter } from "../agent-tools/observation-artifact.mjs";
+ import { writeUIObservationRecord } from "../agent-tools/observation-record.mjs";
+diff --git a/node_modules/@midscene/shared/dist/lib/agent-tools/agent-behavior-init-args.js b/node_modules/@midscene/shared/dist/lib/agent-tools/agent-behavior-init-args.js
+--- a/node_modules/@midscene/shared/dist/lib/agent-tools/agent-behavior-init-args.js
++++ b/node_modules/@midscene/shared/dist/lib/agent-tools/agent-behavior-init-args.js
+@@ -29,7 +29,7 @@
+     getAgentInitArgsSignature: ()=>getAgentInitArgsSignature,
+     shouldRebuildAgentForInitArgs: ()=>shouldRebuildAgentForInitArgs
+ });
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const external_agent_context_js_namespaceObject = require("./agent-context.js");
+ const agentBehaviorInitArgShape = {
+     aiContexts: external_zod_namespaceObject.z.record(external_zod_namespaceObject.z["enum"](external_agent_context_js_namespaceObject.AGENT_AI_CONTEXT_KEYS), external_zod_namespaceObject.z.string()).optional().describe('Additional AI guidance such as business facts, rules, constraints, or output requirements. aiContexts.default is used only when neither the call nor its API key provides a context. Values override rather than automatically merge.'),
+diff --git a/node_modules/@midscene/shared/dist/lib/agent-tools/observation-record.js b/node_modules/@midscene/shared/dist/lib/agent-tools/observation-record.js
+--- a/node_modules/@midscene/shared/dist/lib/agent-tools/observation-record.js
++++ b/node_modules/@midscene/shared/dist/lib/agent-tools/observation-record.js
+@@ -34,7 +34,7 @@
+ const external_node_crypto_namespaceObject = require("node:crypto");
+ const external_node_fs_namespaceObject = require("node:fs");
+ const external_node_path_namespaceObject = require("node:path");
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const external_common_js_namespaceObject = require("../common.js");
+ function _define_property(obj, key, value) {
+     if (key in obj) Object.defineProperty(obj, key, {
+diff --git a/node_modules/@midscene/shared/dist/lib/agent-tools/tool-generator.js b/node_modules/@midscene/shared/dist/lib/agent-tools/tool-generator.js
+--- a/node_modules/@midscene/shared/dist/lib/agent-tools/tool-generator.js
++++ b/node_modules/@midscene/shared/dist/lib/agent-tools/tool-generator.js
+@@ -29,7 +29,7 @@
+     composeUserPrompt: ()=>external_user_prompt_js_namespaceObject.composeUserPrompt
+ });
+ const img_namespaceObject = require("@midscene/shared/img");
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const verbose_js_namespaceObject = require("../cli/verbose.js");
+ const external_zod_schema_utils_js_namespaceObject = require("../zod-schema-utils.js");
+ const external_error_formatter_js_namespaceObject = require("./error-formatter.js");
+diff --git a/node_modules/@midscene/shared/dist/lib/agent-tools/user-prompt.js b/node_modules/@midscene/shared/dist/lib/agent-tools/user-prompt.js
+--- a/node_modules/@midscene/shared/dist/lib/agent-tools/user-prompt.js
++++ b/node_modules/@midscene/shared/dist/lib/agent-tools/user-prompt.js
+@@ -27,7 +27,7 @@
+     promptInputExtraSchema: ()=>promptInputExtraSchema,
+     composeUserPrompt: ()=>composeUserPrompt
+ });
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ function normalizeStringList(raw, fieldName) {
+     if (null == raw) return [];
+     if ('string' == typeof raw) {
+diff --git a/node_modules/@midscene/shared/dist/lib/cli/cli-args.js b/node_modules/@midscene/shared/dist/lib/cli/cli-args.js
+--- a/node_modules/@midscene/shared/dist/lib/cli/cli-args.js
++++ b/node_modules/@midscene/shared/dist/lib/cli/cli-args.js
+@@ -30,7 +30,7 @@
+     parseValue: ()=>external_cli_value_js_namespaceObject.parseValue,
+     getCliOptionDisplay: ()=>getCliOptionDisplay
+ });
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const external_key_alias_utils_js_namespaceObject = require("../key-alias-utils.js");
+ const external_cli_error_js_namespaceObject = require("./cli-error.js");
+ const external_cli_value_js_namespaceObject = require("./cli-value.js");
+diff --git a/node_modules/@midscene/shared/dist/lib/cli/cli-value.js b/node_modules/@midscene/shared/dist/lib/cli/cli-value.js
+--- a/node_modules/@midscene/shared/dist/lib/cli/cli-value.js
++++ b/node_modules/@midscene/shared/dist/lib/cli/cli-value.js
+@@ -27,7 +27,7 @@
+     parseValue: ()=>parseValue,
+     parseCliValue: ()=>parseCliValue
+ });
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const external_zod_schema_utils_js_namespaceObject = require("../zod-schema-utils.js");
+ const cliNumberPattern = /^-?\d+(\.\d+)?$/;
+ function getFieldDef(field) {
+diff --git a/node_modules/@midscene/shared/dist/lib/cli/record-command.js b/node_modules/@midscene/shared/dist/lib/cli/record-command.js
+--- a/node_modules/@midscene/shared/dist/lib/cli/record-command.js
++++ b/node_modules/@midscene/shared/dist/lib/cli/record-command.js
+@@ -26,7 +26,7 @@
+ __webpack_require__.d(__webpack_exports__, {
+     createRecordCliCommand: ()=>createRecordCliCommand
+ });
+-const external_zod_namespaceObject = require("zod");
++const external_zod_namespaceObject = require("zod/v3");
+ const error_formatter_js_namespaceObject = require("../agent-tools/error-formatter.js");
+ const observation_artifact_js_namespaceObject = require("../agent-tools/observation-artifact.js");
+ const observation_record_js_namespaceObject = require("../agent-tools/observation-record.js");
+diff --git a/node_modules/@midscene/shared/dist/types/agent-tools/agent-behavior-init-args.d.ts b/node_modules/@midscene/shared/dist/types/agent-tools/agent-behavior-init-args.d.ts
+--- a/node_modules/@midscene/shared/dist/types/agent-tools/agent-behavior-init-args.d.ts
++++ b/node_modules/@midscene/shared/dist/types/agent-tools/agent-behavior-init-args.d.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v3';
+ import { type AgentAIContexts } from './agent-context';
+ export interface AgentBehaviorInitArgs {
+     /**
+diff --git a/node_modules/@midscene/shared/dist/types/agent-tools/base-tools.d.ts b/node_modules/@midscene/shared/dist/types/agent-tools/base-tools.d.ts
+--- a/node_modules/@midscene/shared/dist/types/agent-tools/base-tools.d.ts
++++ b/node_modules/@midscene/shared/dist/types/agent-tools/base-tools.d.ts
+@@ -1,4 +1,4 @@
+-import type { z } from 'zod';
++import type { z } from 'zod/v3';
+ import { type CliReportSession } from './cli-report-session';
+ import { type ToolDefaults } from './tool-defaults';
+ import type { BaseAgent, BaseDevice, IMidsceneTools, ToolCliMetadata, ToolDefinition, ToolSchema } from './types';
+diff --git a/node_modules/@midscene/shared/dist/types/agent-tools/init-arg-utils.d.ts b/node_modules/@midscene/shared/dist/types/agent-tools/init-arg-utils.d.ts
+--- a/node_modules/@midscene/shared/dist/types/agent-tools/init-arg-utils.d.ts
++++ b/node_modules/@midscene/shared/dist/types/agent-tools/init-arg-utils.d.ts
+@@ -1,4 +1,4 @@
+-import type { z } from 'zod';
++import type { z } from 'zod/v3';
+ import type { ToolSchema } from './types';
+ export declare function extractNamespacedArgs<TFieldName extends string, TArgs extends Record<string, unknown> = Record<string, unknown>>(args: Record<string, unknown>, namespace: string, keys: readonly TFieldName[]): TArgs | undefined;
+ export declare function sanitizeNamespacedArgs(args: Record<string, unknown>, namespace: string, keys: readonly string[]): Record<string, unknown>;
+diff --git a/node_modules/@midscene/shared/dist/types/agent-tools/types.d.ts b/node_modules/@midscene/shared/dist/types/agent-tools/types.d.ts
+--- a/node_modules/@midscene/shared/dist/types/agent-tools/types.d.ts
++++ b/node_modules/@midscene/shared/dist/types/agent-tools/types.d.ts
+@@ -1,4 +1,4 @@
+-import type { z } from 'zod';
++import type { z } from 'zod/v3';
+ import type { ToolDefaults } from './tool-defaults';
+ /**
+  * Default timeout constants for app loading verification
+diff --git a/node_modules/@midscene/shared/dist/types/agent-tools/user-prompt.d.ts b/node_modules/@midscene/shared/dist/types/agent-tools/user-prompt.d.ts
+--- a/node_modules/@midscene/shared/dist/types/agent-tools/user-prompt.d.ts
++++ b/node_modules/@midscene/shared/dist/types/agent-tools/user-prompt.d.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v3';
+ import type { UserPromptLike } from './types';
+ export declare function composeUserPrompt(input: {
+     prompt: string;
+diff --git a/node_modules/@midscene/shared/dist/types/cli/cli-value.d.ts b/node_modules/@midscene/shared/dist/types/cli/cli-value.d.ts
+--- a/node_modules/@midscene/shared/dist/types/cli/cli-value.d.ts
++++ b/node_modules/@midscene/shared/dist/types/cli/cli-value.d.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v3';
+ export declare function parseValue(raw: string): unknown;
+ /** Decode one CLI token; index is supplied only for repeated options. */
+ export declare function parseCliValue(raw: string, field?: z.ZodTypeAny, index?: number): unknown;
+diff --git a/node_modules/@midscene/shared/dist/types/zod-schema-utils.d.ts b/node_modules/@midscene/shared/dist/types/zod-schema-utils.d.ts
+--- a/node_modules/@midscene/shared/dist/types/zod-schema-utils.d.ts
++++ b/node_modules/@midscene/shared/dist/types/zod-schema-utils.d.ts
+@@ -1,4 +1,4 @@
+-import type { z } from 'zod';
++import type { z } from 'zod/v3';
+ /**
+  * Recursively unwrap optional, nullable, default, and effects wrapper types
+  * to get the actual inner Zod type
+--- a/node_modules/nwsapi/src/nwsapi.js
++++ b/node_modules/nwsapi/src/nwsapi.js
+@@ -233,7 +233,7 @@
+     },
+
+   // caching limit for compiled resolver functions
+-  CACHE_LIMIT = 1000,
++  CACHE_LIMIT = 4096,
+
+   // ES5 bounded LRU cache. It stores query plans (compiled resolvers),
+   // never DOM result sets. A prefixed dictionary avoids user-key collisions

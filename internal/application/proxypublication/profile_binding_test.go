@@ -45,7 +45,7 @@ func TestMihomoBundleBindingValidatesCurrentReferenceAndRecipient(t *testing.T) 
 		}, want: apperrors.ErrAccessDenied},
 		{name: "untrusted device mismatch", mutate: func(_ *Bundles, _ *bundleFake, _ *access.MihomoProfileInput, d *access.Device) { d.ID = "device-2" }, want: apperrors.ErrAccessDenied},
 		{name: "instance access denied", mutate: func(b *Bundles, _ *bundleFake, _ *access.MihomoProfileInput, _ *access.Device) {
-			b.auth.(*bindingAuth).err = apperrors.ErrAccessDenied
+			fixtureValue[*bindingAuth](t, b.auth).err = apperrors.ErrAccessDenied
 		}, want: apperrors.ErrAccessDenied},
 	}
 	for _, tt := range tests {
@@ -62,7 +62,7 @@ func TestMihomoBundleBindingValidatesCurrentReferenceAndRecipient(t *testing.T) 
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("validation error = %v, want %v", err, tt.want)
 			}
-			if b.auth.(*bindingAuth).instance != "master" {
+			if fixtureValue[*bindingAuth](t, b.auth).instance != "master" {
 				t.Fatal("permission did not use owning instance")
 			}
 		})
@@ -81,7 +81,7 @@ func retainedBindingFixture() (*Bundles, *bundleFake, access.MihomoProfileInput,
 func TestMihomoRetainedBindingWithoutProxyView(t *testing.T) {
 	b, _, input, device, previous := retainedBindingFixture()
 	input.Name = "Renamed"
-	if err := b.ValidateMihomoBundle(context.Background(), identity.Principal{UserID: "editor"}, input, device, previous); err != nil || b.auth.(*bindingAuth).calls != 0 {
+	if err := b.ValidateMihomoBundle(context.Background(), identity.Principal{UserID: "editor"}, input, device, previous); err != nil || fixtureValue[*bindingAuth](t, b.auth).calls != 0 {
 		t.Fatal("unchanged binding still needs view", err)
 	}
 }
@@ -92,14 +92,16 @@ func TestMihomoNewOrChangedBindingStillRequiresProxyView(t *testing.T) {
 			b, _, input, device, previous := retainedBindingFixture()
 			change(&input, &previous)
 			err := b.ValidateMihomoBundle(context.Background(), identity.Principal{}, input, device, previous)
-			if !errors.Is(err, apperrors.ErrAccessDenied) || b.auth.(*bindingAuth).calls != 1 {
+			if !errors.Is(err, apperrors.ErrAccessDenied) || fixtureValue[*bindingAuth](t, b.auth).calls != 1 {
 				t.Fatal("changed binding bypassed view", err)
 			}
 		})
 	}
 }
 func TestRetainedMihomoBindingRechecksCurrentAuthorization(t *testing.T) {
-	for _, change := range []func(*Bundles, *bundleFake, *access.Device){func(_ *Bundles, f *bundleFake, _ *access.Device) { f.record.Public.State = "revoked" }, func(_ *Bundles, _ *bundleFake, d *access.Device) { d.OwnerUserID = "other" }, func(_ *Bundles, _ *bundleFake, d *access.Device) { d.ID = "other" }, func(b *Bundles, _ *bundleFake, _ *access.Device) { b.sources.(*sourceFake).allowed = []string{} }} {
+	for _, change := range []func(*Bundles, *bundleFake, *access.Device){func(_ *Bundles, f *bundleFake, _ *access.Device) { f.record.Public.State = "revoked" }, func(_ *Bundles, _ *bundleFake, d *access.Device) { d.OwnerUserID = "other" }, func(_ *Bundles, _ *bundleFake, d *access.Device) { d.ID = "other" }, func(b *Bundles, _ *bundleFake, _ *access.Device) {
+		fixtureValue[*sourceFake](t, b.sources).allowed = []string{}
+	}} {
 		b, f, input, device, previous := retainedBindingFixture()
 		change(b, f, &device)
 		if err := b.ValidateMihomoBundle(context.Background(), identity.Principal{}, input, device, previous); !errors.Is(err, apperrors.ErrAccessDenied) {

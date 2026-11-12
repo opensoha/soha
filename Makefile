@@ -118,7 +118,7 @@ verify-image: ## Validate the same-checkout image and remove this run's tag.
 	opensoha-verify image -- --build-arg SOHA_BUILD_VERSION=$(SOHA_BUILD_VERSION) --build-arg GOPROXY=$(GOPROXY) -f $(APP_DOCKERFILE) .
 
 # Test
-test: ## Run Go tests.
+test: ## Run host Go unit tests; full acceptance also requires the native gate in docs/testing.md.
 	$(LOCAL_VERIFY) go test ./...
 
 lint: ## Run the configured Go quality and security linters.

@@ -274,7 +274,11 @@ func fixtureSOCKSFrontend(listener net.Listener, definition fixtureListener, fro
 		if err != nil {
 			return nil, err
 		}
-		return d.(proxy.ContextDialer).DialContext(ctx, "tcp", target)
+		contextual, ok := d.(proxy.ContextDialer)
+		if !ok {
+			return nil, fmt.Errorf("fixture SOCKS dialer lacks context support")
+		}
+		return contextual.DialContext(ctx, "tcp", target)
 	}
 	dialPacket := func(ctx context.Context, _ string, target string) (net.Conn, error) {
 		return proxytransport.DialSOCKS5UDP(ctx, net.JoinHostPort(front.Server, strconv.Itoa(front.Port)), front.Username, front.Password, target, until)
@@ -285,4 +289,28 @@ func fixtureSOCKSFrontend(listener net.Listener, definition fixtureListener, fro
 	}
 	go func() { _ = gate.Serve(listener) }()
 	return nil
+}
+
+func fixtureValue[T any](t *testing.T, value any) T {
+	t.Helper()
+	result, ok := value.(T)
+	if !ok {
+		t.Fatalf("unexpected fixture type %T", value)
+	}
+	return result
+}
+
+func readFixtureConnectStatus(t *testing.T, conn net.Conn, reader *bufio.Reader) (int, error) {
+	t.Helper()
+	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		_ = conn.Close()
+		return 0, err
+	}
+	t.Cleanup(func() {
+		// Close the socket first: closing an undrained CONNECT body can read the tunnel.
+		_ = conn.Close()
+		_ = response.Body.Close()
+	})
+	return response.StatusCode, nil
 }

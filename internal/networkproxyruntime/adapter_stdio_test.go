@@ -30,7 +30,7 @@ func TestReferenceStdioProcess(t *testing.T) {
 func pinnedScript(t *testing.T, script string) (string, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "adapter")
-	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
+	if err := os.WriteFile(path, []byte(script), 0700); err != nil { // #nosec G306 -- owner-only executable adapter fixture in t.TempDir.
 		t.Fatal(err)
 	}
 	return path, fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(script)))
@@ -78,12 +78,12 @@ func TestExternalAdapterProcessLifecycle(t *testing.T) {
 		t.Fatal("reload retained engine epoch")
 	}
 	e.stop()
-	a := e.adapter.(*externalEngineAdapter)
+	a := fixtureValue[*externalEngineAdapter](t, e.adapter)
 	if a.session != nil || e.process != nil || e.egress != nil {
 		t.Fatal("owned processes or egress survived stop")
 	}
 	// A changed installation cannot be re-enabled by descriptor/capability claims.
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil { // #nosec G306 -- replace the pinned owner-only adapter fixture to verify digest rejection.
 		t.Fatal(err)
 	}
 	if result := e.apply(context.Background(), desired); result.Status == "applied" || e.process != nil {

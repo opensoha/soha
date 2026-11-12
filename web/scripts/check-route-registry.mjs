@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(scriptDirectory, '..')
-const vitestEntry = resolve(projectRoot, 'node_modules/vitest/vitest.mjs')
+const vitestEntry = resolve(
+  dirname(createRequire(import.meta.url).resolve('vitest/package.json')),
+  'vitest.mjs',
+)
 
 try {
   execFileSync(process.execPath, [vitestEntry, 'run', 'src/routes/route-validation.test.ts'], {

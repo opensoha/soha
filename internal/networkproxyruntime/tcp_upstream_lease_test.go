@@ -35,7 +35,7 @@ func TestSOCKSUpstreamTCPRenewsBeyondOriginalInnerLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	started := time.Now()
 	for time.Since(started) < 3*window {
 		until := time.Now().Add(window)
@@ -81,7 +81,7 @@ func TestSOCKSUpstreamTCPRefreshCommitsCurrentDeadline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			if fail {
 				_ = gate.Close()
 			}
@@ -126,9 +126,9 @@ func (c *recordedTCPRefresh) Close() error { c.closed = true; return c.Conn.Clos
 
 func TestSOCKSTCPAdapterClampsEveryRenewalIncludingZero(t *testing.T) {
 	left, right := net.Pipe()
-	defer right.Close()
+	defer func() { _ = right.Close() }()
 	stream := &recordedTCPRefresh{Conn: left}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	limit := time.Now().Add(time.Second)
 	adapter := &socksTCPLeaseConn{renewableSOCKSTCP: stream, limit: func() time.Time { return limit }}
 	for _, requested := range []time.Time{{}, limit.Add(time.Second), limit.Add(-100 * time.Millisecond)} {
@@ -171,7 +171,7 @@ func TestSOCKSUpstreamTCPWithoutRenewalAndRevocationFailClosed(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer c.Close()
+			defer func() { _ = c.Close() }()
 			if revoked {
 				g.udpPolicy.Store(copyUDPPolicy(domain.Configuration{Protection: &domain.Protection{CIDRs: []string{"1.1.1.1/32"}}}))
 				_, _ = c.Write([]byte("denied"))
@@ -233,12 +233,12 @@ func tcpLeaseTLSFixture(t *testing.T, source string) (func(context.Context) (net
 				return
 			}
 			go func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				upstream, err := net.Dial("tcp", source)
 				if err != nil {
 					return
 				}
-				defer upstream.Close()
+				defer func() { _ = upstream.Close() }()
 				go func() { _, _ = io.Copy(upstream, conn); _ = upstream.Close() }()
 				_, _ = io.Copy(conn, upstream)
 			}()
@@ -261,7 +261,7 @@ func TestSOCKSUpstreamTCPRenewalCannotPassVerifiedCertificateCap(t *testing.T) {
 	connect = func(ctx context.Context) (net.Conn, error) {
 		conn, err := verifiedConnect(ctx)
 		if err == nil {
-			states <- conn.(*tls.Conn).ConnectionState()
+			states <- fixtureValue[*tls.Conn](t, conn).ConnectionState()
 		}
 		return conn, err
 	}
@@ -276,12 +276,12 @@ func TestSOCKSUpstreamTCPRenewalCannotPassVerifiedCertificateCap(t *testing.T) {
 	if err := g.installSOCKSBridge(node, lease, connect, netip.MustParseAddr("127.0.0.1"), func(context.Context, string, string) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	b := &egressBackend{port: node["port"].(int), user: node["username"].(string), secret: node["password"].(string)}
+	b := &egressBackend{port: fixtureValue[int](t, node["port"]), user: fixtureValue[string](t, node["username"]), secret: fixtureValue[string](t, node["password"])}
 	c, err := dialOwnedTCP(context.Background(), b, "1.1.1.1:443")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	state := <-states
 	if len(state.PeerCertificates) != 1 || len(state.VerifiedChains) == 0 || len(state.VerifiedChains[0]) != 2 || !state.VerifiedChains[0][1].NotAfter.Equal(certificateUntil) {
 		t.Fatal("fixture did not verify the RootCAs-only earlier-expiring CA")
@@ -316,12 +316,12 @@ func TestSOCKSUpstreamTCPRenewalCannotPassVerifiedCertificateCap(t *testing.T) {
 
 func TestSOCKSTCPRequiresVerifiedTLSWhenRequested(t *testing.T) {
 	left, right := net.Pipe()
-	defer left.Close()
-	defer right.Close()
+	defer func() { _ = left.Close() }()
+	defer func() { _ = right.Close() }()
 	if _, err := socksTCPCertificateLimit(left, true); err == nil {
 		t.Fatal("required TLS accepted plaintext")
 	}
-	secure := tls.Client(left, &tls.Config{InsecureSkipVerify: true})
+	secure := tls.Client(left, &tls.Config{InsecureSkipVerify: true}) // #nosec G402 -- negative test must reject an unverified TLS connection; no handshake or data is sent here.
 	if _, err := socksTCPCertificateLimit(secure, true); err == nil {
 		t.Fatal("unverified TLS accepted")
 	}
@@ -335,7 +335,7 @@ func TestSOCKSTCPRequiresVerifiedTLSWhenRequested(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unverified.Close()
+	defer func() { _ = unverified.Close() }()
 	if _, err := socksTCPCertificateLimit(unverified, true); err == nil {
 		t.Fatal("completed but unverified TLS was accepted")
 	}

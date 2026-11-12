@@ -1,5 +1,4 @@
 import type { NetworkRADIUSPool, NetworkRADIUSMember } from '@opensoha/contracts/gen/ts/sohaapi'
-export const radiusKeys = { all: ['network-access', 'radius-pools'] as const }
 export function memberFresh(member: NetworkRADIUSMember, now = Date.now()) {
   return Boolean(member.leaseUntil && Date.parse(member.leaseUntil) > now)
 }

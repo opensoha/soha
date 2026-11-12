@@ -109,18 +109,18 @@ func udpProbeConn(until time.Time, b *egressBackend) net.Conn {
 	left, right := net.Pipe()
 	client, err := proxytransport.NewPacketConn(left, until)
 	if err != nil {
-		left.Close()
-		right.Close()
+		_ = left.Close()
+		_ = right.Close()
 		return left
 	}
 	server, err := proxytransport.NewPacketConn(right, until)
 	if err != nil {
-		client.Close()
-		right.Close()
+		_ = client.Close()
+		_ = right.Close()
 		return client
 	}
 	go func() {
-		defer server.Close()
+		defer func() { _ = server.Close() }()
 		buffer := make([]byte, proxytransport.MaxDatagramBytes)
 		for {
 			n, err := server.Read(buffer)
@@ -147,7 +147,7 @@ func (g *egressGuard) verifyUDP(ctx context.Context, b *egressBackend) error {
 	if err != nil {
 		return errors.New("UDP guard probe failed")
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	before := b.udpProbes.Load()
 	payload := []byte(g.probeHost)
 	if _, err := c.Write(payload); err != nil {

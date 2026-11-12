@@ -35,7 +35,7 @@ func (s *Supervisor) certificatesUntil() (time.Time, error) {
 		if err != nil || info.Size() > 1<<20 {
 			return time.Time{}, ErrDenied
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 -- regular above rejects symlinks and non-root-owned or writable ancestors before this read.
 		if err != nil || len(data) > 1<<20 {
 			return time.Time{}, ErrDenied
 		}

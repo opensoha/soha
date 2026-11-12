@@ -87,7 +87,7 @@ func RunKernelPreflight(ctx context.Context, inputFile string) (report KernelPre
 		report.Reason = "staging_failed"
 		return report
 	}
-	defer os.RemoveAll(directory)
+	defer func(path string) { _ = os.RemoveAll(path) }(directory)
 	directory, err = filepath.EvalSymlinks(directory)
 	if err != nil {
 		report.Reason = "staging_failed"
@@ -158,8 +158,8 @@ func stageKernelCandidate(source, destination string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
-	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0700)
+	defer func() { _ = file.Close() }()
+	out, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0700) // #nosec G304 G302 -- O_EXCL copy in the private staging directory; owner-only 0700 is required to execute the verified candidate.
 	if err != nil {
 		return "", err
 	}

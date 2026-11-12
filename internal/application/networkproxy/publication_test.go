@@ -108,28 +108,38 @@ func TestRuntimePublicationIsAuthenticatedBoundAndLeaseLimited(t *testing.T) {
 				id.ID = "foreign"
 			}
 			config, err := service.Configuration(context.Background(), id)
-			switch name {
-			case "legacy":
-				if err != nil || config == nil || config.Publication != nil {
-					t.Fatalf("legacy config=%+v err=%v", config, err)
-				}
-			case "valid":
-				if err != nil || config.Publication == nil || !config.ValidUntil.Equal(now.Add(time.Minute)) || !config.Publication.ValidUntil.Equal(config.ValidUntil) || !store.prepared || !reader.leaseUntil.Equal(now.Add(time.Minute)) || !store.grantedUntil.Equal(config.ValidUntil) {
-					t.Fatalf("config=%+v err=%v", config, err)
-				}
-			case "grant CAS conflict":
-				if !errors.Is(err, apperrors.ErrConflict) || config != nil {
-					t.Fatalf("grant conflict config=%+v err=%v", config, err)
-				}
-			case "wrong identity":
-				if !errors.Is(err, apperrors.ErrUnauthorized) || reader.called {
-					t.Fatalf("auth error=%v reader called=%v", err, reader.called)
-				}
-			default:
-				if !errors.Is(err, apperrors.ErrServiceUnavailable) || config != nil {
-					t.Fatalf("config=%+v err=%v", config, err)
-				}
-			}
+			assertRuntimePublicationResult(t, name, config, err, now, store, reader)
 		})
+	}
+}
+
+func assertRuntimePublicationResult(t *testing.T, name string, config *domain.Configuration, err error, now time.Time, store *publicationRuntimeStore, reader *testPublicationReader) {
+	t.Helper()
+	switch name {
+	case "legacy":
+		if err != nil || config == nil || config.Publication != nil {
+			t.Fatalf("legacy config=%+v err=%v", config, err)
+		}
+	case "valid":
+		assertValidRuntimePublication(t, config, err, now, store, reader)
+	case "grant CAS conflict":
+		if !errors.Is(err, apperrors.ErrConflict) || config != nil {
+			t.Fatalf("grant conflict config=%+v err=%v", config, err)
+		}
+	case "wrong identity":
+		if !errors.Is(err, apperrors.ErrUnauthorized) || reader.called {
+			t.Fatalf("auth error=%v reader called=%v", err, reader.called)
+		}
+	default:
+		if !errors.Is(err, apperrors.ErrServiceUnavailable) || config != nil {
+			t.Fatalf("config=%+v err=%v", config, err)
+		}
+	}
+}
+
+func assertValidRuntimePublication(t *testing.T, config *domain.Configuration, err error, now time.Time, store *publicationRuntimeStore, reader *testPublicationReader) {
+	t.Helper()
+	if err != nil || config.Publication == nil || !config.ValidUntil.Equal(now.Add(time.Minute)) || !config.Publication.ValidUntil.Equal(config.ValidUntil) || !store.prepared || !reader.leaseUntil.Equal(now.Add(time.Minute)) || !store.grantedUntil.Equal(config.ValidUntil) {
+		t.Fatalf("config=%+v err=%v", config, err)
 	}
 }

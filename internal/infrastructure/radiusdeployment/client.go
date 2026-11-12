@@ -29,7 +29,7 @@ func NewHTTPClient(baseURL, executorID, token string) (*HTTPClient, error) {
 		return nil, fmt.Errorf("invalid RADIUS control plane URL")
 	}
 	ip := net.ParseIP(u.Hostname())
-	if u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || ip != nil && ip.IsLoopback())) {
+	if u.Scheme != "https" && (u.Scheme != "http" || u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
 		return nil, fmt.Errorf("RADIUS executor requires HTTPS outside loopback")
 	}
 	if executorID == "" || len(token) < 32 {

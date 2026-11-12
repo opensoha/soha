@@ -124,7 +124,7 @@ func ingressFixture() (*Bundles, *bundleFake, api.NetworkProxyIngressCheckInput)
 	configUntil := now.Add(10 * time.Minute)
 	pool := domain.ApprovedPool{MasterID: "master", MemberSetHash: "members", OwnerEpoch: 1, Members: []domain.PoolMember{{RuntimeID: "proxy-1", Running: true, Serving: true}}}
 	record := domain.BundleRecord{InstanceID: "master", SourceNodeIDs: []string{"node-1"}, Pool: pool, Scope: api.NetworkProxyScope{UserIDs: []string{"user-1"}, DeviceIDs: []string{"device-1"}, NodeIDs: []string{"node-1"}}, Public: api.NetworkProxyBundle{BundleID: "bundle-1", Revision: 1, ActiveRevision: 1, State: "activated", CredentialEpoch: 1, SourceID: "source-1", SourceRevision: 1, OrgRevision: 1, ValidUntil: now.Add(time.Minute)}, Readbacks: map[string]api.NetworkProxyBundleReadback{"proxy-1": {ProcessEpoch: "server-epoch", Revision: 1}}}
-	f := &bundleFake{record: record, credential: domain.Credential{ID: "credential", InstanceID: "master", EndpointCredentialID: "endpoint-credential", BundleID: "bundle-1", Revision: 1, Epoch: 1, UserID: "user-1", DeviceID: "device-1", RuntimeID: "endpoint-1", ProfileID: "profile-1", NodeIDs: []string{"node-1"}, SecretHash: secretHash("synthetic-secret"), ExpiresAt: now.Add(time.Minute)}}
+	f := &bundleFake{record: record, credential: domain.Credential{ID: "credential", InstanceID: "master", EndpointCredentialID: "endpoint-credential", BundleID: "bundle-1", Revision: 1, Epoch: 1, UserID: "user-1", DeviceID: "device-1", RuntimeID: "endpoint-1", ProfileID: "profile-1", NodeIDs: []string{"node-1"}, SecretHash: secretHash("synthetic-secret"), ExpiresAt: now.Add(time.Minute)}} // #nosec G101 -- Fixed synthetic credential used only by the in-memory authorization fixture.
 	endpoint := domain.EndpointContext{UserID: "user-1", DeviceID: "device-1", RuntimeID: "endpoint-1", ProfileID: "profile-1", BundleID: "bundle-1", OrgRevision: 1, SourceRevision: 1}
 	b := &Bundles{store: f, sources: &sourceFake{source: domain.SourceRecord{Public: api.NetworkProxySource{Revision: 1}}}, rules: &ruleFake{rules: api.NetworkProxyRules{OrgRevision: 1}}, pool: &poolFake{pool: pool}, runtime: runtimeFake{}, current: currentFake{endpoint: endpoint}, destination: destinationFake{}, desired: desiredFake{states: []proxy.MemberConfigurationState{{InstanceID: "proxy-1", BundleID: "bundle-1", BundleRevision: 1, DesiredRevision: 1, AppliedRevision: 1, DesiredHash: "digest", AppliedHash: "digest", PolicyVersion: 1, ObservedPolicyVersion: 1, ProcessEpoch: "server-epoch", LastSeenAt: &now, ConfigurationValidUntil: &configUntil}}}, now: func() time.Time { return now }}
 	input := api.NetworkProxyIngressCheckInput{BundleID: "bundle-1", Revision: 1, CredentialEpoch: 1, CredentialID: "credential", CredentialSecret: "synthetic-secret", NodeID: "node-1", ProcessEpoch: "server-epoch", DestinationHost: "public.example", DestinationPort: 443, Network: "tcp"}
@@ -140,11 +140,11 @@ func TestIngressCurrentScopeAndSecretFailures(t *testing.T) {
 		},
 		"unknown_network": func(_ *Bundles, _ *bundleFake, i *api.NetworkProxyIngressCheckInput) { i.Network = "icmp" },
 		"revoked_source": func(b *Bundles, _ *bundleFake, _ *api.NetworkProxyIngressCheckInput) {
-			b.sources.(*sourceFake).source.Public.Revision++
-			b.sources.(*sourceFake).allowed = []string{}
+			fixtureValue[*sourceFake](t, b.sources).source.Public.Revision++
+			fixtureValue[*sourceFake](t, b.sources).allowed = []string{}
 		},
 		"new_org": func(b *Bundles, _ *bundleFake, _ *api.NetworkProxyIngressCheckInput) {
-			b.rules.(*ruleFake).rules.OrgRevision++
+			fixtureValue[*ruleFake](t, b.rules).rules.OrgRevision++
 		},
 		"revoked_user": func(b *Bundles, _ *bundleFake, _ *api.NetworkProxyIngressCheckInput) {
 			b.current = currentFake{err: apperrors.ErrAccessDenied}
@@ -156,7 +156,7 @@ func TestIngressCurrentScopeAndSecretFailures(t *testing.T) {
 			f.credential.ExpiresAt = b.now()
 		},
 		"pool_changed": func(b *Bundles, _ *bundleFake, _ *api.NetworkProxyIngressCheckInput) {
-			b.pool.(*poolFake).pool.OwnerEpoch++
+			fixtureValue[*poolFake](t, b.pool).pool.OwnerEpoch++
 		},
 	}
 	for name, mutate := range cases {
@@ -324,7 +324,7 @@ func TestDirectDeliveryUsesDedicatedAuthorizedPath(t *testing.T) {
 	f.record.Pool = domain.ApprovedPool{}
 	raw, _ := json.Marshal(domain.IR{Nodes: []api.NetworkProxyNode{{NodeID: "node-1", Server: "upstream.example", Protocol: "http", Port: 443}}})
 	f.record.EncryptedIR, _ = secretcrypto.EncryptStringWithKeyring(b.keys, string(raw))
-	endpoint := domain.EndpointContext{UserID: "user-1", DeviceID: "device-1", RuntimeID: "endpoint-1", CredentialID: "endpoint-credential", ProfileID: "profile-1", BundleID: "bundle-1", DeliveryMode: "direct_subscription", OrgRevision: 1, SourceRevision: 1, ExpiresAt: b.now().Add(time.Minute), ConfigurationValidUntil: b.now().Add(time.Minute)}
+	endpoint := domain.EndpointContext{UserID: "user-1", DeviceID: "device-1", RuntimeID: "endpoint-1", CredentialID: "endpoint-credential", ProfileID: "profile-1", BundleID: "bundle-1", DeliveryMode: "direct_subscription", OrgRevision: 1, SourceRevision: 1, ExpiresAt: b.now().Add(time.Minute), ConfigurationValidUntil: b.now().Add(time.Minute)} // #nosec G101 -- Fixed synthetic credential used only by the in-memory projection fixture.
 	b.endpoint = endpointFake{value: endpoint}
 	b.engine = &engineFake{}
 	out, err := b.DirectProjection(context.Background(), networkidentity.Identity{ID: "endpoint-1"}, "profile-1", "app-boot")
@@ -361,7 +361,7 @@ func TestActivatedLeaseRenewalPreservesScopedCredential(t *testing.T) {
 	}
 	later := now.Add(time.Minute)
 	b.now = func() time.Time { return later }
-	state := b.desired.(desiredFake)
+	state := fixtureValue[desiredFake](t, b.desired)
 	state.states[0].LastSeenAt = &later
 	b.desired = state
 	second, err := b.Projection(context.Background(), networkidentity.Identity{ID: "endpoint-1"}, "", "profile-1", "boot-1")
@@ -371,7 +371,7 @@ func TestActivatedLeaseRenewalPreservesScopedCredential(t *testing.T) {
 	if first.Credential.CredentialID != second.Credential.CredentialID || first.Credential.Secret != second.Credential.Secret || first.CredentialEpoch != second.CredentialEpoch || first.Revision != second.Revision || !second.ExpiresAt.After(first.ExpiresAt) || second.ExpiresAt.After(later.Add(5*time.Minute)) {
 		t.Fatal("same-scope lease rotated immutable identity")
 	}
-	b.rules.(*ruleFake).rules.OrgRevision++
+	fixtureValue[*ruleFake](t, b.rules).rules.OrgRevision++
 	if _, err = b.Projection(context.Background(), networkidentity.Identity{ID: "endpoint-1"}, "", "profile-1", "boot-1"); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatal("revoked revision renewed", err)
 	}
@@ -389,8 +389,8 @@ func TestServerLeaseRespectsCertificateBoundAndPreparedExpiry(t *testing.T) {
 		t.Fatal("stale prepare renewed", err)
 	}
 	f.record.Public.State = "activated"
-	b.sources.(*sourceFake).source.Public.Revision++
-	b.sources.(*sourceFake).allowed = []string{}
+	fixtureValue[*sourceFake](t, b.sources).source.Public.Revision++
+	fixtureValue[*sourceFake](t, b.sources).allowed = []string{}
 	if _, err = b.ServerPublication(context.Background(), "proxy-1", "bundle-1", 1, until); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatal("old source renewed", err)
 	}
@@ -416,7 +416,7 @@ func TestDrainServingMemberKeepsAuthorizedFlowsAndUnknownDenies(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			b, _, input := ingressFixture()
-			pool := b.pool.(*poolFake)
+			pool := fixtureValue[*poolFake](t, b.pool)
 			pool.pool.Members[0].Running = test.running
 			pool.pool.Members[0].Serving = test.serving
 			if test.serving && !test.running {
@@ -428,8 +428,8 @@ func TestDrainServingMemberKeepsAuthorizedFlowsAndUnknownDenies(t *testing.T) {
 				t.Fatal("unexpected serving decision", out.Allowed, err)
 			}
 			if test.allowed {
-				b.sources.(*sourceFake).source.Public.Revision++
-				b.sources.(*sourceFake).allowed = []string{}
+				fixtureValue[*sourceFake](t, b.sources).source.Public.Revision++
+				fixtureValue[*sourceFake](t, b.sources).allowed = []string{}
 				out, err = b.IngressCheck(context.Background(), networkidentity.Identity{ID: "proxy-1"}, "", input)
 				if err != nil || out.Allowed {
 					t.Fatal("security revocation waited for drain", err)
@@ -440,13 +440,13 @@ func TestDrainServingMemberKeepsAuthorizedFlowsAndUnknownDenies(t *testing.T) {
 }
 func TestDrainPublicationCannotExtendIssuedLease(t *testing.T) {
 	b, _, _ := ingressFixture()
-	pool := b.pool.(*poolFake)
+	pool := fixtureValue[*poolFake](t, b.pool)
 	pool.pool.Members[0].Running = false
 	pool.pool.Members[0].Serving = true
 	drainBound := b.now().Add(40 * time.Second)
 	pool.pool.Members[0].ServingUntil = &drainBound
 	issued := b.now().Add(20 * time.Second)
-	states := b.desired.(desiredFake)
+	states := fixtureValue[desiredFake](t, b.desired)
 	states.states[0].ConfigurationValidUntil = &issued
 	b.desired = states
 	out, err := b.ServerPublication(context.Background(), "proxy-1", "bundle-1", 1, b.now().Add(5*time.Minute))

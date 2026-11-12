@@ -28,7 +28,7 @@ type ExecutorService struct {
 
 func NewExecutorService(service *Service, tasks ExecutionTasks, credentials []ExecutorCredential) (*ExecutorService, error) {
 	if service == nil || tasks == nil {
-		return nil, fmt.Errorf("Outpost executor dependencies are required")
+		return nil, fmt.Errorf("outpost executor dependencies are required")
 	}
 	seen := map[string]bool{}
 	for _, item := range credentials {

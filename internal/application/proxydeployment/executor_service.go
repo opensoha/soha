@@ -28,7 +28,7 @@ type ExecutorService struct {
 
 func NewExecutorService(service *Service, tasks ExecutionTasks, credentials []ExecutorCredential) (*ExecutorService, error) {
 	if service == nil || missing(tasks) {
-		return nil, fmt.Errorf("Proxy executor dependencies are required")
+		return nil, fmt.Errorf("proxy executor dependencies are required")
 	}
 	seen := map[string]bool{}
 	for _, item := range credentials {

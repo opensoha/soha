@@ -34,7 +34,7 @@ type Worker struct {
 
 func NewWorker(client ExecutionClient, runtime ScaleRuntime, executorID string, slots []domain.Slot) (*Worker, error) {
 	if client == nil || runtime == nil || executorID == "" {
-		return nil, fmt.Errorf("Proxy worker dependencies are required")
+		return nil, fmt.Errorf("proxy worker dependencies are required")
 	}
 	w := &Worker{client: client, runtime: runtime, executorID: executorID, pollWait: wait, slots: map[string]domain.Slot{}}
 	for _, slot := range slots {

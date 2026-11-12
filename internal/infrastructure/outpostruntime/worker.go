@@ -33,7 +33,7 @@ type Worker struct {
 
 func NewWorker(client ExecutionClient, runtime ScaleRuntime, executorID string, slots []domain.Slot) (*Worker, error) {
 	if client == nil || runtime == nil || executorID == "" {
-		return nil, fmt.Errorf("Outpost worker dependencies are required")
+		return nil, fmt.Errorf("outpost worker dependencies are required")
 	}
 	w := &Worker{client: client, runtime: runtime, executorID: executorID, slots: map[string]domain.Slot{}}
 	for _, slot := range slots {

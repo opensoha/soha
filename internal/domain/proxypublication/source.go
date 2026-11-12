@@ -21,7 +21,7 @@ func NodeMaterial(ir IR) map[string]string {
 			tls.ServerName = strings.ToLower(tls.ServerName)
 			node.TLS = &tls
 		}
-		raw, _ := json.Marshal(node)
+		raw, _ := json.Marshal(node) // #nosec G117 -- Secrets participate in material equality; serialized bytes are hashed immediately and never returned.
 		sum := sha256.Sum256(raw)
 		out[id] = hex.EncodeToString(sum[:])
 	}

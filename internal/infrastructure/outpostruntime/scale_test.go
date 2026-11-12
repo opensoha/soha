@@ -50,7 +50,11 @@ func TestObservationRejectsTemplateChangeBetweenReads(t *testing.T) {
 		if err != nil {
 			return true, nil, err
 		}
-		changed := item.(*appsv1.Deployment).DeepCopy()
+		deployment, ok := item.(*appsv1.Deployment)
+		if !ok || deployment == nil {
+			t.Fatalf("unexpected deployment fixture %T", item)
+		}
+		changed := deployment.DeepCopy()
 		changed.Spec.Template.Spec.Containers[0].Image = "image@sha256:unapproved"
 		changed.ResourceVersion = "new-rv"
 		if err := client.Tracker().Update(resource, changed, slot.Namespace); err != nil {
@@ -77,7 +81,14 @@ func TestScaleWritesOnlyNamedScaleSubresource(t *testing.T) {
 		if action.GetSubresource() != "scale" {
 			t.Fatal("wrote Deployment body")
 		}
-		scale := action.(ktesting.UpdateAction).GetObject().(*autoscalingv1.Scale)
+		update, ok := action.(ktesting.UpdateAction)
+		if !ok || update == nil {
+			t.Fatalf("unexpected update action %T", action)
+		}
+		scale, ok := update.GetObject().(*autoscalingv1.Scale)
+		if !ok || scale == nil {
+			t.Fatalf("unexpected scale fixture %T", update.GetObject())
+		}
 		if scale.Spec.Replicas != 2 || scale.UID != "uid" || scale.ResourceVersion != "rv" {
 			t.Fatalf("unsafe scale: %+v", scale)
 		}
