@@ -105,6 +105,7 @@ export function NetworkNASBindingsPane({
   const [form] = Form.useForm<NASBindingValues>()
   const selectedMedium = Form.useWatch('accessMedium', form)
   const configureEAP = Form.useWatch('configureEAP', form)
+  const eapMethod = Form.useWatch(['eapServerTrust', 'eapMethod'], form)
   const fixedMedium: NetworkAccessMedium | undefined = view === 'ssid' ? 'wifi' : undefined
   const items = fixedMedium
     ? visibleQueryData?.filter((item) => item.accessMedium === fixedMedium)
@@ -172,6 +173,7 @@ export function NetworkNASBindingsPane({
     form.resetFields()
   }
   async function submit() {
+    if (!canManage || operationBlocked) return
     try {
       const values = await form.validateFields()
       const input: NetworkNASBindingInput = {
@@ -189,7 +191,22 @@ export function NetworkNASBindingsPane({
         coaSupported: values.coaSupported,
         disconnectSupported: values.disconnectSupported,
         ...(values.configureEAP && values.eapServerTrust
-          ? { eapServerTrust: values.eapServerTrust }
+          ? {
+              eapServerTrust: {
+                serverNames: values.eapServerTrust.serverNames,
+                caCertificates: values.eapServerTrust.caCertificates,
+                wifiSecurity: values.eapServerTrust.wifiSecurity,
+                ...(values.eapServerTrust.eapMethod === 'ttls'
+                  ? {
+                      eapMethod: 'ttls' as const,
+                      innerMethod: 'pap' as const,
+                      credentialSource: 'user-input' as const,
+                    }
+                  : values.eapServerTrust.eapMethod === 'tls'
+                    ? { eapMethod: 'tls' as const }
+                    : {}),
+              },
+            }
           : {}),
       }
       if (editing) await update.mutateAsync({ bindingId: editing.id, input })
@@ -345,7 +362,7 @@ export function NetworkNASBindingsPane({
         onOk={() => void submit()}
         closable={!operationBlocked}
         cancelButtonProps={{ disabled: operationBlocked }}
-        okButtonProps={{ disabled: operationBlocked }}
+        okButtonProps={{ disabled: operationBlocked || !canManage }}
       >
         {create.feedback}
         {update.feedback}
@@ -435,7 +452,7 @@ export function NetworkNASBindingsPane({
           >
             <Switch />
           </Form.Item>
-          <Divider titlePlacement="start">EAP-TLS</Divider>
+          <Divider titlePlacement="start">EAP</Divider>
           <Form.Item
             name="configureEAP"
             valuePropName="checked"
@@ -445,10 +462,58 @@ export function NetworkNASBindingsPane({
               'Provide public CA certificates and exact DNS names. Turning this off clears the setting; endpoints must retain server certificate validation.',
             )}
           >
-            <Switch />
+            <Switch
+              onChange={(enabled) => {
+                if (!enabled) {
+                  form.setFieldValue(['eapServerTrust', 'eapMethod'], undefined)
+                  form.setFieldValue(['eapServerTrust', 'innerMethod'], undefined)
+                  form.setFieldValue(['eapServerTrust', 'credentialSource'], undefined)
+                }
+              }}
+            />
           </Form.Item>
           {configureEAP && (
             <>
+              <Form.Item
+                name={['eapServerTrust', 'eapMethod']}
+                label={text('EAP 认证方法', 'EAP authentication method')}
+                extra={text(
+                  'PEAP/MSCHAPv2 不可用：尚未配置兼容身份后端。',
+                  'PEAP/MSCHAPv2 is unavailable: no compatible identity backend is configured.',
+                )}
+              >
+                <Select
+                  placeholder="EAP-TLS"
+                  options={[
+                    { value: 'tls', label: 'EAP-TLS' },
+                    { value: 'ttls', label: 'EAP-TTLS / PAP' },
+                    { value: 'peap', label: 'PEAP / MSCHAPv2', disabled: true },
+                  ]}
+                  onChange={() => {
+                    form.setFieldValue(['eapServerTrust', 'innerMethod'], undefined)
+                    form.setFieldValue(['eapServerTrust', 'credentialSource'], undefined)
+                  }}
+                />
+              </Form.Item>
+              <Alert
+                showIcon
+                type="info"
+                title={
+                  eapMethod === 'ttls'
+                    ? text(
+                        'TTLS 使用 PAP 内层认证，凭据由用户在终端输入；密码授权最高为受限访问（restricted）。',
+                        'TTLS uses PAP with credentials entered by the user on the endpoint; password authorization is capped at restricted access.',
+                      )
+                    : text(
+                        'EAP-TLS 使用终端证书认证。',
+                        'EAP-TLS authenticates with an endpoint certificate.',
+                      )
+                }
+                description={text(
+                  '此表单不收集或保存用户密码，浏览器登录令牌不能用作 EAP 密码。保存配置不代表认证成功，终端配置版本由服务器生成。',
+                  'This form does not collect or store user passwords. Browser login tokens cannot be used as EAP passwords. Saving configuration does not confirm authentication; endpoint profile revisions are generated by the server.',
+                )}
+              />
               <Form.Item
                 name={['eapServerTrust', 'serverNames']}
                 label={text('认证服务器 DNS 名称', 'Authentication server DNS names')}

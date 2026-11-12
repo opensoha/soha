@@ -578,6 +578,14 @@ export function ApplicationFormModal({
               />
             </Form.Item>
           )}
+          {!wizard && (
+            <Alert
+              type="warning"
+              showIcon
+              title="清空全部访问规则会允许所有已登录用户访问"
+              description="删除最后一条允许规则并清空列表不会撤权。若要拒绝特定主体，请保留明确的拒绝规则；拒绝规则优先，MFA、网络和时段条件仍需满足。"
+            />
+          )}
           <div className="soha-identity-access-control-section">
             <Form.List name="assignments">
               {(fields, { add, remove }) => (

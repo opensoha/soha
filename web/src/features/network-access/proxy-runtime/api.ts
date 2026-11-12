@@ -59,9 +59,11 @@ export async function getConnections(id: string): Promise<NetworkProxyConnection
 export async function closeConnection(
   id: string,
   connectionId: string,
+  input: import('@opensoha/contracts/gen/ts/sohaapi').NetworkProxyCloseInput,
 ): Promise<NetworkProxyCloseCommandEnvelope> {
   return api.post<NetworkProxyCloseCommandEnvelope>(
     `${instancePath(id)}/connections/${encodeURIComponent(connectionId)}/close`,
+    input,
   )
 }
 

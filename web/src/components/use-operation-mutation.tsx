@@ -20,16 +20,20 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
   const { localeCode } = useI18n()
   const label = localeText(localeCode, ...feedback.label)
   const fence = useRef(false)
-  const uncertain = useRef(false)
+  const uncertain = useRef<{ variables: TVariables }>()
   const [target, setTarget] = useState('')
   const mutation = useMutation({
     ...options,
     onSuccess: async (...args) => {
-      uncertain.current = !feedback.readOnly && writeOutcomeUnknown(feedback.resultError?.(args[0]))
+      uncertain.current =
+        !feedback.readOnly && writeOutcomeUnknown(feedback.resultError?.(args[0]))
+          ? { variables: args[1] }
+          : undefined
       await options.onSuccess?.(...args)
     },
     onError: async (...args) => {
-      uncertain.current = !feedback.readOnly && writeOutcomeUnknown(args[0])
+      uncertain.current =
+        !feedback.readOnly && writeOutcomeUnknown(args[0]) ? { variables: args[1] } : undefined
       await options.onError?.(...args)
     },
     onSettled: async (...args) => {
@@ -101,6 +105,19 @@ export function useOperationMutation<TData, TVariables = void, TContext = unknow
     }) as typeof mutation.mutateAsync,
     reset: () => {
       if (!fence.current && !uncertain.current) mutation.reset()
+    },
+    // The operation owner must verify an authoritative receipt before resolving uncertainty.
+    resolveUnknown: (variables: TVariables) => {
+      if (
+        fence.current ||
+        !uncertain.current ||
+        !outcomeUnknown ||
+        uncertain.current.variables !== variables ||
+        mutation.variables !== variables
+      )
+        return
+      uncertain.current = undefined
+      mutation.reset()
     },
     feedback: (
       <OperationFeedback

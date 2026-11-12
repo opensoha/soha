@@ -1,3 +1,4 @@
+import { trafficSegments, rateText } from './traffic-model'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
 import { formatBytes } from '@/components/resource-metrics-format'
@@ -21,29 +22,32 @@ export default function ProxyOverviewPage() {
   const visibleTrafficData = traffic.isEnabled === false ? undefined : readableQueryData(traffic)
   const samples = visibleTrafficData?.samples ?? []
   const latest = samples[samples.length - 1]
-  const points = samples.map((sample) => ({
-    timestamp: sample.observedAt,
-    upload: sample.uploadBytesPerSecond,
-    download: sample.downloadBytesPerSecond,
-  }))
-  const rates = [
+  const segments = trafficSegments(samples)
+  const rates = segments.flatMap((segment, index) => [
     {
-      key: 'upload',
-      label: t('networkAccess.proxyRuntime.uploadRate', '上传速率'),
+      key: `upload-${index}`,
+      label: `上传 · ${index + 1}`,
       color: compactMetricColors.default,
-      points: points.map((point) => ({ timestamp: point.timestamp, value: point.upload })),
+      points: segment.map((sample) => ({
+        timestamp: sample.observedAt,
+        value: sample.uploadBytesPerSecond!,
+      })),
       unit: 'B/s',
     },
     {
-      key: 'download',
-      label: t('networkAccess.proxyRuntime.downloadRate', '下载速率'),
+      key: `download-${index}`,
+      label: `下载 · ${index + 1}`,
       color: compactMetricColors.networkRx,
-      points: points.map((point) => ({ timestamp: point.timestamp, value: point.download })),
+      points: segment.map((sample) => ({
+        timestamp: sample.observedAt,
+        value: sample.downloadBytesPerSecond!,
+      })),
       unit: 'B/s',
     },
-  ]
+  ])
   const chartSpec = buildCompactChartSpec(rates, 'B/s', localeCode)
   chartSpec.background = resolveThemeColorReference('var(--soha-bg-surface, #fff)', '#fff')
+  chartSpec.legends = { visible: false }
   chartSpec.axes[0].label.formatMethod = (value: unknown) => String(value).slice(-5)
   if (!context.allowed) {
     return <ManagementState kind={context.permissions.isLoading ? 'loading' : 'no-permission'} />
@@ -122,13 +126,19 @@ export default function ProxyOverviewPage() {
         />
       ) : (
         <>
+          {(latest?.rateState === 'gap' || latest?.rateState === 'unknown') && (
+            <Alert
+              type="info"
+              title={latest.rateState === 'gap' ? '采样断档，当前速率未知' : '当前速率尚未建立'}
+            />
+          )}
           <div className="soha-server-proxy-metrics">
             <Card size="small">
               <span>{t('networkAccess.proxyRuntime.uploadTotal', '本次运行上传')}</span>
               <strong>{latest ? formatBytes(latest.uploadTotal) : '—'}</strong>
               <small>
                 {latest
-                  ? `${formatBytes(latest.uploadBytesPerSecond)}/s`
+                  ? rateText(latest.uploadBytesPerSecond, formatBytes, latest.rateState)
                   : t('networkAccess.proxyRuntime.noSample', '未采集')}
               </small>
             </Card>
@@ -137,7 +147,7 @@ export default function ProxyOverviewPage() {
               <strong>{latest ? formatBytes(latest.downloadTotal) : '—'}</strong>
               <small>
                 {latest
-                  ? `${formatBytes(latest.downloadBytesPerSecond)}/s`
+                  ? rateText(latest.downloadBytesPerSecond, formatBytes, latest.rateState)
                   : t('networkAccess.proxyRuntime.noSample', '未采集')}
               </small>
             </Card>
@@ -166,10 +176,10 @@ export default function ProxyOverviewPage() {
             <Typography.Text type="secondary">
               {t(
                 'networkAccess.proxyRuntime.trendScope',
-                '最近一小时 · 由相邻累计计数计算，运行时重启后重新计速',
+                '仅展示已采集区间 · 上传与下载分段显示，运行重启与采样缺口不连接',
               )}
             </Typography.Text>
-            {samples.length >= 2 ? (
+            {segments.some((segment) => segment.length >= 2) ? (
               <div
                 className="soha-server-proxy-chart-canvas"
                 role="img"

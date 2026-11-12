@@ -1,3 +1,4 @@
+import { RadiusServicesPanel } from './radius-services/panel'
 import { ManagementProofAction } from './management-proof'
 import { ManagementDataPage } from '@/components/management-data-page'
 import { ManagementIconButton, ManagementState } from '@/components/management-list'
@@ -195,6 +196,7 @@ export function NetworkAccessPage() {
   const canUpdatePolicies = can('network_access.policy.update')
   const canDeletePolicies = can('network_access.policy.delete')
   const hasAnyView =
+    can('network_access.nas_bindings.view') ||
     canViewDevices ||
     canViewSites ||
     canViewSpaces ||
@@ -844,16 +846,25 @@ export function NetworkAccessPage() {
           children: <NetworkNASBindingsPane canManage={canUpdateSites} view="ssid" />,
         }
       : null,
-    canViewEnrollments
+    canViewEnrollments || can('network_access.nas_bindings.view')
       ? {
           key: 'radius-services',
           label: t('networkAccess.settings.radius', 'RADIUS 接入'),
           children: (
-            <NetworkEnrollmentPane
-              canCreate={canCreateEnrollments}
-              canRevoke={canRevokeEnrollments}
-              runtimeKind="nas"
-            />
+            <>
+              <RadiusServicesPanel
+                canRead={can('network_access.nas_bindings.view')}
+                canCreate={can('network_access.nas_bindings.create')}
+                canUpdate={can('network_access.nas_bindings.update')}
+              />
+              {canViewEnrollments && (
+                <NetworkEnrollmentPane
+                  canCreate={canCreateEnrollments}
+                  canRevoke={canRevokeEnrollments}
+                  runtimeKind="nas"
+                />
+              )}
+            </>
           ),
         }
       : null,

@@ -52,7 +52,9 @@ export function ProxyInstanceHeader({
         <h1>{selected.name}</h1>
         <div className="soha-server-proxy-meta">
           <span>
-            {selected.engine}
+            {selected.engine === 'external'
+              ? (selected.engineDescriptor?.engineId ?? '外部内核')
+              : selected.engine}
             {selected.engineVersion ? ` · ${selected.engineVersion}` : ''}
           </span>
           <Tag color={statusColor[selected.status]}>

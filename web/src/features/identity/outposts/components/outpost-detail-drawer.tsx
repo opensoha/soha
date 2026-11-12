@@ -17,6 +17,7 @@ import {
   outpostRuntimeReason,
 } from '../runtime-model'
 import type { IdentityOutpost } from '../types'
+import { OutpostRuntimePanel } from './outpost-runtime-panel'
 const nextSteps: Record<string, string> = {
   awaiting_registration: '按照部署页安装 Agent，并注入本节点的控制面 token。',
   awaiting_heartbeat: '节点已注册，等待首次配置应用与心跳；如持续未收到，请检查 Agent 日志。',
@@ -25,8 +26,12 @@ const nextSteps: Record<string, string> = {
   configuration_rejected: '检查固定的签名公钥、协议版本和节点时间；有效配置应用前保持拒绝访问。',
   configuration_expired: '配置租约已过期，检查控制面连通性与节点时间。',
   signing_key_unconfigured: '在控制面配置 Outpost 签名密钥后再部署远程节点。',
-  unsupported_protocol: '升级到支持当前协议版本的 Agent。',
+  protocol_incompatible: '升级到支持当前协议版本的 Agent。',
   configuration_pending: '等待节点应用最新配置；如持续不收敛，查看 Agent 日志。',
+  configuration_not_applied: '检查节点是否已应用期望配置版本；如持续未收敛，请检查 Agent 日志。',
+  configuration_expiry_unknown: '节点未报告租约到期时间，请检查节点协议版本与配置应用结果。',
+  configuration_unavailable: '节点没有可用配置，请检查控制面连通性和签名信任配置。',
+  signature_invalid: '核对部署页的签名 Key ID 和信任公钥，检查 Agent 日志。',
   legacy_runtime: '升级节点，使用签名配置与租约观测。',
 }
 export function OutpostDetailDrawer({
@@ -69,14 +74,23 @@ export function OutpostDetailDrawer({
       destroyOnHidden
       title={outpost?.name ?? '接入节点'}
       extra={
-        outpost && (
+        <Space>
           <Button
-            disabled={!hasPermission(snapshot, 'identity.outposts.update')}
-            onClick={() => onEdit(outpost)}
+            disabled={query.isEnabled === false}
+            loading={query.isFetching}
+            onClick={() => void query.refetch()}
           >
-            编辑
+            重新读取状态
           </Button>
-        )
+          {outpost && (
+            <Button
+              disabled={!hasPermission(snapshot, 'identity.outposts.update')}
+              onClick={() => onEdit(outpost)}
+            >
+              编辑
+            </Button>
+          )}
+        </Space>
       }
     >
       <ReadFeedback canRead={query.isEnabled} query={query} label="当前记录" />
@@ -90,7 +104,8 @@ export function OutpostDetailDrawer({
           key={`${id}:${initialTab}`}
           className="soha-resource-tabs"
           defaultActiveKey={
-            ['overview', 'deploy', 'apps', 'diagnostics'].includes(initialTab)
+            ['overview', 'deploy', 'runtime', 'apps', 'diagnostics'].includes(initialTab) &&
+            !(outpost.mode === 'embedded' && initialTab === 'runtime')
               ? initialTab
               : 'overview'
           }
@@ -111,7 +126,7 @@ export function OutpostDetailDrawer({
                     items={[
                       {
                         key: 'status',
-                        label: '状态',
+                        label: '控制面运行判定',
                         children: (
                           <StatusTag
                             value={outpost.runtimeStatus}
@@ -140,7 +155,7 @@ export function OutpostDetailDrawer({
                             },
                             {
                               key: 'applied',
-                              label: '已应用配置版本',
+                              label: '节点上报应用版本',
                               children: outpost.appliedConfigurationVersion || '尚未应用',
                             },
                             {
@@ -150,8 +165,8 @@ export function OutpostDetailDrawer({
                             },
                             {
                               key: 'expiry',
-                              label: '配置租约',
-                              children: outpost.configurationExpiresAt || '尚未签发',
+                              label: '节点上报租约到期',
+                              children: outpost.configurationExpiresAt || '尚未报告',
                             },
                           ]),
                     ]}
@@ -251,6 +266,15 @@ export function OutpostDetailDrawer({
                   </div>
                 ),
             },
+            ...(outpost.mode === 'embedded'
+              ? []
+              : [
+                  {
+                    key: 'runtime',
+                    label: '运行部署',
+                    children: <OutpostRuntimePanel key={id} id={id} />,
+                  },
+                ]),
             {
               key: 'apps',
               label: '关联应用',
@@ -341,14 +365,22 @@ export function OutpostDetailDrawer({
                           },
                           {
                             key: 'version',
-                            label: '程序版本',
+                            label: '节点上报程序版本',
                             children: outpost.runtimeVersion || '尚未报告',
                           },
                         ]),
                     {
                       key: 'reason',
                       label: '运行原因',
-                      children: outpostRuntimeReason(outpost.runtimeReason),
+                      children: outpostRuntimeReason(outpost.runtimeReason) || '未提供原因',
+                    },
+                    {
+                      key: 'observations',
+                      label: '观测边界',
+                      children:
+                        outpost.mode === 'embedded'
+                          ? '内置状态表示当前 Core 的本地鉴权能力，没有独立进程心跳观测；应用接入仍需实际 Forward Auth 验证。'
+                          : '应用版本、程序版本与租约到期为节点上报；当前接口未提供独立数据面探针和凭据轮换确认，节点可用不代表业务访问已验证。',
                     },
                     {
                       key: 'boundary',

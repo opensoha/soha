@@ -5,6 +5,7 @@ import { identityOutpostMutations } from './mutations'
 import type { IdentityOutpost, IdentityOutpostInput } from './types'
 
 const apiMocks = vi.hoisted(() => ({
+  mutateIdentityOutpostRuntime: vi.fn(),
   createIdentityOutpost: vi.fn(),
   deleteIdentityOutpost: vi.fn(),
   rotateIdentityOutpostToken: vi.fn(),
@@ -30,6 +31,30 @@ function queryClientWithInvalidationSpy() {
 describe('identity outpost mutation options', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('does not roll observations back for a late idempotent receipt and clears resolved intent', async () => {
+    const { queryClient, invalidate } = queryClientWithInvalidationSpy()
+    const current = { generation: 9, phase: 'ready' }
+    queryClient.setQueryData(identityOutpostKeys.runtime('edge/id'), current)
+    apiMocks.mutateIdentityOutpostRuntime.mockResolvedValue({
+      runtime: { generation: 3, phase: 'applying' },
+    })
+    const observer = new MutationObserver(
+      queryClient,
+      identityOutpostMutations.runtime(queryClient),
+    )
+    await observer.mutate({
+      outpostId: 'edge/id',
+      kind: 'control',
+      input: { action: 'start', requestId: 'stable', expectedGeneration: 2 },
+    })
+    expect(queryClient.getQueryData(identityOutpostKeys.runtime('edge/id'))).toEqual(current)
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: identityOutpostKeys.runtime('edge/id') })
+    expect(
+      queryClient.getMutationCache().findAll({ mutationKey: identityOutpostMutationKeys.runtime }),
+    ).toHaveLength(0)
+    queryClient.clear()
   })
 
   it('returns the one-time create result and invalidates list caches', async () => {

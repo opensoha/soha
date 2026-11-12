@@ -3,6 +3,9 @@ import type { ApiResponse } from '@/types'
 import { normalizeIdentityOutpostFilters } from './keys'
 import type {
   IdentityOutpost,
+  IdentityOutpostRuntime,
+  IdentityOutpostRuntimeMutationResult,
+  OutpostRuntimeIntent,
   IdentityOutpostFilters,
   IdentityOutpostInput,
   UpdateIdentityOutpostVariables,
@@ -61,5 +64,28 @@ export async function rotateIdentityOutpostToken(outpostId: string): Promise<Ide
   const response = await api.post<ApiResponse<IdentityOutpost>>(
     `/identity/outposts/${encodeURIComponent(outpostId.trim())}/token/rotate`,
   )
+  return response.data
+}
+
+export async function getIdentityOutpostRuntime(
+  outpostId: string,
+): Promise<IdentityOutpostRuntime> {
+  const response = await api.get<ApiResponse<IdentityOutpostRuntime>>(
+    `/identity/outposts/${encodeURIComponent(outpostId.trim())}/runtime`,
+  )
+  return response.data
+}
+
+export async function mutateIdentityOutpostRuntime(
+  intent: OutpostRuntimeIntent,
+): Promise<IdentityOutpostRuntimeMutationResult> {
+  const path = `/identity/outposts/${encodeURIComponent(intent.outpostId.trim())}/runtime`
+  const response =
+    intent.kind === 'bind'
+      ? await api.put<ApiResponse<IdentityOutpostRuntimeMutationResult>>(path, intent.input)
+      : await api.post<ApiResponse<IdentityOutpostRuntimeMutationResult>>(
+          `${path}/control`,
+          intent.input,
+        )
   return response.data
 }

@@ -54,14 +54,14 @@
     ]
   },
   "summary": {
-    "runtimePaths": 298,
-    "metadataPaths": 298,
-    "overlappingPaths": 298,
+    "runtimePaths": 299,
+    "metadataPaths": 299,
+    "overlappingPaths": 299,
     "runtimeOnlyPaths": 0,
     "metadataOnlyPaths": 0,
     "inlineJsxPaths": 0,
-    "lazyRouteLoads": 245,
-    "lazySourceModules": 231
+    "lazyRouteLoads": 246,
+    "lazySourceModules": 232
   },
   "paths": {
     "runtime": [
@@ -234,6 +234,7 @@
       "/network-access/policy",
       "/network-access/proxy-connections",
       "/network-access/proxy-instances",
+      "/network-access/proxy-instances/:instanceID/workspace",
       "/network-access/proxy-overview",
       "/network-access/radius-services",
       "/network-access/resources",
@@ -534,6 +535,7 @@
       "/network-access/policy",
       "/network-access/proxy-connections",
       "/network-access/proxy-instances",
+      "/network-access/proxy-instances/:instanceID/workspace",
       "/network-access/proxy-overview",
       "/network-access/radius-services",
       "/network-access/resources",
@@ -834,6 +836,7 @@
       "/network-access/policy",
       "/network-access/proxy-connections",
       "/network-access/proxy-instances",
+      "/network-access/proxy-instances/:instanceID/workspace",
       "/network-access/proxy-overview",
       "/network-access/radius-services",
       "/network-access/resources",
@@ -1666,6 +1669,11 @@
         "source": "@/features/network-access/proxy-runtime/overview-page"
       },
       {
+        "exportName": "network-access-proxy-workspace:default",
+        "moduleExport": "default",
+        "source": "@/features/network-access/proxy-runtime/workspace-page"
+      },
+      {
         "exportName": "network-access-radius-services:default",
         "moduleExport": "default",
         "source": "@/features/network-access/admission-settings-redirect"
@@ -2289,6 +2297,7 @@
       "@/features/network-access/proxy-runtime/connections-page",
       "@/features/network-access/proxy-runtime/instances-page",
       "@/features/network-access/proxy-runtime/overview-page",
+      "@/features/network-access/proxy-runtime/workspace-page",
       "@/features/network-access/vpn-dashboard-page",
       "@/features/network-access/vpn-documents-page",
       "@/features/observability/alerts/detail-page",
@@ -2538,6 +2547,9 @@
       "@/features/network-access/proxy-runtime/overview-page": [
         "network-access-proxy-overview:default"
       ],
+      "@/features/network-access/proxy-runtime/workspace-page": [
+        "network-access-proxy-workspace:default"
+      ],
       "@/features/network-access/vpn-dashboard-page": ["network-access-vpn-dashboard:default"],
       "@/features/network-access/vpn-documents-page": [
         "network-access-vpn-profiles:default",
@@ -2769,5 +2781,5 @@
       "@/features/virtualization/virtual-machines/list-page": ["VirtualizationVmsPage"]
     }
   },
-  "generatedAt": "2026-11-06T09:46:56.339Z"
+  "generatedAt": "2026-11-07T19:27:35.167Z"
 }
