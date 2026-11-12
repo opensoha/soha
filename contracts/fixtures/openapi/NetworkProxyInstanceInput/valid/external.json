@@ -1,0 +1,15 @@
+{
+  "id": "proxy1",
+  "name": "External",
+  "engine": "external",
+  "engineDescriptor": {
+    "engineId": "custom-engine",
+    "adapterId": "operator-custom",
+    "version": "1.0.0",
+    "protocolMajor": 1,
+    "protocolMinor": 0,
+    "capabilities": [
+      "traffic"
+    ]
+  }
+}

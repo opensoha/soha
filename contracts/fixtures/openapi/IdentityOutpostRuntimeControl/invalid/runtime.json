@@ -1,0 +1,12 @@
+{
+  "outpostId": "edge-a",
+  "protocolVersion": "v1",
+  "instanceId": "pod-uid",
+  "processEpoch": "boot-1",
+  "generation": -1,
+  "action": "drain",
+  "issuedAt": "2026-11-07T01:00:00Z",
+  "expiresAt": "2026-11-07T01:00:30Z",
+  "keyId": "key-1",
+  "signature": "fixture-only"
+}

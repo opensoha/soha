@@ -259,6 +259,9 @@ const (
     // Rejected already belongs to the published PersonalAgentAccessDecisionStatus.
     ["WorkflowRequestReceiptSubmissionStatus", [["Accepted", "accepted"], ["Unknown", "unknown"]]],
     ["WorkbenchAgentStatusEventStatus", [["Cancelled", "cancelled"], ["Failed", "failed"], ["Queued", "queued"], ["Running", "running"], ["Succeeded", "succeeded"]]],
+    ["SearchWorkbenchMessagesParamsWorkspace", [["Chat", "chat"], ["Heya", "heya"]]],
+    ["WorkbenchAgentRunExecutionOwner", [["External", "external"], ["Native", "native"]]],
+    ["ExecuteKubernetesWorkloadActionConditionalParamsAction", [["Restart", "restart"], ["Rollback", "rollback"], ["Scale", "scale"]]],
   ]) {
     for (const [suffix, value] of values) {
       for (const name of [suffix, `${typeName}${suffix}`]) {
@@ -325,11 +328,29 @@ async function writeGoCompatibilitySpec() {
 function applyGoCompatibility(spec) {
   const schemas = spec?.components?.schemas ?? {};
 
+  // oapi-codegen does not understand JSON Schema conditionals. Preserve the
+  // concrete object SDK; public OpenAPI validators and proxy helpers enforce
+  // these same conditional requirements.
+  for (const name of ["NetworkProxyInstance", "NetworkProxyInstanceInput", "NetworkProxyRuntimeCommandInput", "NetworkProxyRuleMatcher", "NetworkProxyRuleAction", "NetworkProxyTrafficSample", "NetworkProxyDeploymentRuntimeControl", "NetworkProxyDeploymentRuntimeAck"]) {
+    delete schemas[name].allOf;
+    delete schemas[name].oneOf;
+  }
+
+  // A positive stopped-process proof must carry explicit known zero. Keep the
+  // existing int64 SDK field while preventing omitempty from erasing that zero.
+  schemas.NetworkProxyDeploymentRuntimeAck.properties.activeConnections["x-omitempty"] = false;
+
   // Keep Rejected available for the published PersonalAgentAccessDecisionStatus.
   schemas.WorkflowRequestReceipt.properties.submissionStatus["x-enum-varnames"] = [
     "WorkflowRequestReceiptSubmissionStatusAccepted",
     "WorkflowRequestReceiptSubmissionStatusUnknown",
     "WorkflowRequestReceiptSubmissionStatusRejected",
+  ];
+
+  // Keep Unavailable available for the published RuntimeNetworkUsageScope.
+  schemas.WorkbenchRuntimeAssetStatus.properties.status["x-enum-varnames"] = [
+    "WorkbenchRuntimeAssetStatusStatusLoaded",
+    "WorkbenchRuntimeAssetStatusStatusUnavailable",
   ];
 
   // Keep the published full-input request-body alias and its string Content.
@@ -364,6 +385,7 @@ function applyGoCompatibility(spec) {
     "ObservabilityMetricAssessmentInput",
     "WorkbenchProfessionalCapabilityInput",
     "NetworkProxyInstanceInput",
+    "NetworkProxyServerPublication",
     "NetworkProxyConfigurationInput",
     "NetworkProxyConfigurationPatchInput",
   ]);
@@ -390,7 +412,7 @@ function applyGoCompatibility(spec) {
     // oapi-codegen v2.7 cannot model OpenAPI 3.1 conditional validation.
     delete runtimeConfigItem.allOf;
   }
-  for (const name of ["NetworkVPNProfileConfig", "NetworkVPNSelectionPolicyConfig", "NetworkVPNConnectionIntentInput"]) {
+  for (const name of ["NetworkVPNProfileConfig", "NetworkVPNSelectionPolicyConfig", "NetworkVPNConnectionIntentInput", "NetworkEAPServerTrust", "NetworkRADIUSRuntimeACK"]) {
     // Keep strict 3.1 conditionals in the public spec. oapi-codegen otherwise
     // collapses these structured request DTOs to interface{}.
     if (isObject(schemas[name])) delete schemas[name].allOf;
@@ -424,7 +446,7 @@ function applyGoCompatibility(spec) {
     markOptionalPointerFields(schema, schemas);
   }
   // A missing monitoring sample is distinct from zero, including required nullable fields.
-  for (const name of ["ResourceMonitoringQuantity", "ResourceMonitoringPoint", "ResourceMonitoringSeries", "ResourceMonitoringNode", "ResourceMonitoringView"]) {
+  for (const name of ["ResourceMonitoringQuantity", "ResourceMonitoringPoint", "ResourceMonitoringSeries", "ResourceMonitoringNode", "ResourceMonitoringView", "NetworkProxyTrafficSample"]) {
     for (const property of Object.values(schemas[name]?.properties ?? {})) {
       if (property.nullable && property.type === "number") property["x-go-type"] = "*float64";
     }

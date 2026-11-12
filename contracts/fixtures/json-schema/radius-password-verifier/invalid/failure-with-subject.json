@@ -1,0 +1,5 @@
+{
+  "authenticated": false,
+  "reasonCode": "authentication_failed",
+  "subjectId": "user-1"
+}

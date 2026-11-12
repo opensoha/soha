@@ -1,0 +1,12 @@
+{
+  "major": 1,
+  "minor": 0,
+  "requestId": "req1",
+  "deadline": "2026-11-08T11:00:00Z",
+  "processEpoch": "epoch1",
+  "method": "handshake",
+  "payload": {
+    "challenge": "0123456789abcdef0123456789abcdef"
+  },
+  "url": "https://example.invalid"
+}

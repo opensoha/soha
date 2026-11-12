@@ -1,0 +1,18 @@
+{
+  "outpostId": "edge-a",
+  "owner": "soha",
+  "slotId": "edge-a",
+  "namespace": "soha",
+  "workloadName": "edge",
+  "workloadUid": "immutable-uid",
+  "generation": 1,
+  "observedGeneration": 1,
+  "desiredReplicas": 0,
+  "actualReplicas": 0,
+  "readyReplicas": 0,
+  "phase": "stopped",
+  "capabilities": {
+    "supportsScale": true,
+    "supportsDrain": true
+  }
+}

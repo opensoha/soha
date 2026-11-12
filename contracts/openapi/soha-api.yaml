@@ -20909,13 +20909,21 @@ paths:
         - { name: connectionID, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
       responses:
         "202":
-          description: Expiring close command queued for the enrolled runtime. The action is audited.
+          description: Expiring close command queued for the enrolled runtime, or the receipt of an exact replay. The caller's requestId is the commandId used to retrieve the receipt. The action is audited.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NetworkProxyCloseCommandEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+      requestBody:
+        required: false
+        description: Bind close to the observed process epoch and a window of at most 30 seconds. Reuse the same requestId, actor, target, connection, epoch and window to recover an existing receipt. Legacy requests use a server-assigned command ID and deadline. When no epoch is provided the server resolves it from a fresh snapshot.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyCloseInput"
   /network-access/connection-options:
     get:
       tags: [ Network Access ]
@@ -26840,6 +26848,1753 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "501": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /identity/outposts/{identityOutpostID}/runtime:
+    parameters:
+      - $ref: "#/components/parameters/IdentityOutpostID"
+    get:
+      tags: [ Identity ]
+      operationId: getIdentityOutpostRuntime
+      description: Read installer-approved workload slot state. Requires identity.outposts.view. Unknown observations are omitted, never reported as zero replicas.
+      responses:
+        "200":
+          description: Outpost workload runtime state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentityOutpostRuntimeEnvelope" }
+        "403": { $ref: "#/components/responses/IdentityError" }
+        "404": { $ref: "#/components/responses/IdentityError" }
+    put:
+      tags: [ Identity ]
+      operationId: bindIdentityOutpostRuntime
+      description: Bind only an installer-approved named slot. Requires identity.outposts.update. The server resolves namespace, workload name and immutable UID from its installation allowlist. Generation conflicts or reuse of a requestId with different input fail with 409. Explicit adoption is required before taking ownership of an external workload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityOutpostRuntimeBindingInput" }
+      responses:
+        "202":
+          description: Binding accepted with an existing domain execution task reference when asynchronous.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentityOutpostRuntimeMutationEnvelope" }
+        "400": { $ref: "#/components/responses/IdentityError" }
+        "403": { $ref: "#/components/responses/IdentityError" }
+        "404": { $ref: "#/components/responses/IdentityError" }
+        "409": { $ref: "#/components/responses/IdentityError" }
+  /identity/outposts/{identityOutpostID}/runtime/control:
+    parameters:
+      - $ref: "#/components/parameters/IdentityOutpostID"
+    post:
+      tags: [ Identity ]
+      operationId: controlIdentityOutpostRuntime
+      description: Start, scale, stop or reconcile the bound installer-approved slot. Requires identity.outposts.update and Soha ownership. Apply generation CAS and requestId idempotency with a durable domain execution task. Stop drains for at most 30 seconds without renewing runtime leases; scale requires replicas. Reconcile only observes the currently approved slot and checks its immutable UID, template and resourceVersion; it never updates scale, changes replicas or replays an unknown write. Never accepts templates or arbitrary Kubernetes targets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityOutpostRuntimeControlInput" }
+      responses:
+        "202":
+          description: Control accepted with an existing domain execution task reference when asynchronous.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentityOutpostRuntimeMutationEnvelope" }
+        "400": { $ref: "#/components/responses/IdentityError" }
+        "403": { $ref: "#/components/responses/IdentityError" }
+        "404": { $ref: "#/components/responses/IdentityError" }
+        "409": { $ref: "#/components/responses/IdentityError" }
+  /identity/outpost-runtime-executor/claim:
+    post:
+      tags: [ Identity ]
+      operationId: claimIdentityOutpostRuntimeExecution
+      description: Claim one execution task only for the authenticated executor installation. The server binds executorId, allowed slots and provider outpost_runtime.<executorID>; arbitrary providerKinds and global runner credentials are forbidden.
+      security:
+        - outpostRuntimeExecutorAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityOutpostRuntimeExecutorClaimRequest" }
+      responses:
+        "202":
+          description: Executor-scoped execution task.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutionTaskEnvelope" }
+        "204": { description: No task available for this installation. }
+        "400": { $ref: "#/components/responses/IdentityError" }
+        "401": { $ref: "#/components/responses/IdentityError" }
+        "403": { $ref: "#/components/responses/IdentityError" }
+        "404": { $ref: "#/components/responses/IdentityError" }
+        "409": { $ref: "#/components/responses/IdentityError" }
+  /identity/outpost-runtime-executor/status:
+    get:
+      tags: [ Identity ]
+      operationId: getIdentityOutpostRuntimeExecutionStatus
+      description: Read task state only within the authenticated installation executor and allowed slots.
+      security:
+        - outpostRuntimeExecutorAuth: []
+      parameters:
+        - name: taskId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Executor-scoped execution task.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutionTaskEnvelope" }
+        "400": { $ref: "#/components/responses/IdentityError" }
+        "401": { $ref: "#/components/responses/IdentityError" }
+        "403": { $ref: "#/components/responses/IdentityError" }
+        "404": { $ref: "#/components/responses/IdentityError" }
+        "409": { $ref: "#/components/responses/IdentityError" }
+  /identity/outpost-runtime-executor/callback:
+    post:
+      tags: [ Identity ]
+      operationId: recordIdentityOutpostRuntimeExecutionCallback
+      description: Record an existing execution-task callback only after validating both the dedicated installation credential and callback token against the executor, task, allowed slot and provider binding.
+      security:
+        - outpostRuntimeExecutorAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExecutionCallbackRequest" }
+      responses:
+        "200":
+          description: Executor-scoped execution task.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutionTaskEnvelope" }
+        "400": { $ref: "#/components/responses/IdentityError" }
+        "401": { $ref: "#/components/responses/IdentityError" }
+        "403": { $ref: "#/components/responses/IdentityError" }
+        "404": { $ref: "#/components/responses/IdentityError" }
+        "409": { $ref: "#/components/responses/IdentityError" }
+  /network-access/proxy-instances/{instanceID}/sources:
+    get:
+      tags:
+        - Network Access
+      operationId: listNetworkProxySources
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.view
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxySourceList"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - Network Access
+      operationId: createNetworkProxySource
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "202":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxySource"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxySourceInput"
+  /network-access/proxy-instances/{instanceID}/sources/{sourceID}:
+    get:
+      tags:
+        - Network Access
+      operationId: getNetworkProxySource
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.view
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: sourceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxySource"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - Network Access
+      operationId: updateNetworkProxySource
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: sourceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxySource"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxySourceInput"
+    delete:
+      tags:
+        - Network Access
+      operationId: deleteNetworkProxySource
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: sourceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: expectedRevision
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: requestId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkProxySource"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-access/proxy-instances/{instanceID}/sources/preview:
+    post:
+      tags:
+        - Network Access
+      operationId: previewNetworkProxySource
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "202":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyConversionPreview"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxySourceInput"
+  /network-access/proxy-instances/{instanceID}/bundles:
+    get:
+      tags:
+        - Network Access
+      operationId: listNetworkProxyBundles
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.view
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyBundleList"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - Network Access
+      operationId: createNetworkProxyBundle
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "202":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyBundle"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyBundleInput"
+  /network-access/proxy-instances/{instanceID}/bundles/{bundleID}/activate:
+    post:
+      tags:
+        - Network Access
+      operationId: activateNetworkProxyBundle
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: bundleID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "202":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyBundle"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyBundleActivateInput"
+  /network-access/proxy-instances/{instanceID}/commands:
+    post:
+      tags:
+        - Network Access
+      operationId: createNetworkProxyRuntimeCommand
+      x-soha-permissions:
+        mode: any
+        keys:
+          - network_access.proxy_instances.update
+          - network_access.proxy_instances.view
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "202":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyRuntimeCommandReceipt"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyRuntimeCommandInput"
+      description: "Kind-specific service authorization is mandatory: groups/probe/rules/dns/logs/diagnostics require view; select/refresh require update. A route-level view-or-update grant alone does not authorize a mutation. Durable commandId=requestId, unique within (instanceID, requestId); a different actor or changed intent conflicts."
+  /network-access/proxy-instances/{instanceID}/commands/{commandID}:
+    get:
+      tags:
+        - Network Access
+      operationId: getNetworkProxyRuntimeCommand
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.view
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: commandID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyRuntimeCommandReceipt"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-access/proxy-instances/{instanceID}/rules:
+    get:
+      tags:
+        - Network Access
+      operationId: getNetworkProxyRules
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.view
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyRules"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - Network Access
+      operationId: updateNetworkProxyRules
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyRules"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyRulesInput"
+  /network-access/proxy-instances/{instanceID}/personal-rules:
+    get:
+      tags:
+        - Network Access
+      operationId: getNetworkProxyPersonalRules
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.view
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyRules"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - Network Access
+      operationId: updateNetworkProxyPersonalRules
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyRules"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyRulesInput"
+  /network-access/proxy-instances/{instanceID}/deployment:
+    get:
+      tags:
+        - Network Access
+      operationId: getNetworkProxyDeployment
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.view
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyDeployment"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    put:
+      tags:
+        - Network Access
+      operationId: bindNetworkProxyDeployment
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyDeployment"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyDeploymentInput"
+  /network-access/proxy-instances/{instanceID}/deployment/control:
+    post:
+      tags:
+        - Network Access
+      operationId: controlNetworkProxyDeployment
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "202":
+          description: Typed proxy operation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkProxyDeploymentOperation"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyDeploymentControlInput"
+  /network-control/v1/runtimes/{runtimeID}/mihomo-profiles/{profileID}/projection:
+    get:
+      servers:
+        - url: /api
+          description: Dedicated device mTLS network-control listener.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: getNetworkProxyEmployeeProjection
+      description: "Device/profile scoped projection only; revalidate current user/device/node grants, credential epoch and bundle server-ready. Cache-Control: private, no-store. Never calls the direct source endpoint as fallback."
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: profileID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: processEpoch
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: Endpoint-service boot nonce bound to endpoint credential. Receipt echoes exactly; never an HA server epoch.
+      responses:
+        "200":
+          description: Scoped safe projection or acknowledgement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkProxyEmployeeProjection"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-control/v1/runtimes/{runtimeID}/mihomo-profiles/{profileID}/projection/receipt:
+    post:
+      servers:
+        - url: /api
+          description: Dedicated device mTLS network-control listener.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: acknowledgeNetworkProxyEmployeeProjection
+      description: Device/profile-scoped acknowledgement shared by protected and explicit direct projections. Echo the exact endpoint boot nonce, bundle/revision and projection hash. Recheck current credential/device/direct authorization. Protected modes require trusted server-ready; direct_subscription requires eligible converted source and device authorization, never a fictitious relay readiness proof. Receipt contains no projection content.
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: profileID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Scoped safe projection or acknowledgement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkProxyProjectionApplied"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyProjectionApplied"
+  /network-control/v1/proxy-runtimes/{runtimeID}/deployment/control:
+    get:
+      servers:
+        - url: /api
+          description: Dedicated proxy runtime mTLS listener.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: getNetworkProxyDeploymentRuntimeControl
+      description: Bind runtime/instance/process/credential identity and owner epoch. Ignore expired/stale acknowledgements. Unknown active counts prevent automatic scale-down.
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: instanceId
+          in: query
+          required: true
+          description: PodName member identity; must appear exactly once and match the authenticated runtime control binding.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: processEpoch
+          in: query
+          required: true
+          description: Process boot nonce; must appear exactly once and match the current member epoch.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Current bounded lifecycle control or acknowledgement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkProxyDeploymentRuntimeControl"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-control/v1/proxy-runtimes/{runtimeID}/deployment/control/receipt:
+    post:
+      servers:
+        - url: /api
+          description: Dedicated proxy runtime mTLS listener.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: acknowledgeNetworkProxyDeploymentRuntimeControl
+      description: Bind runtime/instance/process/credential identity and owner epoch. Ignore expired/stale acknowledgements. Unknown active counts prevent automatic scale-down.
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Current bounded lifecycle control or acknowledgement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkProxyDeploymentRuntimeAck"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyDeploymentRuntimeAck"
+  /network-control/v1/proxies/{runtimeID}/ingress/check:
+    post:
+      servers:
+        - url: /api
+          description: Dedicated proxy runtime mTLS listener, separate from console API.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: checkNetworkProxyIngress
+      description: "Online mapping-entry check. Authenticate actual runtime certificate; resolve current member/process, user/device/profile and node scope; recheck current bundle/epoch, ProtectedSet and organization mandatory policy. Cache-Control: private, no-store. No credential data in logs/audit/errors."
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyIngressCheckInput"
+      responses:
+        "200":
+          description: Typed authenticated runtime decision or recorded readback.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkProxyIngressCheckResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-control/v1/proxies/{runtimeID}/publication/ready:
+    post:
+      servers:
+        - url: /api
+          description: Dedicated proxy runtime mTLS listener, separate from console API.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: acknowledgeNetworkProxyBundleReadback
+      description: Accept only real authenticated runtime readiness observation. Match current desired/applied configuration and bundle hash, epoch and member identity before server_ready. Administrators cannot submit readiness through console authentication.
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkProxyBundleReadback"
+      responses:
+        "200":
+          description: Typed authenticated runtime decision or recorded readback.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkProxyBundleReadback"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-control/v1/proxy-instances/{runtimeID}/commands/next:
+    get:
+      servers:
+        - url: /api
+          description: Dedicated proxy runtime mTLS listener.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: getNextNetworkProxyRuntimeCommand
+      description: Poll current process-scoped typed command. Returns the existing command.request envelope or 204 when none is pending. commandId=requestId; durable uniqueness is (instanceID, requestId). Current runtime credential and process epoch must match.
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: processEpoch
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Existing proxy-runtime command.request message.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - schemaVersion
+                  - runtimeId
+                  - messageType
+                  - occurredAt
+                  - payload
+                properties:
+                  schemaVersion:
+                    type: string
+                    enum:
+                      - proxy-runtime/v1alpha1
+                    x-enum-varnames: [ NetworkProxyCommandRequestSchemaVersion ]
+                  runtimeId:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                    pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+                  messageType:
+                    type: string
+                    enum:
+                      - command.request
+                    x-enum-varnames: [ NetworkProxyCommandRequestMessageType ]
+                  occurredAt:
+                    type: string
+                    format: date-time
+                  payload:
+                    $ref: "#/components/schemas/NetworkProxyRuntimeCommandInput"
+                description: Existing proxy-runtime envelope; focused network/proxy-runtime.schema.json is canonical. Identity is authenticated from current proxy runtime mTLS and process epoch, never caller-assigned.
+        "204":
+          description: No pending command.
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-control/v1/proxy-instances/{runtimeID}/commands/{commandID}/result:
+    post:
+      servers:
+        - url: /api
+          description: Dedicated proxy runtime mTLS listener.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: completeNetworkProxyRuntimeCommand
+      description: Accept existing command.result envelope only from the authenticated runtime/process. Path commandID equals both payload.commandId and payload.requestId. Current actor/intent ownership and (instanceID, requestId) uniqueness are rechecked; stale, cross-actor and changed-intent receipts cannot complete work.
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: commandID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - schemaVersion
+                - runtimeId
+                - messageType
+                - occurredAt
+                - payload
+              properties:
+                schemaVersion:
+                  type: string
+                  enum:
+                    - proxy-runtime/v1alpha1
+                  x-enum-varnames: [ NetworkProxyCommandResultSchemaVersion ]
+                runtimeId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+                messageType:
+                  type: string
+                  enum:
+                    - command.result
+                  x-enum-varnames: [ NetworkProxyCommandResultMessageType ]
+                occurredAt:
+                  type: string
+                  format: date-time
+                payload:
+                  $ref: "#/components/schemas/NetworkProxyRuntimeCommandReceipt"
+              description: Existing proxy-runtime envelope; focused network/proxy-runtime.schema.json is canonical. Identity is authenticated from current proxy runtime mTLS and process epoch, never caller-assigned.
+      responses:
+        "204":
+          description: Receipt recorded idempotently.
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-access/proxy-instances/{instanceID}/commands/{commandID}/cancel:
+    post:
+      tags:
+        - Network Access
+      operationId: cancelNetworkProxyRuntimeCommand
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.proxy_instances.update
+      description: Cancel actor-owned typed command with update permission. Pending work becomes cancelled. Running work can only become unknown with reasonCode cancel_outcome_unknown; never claim reversal of applied side effects. Returns 204 with no body; read current receipt separately if needed.
+      parameters:
+        - name: instanceID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: commandID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "204":
+          description: Cancellation recorded. Pending work becomes cancelled; running work remains unknown/cancel_outcome_unknown. Cancellation cannot undo an applied side effect.
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-control/v1/runtimes/{runtimeID}/mihomo-profiles/{profileID}/direct-projection:
+    get:
+      servers:
+        - url: /api
+          description: Dedicated device network-control mTLS listener.
+      security:
+        - networkControlMTLS: []
+      tags:
+        - Network Access
+      operationId: getNetworkProxyDirectProjection
+      description: Explicit direct_subscription bundle delivery to the assigned, currently authorized device only. Validate endpoint credential, requested boot nonce and current profile/bundle/direct disclosure authorization. Response deliberately contains validated upstream parameters, never original source URL, and carries no gateway credential. private/no-store; never log content or pass it through IPC/exports. No automatic fallback to or from the protected /projection path. Acknowledge through existing /projection/receipt using NetworkProxyProjectionApplied. No server-relay readiness is implied.
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: profileID
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        - name: processEpoch
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: Endpoint-service boot nonce bound to endpoint credential; receipt echoes exactly.
+      responses:
+        "200":
+          description: Sensitive direct projection, delivered only under explicit disclosure authorization.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                  - private, no-store
+              description: private, no-store; no shared caches.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkProxyDirectProjection"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /network-access/radius-pools:
+    get:
+      tags:
+        - Network Access
+      operationId: listNetworkRADIUSPools
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.nas_bindings.view
+      responses:
+        "200":
+          description: Current managed RADIUS control state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkRADIUSPoolList"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+    post:
+      tags:
+        - Network Access
+      operationId: createNetworkRADIUSPool
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.nas_bindings.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkRADIUSPoolInput"
+      responses:
+        "200":
+          description: Current managed RADIUS control state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkRADIUSPool"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /network-access/radius-pools/{poolID}:
+    get:
+      tags:
+        - Network Access
+      operationId: getNetworkRADIUSPool
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.nas_bindings.view
+      parameters:
+        - name: poolID
+          in: path
+          required: true
+          schema: &a1
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      responses:
+        "200":
+          description: Current managed RADIUS control state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkRADIUSPool"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /network-access/radius-pools/{poolID}/configuration:
+    put:
+      tags:
+        - Network Access
+      operationId: configureNetworkRADIUSPool
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.nas_bindings.update
+      parameters:
+        - name: poolID
+          in: path
+          required: true
+          schema: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkRADIUSConfigurationInput"
+      responses:
+        "200":
+          description: Current managed RADIUS control state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkRADIUSPool"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /network-access/radius-pools/{poolID}/control:
+    post:
+      tags:
+        - Network Access
+      operationId: controlNetworkRADIUSPool
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.nas_bindings.update
+      parameters:
+        - name: poolID
+          in: path
+          required: true
+          schema: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkRADIUSControlInput"
+      responses:
+        "200":
+          description: Current managed RADIUS control state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkRADIUSPool"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /network-control/v1/radius-runtimes/{runtimeID}/control:
+    get:
+      tags:
+        - Network Access
+      operationId: getNetworkRADIUSRuntimeControl
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema: *a1
+        - name: memberId
+          in: query
+          required: true
+          schema: *a1
+        - name: processEpoch
+          in: query
+          required: true
+          schema: *a1
+      responses:
+        "200":
+          description: Current managed RADIUS control state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkRADIUSRuntimeControl"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      servers: &a2
+        - url: /api
+          description: Dedicated network-control mTLS listener.
+      security: &a3
+        - networkControlMTLS: []
+  /network-control/v1/radius-runtimes/{runtimeID}/control/receipt:
+    post:
+      tags:
+        - Network Access
+      operationId: acknowledgeNetworkRADIUSRuntimeControl
+      parameters:
+        - name: runtimeID
+          in: path
+          required: true
+          schema: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NetworkRADIUSRuntimeACK"
+      responses:
+        "200":
+          description: Current managed RADIUS control state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkRADIUSRuntimeACK"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+      servers: *a2
+      security: *a3
+  /network-access/radius-pools/options:
+    get:
+      tags:
+        - Network Access
+      operationId: getNetworkRADIUSOptions
+      x-soha-permissions:
+        mode: all
+        keys:
+          - network_access.nas_bindings.view
+      responses:
+        "200":
+          description: Site-filtered installer-approved slots and references; persistent UID reservations are never auto-released.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/NetworkRADIUSOptions"
+        "403":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -26862,6 +28617,10 @@ components:
     networkControlMTLS:
       type: mutualTLS
       description: Current network-control client certificate, bound to the endpoint runtime and credential generation. A console Bearer JWT does not authenticate this listener.
+    outpostRuntimeExecutorAuth:
+      type: http
+      scheme: bearer
+      description: Dedicated installer-provisioned Outpost workload executor token bound to one executor identity and its approved workload slots. Administrator and general runner credentials do not authorize this API.
   parameters:
     MenuID:
       name: menuID
@@ -27848,6 +29607,742 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
   schemas:
+    NetworkRADIUSSlotOption:
+      type: object
+      additionalProperties: false
+      required:
+        - slotId
+        - siteId
+        - nasBindingId
+        - maxReplicas
+        - configurationRefs
+        - available
+        - reasonCode
+        - bindingExists
+        - createApprovedBindingRequired
+      properties:
+        slotId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: SlotID
+        siteId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: SiteID
+        nasBindingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: NASBindingID
+        maxReplicas:
+          type: integer
+          minimum: 1
+          maximum: 128
+        configurationRefs:
+          type: array
+          minItems: 1
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        available:
+          type: boolean
+        reasonCode:
+          type: string
+          maxLength: 128
+        reservedPoolId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: ReservedPoolID
+        bindingExists:
+          type: boolean
+        createApprovedBindingRequired:
+          type: boolean
+        bindingUpdatedAt:
+          type: string
+          format: date-time
+    NetworkRADIUSOptions:
+      type: object
+      additionalProperties: false
+      required:
+        - slots
+      properties:
+        slots:
+          type: array
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/NetworkRADIUSSlotOption"
+    NetworkRADIUSRuntimeProof:
+      type: object
+      additionalProperties: false
+      required:
+        - poolId
+        - memberId
+        - credentialId
+        - processEpoch
+        - ownerEpoch
+        - controlRevision
+        - configurationRevision
+        - configurationHash
+      properties:
+        poolId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: PoolID
+        memberId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: MemberID
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: CredentialID
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        ownerEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        controlRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configurationRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configurationHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+    NetworkRADIUSConfiguration:
+      type: object
+      additionalProperties: false
+      required:
+        - reference
+        - treeHash
+        - nasSharedSecretRef
+        - eapServerCertificateRef
+        - eapServerKeyRef
+        - eapCARef
+        - hooksAttested
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        treeHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        nasSharedSecretRef:
+          type: string
+          maxLength: 266
+          pattern: ^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$
+        eapServerCertificateRef:
+          type: string
+          maxLength: 266
+          pattern: ^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$
+        eapServerKeyRef:
+          type: string
+          maxLength: 266
+          pattern: ^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$
+        eapCARef:
+          type: string
+          maxLength: 266
+          pattern: ^secretref:[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$
+        hooksAttested:
+          type: boolean
+    NetworkRADIUSRuntimeControl:
+      type: object
+      additionalProperties: false
+      required:
+        - poolId
+        - memberId
+        - runtimeId
+        - credentialId
+        - processEpoch
+        - ownerEpoch
+        - controlRevision
+        - configurationRevision
+        - configurationHash
+        - nasBindingId
+        - nasId
+        - siteId
+        - runProcess
+        - acceptNewAuthentications
+        - serveExistingUntil
+        - controlLeaseUntil
+        - configurationLeaseUntil
+        - stopRequired
+        - configuration
+      properties:
+        poolId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: PoolID
+        memberId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: MemberID
+        runtimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: RuntimeID
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: CredentialID
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        ownerEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        controlRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configurationRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configurationHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        nasBindingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: NASBindingID
+        nasId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: NASID
+        siteId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: SiteID
+        runProcess:
+          type: boolean
+        acceptNewAuthentications:
+          type: boolean
+        serveExistingUntil:
+          type: string
+          format: date-time
+        controlLeaseUntil:
+          type: string
+          format: date-time
+        configurationLeaseUntil:
+          type: string
+          format: date-time
+        drainUntil:
+          type: string
+          format: date-time
+        stopRequired:
+          type: boolean
+        stopConfirmUntil:
+          type: string
+          format: date-time
+        configuration:
+          $ref: "#/components/schemas/NetworkRADIUSConfiguration"
+    NetworkRADIUSRuntimeACK:
+      type: object
+      additionalProperties: false
+      required:
+        - poolId
+        - memberId
+        - credentialId
+        - processEpoch
+        - ownerEpoch
+        - controlRevision
+        - configurationRevision
+        - configurationHash
+        - runtimeId
+        - stateCountKnown
+        - acceptingNewAuthentications
+        - configurationApplied
+        - hooksReady
+        - ready
+        - processStopped
+        - observedNASUse
+        - runtimeVersion
+        - observedAt
+      properties:
+        poolId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: PoolID
+        memberId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: MemberID
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: CredentialID
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        ownerEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        controlRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configurationRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configurationHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        runtimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: RuntimeID
+        stateCountKnown:
+          type: boolean
+        activeStates:
+          type: integer
+          minimum: 0
+          maximum: 65536
+          x-go-pointer: true
+        acceptingNewAuthentications:
+          type: boolean
+        configurationApplied:
+          type: boolean
+        hooksReady:
+          type: boolean
+        ready:
+          type: boolean
+        processStopped:
+          type: boolean
+        observedNASUse:
+          type: boolean
+          x-go-name: ObservedNASUse
+        runtimeVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        observedAt:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              stateCountKnown:
+                const: true
+            required:
+              - stateCountKnown
+          then:
+            required:
+              - activeStates
+          else:
+            not:
+              required:
+                - activeStates
+        - if:
+            properties:
+              processStopped:
+                const: true
+            required:
+              - processStopped
+          then:
+            properties:
+              stateCountKnown:
+                const: true
+              activeStates:
+                const: 0
+              acceptingNewAuthentications:
+                const: false
+              ready:
+                const: false
+            required:
+              - activeStates
+    NetworkRADIUSMember:
+      type: object
+      additionalProperties: false
+      required:
+        - memberId
+        - runtimeId
+        - ordinal
+        - endpoint
+        - stateCountKnown
+        - ready
+        - trafficReady
+        - acceptingNewAuthentications
+        - processStopped
+      properties:
+        memberId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: MemberID
+        runtimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: RuntimeID
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 127
+        endpoint:
+          type: string
+          minLength: 1
+          maxLength: 253
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: CredentialID
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        runtimeVersion:
+          type: string
+          maxLength: 64
+        configurationRevision:
+          type: integer
+          minimum: 0
+        controlRevision:
+          type: integer
+          minimum: 0
+        stateCountKnown:
+          type: boolean
+        activeStates:
+          type: integer
+          minimum: 0
+          maximum: 65536
+          x-go-pointer: true
+        ready:
+          type: boolean
+        trafficReady:
+          type: boolean
+        acceptingNewAuthentications:
+          type: boolean
+        processStopped:
+          type: boolean
+        lastObservedAt:
+          type: string
+          format: date-time
+        leaseUntil:
+          type: string
+          format: date-time
+        reasonCode:
+          type: string
+          maxLength: 128
+    NetworkRADIUSPool:
+      type: object
+      additionalProperties: false
+      required:
+        - poolId
+        - name
+        - siteId
+        - nasBindingId
+        - logicalRuntimeId
+        - slotId
+        - objectUid
+        - templateHash
+        - revision
+        - ownerEpoch
+        - configurationRevision
+        - configurationHash
+        - configurationRef
+        - enabled
+        - desiredReplicas
+        - state
+        - members
+      properties:
+        poolId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: PoolID
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        siteId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: SiteID
+        nasBindingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: NASBindingID
+        logicalRuntimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: LogicalRuntimeID
+        slotId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: SlotID
+        objectUid:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: ObjectUID
+        templateHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        ownerEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configurationRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        configurationHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        configurationRef:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        enabled:
+          type: boolean
+        desiredReplicas:
+          type: integer
+          minimum: 0
+          maximum: 128
+        observedReplicas:
+          type: integer
+          minimum: 0
+          maximum: 128
+          x-go-pointer: true
+        readyReplicas:
+          type: integer
+          minimum: 0
+          maximum: 128
+          x-go-pointer: true
+        state:
+          type: string
+          enum:
+            - stopped
+            - pending
+            - starting
+            - ready
+            - draining
+            - unknown
+            - failed
+            - conflict
+          x-enum-varnames:
+            - NetworkRADIUSPoolStateStopped
+            - NetworkRADIUSPoolStatePending
+            - NetworkRADIUSPoolStateStarting
+            - NetworkRADIUSPoolStateReady
+            - NetworkRADIUSPoolStateDraining
+            - NetworkRADIUSPoolStateUnknown
+            - NetworkRADIUSPoolStateFailed
+            - NetworkRADIUSPoolStateConflict
+        reasonCode:
+          type: string
+          maxLength: 128
+        operationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: OperationID
+        members:
+          type: array
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/NetworkRADIUSMember"
+    NetworkRADIUSPoolInput:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - siteId
+        - nasBindingId
+        - slotId
+        - configurationRef
+        - requestId
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        siteId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: SiteID
+        nasBindingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: NASBindingID
+        slotId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: SlotID
+        expectedBindingUpdatedAt:
+          type: string
+          format: date-time
+          x-go-pointer: true
+        configurationRef:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: RequestID
+        createApprovedBinding:
+          type: boolean
+          default: false
+    NetworkRADIUSConfigurationInput:
+      type: object
+      additionalProperties: false
+      required:
+        - configurationRef
+        - expectedRevision
+        - requestId
+      properties:
+        configurationRef:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: RequestID
+    NetworkRADIUSControlInput:
+      type: object
+      additionalProperties: false
+      required:
+        - action
+        - expectedRevision
+        - requestId
+      properties:
+        action:
+          type: string
+          enum:
+            - start
+            - stop
+            - scale
+            - reconcile
+          x-enum-varnames:
+            - NetworkRADIUSControlInputActionStart
+            - NetworkRADIUSControlInputActionStop
+            - NetworkRADIUSControlInputActionScale
+            - NetworkRADIUSControlInputActionReconcile
+        replicas:
+          type: integer
+          minimum: 0
+          maximum: 128
+          x-go-pointer: true
+        expectedRevision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          x-go-name: RequestID
+        drainSeconds:
+          type: integer
+          minimum: 1
+          maximum: 120
+    NetworkRADIUSPoolList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/NetworkRADIUSPool"
     WorkflowRequestInput:
       type: object
       additionalProperties: false
@@ -30614,6 +33109,9 @@ components:
         supportedProtocolVersion: { type: string, minLength: 1, maxLength: 32 }
         runtimeVersion: { type: string, maxLength: 128 }
         currentConfigurationVersion: { type: integer, format: int64, minimum: 0 }
+        instanceId: { type: string, minLength: 1, maxLength: 128 }
+        processEpoch: { type: string, minLength: 1, maxLength: 128 }
+        supportedRuntimeControlVersion: { type: string, enum: [ v1 ] }
       additionalProperties: false
     IdentityOutpostRoute:
       type: object
@@ -30637,6 +33135,7 @@ components:
         keyId: { type: string, minLength: 1, maxLength: 128 }
         checkUrl: { type: string, format: uri }
         routes: { type: array, items: { $ref: "#/components/schemas/IdentityOutpostRoute" } }
+        runtimeControl: { $ref: "#/components/schemas/IdentityOutpostRuntimeControl" }
         signature: { type: string, minLength: 1 }
       additionalProperties: false
     IdentityOutpostRuntimeConfigEnvelope:
@@ -30655,6 +33154,11 @@ components:
         errorCode: { type: string }
         runtimeVersion: { type: string, maxLength: 128 }
         configurationExpiresAt: { type: string, format: date-time }
+        instanceId: { type: string, minLength: 1, maxLength: 128 }
+        processEpoch: { type: string, minLength: 1, maxLength: 128 }
+        acceptingRequests: { type: boolean, x-go-type-skip-optional-pointer: false }
+        activeChecks: { type: integer, minimum: 0, x-go-type-skip-optional-pointer: false }
+        appliedControlGeneration: { type: integer, format: int64, minimum: 0, x-go-type-skip-optional-pointer: false }
       additionalProperties: false
     IdentityOutpostHeartbeat:
       type: object
@@ -59116,6 +61620,21 @@ components:
                 pattern: ^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$
             failClosed:
               type: boolean
+            deliveryMode:
+              $ref: "#/components/schemas/NetworkProxyDeliveryMode"
+            bundleId:
+              type: string
+              minLength: 1
+              maxLength: 128
+              pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+            orgRevision:
+              type: integer
+              format: int64
+              minimum: 0
+            sourceRevision:
+              type: integer
+              format: int64
+              minimum: 0
           additionalProperties: false
         - if:
             properties:
@@ -59151,6 +61670,21 @@ components:
                       const: manual_node
                   required:
                     - sourceType
+              - not:
+                  properties:
+                    deliveryMode:
+                      enum:
+                        - mapped_nodes
+                        - gateway
+                  required:
+                    - deliveryMode
+              - not:
+                  properties:
+                    deliveryMode:
+                      const: direct_subscription
+                  required:
+                    - deliveryMode
+                    - bundleId
           then:
             required:
               - selectedProxy
@@ -59187,38 +61721,162 @@ components:
             not:
               required:
                 - fakeIpRange
+        - if:
+            properties:
+              deliveryMode:
+                enum:
+                  - mapped_nodes
+                  - gateway
+            required:
+              - deliveryMode
+          then:
+            required:
+              - mode
+              - bundleId
+            properties:
+              mode:
+                const: managed_follow
+              selectedProxy:
+                type: string
+                minLength: 1
+                maxLength: 128
+                pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+            not:
+              anyOf:
+                - required:
+                    - subscriptionUrl
+                - required:
+                    - manualNode
+                - required:
+                    - sourceType
+        - if:
+            properties:
+              deliveryMode:
+                const: direct_subscription
+            required:
+              - deliveryMode
+              - bundleId
+          then:
+            required:
+              - mode
+            properties:
+              mode:
+                const: managed_follow
+              selectedProxy:
+                type: string
+                minLength: 1
+                maxLength: 128
+                pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+            not:
+              anyOf:
+                - required:
+                    - subscriptionUrl
+                - required:
+                    - manualNode
+                - required:
+                    - sourceType
     NetworkMihomoProfile:
       type: object
-      required: [ id, deviceId, name, mode, status, subscriptionConfigured, revision, mixedPort, controllerPort, dnsMode, selectorGroup, bypassCidrs, bypassHosts, failClosed, createdAt, updatedAt ]
+      required:
+        - id
+        - deviceId
+        - name
+        - mode
+        - status
+        - subscriptionConfigured
+        - revision
+        - mixedPort
+        - controllerPort
+        - dnsMode
+        - selectorGroup
+        - bypassCidrs
+        - bypassHosts
+        - failClosed
+        - createdAt
+        - updatedAt
       properties:
-        id: { type: string, minLength: 1, maxLength: 128 }
-        deviceId: { type: string, minLength: 1, maxLength: 128 }
-        name: { type: string, minLength: 1, maxLength: 200 }
-        mode: { $ref: "#/components/schemas/NetworkMihomoMode" }
-        sourceType: { $ref: "#/components/schemas/NetworkMihomoSourceType" }
-        status: { $ref: "#/components/schemas/NetworkMihomoProfileStatus" }
-        subscriptionConfigured: { type: boolean }
-        manualNodeConfigured: { type: boolean }
-        revision: { type: integer, minimum: 1 }
-        mixedPort: { type: integer, minimum: 1, maximum: 65535 }
-        controllerPort: { type: integer, minimum: 1, maximum: 65535 }
-        dnsMode: { $ref: "#/components/schemas/NetworkMihomoDNSMode" }
-        fakeIpRange: { $ref: "#/components/schemas/NetworkIPv4CIDR" }
-        selectorGroup: { type: string, minLength: 1, maxLength: 128 }
-        selectedProxy: { type: string, minLength: 1, maxLength: 128 }
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        deviceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        mode:
+          $ref: "#/components/schemas/NetworkMihomoMode"
+        sourceType:
+          $ref: "#/components/schemas/NetworkMihomoSourceType"
+        status:
+          $ref: "#/components/schemas/NetworkMihomoProfileStatus"
+        subscriptionConfigured:
+          type: boolean
+        manualNodeConfigured:
+          type: boolean
+        revision:
+          type: integer
+          minimum: 1
+        mixedPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        controllerPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        dnsMode:
+          $ref: "#/components/schemas/NetworkMihomoDNSMode"
+        fakeIpRange:
+          $ref: "#/components/schemas/NetworkIPv4CIDR"
+        selectorGroup:
+          type: string
+          minLength: 1
+          maxLength: 128
+        selectedProxy:
+          type: string
+          minLength: 1
+          maxLength: 128
         bypassCidrs:
           type: array
           maxItems: 256
           uniqueItems: true
-          items: { $ref: "#/components/schemas/NetworkIPCIDR" }
+          items:
+            $ref: "#/components/schemas/NetworkIPCIDR"
         bypassHosts:
           type: array
           maxItems: 128
           uniqueItems: true
-          items: { type: string, minLength: 1, maxLength: 253 }
-        failClosed: { type: boolean }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+          items:
+            type: string
+            minLength: 1
+            maxLength: 253
+        failClosed:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deliveryMode:
+          $ref: "#/components/schemas/NetworkProxyDeliveryMode"
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        orgRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        sourceRevision:
+          type: integer
+          format: int64
+          minimum: 0
       additionalProperties: false
     NetworkMihomoProfileEnvelope:
       type: object
@@ -59442,17 +62100,51 @@ components:
       additionalProperties: false
     NetworkProxyEngine:
       type: string
-      enum: [ mihomo, sing-box, v2ray ]
-      x-enum-varnames: [ NetworkProxyEngineMihomo, NetworkProxyEngineSingBox, NetworkProxyEngineV2Ray ]
+      enum:
+        - mihomo
+        - sing-box
+        - v2ray
+        - external
+      x-enum-varnames:
+        - NetworkProxyEngineMihomo
+        - NetworkProxyEngineSingBox
+        - NetworkProxyEngineV2Ray
+        - NetworkProxyEngineExternal
     NetworkProxyInstanceInput:
       type: object
-      required: [ id, name, engine ]
+      required:
+        - id
+        - name
+        - engine
       properties:
-        id: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
-        name: { type: string, minLength: 1, maxLength: 128 }
-        engine: { $ref: "#/components/schemas/NetworkProxyEngine" }
-        host: { type: string, maxLength: 128 }
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        engine:
+          $ref: "#/components/schemas/NetworkProxyEngine"
+        host:
+          type: string
+          maxLength: 128
+        engineDescriptor:
+          $ref: "#/components/schemas/NetworkProxyEngineDescriptor"
       additionalProperties: false
+      description: " External engine requires engineDescriptor; adapter selected by descriptor.engineId/adapterId, never legacy engine dispatch."
+      allOf:
+        - if:
+            properties:
+              engine:
+                const: external
+            required:
+              - engine
+          then:
+            required:
+              - engineDescriptor
     NetworkProxyInstanceStatus:
       type: string
       enum: [ unregistered, online, degraded, offline, disabled ]
@@ -59466,6 +62158,15 @@ components:
         - protected_destinations_v1
         - protection_rules_readback
         - guarded_dns_tcp_v1
+        - groups
+        - select
+        - probe
+        - refresh
+        - rules
+        - dns
+        - logs
+        - diagnostics
+        - guarded_udp_v1
       x-enum-varnames:
         - NetworkProxyCapabilityTraffic
         - NetworkProxyCapabilityConnections
@@ -59473,29 +62174,79 @@ components:
         - NetworkProxyCapabilityProtectedDestinationsV1
         - NetworkProxyCapabilityProtectionRulesReadback
         - NetworkProxyCapabilityGuardedDnsTcpV1
+        - NetworkProxyCapabilityGroups
+        - NetworkProxyCapabilitySelect
+        - NetworkProxyCapabilityProbe
+        - NetworkProxyCapabilityRefresh
+        - NetworkProxyCapabilityRules
+        - NetworkProxyCapabilityDns
+        - NetworkProxyCapabilityLogs
+        - NetworkProxyCapabilityDiagnostics
+        - NetworkProxyCapabilityGuardedUDPV1
+      description: guarded_udp_v1 requires an installed and verified datagram gate, authenticated transport, guarded owned backend and current per-packet policy enforcement. It does not assert that every upstream protocol or node supports UDP.
     NetworkProxyInstance:
       type: object
-      required: [ id, name, engine, enabled, status, capabilities, desiredRevision, observedRevision, createdAt, updatedAt ]
+      required:
+        - id
+        - name
+        - engine
+        - enabled
+        - status
+        - capabilities
+        - desiredRevision
+        - observedRevision
+        - createdAt
+        - updatedAt
       properties:
-        id: { type: string, minLength: 1, maxLength: 128 }
-        name: { type: string, minLength: 1, maxLength: 128 }
-        engine: { $ref: "#/components/schemas/NetworkProxyEngine" }
-        enabled: { type: boolean }
-        host: { type: string, maxLength: 128 }
-        engineVersion: { type: string, maxLength: 64 }
-        status: { $ref: "#/components/schemas/NetworkProxyInstanceStatus" }
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        engine:
+          $ref: "#/components/schemas/NetworkProxyEngine"
+        enabled:
+          type: boolean
+        host:
+          type: string
+          maxLength: 128
+        engineVersion:
+          type: string
+          maxLength: 64
+        status:
+          $ref: "#/components/schemas/NetworkProxyInstanceStatus"
         capabilities:
           type: array
-          maxItems: 6
+          maxItems: 64
           uniqueItems: true
-          items: { $ref: "#/components/schemas/NetworkProxyCapability" }
-        desiredRevision: { type: integer, format: int64, minimum: 0 }
-        observedRevision: { type: integer, format: int64, minimum: 0 }
-        lastSeenAt: { type: string, format: date-time }
-        lastSampleAt: { type: string, format: date-time }
-        reasonCode: { type: string, maxLength: 128 }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+          items:
+            $ref: "#/components/schemas/NetworkProxyCapability"
+        desiredRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        observedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        lastSeenAt:
+          type: string
+          format: date-time
+        lastSampleAt:
+          type: string
+          format: date-time
+        reasonCode:
+          type: string
+          maxLength: 128
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
         binding:
           $ref: "#/components/schemas/NetworkProxyBinding"
         policyVersion:
@@ -59507,7 +62258,25 @@ components:
         securityRestricted:
           type: boolean
           description: Owner-bound managed runtime suspension; not per-flow user attribution.
+        engineDescriptor:
+          $ref: "#/components/schemas/NetworkProxyEngineDescriptor"
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
       additionalProperties: false
+      description: " External engine requires engineDescriptor; adapter selected by descriptor.engineId/adapterId, never legacy engine dispatch."
+      allOf:
+        - if:
+            properties:
+              engine:
+                const: external
+            required:
+              - engine
+          then:
+            required:
+              - engineDescriptor
     NetworkProxyInstanceEnvelope:
       type: object
       required: [ data ]
@@ -59534,59 +62303,218 @@ components:
       description: Retained full-configuration SDK input for existing consumers. New partial updates use NetworkProxyConfigurationPatchInput; the HTTP endpoint still accepts full configurations.
     NetworkProxyTrafficSample:
       type: object
-      required: [ observedAt, uploadTotal, downloadTotal, uploadBytesPerSecond, downloadBytesPerSecond ]
+      required:
+        - observedAt
+        - uploadTotal
+        - downloadTotal
+        - uploadBytesPerSecond
+        - downloadBytesPerSecond
       properties:
-        observedAt: { type: string, format: date-time }
-        uploadTotal: { type: integer, format: int64, minimum: 0 }
-        downloadTotal: { type: integer, format: int64, minimum: 0 }
-        uploadBytesPerSecond: { type: number, minimum: 0 }
-        downloadBytesPerSecond: { type: number, minimum: 0 }
-        activeConnections: { type: integer, minimum: 0 }
+        observedAt:
+          type: string
+          format: date-time
+        uploadTotal:
+          type: integer
+          format: int64
+          minimum: 0
+        downloadTotal:
+          type: integer
+          format: int64
+          minimum: 0
+        uploadBytesPerSecond:
+          type: number
+          minimum: 0
+        downloadBytesPerSecond:
+          type: number
+          minimum: 0
+        activeConnections:
+          type: integer
+          minimum: 0
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        sampleSequence:
+          type: integer
+          format: int64
+          minimum: 0
+        rateState:
+          type: string
+          enum:
+            - known
+            - unknown
+            - gap
+          x-enum-varnames:
+            - NetworkProxyTrafficSampleRateStateKnown
+            - NetworkProxyTrafficSampleRateStateUnknown
+            - NetworkProxyTrafficSampleRateStateGap
       additionalProperties: false
+      description: Rates are numeric for existing clients. When rateState is unknown or gap, numeric placeholders carry no rate information. A known rate requires contiguous sample sequence within one process epoch and an acceptable sampling interval. An absent rateState identifies a legacy response.
     NetworkProxyTrafficEnvelope:
       type: object
-      required: [ instanceId, supported, samples ]
+      required:
+        - instanceId
+        - supported
+        - samples
       properties:
-        instanceId: { type: string, minLength: 1, maxLength: 128 }
-        supported: { type: boolean }
+        instanceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        supported:
+          type: boolean
         samples:
           type: array
           maxItems: 1440
-          items: { $ref: "#/components/schemas/NetworkProxyTrafficSample" }
+          items:
+            $ref: "#/components/schemas/NetworkProxyTrafficSample"
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        sampleSequence:
+          type: integer
+          format: int64
+          minimum: 0
+        totalActive:
+          type: integer
+          format: int64
+          minimum: 0
+        returnedCount:
+          type: integer
+          format: int64
+          minimum: 0
+        truncated:
+          type: boolean
+        freshness:
+          type: string
+          enum:
+            - fresh
+            - stale
+            - unavailable
+        observedAt:
+          type: string
+          format: date-time
       additionalProperties: false
     NetworkProxyConnection:
       type: object
-      required: [ id, destination, network, uploadBytes, downloadBytes ]
+      required:
+        - id
+        - destination
+        - network
+        - uploadBytes
+        - downloadBytes
       properties:
-        id: { type: string, minLength: 1, maxLength: 128 }
-        destination: { type: string, minLength: 1, maxLength: 253 }
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        destination:
+          type: string
+          minLength: 1
+          maxLength: 253
         network:
           type: string
-          enum: [ tcp, udp, other ]
-          x-enum-varnames: [ NetworkProxyConnectionNetworkTCP, NetworkProxyConnectionNetworkUDP, NetworkProxyConnectionNetworkOther ]
-        uploadBytes: { type: integer, format: int64, minimum: 0 }
-        downloadBytes: { type: integer, format: int64, minimum: 0 }
-        startedAt: { type: string, format: date-time }
+          enum:
+            - tcp
+            - udp
+            - other
+          x-enum-varnames:
+            - NetworkProxyConnectionNetworkTCP
+            - NetworkProxyConnectionNetworkUDP
+            - NetworkProxyConnectionNetworkOther
+        uploadBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        downloadBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        startedAt:
+          type: string
+          format: date-time
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
       additionalProperties: false
     NetworkProxyConnectionsEnvelope:
       type: object
-      required: [ instanceId, state, connections ]
+      required:
+        - instanceId
+        - state
+        - connections
       properties:
-        instanceId: { type: string, minLength: 1, maxLength: 128 }
-        state: { type: string, enum: [ available, unsupported, unavailable ] }
-        observedAt: { type: string, format: date-time }
+        instanceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        state:
+          type: string
+          enum:
+            - available
+            - unsupported
+            - unavailable
+        observedAt:
+          type: string
+          format: date-time
         connections:
           type: array
           maxItems: 200
-          items: { $ref: "#/components/schemas/NetworkProxyConnection" }
+          items:
+            $ref: "#/components/schemas/NetworkProxyConnection"
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        sampleSequence:
+          type: integer
+          format: int64
+          minimum: 0
+        totalActive:
+          type: integer
+          format: int64
+          minimum: 0
+        returnedCount:
+          type: integer
+          format: int64
+          minimum: 0
+        truncated:
+          type: boolean
+        freshness:
+          type: string
+          enum:
+            - fresh
+            - stale
+            - unavailable
       additionalProperties: false
     NetworkProxyCloseCommandEnvelope:
       type: object
-      required: [ commandId, status, expiresAt ]
+      required:
+        - commandId
+        - status
+        - expiresAt
       properties:
-        commandId: { type: string, minLength: 1, maxLength: 128 }
-        status: { type: string, enum: [ pending, closed, not-found, failed, expired ] }
-        expiresAt: { type: string, format: date-time }
+        commandId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          enum:
+            - pending
+            - closed
+            - not-found
+            - failed
+            - expired
+        expiresAt:
+          type: string
+          format: date-time
         connectionId:
           type: string
           minLength: 1
@@ -59594,6 +62522,11 @@ components:
         reasonCode:
           type: string
           maxLength: 128
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
       additionalProperties: false
     NetworkRuntimeKind:
       type: string
@@ -62094,6 +65027,28 @@ components:
           x-enum-varnames:
             - NetworkEAPServerTrustWifiSecurityWpa2Enterprise
             - NetworkEAPServerTrustWifiSecurityWpa3Enterprise
+        eapMethod:
+          type: string
+          enum: [tls, ttls]
+          default: tls
+        innerMethod:
+          type: string
+          const: pap
+        credentialSource:
+          type: string
+          const: user-input
+      allOf:
+        - if:
+            properties:
+              eapMethod: { const: ttls }
+            required: [eapMethod]
+          then:
+            required: [innerMethod, credentialSource]
+          else:
+            not:
+              anyOf:
+                - required: [innerMethod]
+                - required: [credentialSource]
       additionalProperties: false
     NetworkEndpointResponsePolicyEnvelope:
       type: object
@@ -63401,3 +66356,2258 @@ components:
       properties:
         data: { $ref: "#/components/schemas/KubernetesHelmReleaseValues" }
       additionalProperties: false
+
+    IdentityOutpostRuntimeCapabilities:
+      type: object
+      required: [ supportsScale, supportsDrain ]
+      properties:
+        supportsScale: { type: boolean }
+        supportsDrain: { type: boolean, description: True only when supported and observed for the bound runtime instances. Legacy clients without control capability do not support managed drain. }
+      additionalProperties: false
+    IdentityOutpostRuntime:
+      type: object
+      required: [ outpostId, owner, generation, desiredReplicas, phase, capabilities ]
+      properties:
+        outpostId: { type: string, minLength: 1 }
+        owner: { type: string, enum: [ external, soha ] }
+        slotId: { type: string, description: Installer-approved named workload slot. }
+        namespace: { type: string, readOnly: true }
+        workloadName: { type: string, readOnly: true }
+        workloadUid: { type: string, readOnly: true, description: Immutable Kubernetes workload UID resolved by the installation allowlist. }
+        generation: { type: integer, format: int64, minimum: 0 }
+        observedGeneration: { type: integer, format: int64, minimum: 0, x-go-type-skip-optional-pointer: false }
+        desiredReplicas: { type: integer, minimum: 0 }
+        actualReplicas: { type: integer, minimum: 0, x-go-type-skip-optional-pointer: false, description: Omitted when not observed. }
+        readyReplicas: { type: integer, minimum: 0, x-go-type-skip-optional-pointer: false, description: Omitted when not observed. }
+        phase: { type: string, enum: [ pending, applying, ready, draining, stopped, failed, unknown ] }
+        reason: { type: string }
+        observedAt: { type: string, format: date-time }
+        latestTaskId: { type: string }
+        capabilities: { $ref: "#/components/schemas/IdentityOutpostRuntimeCapabilities" }
+      additionalProperties: false
+    IdentityOutpostRuntimeBindingInput:
+      type: object
+      required: [ slotId, expectedGeneration, requestId ]
+      properties:
+        slotId: { type: string, minLength: 1, maxLength: 128 }
+        expectedGeneration: { type: integer, format: int64, minimum: 0 }
+        requestId: { type: string, minLength: 1, maxLength: 128 }
+        explicitAdoption: { type: boolean, default: false }
+      additionalProperties: false
+    IdentityOutpostRuntimeControlInput:
+      type: object
+      required: [ action, expectedGeneration, requestId ]
+      properties:
+        action: { type: string, enum: [ start, scale, stop, reconcile ] }
+        replicas: { type: integer, minimum: 0, x-go-type-skip-optional-pointer: false, description: Required for scale; forbidden for read-only reconcile. }
+        expectedGeneration: { type: integer, format: int64, minimum: 0 }
+        requestId: { type: string, minLength: 1, maxLength: 128 }
+        drainTimeoutSeconds: { type: integer, minimum: 0, maximum: 30, x-go-type-skip-optional-pointer: false }
+      if:
+        properties:
+          action: { const: reconcile }
+        required: [ action ]
+      then:
+        not:
+          required: [ replicas ]
+      additionalProperties: false
+    IdentityOutpostRuntimeMutationResult:
+      type: object
+      required: [ runtime ]
+      properties:
+        runtime: { $ref: "#/components/schemas/IdentityOutpostRuntime" }
+        task: { $ref: "#/components/schemas/CapabilityTaskRef" }
+      additionalProperties: false
+    IdentityOutpostRuntimeEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/IdentityOutpostRuntime" }
+      additionalProperties: false
+    IdentityOutpostRuntimeMutationEnvelope:
+      type: object
+      required: [ data ]
+      properties:
+        data: { $ref: "#/components/schemas/IdentityOutpostRuntimeMutationResult" }
+      additionalProperties: false
+    IdentityOutpostRuntimeExecutorClaimRequest:
+      type: object
+      required: [ executorId ]
+      properties:
+        executorId: { type: string, minLength: 1, maxLength: 128 }
+      additionalProperties: false
+    IdentityOutpostRuntimeControl:
+      type: object
+      required: [ outpostId, protocolVersion, instanceId, processEpoch, generation, action, issuedAt, expiresAt, keyId, signature ]
+      description: Independently signed per-instance control. Sign UTF-8 compact JSON of these fields in schema order excluding signature, using UTC RFC3339 timestamps as serialized by Go time.Time. Verify separately from the unchanged v1 configuration signature. expiresAt must be later than issuedAt and no more than 30 seconds after it; implementations reject expired, replayed, mismatched-instance or mismatched-process controls. This object grants no configuration lease renewal.
+      properties:
+        outpostId: { type: string, minLength: 1 }
+        protocolVersion: { type: string, enum: [ v1 ] }
+        instanceId: { type: string, minLength: 1, maxLength: 128 }
+        processEpoch: { type: string, minLength: 1, maxLength: 128 }
+        generation: { type: integer, format: int64, minimum: 0 }
+        action: { type: string, enum: [ serve, drain ] }
+        issuedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        keyId: { type: string, minLength: 1, maxLength: 128 }
+        signature: { type: string, minLength: 1 }
+      additionalProperties: false
+    NetworkProxyEngineDescriptor:
+      type: object
+      additionalProperties: false
+      required:
+        - engineId
+        - adapterId
+        - version
+        - protocolMajor
+        - protocolMinor
+        - capabilities
+      properties:
+        engineId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-z][a-z0-9.-]*$
+        adapterId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-z][a-z0-9.-]*$
+        version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        protocolMajor:
+          type: integer
+          enum:
+            - 1
+          x-enum-varnames:
+            - NetworkProxyEngineDescriptorProtocolMajor1
+        protocolMinor:
+          type: integer
+          enum:
+            - 0
+          x-enum-varnames:
+            - NetworkProxyEngineDescriptorProtocolMinor0
+        capabilities:
+          type: array
+          maxItems: 64
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+    NetworkProxyDeliveryMode:
+      type: string
+      enum:
+        - mapped_nodes
+        - gateway
+        - direct_subscription
+      x-enum-varnames:
+        - NetworkProxyDeliveryModeMappedNodes
+        - NetworkProxyDeliveryModeGateway
+        - NetworkProxyDeliveryModeDirectSubscription
+    NetworkProxySourceFormat:
+      type: string
+      enum:
+        - manual
+        - mihomo_yaml
+        - sing_box_json
+        - v2ray_json
+        - uri_list
+      x-enum-varnames:
+        - NetworkProxySourceFormatManual
+        - NetworkProxySourceFormatMihomoYaml
+        - NetworkProxySourceFormatSingBoxJson
+        - NetworkProxySourceFormatV2rayJson
+        - NetworkProxySourceFormatUriList
+    NetworkProxyConversionError:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - location
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - unsupported_protocol
+            - unsupported_field
+            - unsafe_field
+            - invalid_source
+            - incompatible_transport
+            - dangling_reference
+            - quota_exceeded
+            - protected_destination
+          x-enum-varnames:
+            - NetworkProxyConversionErrorCodeUnsupportedProtocol
+            - NetworkProxyConversionErrorCodeUnsupportedField
+            - NetworkProxyConversionErrorCodeUnsafeField
+            - NetworkProxyConversionErrorCodeInvalidSource
+            - NetworkProxyConversionErrorCodeIncompatibleTransport
+            - NetworkProxyConversionErrorCodeDanglingReference
+            - NetworkProxyConversionErrorCodeQuotaExceeded
+            - NetworkProxyConversionErrorCodeProtectedDestination
+        location:
+          type: string
+          minLength: 1
+          maxLength: 256
+        message:
+          type: string
+          minLength: 1
+          maxLength: 512
+      description: Messages contain sanitized field locations, never original source values, URLs or credentials.
+    NetworkProxyTLS:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+      properties:
+        serverName:
+          type: string
+          minLength: 1
+          maxLength: 253
+        enabled:
+          type: boolean
+        alpn:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            minLength: 1
+            maxLength: 32
+        fingerprint:
+          type: string
+          minLength: 1
+          maxLength: 64
+    NetworkProxyTransport:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - tcp
+            - ws
+            - grpc
+          x-enum-varnames:
+            - NetworkProxyTransportTypeTcp
+            - NetworkProxyTransportTypeWs
+            - NetworkProxyTransportTypeGrpc
+        host:
+          type: string
+          minLength: 1
+          maxLength: 253
+        path:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        serviceName:
+          type: string
+          minLength: 1
+          maxLength: 128
+      description: "Trusted converter only: validate equivalence for the pinned target engine; unknown fields reject the whole conversion."
+    NetworkProxyNode:
+      type: object
+      additionalProperties: false
+      required:
+        - nodeId
+        - label
+        - protocol
+        - server
+        - port
+      properties:
+        nodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        label:
+          type: string
+          minLength: 1
+          maxLength: 128
+        protocol:
+          type: string
+          enum:
+            - http
+            - socks5
+            - ss
+            - trojan
+            - vmess
+            - vless
+          x-enum-varnames:
+            - NetworkProxyNodeProtocolHttp
+            - NetworkProxyNodeProtocolSocks5
+            - NetworkProxyNodeProtocolSs
+            - NetworkProxyNodeProtocolTrojan
+            - NetworkProxyNodeProtocolVmess
+            - NetworkProxyNodeProtocolVless
+        server:
+          type: string
+          minLength: 1
+          maxLength: 253
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        username:
+          type: string
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+        secret:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+          format: password
+        cipher:
+          type: string
+          minLength: 1
+          maxLength: 64
+        uuid:
+          type: string
+          format: uuid
+          writeOnly: true
+        tls:
+          $ref: "#/components/schemas/NetworkProxyTLS"
+        transport:
+          $ref: "#/components/schemas/NetworkProxyTransport"
+      description: Administrator/server IR only. Never serialize into an employee projection. Labels must be replaced by safe aliases in employee views.
+    NetworkProxyGroup:
+      type: object
+      additionalProperties: false
+      required:
+        - groupId
+        - label
+        - type
+        - nodeIds
+      properties:
+        groupId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        label:
+          type: string
+          minLength: 1
+          maxLength: 128
+        type:
+          type: string
+          enum:
+            - select
+            - url_test
+            - fallback
+            - load_balance
+          x-enum-varnames:
+            - NetworkProxyGroupTypeSelect
+            - NetworkProxyGroupTypeUrlTest
+            - NetworkProxyGroupTypeFallback
+            - NetworkProxyGroupTypeLoadBalance
+        nodeIds:
+          type: array
+          maxItems: 128
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        selectedNodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+    NetworkProxySourceInput:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedRevision
+        - name
+        - format
+      properties:
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        format:
+          $ref: "#/components/schemas/NetworkProxySourceFormat"
+        deliveryMode:
+          $ref: "#/components/schemas/NetworkProxyDeliveryMode"
+        url:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          format: uri
+          writeOnly: true
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1048576
+          writeOnly: true
+          format: password
+        nodes:
+          type: array
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/NetworkProxyNode"
+      description: Secrets encrypted by server; omitted secret preserves existing value. Historical source defaults to direct_subscription. Unknown formats/fields reject atomically.
+    NetworkProxySource:
+      type: object
+      additionalProperties: false
+      required:
+        - sourceId
+        - revision
+        - name
+        - format
+        - deliveryMode
+        - configured
+        - nodeCount
+        - updatedAt
+      properties:
+        sourceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        format:
+          $ref: "#/components/schemas/NetworkProxySourceFormat"
+        deliveryMode:
+          $ref: "#/components/schemas/NetworkProxyDeliveryMode"
+        configured:
+          type: boolean
+        nodeCount:
+          type: integer
+          format: int64
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+    NetworkProxySourceList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/NetworkProxySource"
+    NetworkProxyConversionPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - sourceRevision
+        - nodes
+        - groups
+        - errors
+        - supported
+      properties:
+        sourceRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        nodes:
+          type: array
+          maxItems: 128
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - nodeId
+              - label
+              - protocol
+            properties:
+              nodeId:
+                type: string
+                minLength: 1
+                maxLength: 128
+                pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+              label:
+                type: string
+                minLength: 1
+                maxLength: 128
+              protocol:
+                type: string
+                enum:
+                  - http
+                  - socks5
+                  - ss
+                  - trojan
+                  - vmess
+                  - vless
+                x-enum-varnames:
+                  - NetworkProxyConversionPreviewNodesItemProtocolHttp
+                  - NetworkProxyConversionPreviewNodesItemProtocolSocks5
+                  - NetworkProxyConversionPreviewNodesItemProtocolSs
+                  - NetworkProxyConversionPreviewNodesItemProtocolTrojan
+                  - NetworkProxyConversionPreviewNodesItemProtocolVmess
+                  - NetworkProxyConversionPreviewNodesItemProtocolVless
+        groups:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: "#/components/schemas/NetworkProxyGroup"
+        errors:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/NetworkProxyConversionError"
+        supported:
+          type: boolean
+      description: Preview contains only opaque IDs and safe labels. No upstream addresses or source secrets.
+    NetworkProxyRuleMatcher:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - domain
+            - domain_suffix
+            - cidr
+            - process_name
+            - process_path
+            - all
+          x-enum-varnames:
+            - NetworkProxyRuleMatcherTypeDomain
+            - NetworkProxyRuleMatcherTypeDomainSuffix
+            - NetworkProxyRuleMatcherTypeCidr
+            - NetworkProxyRuleMatcherTypeProcessName
+            - NetworkProxyRuleMatcherTypeProcessPath
+            - NetworkProxyRuleMatcherTypeAll
+        value:
+          type: string
+          minLength: 1
+          maxLength: 1024
+      description: domain is case insensitive exact; domain_suffix matches label boundaries; cidr canonical netip prefix; process matching is local only, never trusted server-mandatory input. all has no value.
+      oneOf:
+        - properties:
+            type:
+              enum:
+                - all
+          not:
+            required:
+              - value
+        - properties:
+            type:
+              enum:
+                - domain
+                - domain_suffix
+                - cidr
+                - process_name
+                - process_path
+          required:
+            - value
+    NetworkProxyRuleAction:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - reject
+            - direct
+            - node
+            - group
+          x-enum-varnames:
+            - NetworkProxyRuleActionTypeReject
+            - NetworkProxyRuleActionTypeDirect
+            - NetworkProxyRuleActionTypeNode
+            - NetworkProxyRuleActionTypeGroup
+        targetId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      description: node/group require a logical targetId; reject/direct forbid targetId. ProtectedSet reject always wins.
+      oneOf:
+        - properties:
+            type:
+              enum:
+                - reject
+                - direct
+          not:
+            required:
+              - targetId
+        - properties:
+            type:
+              enum:
+                - node
+                - group
+          required:
+            - targetId
+    NetworkProxyRule:
+      type: object
+      additionalProperties: false
+      required:
+        - ruleId
+        - source
+        - order
+        - enabled
+        - matcher
+        - action
+      properties:
+        ruleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        source:
+          type: string
+          enum:
+            - protection
+            - organization_required
+            - personal
+            - organization_default
+            - fallback
+          x-enum-varnames:
+            - NetworkProxyRuleSourceProtection
+            - NetworkProxyRuleSourceOrganizationRequired
+            - NetworkProxyRuleSourcePersonal
+            - NetworkProxyRuleSourceOrganizationDefault
+            - NetworkProxyRuleSourceFallback
+        order:
+          type: integer
+          format: int64
+          minimum: 0
+        enabled:
+          type: boolean
+        matcher:
+          $ref: "#/components/schemas/NetworkProxyRuleMatcher"
+        action:
+          $ref: "#/components/schemas/NetworkProxyRuleAction"
+    NetworkProxyRuleConflict:
+      type: object
+      additionalProperties: false
+      required:
+        - ruleId
+        - blockingRuleId
+        - reasonCode
+      properties:
+        ruleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        blockingRuleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        reasonCode:
+          type: string
+          enum:
+            - masked_by_required
+            - mandatory_conflict
+            - unsupported_matcher
+            - invalid_target
+            - ambiguous_overlap
+          x-enum-varnames:
+            - NetworkProxyRuleConflictReasonCodeMaskedByRequired
+            - NetworkProxyRuleConflictReasonCodeMandatoryConflict
+            - NetworkProxyRuleConflictReasonCodeUnsupportedMatcher
+            - NetworkProxyRuleConflictReasonCodeInvalidTarget
+            - NetworkProxyRuleConflictReasonCodeAmbiguousOverlap
+    NetworkProxyRulesInput:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedOrgRevision
+        - expectedPersonalRevision
+        - rules
+      properties:
+        expectedOrgRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        expectedPersonalRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        rules:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: "#/components/schemas/NetworkProxyRule"
+    NetworkProxyRules:
+      type: object
+      additionalProperties: false
+      required:
+        - orgRevision
+        - personalRevision
+        - rules
+        - effectiveRules
+        - conflicts
+      properties:
+        orgRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        personalRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        rules:
+          type: array
+          maxItems: 10240
+          items:
+            $ref: "#/components/schemas/NetworkProxyRule"
+        effectiveRules:
+          type: array
+          maxItems: 10240
+          items:
+            $ref: "#/components/schemas/NetworkProxyRule"
+        conflicts:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: "#/components/schemas/NetworkProxyRuleConflict"
+      description: Personal drafts persist independently of subscription/org updates. CAS both revisions; conflicts retain original drafts.
+    NetworkProxyEndpointRef:
+      type: object
+      additionalProperties: false
+      required:
+        - endpointId
+      properties:
+        endpointId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      description: Installer-approved internal HTTPS endpoint reference, never arbitrary caller URL.
+    NetworkProxyScope:
+      type: object
+      additionalProperties: false
+      required:
+        - userIds
+        - deviceIds
+        - nodeIds
+      properties:
+        userIds:
+          type: array
+          maxItems: 128
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        deviceIds:
+          type: array
+          maxItems: 128
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        nodeIds:
+          type: array
+          maxItems: 128
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+    NetworkProxyBundleInput:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - expectedRevision
+        - sourceId
+        - sourceRevision
+        - orgRevision
+        - deliveryMode
+        - scope
+        - endpoints
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        sourceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        sourceRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        orgRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        deliveryMode:
+          $ref: "#/components/schemas/NetworkProxyDeliveryMode"
+        scope:
+          $ref: "#/components/schemas/NetworkProxyScope"
+        endpoints:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/NetworkProxyEndpointRef"
+    NetworkProxyBundle:
+      type: object
+      additionalProperties: false
+      required:
+        - bundleId
+        - revision
+        - sourceId
+        - sourceRevision
+        - orgRevision
+        - nodeMappingRevision
+        - serverHash
+        - projectionHash
+        - activeRevision
+        - deliveryMode
+        - state
+        - credentialEpoch
+        - validUntil
+        - converterVersion
+      properties:
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        sourceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        sourceRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        orgRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        nodeMappingRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        serverHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        projectionHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        activeRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        deliveryMode:
+          $ref: "#/components/schemas/NetworkProxyDeliveryMode"
+        state:
+          type: string
+          enum:
+            - prepare
+            - server_ready
+            - client_eligible
+            - activated
+            - failed
+            - revoked
+          x-enum-varnames:
+            - NetworkProxyBundleStatePrepare
+            - NetworkProxyBundleStateServerReady
+            - NetworkProxyBundleStateClientEligible
+            - NetworkProxyBundleStateActivated
+            - NetworkProxyBundleStateFailed
+            - NetworkProxyBundleStateRevoked
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        validUntil:
+          type: string
+          format: date-time
+        converterVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+      description: For mapped_nodes/gateway, server-ready requires authenticated runtime readback matching bundle revision/hash/epoch. Revocation/deleted nodes invalidate old credentials/flows immediately; old lease cannot keep access. For direct_subscription, prepare validates source conversion, policy and explicit device authorization; proceed through client_eligible to activated without server_ready. No server relay or Pod readiness is required or implied, and disclosed upstream credentials cannot promise immediate revocation.
+    NetworkProxyBundleList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/NetworkProxyBundle"
+    NetworkProxyBundleActivateInput:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - expectedRevision
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+      description: Only requests activation; never accepts caller supplied serverReady or observation.
+    NetworkProxyEmployeeNode:
+      type: object
+      additionalProperties: false
+      required:
+        - nodeId
+        - label
+        - endpointId
+      properties:
+        nodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        label:
+          type: string
+          minLength: 1
+          maxLength: 128
+        endpointId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+    NetworkProxyEmployeeEndpoint:
+      type: object
+      additionalProperties: false
+      required:
+        - endpointId
+        - url
+      properties:
+        endpointId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        url:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          pattern: ^https://[^/@?#]+(?::[0-9]+)?(?:/[^?#]*)?$
+      description: Operator approved internal endpoint; validate against approved endpoint set before delivery. HTTP CONNECT supports TCP only.
+    NetworkProxyEmployeeCredential:
+      type: object
+      additionalProperties: false
+      required:
+        - credentialId
+        - userId
+        - deviceId
+        - nodeIds
+        - credentialEpoch
+        - secret
+        - expiresAt
+      properties:
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        userId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        deviceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        nodeIds:
+          type: array
+          maxItems: 128
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        secret:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          format: password
+        expiresAt:
+          type: string
+          format: date-time
+      description: Only delivered through scoped device mTLS channel with private/no-store caching; never administrator list/read response.
+    NetworkProxyEmployeeProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - runtimeId
+        - profileId
+        - bundleId
+        - revision
+        - sourceRevision
+        - orgRevision
+        - activeRevision
+        - projectionHash
+        - deliveryMode
+        - processEpoch
+        - credentialEpoch
+        - expiresAt
+        - nodes
+        - groups
+        - endpoints
+        - credential
+        - rules
+      properties:
+        schemaVersion:
+          type: string
+          enum:
+            - proxy-projection/v1
+          x-enum-varnames:
+            - NetworkProxyEmployeeProjectionSchemaVersionProxyProjectionV1
+        runtimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        profileId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        sourceRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        orgRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        activeRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        projectionHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        deliveryMode:
+          type: string
+          enum:
+            - mapped_nodes
+            - gateway
+          x-enum-varnames:
+            - NetworkProxyEmployeeProjectionDeliveryModeMappedNodes
+            - NetworkProxyEmployeeProjectionDeliveryModeGateway
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: Endpoint-service boot nonce bound to the endpoint credential; not the epoch of an HA proxy server. The profile-scoped projection receipt must echo this exact nonce.
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        expiresAt:
+          type: string
+          format: date-time
+        nodes:
+          type: array
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/NetworkProxyEmployeeNode"
+        groups:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: "#/components/schemas/NetworkProxyGroup"
+        endpoints:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/NetworkProxyEmployeeEndpoint"
+        credential:
+          $ref: "#/components/schemas/NetworkProxyEmployeeCredential"
+        rules:
+          type: array
+          maxItems: 10240
+          items:
+            $ref: "#/components/schemas/NetworkProxyRule"
+      description: Separate employee DTO. Safe aliases only; no upstream parameters/source URL. Fail closed on expiry, epoch change, unreachable internal endpoint. Never fetch direct source as fallback.
+    NetworkProxyProjectionApplied:
+      type: object
+      additionalProperties: false
+      required:
+        - bundleId
+        - revision
+        - projectionHash
+        - processEpoch
+        - status
+      properties:
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        projectionHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: Exact endpoint-service boot nonce from the delivered projection, bound to endpoint credential; stale or mismatched echoes are rejected.
+        status:
+          type: string
+          enum:
+            - applied
+            - rejected
+          x-enum-varnames:
+            - NetworkProxyProjectionAppliedStatusApplied
+            - NetworkProxyProjectionAppliedStatusRejected
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+    NetworkProxyRuntimeCommandKind:
+      type: string
+      enum:
+        - groups
+        - select
+        - probe
+        - refresh
+        - rules
+        - dns
+        - logs
+        - diagnostics
+      x-enum-varnames:
+        - NetworkProxyRuntimeCommandKindGroups
+        - NetworkProxyRuntimeCommandKindSelect
+        - NetworkProxyRuntimeCommandKindProbe
+        - NetworkProxyRuntimeCommandKindRefresh
+        - NetworkProxyRuntimeCommandKindRules
+        - NetworkProxyRuntimeCommandKindDns
+        - NetworkProxyRuntimeCommandKindLogs
+        - NetworkProxyRuntimeCommandKindDiagnostics
+    NetworkProxyRuntimeCommandInput:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - processEpoch
+        - kind
+        - issuedAt
+        - expiresAt
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        kind:
+          $ref: "#/components/schemas/NetworkProxyRuntimeCommandKind"
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        groupId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        nodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        probeProfileId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        sourceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        cursor:
+          type: string
+          minLength: 1
+          maxLength: 256
+      description: Single typed bounded operation. Select requires groupId/nodeId; probe requires registered probeProfileId, never arbitrary URL. No controller path/body/shell. Expiry <=30 seconds; epoch must match.
+      allOf:
+        - if:
+            properties:
+              kind:
+                const: select
+          then:
+            required:
+              - groupId
+              - nodeId
+        - if:
+            properties:
+              kind:
+                const: probe
+          then:
+            required:
+              - probeProfileId
+    NetworkProxyRuntimeCommandResult:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        groups:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: "#/components/schemas/NetworkProxyGroup"
+        rules:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: "#/components/schemas/NetworkProxyRule"
+        dns:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - name
+              - addresses
+              - expiresAt
+            properties:
+              name:
+                type: string
+                minLength: 1
+                maxLength: 253
+              addresses:
+                type: array
+                maxItems: 32
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+              expiresAt:
+                type: string
+                format: date-time
+        logs:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - sequence
+              - level
+              - message
+              - occurredAt
+            properties:
+              sequence:
+                type: integer
+                format: int64
+                minimum: 0
+              level:
+                type: string
+                enum:
+                  - debug
+                  - info
+                  - warn
+                  - error
+                x-enum-varnames:
+                  - NetworkProxyRuntimeCommandResultLogsItemLevelDebug
+                  - NetworkProxyRuntimeCommandResultLogsItemLevelInfo
+                  - NetworkProxyRuntimeCommandResultLogsItemLevelWarn
+                  - NetworkProxyRuntimeCommandResultLogsItemLevelError
+              message:
+                type: string
+                minLength: 1
+                maxLength: 1024
+              occurredAt:
+                type: string
+                format: date-time
+        latencyMilliseconds:
+          type: number
+          minimum: 0
+        selectedNodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        diagnostics:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - code
+              - state
+              - message
+            properties:
+              code:
+                type: string
+                minLength: 1
+                maxLength: 128
+              state:
+                type: string
+                enum:
+                  - available
+                  - unsupported
+                  - unavailable
+                x-enum-varnames:
+                  - NetworkProxyRuntimeCommandResultDiagnosticsItemStateAvailable
+                  - NetworkProxyRuntimeCommandResultDiagnosticsItemStateUnsupported
+                  - NetworkProxyRuntimeCommandResultDiagnosticsItemStateUnavailable
+              message:
+                type: string
+                minLength: 1
+                maxLength: 512
+      description: Bounded sanitized results; no raw kernel config/controller dumps or upstream secrets.
+    NetworkProxyRuntimeCommandReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - commandId
+        - requestId
+        - processEpoch
+        - kind
+        - status
+        - expiresAt
+      properties:
+        commandId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        kind:
+          $ref: "#/components/schemas/NetworkProxyRuntimeCommandKind"
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - succeeded
+            - failed
+            - expired
+            - cancelled
+            - unknown
+            - unsupported
+            - unavailable
+          x-enum-varnames:
+            - NetworkProxyRuntimeCommandReceiptStatusPending
+            - NetworkProxyRuntimeCommandReceiptStatusRunning
+            - NetworkProxyRuntimeCommandReceiptStatusSucceeded
+            - NetworkProxyRuntimeCommandReceiptStatusFailed
+            - NetworkProxyRuntimeCommandReceiptStatusExpired
+            - NetworkProxyRuntimeCommandReceiptStatusCancelled
+            - NetworkProxyRuntimeCommandReceiptStatusUnknown
+            - NetworkProxyRuntimeCommandReceiptStatusUnsupported
+            - NetworkProxyRuntimeCommandReceiptStatusUnavailable
+        expiresAt:
+          type: string
+          format: date-time
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+        result:
+          $ref: "#/components/schemas/NetworkProxyRuntimeCommandResult"
+      description: Durable idempotent receipt; same requestId with different intent conflicts. Accepted does not mean applied. commandId equals requestId; durable uniqueness is scoped to (instanceID, requestId). Reuse by another actor or for a different intent returns conflict; no cross-actor receipt disclosure.
+    NetworkProxyDeploymentInput:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedRevision
+        - slotId
+        - objectUID
+        - templateHash
+        - owner
+        - ownerEpoch
+        - requestId
+        - adopt
+      properties:
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        slotId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        objectUID:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        templateHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        owner:
+          type: string
+          enum:
+            - soha-managed
+            - gitops
+            - helm
+            - manual
+            - external
+          x-enum-varnames:
+            - NetworkProxyDeploymentInputOwnerSohaManaged
+            - NetworkProxyDeploymentInputOwnerGitops
+            - NetworkProxyDeploymentInputOwnerHelm
+            - NetworkProxyDeploymentInputOwnerManual
+            - NetworkProxyDeploymentInputOwnerExternal
+        ownerEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        adopt:
+          type: boolean
+      description: Bind only installer-approved slot/UID/template; no arbitrary image/spec/namespace/shell. Explicit adoption and installer allow_adoption/previous_owner_stopped are required.
+    NetworkProxyDeploymentControlInput:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - expectedRevision
+        - action
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        action:
+          type: string
+          enum:
+            - start
+            - scale
+            - stop
+            - reconcile
+          x-enum-varnames:
+            - NetworkProxyDeploymentControlInputActionStart
+            - NetworkProxyDeploymentControlInputActionScale
+            - NetworkProxyDeploymentControlInputActionStop
+            - NetworkProxyDeploymentControlInputActionReconcile
+        replicas:
+          type: integer
+          minimum: 0
+          maximum: 100
+        drainSeconds:
+          type: integer
+          minimum: 0
+          maximum: 120
+          default: 120
+      description: Reconcile is read-only observation of approved UID/template. Unknown prior result blocks new writes. Scale-down requires known active counts and drain; withdrawal/revocation is immediate. Installer may cap drain below120s.
+    NetworkProxyDeploymentMember:
+      type: object
+      additionalProperties: false
+      required:
+        - instanceId
+        - runtimeId
+        - processEpoch
+        - credentialId
+        - credentialEpoch
+        - observedAt
+        - ready
+        - trafficReady
+        - activeCountKnown
+      properties:
+        instanceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        runtimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        observedAt:
+          type: string
+          format: date-time
+        ready:
+          type: boolean
+        trafficReady:
+          type: boolean
+        activeConnections:
+          type: integer
+          format: int64
+          minimum: 0
+        activeCountKnown:
+          type: boolean
+        acceptingRequests:
+          type: boolean
+        ackRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        controlExpiresAt:
+          type: string
+          format: date-time
+      description: Each process has independent runtime/credential identity. Shared certificate replicas do not establish independent members.
+    NetworkProxyDeployment:
+      type: object
+      additionalProperties: false
+      required:
+        - revision
+        - state
+        - members
+      properties:
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        slotId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        objectUID:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        templateHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        owner:
+          type: string
+          enum:
+            - soha-managed
+            - gitops
+            - helm
+            - manual
+            - external
+          x-enum-varnames:
+            - NetworkProxyDeploymentOwnerSohaManaged
+            - NetworkProxyDeploymentOwnerGitops
+            - NetworkProxyDeploymentOwnerHelm
+            - NetworkProxyDeploymentOwnerManual
+            - NetworkProxyDeploymentOwnerExternal
+        ownerEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        desiredReplicas:
+          type: integer
+          format: int64
+          minimum: 0
+          x-omitempty: false
+          description: Known desired replica count, including zero when stopped.
+        observedReplicas:
+          type: integer
+          format: int64
+          minimum: 0
+          x-go-type-skip-optional-pointer: false
+          description: Omitted when not observed; zero is an observed zero replica count.
+        observedGeneration:
+          type: integer
+          format: int64
+          minimum: 0
+        state:
+          type: string
+          enum:
+            - unbound
+            - pending
+            - starting
+            - ready
+            - draining
+            - stopped
+            - failed
+            - unknown
+            - conflict
+            - unsupported
+          x-enum-varnames:
+            - NetworkProxyDeploymentStateUnbound
+            - NetworkProxyDeploymentStatePending
+            - NetworkProxyDeploymentStateStarting
+            - NetworkProxyDeploymentStateReady
+            - NetworkProxyDeploymentStateDraining
+            - NetworkProxyDeploymentStateStopped
+            - NetworkProxyDeploymentStateFailed
+            - NetworkProxyDeploymentStateUnknown
+            - NetworkProxyDeploymentStateConflict
+            - NetworkProxyDeploymentStateUnsupported
+        members:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/NetworkProxyDeploymentMember"
+        operationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+    NetworkProxyDeploymentOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - requestId
+        - status
+        - desiredRevision
+      properties:
+        operationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - succeeded
+            - failed
+            - unknown
+          x-enum-varnames:
+            - NetworkProxyDeploymentOperationStatusPending
+            - NetworkProxyDeploymentOperationStatusRunning
+            - NetworkProxyDeploymentOperationStatusSucceeded
+            - NetworkProxyDeploymentOperationStatusFailed
+            - NetworkProxyDeploymentOperationStatusUnknown
+        desiredRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+    NetworkProxyCloseInput:
+      type: object
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+      required:
+        - requestId
+        - processEpoch
+        - issuedAt
+        - expiresAt
+    NetworkProxyDeploymentRuntimeControl:
+      type: object
+      additionalProperties: false
+      properties:
+        controlRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        ownerEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        instanceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        runtimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        acceptingRequests:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+        issuedAt:
+          type: string
+          format: date-time
+        stopRequired:
+          type: boolean
+          description: Optional, false omitted. True authorizes bounded confirmation that the exact owned engine and ingress have stopped, only under this newly issued controlRevision with acceptingRequests=false. Core issues a higher revision after the fixed drain expiry; confirmation expires within 30 seconds and no later than the original 240-second task deadline or certificate expiry. It never extends old-flow authorization or allows new traffic.
+      required:
+        - controlRevision
+        - ownerEpoch
+        - instanceId
+        - runtimeId
+        - processEpoch
+        - credentialId
+        - credentialEpoch
+        - acceptingRequests
+        - expiresAt
+        - issuedAt
+      allOf:
+        - if:
+            properties:
+              stopRequired:
+                const: true
+            required:
+              - stopRequired
+          then:
+            properties:
+              acceptingRequests:
+                const: false
+    NetworkProxyDeploymentRuntimeAck:
+      type: object
+      additionalProperties: false
+      properties:
+        controlRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        ownerEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        instanceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        runtimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        acceptingRequests:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+        activeCountKnown:
+          type: boolean
+        activeConnections:
+          type: integer
+          format: int64
+          minimum: 0
+        observedAt:
+          type: string
+          format: date-time
+        processStopped:
+          type: boolean
+          description: Optional, false omitted. True proves the exact owned engine and ingress exited under the current stopRequired control revision, not merely a stopped Pod or a zero default. Requires explicit known activeConnections=0 and acceptingRequests=false. Old or late ACKs cannot confirm a newer revision; no positive proof means no scale-down.
+      required:
+        - controlRevision
+        - ownerEpoch
+        - instanceId
+        - runtimeId
+        - processEpoch
+        - credentialId
+        - credentialEpoch
+        - acceptingRequests
+        - expiresAt
+        - activeCountKnown
+        - observedAt
+      allOf:
+        - if:
+            properties:
+              processStopped:
+                const: true
+            required:
+              - processStopped
+          then:
+            required:
+              - activeConnections
+            properties:
+              acceptingRequests:
+                const: false
+              activeCountKnown:
+                const: true
+              activeConnections:
+                const: 0
+    NetworkProxyServerPublicationNode:
+      type: object
+      additionalProperties: false
+      properties:
+        nodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        outboundId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      required:
+        - nodeId
+        - outboundId
+      description: Logical node and host-compiled outbound reference only. Never a caller-selected listener, controller path or upstream configuration.
+    NetworkProxyServerPublication:
+      type: object
+      additionalProperties: false
+      properties:
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        sourceRevision:
+          type: integer
+          format: int64
+          minimum: 1
+        orgRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 1
+        serverHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        memberSetHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        converterVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        deliveryMode:
+          type: string
+          enum:
+            - mapped_nodes
+            - gateway
+          x-enum-varnames:
+            - NetworkProxyServerPublicationDeliveryModeMappedNodes
+            - NetworkProxyServerPublicationDeliveryModeGateway
+        nodes:
+          type: array
+          maxItems: 128
+          items:
+            $ref: "#/components/schemas/NetworkProxyServerPublicationNode"
+        groups:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: "#/components/schemas/NetworkProxyGroup"
+        rules:
+          type: array
+          maxItems: 10240
+          items:
+            $ref: "#/components/schemas/NetworkProxyRule"
+        validUntil:
+          type: string
+          format: date-time
+      required:
+        - bundleId
+        - revision
+        - sourceRevision
+        - orgRevision
+        - credentialEpoch
+        - serverHash
+        - memberSetHash
+        - converterVersion
+        - deliveryMode
+        - nodes
+        - groups
+        - rules
+        - validUntil
+      description: Server-runtime-only publication metadata, delivered with ConfigurationDesired. Real upstream remains in encrypted server configuration content; never send this DTO through employee/admin command results. The host independently compiles/validates outbound references and enforces lease, protection and ingress authorization.
+    NetworkProxyBundleReadback:
+      type: object
+      additionalProperties: false
+      properties:
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        configurationRevision:
+          type: integer
+          format: int64
+          minimum: 1
+        serverHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        ingressReady:
+          type: boolean
+        protectionReady:
+          type: boolean
+        observedAt:
+          type: string
+          format: date-time
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - bundleId
+        - revision
+        - configurationRevision
+        - serverHash
+        - processEpoch
+        - ingressReady
+        - protectionReady
+        - observedAt
+      description: Authenticated real proxy runtime observation only. Core compares current desired/applied configuration revision/hash, bundle revision, process/member and credential identity. Caller flags alone never activate a bundle; reject stale, mismatched or unauthorized observations.
+    NetworkProxyIngressCheckInput:
+      type: object
+      additionalProperties: false
+      properties:
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        nodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialSecret:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          format: password
+          writeOnly: true
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 1
+        destinationHost:
+          type: string
+          minLength: 1
+          maxLength: 253
+          pattern: ^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|[0-9A-Fa-f:]+)$
+        destinationPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        network:
+          type: string
+          enum:
+            - tcp
+            - udp
+          x-enum-varnames:
+            - NetworkProxyIngressCheckInputNetworkTCP
+            - NetworkProxyIngressCheckInputNetworkUDP
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+      required:
+        - bundleId
+        - revision
+        - nodeId
+        - credentialId
+        - credentialSecret
+        - credentialEpoch
+        - destinationHost
+        - destinationPort
+        - network
+        - processEpoch
+      description: Online authorization request from enrolled runtime. Core derives identity from real mTLS, resolves current user/device/profile/scope and rechecks bundle/node/epoch and destination protection. No caller field grants identity or authorization. Never log, audit, echo or include credentialSecret in errors. UDP is explicitly unsupported unless the verified ingress transport provides it; never silently convert to TCP or DIRECT.
+    NetworkProxyIngressCheckResult:
+      type: object
+      additionalProperties: false
+      properties:
+        allowed:
+          type: boolean
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        nodeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        credentialEpoch:
+          type: integer
+          format: int64
+          minimum: 1
+        expiresAt:
+          type: string
+          format: date-time
+      required:
+        - allowed
+        - bundleId
+        - revision
+        - nodeId
+        - credentialEpoch
+        - expiresAt
+      description: Scoped, short-lived decision, not a reusable grant. Revalidate active flows against current authorization; old epoch/lease cannot preserve revoked access. Denials/errors never expose credential or upstream values.
+
+    NetworkProxyDirectProjection:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - runtimeId
+        - profileId
+        - bundleId
+        - revision
+        - sourceRevision
+        - orgRevision
+        - activeRevision
+        - projectionHash
+        - processEpoch
+        - expiresAt
+        - deliveryMode
+        - upstreamDisclosure
+        - format
+        - content
+        - groups
+        - rules
+      properties:
+        schemaVersion:
+          type: string
+          enum:
+            - proxy-direct/v1
+          x-enum-varnames:
+            - NetworkProxyDirectProjectionSchemaVersionProxyDirectV1
+        runtimeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        profileId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        bundleId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        sourceRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        orgRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        activeRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        projectionHash:
+          type: string
+          pattern: ^sha256:[a-f0-9]{64}$
+        processEpoch:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          description: Endpoint-service boot nonce bound to the endpoint credential; not the epoch of an HA proxy server. The profile-scoped projection receipt must echo this exact nonce.
+        expiresAt:
+          type: string
+          format: date-time
+        deliveryMode:
+          type: string
+          enum:
+            - direct_subscription
+          x-enum-varnames:
+            - NetworkProxyDirectProjectionDeliveryModeDirectSubscription
+        upstreamDisclosure:
+          type: string
+          enum:
+            - upstream_parameters
+          x-enum-varnames:
+            - NetworkProxyDirectProjectionUpstreamDisclosureUpstreamParameters
+        format:
+          type: string
+          enum:
+            - mihomo_yaml
+          x-enum-varnames:
+            - NetworkProxyDirectProjectionFormatMihomoYAML
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1048576
+          format: password
+          description: Sensitive upstream parameters. Contains only converted, validated Mihomo proxies subset, never original source URL, subscription providers, listeners or arbitrary raw configuration. Deliver only to the explicitly direct-authorized device over mTLS; private/no-store. Never put content in logs, audit/error details, IPC or exports.
+        groups:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: "#/components/schemas/NetworkProxyGroup"
+        rules:
+          type: array
+          maxItems: 10240
+          items:
+            $ref: "#/components/schemas/NetworkProxyRule"
+      description: Separate explicit direct-subscription device projection. This mode deliberately discloses upstream parameters, has no scoped gateway credential and promises neither upstream privacy nor immediate revocation of already disclosed credentials. It must never be returned by the protected /projection path or used as automatic fallback. Prepare validates conversion, policy and current device authorization; it may proceed client_eligible to activated without server relay readiness.

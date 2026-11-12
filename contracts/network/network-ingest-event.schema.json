@@ -421,8 +421,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["engine", "uptimeSeconds", "uploadTotal", "downloadTotal"],
+      "dependentRequired": { "processEpoch": ["sampleSequence"], "sampleSequence": ["processEpoch"] },
       "properties": {
-        "engine": { "enum": ["mihomo", "sing-box", "v2ray"] },
+        "engine": { "enum": ["mihomo", "sing-box", "v2ray", "external"] },
+        "processEpoch": {"type":"string","minLength":1,"maxLength":128,"pattern":"^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "sampleSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "uptimeSeconds": { "type": "integer", "minimum": 0 },
         "uploadTotal": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "downloadTotal": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },

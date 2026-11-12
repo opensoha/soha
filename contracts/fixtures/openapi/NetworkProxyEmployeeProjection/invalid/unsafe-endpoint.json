@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "proxy-projection/v1",
+  "runtimeId": "r1",
+  "profileId": "p1",
+  "bundleId": "b1",
+  "revision": 1,
+  "sourceRevision": 1,
+  "orgRevision": 1,
+  "activeRevision": 1,
+  "projectionHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "deliveryMode": "mapped_nodes",
+  "processEpoch": "e1",
+  "credentialEpoch": 1,
+  "expiresAt": "2026-11-08T11:05:00Z",
+  "nodes": [
+    {
+      "nodeId": "n1",
+      "label": "Node 1",
+      "endpointId": "internal1"
+    }
+  ],
+  "groups": [],
+  "endpoints": [
+    {
+      "endpointId": "internal1",
+      "url": "http://internal.example.invalid"
+    }
+  ],
+  "credential": {
+    "credentialId": "c1",
+    "userId": "u1",
+    "deviceId": "d1",
+    "nodeIds": [
+      "n1"
+    ],
+    "credentialEpoch": 1,
+    "secret": "test-scoped-credential",
+    "expiresAt": "2026-11-08T11:05:00Z"
+  },
+  "rules": []
+}

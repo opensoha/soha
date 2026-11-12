@@ -1,0 +1,7 @@
+{
+  "action": "scale",
+  "replicas": 2,
+  "expectedRevision": 1,
+  "requestId": "scale-1",
+  "drainSeconds": 60
+}

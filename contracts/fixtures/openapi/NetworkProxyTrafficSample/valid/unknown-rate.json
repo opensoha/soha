@@ -1,0 +1,10 @@
+{
+  "observedAt": "2026-11-08T12:00:00Z",
+  "uploadTotal": 0,
+  "downloadTotal": 0,
+  "uploadBytesPerSecond": 0,
+  "downloadBytesPerSecond": 0,
+  "rateState": "unknown",
+  "processEpoch": "boot1",
+  "sampleSequence": 1
+}

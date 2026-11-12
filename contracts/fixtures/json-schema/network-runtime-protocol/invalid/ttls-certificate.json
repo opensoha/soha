@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "msg-config-site-link-0001",
+  "messageType": "configuration.desired",
+  "producerId": "network-control-default",
+  "runtimeId": "gateway-site-b",
+  "runtimeKind": "endpoint",
+  "occurredAt": "2026-09-03T08:00:00Z",
+  "expiresAt": "2026-09-03T08:05:00Z",
+  "payload": {
+    "configurationVersion": 13,
+    "policyVersion": 7,
+    "validUntil": "2026-09-03T08:05:00Z",
+    "accessProfile": "full",
+    "protectedResourceIds": [],
+    "networkLeases": [],
+    "resourceLeases": [],
+    "admission": {
+      "restrictionEpoch": 1,
+      "profiles": [
+        {
+          "id": "profile-1",
+          "siteId": "site-1",
+          "accessMedium": "wired",
+          "identity": "user-1",
+          "serverNames": [
+            "radius.example.test"
+          ],
+          "caCertificates": [
+            "-----BEGIN CERTIFICATE-----AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          ],
+          "wifiSecurity": "wpa2-enterprise",
+          "eapMethod": "ttls",
+          "innerMethod": "pap",
+          "credentialSource": "user-input",
+          "profileRevision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "clientCertificateFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  }
+}

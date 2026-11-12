@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "proxy-runtime/v1alpha1",
+  "runtimeId": "runtime1",
+  "occurredAt": "2026-11-08T12:00:01Z",
+  "messageType": "deployment.ack",
+  "payload": {
+    "controlRevision": 2,
+    "ownerEpoch": 1,
+    "instanceId": "pod1",
+    "runtimeId": "runtime1",
+    "processEpoch": "boot1",
+    "credentialId": "credential1",
+    "credentialEpoch": 1,
+    "acceptingRequests": false,
+    "expiresAt": "2026-11-08T12:00:30Z",
+    "activeCountKnown": true,
+    "activeConnections": 0,
+    "observedAt": "2026-11-08T12:00:01Z",
+    "processStopped": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "bundleId": "b1",
+  "revision": 1,
+  "nodeId": "n1",
+  "credentialId": "c1",
+  "credentialSecret": "synthetic-scoped-secret",
+  "credentialEpoch": 1,
+  "destinationHost": "example.invalid",
+  "destinationPort": 443,
+  "network": "tcp",
+  "processEpoch": "epoch1"
+}

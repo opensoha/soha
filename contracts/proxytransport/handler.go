@@ -35,7 +35,7 @@ func New(credentials map[string]string, dial Dial, deadline time.Time) (*Handler
 	}
 	h := &Handler{credentials: map[string][32]byte{}, dial: dial, deadline: deadline.UTC(), connections: map[net.Conn]struct{}{}}
 	for user, password := range credentials {
-		if user == "" || len(user) > 128 || len(password) < 32 {
+		if user == "" || len(user) > MaxUsernameBytes || len(password) < 32 {
 			return nil, errors.New("invalid proxy transport credential")
 		}
 		h.credentials[user] = sha256.Sum256([]byte(password))
@@ -53,6 +53,10 @@ func (h *Handler) Refresh(deadline time.Time) error {
 	h.deadline = deadline
 	for conn := range h.connections {
 		if err := conn.SetDeadline(deadline); err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				delete(h.connections, conn)
+				continue
+			}
 			return err
 		}
 	}

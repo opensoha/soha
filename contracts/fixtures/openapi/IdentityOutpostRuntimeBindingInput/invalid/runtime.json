@@ -1,0 +1,6 @@
+{
+  "slotId": "edge-a",
+  "expectedGeneration": 0,
+  "requestId": "req-bind-1",
+  "namespace": "arbitrary"
+}

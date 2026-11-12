@@ -15149,10 +15149,719 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/identity/outposts/{identityOutpostID}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identityOutpostID: components["parameters"]["IdentityOutpostID"];
+            };
+            cookie?: never;
+        };
+        /** @description Read installer-approved workload slot state. Requires identity.outposts.view. Unknown observations are omitted, never reported as zero replicas. */
+        get: operations["getIdentityOutpostRuntime"];
+        /** @description Bind only an installer-approved named slot. Requires identity.outposts.update. The server resolves namespace, workload name and immutable UID from its installation allowlist. Generation conflicts or reuse of a requestId with different input fail with 409. Explicit adoption is required before taking ownership of an external workload. */
+        put: operations["bindIdentityOutpostRuntime"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity/outposts/{identityOutpostID}/runtime/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identityOutpostID: components["parameters"]["IdentityOutpostID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Start, scale, stop or reconcile the bound installer-approved slot. Requires identity.outposts.update and Soha ownership. Apply generation CAS and requestId idempotency with a durable domain execution task. Stop drains for at most 30 seconds without renewing runtime leases; scale requires replicas. Reconcile only observes the currently approved slot and checks its immutable UID, template and resourceVersion; it never updates scale, changes replicas or replays an unknown write. Never accepts templates or arbitrary Kubernetes targets. */
+        post: operations["controlIdentityOutpostRuntime"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity/outpost-runtime-executor/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Claim one execution task only for the authenticated executor installation. The server binds executorId, allowed slots and provider outpost_runtime.<executorID>; arbitrary providerKinds and global runner credentials are forbidden. */
+        post: operations["claimIdentityOutpostRuntimeExecution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity/outpost-runtime-executor/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read task state only within the authenticated installation executor and allowed slots. */
+        get: operations["getIdentityOutpostRuntimeExecutionStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity/outpost-runtime-executor/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Record an existing execution-task callback only after validating both the dedicated installation credential and callback token against the executor, task, allowed slot and provider binding. */
+        post: operations["recordIdentityOutpostRuntimeExecutionCallback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listNetworkProxySources"];
+        put?: never;
+        post: operations["createNetworkProxySource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/sources/{sourceID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkProxySource"];
+        put: operations["updateNetworkProxySource"];
+        post?: never;
+        delete: operations["deleteNetworkProxySource"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/sources/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["previewNetworkProxySource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listNetworkProxyBundles"];
+        put?: never;
+        post: operations["createNetworkProxyBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/bundles/{bundleID}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["activateNetworkProxyBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Kind-specific service authorization is mandatory: groups/probe/rules/dns/logs/diagnostics require view; select/refresh require update. A route-level view-or-update grant alone does not authorize a mutation. Durable commandId=requestId, unique within (instanceID, requestId); a different actor or changed intent conflicts. */
+        post: operations["createNetworkProxyRuntimeCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/commands/{commandID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkProxyRuntimeCommand"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkProxyRules"];
+        put: operations["updateNetworkProxyRules"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/personal-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkProxyPersonalRules"];
+        put: operations["updateNetworkProxyPersonalRules"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/deployment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkProxyDeployment"];
+        put: operations["bindNetworkProxyDeployment"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/deployment/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["controlNetworkProxyDeployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/runtimes/{runtimeID}/mihomo-profiles/{profileID}/projection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Device/profile scoped projection only; revalidate current user/device/node grants, credential epoch and bundle server-ready. Cache-Control: private, no-store. Never calls the direct source endpoint as fallback. */
+        get: operations["getNetworkProxyEmployeeProjection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/runtimes/{runtimeID}/mihomo-profiles/{profileID}/projection/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Device/profile-scoped acknowledgement shared by protected and explicit direct projections. Echo the exact endpoint boot nonce, bundle/revision and projection hash. Recheck current credential/device/direct authorization. Protected modes require trusted server-ready; direct_subscription requires eligible converted source and device authorization, never a fictitious relay readiness proof. Receipt contains no projection content. */
+        post: operations["acknowledgeNetworkProxyEmployeeProjection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/proxy-runtimes/{runtimeID}/deployment/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Bind runtime/instance/process/credential identity and owner epoch. Ignore expired/stale acknowledgements. Unknown active counts prevent automatic scale-down. */
+        get: operations["getNetworkProxyDeploymentRuntimeControl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/proxy-runtimes/{runtimeID}/deployment/control/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Bind runtime/instance/process/credential identity and owner epoch. Ignore expired/stale acknowledgements. Unknown active counts prevent automatic scale-down. */
+        post: operations["acknowledgeNetworkProxyDeploymentRuntimeControl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/proxies/{runtimeID}/ingress/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Online mapping-entry check. Authenticate actual runtime certificate; resolve current member/process, user/device/profile and node scope; recheck current bundle/epoch, ProtectedSet and organization mandatory policy. Cache-Control: private, no-store. No credential data in logs/audit/errors. */
+        post: operations["checkNetworkProxyIngress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/proxies/{runtimeID}/publication/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Accept only real authenticated runtime readiness observation. Match current desired/applied configuration and bundle hash, epoch and member identity before server_ready. Administrators cannot submit readiness through console authentication. */
+        post: operations["acknowledgeNetworkProxyBundleReadback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/proxy-instances/{runtimeID}/commands/next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Poll current process-scoped typed command. Returns the existing command.request envelope or 204 when none is pending. commandId=requestId; durable uniqueness is (instanceID, requestId). Current runtime credential and process epoch must match. */
+        get: operations["getNextNetworkProxyRuntimeCommand"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/proxy-instances/{runtimeID}/commands/{commandID}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Accept existing command.result envelope only from the authenticated runtime/process. Path commandID equals both payload.commandId and payload.requestId. Current actor/intent ownership and (instanceID, requestId) uniqueness are rechecked; stale, cross-actor and changed-intent receipts cannot complete work. */
+        post: operations["completeNetworkProxyRuntimeCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/proxy-instances/{instanceID}/commands/{commandID}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Cancel actor-owned typed command with update permission. Pending work becomes cancelled. Running work can only become unknown with reasonCode cancel_outcome_unknown; never claim reversal of applied side effects. Returns 204 with no body; read current receipt separately if needed. */
+        post: operations["cancelNetworkProxyRuntimeCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/runtimes/{runtimeID}/mihomo-profiles/{profileID}/direct-projection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Explicit direct_subscription bundle delivery to the assigned, currently authorized device only. Validate endpoint credential, requested boot nonce and current profile/bundle/direct disclosure authorization. Response deliberately contains validated upstream parameters, never original source URL, and carries no gateway credential. private/no-store; never log content or pass it through IPC/exports. No automatic fallback to or from the protected /projection path. Acknowledge through existing /projection/receipt using NetworkProxyProjectionApplied. No server-relay readiness is implied. */
+        get: operations["getNetworkProxyDirectProjection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/radius-pools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listNetworkRADIUSPools"];
+        put?: never;
+        post: operations["createNetworkRADIUSPool"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/radius-pools/{poolID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkRADIUSPool"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/radius-pools/{poolID}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["configureNetworkRADIUSPool"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/radius-pools/{poolID}/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["controlNetworkRADIUSPool"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/radius-runtimes/{runtimeID}/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkRADIUSRuntimeControl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-control/v1/radius-runtimes/{runtimeID}/control/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["acknowledgeNetworkRADIUSRuntimeControl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network-access/radius-pools/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNetworkRADIUSOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        NetworkRADIUSSlotOption: {
+            slotId: string;
+            siteId: string;
+            nasBindingId: string;
+            maxReplicas: number;
+            configurationRefs: string[];
+            available: boolean;
+            reasonCode: string;
+            reservedPoolId?: string;
+            bindingExists: boolean;
+            createApprovedBindingRequired: boolean;
+            /** Format: date-time */
+            bindingUpdatedAt?: string;
+        };
+        NetworkRADIUSOptions: {
+            slots: components["schemas"]["NetworkRADIUSSlotOption"][];
+        };
+        NetworkRADIUSRuntimeProof: {
+            poolId: string;
+            memberId: string;
+            credentialId: string;
+            processEpoch: string;
+            ownerEpoch: number;
+            controlRevision: number;
+            configurationRevision: number;
+            configurationHash: string;
+        };
+        NetworkRADIUSConfiguration: {
+            reference: string;
+            treeHash: string;
+            nasSharedSecretRef: string;
+            eapServerCertificateRef: string;
+            eapServerKeyRef: string;
+            eapCARef: string;
+            hooksAttested: boolean;
+        };
+        NetworkRADIUSRuntimeControl: {
+            poolId: string;
+            memberId: string;
+            runtimeId: string;
+            credentialId: string;
+            processEpoch: string;
+            ownerEpoch: number;
+            controlRevision: number;
+            configurationRevision: number;
+            configurationHash: string;
+            nasBindingId: string;
+            nasId: string;
+            siteId: string;
+            runProcess: boolean;
+            acceptNewAuthentications: boolean;
+            /** Format: date-time */
+            serveExistingUntil: string;
+            /** Format: date-time */
+            controlLeaseUntil: string;
+            /** Format: date-time */
+            configurationLeaseUntil: string;
+            /** Format: date-time */
+            drainUntil?: string;
+            stopRequired: boolean;
+            /** Format: date-time */
+            stopConfirmUntil?: string;
+            configuration: components["schemas"]["NetworkRADIUSConfiguration"];
+        };
+        NetworkRADIUSRuntimeACK: {
+            poolId: string;
+            memberId: string;
+            credentialId: string;
+            processEpoch: string;
+            ownerEpoch: number;
+            controlRevision: number;
+            configurationRevision: number;
+            configurationHash: string;
+            runtimeId: string;
+            stateCountKnown: boolean;
+            activeStates?: number;
+            acceptingNewAuthentications: boolean;
+            configurationApplied: boolean;
+            hooksReady: boolean;
+            ready: boolean;
+            processStopped: boolean;
+            observedNASUse: boolean;
+            runtimeVersion: string;
+            /** Format: date-time */
+            observedAt: string;
+        } & (unknown & unknown);
+        NetworkRADIUSMember: {
+            memberId: string;
+            runtimeId: string;
+            ordinal: number;
+            endpoint: string;
+            credentialId?: string;
+            processEpoch?: string;
+            runtimeVersion?: string;
+            configurationRevision?: number;
+            controlRevision?: number;
+            stateCountKnown: boolean;
+            activeStates?: number;
+            ready: boolean;
+            trafficReady: boolean;
+            acceptingNewAuthentications: boolean;
+            processStopped: boolean;
+            /** Format: date-time */
+            lastObservedAt?: string;
+            /** Format: date-time */
+            leaseUntil?: string;
+            reasonCode?: string;
+        };
+        NetworkRADIUSPool: {
+            poolId: string;
+            name: string;
+            siteId: string;
+            nasBindingId: string;
+            logicalRuntimeId: string;
+            slotId: string;
+            objectUid: string;
+            templateHash: string;
+            revision: number;
+            ownerEpoch: number;
+            configurationRevision: number;
+            configurationHash: string;
+            configurationRef: string;
+            enabled: boolean;
+            desiredReplicas: number;
+            observedReplicas?: number;
+            readyReplicas?: number;
+            /** @enum {string} */
+            state: "stopped" | "pending" | "starting" | "ready" | "draining" | "unknown" | "failed" | "conflict";
+            reasonCode?: string;
+            operationId?: string;
+            members: components["schemas"]["NetworkRADIUSMember"][];
+        };
+        NetworkRADIUSPoolInput: {
+            name: string;
+            siteId: string;
+            nasBindingId: string;
+            slotId: string;
+            /** Format: date-time */
+            expectedBindingUpdatedAt?: string;
+            configurationRef: string;
+            requestId: string;
+            /** @default false */
+            createApprovedBinding?: boolean;
+        };
+        NetworkRADIUSConfigurationInput: {
+            configurationRef: string;
+            expectedRevision: number;
+            requestId: string;
+        };
+        NetworkRADIUSControlInput: {
+            /** @enum {string} */
+            action: "start" | "stop" | "scale" | "reconcile";
+            replicas?: number;
+            expectedRevision: number;
+            requestId: string;
+            drainSeconds?: number;
+        };
+        NetworkRADIUSPoolList: {
+            items: components["schemas"]["NetworkRADIUSPool"][];
+        };
         WorkflowRequestInput: {
             idempotencyKey: string;
             workflow: components["schemas"]["WorkflowTriggerRequest"];
@@ -16486,6 +17195,10 @@ export interface components {
             runtimeVersion?: string;
             /** Format: int64 */
             currentConfigurationVersion?: number;
+            instanceId?: string;
+            processEpoch?: string;
+            /** @enum {string} */
+            supportedRuntimeControlVersion?: "v1";
         };
         IdentityOutpostRoute: {
             host: string;
@@ -16508,6 +17221,7 @@ export interface components {
             /** Format: uri */
             checkUrl: string;
             routes: components["schemas"]["IdentityOutpostRoute"][];
+            runtimeControl?: components["schemas"]["IdentityOutpostRuntimeControl"];
             signature: string;
         };
         IdentityOutpostRuntimeConfigEnvelope: {
@@ -16525,6 +17239,12 @@ export interface components {
             runtimeVersion?: string;
             /** Format: date-time */
             configurationExpiresAt?: string;
+            instanceId?: string;
+            processEpoch?: string;
+            acceptingRequests?: boolean;
+            activeChecks?: number;
+            /** Format: int64 */
+            appliedControlGeneration?: number;
         };
         IdentityOutpostHeartbeat: {
             accepted: boolean;
@@ -32457,7 +33177,13 @@ export interface components {
             bypassCidrs: components["schemas"]["NetworkIPCIDR"][];
             bypassHosts: string[];
             failClosed: boolean;
-        } & unknown & unknown & unknown & unknown;
+            deliveryMode?: components["schemas"]["NetworkProxyDeliveryMode"];
+            bundleId?: string;
+            /** Format: int64 */
+            orgRevision?: number;
+            /** Format: int64 */
+            sourceRevision?: number;
+        } & unknown & unknown & unknown & unknown & unknown & unknown;
         NetworkMihomoProfile: {
             id: string;
             deviceId: string;
@@ -32481,6 +33207,12 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            deliveryMode?: components["schemas"]["NetworkProxyDeliveryMode"];
+            bundleId?: string;
+            /** Format: int64 */
+            orgRevision?: number;
+            /** Format: int64 */
+            sourceRevision?: number;
         };
         NetworkMihomoProfileEnvelope: {
             data: components["schemas"]["NetworkMihomoProfile"];
@@ -32635,17 +33367,23 @@ export interface components {
             items: components["schemas"]["NetworkSiteProfileBinding"][];
         };
         /** @enum {string} */
-        NetworkProxyEngine: "mihomo" | "sing-box" | "v2ray";
+        NetworkProxyEngine: "mihomo" | "sing-box" | "v2ray" | "external";
+        /** @description External engine requires engineDescriptor; adapter selected by descriptor.engineId/adapterId, never legacy engine dispatch. */
         NetworkProxyInstanceInput: {
             id: string;
             name: string;
             engine: components["schemas"]["NetworkProxyEngine"];
             host?: string;
-        };
+            engineDescriptor?: components["schemas"]["NetworkProxyEngineDescriptor"];
+        } & unknown;
         /** @enum {string} */
         NetworkProxyInstanceStatus: "unregistered" | "online" | "degraded" | "offline" | "disabled";
-        /** @enum {string} */
-        NetworkProxyCapability: "traffic" | "connections" | "close_connection" | "protected_destinations_v1" | "protection_rules_readback" | "guarded_dns_tcp_v1";
+        /**
+         * @description guarded_udp_v1 requires an installed and verified datagram gate, authenticated transport, guarded owned backend and current per-packet policy enforcement. It does not assert that every upstream protocol or node supports UDP.
+         * @enum {string}
+         */
+        NetworkProxyCapability: "traffic" | "connections" | "close_connection" | "protected_destinations_v1" | "protection_rules_readback" | "guarded_dns_tcp_v1" | "groups" | "select" | "probe" | "refresh" | "rules" | "dns" | "logs" | "diagnostics" | "guarded_udp_v1";
+        /** @description External engine requires engineDescriptor; adapter selected by descriptor.engineId/adapterId, never legacy engine dispatch. */
         NetworkProxyInstance: {
             id: string;
             name: string;
@@ -32673,7 +33411,9 @@ export interface components {
             observedPolicyVersion?: number;
             /** @description Owner-bound managed runtime suspension; not per-flow user attribution. */
             securityRestricted?: boolean;
-        };
+            engineDescriptor?: components["schemas"]["NetworkProxyEngineDescriptor"];
+            processEpoch?: string;
+        } & unknown;
         NetworkProxyInstanceEnvelope: {
             data: components["schemas"]["NetworkProxyInstance"];
         };
@@ -32688,6 +33428,7 @@ export interface components {
             /** Format: password */
             content: string;
         };
+        /** @description Rates are numeric for existing clients. When rateState is unknown or gap, numeric placeholders carry no rate information. A known rate requires contiguous sample sequence within one process epoch and an acceptable sampling interval. An absent rateState identifies a legacy response. */
         NetworkProxyTrafficSample: {
             /** Format: date-time */
             observedAt: string;
@@ -32698,11 +33439,28 @@ export interface components {
             uploadBytesPerSecond: number;
             downloadBytesPerSecond: number;
             activeConnections?: number;
+            processEpoch?: string;
+            /** Format: int64 */
+            sampleSequence?: number;
+            /** @enum {string} */
+            rateState?: "known" | "unknown" | "gap";
         };
         NetworkProxyTrafficEnvelope: {
             instanceId: string;
             supported: boolean;
             samples: components["schemas"]["NetworkProxyTrafficSample"][];
+            processEpoch?: string;
+            /** Format: int64 */
+            sampleSequence?: number;
+            /** Format: int64 */
+            totalActive?: number;
+            /** Format: int64 */
+            returnedCount?: number;
+            truncated?: boolean;
+            /** @enum {string} */
+            freshness?: "fresh" | "stale" | "unavailable";
+            /** Format: date-time */
+            observedAt?: string;
         };
         NetworkProxyConnection: {
             id: string;
@@ -32715,6 +33473,7 @@ export interface components {
             downloadBytes: number;
             /** Format: date-time */
             startedAt?: string;
+            processEpoch?: string;
         };
         NetworkProxyConnectionsEnvelope: {
             instanceId: string;
@@ -32723,6 +33482,16 @@ export interface components {
             /** Format: date-time */
             observedAt?: string;
             connections: components["schemas"]["NetworkProxyConnection"][];
+            processEpoch?: string;
+            /** Format: int64 */
+            sampleSequence?: number;
+            /** Format: int64 */
+            totalActive?: number;
+            /** Format: int64 */
+            returnedCount?: number;
+            truncated?: boolean;
+            /** @enum {string} */
+            freshness?: "fresh" | "stale" | "unavailable";
         };
         NetworkProxyCloseCommandEnvelope: {
             commandId: string;
@@ -32732,6 +33501,7 @@ export interface components {
             expiresAt: string;
             connectionId?: string;
             reasonCode?: string;
+            processEpoch?: string;
         };
         /** @enum {string} */
         NetworkRuntimeKind: "endpoint" | "gateway" | "nas" | "proxy";
@@ -33844,7 +34614,16 @@ export interface components {
             caCertificates: string[];
             /** @enum {string} */
             wifiSecurity: "wpa2-enterprise" | "wpa3-enterprise";
-        };
+            /**
+             * @default tls
+             * @enum {string}
+             */
+            eapMethod?: "tls" | "ttls";
+            /** @constant */
+            innerMethod?: "pap";
+            /** @constant */
+            credentialSource?: "user-input";
+        } & unknown;
         NetworkEndpointResponsePolicyEnvelope: {
             data: components["schemas"]["NetworkEndpointResponsePolicy"];
         };
@@ -34271,6 +35050,665 @@ export interface components {
         KubernetesHelmReleaseValuesEnvelope: {
             data: components["schemas"]["KubernetesHelmReleaseValues"];
         };
+        IdentityOutpostRuntimeCapabilities: {
+            supportsScale: boolean;
+            /** @description True only when supported and observed for the bound runtime instances. Legacy clients without control capability do not support managed drain. */
+            supportsDrain: boolean;
+        };
+        IdentityOutpostRuntime: {
+            outpostId: string;
+            /** @enum {string} */
+            owner: "external" | "soha";
+            /** @description Installer-approved named workload slot. */
+            slotId?: string;
+            readonly namespace?: string;
+            readonly workloadName?: string;
+            /** @description Immutable Kubernetes workload UID resolved by the installation allowlist. */
+            readonly workloadUid?: string;
+            /** Format: int64 */
+            generation: number;
+            /** Format: int64 */
+            observedGeneration?: number;
+            desiredReplicas: number;
+            /** @description Omitted when not observed. */
+            actualReplicas?: number;
+            /** @description Omitted when not observed. */
+            readyReplicas?: number;
+            /** @enum {string} */
+            phase: "pending" | "applying" | "ready" | "draining" | "stopped" | "failed" | "unknown";
+            reason?: string;
+            /** Format: date-time */
+            observedAt?: string;
+            latestTaskId?: string;
+            capabilities: components["schemas"]["IdentityOutpostRuntimeCapabilities"];
+        };
+        IdentityOutpostRuntimeBindingInput: {
+            slotId: string;
+            /** Format: int64 */
+            expectedGeneration: number;
+            requestId: string;
+            /** @default false */
+            explicitAdoption?: boolean;
+        };
+        IdentityOutpostRuntimeControlInput: {
+            /** @enum {string} */
+            action: "start" | "scale" | "stop" | "reconcile";
+            /** @description Required for scale; forbidden for read-only reconcile. */
+            replicas?: number;
+            /** Format: int64 */
+            expectedGeneration: number;
+            requestId: string;
+            drainTimeoutSeconds?: number;
+        };
+        IdentityOutpostRuntimeMutationResult: {
+            runtime: components["schemas"]["IdentityOutpostRuntime"];
+            task?: components["schemas"]["CapabilityTaskRef"];
+        };
+        IdentityOutpostRuntimeEnvelope: {
+            data: components["schemas"]["IdentityOutpostRuntime"];
+        };
+        IdentityOutpostRuntimeMutationEnvelope: {
+            data: components["schemas"]["IdentityOutpostRuntimeMutationResult"];
+        };
+        IdentityOutpostRuntimeExecutorClaimRequest: {
+            executorId: string;
+        };
+        /** @description Independently signed per-instance control. Sign UTF-8 compact JSON of these fields in schema order excluding signature, using UTC RFC3339 timestamps as serialized by Go time.Time. Verify separately from the unchanged v1 configuration signature. expiresAt must be later than issuedAt and no more than 30 seconds after it; implementations reject expired, replayed, mismatched-instance or mismatched-process controls. This object grants no configuration lease renewal. */
+        IdentityOutpostRuntimeControl: {
+            outpostId: string;
+            /** @enum {string} */
+            protocolVersion: "v1";
+            instanceId: string;
+            processEpoch: string;
+            /** Format: int64 */
+            generation: number;
+            /** @enum {string} */
+            action: "serve" | "drain";
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            keyId: string;
+            signature: string;
+        };
+        NetworkProxyEngineDescriptor: {
+            engineId: string;
+            adapterId: string;
+            version: string;
+            /** @enum {integer} */
+            protocolMajor: 1;
+            /** @enum {integer} */
+            protocolMinor: 0;
+            capabilities: string[];
+        };
+        /** @enum {string} */
+        NetworkProxyDeliveryMode: "mapped_nodes" | "gateway" | "direct_subscription";
+        /** @enum {string} */
+        NetworkProxySourceFormat: "manual" | "mihomo_yaml" | "sing_box_json" | "v2ray_json" | "uri_list";
+        /** @description Messages contain sanitized field locations, never original source values, URLs or credentials. */
+        NetworkProxyConversionError: {
+            /** @enum {string} */
+            code: "unsupported_protocol" | "unsupported_field" | "unsafe_field" | "invalid_source" | "incompatible_transport" | "dangling_reference" | "quota_exceeded" | "protected_destination";
+            location: string;
+            message: string;
+        };
+        NetworkProxyTLS: {
+            serverName?: string;
+            enabled: boolean;
+            alpn?: string[];
+            fingerprint?: string;
+        };
+        /** @description Trusted converter only: validate equivalence for the pinned target engine; unknown fields reject the whole conversion. */
+        NetworkProxyTransport: {
+            /** @enum {string} */
+            type: "tcp" | "ws" | "grpc";
+            host?: string;
+            path?: string;
+            serviceName?: string;
+        };
+        /** @description Administrator/server IR only. Never serialize into an employee projection. Labels must be replaced by safe aliases in employee views. */
+        NetworkProxyNode: {
+            nodeId: string;
+            label: string;
+            /** @enum {string} */
+            protocol: "http" | "socks5" | "ss" | "trojan" | "vmess" | "vless";
+            server: string;
+            port: number;
+            username?: string;
+            /** Format: password */
+            secret?: string;
+            cipher?: string;
+            /** Format: uuid */
+            uuid?: string;
+            tls?: components["schemas"]["NetworkProxyTLS"];
+            transport?: components["schemas"]["NetworkProxyTransport"];
+        };
+        NetworkProxyGroup: {
+            groupId: string;
+            label: string;
+            /** @enum {string} */
+            type: "select" | "url_test" | "fallback" | "load_balance";
+            nodeIds: string[];
+            selectedNodeId?: string;
+        };
+        /** @description Secrets encrypted by server; omitted secret preserves existing value. Historical source defaults to direct_subscription. Unknown formats/fields reject atomically. */
+        NetworkProxySourceInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+            name: string;
+            format: components["schemas"]["NetworkProxySourceFormat"];
+            deliveryMode?: components["schemas"]["NetworkProxyDeliveryMode"];
+            /** Format: uri */
+            url?: string;
+            /** Format: password */
+            content?: string;
+            nodes?: components["schemas"]["NetworkProxyNode"][];
+        };
+        NetworkProxySource: {
+            sourceId: string;
+            /** Format: int64 */
+            revision: number;
+            name: string;
+            format: components["schemas"]["NetworkProxySourceFormat"];
+            deliveryMode: components["schemas"]["NetworkProxyDeliveryMode"];
+            configured: boolean;
+            /** Format: int64 */
+            nodeCount: number;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        NetworkProxySourceList: {
+            items: components["schemas"]["NetworkProxySource"][];
+        };
+        /** @description Preview contains only opaque IDs and safe labels. No upstream addresses or source secrets. */
+        NetworkProxyConversionPreview: {
+            /** Format: int64 */
+            sourceRevision: number;
+            nodes: {
+                nodeId: string;
+                label: string;
+                /** @enum {string} */
+                protocol: "http" | "socks5" | "ss" | "trojan" | "vmess" | "vless";
+            }[];
+            groups: components["schemas"]["NetworkProxyGroup"][];
+            errors: components["schemas"]["NetworkProxyConversionError"][];
+            supported: boolean;
+        };
+        /** @description domain is case insensitive exact; domain_suffix matches label boundaries; cidr canonical netip prefix; process matching is local only, never trusted server-mandatory input. all has no value. */
+        NetworkProxyRuleMatcher: {
+            /** @enum {string} */
+            type: "domain" | "domain_suffix" | "cidr" | "process_name" | "process_path" | "all";
+            value?: string;
+        } & ({
+            /** @enum {unknown} */
+            type?: "all";
+        } | {
+            /** @enum {unknown} */
+            type?: "domain" | "domain_suffix" | "cidr" | "process_name" | "process_path";
+        });
+        /** @description node/group require a logical targetId; reject/direct forbid targetId. ProtectedSet reject always wins. */
+        NetworkProxyRuleAction: {
+            /** @enum {string} */
+            type: "reject" | "direct" | "node" | "group";
+            targetId?: string;
+        } & ({
+            /** @enum {unknown} */
+            type?: "reject" | "direct";
+        } | {
+            /** @enum {unknown} */
+            type?: "node" | "group";
+        });
+        NetworkProxyRule: {
+            ruleId: string;
+            /** @enum {string} */
+            source: "protection" | "organization_required" | "personal" | "organization_default" | "fallback";
+            /** Format: int64 */
+            order: number;
+            enabled: boolean;
+            matcher: components["schemas"]["NetworkProxyRuleMatcher"];
+            action: components["schemas"]["NetworkProxyRuleAction"];
+        };
+        NetworkProxyRuleConflict: {
+            ruleId: string;
+            blockingRuleId: string;
+            /** @enum {string} */
+            reasonCode: "masked_by_required" | "mandatory_conflict" | "unsupported_matcher" | "invalid_target" | "ambiguous_overlap";
+        };
+        NetworkProxyRulesInput: {
+            /** Format: int64 */
+            expectedOrgRevision: number;
+            /** Format: int64 */
+            expectedPersonalRevision: number;
+            rules: components["schemas"]["NetworkProxyRule"][];
+        };
+        /** @description Personal drafts persist independently of subscription/org updates. CAS both revisions; conflicts retain original drafts. */
+        NetworkProxyRules: {
+            /** Format: int64 */
+            orgRevision: number;
+            /** Format: int64 */
+            personalRevision: number;
+            rules: components["schemas"]["NetworkProxyRule"][];
+            effectiveRules: components["schemas"]["NetworkProxyRule"][];
+            conflicts: components["schemas"]["NetworkProxyRuleConflict"][];
+        };
+        /** @description Installer-approved internal HTTPS endpoint reference, never arbitrary caller URL. */
+        NetworkProxyEndpointRef: {
+            endpointId: string;
+        };
+        NetworkProxyScope: {
+            userIds: string[];
+            deviceIds: string[];
+            nodeIds: string[];
+        };
+        NetworkProxyBundleInput: {
+            requestId: string;
+            /** Format: int64 */
+            expectedRevision: number;
+            sourceId: string;
+            /** Format: int64 */
+            sourceRevision: number;
+            /** Format: int64 */
+            orgRevision: number;
+            deliveryMode: components["schemas"]["NetworkProxyDeliveryMode"];
+            scope: components["schemas"]["NetworkProxyScope"];
+            endpoints: components["schemas"]["NetworkProxyEndpointRef"][];
+        };
+        /** @description For mapped_nodes/gateway, server-ready requires authenticated runtime readback matching bundle revision/hash/epoch. Revocation/deleted nodes invalidate old credentials/flows immediately; old lease cannot keep access. For direct_subscription, prepare validates source conversion, policy and explicit device authorization; proceed through client_eligible to activated without server_ready. No server relay or Pod readiness is required or implied, and disclosed upstream credentials cannot promise immediate revocation. */
+        NetworkProxyBundle: {
+            bundleId: string;
+            /** Format: int64 */
+            revision: number;
+            sourceId: string;
+            /** Format: int64 */
+            sourceRevision: number;
+            /** Format: int64 */
+            orgRevision: number;
+            /** Format: int64 */
+            nodeMappingRevision: number;
+            serverHash: string;
+            projectionHash: string;
+            /** Format: int64 */
+            activeRevision: number;
+            deliveryMode: components["schemas"]["NetworkProxyDeliveryMode"];
+            /** @enum {string} */
+            state: "prepare" | "server_ready" | "client_eligible" | "activated" | "failed" | "revoked";
+            /** Format: int64 */
+            credentialEpoch: number;
+            /** Format: date-time */
+            validUntil: string;
+            converterVersion: string;
+            reasonCode?: string;
+        };
+        NetworkProxyBundleList: {
+            items: components["schemas"]["NetworkProxyBundle"][];
+        };
+        /** @description Only requests activation; never accepts caller supplied serverReady or observation. */
+        NetworkProxyBundleActivateInput: {
+            requestId: string;
+            /** Format: int64 */
+            expectedRevision: number;
+        };
+        NetworkProxyEmployeeNode: {
+            nodeId: string;
+            label: string;
+            endpointId: string;
+        };
+        /** @description Operator approved internal endpoint; validate against approved endpoint set before delivery. HTTP CONNECT supports TCP only. */
+        NetworkProxyEmployeeEndpoint: {
+            endpointId: string;
+            url: string;
+        };
+        /** @description Only delivered through scoped device mTLS channel with private/no-store caching; never administrator list/read response. */
+        NetworkProxyEmployeeCredential: {
+            credentialId: string;
+            userId: string;
+            deviceId: string;
+            nodeIds: string[];
+            /** Format: int64 */
+            credentialEpoch: number;
+            /** Format: password */
+            secret: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        /** @description Separate employee DTO. Safe aliases only; no upstream parameters/source URL. Fail closed on expiry, epoch change, unreachable internal endpoint. Never fetch direct source as fallback. */
+        NetworkProxyEmployeeProjection: {
+            /** @enum {string} */
+            schemaVersion: "proxy-projection/v1";
+            runtimeId: string;
+            profileId: string;
+            bundleId: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            sourceRevision: number;
+            /** Format: int64 */
+            orgRevision: number;
+            /** Format: int64 */
+            activeRevision: number;
+            projectionHash: string;
+            /** @enum {string} */
+            deliveryMode: "mapped_nodes" | "gateway";
+            /** @description Endpoint-service boot nonce bound to the endpoint credential; not the epoch of an HA proxy server. The profile-scoped projection receipt must echo this exact nonce. */
+            processEpoch: string;
+            /** Format: int64 */
+            credentialEpoch: number;
+            /** Format: date-time */
+            expiresAt: string;
+            nodes: components["schemas"]["NetworkProxyEmployeeNode"][];
+            groups: components["schemas"]["NetworkProxyGroup"][];
+            endpoints: components["schemas"]["NetworkProxyEmployeeEndpoint"][];
+            credential: components["schemas"]["NetworkProxyEmployeeCredential"];
+            rules: components["schemas"]["NetworkProxyRule"][];
+        };
+        NetworkProxyProjectionApplied: {
+            bundleId: string;
+            /** Format: int64 */
+            revision: number;
+            projectionHash: string;
+            /** @description Exact endpoint-service boot nonce from the delivered projection, bound to endpoint credential; stale or mismatched echoes are rejected. */
+            processEpoch: string;
+            /** @enum {string} */
+            status: "applied" | "rejected";
+            reasonCode?: string;
+        };
+        /** @enum {string} */
+        NetworkProxyRuntimeCommandKind: "groups" | "select" | "probe" | "refresh" | "rules" | "dns" | "logs" | "diagnostics";
+        /** @description Single typed bounded operation. Select requires groupId/nodeId; probe requires registered probeProfileId, never arbitrary URL. No controller path/body/shell. Expiry <=30 seconds; epoch must match. */
+        NetworkProxyRuntimeCommandInput: {
+            requestId: string;
+            processEpoch: string;
+            kind: components["schemas"]["NetworkProxyRuntimeCommandKind"];
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            groupId?: string;
+            nodeId?: string;
+            probeProfileId?: string;
+            sourceId?: string;
+            limit?: number;
+            cursor?: string;
+        } & (unknown & unknown);
+        /** @description Bounded sanitized results; no raw kernel config/controller dumps or upstream secrets. */
+        NetworkProxyRuntimeCommandResult: {
+            groups?: components["schemas"]["NetworkProxyGroup"][];
+            rules?: components["schemas"]["NetworkProxyRule"][];
+            dns?: {
+                name: string;
+                addresses: string[];
+                /** Format: date-time */
+                expiresAt: string;
+            }[];
+            logs?: {
+                /** Format: int64 */
+                sequence: number;
+                /** @enum {string} */
+                level: "debug" | "info" | "warn" | "error";
+                message: string;
+                /** Format: date-time */
+                occurredAt: string;
+            }[];
+            latencyMilliseconds?: number;
+            selectedNodeId?: string;
+            diagnostics?: {
+                code: string;
+                /** @enum {string} */
+                state: "available" | "unsupported" | "unavailable";
+                message: string;
+            }[];
+        };
+        /** @description Durable idempotent receipt; same requestId with different intent conflicts. Accepted does not mean applied. commandId equals requestId; durable uniqueness is scoped to (instanceID, requestId). Reuse by another actor or for a different intent returns conflict; no cross-actor receipt disclosure. */
+        NetworkProxyRuntimeCommandReceipt: {
+            commandId: string;
+            requestId: string;
+            processEpoch: string;
+            kind: components["schemas"]["NetworkProxyRuntimeCommandKind"];
+            /** @enum {string} */
+            status: "pending" | "running" | "succeeded" | "failed" | "expired" | "cancelled" | "unknown" | "unsupported" | "unavailable";
+            /** Format: date-time */
+            expiresAt: string;
+            reasonCode?: string;
+            result?: components["schemas"]["NetworkProxyRuntimeCommandResult"];
+        };
+        /** @description Bind only installer-approved slot/UID/template; no arbitrary image/spec/namespace/shell. Explicit adoption and installer allow_adoption/previous_owner_stopped are required. */
+        NetworkProxyDeploymentInput: {
+            /** Format: int64 */
+            expectedRevision: number;
+            slotId: string;
+            objectUID: string;
+            templateHash: string;
+            /** @enum {string} */
+            owner: "soha-managed" | "gitops" | "helm" | "manual" | "external";
+            /** Format: int64 */
+            ownerEpoch: number;
+            requestId: string;
+            adopt: boolean;
+        };
+        /** @description Reconcile is read-only observation of approved UID/template. Unknown prior result blocks new writes. Scale-down requires known active counts and drain; withdrawal/revocation is immediate. Installer may cap drain below120s. */
+        NetworkProxyDeploymentControlInput: {
+            requestId: string;
+            /** Format: int64 */
+            expectedRevision: number;
+            /** @enum {string} */
+            action: "start" | "scale" | "stop" | "reconcile";
+            replicas?: number;
+            /** @default 120 */
+            drainSeconds?: number;
+        };
+        /** @description Each process has independent runtime/credential identity. Shared certificate replicas do not establish independent members. */
+        NetworkProxyDeploymentMember: {
+            instanceId: string;
+            runtimeId: string;
+            processEpoch: string;
+            credentialId: string;
+            /** Format: int64 */
+            credentialEpoch: number;
+            /** Format: date-time */
+            observedAt: string;
+            ready: boolean;
+            trafficReady: boolean;
+            /** Format: int64 */
+            activeConnections?: number;
+            activeCountKnown: boolean;
+            acceptingRequests?: boolean;
+            /** Format: int64 */
+            ackRevision?: number;
+            /** Format: date-time */
+            controlExpiresAt?: string;
+        };
+        NetworkProxyDeployment: {
+            /** Format: int64 */
+            revision: number;
+            slotId?: string;
+            objectUID?: string;
+            templateHash?: string;
+            /** @enum {string} */
+            owner?: "soha-managed" | "gitops" | "helm" | "manual" | "external";
+            /** Format: int64 */
+            ownerEpoch?: number;
+            /**
+             * Format: int64
+             * @description Known desired replica count, including zero when stopped.
+             */
+            desiredReplicas?: number;
+            /**
+             * Format: int64
+             * @description Omitted when not observed; zero is an observed zero replica count.
+             */
+            observedReplicas?: number;
+            /** Format: int64 */
+            observedGeneration?: number;
+            /** @enum {string} */
+            state: "unbound" | "pending" | "starting" | "ready" | "draining" | "stopped" | "failed" | "unknown" | "conflict" | "unsupported";
+            members: components["schemas"]["NetworkProxyDeploymentMember"][];
+            operationId?: string;
+            reasonCode?: string;
+        };
+        NetworkProxyDeploymentOperation: {
+            operationId: string;
+            requestId: string;
+            /** @enum {string} */
+            status: "pending" | "running" | "succeeded" | "failed" | "unknown";
+            /** Format: int64 */
+            desiredRevision: number;
+            reasonCode?: string;
+        };
+        NetworkProxyCloseInput: {
+            requestId: string;
+            processEpoch: string;
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        NetworkProxyDeploymentRuntimeControl: {
+            /** Format: int64 */
+            controlRevision: number;
+            /** Format: int64 */
+            ownerEpoch: number;
+            instanceId: string;
+            runtimeId: string;
+            processEpoch: string;
+            credentialId: string;
+            /** Format: int64 */
+            credentialEpoch: number;
+            acceptingRequests: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            issuedAt: string;
+            /** @description Optional, false omitted. True authorizes bounded confirmation that the exact owned engine and ingress have stopped, only under this newly issued controlRevision with acceptingRequests=false. Core issues a higher revision after the fixed drain expiry; confirmation expires within 30 seconds and no later than the original 240-second task deadline or certificate expiry. It never extends old-flow authorization or allows new traffic. */
+            stopRequired?: boolean;
+        } & unknown;
+        NetworkProxyDeploymentRuntimeAck: {
+            /** Format: int64 */
+            controlRevision: number;
+            /** Format: int64 */
+            ownerEpoch: number;
+            instanceId: string;
+            runtimeId: string;
+            processEpoch: string;
+            credentialId: string;
+            /** Format: int64 */
+            credentialEpoch: number;
+            acceptingRequests: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+            activeCountKnown: boolean;
+            /** Format: int64 */
+            activeConnections?: number;
+            /** Format: date-time */
+            observedAt: string;
+            /** @description Optional, false omitted. True proves the exact owned engine and ingress exited under the current stopRequired control revision, not merely a stopped Pod or a zero default. Requires explicit known activeConnections=0 and acceptingRequests=false. Old or late ACKs cannot confirm a newer revision; no positive proof means no scale-down. */
+            processStopped?: boolean;
+        } & unknown;
+        /** @description Logical node and host-compiled outbound reference only. Never a caller-selected listener, controller path or upstream configuration. */
+        NetworkProxyServerPublicationNode: {
+            nodeId: string;
+            outboundId: string;
+        };
+        /** @description Server-runtime-only publication metadata, delivered with ConfigurationDesired. Real upstream remains in encrypted server configuration content; never send this DTO through employee/admin command results. The host independently compiles/validates outbound references and enforces lease, protection and ingress authorization. */
+        NetworkProxyServerPublication: {
+            bundleId: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            sourceRevision: number;
+            /** Format: int64 */
+            orgRevision: number;
+            /** Format: int64 */
+            credentialEpoch: number;
+            serverHash: string;
+            memberSetHash: string;
+            converterVersion: string;
+            /** @enum {string} */
+            deliveryMode: "mapped_nodes" | "gateway";
+            nodes: components["schemas"]["NetworkProxyServerPublicationNode"][];
+            groups: components["schemas"]["NetworkProxyGroup"][];
+            rules: components["schemas"]["NetworkProxyRule"][];
+            /** Format: date-time */
+            validUntil: string;
+        };
+        /** @description Authenticated real proxy runtime observation only. Core compares current desired/applied configuration revision/hash, bundle revision, process/member and credential identity. Caller flags alone never activate a bundle; reject stale, mismatched or unauthorized observations. */
+        NetworkProxyBundleReadback: {
+            bundleId: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            configurationRevision: number;
+            serverHash: string;
+            processEpoch: string;
+            ingressReady: boolean;
+            protectionReady: boolean;
+            /** Format: date-time */
+            observedAt: string;
+            reasonCode?: string;
+        };
+        /** @description Online authorization request from enrolled runtime. Core derives identity from real mTLS, resolves current user/device/profile/scope and rechecks bundle/node/epoch and destination protection. No caller field grants identity or authorization. Never log, audit, echo or include credentialSecret in errors. UDP is explicitly unsupported unless the verified ingress transport provides it; never silently convert to TCP or DIRECT. */
+        NetworkProxyIngressCheckInput: {
+            bundleId: string;
+            /** Format: int64 */
+            revision: number;
+            nodeId: string;
+            credentialId: string;
+            /** Format: password */
+            credentialSecret: string;
+            /** Format: int64 */
+            credentialEpoch: number;
+            destinationHost: string;
+            destinationPort: number;
+            /** @enum {string} */
+            network: "tcp" | "udp";
+            processEpoch: string;
+        };
+        /** @description Scoped, short-lived decision, not a reusable grant. Revalidate active flows against current authorization; old epoch/lease cannot preserve revoked access. Denials/errors never expose credential or upstream values. */
+        NetworkProxyIngressCheckResult: {
+            allowed: boolean;
+            reasonCode?: string;
+            bundleId: string;
+            /** Format: int64 */
+            revision: number;
+            nodeId: string;
+            /** Format: int64 */
+            credentialEpoch: number;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        /** @description Separate explicit direct-subscription device projection. This mode deliberately discloses upstream parameters, has no scoped gateway credential and promises neither upstream privacy nor immediate revocation of already disclosed credentials. It must never be returned by the protected /projection path or used as automatic fallback. Prepare validates conversion, policy and current device authorization; it may proceed client_eligible to activated without server relay readiness. */
+        NetworkProxyDirectProjection: {
+            /** @enum {string} */
+            schemaVersion: "proxy-direct/v1";
+            runtimeId: string;
+            profileId: string;
+            bundleId: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            sourceRevision: number;
+            /** Format: int64 */
+            orgRevision: number;
+            /** Format: int64 */
+            activeRevision: number;
+            projectionHash: string;
+            /** @description Endpoint-service boot nonce bound to the endpoint credential; not the epoch of an HA proxy server. The profile-scoped projection receipt must echo this exact nonce. */
+            processEpoch: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @enum {string} */
+            deliveryMode: "direct_subscription";
+            /** @enum {string} */
+            upstreamDisclosure: "upstream_parameters";
+            /** @enum {string} */
+            format: "mihomo_yaml";
+            /**
+             * Format: password
+             * @description Sensitive upstream parameters. Contains only converted, validated Mihomo proxies subset, never original source URL, subscription providers, listeners or arbitrary raw configuration. Deliver only to the explicitly direct-authorized device over mTLS; private/no-store. Never put content in logs, audit/error details, IPC or exports.
+             */
+            content: string;
+            groups: components["schemas"]["NetworkProxyGroup"][];
+            rules: components["schemas"]["NetworkProxyRule"][];
+        };
     };
     responses: {
         /** @description Stable redacted Identity protocol or management error. */
@@ -34480,6 +35918,18 @@ export interface components {
     };
     pathItems: never;
 }
+export type NetworkRADIUSSlotOption = components['schemas']['NetworkRADIUSSlotOption'];
+export type NetworkRADIUSOptions = components['schemas']['NetworkRADIUSOptions'];
+export type NetworkRADIUSRuntimeProof = components['schemas']['NetworkRADIUSRuntimeProof'];
+export type NetworkRADIUSConfiguration = components['schemas']['NetworkRADIUSConfiguration'];
+export type NetworkRADIUSRuntimeControl = components['schemas']['NetworkRADIUSRuntimeControl'];
+export type NetworkRADIUSRuntimeACK = components['schemas']['NetworkRADIUSRuntimeACK'];
+export type NetworkRADIUSMember = components['schemas']['NetworkRADIUSMember'];
+export type NetworkRADIUSPool = components['schemas']['NetworkRADIUSPool'];
+export type NetworkRADIUSPoolInput = components['schemas']['NetworkRADIUSPoolInput'];
+export type NetworkRADIUSConfigurationInput = components['schemas']['NetworkRADIUSConfigurationInput'];
+export type NetworkRADIUSControlInput = components['schemas']['NetworkRADIUSControlInput'];
+export type NetworkRADIUSPoolList = components['schemas']['NetworkRADIUSPoolList'];
 export type WorkflowRequestInput = components['schemas']['WorkflowRequestInput'];
 export type WorkflowRequestReceipt = components['schemas']['WorkflowRequestReceipt'];
 export type WorkflowRequestReceiptEnvelope = components['schemas']['WorkflowRequestReceiptEnvelope'];
@@ -36751,6 +38201,62 @@ export type KubernetesSecretCertificateEnvelope = components['schemas']['Kuberne
 export type KubernetesHelmReleaseValuesUpdateInput = components['schemas']['KubernetesHelmReleaseValuesUpdateInput'];
 export type KubernetesHelmReleaseValues = components['schemas']['KubernetesHelmReleaseValues'];
 export type KubernetesHelmReleaseValuesEnvelope = components['schemas']['KubernetesHelmReleaseValuesEnvelope'];
+export type IdentityOutpostRuntimeCapabilities = components['schemas']['IdentityOutpostRuntimeCapabilities'];
+export type IdentityOutpostRuntime = components['schemas']['IdentityOutpostRuntime'];
+export type IdentityOutpostRuntimeBindingInput = components['schemas']['IdentityOutpostRuntimeBindingInput'];
+export type IdentityOutpostRuntimeControlInput = components['schemas']['IdentityOutpostRuntimeControlInput'];
+export type IdentityOutpostRuntimeMutationResult = components['schemas']['IdentityOutpostRuntimeMutationResult'];
+export type IdentityOutpostRuntimeEnvelope = components['schemas']['IdentityOutpostRuntimeEnvelope'];
+export type IdentityOutpostRuntimeMutationEnvelope = components['schemas']['IdentityOutpostRuntimeMutationEnvelope'];
+export type IdentityOutpostRuntimeExecutorClaimRequest = components['schemas']['IdentityOutpostRuntimeExecutorClaimRequest'];
+export type IdentityOutpostRuntimeControl = components['schemas']['IdentityOutpostRuntimeControl'];
+export type NetworkProxyEngineDescriptor = components['schemas']['NetworkProxyEngineDescriptor'];
+export type NetworkProxyDeliveryMode = components['schemas']['NetworkProxyDeliveryMode'];
+export type NetworkProxySourceFormat = components['schemas']['NetworkProxySourceFormat'];
+export type NetworkProxyConversionError = components['schemas']['NetworkProxyConversionError'];
+export type NetworkProxyTLS = components['schemas']['NetworkProxyTLS'];
+export type NetworkProxyTransport = components['schemas']['NetworkProxyTransport'];
+export type NetworkProxyNode = components['schemas']['NetworkProxyNode'];
+export type NetworkProxyGroup = components['schemas']['NetworkProxyGroup'];
+export type NetworkProxySourceInput = components['schemas']['NetworkProxySourceInput'];
+export type NetworkProxySource = components['schemas']['NetworkProxySource'];
+export type NetworkProxySourceList = components['schemas']['NetworkProxySourceList'];
+export type NetworkProxyConversionPreview = components['schemas']['NetworkProxyConversionPreview'];
+export type NetworkProxyRuleMatcher = components['schemas']['NetworkProxyRuleMatcher'];
+export type NetworkProxyRuleAction = components['schemas']['NetworkProxyRuleAction'];
+export type NetworkProxyRule = components['schemas']['NetworkProxyRule'];
+export type NetworkProxyRuleConflict = components['schemas']['NetworkProxyRuleConflict'];
+export type NetworkProxyRulesInput = components['schemas']['NetworkProxyRulesInput'];
+export type NetworkProxyRules = components['schemas']['NetworkProxyRules'];
+export type NetworkProxyEndpointRef = components['schemas']['NetworkProxyEndpointRef'];
+export type NetworkProxyScope = components['schemas']['NetworkProxyScope'];
+export type NetworkProxyBundleInput = components['schemas']['NetworkProxyBundleInput'];
+export type NetworkProxyBundle = components['schemas']['NetworkProxyBundle'];
+export type NetworkProxyBundleList = components['schemas']['NetworkProxyBundleList'];
+export type NetworkProxyBundleActivateInput = components['schemas']['NetworkProxyBundleActivateInput'];
+export type NetworkProxyEmployeeNode = components['schemas']['NetworkProxyEmployeeNode'];
+export type NetworkProxyEmployeeEndpoint = components['schemas']['NetworkProxyEmployeeEndpoint'];
+export type NetworkProxyEmployeeCredential = components['schemas']['NetworkProxyEmployeeCredential'];
+export type NetworkProxyEmployeeProjection = components['schemas']['NetworkProxyEmployeeProjection'];
+export type NetworkProxyProjectionApplied = components['schemas']['NetworkProxyProjectionApplied'];
+export type NetworkProxyRuntimeCommandKind = components['schemas']['NetworkProxyRuntimeCommandKind'];
+export type NetworkProxyRuntimeCommandInput = components['schemas']['NetworkProxyRuntimeCommandInput'];
+export type NetworkProxyRuntimeCommandResult = components['schemas']['NetworkProxyRuntimeCommandResult'];
+export type NetworkProxyRuntimeCommandReceipt = components['schemas']['NetworkProxyRuntimeCommandReceipt'];
+export type NetworkProxyDeploymentInput = components['schemas']['NetworkProxyDeploymentInput'];
+export type NetworkProxyDeploymentControlInput = components['schemas']['NetworkProxyDeploymentControlInput'];
+export type NetworkProxyDeploymentMember = components['schemas']['NetworkProxyDeploymentMember'];
+export type NetworkProxyDeployment = components['schemas']['NetworkProxyDeployment'];
+export type NetworkProxyDeploymentOperation = components['schemas']['NetworkProxyDeploymentOperation'];
+export type NetworkProxyCloseInput = components['schemas']['NetworkProxyCloseInput'];
+export type NetworkProxyDeploymentRuntimeControl = components['schemas']['NetworkProxyDeploymentRuntimeControl'];
+export type NetworkProxyDeploymentRuntimeAck = components['schemas']['NetworkProxyDeploymentRuntimeAck'];
+export type NetworkProxyServerPublicationNode = components['schemas']['NetworkProxyServerPublicationNode'];
+export type NetworkProxyServerPublication = components['schemas']['NetworkProxyServerPublication'];
+export type NetworkProxyBundleReadback = components['schemas']['NetworkProxyBundleReadback'];
+export type NetworkProxyIngressCheckInput = components['schemas']['NetworkProxyIngressCheckInput'];
+export type NetworkProxyIngressCheckResult = components['schemas']['NetworkProxyIngressCheckResult'];
+export type NetworkProxyDirectProjection = components['schemas']['NetworkProxyDirectProjection'];
 export type ResponseIdentityError = components['responses']['IdentityError'];
 export type ResponseError = components['responses']['Error'];
 export type ResponseComputeError = components['responses']['ComputeError'];
@@ -62618,9 +64124,14 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Bind close to the observed process epoch and a window of at most 30 seconds. Reuse the same requestId, actor, target, connection, epoch and window to recover an existing receipt. Legacy requests use a server-assigned command ID and deadline. When no epoch is provided the server resolves it from a fresh snapshot. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyCloseInput"];
+            };
+        };
         responses: {
-            /** @description Expiring close command queued for the enrolled runtime. The action is audited. */
+            /** @description Expiring close command queued for the enrolled runtime, or the receipt of an exact replay. The caller's requestId is the commandId used to retrieve the receipt. The action is audited. */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -62629,6 +64140,7 @@ export interface operations {
                     "application/json": components["schemas"]["NetworkProxyCloseCommandEnvelope"];
                 };
             };
+            400: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
@@ -68800,6 +70312,1288 @@ export interface operations {
             409: components["responses"]["Error"];
             501: components["responses"]["Error"];
             503: components["responses"]["Error"];
+        };
+    };
+    getIdentityOutpostRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identityOutpostID: components["parameters"]["IdentityOutpostID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Outpost workload runtime state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityOutpostRuntimeEnvelope"];
+                };
+            };
+            403: components["responses"]["IdentityError"];
+            404: components["responses"]["IdentityError"];
+        };
+    };
+    bindIdentityOutpostRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identityOutpostID: components["parameters"]["IdentityOutpostID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityOutpostRuntimeBindingInput"];
+            };
+        };
+        responses: {
+            /** @description Binding accepted with an existing domain execution task reference when asynchronous. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityOutpostRuntimeMutationEnvelope"];
+                };
+            };
+            400: components["responses"]["IdentityError"];
+            403: components["responses"]["IdentityError"];
+            404: components["responses"]["IdentityError"];
+            409: components["responses"]["IdentityError"];
+        };
+    };
+    controlIdentityOutpostRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identityOutpostID: components["parameters"]["IdentityOutpostID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityOutpostRuntimeControlInput"];
+            };
+        };
+        responses: {
+            /** @description Control accepted with an existing domain execution task reference when asynchronous. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityOutpostRuntimeMutationEnvelope"];
+                };
+            };
+            400: components["responses"]["IdentityError"];
+            403: components["responses"]["IdentityError"];
+            404: components["responses"]["IdentityError"];
+            409: components["responses"]["IdentityError"];
+        };
+    };
+    claimIdentityOutpostRuntimeExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityOutpostRuntimeExecutorClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Executor-scoped execution task. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionTaskEnvelope"];
+                };
+            };
+            /** @description No task available for this installation. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["IdentityError"];
+            401: components["responses"]["IdentityError"];
+            403: components["responses"]["IdentityError"];
+            404: components["responses"]["IdentityError"];
+            409: components["responses"]["IdentityError"];
+        };
+    };
+    getIdentityOutpostRuntimeExecutionStatus: {
+        parameters: {
+            query: {
+                taskId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Executor-scoped execution task. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionTaskEnvelope"];
+                };
+            };
+            400: components["responses"]["IdentityError"];
+            401: components["responses"]["IdentityError"];
+            403: components["responses"]["IdentityError"];
+            404: components["responses"]["IdentityError"];
+            409: components["responses"]["IdentityError"];
+        };
+    };
+    recordIdentityOutpostRuntimeExecutionCallback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutionCallbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Executor-scoped execution task. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionTaskEnvelope"];
+                };
+            };
+            400: components["responses"]["IdentityError"];
+            401: components["responses"]["IdentityError"];
+            403: components["responses"]["IdentityError"];
+            404: components["responses"]["IdentityError"];
+            409: components["responses"]["IdentityError"];
+        };
+    };
+    listNetworkProxySources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxySourceList"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createNetworkProxySource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxySourceInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxySource"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxySource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+                sourceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxySource"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateNetworkProxySource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+                sourceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxySourceInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxySource"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    deleteNetworkProxySource: {
+        parameters: {
+            query: {
+                expectedRevision: number;
+                requestId: string;
+            };
+            header?: never;
+            path: {
+                instanceID: string;
+                sourceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxySource"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    previewNetworkProxySource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxySourceInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyConversionPreview"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listNetworkProxyBundles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyBundleList"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createNetworkProxyBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyBundleInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyBundle"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    activateNetworkProxyBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+                bundleID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyBundleActivateInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyBundle"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    createNetworkProxyRuntimeCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyRuntimeCommandInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyRuntimeCommandReceipt"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxyRuntimeCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+                commandID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyRuntimeCommandReceipt"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxyRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyRules"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateNetworkProxyRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyRulesInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyRules"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxyPersonalRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyRules"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateNetworkProxyPersonalRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyRulesInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyRules"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxyDeployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyDeployment"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    bindNetworkProxyDeployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyDeploymentInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyDeployment"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    controlNetworkProxyDeployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyDeploymentControlInput"];
+            };
+        };
+        responses: {
+            /** @description Typed proxy operation result. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkProxyDeploymentOperation"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxyEmployeeProjection: {
+        parameters: {
+            query: {
+                /** @description Endpoint-service boot nonce bound to endpoint credential. Receipt echoes exactly; never an HA server epoch. */
+                processEpoch: string;
+            };
+            header?: never;
+            path: {
+                runtimeID: string;
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scoped safe projection or acknowledgement. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyEmployeeProjection"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    acknowledgeNetworkProxyEmployeeProjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtimeID: string;
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyProjectionApplied"];
+            };
+        };
+        responses: {
+            /** @description Scoped safe projection or acknowledgement. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyProjectionApplied"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxyDeploymentRuntimeControl: {
+        parameters: {
+            query: {
+                /** @description PodName member identity; must appear exactly once and match the authenticated runtime control binding. */
+                instanceId: string;
+                /** @description Process boot nonce; must appear exactly once and match the current member epoch. */
+                processEpoch: string;
+            };
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current bounded lifecycle control or acknowledgement. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyDeploymentRuntimeControl"];
+                };
+            };
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    acknowledgeNetworkProxyDeploymentRuntimeControl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyDeploymentRuntimeAck"];
+            };
+        };
+        responses: {
+            /** @description Current bounded lifecycle control or acknowledgement. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyDeploymentRuntimeAck"];
+                };
+            };
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    checkNetworkProxyIngress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyIngressCheckInput"];
+            };
+        };
+        responses: {
+            /** @description Typed authenticated runtime decision or recorded readback. */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyIngressCheckResult"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    acknowledgeNetworkProxyBundleReadback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkProxyBundleReadback"];
+            };
+        };
+        responses: {
+            /** @description Typed authenticated runtime decision or recorded readback. */
+            200: {
+                headers: {
+                    /** @description private, no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyBundleReadback"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNextNetworkProxyRuntimeCommand: {
+        parameters: {
+            query: {
+                processEpoch: string;
+            };
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existing proxy-runtime command.request message. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        schemaVersion: "proxy-runtime/v1alpha1";
+                        runtimeId: string;
+                        /** @enum {string} */
+                        messageType: "command.request";
+                        /** Format: date-time */
+                        occurredAt: string;
+                        payload: components["schemas"]["NetworkProxyRuntimeCommandInput"];
+                    };
+                };
+            };
+            /** @description No pending command. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    completeNetworkProxyRuntimeCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtimeID: string;
+                commandID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    schemaVersion: "proxy-runtime/v1alpha1";
+                    runtimeId: string;
+                    /** @enum {string} */
+                    messageType: "command.result";
+                    /** Format: date-time */
+                    occurredAt: string;
+                    payload: components["schemas"]["NetworkProxyRuntimeCommandReceipt"];
+                };
+            };
+        };
+        responses: {
+            /** @description Receipt recorded idempotently. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    cancelNetworkProxyRuntimeCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceID: string;
+                commandID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation recorded. Pending work becomes cancelled; running work remains unknown/cancel_outcome_unknown. Cancellation cannot undo an applied side effect. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNetworkProxyDirectProjection: {
+        parameters: {
+            query: {
+                /** @description Endpoint-service boot nonce bound to endpoint credential; receipt echoes exactly. */
+                processEpoch: string;
+            };
+            header?: never;
+            path: {
+                runtimeID: string;
+                profileID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sensitive direct projection, delivered only under explicit disclosure authorization. */
+            200: {
+                headers: {
+                    /** @description private, no-store; no shared caches. */
+                    "Cache-Control"?: "private, no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkProxyDirectProjection"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    listNetworkRADIUSPools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current managed RADIUS control state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkRADIUSPoolList"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    createNetworkRADIUSPool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkRADIUSPoolInput"];
+            };
+        };
+        responses: {
+            /** @description Current managed RADIUS control state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkRADIUSPool"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getNetworkRADIUSPool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                poolID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current managed RADIUS control state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkRADIUSPool"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    configureNetworkRADIUSPool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                poolID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkRADIUSConfigurationInput"];
+            };
+        };
+        responses: {
+            /** @description Current managed RADIUS control state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkRADIUSPool"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    controlNetworkRADIUSPool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                poolID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkRADIUSControlInput"];
+            };
+        };
+        responses: {
+            /** @description Current managed RADIUS control state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkRADIUSPool"];
+                    };
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getNetworkRADIUSRuntimeControl: {
+        parameters: {
+            query: {
+                memberId: string;
+                processEpoch: string;
+            };
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current managed RADIUS control state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkRADIUSRuntimeControl"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    acknowledgeNetworkRADIUSRuntimeControl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runtimeID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkRADIUSRuntimeACK"];
+            };
+        };
+        responses: {
+            /** @description Current managed RADIUS control state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkRADIUSRuntimeACK"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getNetworkRADIUSOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Site-filtered installer-approved slots and references; persistent UID reservations are never auto-released. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["NetworkRADIUSOptions"];
+                    };
+                };
+            };
+            403: components["responses"]["Error"];
         };
     };
 }

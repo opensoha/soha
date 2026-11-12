@@ -1,0 +1,6 @@
+{
+  "executorId": "edge-install-1",
+  "providerKinds": [
+    "docker"
+  ]
+}
