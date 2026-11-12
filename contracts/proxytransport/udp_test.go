@@ -22,6 +22,71 @@ import (
 
 const packetTestSecret = "0123456789abcdef0123456789abcdef"
 
+func closePacketFixture(t *testing.T, closer io.Closer) {
+	t.Helper()
+	if err := closer.Close(); !packetFixtureAlreadyClosed(err) {
+		t.Errorf("fixture close failed: %v", err)
+	}
+}
+
+func packetFixtureAlreadyClosed(err error) bool {
+	if err == nil {
+		return true
+	}
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		children := wrapped.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !packetFixtureAlreadyClosed(child) {
+				return false
+			}
+		}
+		return true
+	case interface{ Unwrap() error }:
+		return packetFixtureAlreadyClosed(wrapped.Unwrap())
+	default:
+		return errors.Is(err, net.ErrClosed) || errors.Is(err, io.ErrClosedPipe)
+	}
+}
+
+func TestPacketFixtureCleanupKeepsUnexpectedErrors(t *testing.T) {
+	unexpected := errors.New("owned body cleanup failed")
+	for _, tc := range []struct {
+		err    error
+		closed bool
+	}{
+		{nil, true}, {net.ErrClosed, true}, {fmt.Errorf("closed transport: %w", net.ErrClosed), true},
+		{errors.Join(net.ErrClosed, io.ErrClosedPipe), true}, {unexpected, false},
+		{errors.Join(net.ErrClosed, unexpected), false},
+		{fmt.Errorf("wrapped cleanup: %w", errors.Join(net.ErrClosed, unexpected)), false},
+	} {
+		if got := packetFixtureAlreadyClosed(tc.err); got != tc.closed {
+			t.Fatalf("cleanup error=%v, closed=%v, want=%v", tc.err, got, tc.closed)
+		}
+	}
+}
+
+func packetFixtureAs[T any](t *testing.T, value any) T {
+	t.Helper()
+	typed, ok := value.(T)
+	if !ok {
+		t.Fatalf("unexpected fixture type %T", value)
+	}
+	return typed
+}
+
+func packetFixturePort(t *testing.T, port int) []byte {
+	t.Helper()
+	if port < 0 || port > 65535 {
+		t.Fatalf("invalid fixture port %d", port)
+		return nil
+	}
+	return binary.BigEndian.AppendUint16(nil, uint16(port))
+}
+
 func packetTestLease() time.Time { return time.Now().Add(time.Minute) }
 func packetEchoPair(t *testing.T) net.Conn {
 	t.Helper()
@@ -35,7 +100,7 @@ func packetEchoPair(t *testing.T) net.Conn {
 		t.Fatal(err)
 	}
 	go func() {
-		defer server.Close()
+		defer closePacketFixture(t, server)
 		buffer := make([]byte, MaxDatagramBytes)
 		for {
 			n, err := server.Read(buffer)
@@ -74,14 +139,14 @@ func waitPacketCount(t *testing.T, count func() int, want int) {
 
 func TestPacketFramingAndExpiry(t *testing.T) {
 	c := packetEchoPair(t)
-	defer c.Close()
+	defer closePacketFixture(t, c)
 	packetRoundTrip(t, c, nil)
 	packetRoundTrip(t, c, []byte("one"))
 	packetRoundTrip(t, c, bytes.Repeat([]byte{'m'}, MaxDatagramBytes))
 	if _, err := c.Write(make([]byte, MaxDatagramBytes+1)); err == nil {
 		t.Fatal("oversized write accepted")
 	}
-	if err := c.(*PacketConn).Refresh(packetTestLease()); !errors.Is(err, net.ErrClosed) {
+	if err := packetFixtureAs[*PacketConn](t, c).Refresh(packetTestLease()); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("closed revived: %v", err)
 	}
 	for _, tc := range []struct {
@@ -95,7 +160,7 @@ func TestPacketFramingAndExpiry(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer p.Close()
+			defer closePacketFixture(t, p)
 			go func() { _, _ = b.Write(tc.frame); _ = b.Close() }()
 			if _, err := p.Read(make([]byte, tc.size)); err == nil {
 				t.Fatal("invalid frame accepted")
@@ -103,23 +168,23 @@ func TestPacketFramingAndExpiry(t *testing.T) {
 		})
 	}
 	a, b := net.Pipe()
-	defer b.Close()
+	defer closePacketFixture(t, b)
 	p, err := NewPacketConn(a, time.Now().Add(25*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer closePacketFixture(t, p)
 	time.Sleep(35 * time.Millisecond)
 	if p.Refresh(packetTestLease()) == nil {
 		t.Fatal("expired grant revived")
 	}
 	a2, b2 := net.Pipe()
-	defer b2.Close()
+	defer closePacketFixture(t, b2)
 	idle, err := NewPacketConn(a2, packetTestLease())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer idle.Close()
+	defer closePacketFixture(t, idle)
 	idle.mu.Lock()
 	idle.lastActivity = time.Now().Add(-PacketIdleTimeout - time.Second)
 	idle.mu.Unlock()
@@ -143,7 +208,7 @@ func TestPacketTLSHTTPOptInAuthenticationAndAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer h.Close()
+	defer closePacketFixture(t, h)
 	tcp, err := New(map[string]string{"mapped": packetTestSecret}, func(context.Context, string, string) (net.Conn, error) {
 		a, b := net.Pipe()
 		go func() { _, _ = io.Copy(b, b); _ = b.Close() }()
@@ -152,7 +217,7 @@ func TestPacketTLSHTTPOptInAuthenticationAndAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tcp.Close()
+	defer closePacketFixture(t, tcp)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(r.Header.Values(PacketTransportHeader)) != 0 {
 			h.ServeHTTP(w, r)
@@ -162,7 +227,7 @@ func TestPacketTLSHTTPOptInAuthenticationAndAuthorization(t *testing.T) {
 	}))
 	defer server.Close()
 	dial := func(secret string) (*PacketConn, error) {
-		cfg := server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+		cfg := packetFixtureAs[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone()
 		raw, err := tls.Dial("tcp", strings.TrimPrefix(server.URL, "https://"), cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -173,7 +238,7 @@ func TestPacketTLSHTTPOptInAuthenticationAndAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer closePacketFixture(t, c)
 	packetRoundTrip(t, c, []byte("tls datagram"))
 	packetRoundTrip(t, c, nil)
 	if checks.Load() < 5 {
@@ -189,12 +254,12 @@ func TestPacketTLSHTTPOptInAuthenticationAndAuthorization(t *testing.T) {
 	}
 	packetRoundTrip(t, c, []byte("retained"))
 	// No UDP header still uses the unchanged stream CONNECT behavior.
-	cfg := server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	cfg := packetFixtureAs[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone()
 	raw, err := tls.Dial("tcp", strings.TrimPrefix(server.URL, "https://"), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer raw.Close()
+	defer closePacketFixture(t, raw)
 	_ = raw.SetDeadline(time.Now().Add(time.Second))
 	req := httptest.NewRequest(http.MethodConnect, "http://example.invalid:443", nil)
 	req.URL = &url.URL{Opaque: "example.invalid:443"}
@@ -208,6 +273,14 @@ func TestPacketTLSHTTPOptInAuthenticationAndAuthorization(t *testing.T) {
 	}
 	reader := bufio.NewReader(raw)
 	response, err := http.ReadResponse(reader, req)
+	if response != nil {
+		defer func() {
+			closePacketFixture(t, raw)
+			if err := response.Body.Close(); err != nil {
+				t.Errorf("TCP response body close: %v", err)
+			}
+		}()
+	}
 	if err != nil || response.StatusCode != 200 {
 		t.Fatalf("TCP compatibility %v", err)
 	}
@@ -230,7 +303,7 @@ func TestPacketHandlerRejectsMalformedOptIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer h.Close()
+	defer closePacketFixture(t, h)
 	for _, values := range [][]string{nil, {"udp/2"}, {"udp/1", "udp/1"}, {"udp/1, udp/1"}} {
 		r := httptest.NewRequest("CONNECT", "http://example.invalid:443", nil)
 		r.URL = &url.URL{Host: "example.invalid:443"}
@@ -262,7 +335,7 @@ func realPacketEcho(t *testing.T) *net.UDPAddr {
 			_, _ = socket.WriteToUDP(b[:n], from)
 		}
 	}()
-	return socket.LocalAddr().(*net.UDPAddr)
+	return packetFixtureAs[*net.UDPAddr](t, socket.LocalAddr())
 }
 func openGateUDP(t *testing.T, address, user string) (net.Conn, *net.UDPConn) {
 	t.Helper()
@@ -354,20 +427,20 @@ func TestSOCKS5GateMultiTargetSourceFragmentDrainAndRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer gate.Close()
+	defer closePacketFixture(t, gate)
 	go func() { _ = gate.Serve(listener) }()
 	control, udp := openGateUDP(t, listener.Addr().String(), "local-node")
-	defer control.Close()
-	defer udp.Close()
+	defer closePacketFixture(t, control)
+	defer closePacketFixture(t, udp)
 	gateRoundTrip(t, udp, a.String(), []byte("A"))
 	gateRoundTrip(t, udp, b.String(), nil)
 	waitPacketCount(t, gate.ActiveCount, 2)
 	// Wrong source port and RFC fragmentation never reach a new destination.
-	other, err := net.DialUDP("udp", nil, udp.RemoteAddr().(*net.UDPAddr))
+	other, err := net.DialUDP("udp", nil, packetFixtureAs[*net.UDPAddr](t, udp.RemoteAddr()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer other.Close()
+	defer closePacketFixture(t, other)
 	frame, _ := encodeSOCKSDatagram(c.String(), []byte("bad"))
 	_, _ = other.Write(frame)
 	frame[2] = 1
@@ -415,7 +488,7 @@ func fakeOwnedSOCKSUDP(t *testing.T, target *net.UDPAddr, mutate bool) (string, 
 		if err != nil {
 			return
 		}
-		defer control.Close()
+		defer closePacketFixture(t, control)
 		_ = control.SetDeadline(time.Now().Add(3 * time.Second))
 		var greeting [3]byte
 		if _, err := io.ReadFull(control, greeting[:]); err != nil || greeting != [3]byte{5, 1, 2} {
@@ -451,14 +524,14 @@ func fakeOwnedSOCKSUDP(t *testing.T, target *net.UDPAddr, mutate bool) (string, 
 		if err != nil {
 			return
 		}
-		defer relay.Close()
-		port := relay.LocalAddr().(*net.UDPAddr).Port
-		_, _ = control.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, byte(port >> 8), byte(port)})
+		defer closePacketFixture(t, relay)
+		port := packetFixtureAs[*net.UDPAddr](t, relay.LocalAddr()).Port
+		_, _ = control.Write(append([]byte{5, 0, 0, 1, 127, 0, 0, 1}, packetFixturePort(t, port)...))
 		upstream, err := net.DialUDP("udp4", nil, target)
 		if err != nil {
 			return
 		}
-		defer upstream.Close()
+		defer closePacketFixture(t, upstream)
 		go func() { _, _ = io.Copy(io.Discard, control); _ = relay.Close() }()
 		b := make([]byte, 65536)
 		for {
@@ -545,7 +618,7 @@ func TestSOCKS5GateTCPAuthenticationAndExpiredRenewal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer gate.Close()
+	defer closePacketFixture(t, gate)
 	go func() { _ = gate.Serve(listener) }()
 	bad, err := net.Dial("tcp", listener.Addr().String())
 	if err != nil {
@@ -560,7 +633,7 @@ func TestSOCKS5GateTCPAuthenticationAndExpiredRenewal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer closePacketFixture(t, conn)
 	_ = conn.SetDeadline(time.Now().Add(time.Second))
 	if socksClientAuth(conn, "local", packetTestSecret) != nil {
 		t.Fatal("SOCKS auth failed")
@@ -593,7 +666,7 @@ func TestSOCKS5GateTCPAuthenticationAndExpiredRenewal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer handler.Close()
+	defer closePacketFixture(t, handler)
 	handler.mu.Lock()
 	handler.until = time.Now().Add(-time.Second)
 	handler.mu.Unlock()
@@ -609,7 +682,7 @@ func TestPacketUnsupportedStaticMappingAndUnsafeHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer handler.Close()
+	defer closePacketFixture(t, handler)
 	cases := []struct {
 		name        string
 		serve       http.Handler
@@ -624,14 +697,14 @@ func TestPacketUnsupportedStaticMappingAndUnsafeHeader(t *testing.T) {
 			}
 			w.Header().Set("Content-Length", "1000000")
 			w.WriteHeader(http.StatusNotImplemented)
-			w.(http.Flusher).Flush()
+			packetFixtureAs[http.Flusher](t, w).Flush()
 			<-release
 		})
 		t.Run("bodyless "+version, func(t *testing.T) {
 			server := httptest.NewTLSServer(serve)
 			defer server.Close()
 			defer close(release)
-			cfg := server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+			cfg := packetFixtureAs[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone()
 			raw, e := tls.Dial("tcp", strings.TrimPrefix(server.URL, "https://"), cfg)
 			if e != nil {
 				t.Fatal(e)
@@ -650,7 +723,7 @@ func TestPacketUnsupportedStaticMappingAndUnsafeHeader(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewTLSServer(tc.serve)
 			defer server.Close()
-			cfg := server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+			cfg := packetFixtureAs[*http.Transport](t, server.Client().Transport).TLSClientConfig.Clone()
 			raw, e := tls.Dial("tcp", strings.TrimPrefix(server.URL, "https://"), cfg)
 			if e != nil {
 				t.Fatal(e)
@@ -658,6 +731,62 @@ func TestPacketUnsupportedStaticMappingAndUnsafeHeader(t *testing.T) {
 			_, e = DialPacketTunnel(context.Background(), raw, "example.invalid:443", "u", packetTestSecret, packetTestLease())
 			if errors.Is(e, ErrPacketUnsupported) != tc.unsupported {
 				t.Fatalf("unsupported mapping: %v", e)
+			}
+		})
+	}
+}
+
+type packetBodyFixture struct {
+	io.Reader
+	close func() error
+}
+
+func (body *packetBodyFixture) Close() error { return body.close() }
+
+type packetConnectionFixture struct {
+	net.Conn
+	close func() error
+}
+
+func (connection *packetConnectionFixture) Close() error { return connection.close() }
+
+func TestPacketTunnelResponseBodyOwnership(t *testing.T) {
+	bodyFailure := errors.New("response body close failed")
+	for _, want := range []error{nil, bodyFailure} {
+		t.Run(fmt.Sprint(want), func(t *testing.T) {
+			client, peer := net.Pipe()
+			defer closePacketFixture(t, peer)
+			order := []string{}
+			connection := &packetConnectionFixture{Conn: client, close: func() error {
+				order = append(order, "transport")
+				return client.Close()
+			}}
+			body := &packetBodyFixture{Reader: strings.NewReader(""), close: func() error {
+				order = append(order, "body")
+				return want
+			}}
+			stream := &bufferedPacketStream{Conn: connection, reader: bufio.NewReader(connection), responseBody: body}
+			packet, err := NewPacketConn(stream, packetTestLease())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = packet.Close() }()
+			written := make(chan error, 1)
+			go func() { _, err := peer.Write([]byte{0, 3, 'u', 'd', 'p'}); written <- err }()
+			payload := make([]byte, 3)
+			if n, err := packet.Read(payload); err != nil || n != 3 || string(payload) != "udp" || len(order) != 0 {
+				t.Fatalf("tunnel closed before ownership ended: n=%d err=%v order=%v", n, err, order)
+			}
+			if err := <-written; err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := packet.Close(); !errors.Is(err, want) {
+					t.Fatalf("close error=%v, want=%v", err, want)
+				}
+			}
+			if len(order) != 2 || order[0] != "transport" || order[1] != "body" {
+				t.Fatalf("owned close order/count=%v", order)
 			}
 		})
 	}

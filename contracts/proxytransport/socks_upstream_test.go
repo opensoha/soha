@@ -36,7 +36,7 @@ func startUpstreamPeer(t *testing.T, command byte, noAuth bool, bound func(int) 
 		if err != nil {
 			return
 		}
-		defer control.Close()
+		defer closePacketFixture(t, control)
 		_ = control.SetDeadline(time.Now().Add(3 * time.Second))
 		var greeting [3]byte
 		if _, err := io.ReadFull(control, greeting[:]); err != nil {
@@ -97,8 +97,8 @@ func startUpstreamPeer(t *testing.T, command byte, noAuth bool, bound func(int) 
 		if err != nil {
 			return
 		}
-		defer relay.Close()
-		port := relay.LocalAddr().(*net.UDPAddr).Port
+		defer closePacketFixture(t, relay)
+		port := packetFixtureAs[*net.UDPAddr](t, relay.LocalAddr()).Port
 		if writePacketAll(control, append([]byte{5, 0, 0}, bound(port)...)) != nil {
 			return
 		}
@@ -112,7 +112,7 @@ func startUpstreamPeer(t *testing.T, command byte, noAuth bool, bound func(int) 
 		if err != nil {
 			return
 		}
-		defer upstream.Close()
+		defer closePacketFixture(t, upstream)
 		buffer := make([]byte, 65536)
 		for {
 			n, from, err := relay.ReadFromUDP(buffer)
@@ -154,7 +154,7 @@ func TestSOCKS5UpstreamUDPSamePinnedSourceAndUnspecified(t *testing.T) {
 		noAuth bool
 	}{{"same IP", []byte{1, 127, 0, 0, 1}, false}, {"unspecified IPv4", []byte{1, 0, 0, 0, 0}, true}, {"unspecified IPv6", append([]byte{4}, make([]byte, 16)...), false}} {
 		t.Run(tc.name, func(t *testing.T) {
-			peer := startUpstreamPeer(t, 3, tc.noAuth, func(port int) []byte { return append(append([]byte(nil), tc.prefix...), byte(port>>8), byte(port)) }, target)
+			peer := startUpstreamPeer(t, 3, tc.noAuth, func(port int) []byte { return append(append([]byte(nil), tc.prefix...), packetFixturePort(t, port)...) }, target)
 			user, secret := "upstream-user", "short-secret"
 			if tc.noAuth {
 				user, secret = "", ""
@@ -165,7 +165,7 @@ func TestSOCKS5UpstreamUDPSamePinnedSourceAndUnspecified(t *testing.T) {
 			}
 			packetRoundTrip(t, conn, []byte("source-pinned UDP"))
 			packetRoundTrip(t, conn, nil)
-			if conn.RemoteAddr().(*net.UDPAddr).IP.String() != "127.0.0.1" {
+			if packetFixtureAs[*net.UDPAddr](t, conn.RemoteAddr()).IP.String() != "127.0.0.1" {
 				t.Fatal("socket not pinned to approved source")
 			}
 			if request := <-peer.targets; request != "0.0.0.0:0" {
@@ -173,7 +173,7 @@ func TestSOCKS5UpstreamUDPSamePinnedSourceAndUnspecified(t *testing.T) {
 			}
 			_ = conn.Close()
 			awaitUpstreamClose(t, peer.closed)
-			if conn.(interface{ Refresh(time.Time) error }).Refresh(packetTestLease()) == nil {
+			if packetFixtureAs[interface{ Refresh(time.Time) error }](t, conn).Refresh(packetTestLease()) == nil {
 				t.Fatal("closed upstream UDP revived")
 			}
 		})
@@ -184,8 +184,8 @@ func TestSOCKS5UpstreamUDPRejectsRelayRedirectionWithoutPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer capture.Close()
-	port := capture.LocalAddr().(*net.UDPAddr).Port
+	defer closePacketFixture(t, capture)
+	port := packetFixtureAs[*net.UDPAddr](t, capture.LocalAddr()).Port
 	for _, tc := range []struct {
 		name  string
 		reply []byte
@@ -227,7 +227,7 @@ func TestSOCKS5UpstreamRejectsWrongFactoryPeerBeforeAuthentication(t *testing.T)
 				bytesSeen <- 0
 				return
 			}
-			defer c.Close()
+			defer closePacketFixture(t, c)
 			_ = c.SetReadDeadline(time.Now().Add(time.Second))
 			n, _ := c.Read(make([]byte, 512))
 			bytesSeen <- n
@@ -274,7 +274,7 @@ func TestSOCKS5UpstreamTCPKeepsPinnedTargetAndLease(t *testing.T) {
 		}
 		_ = conn.Close()
 		awaitUpstreamClose(t, peer.closed)
-		if conn.(interface{ Refresh(time.Time) error }).Refresh(packetTestLease()) == nil {
+		if packetFixtureAs[interface{ Refresh(time.Time) error }](t, conn).Refresh(packetTestLease()) == nil {
 			t.Fatal("closed TCP revived")
 		}
 	}
@@ -284,7 +284,7 @@ func TestSOCKS5UpstreamTCPKeepsPinnedTargetAndLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(45 * time.Millisecond)
-	if conn.(interface{ Refresh(time.Time) error }).Refresh(packetTestLease()) == nil {
+	if packetFixtureAs[interface{ Refresh(time.Time) error }](t, conn).Refresh(packetTestLease()) == nil {
 		t.Fatal("expired TCP revived")
 	}
 	_ = conn.Close()
@@ -346,14 +346,14 @@ func TestSOCKS5UpstreamResponseSourceIsLiteralAndPinned(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer relay.Close()
-			udp, err := net.DialUDP("udp4", nil, relay.LocalAddr().(*net.UDPAddr))
+			defer closePacketFixture(t, relay)
+			udp, err := net.DialUDP("udp4", nil, packetFixtureAs[*net.UDPAddr](t, relay.LocalAddr()))
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer udp.Close()
+			defer closePacketFixture(t, udp)
 			_ = udp.SetReadDeadline(time.Now().Add(time.Second))
-			_, err = relay.WriteToUDP(tc.packet, udp.LocalAddr().(*net.UDPAddr))
+			_, err = relay.WriteToUDP(tc.packet, packetFixtureAs[*net.UDPAddr](t, udp.LocalAddr()))
 			if err != nil {
 				t.Fatal(err)
 			}

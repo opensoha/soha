@@ -79,7 +79,11 @@ func NewPacketConn(conn net.Conn, deadline time.Time) (*PacketConn, error) {
 	}
 	write := func(p []byte) (int, error) {
 		var header [2]byte
-		binary.BigEndian.PutUint16(header[:], uint16(len(p)))
+		size := len(p)
+		if size > MaxDatagramBytes {
+			return 0, errors.New("oversized datagram")
+		}
+		binary.BigEndian.PutUint16(header[:], uint16(size))
 		if err := writePacketAll(conn, header[:]); err != nil {
 			return 0, err
 		}
@@ -194,7 +198,6 @@ func (p *PacketConn) Refresh(until time.Time) error {
 	p.until = until
 	return p.applyDeadlinesLocked()
 }
-func (p *PacketConn) leaseUntil() time.Time { p.mu.Lock(); defer p.mu.Unlock(); return p.until }
 func (p *PacketConn) Close() error {
 	p.closeOnce.Do(func() { p.mu.Lock(); p.closed = true; p.mu.Unlock(); p.closeErr = p.conn.Close() })
 	return p.closeErr

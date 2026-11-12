@@ -94,11 +94,13 @@ func TestNativeScopeResolverCancellation(t *testing.T) {
 	}
 }
 
-func nativeRelayBound(port int) []byte { return []byte{1, 0, 0, 0, 0, byte(port >> 8), byte(port)} }
+func nativeRelayBound(t *testing.T) func(int) []byte {
+	return func(port int) []byte { return append([]byte{1, 0, 0, 0, 0}, packetFixturePort(t, port)...) }
+}
 
 func TestNativeUDPInjectedDialRoundTrip(t *testing.T) {
 	target := realPacketEcho(t)
-	peer := startUpstreamPeer(t, 3, true, nativeRelayBound, target)
+	peer := startUpstreamPeer(t, 3, true, nativeRelayBound(t), target)
 	calls := 0
 	var injected *net.UDPConn
 	conn, err := DialSOCKS5UpstreamUDPWithDial(context.Background(), upstreamTestConnect(peer.address), func(ctx context.Context, relay netip.AddrPort) (*net.UDPConn, error) {
@@ -113,7 +115,7 @@ func TestNativeUDPInjectedDialRoundTrip(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		injected = c.(*net.UDPConn)
+		injected = packetFixtureAs[*net.UDPConn](t, c)
 		return injected, nil
 	}, netip.MustParseAddr("127.0.0.1"), "", "", target.String(), packetTestLease())
 	if err != nil {
@@ -127,12 +129,12 @@ func TestNativeUDPInjectedDialRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer spoof.Close()
+	defer closePacketFixture(t, spoof)
 	packet, err := encodeSOCKSDatagram(target.String(), []byte("off-path"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := spoof.WriteToUDP(packet, injected.LocalAddr().(*net.UDPAddr)); err != nil {
+	if _, err := spoof.WriteToUDP(packet, packetFixtureAs[*net.UDPAddr](t, injected.LocalAddr())); err != nil {
 		t.Fatal(err)
 	}
 	packetRoundTrip(t, conn, []byte("injected UDP"))
@@ -146,10 +148,10 @@ func TestNativeUDPInjectedDialRejectsInvalidSockets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer capture.Close()
+	defer closePacketFixture(t, capture)
 	for _, mode := range []string{"error", "nil", "error with socket", "wrong remote", "wrong family", "unconnected", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
-			peer := startUpstreamPeer(t, 3, true, nativeRelayBound, nil)
+			peer := startUpstreamPeer(t, 3, true, nativeRelayBound(t), nil)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			calls := 0
@@ -165,7 +167,7 @@ func TestNativeUDPInjectedDialRejectsInvalidSockets(t *testing.T) {
 				var err error
 				switch mode {
 				case "wrong remote":
-					returned, err = net.DialUDP("udp4", nil, capture.LocalAddr().(*net.UDPAddr))
+					returned, err = net.DialUDP("udp4", nil, packetFixtureAs[*net.UDPAddr](t, capture.LocalAddr()))
 				case "wrong family":
 					returned, err = net.DialUDP("udp6", nil, &net.UDPAddr{IP: net.IPv6loopback, Port: int(relay.Port())})
 				case "unconnected":
@@ -185,7 +187,7 @@ func TestNativeUDPInjectedDialRejectsInvalidSockets(t *testing.T) {
 				return returned, nil
 			}, netip.MustParseAddr("127.0.0.1"), "", "", "198.51.100.2:443", packetTestLease())
 			if conn != nil {
-				conn.Close()
+				closePacketFixture(t, conn)
 				t.Fatal("invalid callback returned usable connection")
 			}
 			if err == nil || calls != 1 {
@@ -212,7 +214,7 @@ func TestNativeUDPRejectsBeforeInjectedDial(t *testing.T) {
 		return nil, errors.New("must not dial")
 	}
 	for _, reply := range [][]byte{{1, 127, 0, 0, 2}, {4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, append([]byte{3, 9}, []byte("localhost")...)} {
-		peer := startUpstreamPeer(t, 3, true, func(port int) []byte { return append(append([]byte(nil), reply...), byte(port>>8), byte(port)) }, nil)
+		peer := startUpstreamPeer(t, 3, true, func(port int) []byte { return append(append([]byte(nil), reply...), packetFixturePort(t, port)...) }, nil)
 		conn, err := DialSOCKS5UpstreamUDPWithDial(context.Background(), upstreamTestConnect(peer.address), dial, netip.MustParseAddr("127.0.0.1"), "", "", "198.51.100.2:443", packetTestLease())
 		if conn != nil || err == nil {
 			t.Fatal("unapproved relay accepted")

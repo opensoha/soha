@@ -314,7 +314,7 @@ func (s *socksGateSession) tcp(target string) {
 		_ = socksReply(s.control, 5, "0.0.0.0:0")
 		return
 	}
-	defer back.Close()
+	defer func() { _ = back.Close() }()
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()

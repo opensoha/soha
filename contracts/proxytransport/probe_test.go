@@ -14,7 +14,7 @@ func TestProbeConnectionGETAndHEADNoBody(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		t.Run(method, func(t *testing.T) {
 			conn := ProbeConnection()
-			defer conn.Close()
+			defer closePacketFixture(t, conn)
 			if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
 				t.Fatal(err)
 			}
@@ -36,7 +36,11 @@ func TestProbeConnectionGETAndHEADNoBody(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer response.Body.Close()
+			defer func() {
+				if err := response.Body.Close(); err != nil {
+					t.Errorf("probe response body close: %v", err)
+				}
+			}()
 			body, err := io.ReadAll(response.Body)
 			wantLength := int64(0)
 			if method == http.MethodHead {
@@ -54,13 +58,20 @@ func TestProbeConnectionRejectsOtherMethods(t *testing.T) {
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodConnect} {
 		t.Run(method, func(t *testing.T) {
 			conn := ProbeConnection()
-			defer conn.Close()
+			defer closePacketFixture(t, conn)
 			_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 			_, err := io.WriteString(conn, method+" / HTTP/1.1\r\nHost: private-probe.invalid\r\nContent-Length: 0\r\n\r\n")
 			if err != nil {
 				t.Fatal(err)
 			}
 			response, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: method})
+			if response != nil {
+				defer func() {
+					if err := response.Body.Close(); err != nil {
+						t.Errorf("probe response body close: %v", err)
+					}
+				}()
+			}
 			if err == nil || response != nil {
 				t.Fatal("unsupported method accepted")
 			}
@@ -69,7 +80,7 @@ func TestProbeConnectionRejectsOtherMethods(t *testing.T) {
 }
 func TestProbeConnectionBoundsRequestHeaders(t *testing.T) {
 	conn := ProbeConnection()
-	defer conn.Close()
+	defer closePacketFixture(t, conn)
 	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 	written := make(chan error, 1)
 	go func() {
@@ -77,6 +88,13 @@ func TestProbeConnectionBoundsRequestHeaders(t *testing.T) {
 		written <- err
 	}()
 	response, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodHead})
+	if response != nil {
+		defer func() {
+			if err := response.Body.Close(); err != nil {
+				t.Errorf("probe response body close: %v", err)
+			}
+		}()
+	}
 	if err == nil || response != nil {
 		t.Fatal("oversized headers accepted")
 	}

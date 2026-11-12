@@ -64,7 +64,8 @@ func readSOCKSAddressType(r io.Reader, kind byte) (string, error) {
 func encodeSOCKSAddress(target string, allowZero bool) ([]byte, error) {
 	host, port, err := net.SplitHostPort(target)
 	n, e := strconv.Atoi(port)
-	if err != nil || e != nil || n < 0 || n > 65535 || !allowZero && n == 0 || host == "" || len(host) > 253 {
+	hostSize := len(host)
+	if err != nil || e != nil || n < 0 || n > 65535 || !allowZero && n == 0 || hostSize == 0 || hostSize > 253 {
 		return nil, errors.New("invalid SOCKS target")
 	}
 	var b []byte
@@ -78,9 +79,9 @@ func encodeSOCKSAddress(target string, allowZero bool) ([]byte, error) {
 		if !allowZero && packetTarget(target) != nil {
 			return nil, errors.New("invalid SOCKS hostname")
 		}
-		b = append([]byte{3, byte(len(host))}, []byte(host)...)
+		b = append([]byte{3, byte(hostSize)}, []byte(host)...)
 	}
-	b = append(b, byte(n>>8), byte(n))
+	b = binary.BigEndian.AppendUint16(b, uint16(n))
 	return b, nil
 }
 func encodeSOCKSDatagram(target string, payload []byte) ([]byte, error) {
@@ -118,7 +119,8 @@ func (r *packetByteReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 func socksClientAuth(c net.Conn, user, secret string) error {
-	if user == "" || len(user) > 255 || len(secret) < 32 || len(secret) > 255 {
+	userSize, secretSize := len(user), len(secret)
+	if userSize == 0 || userSize > 255 || secretSize < 32 || secretSize > 255 {
 		return errors.New("invalid SOCKS credential size")
 	}
 	if err := writePacketAll(c, []byte{5, 1, 2}); err != nil {
@@ -131,9 +133,9 @@ func socksClientAuth(c net.Conn, user, secret string) error {
 	if reply != [2]byte{5, 2} {
 		return errors.New("SOCKS password authentication required")
 	}
-	b := []byte{1, byte(len(user))}
+	b := []byte{1, byte(userSize)}
 	b = append(b, []byte(user)...)
-	b = append(b, byte(len(secret)))
+	b = append(b, byte(secretSize))
 	b = append(b, []byte(secret)...)
 	if err := writePacketAll(c, b); err != nil {
 		return err

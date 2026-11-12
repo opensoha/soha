@@ -3,8 +3,9 @@ package proxyadapter
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestAdapterResultFixtures(t *testing.T) {
 				dir, name = "invalid", string(method)+"-incomplete-result.json"
 			}
 			t.Run(dir+"/"+name, func(t *testing.T) {
-				raw, err := os.ReadFile(filepath.Join("..", "fixtures", "json-schema", "proxy-adapter", dir, name))
+				raw, err := fs.ReadFile(os.DirFS("../fixtures/json-schema/proxy-adapter"), path.Join(dir, name))
 				if err != nil {
 					t.Fatal(err)
 				}

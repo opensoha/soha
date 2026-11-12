@@ -192,7 +192,7 @@ func (h *PacketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	defer back.Close()
+	defer func() { _ = back.Close() }()
 	if err := refreshPacketConn(back, until); err != nil {
 		http.Error(w, "datagram backend unavailable", http.StatusBadGateway)
 		return
@@ -206,12 +206,12 @@ func (h *PacketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer raw.Close()
+	defer func() { _ = raw.Close() }()
 	front, err := NewPacketConn(&bufferedPacketStream{Conn: raw, reader: buffer.Reader}, until)
 	if err != nil {
 		return
 	}
-	defer front.Close()
+	defer func() { _ = front.Close() }()
 	association := &packetAssociation{front: front, back: back}
 	h.mu.Lock()
 	if h.closed || h.noNew || !h.until.After(time.Now()) {
@@ -259,10 +259,21 @@ func (h *PacketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type bufferedPacketStream struct {
 	net.Conn
-	reader *bufio.Reader
+	reader       *bufio.Reader
+	responseBody io.Closer
 }
 
 func (c *bufferedPacketStream) Read(p []byte) (int, error) { return c.reader.Read(p) }
+
+func (c *bufferedPacketStream) Close() error {
+	// Closing the transport first prevents an HTTP body closer from draining
+	// the live CONNECT datagram stream. PacketConn owns this close exactly once.
+	err := c.Conn.Close()
+	if c.responseBody != nil {
+		return errors.Join(err, c.responseBody.Close())
+	}
+	return err
+}
 
 type packetHeaderReader struct {
 	reader    io.Reader
@@ -337,6 +348,7 @@ func DialPacketTunnel(ctx context.Context, rawTLSConn net.Conn, target, user, se
 	if err != nil {
 		return fail(errors.New("packet tunnel response failed"))
 	}
+	defer func() { _ = response.Body.Close() }()
 	version, ok := singleHeader(response.Header, PacketTransportHeader)
 	if response.ProtoMajor != 1 || !ok || version != PacketTransportVersion || len(response.TransferEncoding) != 0 {
 		return fail(errors.New("unsafe packet tunnel response"))
@@ -347,9 +359,14 @@ func DialPacketTunnel(ctx context.Context, rawTLSConn net.Conn, target, user, se
 	if response.StatusCode != http.StatusOK {
 		return fail(errors.New("packet tunnel refused"))
 	}
-	packet, err := NewPacketConn(&bufferedPacketStream{Conn: rawTLSConn, reader: reader}, deadline)
+	stream := &bufferedPacketStream{Conn: rawTLSConn, reader: reader}
+	packet, err := NewPacketConn(stream, deadline)
 	if err != nil {
 		return fail(err)
 	}
+	// Transfer the response body to the returned connection; the deferred closer
+	// handles failure paths only and must not consume a successful tunnel.
+	stream.responseBody = response.Body
+	response.Body = http.NoBody
 	return packet, nil
 }

@@ -75,14 +75,16 @@ func connectSOCKSUpstream(ctx context.Context, connect UpstreamConnect, approved
 }
 func upstreamSOCKSAuth(c net.Conn, user, secret string) error {
 	// Empty user is an explicit NoAuth choice, not password negotiation fallback.
-	method := byte(2)
-	if user == "" {
-		if secret != "" {
-			return errors.New("SOCKS secret requires a username")
-		}
-		method = 0
-	} else if len(user) > 255 || len(secret) == 0 || len(secret) > 255 {
+	userSize, secretSize := len(user), len(secret)
+	if userSize == 0 && secretSize != 0 {
+		return errors.New("SOCKS secret requires a username")
+	}
+	if userSize > 255 || secretSize > 255 || userSize != 0 && secretSize == 0 {
 		return errors.New("invalid upstream SOCKS credential size")
+	}
+	method := byte(2)
+	if userSize == 0 {
+		method = 0
 	}
 	if writePacketAll(c, []byte{5, 1, method}) != nil {
 		return errors.New("SOCKS authentication handshake failed")
@@ -94,9 +96,9 @@ func upstreamSOCKSAuth(c net.Conn, user, secret string) error {
 	if method == 0 {
 		return nil
 	}
-	request := []byte{1, byte(len(user))}
+	request := []byte{1, byte(userSize)}
 	request = append(request, []byte(user)...)
-	request = append(request, byte(len(secret)))
+	request = append(request, byte(secretSize))
 	request = append(request, []byte(secret)...)
 	if writePacketAll(c, request) != nil {
 		return errors.New("SOCKS authentication exchange failed")
