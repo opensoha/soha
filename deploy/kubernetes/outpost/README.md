@@ -1,6 +1,15 @@
 # Soha Outpost
 
-This artifact runs the standard `ghcr.io/opensoha/soha-agent` image published by the agent release workflow. Outpost is a forward-auth decision point; the protected application traffic continues through the ingress or reverse proxy. Check out an agent release that advertises Identity Outpost protocol `v1`, replace the control-plane URL, Outpost ID (`agent_id`), and pinned Ed25519 trust key in `soha-outpost.yaml`, and pin the image before applying it:
+This artifact runs the standard `ghcr.io/opensoha/soha-agent` image published by the agent release workflow. Outpost is a forward-auth decision point; the protected application traffic continues through the ingress or reverse proxy. Check out an agent release that advertises Identity Outpost protocol `v1`, replace the control-plane URL, Outpost ID (`agent_id`), and pinned Ed25519 trust key in `soha-outpost.yaml`, and pin the image before applying it. Provision the existing `soha-outpost-state`
+PVC in the same namespace before starting the deployment. The two-replica
+rolling deployment requires ReadWriteMany storage writable by group 10001.
+The Agent creates a private state directory for each Pod UID. Preserve that
+claim across container restarts and upgrades. When migrating an existing
+installation with durable state, stop the old owners and preserve their replay
+floors under the approved migration procedure before replacing its state mount.
+
+The sequence below assumes that the storage claim has already been provisioned
+by the installer:
 
 ```bash
 git checkout vX.Y.Z

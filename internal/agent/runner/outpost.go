@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/opensoha/soha-agent/internal/agent/buildinfo"
+	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
 	contractauth "github.com/opensoha/soha-contracts/auth"
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"go.uber.org/zap"
@@ -46,25 +48,41 @@ type ForwardAuthResult struct {
 }
 
 type OutpostStatus struct {
-	Enabled              bool   `json:"enabled"`
-	Ready                bool   `json:"ready"`
-	ErrorCode            string `json:"errorCode,omitempty"`
-	OutpostID            string `json:"outpostId,omitempty"`
-	ConfigurationVersion int64  `json:"configurationVersion,omitempty"`
-	DesiredVersion       int64  `json:"desiredConfigurationVersion,omitempty"`
-	ExpiresAt            string `json:"expiresAt,omitempty"`
-	LastClaimAt          string `json:"lastClaimAt,omitempty"`
-	LastHeartbeatAt      string `json:"lastHeartbeatAt,omitempty"`
-	ClaimFailures        int64  `json:"claimFailures"`
-	HeartbeatFailures    int64  `json:"heartbeatFailures"`
-	CheckFailures        int64  `json:"checkFailures"`
-	Denied               int64  `json:"denied"`
+	InstanceID               string `json:"instanceId,omitempty"`
+	ProcessEpoch             string `json:"processEpoch,omitempty"`
+	AcceptingRequests        bool   `json:"acceptingRequests"`
+	ActiveChecks             int    `json:"activeChecks"`
+	AppliedControlGeneration int64  `json:"appliedControlGeneration"`
+	Enabled                  bool   `json:"enabled"`
+	Ready                    bool   `json:"ready"`
+	ErrorCode                string `json:"errorCode,omitempty"`
+	OutpostID                string `json:"outpostId,omitempty"`
+	ConfigurationVersion     int64  `json:"configurationVersion,omitempty"`
+	DesiredVersion           int64  `json:"desiredConfigurationVersion,omitempty"`
+	ExpiresAt                string `json:"expiresAt,omitempty"`
+	LastClaimAt              string `json:"lastClaimAt,omitempty"`
+	LastHeartbeatAt          string `json:"lastHeartbeatAt,omitempty"`
+	ClaimFailures            int64  `json:"claimFailures"`
+	HeartbeatFailures        int64  `json:"heartbeatFailures"`
+	CheckFailures            int64  `json:"checkFailures"`
+	Denied                   int64  `json:"denied"`
 }
 
 type outpostRuntime struct {
 	mu                 sync.RWMutex
+	instanceID         string
+	processEpoch       string
+	controlEnabled     bool
+	control            *sohaapi.IdentityOutpostRuntimeControl
+	controlDeadline    time.Time
+	controlError       string
+	activeChecks       int
 	config             *sohaapi.IdentityOutpostRuntimeConfig
+	leaseDeadline      time.Time
 	publicKey          ed25519.PublicKey
+	trustedKeys        map[string]ed25519.PublicKey
+	floor              outpostConfigFloor
+	state              *outpostStateStore
 	lastClaimAt        time.Time
 	lastHeartbeatAt    time.Time
 	claimFailures      int64
@@ -74,6 +92,7 @@ type outpostRuntime struct {
 	desiredVersion     int64
 	contactOutpostID   string
 	configurationError string
+	persistenceFailed  bool
 }
 
 func newOutpostRuntime(encodedPublicKey string) (*outpostRuntime, error) {
@@ -84,12 +103,50 @@ func newOutpostRuntime(encodedPublicKey string) (*outpostRuntime, error) {
 	return &outpostRuntime{publicKey: ed25519.PublicKey(key)}, nil
 }
 
+func newConfiguredOutpostRuntime(cfg cfgpkg.OutpostConfig, baseURL string) (*outpostRuntime, error) {
+	keys, err := cfg.TrustedKeys()
+	if err != nil {
+		return nil, err
+	}
+	instanceID := strings.TrimSpace(cfg.InstanceID)
+	if instanceID == "" {
+		instanceID, err = os.Hostname()
+		if err != nil || strings.TrimSpace(instanceID) == "" {
+			return nil, errors.New("outpost instance identity unavailable")
+		}
+	}
+	if len(instanceID) > 128 {
+		return nil, errors.New("outpost instance identity exceeds 128 bytes")
+	}
+	epoch, err := uuid.NewRandom()
+	if err != nil {
+		return nil, fmt.Errorf("create outpost process epoch: %w", err)
+	}
+	store, floor, err := openOutpostInstanceState(cfg.StateDir, baseURL, cfg.AgentID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if floor.Managed && !cfg.RuntimeControlEnabled {
+		store.close()
+		return nil, errors.New("managed outpost runtime control cannot be disabled")
+	}
+	if cfg.RuntimeControlEnabled && !floor.Managed {
+		floor.Managed = true
+		if err := store.save(floor); err != nil {
+			store.close()
+			return nil, err
+		}
+	}
+	return &outpostRuntime{trustedKeys: keys, state: store, floor: floor, instanceID: instanceID, processEpoch: epoch.String(), controlEnabled: cfg.RuntimeControlEnabled}, nil
+}
+
 func (r *Runner) startOutpost(ctx context.Context) {
 	if !r.cfg.Outpost.Enabled {
 		return
 	}
-	runtime, err := newOutpostRuntime(r.cfg.Outpost.TrustPublicKey)
+	runtime, err := newConfiguredOutpostRuntime(r.cfg.Outpost, r.cfg.BaseURL)
 	if err != nil {
+		r.outpost = &outpostRuntime{configurationError: "configuration_state_unavailable"}
 		r.logger.Error("outpost runtime disabled", zap.Error(err))
 		return
 	}
@@ -98,6 +155,7 @@ func (r *Runner) startOutpost(ctx context.Context) {
 }
 
 func (r *Runner) outpostLoop(ctx context.Context) {
+	defer r.outpost.state.close()
 	poll := positiveDuration(r.cfg.Outpost.PollInterval, 5*time.Second)
 	heartbeat := positiveDuration(r.cfg.Outpost.HeartbeatInterval, 15*time.Second)
 	pollTicker := time.NewTicker(poll)
@@ -120,11 +178,16 @@ func (r *Runner) outpostLoop(ctx context.Context) {
 
 func (r *Runner) claimOutpostConfig(ctx context.Context) {
 	current := r.OutpostStatus().ConfigurationVersion
-	config, err := r.apiClient().ClaimIdentityOutpostConfig(ctx, sohaapi.IdentityOutpostClaimRequest{
+	request := sohaapi.IdentityOutpostClaimRequest{
 		AgentID: r.cfg.Outpost.AgentID, CurrentConfigurationVersion: current,
 		SupportedProtocolVersion: r.cfg.Outpost.ProtocolVersion,
 		RuntimeVersion:           buildinfo.Version,
-	})
+	}
+	if r.outpost.controlEnabled {
+		request.InstanceID, request.ProcessEpoch = r.outpost.instanceID, r.outpost.processEpoch
+		request.SupportedRuntimeControlVersion = "v1"
+	}
+	config, err := r.apiClient().ClaimIdentityOutpostConfig(ctx, request)
 	if err != nil {
 		r.outpost.markClaimFailure()
 		return
@@ -166,10 +229,15 @@ func (r *Runner) heartbeatOutpost(ctx context.Context) {
 	if parsed, err := time.Parse(time.RFC3339, status.ExpiresAt); err == nil {
 		expiresAt = &parsed
 	}
-	response, err := r.apiClient().HeartbeatIdentityOutpost(ctx, status.OutpostID, sohaapi.IdentityOutpostHeartbeatRequest{
+	request := sohaapi.IdentityOutpostHeartbeatRequest{
 		AgentID: r.cfg.Outpost.AgentID, CheckedAt: time.Now().UTC(), ConfigurationVersion: status.ConfigurationVersion,
 		Status: state, ErrorCode: errorCode, RuntimeVersion: buildinfo.Version, ConfigurationExpiresAt: expiresAt,
-	})
+	}
+	if r.outpost.controlEnabled {
+		request.InstanceID, request.ProcessEpoch = status.InstanceID, status.ProcessEpoch
+		request.AcceptingRequests, request.ActiveChecks, request.AppliedControlGeneration = &status.AcceptingRequests, &status.ActiveChecks, &status.AppliedControlGeneration
+	}
+	response, err := r.apiClient().HeartbeatIdentityOutpost(ctx, status.OutpostID, request)
 	if err == nil {
 		r.outpost.markDesiredVersion(response.DesiredConfigurationVersion)
 	}
@@ -187,6 +255,12 @@ func (r *Runner) CheckOutpostAccess(ctx context.Context, request ForwardAuthRequ
 	if r == nil || r.outpost == nil {
 		return ForwardAuthResult{Decision: "deny", StatusCode: http.StatusServiceUnavailable}, errOutpostUnavailable
 	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := r.outpost.beginCheck(time.Now()); err != nil {
+		return ForwardAuthResult{Decision: "deny", StatusCode: http.StatusServiceUnavailable}, err
+	}
+	defer r.outpost.finishCheck()
 	config, route, skip, err := r.outpost.route(request.RequestHost, request.RequestPath, time.Now())
 	if err != nil {
 		return ForwardAuthResult{Decision: "deny", StatusCode: http.StatusServiceUnavailable}, err
@@ -272,14 +346,69 @@ func (r *Runner) reportOutpostEvent(ctx context.Context, eventType sohaapi.Ident
 }
 
 func (o *outpostRuntime) apply(config sohaapi.IdentityOutpostRuntimeConfig, trustKeyID string, now time.Time) error {
-	if strings.TrimSpace(config.KeyID) != strings.TrimSpace(trustKeyID) {
+	key := o.publicKey
+	if o.trustedKeys != nil {
+		key = o.trustedKeys[config.KeyID]
+	} else if strings.TrimSpace(config.KeyID) != strings.TrimSpace(trustKeyID) {
+		key = nil
+	}
+	if len(key) != ed25519.PublicKeySize {
 		return errors.New("outpost configuration uses an untrusted key")
 	}
 	if strings.TrimSpace(config.OutpostID) == "" || config.ProtocolVersion != "v1" || strings.TrimSpace(config.CheckURL) == "" ||
 		config.ConfigurationVersion <= 0 || !config.IssuedAt.Before(config.ExpiresAt) || config.IssuedAt.After(now.Add(outpostConfigClockSkew)) || !now.Before(config.ExpiresAt) {
 		return errors.New("outpost configuration is malformed or expired")
 	}
-	for _, route := range config.Routes {
+	if err := validateOutpostRoutes(config.Routes); err != nil {
+		return err
+	}
+	signature, err := decodeBase64(config.Signature)
+	if err != nil || !ed25519.Verify(key, outpostConfigPayload(config), signature) {
+		return errors.New("outpost configuration signature is invalid")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.persistenceFailed {
+		return errors.New("outpost durable state requires restart after persistence failure")
+	}
+	if err := o.applyConfigurationLocked(config, now); err != nil {
+		return err
+	}
+	if o.controlEnabled {
+		return o.applyControlLocked(config.RuntimeControl, config.OutpostID, trustKeyID, now)
+	}
+	return nil
+}
+
+func (o *outpostRuntime) applyConfigurationLocked(config sohaapi.IdentityOutpostRuntimeConfig, now time.Time) error {
+	next := newOutpostConfigFloor(config)
+	// Control renewals do not renew or resurrect the configuration lease.
+	if o.controlEnabled && o.config != nil && o.floor.sameLease(next) {
+		return nil
+	}
+	if err := o.floor.accepts(next); err != nil {
+		return err
+	}
+	next.Managed, next.Control = o.floor.Managed, o.floor.Control
+	if o.state != nil {
+		if err := o.state.save(next); err != nil {
+			o.configurationError = "configuration_persistence_failed"
+			o.persistenceFailed = true
+			return fmt.Errorf("persist outpost configuration floor: %w", err)
+		}
+	}
+	o.floor = next
+	copy := config
+	o.config = &copy
+	o.leaseDeadline = now.Add(min(config.ExpiresAt.Sub(now), config.ExpiresAt.Sub(config.IssuedAt)))
+	o.configurationError = ""
+	o.desiredVersion = config.ConfigurationVersion
+	o.lastClaimAt = now.UTC()
+	return nil
+}
+
+func validateOutpostRoutes(routes []sohaapi.IdentityOutpostRoute) error {
+	for _, route := range routes {
 		if strings.TrimSpace(route.Host) == "" || strings.TrimSpace(route.ProviderID) == "" ||
 			(strings.TrimSpace(route.PathPrefix) != "" && !strings.HasPrefix(route.PathPrefix, "/")) {
 			return errors.New("outpost configuration contains an invalid route")
@@ -290,25 +419,6 @@ func (o *outpostRuntime) apply(config sohaapi.IdentityOutpostRuntimeConfig, trus
 			}
 		}
 	}
-	signature, err := decodeBase64(config.Signature)
-	if err != nil || !ed25519.Verify(o.publicKey, outpostConfigPayload(config), signature) {
-		return errors.New("outpost configuration signature is invalid")
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.config != nil {
-		if config.ConfigurationVersion < o.config.ConfigurationVersion {
-			return errors.New("outpost configuration version is not monotonic")
-		}
-		if config.ConfigurationVersion == o.config.ConfigurationVersion && !config.ExpiresAt.After(o.config.ExpiresAt) {
-			return errors.New("outpost configuration lease is not newer")
-		}
-	}
-	copy := config
-	o.config = &copy
-	o.configurationError = ""
-	o.desiredVersion = config.ConfigurationVersion
-	o.lastClaimAt = now.UTC()
 	return nil
 }
 
@@ -330,7 +440,7 @@ func outpostConfigPayload(config sohaapi.IdentityOutpostRuntimeConfig) []byte {
 func (o *outpostRuntime) route(host, requestPath string, now time.Time) (sohaapi.IdentityOutpostRuntimeConfig, sohaapi.IdentityOutpostRoute, bool, error) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
-	if o.config == nil || o.configurationError != "" || !now.Before(o.config.ExpiresAt) {
+	if o.config == nil || o.configurationError != "" || (!now.Before(o.config.ExpiresAt) || !now.Before(o.leaseDeadline)) {
 		return sohaapi.IdentityOutpostRuntimeConfig{}, sohaapi.IdentityOutpostRoute{}, false, errOutpostUnavailable
 	}
 	host = strings.ToLower(strings.TrimSpace(strings.Split(host, ":")[0]))
@@ -360,16 +470,26 @@ func (o *outpostRuntime) status(now time.Time) OutpostStatus {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	status := OutpostStatus{Enabled: true, ClaimFailures: o.claimFailures, HeartbeatFailures: o.heartbeatFailures, CheckFailures: o.checkFailures, Denied: o.denied}
+	status.InstanceID, status.ProcessEpoch = o.instanceID, o.processEpoch
+	status.ActiveChecks = o.activeChecks
+	if o.control != nil {
+		status.AppliedControlGeneration = o.control.Generation
+	}
 	status.DesiredVersion = o.desiredVersion
 	status.OutpostID, status.ErrorCode = o.contactOutpostID, o.configurationError
 	if o.config != nil {
-		status.Ready = o.configurationError == "" && now.Before(o.config.ExpiresAt)
-		if !now.Before(o.config.ExpiresAt) {
+		status.Ready = o.configurationError == "" && now.Before(o.config.ExpiresAt) && now.Before(o.leaseDeadline)
+		if !now.Before(o.config.ExpiresAt) || !now.Before(o.leaseDeadline) {
 			status.ErrorCode = "configuration_expired"
 		}
 		status.OutpostID = o.config.OutpostID
 		status.ConfigurationVersion = o.config.ConfigurationVersion
 		status.ExpiresAt = o.config.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	status.AcceptingRequests = o.acceptingLocked(now)
+	status.Ready = status.Ready && status.AcceptingRequests
+	if status.ErrorCode == "" && o.controlEnabled && !status.AcceptingRequests {
+		status.ErrorCode = o.controlStatusLocked(now)
 	}
 	if !o.lastClaimAt.IsZero() {
 		status.LastClaimAt = o.lastClaimAt.Format(time.RFC3339)
