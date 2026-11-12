@@ -50,7 +50,7 @@ type Store interface {
 	ListMihomoProfiles(context.Context, domainnetworkaccess.MihomoProfileFilter) ([]domainnetworkaccess.MihomoProfile, error)
 	GetMihomoProfile(context.Context, string) (domainnetworkaccess.MihomoProfile, error)
 	CreateMihomoProfile(context.Context, domainnetworkaccess.MihomoProfile) (domainnetworkaccess.MihomoProfile, error)
-	UpdateMihomoProfile(context.Context, string, domainnetworkaccess.MihomoProfile, time.Time) (domainnetworkaccess.MihomoProfile, error)
+	UpdateMihomoProfile(context.Context, string, domainnetworkaccess.MihomoProfile, int, time.Time) (domainnetworkaccess.MihomoProfile, error)
 	DeleteMihomoProfile(context.Context, string) error
 	ListNASBindings(context.Context, domainnetworkaccess.NASBindingFilter) ([]domainnetworkaccess.NASBinding, error)
 	GetNASBinding(context.Context, string) (domainnetworkaccess.NASBinding, error)
@@ -92,12 +92,13 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	store       Store
-	permissions *appaccess.PermissionResolver
-	scope       ScopeAuthorizer
-	audit       AuditRecorder
-	operations  OperationRecorder
-	keys        keyring.Ring
+	store         Store
+	permissions   *appaccess.PermissionResolver
+	scope         ScopeAuthorizer
+	audit         AuditRecorder
+	operations    OperationRecorder
+	keys          keyring.Ring
+	mihomoBundles MihomoBundleValidator
 }
 
 func New(store Store, permissions *appaccess.PermissionResolver, scope ScopeAuthorizer, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) (*Service, error) {
@@ -498,19 +499,24 @@ func (s *Service) CreateMihomoProfile(ctx context.Context, principal domainident
 	if err := validateMihomoProfileInput(input); err != nil {
 		return domainnetworkaccess.MihomoProfile{}, err
 	}
+	if err := s.validateMihomoBundle(ctx, principal, input, nil); err != nil {
+		return domainnetworkaccess.MihomoProfile{}, err
+	}
 	var subscriptionCiphertext, manualNodeCiphertext string
 	var err error
-	switch input.SourceType {
-	case domainnetworkaccess.MihomoSourceManagedSubscription:
-		if input.SubscriptionURL == nil {
-			return domainnetworkaccess.MihomoProfile{}, invalid("managed_subscription requires subscriptionUrl when created")
+	if input.DeliveryMode == "direct_subscription" && input.BundleID == "" {
+		switch input.SourceType {
+		case domainnetworkaccess.MihomoSourceManagedSubscription:
+			if input.SubscriptionURL == nil {
+				return domainnetworkaccess.MihomoProfile{}, invalid("managed_subscription requires subscriptionUrl when created")
+			}
+			subscriptionCiphertext, err = encryptMihomoSubscription(s.keys, input.SubscriptionURL)
+		case domainnetworkaccess.MihomoSourceManualNode:
+			if input.ManualNode == nil {
+				return domainnetworkaccess.MihomoProfile{}, invalid("manual_node requires manualNode when created")
+			}
+			manualNodeCiphertext, err = encryptMihomoManualNode(s.keys, input.ManualNode)
 		}
-		subscriptionCiphertext, err = encryptMihomoSubscription(s.keys, input.SubscriptionURL)
-	case domainnetworkaccess.MihomoSourceManualNode:
-		if input.ManualNode == nil {
-			return domainnetworkaccess.MihomoProfile{}, invalid("manual_node requires manualNode when created")
-		}
-		manualNodeCiphertext, err = encryptMihomoManualNode(s.keys, input.ManualNode)
 	}
 	if err != nil {
 		return domainnetworkaccess.MihomoProfile{}, fmt.Errorf("encrypt mihomo source: %w", err)
@@ -536,32 +542,40 @@ func (s *Service) UpdateMihomoProfile(ctx context.Context, principal domainident
 	if err != nil {
 		return domainnetworkaccess.MihomoProfile{}, err
 	}
+	if existing.ID != id || existing.Revision < 1 {
+		return domainnetworkaccess.MihomoProfile{}, apperrors.ErrConflict
+	}
+	if err := s.validateMihomoBundle(ctx, principal, input, &existing); err != nil {
+		return domainnetworkaccess.MihomoProfile{}, err
+	}
 	var subscriptionCiphertext, manualNodeCiphertext string
-	switch input.SourceType {
-	case domainnetworkaccess.MihomoSourceManagedSubscription:
-		if input.SubscriptionURL == nil {
-			if existing.SourceType != input.SourceType || existing.SubscriptionURLCiphertext == "" {
-				return domainnetworkaccess.MihomoProfile{}, invalid("managed_subscription requires subscriptionUrl when no managed subscription exists")
+	if input.DeliveryMode == "direct_subscription" && input.BundleID == "" {
+		switch input.SourceType {
+		case domainnetworkaccess.MihomoSourceManagedSubscription:
+			if input.SubscriptionURL == nil {
+				if existing.SourceType != input.SourceType || existing.SubscriptionURLCiphertext == "" {
+					return domainnetworkaccess.MihomoProfile{}, invalid("managed_subscription requires subscriptionUrl when no managed subscription exists")
+				}
+				subscriptionCiphertext = existing.SubscriptionURLCiphertext
+			} else {
+				subscriptionCiphertext, err = encryptMihomoSubscription(s.keys, input.SubscriptionURL)
 			}
-			subscriptionCiphertext = existing.SubscriptionURLCiphertext
-		} else {
-			subscriptionCiphertext, err = encryptMihomoSubscription(s.keys, input.SubscriptionURL)
-		}
-	case domainnetworkaccess.MihomoSourceManualNode:
-		if input.ManualNode == nil {
-			if existing.SourceType != input.SourceType || existing.ManualNodeCiphertext == "" {
-				return domainnetworkaccess.MihomoProfile{}, invalid("manual_node requires manualNode when no manual node exists")
+		case domainnetworkaccess.MihomoSourceManualNode:
+			if input.ManualNode == nil {
+				if existing.SourceType != input.SourceType || existing.ManualNodeCiphertext == "" {
+					return domainnetworkaccess.MihomoProfile{}, invalid("manual_node requires manualNode when no manual node exists")
+				}
+				manualNodeCiphertext = existing.ManualNodeCiphertext
+			} else {
+				manualNodeCiphertext, err = encryptMihomoManualNode(s.keys, input.ManualNode)
 			}
-			manualNodeCiphertext = existing.ManualNodeCiphertext
-		} else {
-			manualNodeCiphertext, err = encryptMihomoManualNode(s.keys, input.ManualNode)
 		}
 	}
 	if err != nil {
 		return domainnetworkaccess.MihomoProfile{}, fmt.Errorf("encrypt mihomo source: %w", err)
 	}
 	item := mihomoProfileFromInput(id, input, subscriptionCiphertext, manualNodeCiphertext, existing.CreatedAt)
-	item, err = s.store.UpdateMihomoProfile(ctx, id, item, time.Now().UTC())
+	item, err = s.store.UpdateMihomoProfile(ctx, id, item, existing.Revision, time.Now().UTC())
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.mihomo_profiles.update", "NetworkMihomoProfile", item.ID, item.Name)
 	}
@@ -583,6 +597,7 @@ func (s *Service) DeleteMihomoProfile(ctx context.Context, principal domainident
 func mihomoProfileFromInput(id string, input domainnetworkaccess.MihomoProfileInput, subscriptionCiphertext, manualNodeCiphertext string, createdAt time.Time) domainnetworkaccess.MihomoProfile {
 	return domainnetworkaccess.MihomoProfile{
 		ID: id, DeviceID: input.DeviceID, Name: input.Name, Mode: input.Mode, SourceType: input.SourceType, Status: input.Status,
+		DeliveryMode: input.DeliveryMode, BundleID: input.BundleID, OrgRevision: input.OrgRevision, SourceRevision: input.SourceRevision,
 		SubscriptionConfigured: subscriptionCiphertext != "", SubscriptionURLCiphertext: subscriptionCiphertext,
 		ManualNodeConfigured: manualNodeCiphertext != "", ManualNodeCiphertext: manualNodeCiphertext, Revision: 1,
 		MixedPort: input.MixedPort, ControllerPort: input.ControllerPort, DNSMode: input.DNSMode,
@@ -1148,7 +1163,13 @@ func normalizeMihomoProfileInput(input domainnetworkaccess.MihomoProfileInput) d
 	input.Name = strings.TrimSpace(input.Name)
 	input.Mode = strings.TrimSpace(input.Mode)
 	input.SourceType = strings.TrimSpace(input.SourceType)
-	if input.Mode == domainnetworkaccess.MihomoModeManagedFollow && input.SourceType == "" {
+	if input.DeliveryMode == "" {
+		input.DeliveryMode = "direct_subscription"
+	}
+	if input.BundleID != "" {
+		input.SourceType = ""
+	}
+	if input.Mode == domainnetworkaccess.MihomoModeManagedFollow && input.SourceType == "" && input.BundleID == "" {
 		input.SourceType = domainnetworkaccess.MihomoSourceManagedSubscription
 	}
 	input.Status = strings.TrimSpace(input.Status)

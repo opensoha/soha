@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
 	domainnetworkruntime "github.com/opensoha/soha/internal/domain/networkruntime"
+	publication "github.com/opensoha/soha/internal/domain/proxypublication"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	networkaccessrepo "github.com/opensoha/soha/internal/repository/networkaccess"
@@ -38,7 +39,7 @@ func (r *Repository) MihomoSource(ctx context.Context, credentialID, profileID s
 		FROM network_mihomo_profiles p
 		JOIN network_runtime_credentials c ON c.tenant_id = p.tenant_id AND c.workspace_id = p.workspace_id AND c.device_id = p.device_id
 		WHERE p.tenant_id = 'default' AND p.workspace_id = 'default' AND p.id = ? AND p.status = 'active'
-		AND p.mode = 'managed_follow' AND ((p.source_type = 'managed_subscription' AND p.subscription_url_ciphertext IS NOT NULL) OR (p.source_type = 'manual_node' AND p.manual_node_ciphertext IS NOT NULL))
+		AND p.bundle_id = '' AND p.delivery_mode = 'direct_subscription' AND p.mode = 'managed_follow' AND ((p.source_type = 'managed_subscription' AND p.subscription_url_ciphertext IS NOT NULL) OR (p.source_type = 'manual_node' AND p.manual_node_ciphertext IS NOT NULL))
 		AND c.id = ? AND c.runtime_kind = 'endpoint' AND c.status = 'active' AND c.not_before <= ? AND c.expires_at > ?
 		AND c.capabilities @> '["mihomo","mihomo-policy-v1"]'::jsonb
 		LIMIT 1`, profileID, credentialID, now, now).Row().Scan(&sourceType, &ciphertext, &revision)
@@ -1157,6 +1158,7 @@ func mihomoDesired(profile *domainnetworkaccess.MihomoProfile, wireGuard *networ
 	}
 	desired := &networkprotocol.MihomoConfiguration{
 		Mode: profile.Mode, SourceType: profile.SourceType, ProfileID: profile.ID, ProfileRevision: profile.Revision,
+		DeliveryMode: profile.DeliveryMode, BundleID: profile.BundleID, OrgRevision: profile.OrgRevision, SourceRevision: profile.SourceRevision,
 		MixedPort: profile.MixedPort, ControllerPort: profile.ControllerPort, DNSMode: profile.DNSMode,
 		FakeIPRange: profile.FakeIPRange, SelectorGroup: profile.SelectorGroup, SelectedProxy: profile.SelectedProxy,
 		BypassCIDRs: slices.Clone(profile.BypassCIDRs), BypassHosts: slices.Clone(profile.BypassHosts), FailClosed: profile.FailClosed,
@@ -1810,4 +1812,61 @@ func gatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential creden
 	}
 	desired.DNSRequests, err = gatewayDNSRequests(tx, gateway, credential)
 	return desired, err
+}
+
+func (r *Repository) ProjectionContext(ctx context.Context, credentialID, profileID string, now time.Time) (publication.EndpointContext, error) {
+	var out publication.EndpointContext
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var c credentialRow
+		err := tx.Where("id = ? AND tenant_id = 'default' AND workspace_id = 'default' AND runtime_kind = 'endpoint' AND status = 'active' AND not_before <= ? AND expires_at > ?", credentialID, now, now).Take(&c).Error
+		if err != nil {
+			return apperrors.ErrAccessDenied
+		}
+		profile, err := activeEndpointMihomoProfile(tx, c)
+		if err != nil {
+			return err
+		}
+		if profile == nil || profile.ID != profileID || profile.DeviceID != c.DeviceID || profile.BundleID == "" || (profile.DeliveryMode != "mapped_nodes" && profile.DeliveryMode != "gateway" && profile.DeliveryMode != "direct_subscription") {
+			return apperrors.ErrAccessDenied
+		}
+		// Resolve current active owner and device state independently of certificate issuance.
+		var count int64
+		if err = tx.Raw("SELECT count(*) FROM network_access_devices d JOIN users u ON u.id::text = d.owner_user_id::text WHERE d.tenant_id = 'default' AND d.workspace_id = 'default' AND d.id = ? AND d.owner_user_id::text = ? AND d.status = 'active' AND u.status = 'active'", c.DeviceID, c.SubjectID).Scan(&count).Error; err != nil {
+			return err
+		}
+		if count != 1 {
+			return apperrors.ErrAccessDenied
+		}
+		configuration, err := projectionConfiguration(tx, c, profile, now)
+		if err != nil {
+			return err
+		}
+		out = publication.EndpointContext{ConfigurationValidUntil: configuration.ValidUntil, UserID: c.SubjectID, DeviceID: c.DeviceID, RuntimeID: c.RuntimeID, CredentialID: c.ID, ProfileID: profileID, BundleID: profile.BundleID, DeliveryMode: profile.DeliveryMode, OrgRevision: profile.OrgRevision, SourceRevision: profile.SourceRevision, ExpiresAt: c.ExpiresAt}
+		return nil
+	})
+	return out, err
+}
+
+func projectionConfiguration(tx *gorm.DB, c credentialRow, profile *domainnetworkaccess.MihomoProfile, now time.Time) (domainnetworkruntime.Configuration, error) {
+	configuration, configErr := latestConfiguration(tx, c.RuntimeID)
+	if configErr != nil || !configuration.ValidUntil.After(now) || configuration.Desired.Mihomo == nil {
+		return domainnetworkruntime.Configuration{}, apperrors.ErrAccessDenied
+	}
+	desired := configuration.Desired.Mihomo
+	if desired.ProfileID != profile.ID || desired.BundleID != profile.BundleID || desired.DeliveryMode != profile.DeliveryMode || desired.OrgRevision != profile.OrgRevision || desired.SourceRevision != profile.SourceRevision {
+		return domainnetworkruntime.Configuration{}, apperrors.ErrAccessDenied
+	}
+	snapshot, snapshotErr := latestSnapshot(tx)
+	if snapshotErr != nil {
+		return domainnetworkruntime.Configuration{}, snapshotErr
+	}
+	current, currentErr := mihomoProtectionCurrent(tx, desired, snapshot)
+	if currentErr != nil {
+		return domainnetworkruntime.Configuration{}, currentErr
+	}
+	if !current || configuration.PolicyVersion != snapshot.PolicyVersion {
+		return domainnetworkruntime.Configuration{}, apperrors.ErrAccessDenied
+	}
+
+	return configuration, nil
 }

@@ -116,23 +116,30 @@ type LoggerConfig struct {
 }
 
 type RuntimeConfig struct {
-	WorkflowWorkers               int           `mapstructure:"workflow_workers"`
-	WorkflowQueueSize             int           `mapstructure:"workflow_queue_size"`
-	WorkflowNodeParallelism       int           `mapstructure:"workflow_node_parallelism"`
-	ClusterSyncParallelism        int           `mapstructure:"cluster_sync_parallelism"`
-	CopilotInspectionParallelism  int           `mapstructure:"copilot_inspection_parallelism"`
-	AlertUpsertBatchSize          int           `mapstructure:"alert_upsert_batch_size"`
-	VirtualizationStartupSync     bool          `mapstructure:"virtualization_startup_sync_enabled"`
-	VirtualizationWorkerInterval  time.Duration `mapstructure:"virtualization_worker_interval"`
-	VirtualizationSyncConcurrency int           `mapstructure:"virtualization_sync_concurrency"`
-	ExecutionRunnerToken          string        `mapstructure:"execution_runner_token"`
-	ExecutionRunnerKeys           keyring.Ring  `mapstructure:"-"`
-	ExecutionJobClusterID         string        `mapstructure:"execution_job_cluster_id"`
-	BuildpacksRunnerEndpoint      string        `mapstructure:"buildpacks_runner_endpoint"`
-	ExecutionJobNamespace         string        `mapstructure:"execution_job_namespace"`
-	ExecutionJobImage             string        `mapstructure:"execution_job_image"`
-	ExecutionJobGitImage          string        `mapstructure:"execution_job_git_image"`
-	ExecutionJobTTLSeconds        int           `mapstructure:"execution_job_ttl_seconds"`
+	RadiusSlots                   []RadiusRuntimeSlotConfig      `mapstructure:"radius_slots"`
+	RadiusRuntimeExecutors        []RadiusRuntimeExecutorConfig  `mapstructure:"radius_runtime_executors"`
+	ProxyProbeProfiles            []ProxyProbeProfileConfig      `mapstructure:"proxy_probe_profiles"`
+	ProxySlots                    []ProxyRuntimeSlotConfig       `mapstructure:"proxy_slots"`
+	ProxyRuntimeExecutors         []ProxyRuntimeExecutorConfig   `mapstructure:"proxy_runtime_executors"`
+	OutpostSlots                  []OutpostRuntimeSlotConfig     `mapstructure:"outpost_slots"`
+	OutpostRuntimeExecutors       []OutpostRuntimeExecutorConfig `mapstructure:"outpost_runtime_executors"`
+	WorkflowWorkers               int                            `mapstructure:"workflow_workers"`
+	WorkflowQueueSize             int                            `mapstructure:"workflow_queue_size"`
+	WorkflowNodeParallelism       int                            `mapstructure:"workflow_node_parallelism"`
+	ClusterSyncParallelism        int                            `mapstructure:"cluster_sync_parallelism"`
+	CopilotInspectionParallelism  int                            `mapstructure:"copilot_inspection_parallelism"`
+	AlertUpsertBatchSize          int                            `mapstructure:"alert_upsert_batch_size"`
+	VirtualizationStartupSync     bool                           `mapstructure:"virtualization_startup_sync_enabled"`
+	VirtualizationWorkerInterval  time.Duration                  `mapstructure:"virtualization_worker_interval"`
+	VirtualizationSyncConcurrency int                            `mapstructure:"virtualization_sync_concurrency"`
+	ExecutionRunnerToken          string                         `mapstructure:"execution_runner_token"`
+	ExecutionRunnerKeys           keyring.Ring                   `mapstructure:"-"`
+	ExecutionJobClusterID         string                         `mapstructure:"execution_job_cluster_id"`
+	BuildpacksRunnerEndpoint      string                         `mapstructure:"buildpacks_runner_endpoint"`
+	ExecutionJobNamespace         string                         `mapstructure:"execution_job_namespace"`
+	ExecutionJobImage             string                         `mapstructure:"execution_job_image"`
+	ExecutionJobGitImage          string                         `mapstructure:"execution_job_git_image"`
+	ExecutionJobTTLSeconds        int                            `mapstructure:"execution_job_ttl_seconds"`
 }
 
 type DatabaseConfig struct {
@@ -493,6 +500,9 @@ func (c Config) staticProblems() []string {
 	problems = append(problems, validateWebAuthnConfig(c.Security)...)
 	problems = append(problems, validateSecretProvider(c.Security)...)
 	problems = append(problems, validateCompanionConfig(c.Plugins.Companion)...)
+	problems = append(problems, validateOutpostRuntimeConfig(c.Runtime)...)
+	problems = append(problems, validateProxyRuntimeConfig(c.Runtime)...)
+	problems = append(problems, validateRadiusRuntimeConfig(c.Runtime)...)
 	if err := c.NetworkIngestQuery.Validate(); err != nil {
 		problems = append(problems, err.Error())
 	}

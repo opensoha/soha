@@ -11,7 +11,12 @@ import (
 	"time"
 
 	api "github.com/opensoha/soha/internal/api/networkcontrol"
+	appidentity "github.com/opensoha/soha/internal/application/identity"
 	app "github.com/opensoha/soha/internal/application/networkcontrol"
+	appsettings "github.com/opensoha/soha/internal/application/settings"
+	repomfa "github.com/opensoha/soha/internal/repository/identitymfa"
+	reposettings "github.com/opensoha/soha/internal/repository/settings"
+	repouser "github.com/opensoha/soha/internal/repository/user"
 
 	appep "github.com/opensoha/soha/internal/application/endpointcontrol"
 	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
@@ -23,7 +28,6 @@ import (
 	"github.com/opensoha/soha/internal/networkingestquery"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	repoep "github.com/opensoha/soha/internal/repository/endpointcontrol"
-	networkproxyrepository "github.com/opensoha/soha/internal/repository/networkproxy"
 	networkruntimerepository "github.com/opensoha/soha/internal/repository/networkruntime"
 	runtimeconfigrepository "github.com/opensoha/soha/internal/repository/runtimeconfig"
 	"go.uber.org/zap"
@@ -87,7 +91,20 @@ func New(ctx context.Context) (*App, error) {
 	if err != nil {
 		return fail(err)
 	}
-	service, err := app.New(runtimeRepository, schemas, app.Options{
+	var passwordVerifier app.NetworkPasswordVerifier
+	var passwordStore app.PasswordStore
+	if cfg.PasswordVerifier.Enabled {
+		passwordVerifier, err = appidentity.NewNetworkPasswordVerifier(repouser.New(store.DB()), appidentity.NetworkPasswordPolicy{
+			Enabled: true, InteractiveVerificationRequired: cfg.PasswordAuth.LoginVerification.SliderEnabled,
+			Settings: appsettings.New(reposettings.New(store.DB()), nil, nil, nil), MFA: repomfa.New(store.DB()),
+		})
+		if err != nil {
+			return fail(err)
+		}
+		passwordStore = runtimeRepository
+	}
+	service, radiusService, err := newRadiusNetworkService(store.DB(), cfg, runtimeRepository, schemas, app.Options{
+		PasswordVerifier: passwordVerifier, PasswordStore: passwordStore, EAPRevocations: runtimeRepository,
 		EAPIssuer:        eapIssuer,
 		EndpointChannels: channels,
 		MaxClockSkew:     cfg.MaxClockSkew, ConfigurationTTL: cfg.ConfigurationTTL, LeaseTTL: cfg.LeaseTTL,
@@ -97,11 +114,15 @@ func New(ctx context.Context) (*App, error) {
 	if err != nil {
 		return fail(err)
 	}
-	proxy, err := appnetworkproxy.NewRuntime(networkproxyrepository.New(store.DB()), runtimeRepository, cfg.CredentialEncryptionKeys)
+	proxyServices, err := newProxyControlServices(store.DB(), cfg, service, runtimeRepository)
 	if err != nil {
 		return fail(err)
 	}
-	router, err := api.NewRouter(service, store, api.Options{MaxBodyBytes: cfg.MaxBodyBytes, RequestsPerMinute: cfg.RequestsPerMinute, ProxyRuntime: proxy, ProxySchemas: schemas})
+	var passwordRuntime api.RadiusPasswordRuntime
+	if cfg.PasswordVerifier.Enabled {
+		passwordRuntime = service
+	}
+	router, err := api.NewRouter(service, store, api.Options{RadiusDeployment: radiusService, EAPLifecycle: service, PasswordRuntime: passwordRuntime, PasswordAllowedPeers: cfg.PasswordVerifier.AllowedPeerCIDRs, MaxBodyBytes: cfg.MaxBodyBytes, RequestsPerMinute: cfg.RequestsPerMinute, ProxyRuntime: proxyServices.runtime, ProxyCommands: proxyServices.runtime, ProxyPublication: proxyServices.publication, ProxyDeployment: proxyServices.deployment, ProxySchemas: schemas})
 	if err != nil {
 		return fail(err)
 	}
@@ -115,7 +136,7 @@ func New(ctx context.Context) (*App, error) {
 	}
 	refreshCtx, stop := context.WithCancel(context.Background())
 	application := &App{
-		Logger: logger, store: store, service: service, proxy: proxy, refreshInterval: cfg.SnapshotRefreshInterval, stop: stop,
+		Logger: logger, store: store, service: service, proxy: proxyServices.runtime, refreshInterval: cfg.SnapshotRefreshInterval, stop: stop,
 		server: &http.Server{
 			Addr: cfg.HTTP.Addr, Handler: router, TLSConfig: tlsConfig,
 			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: cfg.HTTP.ReadTimeout,

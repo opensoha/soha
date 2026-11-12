@@ -87,6 +87,25 @@ func (s *Service) ActivateEAPCertificate(ctx context.Context, identity networkid
 	if err != nil {
 		return networkprotocol.RuntimeMessage{}, invalidRuntimeMessage()
 	}
+	if slices.Contains(credential.Capabilities, networkprotocol.CapabilityEAPLifecycle) {
+		if request.RequestID == "" || request.ProfileID == "" || request.ProfileRevision == "" {
+			return networkprotocol.RuntimeMessage{}, invalidRuntimeMessage()
+		}
+		snapshot, snapshotErr := s.CurrentSnapshot()
+		if snapshotErr != nil {
+			return networkprotocol.RuntimeMessage{}, snapshotErr
+		}
+		profiles, profileErr := s.endpointAdmissionConfiguration(ctx, credential, snapshot)
+		if profileErr != nil {
+			return networkprotocol.RuntimeMessage{}, profileErr
+		}
+		found := profiles != nil && slices.ContainsFunc(profiles.Profiles, func(profile networkprotocol.AdmissionProfile) bool {
+			return profile.ID == request.ProfileID && profile.EAPMethod == "tls" && profile.ProfileRevision == request.ProfileRevision
+		})
+		if !found {
+			return networkprotocol.RuntimeMessage{}, invalidRuntimeMessage()
+		}
+	}
 	now := s.now().UTC()
 	result, err := s.store.ActivateEAPCertificate(ctx, credential, request, now)
 	if err != nil {

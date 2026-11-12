@@ -2,17 +2,16 @@ package networkproxyruntime
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
@@ -20,70 +19,52 @@ import (
 )
 
 type engine struct {
-	config        Config
-	controller    *clashController
-	secret        string
-	process       *exec.Cmd
-	wait          chan error
-	startedAt     time.Time
-	bootstrapAt   time.Time
-	fileHash      string
-	protection    *domain.Protection
-	egress        *egressGuard
-	compiledRules []compiledMihomoRule
+	ownedCloseErr        error
+	kernel               installedKernel
+	artifact             *kernelArtifactMeasurement
+	processEpoch         string
+	sampleSequence       int64
+	desired              domain.Configuration
+	config               Config
+	adapter              engineAdapter
+	controller           *clashController
+	process              *exec.Cmd
+	wait                 chan error
+	processFence         *ownedProcessFence
+	startedAt            time.Time
+	bootstrapAt          time.Time
+	bootstrapFingerprint [32]byte
+	fileHash             string
+	protection           *domain.Protection
+	egress               *egressGuard
+	compiledRules        []compiledMihomoRule
 }
 
 func newEngine(config Config, secret string) *engine {
-	e := &engine{config: config, secret: secret}
+	e := &engine{config: config}
 	if config.Engine != domain.EngineV2Ray {
 		e.controller = newClashController(config.ControllerURL, secret)
 	}
+	e.adapter = newBuiltinEngineAdapter(config, secret, e.controller)
 	return e
 }
 
 func (e *engine) command(path string, check bool) *exec.Cmd {
-	var args []string
-	switch e.config.Engine {
-	case domain.EngineMihomo:
-		args = []string{"-f", path}
-		if check {
-			args = append([]string{"-t"}, args...)
-		}
-	case domain.EngineSingBox:
-		if check {
-			args = []string{"check", "-c", path}
-		} else {
-			args = []string{"run", "-c", path}
-		}
-	case domain.EngineV2Ray:
-		if check {
-			args = []string{"test", "-format=json", "-config", path}
-		} else {
-			args = []string{"run", "-format=json", "-config", path}
-		}
+	args := e.adapter.commandArgs(path, check)
+	binary := e.config.EngineBinary
+	if e.kernel.path != "" {
+		binary = e.kernel.path
 	}
-	command := exec.Command(e.config.EngineBinary, args...) // #nosec G204 -- binary is operator-owned local configuration; arguments never use a shell.
+	command := exec.Command(binary, args...) // #nosec G204 -- binary is operator-owned local configuration; arguments never use a shell.
 	configureOwnedEngineProcess(command)
+	command.WaitDelay = 500 * time.Millisecond
 	command.Stdout = io.Discard
 	command.Stderr = io.Discard
 	return command
 }
 
 func (e *engine) render(content string) ([]byte, error) {
-	controller, err := url.Parse(e.config.ControllerURL)
-	if err != nil {
-		return nil, err
-	}
-	address := controller.Host
-	switch e.config.Engine {
-	case domain.EngineMihomo:
-		return renderMihomo(content, address, e.secret)
-	case domain.EngineSingBox:
-		return renderSingBox(content, address, e.secret)
-	case domain.EngineV2Ray:
-		return renderV2Ray(content, address)
-	}
-	return nil, fmt.Errorf("proxy engine is unsupported")
+	return e.adapter.render(content)
 }
 
 func renderMihomo(content, address, secret string) ([]byte, error) {
@@ -201,6 +182,9 @@ func writeAtomic(path string, content []byte) error {
 }
 
 func (e *engine) validate(ctx context.Context, content []byte) error {
+	if err := e.kernel.verify(); err != nil {
+		return err
+	}
 	file, err := os.CreateTemp(e.config.StateDir, ".candidate-*")
 	if err != nil {
 		return err
@@ -220,17 +204,22 @@ func (e *engine) validate(ctx context.Context, content []byte) error {
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	command := e.command(file.Name(), true)
-	command = exec.CommandContext(checkCtx, command.Path, command.Args[1:]...) // #nosec G204 -- reuse the operator-owned engine command with a validation deadline.
-	command.Stdout, command.Stderr = io.Discard, io.Discard
-	if err := command.Run(); err != nil {
+	if err := runOwnedCommand(checkCtx, command); err != nil {
 		return fmt.Errorf("proxy configuration validation failed")
 	}
 	return nil
 }
 
 func (e *engine) start(ctx context.Context) error {
-	if e.egress == nil || e.egress.handler == nil || !e.egress.handler.Ready() {
+	if !e.egress.ready() {
 		return fmt.Errorf("proxy egress guard is inactive")
+	}
+	if err := e.kernel.verify(); err != nil {
+		return err
+	}
+	e.measureKernelArtifact(ctx)
+	if err := e.kernel.verify(); err != nil {
+		return err
 	}
 	e.egress.release()
 	command := e.command(e.config.ConfigFile, false)
@@ -246,7 +235,8 @@ func (e *engine) start(ctx context.Context) error {
 	}()
 	e.startedAt = time.Now().UTC()
 	e.wait = make(chan error, 1)
-	go func() { e.wait <- command.Wait() }()
+	e.processFence = &ownedProcessFence{command: command}
+	go func(wait chan<- error, fence *ownedProcessFence) { wait <- fence.wait() }(e.wait, e.processFence)
 	for attempt := 0; attempt < 20; attempt++ {
 		if err := e.health(ctx); err == nil {
 			started = true
@@ -261,33 +251,28 @@ func (e *engine) start(ctx context.Context) error {
 	return fmt.Errorf("proxy engine health check failed")
 }
 
-func (e *engine) stop() {
-	e.egress.close()
-	e.egress = nil
-	if e.process == nil {
-		return
-	}
-	_ = e.process.Process.Signal(syscall.SIGTERM)
-	select {
-	case <-e.wait:
-	case <-time.After(5 * time.Second):
-		_ = e.process.Process.Kill()
-		<-e.wait
-	}
-	e.process = nil
-	e.wait = nil
+func (e *engine) stop() { _ = e.stopForReplacement() }
+
+func (e *engine) stopForReplacement() error {
+	e.bootstrapFingerprint = [32]byte{}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	return e.stopOwned(ctx)
 }
 
 func (e *engine) health(ctx context.Context) error {
-	if e.egress == nil || e.egress.handler == nil || !e.egress.handler.Ready() {
+	if err := e.verifyKernelArtifactDrift(); err != nil {
+		return err
+	}
+	if !e.egress.ready() {
 		return fmt.Errorf("proxy egress guard expired")
 	}
-	if e.process == nil {
+	if e.process == nil || e.wait == nil {
 		return fmt.Errorf("proxy engine is stopped")
 	}
 	select {
 	case <-e.wait:
-		e.process = nil
+		e.wait = nil
 		return fmt.Errorf("proxy engine exited")
 	default:
 	}
@@ -306,17 +291,22 @@ func (e *engine) health(ctx context.Context) error {
 				return err
 			}
 		}
-		_, err := e.controller.version(ctx)
-		return err
 	}
-	return e.v2rayHealth(ctx)
+	return e.adapter.health(ctx)
 }
 
 func (e *engine) apply(ctx context.Context, desired domain.Configuration) domain.Applied {
-	e.stop()
+	return e.applyPrepared(ctx, desired, nil)
+}
+
+func (e *engine) applyPrepared(ctx context.Context, desired domain.Configuration, prepared *bootstrapPreparation) domain.Applied {
+	if err := e.stopForReplacement(); err != nil {
+		return domain.Applied{Revision: desired.Revision, Status: "rejected", ReasonCode: "previous_process_stop_unproven", ReadbackHash: e.fileHash}
+	}
 	if !desired.Enabled {
 		return domain.Applied{Revision: desired.Revision, Status: "applied", ReadbackHash: desired.Digest()}
 	}
+	e.processEpoch, e.sampleSequence = rand.Text(), 0
 	old, readErr := os.ReadFile(e.config.ConfigFile)
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return domain.Applied{Revision: desired.Revision, Status: "rejected", ReasonCode: "read_failed",
@@ -325,42 +315,19 @@ func (e *engine) apply(ctx context.Context, desired domain.Configuration) domain
 	hadOld := readErr == nil
 	oldHash := sha256.Sum256(old)
 	result := domain.Applied{Revision: desired.Revision, Status: "rejected", ReadbackHash: fmt.Sprintf("sha256:%x", oldHash)}
-	rollback := func() {
-		e.stop()
-		if hadOld {
-			if err := writeAtomic(e.config.ConfigFile, old); err != nil {
-				result.ReasonCode = "rollback_failed"
-				return
-			}
-		} else if err := os.Remove(e.config.ConfigFile); err != nil && !os.IsNotExist(err) {
-			result.ReasonCode = "rollback_failed"
-			return
+	if prepared == nil {
+		var reason string
+		var err error
+		prepared, reason, err = e.prepareBootstrap(ctx, desired)
+		if err != nil {
+			result.ReasonCode = reason
+			return result
 		}
-		// Restore the file only: an opaque replacement may revoke access granted by its predecessor.
-		result.Status = "rolled-back"
 	}
-	if err := validateProtection(desired); err != nil {
-		result.ReasonCode = "protection_invalid"
-		return result
-	}
-	rendered, err := e.render(desired.Content)
+	e.bindInstalledKernel(prepared.kernel)
+	rendered, reason, err := e.compilePreparedConfiguration(ctx, desired, prepared)
 	if err != nil {
-		result.ReasonCode = "render_failed"
-		return result
-	}
-	rendered, err = protectConfiguration(e.config.Engine, rendered, desired.Protection)
-	if err != nil {
-		result.ReasonCode = "protection_compile_failed"
-		return result
-	}
-	rendered, err = e.guardConfiguration(ctx, rendered, desired)
-	if err != nil {
-		result.ReasonCode = "bootstrap_guard_failed"
-		return result
-	}
-	if err := e.prepareRuleReadback(rendered); err != nil {
-		e.stop()
-		result.ReasonCode = "rule_readback_unsupported"
+		result.ReasonCode = reason
 		return result
 	}
 	committed := false
@@ -369,6 +336,10 @@ func (e *engine) apply(ctx context.Context, desired domain.Configuration) domain
 			e.stop()
 		}
 	}()
+	if err := e.prepareExternal(ctx, desired, rendered); err != nil {
+		result.ReasonCode = "adapter_prepare_failed"
+		return result
+	}
 	if err := e.validate(ctx, rendered); err != nil {
 		result.ReasonCode = "validation_failed"
 		return result
@@ -379,38 +350,70 @@ func (e *engine) apply(ctx context.Context, desired domain.Configuration) domain
 	}
 	e.fileHash = fmt.Sprintf("sha256:%x", sha256.Sum256(rendered))
 	e.protection = desired.Protection
-	if desired.Enabled {
-		if err := e.start(ctx); err != nil {
-			result.ReasonCode = "start_failed"
-			rollback()
-			return result
-		}
+	if err := e.start(ctx); err != nil {
+		result.ReasonCode = "start_failed"
+		e.rollbackConfiguration(old, hadOld, &result)
+		return result
+	}
+	if err := e.applyExternal(ctx); err != nil {
+		result.ReasonCode = "adapter_apply_failed"
+		e.rollbackConfiguration(old, hadOld, &result)
+		return result
 	}
 	actual, err := os.ReadFile(e.config.ConfigFile)
 	if err != nil || !strings.EqualFold(fmt.Sprintf("%x", sha256.Sum256(actual)), fmt.Sprintf("%x", sha256.Sum256(rendered))) {
 		result.ReasonCode = "readback_failed"
-		rollback()
+		e.rollbackConfiguration(old, hadOld, &result)
 		return result
 	}
+	e.desired = desired
 	e.bootstrapAt = time.Now().UTC()
+	e.bootstrapFingerprint = prepared.fingerprint
 	committed = true
 	result.Status, result.ReadbackHash = "applied", desired.Digest()
 	return result
 }
 
-func (e *engine) close(ctx context.Context, id string) (string, error) {
-	if e.controller == nil {
-		return "failed", fmt.Errorf("connection close is unsupported")
+func (e *engine) rollbackConfiguration(old []byte, hadOld bool, result *domain.Applied) {
+	if err := e.stopForReplacement(); err != nil {
+		result.ReasonCode = "previous_process_stop_unproven"
+		return
 	}
-	return e.controller.close(ctx, id)
+	if hadOld {
+		if err := writeAtomic(e.config.ConfigFile, old); err != nil {
+			result.ReasonCode = "rollback_failed"
+			return
+		}
+	} else if err := os.Remove(e.config.ConfigFile); err != nil && !os.IsNotExist(err) {
+		result.ReasonCode = "rollback_failed"
+		return
+	}
+	// Restore the file only; the old configuration may no longer be authorized.
+	result.Status = "rolled-back"
+}
+
+func (e *engine) close(ctx context.Context, id string) (string, error) {
+	return e.adapter.close(ctx, id)
 }
 
 func (e *engine) prepareRuleReadback(raw []byte) error {
-	if e.config.Engine != domain.EngineMihomo {
+	if e.dialect() != domain.EngineMihomo {
 		e.compiledRules = nil
 		return nil
 	}
 	var err error
 	e.compiledRules, err = expectedMihomoRules(raw)
 	return err
+}
+
+func (e *engine) compilePreparedConfiguration(ctx context.Context, desired domain.Configuration, prepared *bootstrapPreparation) ([]byte, string, error) {
+	rendered, err := e.guardPreparedConfiguration(ctx, prepared.doc, prepared.explicitUDP, desired)
+	if err != nil {
+		return nil, "bootstrap_guard_failed", err
+	}
+	if err := e.prepareRuleReadback(rendered); err != nil {
+		e.stop()
+		return nil, "rule_readback_unsupported", err
+	}
+	return rendered, "", nil
 }

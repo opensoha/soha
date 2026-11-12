@@ -14,6 +14,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"
 	reponetwork "github.com/opensoha/soha/internal/repository/networkaccess"
+	radiusrepo "github.com/opensoha/soha/internal/repository/radiusdeployment"
 	"gorm.io/gorm"
 )
 
@@ -104,13 +105,13 @@ func revokeContentVPN(tx *gorm.DB, event domain.NetworkCause) error {
 }
 func restrictContentNAS(tx *gorm.DB, event domain.NetworkCause) error {
 	var sessions []struct {
-		ID, RuntimeID, NASID, CredentialID, DeviceID string
-		PolicyVersion                                int
-		Actionable                                   bool
+		ID, RuntimeID, NASID, CredentialID, DeviceID, SiteID string
+		PolicyVersion                                        int
+		Actionable                                           bool
 	}
-	err := tx.Raw(`SELECT s.id,s.runtime_id,s.nas_id,s.policy_version,COALESCE(a.credential_id,'') AS credential_id,s.device_id,
- COALESCE(b.disconnect_supported AND b.status='active' AND e.state='active' AND e.stopped_at IS NULL AND e.observed_at>? AND e.received_at>? AND e.observed_at<=? AND e.received_at<=? AND e.runtime_id=s.runtime_id AND e.nas_id=s.nas_id AND e.accounting_epoch>=COALESCE(ep.observed_at,e.accounting_epoch) AND e.subject_id=s.subject_id AND e.device_id=s.device_id AND e.credential_id=a.credential_id AND e.station_id=a.station_id AND a.authentication_method=?,false) AS actionable
- FROM network_runtime_sessions s LEFT JOIN network_access_nas_bindings b ON b.runtime_id=s.runtime_id AND b.nas_id=s.nas_id AND b.site_id=s.site_id AND b.tenant_id=s.tenant_id AND b.workspace_id=s.workspace_id
+	err := tx.Raw(`SELECT s.id,s.runtime_id,s.nas_id,s.site_id,s.policy_version,COALESCE(a.credential_id,'') AS credential_id,s.device_id,
+ COALESCE(e.state='active' AND e.stopped_at IS NULL AND e.observed_at>? AND e.received_at>? AND e.observed_at<=? AND e.received_at<=? AND e.runtime_id=s.runtime_id AND e.nas_id=s.nas_id AND e.accounting_epoch>=COALESCE(ep.observed_at,e.accounting_epoch) AND e.subject_id=s.subject_id AND e.device_id=s.device_id AND e.credential_id=a.credential_id AND e.station_id=a.station_id AND a.authentication_method=?,false) AS actionable
+ FROM network_runtime_sessions s
  LEFT JOIN network_nas_session_evidence e ON e.session_id=s.id AND e.tenant_id=s.tenant_id AND e.workspace_id=s.workspace_id
  LEFT JOIN network_nas_accounting_epochs ep ON ep.runtime_id=s.runtime_id AND ep.nas_id=s.nas_id AND ep.tenant_id=s.tenant_id AND ep.workspace_id=s.workspace_id
  LEFT JOIN network_nas_authorizations a ON a.session_id=s.id AND a.tenant_id=s.tenant_id AND a.workspace_id=s.workspace_id
@@ -130,7 +131,7 @@ func restrictContentNAS(tx *gorm.DB, event domain.NetworkCause) error {
 		}
 		command, state := "", "enforcement_unknown"
 		if s.Actionable {
-			current, err := reponetwork.New(tx).EndpointCredentialCurrent(tx.Statement.Context, s.CredentialID, s.DeviceID, event.ActorID, event.CreatedAt)
+			current, err := contentNASEnforceable(tx, s.RuntimeID, s.NASID, s.SiteID, s.CredentialID, s.DeviceID, event.ActorID, event.CreatedAt)
 			if err != nil {
 				return err
 			}
@@ -209,4 +210,18 @@ func (r *Repository) ContentSubjectState(ctx context.Context, id string) (domain
 func contentCommandHash(event, session string) string {
 	sum := sha256.Sum256([]byte("content_dlp\x00" + event + "\x00" + session))
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func contentNASEnforceable(tx *gorm.DB, runtime, nas, site, credential, device, subject string, now time.Time) (bool, error) {
+	binding, err := radiusrepo.SessionNASBinding(tx, runtime, nas, site, now)
+	if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, apperrors.ErrUnauthorized) || errors.Is(err, apperrors.ErrAccessDenied) || errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !binding.DisconnectSupported {
+		return false, nil
+	}
+	return reponetwork.New(tx).EndpointCredentialCurrent(tx.Statement.Context, credential, device, subject, now)
 }

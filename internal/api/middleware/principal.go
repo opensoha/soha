@@ -248,6 +248,15 @@ func allowsProtocolAccessCookie(path string) bool {
 }
 
 var externalBearerTokenSuffixes = [...]string{
+	"/network/radius-deployment-executor/claim",
+	"/network/radius-deployment-executor/status",
+	"/network/radius-deployment-executor/callback",
+	"/network/proxy-deployment-executor/claim",
+	"/network/proxy-deployment-executor/status",
+	"/network/proxy-deployment-executor/callback",
+	"/identity/outpost-runtime-executor/claim",
+	"/identity/outpost-runtime-executor/status",
+	"/identity/outpost-runtime-executor/callback",
 	"/agent-sessions/connect",
 	"/integrations/alerts/webhook",
 	"/delivery/execution-callbacks",
@@ -285,7 +294,28 @@ func allowsExternalBearerToken(path string) bool {
 			return true
 		}
 	}
-	return strings.HasPrefix(path, "/api/v1/provider/outposts") ||
+	return isIdentityOutpostRuntimePath(path) || strings.HasPrefix(path, "/api/v1/provider/outposts") ||
 		path == "/oauth2/userinfo" ||
 		path == "/api/v1/provider/oidc/userinfo"
+}
+
+func isIdentityOutpostRuntimePath(path string) bool {
+	const marker = "/identity/outposts/"
+	index := strings.LastIndex(path, marker)
+	if index < 0 {
+		return false
+	}
+	parts := strings.Split(path[index+len(marker):], "/")
+	if len(parts) != 2 || parts[0] == "" {
+		return false
+	}
+	if parts[0] == "runtime" && parts[1] == "claim" {
+		return true
+	}
+	switch parts[1] {
+	case "heartbeat", "check", "events":
+		return true
+	default:
+		return false
+	}
 }

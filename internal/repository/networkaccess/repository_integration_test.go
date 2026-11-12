@@ -46,7 +46,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 		t.Fatalf("create migration staging directory: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(migrationDir) })
-	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql", "0077_network_vpn_selection.sql", "0120_endpoint_response.sql", "0121_nas_admission_revalidation.sql", "0122_network_eap_credentials.sql", "0123_network_admission_versions.sql", "0102_network_proxy_instances.sql", "0124_network_vpn_revocations.sql", "0125_network_proxy_protection.sql", "0126_network_device_governance.sql", "0127_network_site_dns.sql", "0128_network_ipv6.sql", "0129_network_workload_bindings.sql", "0130_network_management_proofs.sql", "0131_network_workload_revocation.sql", "0132_network_proxy_history.sql", "0133_network_dns_reconfiguration.sql", "0134_docker_volume_dlp.sql", "0135_dlp_response_workflows.sql"} {
+	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql", "0077_network_vpn_selection.sql", "0120_endpoint_response.sql", "0121_nas_admission_revalidation.sql", "0122_network_eap_credentials.sql", "0123_network_admission_versions.sql", "0102_network_proxy_instances.sql", "0124_network_vpn_revocations.sql", "0125_network_proxy_protection.sql", "0126_network_device_governance.sql", "0127_network_site_dns.sql", "0128_network_ipv6.sql", "0129_network_workload_bindings.sql", "0130_network_management_proofs.sql", "0131_network_workload_revocation.sql", "0132_network_proxy_history.sql", "0133_network_dns_reconfiguration.sql", "0134_docker_volume_dlp.sql", "0135_dlp_response_workflows.sql", "0136_endpoint_channel_controls.sql", "0137_managed_content_transfers.sql", "0138_managed_content_network_holds.sql", "0139_endpoint_channel_identity_types.sql", "0140_network_dns_reconfiguration_scope.sql", "0146_proxy_publication.sql"} {
 		contents, err := os.ReadFile(filepath.Join(migrationSource, name)) // #nosec G304 -- fixed migration names from the repository fixture list.
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -364,7 +364,7 @@ func (s *accessRepositoryScenario) checkDevicePostureAndMihomo(t *testing.T) {
 	}
 	mihomoProfile, err := s.repository.CreateMihomoProfile(s.ctx, domainnetworkaccess.MihomoProfile{
 		ID: "mihomo-" + s.suffix, DeviceID: s.updatedDevice.ID, Name: "Managed proxy", Mode: domainnetworkaccess.MihomoModeManagedFollow,
-		Status: domainnetworkaccess.StatusActive, SubscriptionURLCiphertext: "encrypted-subscription", Revision: 1,
+		Status: domainnetworkaccess.StatusActive, DeliveryMode: "direct_subscription", SubscriptionURLCiphertext: "encrypted-subscription", Revision: 1,
 		MixedPort: 7890, ControllerPort: 9090, DNSMode: domainnetworkaccess.MihomoDNSFakeIP,
 		FakeIPRange: "198.18.0.0/16", SelectorGroup: "SOHA", SelectedProxy: "Hong Kong",
 		BypassCIDRs: []string{"10.0.0.0/8"}, BypassHosts: []string{"control.example.test"}, FailClosed: true,
@@ -376,7 +376,7 @@ func (s *accessRepositoryScenario) checkDevicePostureAndMihomo(t *testing.T) {
 	}
 	mihomoProfile.Mode, mihomoProfile.SubscriptionURLCiphertext, mihomoProfile.SelectedProxy = domainnetworkaccess.MihomoModeAppSubscription, "", ""
 	mihomoProfile.DNSMode, mihomoProfile.FakeIPRange, mihomoProfile.FailClosed = domainnetworkaccess.MihomoDNSDisabled, "", false
-	mihomoProfile, s.err = s.repository.UpdateMihomoProfile(s.ctx, mihomoProfile.ID, mihomoProfile, s.now.Add(time.Second))
+	mihomoProfile, s.err = s.repository.UpdateMihomoProfile(s.ctx, mihomoProfile.ID, mihomoProfile, mihomoProfile.Revision, s.now.Add(time.Second))
 	if s.err != nil || mihomoProfile.SubscriptionConfigured || mihomoProfile.Revision != 2 || mihomoProfile.Mode != domainnetworkaccess.MihomoModeAppSubscription {
 		t.Fatalf("update mihomo profile = %#v, %v", mihomoProfile, s.err)
 	}

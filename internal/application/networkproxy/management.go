@@ -40,6 +40,11 @@ type TrafficReader interface {
 	Samples(context.Context, string, time.Time, time.Time) ([]domain.TrafficSample, error)
 }
 
+type closeRequestStore interface {
+	ReplayClose(context.Context, string, string, string, domain.CloseInput, time.Time) (domain.CloseCommand, bool, error)
+	QueueCloseRequest(context.Context, string, string, string, domain.CloseInput, time.Time) (domain.CloseCommand, error)
+}
+
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
@@ -48,6 +53,7 @@ type OperationRecorder interface {
 }
 
 type Management struct {
+	probes      ProbeProfiles
 	store       ManagementStore
 	traffic     TrafficReader
 	permissions *appaccess.PermissionResolver
@@ -83,7 +89,7 @@ func missing(value any) bool {
 }
 
 func validEngine(engine string) bool {
-	return engine == domain.EngineMihomo || engine == domain.EngineSingBox || engine == domain.EngineV2Ray
+	return engine == domain.EngineExternal || engine == domain.EngineMihomo || engine == domain.EngineSingBox || engine == domain.EngineV2Ray
 }
 
 func public(item domain.Instance, now time.Time) domain.Instance {
@@ -110,6 +116,9 @@ func (s *Management) Create(ctx context.Context, principal domainidentity.Princi
 		return domain.Instance{}, err
 	}
 	input.ID, input.Name, input.Engine, input.Host = strings.TrimSpace(input.ID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Engine), strings.TrimSpace(input.Host)
+	if err := validateDescriptor(input.Engine, input.EngineDescriptor); err != nil {
+		return domain.Instance{}, err
+	}
 	if !identifier.MatchString(input.ID) || input.Name == "" || len(input.Name) > 128 || len(input.Host) > 128 || !validEngine(input.Engine) {
 		return domain.Instance{}, invalid("proxy instance input is invalid")
 	}
@@ -276,15 +285,7 @@ func (s *Management) Traffic(ctx context.Context, principal domainidentity.Princ
 	if err != nil {
 		return domain.Traffic{}, err
 	}
-	for index := 1; index < len(samples); index++ {
-		previous, current := samples[index-1], &samples[index]
-		seconds := current.ObservedAt.Sub(previous.ObservedAt).Seconds()
-		if seconds <= 0 || current.UptimeSeconds <= previous.UptimeSeconds || current.UploadTotal < previous.UploadTotal || current.DownloadTotal < previous.DownloadTotal {
-			continue
-		}
-		current.UploadBytesPerSecond = float64(current.UploadTotal-previous.UploadTotal) / seconds
-		current.DownloadBytesPerSecond = float64(current.DownloadTotal-previous.DownloadTotal) / seconds
-	}
+	calculateTrafficRates(samples)
 	return domain.Traffic{InstanceID: id, Supported: slices.Contains(item.Capabilities, "traffic"), Samples: samples}, nil
 }
 
@@ -312,13 +313,23 @@ func (s *Management) Connections(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domain.ConnectionsSnapshot{}, err
 	}
-	if snapshot.ObservedAt != nil && s.now().UTC().Sub(*snapshot.ObservedAt) > time.Minute {
-		return domain.ConnectionsSnapshot{InstanceID: id, State: "unavailable", Connections: []domain.Connection{}}, nil
+	if snapshot.ProcessEpoch != item.ProcessEpoch || snapshot.ObservedAt != nil && s.now().UTC().Sub(*snapshot.ObservedAt) > 2*time.Minute {
+		snapshot.State = "unavailable"
+		snapshot.Freshness = "stale"
+		return snapshot, nil
 	}
 	return snapshot, nil
 }
 
 func (s *Management) Close(ctx context.Context, principal domainidentity.Principal, id, connectionID string) (domain.CloseCommand, error) {
+	return s.CloseWithEpoch(ctx, principal, id, connectionID, "")
+}
+
+func (s *Management) CloseWithEpoch(ctx context.Context, principal domainidentity.Principal, id, connectionID, epoch string) (domain.CloseCommand, error) {
+	return s.CloseWithInput(ctx, principal, id, connectionID, domain.CloseInput{ProcessEpoch: epoch})
+}
+
+func (s *Management) CloseWithInput(ctx context.Context, principal domainidentity.Principal, id, connectionID string, input domain.CloseInput) (domain.CloseCommand, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermNetworkAccessProxyConnectionsClose); err != nil {
 		return domain.CloseCommand{}, err
 	}
@@ -332,26 +343,43 @@ func (s *Management) Close(ctx context.Context, principal domainidentity.Princip
 	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessProxyConnectionsClose, item); err != nil {
 		return domain.CloseCommand{}, err
 	}
+	if err := validateCloseInput(input); err != nil {
+		return domain.CloseCommand{}, err
+	}
+	store, _ := s.store.(closeRequestStore)
+	if input.RequestID != "" {
+		if store == nil {
+			return domain.CloseCommand{}, apperrors.ErrServiceUnavailable
+		}
+		now := s.now().UTC()
+		if receipt, found, err := store.ReplayClose(ctx, id, connectionID, principal.UserID, input, now); err != nil || found {
+			return receipt, err
+		}
+		if input.IssuedAt.After(now) || !input.ExpiresAt.After(now) {
+			return domain.CloseCommand{}, invalid("invalid close command deadline")
+		}
+	}
 	if !slices.Contains(item.Capabilities, "close_connection") {
 		return domain.CloseCommand{}, apperrors.ErrConflict
 	}
-	snapshot, err := s.store.Connections(ctx, id)
-	if err != nil {
-		return domain.CloseCommand{}, err
-	}
-	if snapshot.ObservedAt == nil || s.now().UTC().Sub(*snapshot.ObservedAt) > time.Minute {
-		return domain.CloseCommand{}, apperrors.ErrConflict
-	}
-	found := false
-	for _, connection := range snapshot.Connections {
-		if connection.ID == connectionID {
-			found = true
-			break
+	return s.queueClose(ctx, principal, id, connectionID, input, store)
+}
+
+func validateCloseInput(input domain.CloseInput) error {
+	if input.RequestID == "" && input.IssuedAt.IsZero() && input.ExpiresAt.IsZero() {
+		if input.ProcessEpoch != "" && !identifier.MatchString(input.ProcessEpoch) {
+			return invalid("invalid close command epoch")
 		}
+		return nil
 	}
-	if !found {
-		return domain.CloseCommand{}, apperrors.ErrNotFound
+	if !identifier.MatchString(input.RequestID) || !identifier.MatchString(input.ProcessEpoch) || input.IssuedAt.IsZero() ||
+		!input.ExpiresAt.After(input.IssuedAt) || input.ExpiresAt.Sub(input.IssuedAt) > 30*time.Second {
+		return invalid("invalid close command identity or deadline")
 	}
+	return nil
+}
+
+func (s *Management) queueClose(ctx context.Context, principal domainidentity.Principal, id, connectionID string, input domain.CloseInput, store closeRequestStore) (domain.CloseCommand, error) {
 	meta := requestctx.FromContext(ctx)
 	if err := s.audit.Record(ctx, domainaudit.Entry{
 		ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
@@ -363,7 +391,16 @@ func (s *Management) Close(ctx context.Context, principal domainidentity.Princip
 	}); err != nil {
 		return domain.CloseCommand{}, fmt.Errorf("audit proxy connection close: %w", err)
 	}
-	command, err := s.store.QueueClose(ctx, id, connectionID, principal.UserID, s.now().UTC())
+	var command domain.CloseCommand
+	var err error
+	if input.ProcessEpoch != "" {
+		if store == nil {
+			return command, apperrors.ErrServiceUnavailable
+		}
+		command, err = store.QueueCloseRequest(ctx, id, connectionID, principal.UserID, input, s.now().UTC())
+	} else {
+		command, err = s.store.QueueClose(ctx, id, connectionID, principal.UserID, s.now().UTC())
+	}
 	if err != nil {
 		return domain.CloseCommand{}, err
 	}
@@ -404,4 +441,27 @@ func (s *Management) record(ctx context.Context, principal domainidentity.Princi
 
 func invalid(message string) error {
 	return apperrors.NewBusiness(apperrors.ErrInvalidArgument, "proxy_invalid", message, "代理请求无效。")
+}
+
+func calculateTrafficRates(samples []domain.TrafficSample) {
+	for i := range samples {
+		samples[i].RateState = "unknown"
+		samples[i].UploadBytesPerSecond = 0
+		samples[i].DownloadBytesPerSecond = 0
+	}
+	for index := 1; index < len(samples); index++ {
+		previous, current := samples[index-1], &samples[index]
+		seconds := current.ObservedAt.Sub(previous.ObservedAt).Seconds()
+		sameEpoch := current.ProcessEpoch != "" && current.ProcessEpoch == previous.ProcessEpoch
+		sequenceDelta := current.SampleSequence - previous.SampleSequence
+		if seconds > 60 || (sameEpoch && sequenceDelta > 1) {
+			current.RateState = "gap"
+		}
+		if seconds <= 0 || seconds > 60 || !sameEpoch || sequenceDelta != 1 || current.UptimeSeconds <= previous.UptimeSeconds || current.UploadTotal < previous.UploadTotal || current.DownloadTotal < previous.DownloadTotal {
+			continue
+		}
+		current.RateState = "known"
+		current.UploadBytesPerSecond = float64(current.UploadTotal-previous.UploadTotal) / seconds
+		current.DownloadBytesPerSecond = float64(current.DownloadTotal-previous.DownloadTotal) / seconds
+	}
 }

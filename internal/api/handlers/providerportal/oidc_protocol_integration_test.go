@@ -16,6 +16,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 )
 
 func TestOIDCProtocolHTTPWithPostgres(t *testing.T) {
@@ -35,6 +36,41 @@ func TestOIDCProtocolHTTPWithPostgres(t *testing.T) {
 			verifyOIDCClientFlow(t, f, callback.URL, discovery, kind)
 		})
 	}
+}
+
+// TestOIDCAuthorizationSourcePostgres exercises the private INET roundtrip
+// through an authorization code, a stored session and refresh rotation.
+func TestOIDCAuthorizationSourcePostgres(t *testing.T) {
+	f := newSSOProtocolFixture(t)
+	const redirect = "https://rp.example.test/callback"
+	const verifier = "0123456789abcdefghijklmnopqrstuvwxyz-._~ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	input := onboardingTestInput("oidc")
+	input.Application.Metadata = map[string]any{"accessPolicy": map[string]any{"allowedCidrs": []string{"192.0.2.0/24"}}}
+	input.OIDCClient.ClientType = "confidential"
+	input.OIDCClient.RedirectURIs = []string{redirect}
+	input.OIDCClient.AllowedScopes = []string{"openid", "offline_access"}
+	input.OIDCClient.AllowedGrantTypes = []string{"authorization_code", "refresh_token"}
+	result := f.onboard(t, input)
+	client := domainprovider.ClientAuthInput{ClientID: result.OIDCClient.Client.ClientID, ClientSecret: result.OIDCClient.ClientSecret}
+	browser := requestctx.WithMetadata(context.Background(), requestctx.Metadata{SourceIP: "::ffff:192.0.2.24"})
+	rp := requestctx.WithMetadata(context.Background(), requestctx.Metadata{SourceIP: "198.51.100.19"})
+	sum := sha256.Sum256([]byte(verifier))
+	code, err := f.providers.Authorize(browser, f.publicURL, f.principal, domainprovider.AuthorizeInput{
+		ResponseType: "code", ClientID: client.ClientID, RedirectURI: redirect, Scope: "openid offline_access",
+		CodeChallenge: base64.RawURLEncoding.EncodeToString(sum[:]), CodeChallengeMethod: "S256", PlatformSessionID: f.login(t, "oidc-source"),
+	})
+	ssoNoError(t, err)
+	tokens, err := f.providers.Token(rp, f.publicURL, domainprovider.TokenInput{
+		GrantType: "authorization_code", ClientID: client.ClientID, ClientSecret: client.ClientSecret,
+		Code: code.Code, RedirectURI: redirect, CodeVerifier: verifier,
+	})
+	ssoNoError(t, err)
+	refreshed, err := f.providers.Token(rp, f.publicURL, domainprovider.TokenInput{
+		GrantType: "refresh_token", ClientID: client.ClientID, ClientSecret: client.ClientSecret, RefreshToken: tokens.RefreshToken,
+	})
+	ssoNoError(t, err)
+	info, err := f.providers.Introspect(rp, f.publicURL, refreshed.AccessToken, client)
+	ssoCheck(t, err == nil && info.Active && info.Subject == f.principal.UserID, "OIDC source-backed introspection active=%t, err=%v", info.Active, err)
 }
 
 func verifyOIDCClientIDToken(t *testing.T, f *ssoProtocolFixture, discovery domainprovider.DiscoveryDocument, audience, raw string) {

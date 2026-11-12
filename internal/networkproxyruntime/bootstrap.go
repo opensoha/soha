@@ -20,6 +20,9 @@ import (
 )
 
 func bootstrapConfiguration(ctx context.Context, engine string, doc map[string]any, p *domain.Protection) error {
+	return bootstrapConfigurationWithUDP(ctx, engine, doc, p, nil)
+}
+func bootstrapConfigurationWithUDP(ctx context.Context, engine string, doc map[string]any, p *domain.Protection, explicit map[string]bool) error {
 	scope, err := proxytransport.NewScope(p.CIDRs, p.Hosts)
 	if err != nil {
 		return err
@@ -30,7 +33,7 @@ func bootstrapConfiguration(ctx context.Context, engine string, doc map[string]a
 	}
 	switch engine {
 	case domain.EngineMihomo:
-		return bootstrapMihomo(ctx, doc, scope)
+		return bootstrapMihomoWithUDP(ctx, doc, scope, explicit)
 	case domain.EngineSingBox:
 		return bootstrapSingBox(ctx, doc, scope)
 	case domain.EngineV2Ray:
@@ -98,6 +101,9 @@ func fetchBootstrap(ctx context.Context, rawURL string, scope *proxytransport.Sc
 	return raw, nil
 }
 func bootstrapMihomo(ctx context.Context, doc map[string]any, scope *proxytransport.Scope) error {
+	return bootstrapMihomoWithUDP(ctx, doc, scope, nil)
+}
+func bootstrapMihomoWithUDP(ctx context.Context, doc map[string]any, scope *proxytransport.Scope, explicit map[string]bool) error {
 	nodes, err := arraySection(doc["proxies"])
 	if err != nil {
 		return err
@@ -107,7 +113,13 @@ func bootstrapMihomo(ctx context.Context, doc map[string]any, scope *proxytransp
 		return errUnsafeConfiguration
 	}
 	providerNames := map[string][]any{}
-	for name, raw := range providers {
+	names := make([]string, 0, len(providers))
+	for name := range providers {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		raw := providers[name]
 		provider, ok := raw.(map[string]any)
 		if !ok {
 			return errUnsafeConfiguration
@@ -138,6 +150,7 @@ func bootstrapMihomo(ctx context.Context, doc map[string]any, scope *proxytransp
 		if !ok {
 			return errUnsafeConfiguration
 		}
+		recordExplicitSOCKSUDP(node, explicit)
 		if err := pinMihomoTransport(ctx, node, scope); err != nil {
 			return err
 		}
@@ -198,7 +211,7 @@ func pinMihomoTransport(ctx context.Context, node map[string]any, scope *proxytr
 			node["sni"] = host
 		}
 	}
-	node["server"], node["port"], node["udp"] = ip.String(), port, false
+	node["server"], node["port"], node["udp"] = ip.String(), port, mihomoNodeUDP(node)
 	return nil
 }
 func inlineMihomoRules(ctx context.Context, doc map[string]any, scope *proxytransport.Scope) error {
@@ -446,4 +459,11 @@ func inlineMihomoGroups(doc map[string]any, providerNames map[string][]any) erro
 		delete(group, "use")
 	}
 	return nil
+}
+
+func recordExplicitSOCKSUDP(node map[string]any, explicit map[string]bool) {
+	if explicit != nil && node["type"] == "socks5" && node["udp"] == true {
+		name, _ := node["name"].(string)
+		explicit[name] = true
+	}
 }

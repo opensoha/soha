@@ -20,7 +20,7 @@ func (e *engine) verifyProtection(ctx context.Context) error {
 	if json.Unmarshal(raw, &config) != nil || config.Mode != "rule" {
 		return fmt.Errorf("proxy mode drifted")
 	}
-	if e.config.Engine != domain.EngineMihomo {
+	if e.dialect() != domain.EngineMihomo {
 		return nil
 	}
 	raw, err = e.controller.request(ctx, http.MethodGet, "/rules", nil)

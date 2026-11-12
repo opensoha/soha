@@ -33,7 +33,7 @@ func TestClaimExecutionTaskClosesSelectedRowAndUpdatesTask(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`(?s)SELECT id, release_bundle_id.*FOR UPDATE SKIP LOCKED`).
-		WithArgs("manifest.direct", "worker-1").
+		WithArgs("manifest.direct", "outpost_runtime.", "proxy_deployment.", "radius_deployment.", "worker-1").
 		WillReturnRows(rows).
 		RowsWillBeClosed()
 	mock.ExpectExec(`(?s)UPDATE execution_tasks.*WHERE id =`).

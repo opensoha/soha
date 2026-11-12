@@ -439,6 +439,16 @@ func validateMihomoSelectorName(name string) error {
 }
 
 func validateMihomoMode(input domainnetworkaccess.MihomoProfileInput) error {
+	if input.DeliveryMode != "" && input.DeliveryMode != "direct_subscription" {
+		return validateMappedMihomoMode(input)
+	}
+	if input.BundleID != "" {
+		return validateDirectBundleMihomoMode(input)
+	}
+	if input.OrgRevision != 0 || input.SourceRevision != 0 {
+		return invalid("direct profile cannot reference a bundle")
+	}
+
 	switch input.Mode {
 	case domainnetworkaccess.MihomoModeManagedFollow:
 		if !input.FailClosed {
@@ -953,4 +963,21 @@ func requiredText(name, value string, maxLength int) error {
 
 func invalid(message string) error {
 	return fmt.Errorf("%w: %s", apperrors.ErrInvalidArgument, message)
+}
+
+func validateMappedMihomoMode(input domainnetworkaccess.MihomoProfileInput) error {
+	if input.DeliveryMode != "mapped_nodes" && input.DeliveryMode != "gateway" {
+		return invalid("deliveryMode is invalid")
+	}
+	if input.Mode != domainnetworkaccess.MihomoModeManagedFollow || !input.FailClosed || input.BundleID == "" || input.OrgRevision < 0 || input.SourceRevision < 1 || input.SubscriptionURL != nil || input.ManualNode != nil || input.SelectedProxy != "" {
+		return invalid("mapped profile requires bundle and forbids raw source")
+	}
+	return nil
+}
+
+func validateDirectBundleMihomoMode(input domainnetworkaccess.MihomoProfileInput) error {
+	if input.Mode != domainnetworkaccess.MihomoModeManagedFollow || !input.FailClosed || input.SourceRevision < 1 || input.OrgRevision < 0 || input.SubscriptionURL != nil || input.ManualNode != nil || input.SourceType != "" || input.SelectedProxy != "" {
+		return invalid("direct bundle requires refs and forbids raw source")
+	}
+	return nil
 }

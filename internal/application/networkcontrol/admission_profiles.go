@@ -35,6 +35,13 @@ func (s *Service) endpointAdmissionConfiguration(ctx context.Context, credential
 			return nil, err
 		}
 		for _, binding := range bindings {
+			method := "tls"
+			if binding.EAPServerTrust != nil && binding.EAPServerTrust.EapMethod != "" {
+				method = string(binding.EAPServerTrust.EapMethod)
+			}
+			if method == "ttls" && !slices.Contains(credential.Capabilities, networkprotocol.CapabilityTTLS) {
+				continue
+			}
 			profile, err := s.admissionProfile(ctx, principal, binding, fingerprint)
 			if err != nil {
 				return nil, err
@@ -72,7 +79,21 @@ func (s *Service) admissionProfile(ctx context.Context, principal policyPrincipa
 	if err := app.ValidateEAPServerTrust(binding.EAPServerTrust); err != nil {
 		return nil, err
 	}
-	return &networkprotocol.AdmissionProfile{ID: binding.ID, SiteID: binding.SiteID, AccessMedium: binding.AccessMedium, SSID: binding.SSID,
+	profile := &networkprotocol.AdmissionProfile{ID: binding.ID, SiteID: binding.SiteID, AccessMedium: binding.AccessMedium, SSID: binding.SSID,
 		Identity: principal.subject.UserID, ServerNames: slices.Clone(binding.EAPServerTrust.ServerNames), CACertificates: slices.Clone(binding.EAPServerTrust.CaCertificates),
-		WifiSecurity: string(binding.EAPServerTrust.WifiSecurity), ClientCertificateFingerprint: fingerprint}, nil
+		WifiSecurity: string(binding.EAPServerTrust.WifiSecurity), ClientCertificateFingerprint: fingerprint}
+	profile.EAPMethod = string(binding.EAPServerTrust.EapMethod)
+	if profile.EAPMethod == "" {
+		profile.EAPMethod = "tls"
+	}
+	profile.InnerMethod, profile.CredentialSource = binding.EAPServerTrust.InnerMethod, binding.EAPServerTrust.CredentialSource
+	if profile.EAPMethod == "ttls" {
+		profile.ClientCertificateFingerprint = ""
+	}
+	profile.ProfileRevision = admissionProfileRevision(*profile)
+	return profile, nil
+}
+
+func admissionProfileRevision(profile networkprotocol.AdmissionProfile) string {
+	return networkprotocol.AdmissionProfileRevision(profile)
 }

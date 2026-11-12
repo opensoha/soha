@@ -1,0 +1,23 @@
+{
+  "proxyRuntime": {
+    "enabled": true,
+    "name": "soha-proxy",
+    "replicas": 0,
+    "image": "registry.example/soha-proxy-mihomo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "controlUrl": "https://control.example:8082",
+    "ingestUrl": "https://ingest.example:8083",
+    "endpointId": "proxy-ingress",
+    "members": [
+      {
+        "instanceId": "soha-proxy-0",
+        "runtimeId": "runtime-0",
+        "existingSecret": "proxy-member-0"
+      },
+      {
+        "instanceId": "soha-proxy-1",
+        "runtimeId": "runtime-1",
+        "existingSecret": "proxy-member-1"
+      }
+    ]
+  }
+}

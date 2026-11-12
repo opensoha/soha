@@ -16,7 +16,6 @@ import (
 	domainportal "github.com/opensoha/soha/internal/domain/providerportal"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
-	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 )
 
@@ -153,6 +152,10 @@ func (s *Service) SAMLSSO(ctx context.Context, issuer, providerID, sessionID str
 	if err := repository.ConsumeSAMLReplayKey(ctx, provider.ID, "request", request.ID, time.Now().UTC().Add(10*time.Minute)); err != nil {
 		return SAMLSSOResult{}, fmt.Errorf("%w: SAML AuthnRequest was already consumed", apperrors.ErrUnauthorized)
 	}
+	principal, err = s.currentApplicationAccess(ctx, principal.UserID, application, sessionID)
+	if err != nil {
+		return SAMLSSOResult{}, err
+	}
 	sessionIndex := firstNonEmpty(sessionID, uuid.NewString())
 	response, err := s.saml.SignResponse(material, SAMLResponseInput{
 		RequestID: request.ID, SPEntityID: request.Issuer, ACSURL: request.ACSURL,
@@ -161,6 +164,9 @@ func (s *Service) SAMLSSO(ctx context.Context, issuer, providerID, sessionID str
 		Attributes: samlAttributes(principal, serviceProvider.AttributeMappings),
 	})
 	if err != nil {
+		return SAMLSSOResult{}, err
+	}
+	if err := s.validateCurrentSAMLAccess(ctx, provider.ID, principal.UserID, sessionID); err != nil {
 		return SAMLSSOResult{}, err
 	}
 	encoded := base64.StdEncoding.EncodeToString(response)
@@ -212,17 +218,25 @@ func (s *Service) samlRuntime(ctx context.Context, issuer, providerID string) (d
 	}, serviceProvider, nil
 }
 
+func (s *Service) validateCurrentSAMLAccess(ctx context.Context, providerID, userID, sessionID string) error {
+	provider, err := s.repo.GetProvider(ctx, providerID)
+	if err != nil {
+		return err
+	}
+	if !providerEnabled(provider) || provider.Type != domainprovider.ProviderTypeSAML {
+		return fmt.Errorf("%w: SAML provider is disabled", apperrors.ErrUnauthorized)
+	}
+	application, err := s.repo.GetProviderApplication(ctx, provider.ID)
+	if err != nil {
+		return err
+	}
+	_, err = s.currentApplicationAccess(ctx, userID, application, sessionID)
+	return err
+}
+
 func (s *Service) validateSAMLProviderAccess(ctx context.Context, principal domainidentity.Principal, application domainportal.Application, sessionID string) error {
-	if application.Status != domainportal.ApplicationStatusEnabled {
-		return fmt.Errorf("%w: application is disabled", apperrors.ErrAccessDenied)
-	}
-	access := domainportal.AccessPolicyContext{SourceIP: requestctx.FromContext(ctx).SourceIP, Now: time.Now().UTC()}
-	if sessionID != "" && s.users != nil {
-		if session, err := s.users.GetAuthSessionByID(ctx, sessionID); err == nil {
-			access.MFAAuthenticated = metadataMFA(session.Metadata)
-		}
-	}
-	return applicationPolicyAccessError(principal, application, access)
+	_, err := s.currentApplicationAccess(ctx, principal.UserID, application, sessionID)
+	return err
 }
 
 func samlNameID(principal domainidentity.Principal, format string) string {

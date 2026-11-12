@@ -4,48 +4,65 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domainaccess "github.com/opensoha/soha/internal/domain/networkaccess"
 	"time"
 )
 
 const (
-	EngineMihomo  = "mihomo"
-	EngineSingBox = "sing-box"
-	EngineV2Ray   = "v2ray"
+	EngineExternal = "external"
+	EngineMihomo   = "mihomo"
+	EngineSingBox  = "sing-box"
+	EngineV2Ray    = "v2ray"
 )
 
+type EngineDescriptor struct {
+	EngineID      string   `json:"engineId"`
+	AdapterID     string   `json:"adapterId"`
+	Version       string   `json:"version"`
+	ProtocolMajor int      `json:"protocolMajor"`
+	ProtocolMinor int      `json:"protocolMinor"`
+	Capabilities  []string `json:"capabilities"`
+}
+
 type Instance struct {
-	SecurityRestricted      bool        `json:"securityRestricted,omitempty"`
-	Binding                 *Binding    `json:"binding,omitempty"`
-	PolicyVersion           int         `json:"policyVersion,omitempty"`
-	ObservedPolicyVersion   int         `json:"observedPolicyVersion,omitempty"`
-	Protection              *Protection `json:"-"`
-	ID                      string      `json:"id"`
-	Name                    string      `json:"name"`
-	Engine                  string      `json:"engine"`
-	Host                    string      `json:"host,omitempty"`
-	EngineVersion           string      `json:"engineVersion,omitempty"`
-	Status                  string      `json:"status"`
-	Capabilities            []string    `json:"capabilities"`
-	DesiredRevision         int64       `json:"desiredRevision"`
-	ObservedRevision        int64       `json:"observedRevision"`
-	LastSeenAt              *time.Time  `json:"lastSeenAt,omitempty"`
-	LastSampleAt            *time.Time  `json:"lastSampleAt,omitempty"`
-	ReasonCode              string      `json:"reasonCode,omitempty"`
-	CreatedAt               time.Time   `json:"createdAt"`
-	UpdatedAt               time.Time   `json:"updatedAt"`
-	Enabled                 bool        `json:"enabled"`
-	Health                  string      `json:"-"`
-	DesiredContentEncrypted string      `json:"-"`
-	DesiredHash             string      `json:"-"`
-	Registered              bool        `json:"-"`
+	BundleID                string            `json:"-"`
+	BundleRevision          int64             `json:"-"`
+	EngineDescriptor        *EngineDescriptor `json:"engineDescriptor,omitempty"`
+	ProcessEpoch            string            `json:"processEpoch,omitempty"`
+	SampleSequence          int64             `json:"sampleSequence,omitempty"`
+	SecurityRestricted      bool              `json:"securityRestricted,omitempty"`
+	Binding                 *Binding          `json:"binding,omitempty"`
+	PolicyVersion           int               `json:"policyVersion,omitempty"`
+	ObservedPolicyVersion   int               `json:"observedPolicyVersion,omitempty"`
+	Protection              *Protection       `json:"-"`
+	ID                      string            `json:"id"`
+	Name                    string            `json:"name"`
+	Engine                  string            `json:"engine"`
+	Host                    string            `json:"host,omitempty"`
+	EngineVersion           string            `json:"engineVersion,omitempty"`
+	Status                  string            `json:"status"`
+	Capabilities            []string          `json:"capabilities"`
+	DesiredRevision         int64             `json:"desiredRevision"`
+	ObservedRevision        int64             `json:"observedRevision"`
+	LastSeenAt              *time.Time        `json:"lastSeenAt,omitempty"`
+	LastSampleAt            *time.Time        `json:"lastSampleAt,omitempty"`
+	ReasonCode              string            `json:"reasonCode,omitempty"`
+	CreatedAt               time.Time         `json:"createdAt"`
+	UpdatedAt               time.Time         `json:"updatedAt"`
+	Enabled                 bool              `json:"enabled"`
+	Health                  string            `json:"-"`
+	DesiredContentEncrypted string            `json:"-"`
+	DesiredHash             string            `json:"-"`
+	Registered              bool              `json:"-"`
 }
 
 type InstanceInput struct {
-	ID     string
-	Name   string
-	Engine string
-	Host   string
+	EngineDescriptor *EngineDescriptor
+	ID               string
+	Name             string
+	Engine           string
+	Host             string
 }
 
 type ConfigurationInput struct {
@@ -57,14 +74,16 @@ type ConfigurationInput struct {
 }
 
 type Configuration struct {
-	Binding     *Binding    `json:"binding,omitempty"`
-	Protection  *Protection `json:"protection,omitempty"`
-	Revision    int64       `json:"revision"`
-	Engine      string      `json:"engine"`
-	Enabled     bool        `json:"enabled"`
-	ContentHash string      `json:"contentHash"`
-	Content     string      `json:"content"`
-	ValidUntil  time.Time   `json:"validUntil"`
+	Publication      *api.NetworkProxyServerPublication `json:"publication,omitempty"`
+	EngineDescriptor *EngineDescriptor                  `json:"engineDescriptor,omitempty"`
+	Binding          *Binding                           `json:"binding,omitempty"`
+	Protection       *Protection                        `json:"protection,omitempty"`
+	Revision         int64                              `json:"revision"`
+	Engine           string                             `json:"engine"`
+	Enabled          bool                               `json:"enabled"`
+	ContentHash      string                             `json:"contentHash"`
+	Content          string                             `json:"content"`
+	ValidUntil       time.Time                          `json:"validUntil"`
 }
 
 type Binding struct {
@@ -80,15 +99,31 @@ type Protection = domainaccess.ProtectedDestinations
 
 // ValidUntil is renewable without a new revision. The enforcement content is not.
 func (configuration Configuration) Digest() string {
-	if configuration.Protection == nil && configuration.Binding == nil {
+	if configuration.Protection == nil && configuration.Binding == nil && configuration.Publication == nil {
 		return configuration.ContentHash
+	}
+	// The publication ledger fixes metadata for this identity. Its renewable lease
+	// is deliberately excluded, just as the enclosing configuration lease is.
+	var publication *struct {
+		BundleID string `json:"bundleId"`
+		Revision int64  `json:"revision"`
+	}
+	if configuration.Publication != nil {
+		publication = &struct {
+			BundleID string `json:"bundleId"`
+			Revision int64  `json:"revision"`
+		}{configuration.Publication.BundleID, configuration.Publication.Revision}
 	}
 	raw, _ := json.Marshal(struct {
 		ContentHash string      `json:"contentHash"`
 		Enabled     bool        `json:"enabled"`
 		Binding     *Binding    `json:"binding"`
 		Protection  *Protection `json:"protection"`
-	}{configuration.ContentHash, configuration.Enabled, configuration.Binding, configuration.Protection})
+		Publication *struct {
+			BundleID string `json:"bundleId"`
+			Revision int64  `json:"revision"`
+		} `json:"publication,omitempty"`
+	}{ContentHash: configuration.ContentHash, Enabled: configuration.Enabled, Binding: configuration.Binding, Protection: configuration.Protection, Publication: publication})
 	return fmt.Sprintf("sha256:%x", sha256.Sum256(raw))
 }
 
@@ -100,18 +135,24 @@ type Applied struct {
 }
 
 type Observation struct {
-	Engine            string   `json:"engine"`
-	EngineVersion     string   `json:"engineVersion"`
-	Health            string   `json:"health"`
-	Capabilities      []string `json:"capabilities"`
-	ReasonCode        string   `json:"reasonCode,omitempty"`
-	UptimeSeconds     int64    `json:"uptimeSeconds"`
-	UploadTotal       int64    `json:"uploadTotal"`
-	DownloadTotal     int64    `json:"downloadTotal"`
-	ActiveConnections *int     `json:"activeConnections,omitempty"`
+	EngineDescriptor  *EngineDescriptor `json:"engineDescriptor,omitempty"`
+	ProcessEpoch      string            `json:"processEpoch,omitempty"`
+	SampleSequence    int64             `json:"sampleSequence,omitempty"`
+	Engine            string            `json:"engine"`
+	EngineVersion     string            `json:"engineVersion"`
+	Health            string            `json:"health"`
+	Capabilities      []string          `json:"capabilities"`
+	ReasonCode        string            `json:"reasonCode,omitempty"`
+	UptimeSeconds     int64             `json:"uptimeSeconds"`
+	UploadTotal       int64             `json:"uploadTotal"`
+	DownloadTotal     int64             `json:"downloadTotal"`
+	ActiveConnections *int              `json:"activeConnections,omitempty"`
 }
 
 type TrafficSample struct {
+	ProcessEpoch           string    `json:"processEpoch,omitempty"`
+	SampleSequence         int64     `json:"sampleSequence,omitempty"`
+	RateState              string    `json:"rateState,omitempty"`
 	ObservedAt             time.Time `json:"observedAt"`
 	UploadTotal            int64     `json:"uploadTotal"`
 	DownloadTotal          int64     `json:"downloadTotal"`
@@ -137,13 +178,20 @@ type Connection struct {
 }
 
 type ConnectionsSnapshot struct {
-	InstanceID  string       `json:"instanceId"`
-	State       string       `json:"state"`
-	ObservedAt  *time.Time   `json:"observedAt,omitempty"`
-	Connections []Connection `json:"connections"`
+	ProcessEpoch   string       `json:"processEpoch,omitempty"`
+	SampleSequence int64        `json:"sampleSequence,omitempty"`
+	TotalActive    *int         `json:"totalActive,omitempty"`
+	ReturnedCount  *int         `json:"returnedCount,omitempty"`
+	Truncated      *bool        `json:"truncated,omitempty"`
+	Freshness      string       `json:"freshness,omitempty"`
+	InstanceID     string       `json:"instanceId"`
+	State          string       `json:"state"`
+	ObservedAt     *time.Time   `json:"observedAt,omitempty"`
+	Connections    []Connection `json:"connections"`
 }
 
 type CloseCommand struct {
+	ProcessEpoch string    `json:"processEpoch,omitempty"`
 	ID           string    `json:"commandId"`
 	InstanceID   string    `json:"-"`
 	ConnectionID string    `json:"connectionId,omitempty"`

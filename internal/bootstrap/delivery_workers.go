@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+
+	"github.com/opensoha/soha/internal/application/execution"
+	"github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 type deliveryBackgroundWorker interface {
@@ -57,4 +60,27 @@ func (workers deliveryWorkers) start(ctx context.Context) error {
 	workers.triggers.Start(ctx)
 	workers.updates.Start(ctx)
 	return nil
+}
+
+// Private executor recovery remains available when Delivery is disabled.
+func startPrivateExecutionMonitors(ctx context.Context, cfg config.RuntimeConfig, service *execution.Service) {
+	if len(cfg.OutpostSlots) > 0 {
+		ids := make([]string, 0, len(cfg.OutpostRuntimeExecutors))
+		for _, executor := range cfg.OutpostRuntimeExecutors {
+			ids = append(ids, executor.ExecutorID)
+		}
+		service.StartOutpostRuntime(ctx, ids)
+	}
+	if len(cfg.ProxySlots) > 0 {
+		ids := make([]string, 0, len(cfg.ProxyRuntimeExecutors))
+		for _, executor := range cfg.ProxyRuntimeExecutors {
+			ids = append(ids, executor.ExecutorID)
+		}
+		service.StartProxyDeployment(ctx, ids)
+	}
+	ids := make([]string, 0, len(cfg.RadiusRuntimeExecutors))
+	for _, executor := range cfg.RadiusRuntimeExecutors {
+		ids = append(ids, executor.ExecutorID)
+	}
+	service.StartRadiusDeployment(ctx, ids)
 }

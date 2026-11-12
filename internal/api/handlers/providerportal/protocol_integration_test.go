@@ -11,12 +11,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	appportal "github.com/opensoha/soha/internal/application/providerportal"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainportal "github.com/opensoha/soha/internal/domain/providerportal"
+	"github.com/opensoha/soha/internal/infrastructure/config"
 	infrasaml "github.com/opensoha/soha/internal/infrastructure/saml"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	providerrepo "github.com/opensoha/soha/internal/repository/identityprovider"
 	portalrepo "github.com/opensoha/soha/internal/repository/providerportal"
@@ -61,6 +64,8 @@ func newSSOProtocolFixture(t *testing.T) *ssoProtocolFixture {
 	f := &ssoProtocolFixture{providers: providers, applications: applications, onboarding: appportal.NewOnboarding(repo, applications, providers), repo: repo, users: users, principal: principal}
 	h := New(Services{OIDC: providers, OIDCLogout: providers, SAML: providers, Proxy: providers, OutpostContractRuntime: providers})
 	router := gin.New()
+	// Exercise the production bearer boundary; only platform login remains a fixture.
+	router.Use(apiMiddleware.BuildPrincipalMiddleware(config.AuthConfig{}, ssoPlatformTokenParser{}))
 	router.Use(func(c *gin.Context) {
 		if cookie, err := c.Request.Cookie("test-platform-session"); err == nil {
 			if session, err := users.GetAuthSessionByID(c.Request.Context(), cookie.Value); err == nil && session.Status == "active" {
@@ -91,6 +96,12 @@ func newSSOProtocolFixture(t *testing.T) *ssoProtocolFixture {
 	providers.SetPublicAccessURL(func() string { return f.publicURL })
 	f.client = &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return f
+}
+
+type ssoPlatformTokenParser struct{}
+
+func (ssoPlatformTokenParser) ParseAccessToken(context.Context, string) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	return domainidentity.Principal{}, domainidentity.AccessContext{}, apperrors.ErrUnauthorized
 }
 
 func (f *ssoProtocolFixture) onboard(t *testing.T, input appportal.OnboardingInput) appportal.OnboardingResult {

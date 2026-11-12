@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"time"
 
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
@@ -12,7 +13,7 @@ import (
 const mihomoProfileColumns = `id, device_id, name, mode, COALESCE(source_type, ''), status,
 	COALESCE(subscription_url_ciphertext, ''), COALESCE(manual_node_ciphertext, ''), revision,
 	mixed_port, controller_port, dns_mode, COALESCE(fake_ip_range::text, ''), selector_group,
-	COALESCE(selected_proxy, ''), bypass_cidrs, bypass_hosts, fail_closed, created_at, updated_at`
+	COALESCE(selected_proxy, ''), bypass_cidrs, bypass_hosts, fail_closed, created_at, updated_at, delivery_mode, bundle_id, org_revision, source_revision`
 
 func (r *Repository) ListMihomoProfiles(ctx context.Context, filter domainnetworkaccess.MihomoProfileFilter) ([]domainnetworkaccess.MihomoProfile, error) {
 	query := `SELECT ` + mihomoProfileColumns + ` FROM network_mihomo_profiles WHERE tenant_id = 'default' AND workspace_id = 'default'`
@@ -37,18 +38,21 @@ func (r *Repository) CreateMihomoProfile(ctx context.Context, item domainnetwork
 	}
 	err = r.db.WithContext(ctx).Exec(`INSERT INTO network_mihomo_profiles
 		(id, device_id, name, mode, source_type, status, subscription_url_ciphertext, manual_node_ciphertext, revision, mixed_port, controller_port,
-		 dns_mode, fake_ip_range, selector_group, selected_proxy, bypass_cidrs, bypass_hosts, fail_closed, created_at, updated_at)
-		VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), 1, ?, ?, ?, NULLIF(?, '')::cidr, ?, NULLIF(?, ''), ?::jsonb, ?::jsonb, ?, ?, ?)`,
+		 dns_mode, fake_ip_range, selector_group, selected_proxy, bypass_cidrs, bypass_hosts, fail_closed, created_at, updated_at, delivery_mode, bundle_id, org_revision, source_revision)
+		VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), 1, ?, ?, ?, NULLIF(?, '')::cidr, ?, NULLIF(?, ''), ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)`,
 		item.ID, item.DeviceID, item.Name, item.Mode, item.SourceType, item.Status, item.SubscriptionURLCiphertext, item.ManualNodeCiphertext,
 		item.MixedPort, item.ControllerPort, item.DNSMode, item.FakeIPRange, item.SelectorGroup, item.SelectedProxy,
-		bypassCIDRs, bypassHosts, item.FailClosed, item.CreatedAt, item.UpdatedAt).Error
+		bypassCIDRs, bypassHosts, item.FailClosed, item.CreatedAt, item.UpdatedAt, item.DeliveryMode, item.BundleID, item.OrgRevision, item.SourceRevision).Error
 	if err != nil {
 		return domainnetworkaccess.MihomoProfile{}, normalizeDatabaseError(err)
 	}
 	return r.GetMihomoProfile(ctx, item.ID)
 }
 
-func (r *Repository) UpdateMihomoProfile(ctx context.Context, id string, item domainnetworkaccess.MihomoProfile, updatedAt time.Time) (domainnetworkaccess.MihomoProfile, error) {
+func (r *Repository) UpdateMihomoProfile(ctx context.Context, id string, item domainnetworkaccess.MihomoProfile, expectedRevision int, updatedAt time.Time) (domainnetworkaccess.MihomoProfile, error) {
+	if expectedRevision < 1 {
+		return domainnetworkaccess.MihomoProfile{}, apperrors.ErrConflict
+	}
 	bypassCIDRs, bypassHosts, err := encodeMihomoLists(item)
 	if err != nil {
 		return domainnetworkaccess.MihomoProfile{}, err
@@ -57,13 +61,16 @@ func (r *Repository) UpdateMihomoProfile(ctx context.Context, id string, item do
 		device_id = ?, name = ?, mode = ?, source_type = NULLIF(?, ''), status = ?, subscription_url_ciphertext = NULLIF(?, ''), manual_node_ciphertext = NULLIF(?, ''),
 		revision = revision + 1, mixed_port = ?, controller_port = ?, dns_mode = ?, fake_ip_range = NULLIF(?, '')::cidr,
 		selector_group = ?, selected_proxy = NULLIF(?, ''), bypass_cidrs = ?::jsonb, bypass_hosts = ?::jsonb,
-		fail_closed = ?, updated_at = ?
-		WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`,
+		fail_closed = ?, updated_at = ?, delivery_mode = ?, bundle_id = ?, org_revision = ?, source_revision = ?
+		WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND revision = ?`,
 		item.DeviceID, item.Name, item.Mode, item.SourceType, item.Status, item.SubscriptionURLCiphertext, item.ManualNodeCiphertext,
 		item.MixedPort, item.ControllerPort, item.DNSMode, item.FakeIPRange, item.SelectorGroup, item.SelectedProxy,
-		bypassCIDRs, bypassHosts, item.FailClosed, updatedAt, id)
-	if err := mutationError(result, "mihomo profile"); err != nil {
-		return domainnetworkaccess.MihomoProfile{}, err
+		bypassCIDRs, bypassHosts, item.FailClosed, updatedAt, item.DeliveryMode, item.BundleID, item.OrgRevision, item.SourceRevision, id, expectedRevision)
+	if result.Error != nil {
+		return domainnetworkaccess.MihomoProfile{}, normalizeDatabaseError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return domainnetworkaccess.MihomoProfile{}, apperrors.ErrConflict
 	}
 	return r.GetMihomoProfile(ctx, id)
 }
@@ -77,7 +84,7 @@ func scanMihomoProfile(row scanner) (domainnetworkaccess.MihomoProfile, error) {
 	var bypassCIDRs, bypassHosts []byte
 	if err := row.Scan(&item.ID, &item.DeviceID, &item.Name, &item.Mode, &item.SourceType, &item.Status, &item.SubscriptionURLCiphertext, &item.ManualNodeCiphertext,
 		&item.Revision, &item.MixedPort, &item.ControllerPort, &item.DNSMode, &item.FakeIPRange, &item.SelectorGroup,
-		&item.SelectedProxy, &bypassCIDRs, &bypassHosts, &item.FailClosed, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&item.SelectedProxy, &bypassCIDRs, &bypassHosts, &item.FailClosed, &item.CreatedAt, &item.UpdatedAt, &item.DeliveryMode, &item.BundleID, &item.OrgRevision, &item.SourceRevision); err != nil {
 		return item, err
 	}
 	if err := json.Unmarshal(bypassCIDRs, &item.BypassCIDRs); err != nil {

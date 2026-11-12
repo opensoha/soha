@@ -20,6 +20,7 @@ import (
 	domainnetworkruntime "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	radiusrepo "github.com/opensoha/soha/internal/repository/radiusdeployment"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -44,6 +45,9 @@ func New(db *gorm.DB, governance appnetworkaccess.VPNGovernanceEvaluator) *Repos
 }
 
 func (r *Repository) CreateEnrollment(ctx context.Context, challenge domainnetworkruntime.EnrollmentChallenge) error {
+	if strings.HasPrefix(challenge.RuntimeID, "radius-pool:") || strings.HasPrefix(challenge.DeviceID, "nas-station:") {
+		return apperrors.ErrAccessDenied
+	}
 	return r.db.WithContext(ctx).Create(enrollmentRowFromDomain(challenge)).Error
 }
 
@@ -111,6 +115,9 @@ func (r *Repository) ConsumeEnrollment(ctx context.Context, consumption domainne
 	var configuration domainnetworkruntime.Configuration
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockWireGuardMutations(tx); err != nil {
+			return err
+		}
+		if err := radiusrepo.ValidateEnrollment(tx, consumption); err != nil {
 			return err
 		}
 		enrollment, err := consumeEnrollmentChallenge(tx, consumption)

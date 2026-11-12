@@ -10,6 +10,7 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainnetworkaccess "github.com/opensoha/soha/internal/domain/networkaccess"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 )
@@ -28,7 +29,10 @@ func (s *mihomoStoreStub) CreateMihomoProfile(_ context.Context, item domainnetw
 	return item, nil
 }
 
-func (s *mihomoStoreStub) UpdateMihomoProfile(_ context.Context, _ string, item domainnetworkaccess.MihomoProfile, updatedAt time.Time) (domainnetworkaccess.MihomoProfile, error) {
+func (s *mihomoStoreStub) UpdateMihomoProfile(_ context.Context, _ string, item domainnetworkaccess.MihomoProfile, expectedRevision int, updatedAt time.Time) (domainnetworkaccess.MihomoProfile, error) {
+	if expectedRevision < 1 || expectedRevision != s.item.Revision {
+		return domainnetworkaccess.MihomoProfile{}, apperrors.ErrConflict
+	}
 	item.Revision = s.item.Revision + 1
 	item.UpdatedAt = updatedAt
 	s.item = item

@@ -1,0 +1,84 @@
+package execution
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/opensoha/soha/internal/domain/delivery"
+	domain "github.com/opensoha/soha/internal/domain/outpostruntime"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+)
+
+func TestPrivateOutpostStatusAndCallbackRequireExecutorIdentity(t *testing.T) {
+	repo := newExecutionRepoFake()
+	repo.tasks["private"] = delivery.ExecutionTask{ID: "private", ProviderKind: "outpost_runtime.edge", TaskKind: "outpost_runtime_control", ClaimedByAgentID: "edge", Status: "dispatching", CallbackToken: "secret"}
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	input := delivery.ExecutionCallbackInput{CallbackToken: "secret", Status: "running", Payload: map[string]any{}}
+	if _, err := service.RecordCallback(context.Background(), input); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("generic callback accepted: %v", err)
+	}
+	if len(repo.callbacks) != 0 || len(repo.updates) != 0 {
+		t.Fatal("generic callback wrote state")
+	}
+	if _, err := service.GetOutpostRuntimeExecutionTask(context.Background(), "other", "private"); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("wrong identity got task: %v", err)
+	}
+	if _, err := service.RecordOutpostRuntimeCallback(context.Background(), "other", input); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("wrong identity wrote task: %v", err)
+	}
+	if task, err := service.GetOutpostRuntimeExecutionTask(context.Background(), "edge", "private"); err != nil || task.CallbackToken != "secret" {
+		t.Fatalf("dedicated status failed: %v", err)
+	}
+	if _, err := service.RecordOutpostRuntimeCallback(context.Background(), "edge", input); err != nil {
+		t.Fatal(err)
+	}
+	repo.tasks["normal"] = delivery.ExecutionTask{ID: "normal", TaskKind: "build", ProviderKind: "ci_agent_runner", CallbackToken: "normal"}
+	if _, err := service.RecordOutpostRuntimeCallback(context.Background(), "edge", delivery.ExecutionCallbackInput{CallbackToken: "normal", Status: "running"}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("private executor wrote unrelated task: %v", err)
+	}
+}
+
+func TestPrivateMaintenanceExpiresQueuedAndClaimedWithoutDispatchingDelivery(t *testing.T) {
+	now := time.Now().UTC()
+	oldHeartbeat := now.Add(-121 * time.Second)
+	repo := newExecutionRepoFake()
+	repo.tasks["queued"] = delivery.ExecutionTask{ID: "queued", TaskKind: domain.TaskKind, ProviderKind: "outpost_runtime.edge", Status: "queued", CreatedAt: now.Add(-91 * time.Second), TimeoutSeconds: 120, Payload: map[string]any{"outpostRuntime": domain.Command{Deadline: now.Add(-time.Second)}}}
+	repo.tasks["claimed"] = delivery.ExecutionTask{ID: "claimed", TaskKind: domain.TaskKind, ProviderKind: "outpost_runtime.edge", Status: "running", LastHeartbeatAt: &oldHeartbeat, TimeoutSeconds: 120, Payload: map[string]any{}}
+	repo.tasks["ordinary"] = delivery.ExecutionTask{ID: "ordinary", TaskKind: "build", ProviderKind: "ci_agent_runner", Status: "running", LastHeartbeatAt: &oldHeartbeat, TimeoutSeconds: 120}
+	repo.tasks["other-slot"] = delivery.ExecutionTask{ID: "other-slot", TaskKind: domain.TaskKind, ProviderKind: "outpost_runtime.other", Status: "running", LastHeartbeatAt: &oldHeartbeat, TimeoutSeconds: 120}
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	sink := &executionTaskSinkSpy{}
+	service.AddExecutionTaskSink(sink)
+	if err := service.maintainOutpostRuntime(context.Background(), []string{"edge"}, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"queued", "claimed"} {
+		if repo.tasks[id].Status != "callback_timeout" {
+			t.Fatalf("%s not expired: %s", id, repo.tasks[id].Status)
+		}
+	}
+	for _, id := range []string{"ordinary", "other-slot"} {
+		if repo.tasks[id].Status != "running" {
+			t.Fatalf("unrelated task was changed: %s", id)
+		}
+	}
+	if len(sink.tasks) != 2 {
+		t.Fatalf("result sinks=%d", len(sink.tasks))
+	}
+}
+
+func TestPrivateMaintenanceDeadlineHasNoEarlyExpiry(t *testing.T) {
+	deadline := time.Now().UTC()
+	task := delivery.ExecutionTask{Status: "queued", CreatedAt: deadline.Add(-90 * time.Second), TimeoutSeconds: 120, Payload: map[string]any{"outpostRuntime": domain.Command{Deadline: deadline}}}
+	if outpostRuntimeExpired(task, deadline.Add(-time.Nanosecond)) {
+		t.Fatal("expired before command deadline")
+	}
+	if !outpostRuntimeExpired(task, deadline) {
+		t.Fatal("did not expire at deadline")
+	}
+	if executionMonitorInterval != 15*time.Second {
+		t.Fatal("maintenance polling bound changed")
+	}
+}

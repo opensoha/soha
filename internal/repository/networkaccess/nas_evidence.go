@@ -37,7 +37,9 @@ func (r *Repository) RecordNASAccounting(ctx context.Context, runtimeID string, 
 			return err
 		}
 		var binding string
-		if err := tx.Raw(`SELECT id FROM network_access_nas_bindings WHERE tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND nas_id = ? AND status = 'active' LIMIT 1`, runtimeID, request.NASID).Row().Scan(&binding); err != nil {
+		resolved, err := New(tx).FindActiveNASBinding(ctx, runtimeID, request.NASID)
+		binding = resolved.ID
+		if err != nil || binding == "" {
 			return accountingBindingError()
 		}
 		if request.StatusType == "accounting-on" || request.StatusType == "accounting-off" {
@@ -69,11 +71,15 @@ func (r *Repository) RecordNASAccounting(ctx context.Context, runtimeID string, 
 func accountingAuthorization(tx *gorm.DB, runtimeID string, request networkprotocol.RadiusAccountingRequest, observedAt time.Time, skew time.Duration) (domain.NASSessionObservation, error) {
 	item := domain.NASSessionObservation{NASSessionEvidence: domain.NASSessionEvidence{SessionID: request.SessionID, RuntimeID: runtimeID, NasID: request.NASID}}
 	var createdAt time.Time
+	binding, bindingErr := New(tx).FindActiveNASBinding(tx.Statement.Context, runtimeID, request.NASID)
+	if bindingErr != nil {
+		return item, accountingBindingError()
+	}
 	if err := tx.Raw(`SELECT a.subject_id, a.device_id, COALESCE(a.station_id, ''), COALESCE(a.credential_id, ''), s.created_at
   FROM network_nas_authorizations a JOIN network_runtime_sessions s ON s.id = a.session_id
-  JOIN network_access_nas_bindings b ON b.runtime_id = a.runtime_id AND b.nas_id = a.nas_id AND b.site_id = s.site_id
+  JOIN network_access_nas_bindings b ON b.id = ? AND b.nas_id = a.nas_id AND b.site_id = s.site_id
   WHERE a.tenant_id = 'default' AND a.workspace_id = 'default' AND a.session_id = ? AND a.runtime_id = ? AND a.nas_id = ?
-   AND a.decision = 'allow' AND b.tenant_id = 'default' AND b.workspace_id = 'default' AND b.status = 'active'`, request.SessionID, runtimeID, request.NASID).Row().Scan(&item.SubjectID, &item.DeviceID, &item.StationID, &item.CredentialID, &createdAt); err != nil {
+   AND a.decision = 'allow' AND b.tenant_id = 'default' AND b.workspace_id = 'default' AND b.status = 'active'`, binding.ID, request.SessionID, runtimeID, request.NASID).Row().Scan(&item.SubjectID, &item.DeviceID, &item.StationID, &item.CredentialID, &createdAt); err != nil {
 		return item, accountingBindingError()
 	}
 	if request.SessionID == "" || item.StationID == "" || item.SubjectID != request.UserID || item.StationID != domain.CanonicalStationID(request.DeviceID) || observedAt.Before(createdAt.Add(-skew)) {

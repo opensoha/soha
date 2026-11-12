@@ -805,6 +805,10 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 		permission   string
 		scoped       bool
 	}{
+		{name: "proxy typed command permission is kind dependent", method: "POST", path: "/api/v1/network-access/proxy-instances/:instanceID/commands", resourceKind: "NetworkProxyCommand", action: "execute", permission: "network_access.proxy_instances.<command>", scoped: true},
+		{name: "proxy source deletion updates existing instance", method: "DELETE", path: "/api/v1/network-access/proxy-instances/:instanceID/sources/:sourceID", resourceKind: "NetworkProxyInstance", action: "update", permission: appaccess.PermNetworkAccessProxyInstancesUpdate, scoped: true},
+		{name: "proxy deployment control updates existing instance", method: "POST", path: "/api/v1/network-access/proxy-instances/:instanceID/deployment/control", resourceKind: "NetworkProxyInstance", action: "update", permission: appaccess.PermNetworkAccessProxyInstancesUpdate, scoped: true},
+		{name: "proxy command cancellation updates existing instance", method: "POST", path: "/api/v1/network-access/proxy-instances/:instanceID/commands/:commandID/cancel", resourceKind: "NetworkProxyInstance", action: "update", permission: appaccess.PermNetworkAccessProxyInstancesUpdate, scoped: true},
 		{name: "application create", method: "POST", path: "/api/v1/applications", resourceKind: "Application", action: "create", permission: appaccess.PermDeliveryApplicationsCreate, scoped: true},
 		{name: "workflow trigger", method: "POST", path: "/api/v1/workflows/trigger", resourceKind: "Workflow", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scoped: true},
 		{name: "original workflow request", method: "POST", path: "/api/v1/workflow-requests", resourceKind: "WorkflowRequest", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scoped: true},
@@ -826,6 +830,10 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 		{name: "access team scope grant delete", method: "DELETE", path: "/api/v1/access/teams/:teamID/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "delete", permission: "access.scope-grants.delete"},
 		{name: "identity policy update", method: "PATCH", path: "/api/v1/identity/policies/:applicationID", resourceKind: "IdentityPolicy", action: "update", permission: "identity.policies.update"},
 		{name: "identity outpost update", method: "PATCH", path: "/api/v1/identity/outposts/:outpostID", resourceKind: "IdentityOutpost", action: "update", permission: "identity.outposts.update"},
+		{name: "identity outpost runtime binding", method: "PUT", path: "/api/v1/identity/outposts/:outpostID/runtime", resourceKind: "IdentityOutpost", action: "update", permission: "identity.outposts.update"},
+		{name: "identity outpost lifecycle control", method: "POST", path: "/api/v1/identity/outposts/:outpostID/runtime/control", resourceKind: "IdentityOutpost", action: "update", permission: "identity.outposts.update"},
+		{name: "identity outpost create remains create", method: "POST", path: "/api/v1/identity/outposts", resourceKind: "IdentityOutpost", action: "create", permission: "identity.outposts.create"},
+		{name: "identity outpost rotate remains rotate", method: "POST", path: "/api/v1/identity/outposts/:outpostID/token/rotate", resourceKind: "IdentityOutpost", action: "rotate", permission: "identity.outposts.rotate"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry, ok := nonPlatformMutationSecuritySurface(tc.method, tc.path)
@@ -1049,6 +1057,11 @@ func routeTestDependencies() Dependencies {
 		EndpointControls:           &apiHandlers.EndpointControlsHandler{},
 		NetworkEndpointResponse:    &apiHandlers.NetworkEndpointResponseHandler{},
 		NetworkProxy:               &apiHandlers.NetworkProxyHandler{},
+		ProxyCommands:              &apiHandlers.NetworkProxyCommandsHandler{},
+		ProxySources:               &apiHandlers.ProxyPublicationSourcesHandler{},
+		ProxyBundles:               &apiHandlers.ProxyPublicationBundlesHandler{},
+		ProxyRules:                 &apiHandlers.ProxyPublicationRulesHandler{},
+		ProxyDeployment:            &apiHandlers.ProxyDeploymentHandler{},
 		NetworkVPN:                 &apiHandlers.NetworkVPNHandler{},
 		System:                     &apiHandlers.SystemHandler{},
 		Platform:                   &apiHandlers.PlatformHandler{},

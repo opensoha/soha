@@ -1,5 +1,47 @@
+rest soha_verify_password {
+	tls {
+		ca_info_file = $ENV{SOHA_RADIUS_CONTROL_CA_FILE}
+		certificate_file = $ENV{SOHA_RADIUS_CONTROL_CERT_FILE}
+		private_key_file = $ENV{SOHA_RADIUS_CONTROL_KEY_FILE}
+		check_cert = yes
+		check_cert_cn = yes
+	}
+	connect_timeout = 3.0
+	authenticate {
+		uri = "$ENV{SOHA_RADIUS_CONTROL_URL}/api/network-control/v1/runtimes/$ENV{SOHA_RADIUS_RUNTIME_ID}/radius:verify-password"
+		method = post
+		body = json
+		data = '{"requestId":"verify-%{sha256:%{outer.request:NAS-Identifier}|%{User-Name}|%{control:Tmp-String-0}|%{outer.request:State}}","nasId":"%{outer.request:NAS-Identifier}","stationId":"%{control:Tmp-String-0}","login":"%{User-Name}","passwordBase64":"%{base64:&User-Password}","eapMethod":"ttls","innerMethod":"pap"%{outer.control:Tmp-String-9}}'
+		force_to = json
+		tls = ${..tls}
+		timeout = 3.0
+		chunk = 4096
+	}
+}
+
+rest soha_authorize_ttls {
+	tls {
+		ca_info_file = $ENV{SOHA_RADIUS_CONTROL_CA_FILE}
+		certificate_file = $ENV{SOHA_RADIUS_CONTROL_CERT_FILE}
+		private_key_file = $ENV{SOHA_RADIUS_CONTROL_KEY_FILE}
+		check_cert = yes
+		check_cert_cn = yes
+	}
+	connect_timeout = 3.0
+	post-auth {
+		uri = "$ENV{SOHA_RADIUS_CONTROL_URL}/api/network-control/v1/runtimes/$ENV{SOHA_RADIUS_RUNTIME_ID}/radius:post-auth"
+		method = post
+		body = json
+		data = '{"requestId":"radius-%{sha256:%{NAS-Identifier}|%{session-state:Tmp-String-5}|%{control:Tmp-String-0}|%{Packet-Authentication-Vector}}","nasId":"%{NAS-Identifier}","stationId":"%{control:Tmp-String-0}","subjectId":"%{session-state:Tmp-String-5}","authenticationMethod":"eap-ttls-pap","authenticationReceipt":"%{session-state:Tmp-String-4}"%{control:Tmp-String-9}}'
+		force_to = json
+		tls = ${..tls}
+		timeout = 3.0
+		chunk = 4096
+	}
+}
+
 files soha_lab_users {
-	filename = /run/freeradius/soha-lab-users
+	filename = $ENV{SOHA_RADIUS_LAB_USERS_FILE}
 }
 
 rest soha_authorize_password {
@@ -15,7 +57,7 @@ rest soha_authorize_password {
 		uri = "$ENV{SOHA_RADIUS_CONTROL_URL}/api/network-control/v1/runtimes/$ENV{SOHA_RADIUS_RUNTIME_ID}/radius:post-auth"
 		method = post
 		body = json
-		data = '{"requestId":"radius-%{sha256:%{NAS-Identifier}|%{User-Name}|%{Calling-Station-Id}|%{Packet-Authentication-Vector}}","nasId":"%{NAS-Identifier}","subjectId":"%{User-Name}","deviceId":"%{Calling-Station-Id}","authenticationMethod":"password-compatible"}'
+		data = '{"requestId":"radius-%{sha256:%{NAS-Identifier}|%{User-Name}|%{Calling-Station-Id}|%{Packet-Authentication-Vector}}","nasId":"%{NAS-Identifier}","subjectId":"%{User-Name}","deviceId":"%{Calling-Station-Id}","authenticationMethod":"password-compatible"%{control:Tmp-String-9}}'
 		force_to = json
 		tls = ${..tls}
 		timeout = 3.0
@@ -36,7 +78,7 @@ rest soha_authorize_eap_tls {
 		uri = "$ENV{SOHA_RADIUS_CONTROL_URL}/api/network-control/v1/runtimes/$ENV{SOHA_RADIUS_RUNTIME_ID}/radius:post-auth"
 		method = post
 		body = json
-		data = '{"requestId":"radius-%{sha256:%{NAS-Identifier}|%{User-Name}|%{Calling-Station-Id}|%{Packet-Authentication-Vector}}","nasId":"%{NAS-Identifier}","subjectId":"%{User-Name}","stationId":"%{Calling-Station-Id}","authenticationMethod":"eap-tls","clientCertificateSerial":"%{TLS-Client-Cert-Serial}","clientCertificateAuthorityKeyId":"%{TLS-Client-Cert-X509v3-Authority-Key-Identifier}"}'
+		data = '{"requestId":"radius-%{sha256:%{NAS-Identifier}|%{User-Name}|%{Calling-Station-Id}|%{Packet-Authentication-Vector}}","nasId":"%{NAS-Identifier}","subjectId":"%{User-Name}","stationId":"%{Calling-Station-Id}","authenticationMethod":"eap-tls","clientCertificateSerial":"%{TLS-Client-Cert-Serial}","clientCertificateAuthorityKeyId":"%{TLS-Client-Cert-X509v3-Authority-Key-Identifier}"%{control:Tmp-String-9}}'
 		force_to = json
 		tls = ${..tls}
 		timeout = 3.0
@@ -80,6 +122,114 @@ rest soha_accounting_control {
 		data = '{"schemaVersion":"network-radius-accounting/v1alpha1","eventTimestamp":%{integer:&Event-Timestamp},"statusType":"%{control:Tmp-String-0}","accountingSessionId":"%{Acct-Session-Id}","sessionId":"%{control:Tmp-String-1}","nasId":"%{NAS-Identifier}","nasPortId":"%{NAS-Port-Id}","userId":"%{User-Name}","deviceId":"%{Calling-Station-Id}","sessionTimeSeconds":%{%{integer:&Acct-Session-Time}:-0},"inputOctets":%{%{integer:&Acct-Input-Octets}:-0},"outputOctets":%{%{integer:&Acct-Output-Octets}:-0},"inputPackets":%{%{integer:&Acct-Input-Packets}:-0},"outputPackets":%{%{integer:&Acct-Output-Packets}:-0},"accountingDelaySeconds":%{%{integer:&Acct-Delay-Time}:-0}%{control:Tmp-String-2}%{control:Tmp-String-3}}'
 		tls = ${..tls}
 		timeout = 3.0
+		chunk = 4096
+	}
+}
+
+linelog soha_event_authorize {
+	filename = /run/freeradius/admission-events/events.jsonl
+	permissions = 0600
+	format = "{\"schemaVersion\":\"soha-admission-event/v1\",\"event\":\"authorize\",\"nasId\":\"%{NAS-Identifier}\",\"nasPortId\":\"%{NAS-Port-Id}\",\"stationId\":\"%{Calling-Station-Id}\",\"coreSessionId\":\"%{reply:Class}\",\"observedAt\":%l,\"sessionTimeout\":%{integer:reply:Session-Timeout},\"filterId\":\"%{reply:Filter-Id}\",\"vlanId\":%{control:Tmp-String-7}}"
+}
+
+linelog soha_event_accounting {
+	filename = /run/freeradius/admission-events/events.jsonl
+	permissions = 0600
+	format = "{\"schemaVersion\":\"soha-admission-event/v1\",\"event\":\"%{control:Tmp-String-0}\",\"nasId\":\"%{NAS-Identifier}\",\"nasPortId\":\"%{NAS-Port-Id}\",\"stationId\":\"%{Calling-Station-Id}\",\"coreSessionId\":\"%{control:Tmp-String-1}\",\"accountingSessionId\":\"%{Acct-Session-Id}\",\"observedAt\":%l,\"sessionTimeSeconds\":%{%{integer:&Acct-Session-Time}:-0}}"
+}
+
+rest soha_managed_admit {
+	connect_uri = "http://localhost"
+	connect_uri_socket = "$ENV{SOHA_RADIUS_HOOK_SOCKET}"
+	connect_timeout = 1.0
+	pool {
+		start = $ENV{SOHA_RADIUS_HOOK_POOL_START}
+		min = $ENV{SOHA_RADIUS_HOOK_POOL_START}
+		max = ${thread[pool].max_servers}
+		spare = 1
+		uses = 0
+		lifetime = 0
+		idle_timeout = 5
+	}
+	authorize {
+		uri = "http://localhost/admit"
+		method = post
+		body = json
+		data = '{"epoch":"%{control:Tmp-String-6}","nasId":"%{NAS-Identifier}","stationId":"%{Calling-Station-Id}","state":"%{State}"}'
+		force_to = json
+		timeout = 1.0
+		chunk = 4096
+	}
+}
+
+rest soha_managed_challenge {
+	connect_uri = "http://localhost"
+	connect_uri_socket = "$ENV{SOHA_RADIUS_HOOK_SOCKET}"
+	connect_timeout = 1.0
+	pool {
+		start = $ENV{SOHA_RADIUS_HOOK_POOL_START}
+		min = $ENV{SOHA_RADIUS_HOOK_POOL_START}
+		max = ${thread[pool].max_servers}
+		spare = 1
+		uses = 0
+		lifetime = 0
+		idle_timeout = 5
+	}
+	post-auth {
+		uri = "http://localhost/challenge"
+		method = post
+		body = json
+		data = '{"epoch":"%{control:Tmp-String-6}","nasId":"%{NAS-Identifier}","stationId":"%{Calling-Station-Id}","state":"%{State}","nonce":"%{control:Tmp-String-8}","nextState":"%{reply:State}"}'
+		force_to = json
+		timeout = 1.0
+		chunk = 4096
+	}
+}
+
+rest soha_managed_accept {
+	connect_uri = "http://localhost"
+	connect_uri_socket = "$ENV{SOHA_RADIUS_HOOK_SOCKET}"
+	connect_timeout = 1.0
+	pool {
+		start = $ENV{SOHA_RADIUS_HOOK_POOL_START}
+		min = $ENV{SOHA_RADIUS_HOOK_POOL_START}
+		max = ${thread[pool].max_servers}
+		spare = 1
+		uses = 0
+		lifetime = 0
+		idle_timeout = 5
+	}
+	post-auth {
+		uri = "http://localhost/finish"
+		method = post
+		body = json
+		data = '{"epoch":"%{control:Tmp-String-6}","nasId":"%{NAS-Identifier}","stationId":"%{Calling-Station-Id}","state":"%{State}","nonce":"%{control:Tmp-String-8}","outcome":"accept"}'
+		force_to = json
+		timeout = 1.0
+		chunk = 4096
+	}
+}
+
+rest soha_managed_reject {
+	connect_uri = "http://localhost"
+	connect_uri_socket = "$ENV{SOHA_RADIUS_HOOK_SOCKET}"
+	connect_timeout = 1.0
+	pool {
+		start = $ENV{SOHA_RADIUS_HOOK_POOL_START}
+		min = $ENV{SOHA_RADIUS_HOOK_POOL_START}
+		max = ${thread[pool].max_servers}
+		spare = 1
+		uses = 0
+		lifetime = 0
+		idle_timeout = 5
+	}
+	post-auth {
+		uri = "http://localhost/finish"
+		method = post
+		body = json
+		data = '{"epoch":"%{control:Tmp-String-6}","nasId":"%{NAS-Identifier}","stationId":"%{Calling-Station-Id}","state":"%{State}","nonce":"%{control:Tmp-String-8}","outcome":"reject"}'
+		force_to = json
+		timeout = 1.0
 		chunk = 4096
 	}
 }

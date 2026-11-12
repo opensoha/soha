@@ -48,10 +48,13 @@ func outpostRuntimeHealth(item domainprovider.Outpost, now time.Time, signingRea
 	if item.LastHeartbeatAt == nil {
 		return "unavailable", "awaiting_heartbeat"
 	}
+	if item.LastHeartbeatAt.After(now) {
+		return "unavailable", "heartbeat_time_invalid"
+	}
 	if now.Sub(*item.LastHeartbeatAt) > outpostHeartbeatTimeout {
 		return "unavailable", "heartbeat_timeout"
 	}
-	if item.ProtocolVersion == "" {
+	if item.ProtocolVersion == "" || item.RuntimeReason == "legacy_runtime" {
 		return "degraded", "legacy_runtime"
 	}
 	if item.RuntimeStatus == "unavailable" && item.RuntimeReason != "" {
@@ -62,6 +65,9 @@ func outpostRuntimeHealth(item domainprovider.Outpost, now time.Time, signingRea
 	}
 	if item.ConfigurationExpiresAt != nil && !item.ConfigurationExpiresAt.After(now) {
 		return "unavailable", "configuration_expired"
+	}
+	if item.ConfigurationExpiresAt != nil && item.ConfigurationExpiresAt.After(item.LastHeartbeatAt.Add(outpostConfigurationLeaseTTL)) {
+		return "unavailable", "configuration_lease_invalid"
 	}
 	return outpostReportedHealth(item, now)
 }

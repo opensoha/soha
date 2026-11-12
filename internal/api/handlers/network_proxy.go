@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -24,7 +25,7 @@ type NetworkProxyManagement interface {
 }
 
 type NetworkProxyConnectionCommands interface {
-	Close(context.Context, domainidentity.Principal, string, string) (domain.CloseCommand, error)
+	CloseWithInput(context.Context, domainidentity.Principal, string, string, domain.CloseInput) (domain.CloseCommand, error)
 	GetClose(context.Context, domainidentity.Principal, string, string) (domain.CloseCommand, error)
 }
 
@@ -43,7 +44,7 @@ func (h *NetworkProxyHandler) Create(c *gin.Context) {
 		return
 	}
 	item, err := h.service.Create(c.Request.Context(), principal(c), domain.InstanceInput{
-		ID: input.ID, Name: input.Name, Engine: string(input.Engine), Host: input.Host,
+		ID: input.ID, Name: input.Name, Engine: string(input.Engine), Host: input.Host, EngineDescriptor: proxyDescriptor(input.EngineDescriptor),
 	})
 	respondItem(c, http.StatusCreated, item, err)
 }
@@ -122,7 +123,24 @@ func (h *NetworkProxyHandler) Connections(c *gin.Context) {
 }
 
 func (h *NetworkProxyHandler) Close(c *gin.Context) {
-	result, err := h.commands.Close(c.Request.Context(), principal(c), c.Param("instanceID"), c.Param("connectionID"))
+	var input domain.CloseInput
+	if c.Request.ContentLength != 0 {
+		var body json.RawMessage
+		if !bindNetworkJSON(c, &body) {
+			return
+		}
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(body, &fields) != nil || fields == nil || json.Unmarshal(body, &input) != nil {
+			writeError(c, apperrors.ErrInvalidArgument)
+			return
+		}
+		legacy := len(fields) == 0 || (len(fields) == 1 && fields["processEpoch"] != nil)
+		if !legacy && (len(fields) != 4 || fields["processEpoch"] == nil || fields["requestId"] == nil || fields["issuedAt"] == nil || fields["expiresAt"] == nil || input.RequestID == "") {
+			writeError(c, apperrors.ErrInvalidArgument)
+			return
+		}
+	}
+	result, err := h.commands.CloseWithInput(c.Request.Context(), principal(c), c.Param("instanceID"), c.Param("connectionID"), input)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -138,4 +156,11 @@ func (h *NetworkProxyHandler) GetClose(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	apiresponse.JSON(c, http.StatusOK, result)
+}
+
+func proxyDescriptor(d *sohaapi.NetworkProxyEngineDescriptor) *domain.EngineDescriptor {
+	if d == nil {
+		return nil
+	}
+	return &domain.EngineDescriptor{EngineID: d.EngineID, AdapterID: d.AdapterID, Version: d.Version, ProtocolMajor: int(d.ProtocolMajor), ProtocolMinor: int(d.ProtocolMinor), Capabilities: d.Capabilities}
 }

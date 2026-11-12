@@ -2554,6 +2554,9 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if domaindelivery.IsPrivateRuntimeTask(task) {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrAccessDenied
+	}
 	callback := domaindelivery.ExecutionCallback{
 		ID:              uuid.NewString(),
 		ExecutionTaskID: task.ID,
@@ -2594,7 +2597,7 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 
 func (s *Service) GetExecutionTaskForRunner(ctx context.Context, taskID string) (domaindelivery.ExecutionTask, error) {
 	task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
-	if err == nil && task.TaskKind == "vm_ssh_command" {
+	if err == nil && (task.TaskKind == "vm_ssh_command" || domaindelivery.IsPrivateRuntimeTask(task)) {
 		return domaindelivery.ExecutionTask{}, apperrors.ErrAccessDenied
 	}
 	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
