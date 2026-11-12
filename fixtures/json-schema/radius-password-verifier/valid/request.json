@@ -1,0 +1,9 @@
+{
+  "requestId": "auth-1",
+  "nasId": "nas-1",
+  "stationId": "02:00:00:00:00:01",
+  "login": "user-1",
+  "passwordBase64": "IGEg5a+G56K8IA==",
+  "eapMethod": "ttls",
+  "innerMethod": "pap"
+}

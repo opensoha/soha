@@ -1,0 +1,10 @@
+{
+  "outpostId": "edge-a",
+  "owner": "soha",
+  "generation": 1,
+  "desiredReplicas": 1,
+  "phase": "ready",
+  "capabilities": {
+    "supportsScale": true
+  }
+}

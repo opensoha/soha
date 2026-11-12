@@ -1,7 +1,7 @@
 {
   "schemaVersion": "authorization.opensoha.io/v1",
   "catalogVersion": "2.0.0",
-  "contentHash": "sha256:81015cb50e6b648854ebda71435910439e55c812400b080e2ad3dfe1241069c9",
+  "contentHash": "sha256:132db706644d454f3706998f29f1ca9d7de4fece9a7adaeb00acc6597386104a",
   "permissions": [
     {
       "key": "access.directory.create",
@@ -5372,6 +5372,54 @@
       "resource": "mihomo_profiles",
       "action": "view",
       "displayName": "查看 mihomo 代理配置",
+      "riskLevel": "read",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.nas_bindings.create",
+      "domain": "network_access",
+      "resource": "nas_bindings",
+      "action": "create",
+      "displayName": "创建站点范围托管 NAS/RADIUS 服务",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.nas_bindings.update",
+      "domain": "network_access",
+      "resource": "nas_bindings",
+      "action": "update",
+      "displayName": "修改站点范围托管 NAS/RADIUS 服务",
+      "riskLevel": "mutate",
+      "scopeKinds": [
+        "tenant",
+        "workspace",
+        "resource"
+      ],
+      "approvalPolicy": "never",
+      "status": "active",
+      "assignable": true
+    },
+    {
+      "key": "network_access.nas_bindings.view",
+      "domain": "network_access",
+      "resource": "nas_bindings",
+      "action": "view",
+      "displayName": "查看站点范围托管 NAS/RADIUS 服务",
       "riskLevel": "read",
       "scopeKinds": [
         "tenant",

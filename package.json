@@ -112,6 +112,9 @@
     "./runner/docker-runtime-read.schema.json": "./runner/docker-runtime-read.schema.json",
     "./runner/docker-runtime-read-result.schema.json": "./runner/docker-runtime-read-result.schema.json",
     "./endpointcontrol/protocol.schema.json": "./endpointcontrol/protocol.schema.json",
+    "./network/proxy-adapter.schema.json": "./network/proxy-adapter.schema.json",
+    "./network/radius-password-verifier.schema.json": "./network/radius-password-verifier.schema.json",
+    "./network/radius-runtime.schema.json": "./network/radius-runtime.schema.json",
     "./agent/dsh-runtime.schema.json": "./agent/dsh-runtime.schema.json"
   },
   "files": [
@@ -146,7 +149,9 @@
     "memory",
     "docker",
     "proxytransport",
-    "endpointcontrol"
+    "endpointcontrol",
+    "proxyadapter",
+    "proxypolicy"
   ],
   "devDependencies": {
     "ajv": "^8.20.0",

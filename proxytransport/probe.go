@@ -21,9 +21,13 @@ func ProbeConnection() net.Conn {
 			return
 		}
 		_ = request.Body.Close()
-		if request.Method != http.MethodGet {
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			return
 		}
+		// Native Mihomo URLTest truncates elapsed time to integral milliseconds
+		// and rejects a successful zero. This fixed floor is health-only
+		// compatibility; this private responder must not supply real RTT data.
+		time.Sleep(2 * time.Millisecond)
 		_, _ = io.WriteString(server, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
 	}()
 	return client

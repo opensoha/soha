@@ -1,0 +1,11 @@
+{
+  "outpostId": "edge-a",
+  "owner": "external",
+  "generation": 0,
+  "desiredReplicas": 0,
+  "phase": "unknown",
+  "capabilities": {
+    "supportsScale": false,
+    "supportsDrain": false
+  }
+}

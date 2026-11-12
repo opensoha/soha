@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "proxy-direct/v1",
+  "runtimeId": "runtime1",
+  "profileId": "profile1",
+  "bundleId": "bundle1",
+  "revision": 1,
+  "sourceRevision": 1,
+  "orgRevision": 0,
+  "activeRevision": 1,
+  "projectionHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "processEpoch": "endpoint-boot1",
+  "expiresAt": "2026-11-08T12:00:00Z",
+  "deliveryMode": "direct_subscription",
+  "upstreamDisclosure": "upstream_parameters",
+  "format": "mihomo_yaml",
+  "content": "proxies:\n  - name: node1\n    type: socks5\n    server: upstream.example.invalid\n    port: 1080\n",
+  "groups": [],
+  "rules": []
+}

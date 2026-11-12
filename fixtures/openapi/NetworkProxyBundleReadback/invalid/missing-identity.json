@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "configurationRevision": 2,
+  "serverHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "processEpoch": "epoch1",
+  "ingressReady": true,
+  "protectionReady": true,
+  "observedAt": "2026-11-08T12:00:00Z"
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "network-runtime/v1alpha1",
+  "messageId": "m-1",
+  "messageType": "nas.authorization.request",
+  "producerId": "nas-runtime-1",
+  "runtimeId": "nas-runtime-1",
+  "runtimeKind": "nas",
+  "occurredAt": "2026-11-08T00:00:00Z",
+  "expiresAt": "2026-11-08T00:00:30Z",
+  "payload": {
+    "requestId": "request-1",
+    "nasId": "nas-1",
+    "subjectId": "user-1",
+    "stationId": "other-device",
+    "authenticationMethod": "eap-ttls-pap",
+    "authenticationReceipt": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

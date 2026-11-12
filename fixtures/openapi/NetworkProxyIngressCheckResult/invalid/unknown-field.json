@@ -1,0 +1,10 @@
+{
+  "allowed": false,
+  "reasonCode": "credential_revoked",
+  "bundleId": "b1",
+  "revision": 1,
+  "nodeId": "n1",
+  "credentialEpoch": 1,
+  "expiresAt": "2026-11-08T12:00:00Z",
+  "upstream": "https://secret.example.invalid"
+}
