@@ -17,6 +17,7 @@ import (
 	accessrepo "github.com/opensoha/soha/internal/repository/networkaccess"
 	pubrepo "github.com/opensoha/soha/internal/repository/proxypublication"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -41,11 +42,12 @@ func (f *publicationPG) profileBindingScenario(t *testing.T) {
 	originalID := saved.ID
 	input.Name = "Updated bound profile"
 	publicationResponse(t, f.request(t, "PUT", "/profiles/"+saved.ID, input, false), 200, &saved)
+	expectedRecord := f.profileBindingRecord(t, originalID)
 	assertUnchanged := func() {
 		t.Helper()
 		var name string
 		pgRequire(t, f.db.Raw("SELECT name FROM network_mihomo_profiles WHERE id=?", originalID).Scan(&name).Error)
-		if name != input.Name {
+		if name != input.Name || f.profileBindingRecord(t, originalID) != expectedRecord {
 			t.Fatal("invalid profile mutation persisted")
 		}
 	}
@@ -73,22 +75,68 @@ func (f *publicationPG) profileBindingScenario(t *testing.T) {
 	publicationResponse(t, f.request(t, "PUT", "/profiles/"+originalID, input, false), 403, nil)
 	assertUnchanged()
 	f.sql(t, "UPDATE network_access_devices SET owner_user_id=? WHERE id='px-device'", f.user)
-	raw, _ := json.Marshal(input)
-	req := httptest.NewRequest("PUT", "/profiles/"+originalID, bytes.NewReader(raw))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Test-Role", "profiles-only")
-	w := httptest.NewRecorder()
-	f.router.ServeHTTP(w, req)
-	if w.Code != 403 {
-		t.Fatal("profile-only operator bypassed instance permission")
-	}
-	assertUnchanged()
+	input, expectedRecord = f.profileOnlyBindingScenario(t, originalID, input)
 	// Temporarily mark this same real record non-active; restore only fixture state.
 	f.sql(t, `UPDATE network_proxy_bundles SET record=jsonb_set(record,'{Public,state}','"prepare"') WHERE bundle_id='mapped'`)
 	publicationResponse(t, f.request(t, "PUT", "/profiles/"+originalID, input, false), 403, nil)
 	assertUnchanged()
 	f.sql(t, `UPDATE network_proxy_bundles SET record=jsonb_set(record,'{Public,state}','"activated"') WHERE bundle_id='mapped'`)
 	f.sql(t, "DELETE FROM network_mihomo_profiles WHERE id=?", originalID)
+}
+func (f *publicationPG) profileBindingRecord(t *testing.T, id string) string {
+	t.Helper()
+	var record string
+	pgRequire(t, f.db.Raw("SELECT to_jsonb(p)::text FROM network_mihomo_profiles p WHERE id=?", id).Scan(&record).Error)
+	if record == "" {
+		t.Fatal("profile persistence record missing")
+	}
+	return record
+}
+func (f *publicationPG) profilesOnlyRequest(t *testing.T, method, path string, input any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(input)
+	pgRequire(t, err)
+	req := httptest.NewRequest(method, path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Test-Role", "profiles-only")
+	w := httptest.NewRecorder()
+	f.router.ServeHTTP(w, req)
+	return append([]byte(strconv.Itoa(w.Code)+"\n"), w.Body.Bytes()...)
+}
+func (f *publicationPG) profileOnlyBindingScenario(t *testing.T, id string, input api.NetworkMihomoProfileInput) (api.NetworkMihomoProfileInput, string) {
+	t.Helper()
+	publicationResponse(t, f.profilesOnlyRequest(t, "GET", "/instances/px-master/sources/source", nil), 403, nil)
+	profiles := accessrepo.New(f.db)
+	before, err := profiles.GetMihomoProfile(f.ctx, id)
+	pgRequire(t, err)
+	input.Name = "Profile-only retained edit"
+	var saved accessdomain.MihomoProfile
+	publicationResponse(t, f.profilesOnlyRequest(t, "PUT", "/profiles/"+id, input), 200, &saved)
+	after, err := profiles.GetMihomoProfile(f.ctx, id)
+	pgRequire(t, err)
+	before.Name, before.Revision, before.UpdatedAt = input.Name, before.Revision+1, after.UpdatedAt
+	if !reflect.DeepEqual(before, after) || saved.ID != id || saved.Name != input.Name || saved.Revision != after.Revision {
+		t.Fatal("retained edit changed the binding or failed to persist the ordinary field")
+	}
+	expectedRecord := f.profileBindingRecord(t, id)
+	// A real direct target uses the same source/recipient without replacing the
+	// mapped member desired/readback state needed by subsequent scenarios.
+	target := f.prepare(t, "profile-rebind-target", "direct_subscription")
+	publicationResponse(t, f.request(t, "POST", "/instances/px-master/bundles/"+target.BundleID+"/activate", api.NetworkProxyBundleActivateInput{ExpectedRevision: target.Revision, RequestID: "profile-rebind-activate"}, false), 202, &target)
+	if target.BundleID == input.BundleID || target.State != "activated" || target.ActiveRevision != target.Revision {
+		t.Fatal("rebind target is not a distinct real activated bundle")
+	}
+	rebind := input
+	rebind.Name = "Denied rebind must not persist"
+	rebind.BundleID, rebind.DeliveryMode = target.BundleID, target.DeliveryMode
+	rebind.SourceRevision, rebind.OrgRevision = target.SourceRevision, target.OrgRevision
+	publicationResponse(t, f.profilesOnlyRequest(t, "PUT", "/profiles/"+id, rebind), 403, nil)
+	if f.profileBindingRecord(t, id) != expectedRecord {
+		t.Fatal("denied rebind changed the persisted profile or revision")
+	}
+	// This unbound role-check target must not enter the later committed-race seed.
+	f.sql(t, "DELETE FROM network_proxy_bundles WHERE instance_id='px-master' AND bundle_id=?", target.BundleID)
+	return input, expectedRecord
 }
 func (f *publicationPG) sourceSecurityScenario(t *testing.T) {
 	var before, after api.NetworkProxyEmployeeProjection
