@@ -13,7 +13,7 @@ require (
 	github.com/hashicorp/yamux v0.1.2
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
-	github.com/opensoha/soha-contracts v0.1.30-0.20261110173546-4aef3ea31f6a
+	github.com/opensoha/soha-contracts v0.1.30-0.20261112071503-e0b9d2f86a68
 	github.com/spf13/viper v1.21.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.57.0
