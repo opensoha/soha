@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: soha-outpost
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soha-outpost-config
+data:
+  agent.config.yaml: |
+    app:
+      name: soha-outpost
+      env: production
+    http:
+      addr: :18080
+      base_path: /api/v1
+      read_timeout: 15s
+      write_timeout: 15s
+    auth:
+      bearer_token_file: /var/run/secrets/soha/agent-token
+    control_plane:
+      enabled: true
+      base_url: https://soha.example.com
+      bearer_token_file: /var/run/secrets/soha/control-plane-token
+      outpost:
+        enabled: true
+        agent_id: kubernetes-outpost
+        protocol_version: v1
+        trust_key_id: replace-with-key-id
+        trust_public_key: replace-with-base64-ed25519-public-key
+        poll_interval: 5s
+        heartbeat_interval: 15s
+    kubernetes:
+      enabled: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soha-outpost
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: soha-outpost
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: soha-outpost
+    spec:
+      serviceAccountName: soha-outpost
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: outpost
+          image: ghcr.io/opensoha/soha-agent:v0.1.12
+          args: []
+          ports:
+            - name: http
+              containerPort: 18080
+          env:
+            - name: SOHA_AGENT_CONFIG_FILE
+              value: /etc/soha/agent.config.yaml
+            - name: SOHA_AGENT_CONTROL_PLANE_OUTPOST_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: SOHA_AGENT_CONTROL_PLANE_OUTPOST_STATE_DIR
+              value: /var/lib/soha-outpost/instances/$(SOHA_AGENT_CONTROL_PLANE_OUTPOST_INSTANCE_ID)/.soha/outpost
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/soha-outpost
+            - name: config
+              mountPath: /etc/soha
+              readOnly: true
+            - name: secrets
+              mountPath: /var/run/secrets/soha
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: soha-outpost-state
+        - name: config
+          configMap:
+            name: soha-outpost-config
+        - name: secrets
+          secret:
+            secretName: soha-outpost-secrets
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: soha-outpost
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: soha-outpost
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: soha-outpost
+spec:
+  selector:
+    app.kubernetes.io/name: soha-outpost
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

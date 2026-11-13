@@ -1,0 +1,201 @@
+package resource
+
+import (
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractsresource "github.com/opensoha/soha-contracts/resource"
+)
+
+const (
+	PodLogsMaxContentBytes = contractsresource.PodLogsMaxContentBytes
+	PodExecMaxOutputBytes  = contractsresource.PodExecMaxOutputBytes
+	StorageRelationLimit   = contractsresource.StorageRelationLimit
+)
+
+type (
+	CRDResourceDefinition     = contractsresource.CRDResourceDefinition
+	CustomResourceYAMLRequest = contractsresource.CustomResourceYAMLRequest
+	NamespaceView             = contractsresource.NamespaceView
+	NamespaceUpsertInput      = contractsresource.NamespaceUpsertInput
+	NodeDrainInput            = contractsresource.NodeDrainInput
+	ConfigReferenceView       = sohaapi.KubernetesConfigReference
+
+	PodView                       = contractsresource.PodView
+	PodContainerStatusView        = contractsresource.PodContainerStatusView
+	PodDetailView                 = contractsresource.PodDetailView
+	PodLogsView                   = contractsresource.PodLogsView
+	PodExecView                   = contractsresource.PodExecView
+	PodVolumeMountView            = contractsresource.PodVolumeMountView
+	PodVolumeView                 = contractsresource.PodVolumeView
+	PodRelatedResourceView        = contractsresource.PodRelatedResourceView
+	WorkloadOverviewNamespaceView = contractsresource.WorkloadOverviewNamespaceView
+	WorkloadOverviewPodView       = contractsresource.WorkloadOverviewPodView
+	WorkloadOverviewView          = contractsresource.WorkloadOverviewView
+	WorkloadConditionView         = contractsresource.WorkloadConditionView
+	WorkloadContainerView         = contractsresource.WorkloadContainerView
+
+	ResourceQuantityView      = contractsresource.ResourceQuantityView
+	ResourcePercentageView    = contractsresource.ResourcePercentageView
+	ResourceMetricsView       = contractsresource.ResourceMetricsView
+	ResourceYAMLView          = contractsresource.ResourceYAMLView
+	ResourceScopeMode         = contractsresource.ResourceScopeMode
+	ResourceRef               = contractsresource.ResourceRef
+	ResourceStreamEvent       = contractsresource.ResourceStreamEvent
+	ResourceGraphNode         = contractsresource.ResourceGraphNode
+	ResourceGraphEdge         = contractsresource.ResourceGraphEdge
+	ResourceEvidence          = contractsresource.ResourceEvidence
+	ResourceGraph             = contractsresource.ResourceGraph
+	ManagedFieldOwner         = contractsresource.ManagedFieldOwner
+	FieldConflict             = contractsresource.FieldConflict
+	ResourceUpdateAnalysis    = contractsresource.ResourceUpdateAnalysis
+	SecuritySeverityCounts    = contractsresource.SecuritySeverityCounts
+	SecurityFinding           = contractsresource.SecurityFinding
+	SecurityPosture           = contractsresource.SecurityPosture
+	AccessReviewSubject       = contractsresource.AccessReviewSubject
+	AccessReviewCheck         = contractsresource.AccessReviewCheck
+	SubjectAccessReviewInput  = contractsresource.SubjectAccessReviewInput
+	AccessReviewDecision      = contractsresource.AccessReviewDecision
+	SubjectAccessReviewResult = contractsresource.SubjectAccessReviewResult
+
+	MetricPointView  = contractsresource.MetricPointView
+	MetricSeriesView = contractsresource.MetricSeriesView
+	PodMetricsView   = contractsresource.PodMetricsView
+
+	DeploymentView                  = contractsresource.DeploymentView
+	DeploymentDetailView            = contractsresource.DeploymentDetailView
+	DeploymentRolloutStatusView     = contractsresource.DeploymentRolloutStatusView
+	DeploymentRollbackView          = contractsresource.DeploymentRollbackView
+	RolloutHistoryView              = contractsresource.RolloutHistoryView
+	StatefulSetView                 = contractsresource.StatefulSetView
+	StatefulSetDetailView           = contractsresource.StatefulSetDetailView
+	DaemonSetView                   = contractsresource.DaemonSetView
+	DaemonSetDetailView             = contractsresource.DaemonSetDetailView
+	JobView                         = contractsresource.JobView
+	JobDetailView                   = contractsresource.JobDetailView
+	CronJobView                     = contractsresource.CronJobView
+	CronJobDetailView               = contractsresource.CronJobDetailView
+	ReplicaSetView                  = contractsresource.ReplicaSetView
+	ReplicaSetDetailView            = contractsresource.ReplicaSetDetailView
+	ReplicationControllerView       = contractsresource.ReplicationControllerView
+	ReplicationControllerDetailView = contractsresource.ReplicationControllerDetailView
+	WorkloadRelationView            = contractsresource.WorkloadRelationView
+
+	ServicePortView              = contractsresource.ServicePortView
+	ServiceView                  = contractsresource.ServiceView
+	ServiceDetailView            = contractsresource.ServiceDetailView
+	ServiceEndpointView          = contractsresource.ServiceEndpointView
+	IngressView                  = contractsresource.IngressView
+	IngressDetailView            = contractsresource.IngressDetailView
+	IngressRouteView             = contractsresource.IngressRouteView
+	IngressBackendView           = contractsresource.IngressBackendView
+	NetworkRelatedPodView        = contractsresource.NetworkRelatedPodView
+	GatewayView                  = contractsresource.GatewayView
+	GatewayDetailView            = contractsresource.GatewayDetailView
+	GatewayListenerView          = contractsresource.GatewayListenerView
+	GatewayRouteReferenceView    = contractsresource.GatewayRouteReferenceView
+	GatewayRouteParentStatusView = contractsresource.GatewayRouteParentStatusView
+	GatewayClassView             = contractsresource.GatewayClassView
+	GatewayClassDetailView       = contractsresource.GatewayClassDetailView
+	HTTPRouteView                = contractsresource.HTTPRouteView
+	HTTPRouteDetailView          = contractsresource.HTTPRouteDetailView
+	GatewayRouteRuleView         = contractsresource.GatewayRouteRuleView
+	GatewayRouteBackendView      = contractsresource.GatewayRouteBackendView
+	BackendTLSPolicyView         = contractsresource.BackendTLSPolicyView
+	BackendTLSPolicyDetailView   = contractsresource.BackendTLSPolicyDetailView
+	GRPCRouteView                = contractsresource.GRPCRouteView
+	GRPCRouteDetailView          = contractsresource.GRPCRouteDetailView
+	ReferenceGrantView           = contractsresource.ReferenceGrantView
+	ReferenceGrantDetailView     = contractsresource.ReferenceGrantDetailView
+	ReferenceGrantFromView       = contractsresource.ReferenceGrantFromView
+	ReferenceGrantToView         = contractsresource.ReferenceGrantToView
+	EndpointSliceView            = contractsresource.EndpointSliceView
+	EndpointSliceDetailView      = contractsresource.EndpointSliceDetailView
+	NetworkPolicyView            = contractsresource.NetworkPolicyView
+	NetworkPolicyDetailView      = contractsresource.NetworkPolicyDetailView
+	NetworkPolicyPeerView        = contractsresource.NetworkPolicyPeerView
+	NetworkPolicyPortView        = contractsresource.NetworkPolicyPortView
+	NetworkPolicyRuleView        = contractsresource.NetworkPolicyRuleView
+	IngressClassView             = contractsresource.IngressClassView
+	IngressClassDetailView       = contractsresource.IngressClassDetailView
+	NetworkTopologyView          = contractsresource.NetworkTopologyView
+	NetworkTopologyNodeView      = contractsresource.NetworkTopologyNodeView
+	NetworkTopologyTraceView     = contractsresource.NetworkTopologyTraceView
+	NetworkTopologySummaryView   = contractsresource.NetworkTopologySummaryView
+
+	NodeView                = contractsresource.NodeView
+	NodePodView             = contractsresource.NodePodView
+	NodeDetailView          = contractsresource.NodeDetailView
+	NodeResourceSummaryView = contractsresource.NodeResourceSummaryView
+	NodeTaintView           = contractsresource.NodeTaintView
+	NodeUpdateInput         = contractsresource.NodeUpdateInput
+	ClusterEventView        = contractsresource.ClusterEventView
+
+	PersistentVolumeClaimView       = contractsresource.PersistentVolumeClaimView
+	PersistentVolumeView            = contractsresource.PersistentVolumeView
+	StorageClassView                = contractsresource.StorageClassView
+	StoragePodReferenceView         = contractsresource.StoragePodReferenceView
+	PersistentVolumeClaimDetailView = contractsresource.PersistentVolumeClaimDetailView
+	PersistentVolumeDetailView      = contractsresource.PersistentVolumeDetailView
+	StorageClassDetailView          = contractsresource.StorageClassDetailView
+
+	CRDView                                 = contractsresource.CRDView
+	CustomResourceView                      = contractsresource.CustomResourceView
+	ConfigMapView                           = contractsresource.ConfigMapView
+	ConfigMapDetailView                     = contractsresource.ConfigMapDetailView
+	SecretView                              = contractsresource.SecretView
+	SecretDetailView                        = contractsresource.SecretDetailView
+	SecretCertificateView                   = contractsresource.SecretCertificateView
+	ServiceAccountView                      = contractsresource.ServiceAccountView
+	ServiceAccountDetailView                = contractsresource.ServiceAccountDetailView
+	RoleView                                = contractsresource.RoleView
+	RoleDetailView                          = contractsresource.RoleDetailView
+	RoleBindingView                         = contractsresource.RoleBindingView
+	RoleBindingDetailView                   = contractsresource.RoleBindingDetailView
+	ClusterRoleView                         = contractsresource.ClusterRoleView
+	ClusterRoleDetailView                   = contractsresource.ClusterRoleDetailView
+	ClusterRoleBindingView                  = contractsresource.ClusterRoleBindingView
+	ClusterRoleBindingDetailView            = contractsresource.ClusterRoleBindingDetailView
+	MutatingWebhookConfigurationView        = contractsresource.MutatingWebhookConfigurationView
+	ValidatingWebhookConfigurationView      = contractsresource.ValidatingWebhookConfigurationView
+	AdmissionWebhookRuleView                = contractsresource.AdmissionWebhookRuleView
+	AdmissionWebhookView                    = contractsresource.AdmissionWebhookView
+	AdmissionWebhookConfigurationDetailView = contractsresource.AdmissionWebhookConfigurationDetailView
+	ResourceQuotaView                       = contractsresource.ResourceQuotaView
+	ResourceQuotaDetailView                 = contractsresource.ResourceQuotaDetailView
+	LimitRangeView                          = contractsresource.LimitRangeView
+	LimitRangeRuleView                      = contractsresource.LimitRangeRuleView
+	LimitRangeDetailView                    = contractsresource.LimitRangeDetailView
+	LeaseView                               = contractsresource.LeaseView
+	HorizontalPodAutoscalerView             = contractsresource.HorizontalPodAutoscalerView
+	HorizontalPodAutoscalerMetricView       = contractsresource.HorizontalPodAutoscalerMetricView
+	HorizontalPodAutoscalerDetailView       = contractsresource.HorizontalPodAutoscalerDetailView
+	PodDisruptionBudgetView                 = contractsresource.PodDisruptionBudgetView
+	PodDisruptionBudgetDetailView           = contractsresource.PodDisruptionBudgetDetailView
+	PriorityClassView                       = contractsresource.PriorityClassView
+	RuntimeClassView                        = contractsresource.RuntimeClassView
+
+	HelmReleaseView              = contractsresource.HelmReleaseView
+	HelmReleaseDetailView        = contractsresource.HelmReleaseDetailView
+	HelmReleaseHistoryView       = contractsresource.HelmReleaseHistoryView
+	HelmReleaseManifestView      = contractsresource.HelmReleaseManifestView
+	HelmReleaseRollbackInput     = contractsresource.HelmReleaseRollbackInput
+	HelmValuesView               = contractsresource.HelmValuesView
+	HelmChartRepositoryView      = contractsresource.HelmChartRepositoryView
+	HelmChartMaintainerView      = contractsresource.HelmChartMaintainerView
+	HelmChartView                = contractsresource.HelmChartView
+	HelmChartLinkView            = contractsresource.HelmChartLinkView
+	HelmChartVersionView         = contractsresource.HelmChartVersionView
+	HelmChartDetailView          = contractsresource.HelmChartDetailView
+	HelmChartValuesTemplateView  = contractsresource.HelmChartValuesTemplateView
+	HelmChartInstallInput        = contractsresource.HelmChartInstallInput
+	HelmChartInstallResourceView = contractsresource.HelmChartInstallResourceView
+	HelmChartInstallResult       = contractsresource.HelmChartInstallResult
+	HelmChartCatalogView         = contractsresource.HelmChartCatalogView
+
+	PortForwardSessionView   = contractsresource.PortForwardSessionView
+	PortForwardRegisterInput = contractsresource.PortForwardRegisterInput
+)
+
+const (
+	ResourceScopeModeCluster   = contractsresource.ResourceScopeModeCluster
+	ResourceScopeModeNamespace = contractsresource.ResourceScopeModeNamespace
+)

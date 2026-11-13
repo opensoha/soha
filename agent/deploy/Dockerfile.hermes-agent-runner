@@ -1,0 +1,46 @@
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS soha-agent-build
+ARG TARGETOS=linux
+ARG TARGETARCH
+ARG GOPROXY=https://proxy.golang.org,direct
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
+ENV GOPROXY=$GOPROXY GOWORK=off
+WORKDIR /src
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+COPY go.mod go.sum ./soha-agent/
+RUN for attempt in 1 2 3; do \
+      (cd soha-agent && go mod download) && exit 0; \
+      echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
+      sleep 2; \
+    done; \
+    exit 1
+COPY . ./soha-agent
+ARG GOMAXPROCS=4
+ENV GOMAXPROCS=$GOMAXPROCS
+RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
+    cd soha-agent && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=${VERSION} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=${COMMIT} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=${DATE}" -o /out/soha-agent ./cmd/agent
+
+FROM nousresearch/hermes-agent:v2026.6.5@sha256:9ad3b04ec916ea2c2da22358fd43b024c788d74073210695af88bfc2e63869b4
+USER root
+WORKDIR /app
+COPY --from=soha-agent-build /out/soha-agent /app/soha-agent
+COPY configs/agent.config.yaml /app/configs/agent.config.yaml
+RUN chmod 0755 /app/soha-agent \
+    && mkdir -p /app/configs /var/lib/soha-agent-runtime
+
+ENV SOHA_AGENT_CONFIG_FILE=/app/configs/agent.config.yaml
+ENV SOHA_AGENT_CONTROL_PLANE_ENABLED=true
+ENV SOHA_AGENT_CONTROL_PLANE_BASE_URL=http://soha:8080
+ENV SOHA_AGENT_CONTROL_PLANE_AGENT_ID=hermes-agent-runner
+ENV SOHA_AGENT_CONTROL_PLANE_PROVIDER_KINDS=agent_runtime_only
+ENV SOHA_AGENT_CONTROL_PLANE_DOCKER_ENABLED=false
+ENV SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_ENABLED=true
+ENV SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_WORKER_ID=hermes-agent-runner
+ENV SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_HERMES_COMMAND=hermes
+ENV SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_WORKSPACE_ROOT=/var/lib/soha-agent-runtime
+ENV SOHA_AGENT_KUBERNETES_ENABLED=false
+
+ENTRYPOINT ["/app/soha-agent"]

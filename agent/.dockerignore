@@ -1,0 +1,9 @@
+.git
+.claude
+.cache
+bin
+tmp
+*.log
+go.work
+go.work.sum
+soha-contracts
