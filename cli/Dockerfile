@@ -13,7 +13,6 @@ COPY contracts/go.mod contracts/go.sum ./contracts/
 COPY cli/go.mod cli/go.sum ./cli/
 COPY agent/go.mod agent/go.sum ./agent/
 WORKDIR /src/cli
-RUN go mod download
 COPY contracts/ /src/contracts/
 COPY cli/ /src/cli/
 RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \

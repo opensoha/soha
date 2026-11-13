@@ -23,6 +23,19 @@ class SourceLayoutTest(unittest.TestCase):
                 self.assertIn("golang:1.27.4", text)
                 owner = "soha-cli/internal/sohacli.commit" if name.startswith("cli/") else "soha-agent/internal/agent/buildinfo.Commit"
                 self.assertIn("github.com/opensoha/" + owner + "=${COMMIT}", text)
+        source_copies = {
+            "deploy/Dockerfile": ("COPY . ./soha", "COPY --from=web-build /src/contracts ./soha/contracts"),
+            "cli/Dockerfile": ("COPY cli/ /src/cli/", "COPY contracts/ /src/contracts/"),
+            "agent/deploy/Dockerfile": ("COPY agent/ /src/agent/", "COPY contracts/ /src/contracts/"),
+            "agent/deploy/Dockerfile.hermes-agent-runner": ("COPY agent/ /src/agent/", "COPY contracts/ /src/contracts/"),
+        }
+        for name, copies in source_copies.items():
+            with self.subTest(source_build=name):
+                text = (ROOT / name).read_text()
+                self.assertNotRegex(text, r"\bgo\s+mod\s+download\b")
+                build = text.index("go build")
+                for source in copies:
+                    self.assertLess(text.index(source), build)
         agent = (ROOT / "agent/deploy/Dockerfile").read_text()
         for target in ("volume-reader-runtime", "buildpacks-runtime", "buildpacks-daemonless-runtime", "agent-runtime"):
             self.assertIn(" AS " + target, agent)

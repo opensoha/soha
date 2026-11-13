@@ -13,12 +13,6 @@ COPY contracts/go.mod contracts/go.sum ./contracts/
 COPY cli/go.mod cli/go.sum ./cli/
 COPY agent/go.mod agent/go.sum ./agent/
 WORKDIR /src/agent
-RUN for attempt in 1 2 3; do \
-      go mod download && exit 0; \
-      echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
-      sleep 2; \
-    done; \
-    exit 1
 COPY contracts/ /src/contracts/
 COPY agent/ /src/agent/
 ARG GOMAXPROCS=4

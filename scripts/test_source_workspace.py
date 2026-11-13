@@ -153,11 +153,12 @@ class GoSourceTest(unittest.TestCase):
         sdk = self.root / "contracts/unpublished"
         sdk.mkdir()
         (sdk / "value.go").write_text("package unpublished\nconst Value = 1\n")
-        for name, directory in self.modules:
+        for index, (name, directory) in enumerate(self.modules):
             if directory == workspace.SDK:
                 continue
             with (directory / "go.mod").open("a") as stream:
-                stream.write("require github.com/opensoha/soha-contracts v0.0.0-20261113000000-deadbeef0123\n")
+                # Each consumer's unpublished declaration must resolve to the local SDK.
+                stream.write(f"require github.com/opensoha/soha-contracts v0.0.0-20261113000000-deadbeef{index:04x}\n")
             (directory / "source.go").write_text('package source\nimport "github.com/opensoha/soha-contracts/unpublished"\nvar Value = unpublished.Value\n')
         env = {**os.environ, "GOWORK": str(self.root / "go.work"), "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
         with patch.dict(os.environ, env):
