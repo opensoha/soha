@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensoha/soha-contracts/resource"
+	"github.com/opensoha/soha/contracts/resource"
 )
 
 const TerminalProtocol = "docker-native-terminal-v1"

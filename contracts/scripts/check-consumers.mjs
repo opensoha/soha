@@ -451,14 +451,28 @@ function contractsTarball(packageDir) {
   return join(packageDir, `opensoha-contracts-${packageVersion()}.tgz`);
 }
 
+function declaredSDKModule(consumerDir) {
+  const manifest = readFileSync(join(consumerDir, "go.mod"), "utf8");
+  const requirements = [...manifest.replace(/\/\/[^\n]*/g, "").matchAll(/^\s*require[ \t]+(?:\(([^)]*)\)|([^\n]+))/gm)]
+    .flatMap((match) => (match[1] ?? match[2]).split("\n"));
+  const paths = requirements.map((line) => line.trim().split(/\s+/))
+    .filter(([name, version, extra]) => ["github.com/opensoha/soha-contracts", "github.com/opensoha/soha/contracts"].includes(name) && version?.startsWith("v") && !extra)
+    .map(([name]) => name);
+  if (paths.length !== 1) throw new Error("consumer must declare exactly one supported contracts module");
+  return paths[0];
+}
+
 async function goWorkspaceEnv(consumerDir) {
   consumerDir = realpathSync(consumerDir);
+  const modulePath = declaredSDKModule(consumerDir);
+  const sourceModule = readFileSync(join(contractsRoot, "go.mod"), "utf8").match(/^module (\S+)$/m)?.[1];
+  if (modulePath !== sourceModule) throw new Error("candidate SDK module identity differs from consumer; migrate imports/pin or use the matching legacy SDK checkout");
   const workDir = await mkdtemp(join(tmpdir(), "opensoha-consumer-work-"));
   const goWork = join(workDir, "go.work");
   const env = { ...process.env, GOWORK: goWork };
   try {
     run("go", ["work", "init", consumerDir], workDir, { ...process.env, GOWORK: "off" });
-    run("go", ["work", "edit", `-replace=github.com/opensoha/soha-contracts=${contractsRoot}`], workDir, env);
+    run("go", ["work", "edit", `-replace=${modulePath}=${contractsRoot}`], workDir, env);
     return { env, directory: workDir };
   } catch (error) {
     if (process.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS !== "1") await rm(workDir, { recursive: true, force: true });
@@ -482,11 +496,12 @@ function run(command, args, cwd, env) {
 
 
 function verifyDeclaredGoSDK(dir, env) {
-  const result = spawnSync("go", ["list", "-m", "-json", "github.com/opensoha/soha-contracts"], { cwd: dir, env, encoding: "utf8" });
+  const modulePath = declaredSDKModule(dir);
+  const result = spawnSync("go", ["list", "-m", "-json", modulePath], { cwd: dir, env, encoding: "utf8" });
   if (result.status !== 0) throw new Error(`cannot resolve declared contracts module for ${basename(dir)}: ${result.stderr ?? result.error?.message ?? ""}`);
   const module = JSON.parse(result.stdout);
   if (module.Replace || !module.Version) throw new Error(`declared contracts module must have a version and checksum without replacement: ${basename(dir)}`);
-  const downloaded = spawnSync("go", ["mod", "download", "-json", "github.com/opensoha/soha-contracts"], { cwd: dir, env, encoding: "utf8" });
+  const downloaded = spawnSync("go", ["mod", "download", "-json", modulePath], { cwd: dir, env, encoding: "utf8" });
   if (downloaded.status !== 0) throw new Error(`cannot download declared contracts module for ${basename(dir)}: ${downloaded.stderr ?? downloaded.error?.message ?? ""}`);
   const resolved = JSON.parse(downloaded.stdout);
   if (!resolved.Sum || resolved.Version !== module.Version || (module.Sum && resolved.Sum !== module.Sum)) throw new Error("declared SDK checksum/version mismatch");

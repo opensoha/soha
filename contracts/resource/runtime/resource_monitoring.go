@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 )

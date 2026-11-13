@@ -1,8 +1,8 @@
-# soha-contracts
+# Soha Contracts
 
 Shared public contracts for OpenSoha.
 
-This repository is the source of truth for schemas consumed across Soha core,
+The `contracts/` workspace in `opensoha/soha` is the source of truth for schemas consumed across Soha core,
 Soha CLI, Soha Agent, Soha Web, Soha App, official skills, connectors, and Soha
 Cloud services. Product repositories should depend on generated SDKs, HTTP
 APIs, JSON Schemas, or released artifacts from this repository instead of
@@ -64,8 +64,8 @@ personal environments.
 
 Current SDK entry points:
 
-- Go: `github.com/opensoha/soha-contracts/gen/go/sohaapi`
-- Go OpenAPI artifact: `github.com/opensoha/soha-contracts/openapi`
+- Go: `github.com/opensoha/soha/contracts/gen/go/sohaapi`
+- Go OpenAPI artifact: `github.com/opensoha/soha/contracts/openapi`
 - TypeScript: `@opensoha/contracts/gen/ts/sohaapi`
 - npm OpenAPI artifacts: `@opensoha/contracts/openapi/soha-api.yaml` and
   `@opensoha/contracts/openapi/soha-api.json`
@@ -308,48 +308,43 @@ properties, add required request properties, or remove enum values.
 
 ## Release Shape
 
-The stable TypeScript package name is `@opensoha/contracts`, and the stable Go
-module path is `github.com/opensoha/soha-contracts/gen/go/sohaapi`.
+The TypeScript package name remains `@opensoha/contracts`. The Go module is
+`github.com/opensoha/soha/contracts`, with the client in `gen/go/sohaapi`.
+Source metadata identifies `https://github.com/opensoha/soha`, directory
+`contracts`. SDK release tags use `contracts/v<package.json version>`; Root
+`v*` tags belong to Core and are ignored by the SDK version-sync gate.
 
-Release tags must be `v<package.json version>`. `npm test` runs
-`npm run check:version-sync`, which verifies `package.json`,
-`package-lock.json`, OpenAPI `info.version`, the Go module path, the Go client
-user agent version, and the GitHub release tag when the workflow runs from a
-tag.
+The current `0.1.29` metadata is a source candidate, not a published release of
+the new Go namespace. Changing the Go module identity requires an intentional
+`0.x` minor release in B5, with coordinated consumer migration and public artifact
+verification. Historical released consumers retain their old module path until
+that migration. No `0.1.x` patch publication is implied by this source move.
 
-Release artifacts are prepared and verified with:
+From the Root workspace, prepare and verify local artifacts with:
 
 ```sh
-npm run release:artifacts
-npm run release:verify -- dist/release/opensoha-contracts-0.1.0.tgz
+npm run check:version-sync --workspace contracts
+npm run release:artifacts --workspace contracts
+npm run release:verify --workspace contracts -- dist/release/opensoha-contracts-0.1.29.tgz
 ```
 
-The command writes `dist/release/<npm-tarball>.tgz`, a matching
-`.sha256` checksum file, `dist/release/release-manifest.json`, a CycloneDX SBOM
-with its checksum, a provenance policy manifest with its checksum, and, when
-provided by CI, `dist/release/consumer-matrix.json`. `release:verify` checks
-the tarball checksum, manifest metadata, packed `package.json`, every exported
-package entrypoint, both OpenAPI artifact hashes, the SBOM identity and
-checksum, the provenance policy and checksum, and the consumer matrix summary.
+The verify argument is relative to `contracts/`. Artifact preparation writes an npm tarball, checksums, a release
+manifest, a CycloneDX SBOM and an expected provenance policy. Verification checks
+the tarball, package repository/directory, Go module identity, exported entries,
+OpenAPI hashes, SBOM and policy checksums, and any supplied consumer matrix.
+These checks prove local source/package consistency only.
 
-The tag workflow runs `npm test`, `npm pack --dry-run`, and the strict consumer
-matrix, then uses `NPM_TOKEN` to stage the npm tarball with provenance. A
-maintainer approves the stage on npmjs.com with 2FA. Dispatch the release
-workflow with the same tag and `publish_mode=recover` after approval. Recovery
-verifies the public npm package and Go module tag, attaches the release
-artifacts to GitHub, and verifies the downloaded tarball.
+The expected SDK publisher is Root `.github/workflows/contracts-release.yml`,
+with the `contracts/v*` tag route. B5 must create and enable that publisher;
+the historical `contracts/.github/workflows/release.yml` is retained but inactive,
+and Root `.github/workflows/release.yml` belongs to Core. A local provenance
+policy neither attests the package nor proves that this publisher exists.
+Actual registry provenance, source revision, npm availability and Go proxy/tag
+availability remain separate B5 release qualifications.
 
-The local release manifest records the provenance policy expected from the tag
-workflow. Verify the registry attestation's artifact digest and source revision
-after approval makes the package public.
-
-During private staging, consumers intentionally use sibling repository
-checkouts, `go.work` / `replace` entries, and `file:../soha-contracts` package
-dependencies instead of resolving this repository through anonymous GitHub
-module fetches or npm. After the repository is publicly readable and the npm
-package is published, released consumer modules can switch to a real
-`soha-contracts` version tag and the published npm package without changing SDK
-import paths.
+Internal source development uses the Root npm workspace and `go.work`. External
+consumers must adopt the new namespace through a real version after its public
+release is verified; a local source replacement is not public availability proof.
 
 ## License
 

@@ -1,12 +1,19 @@
 # Compatibility and Versioning
 
-This repository owns the public OpenSoha contract surface. Consumers should
-pin released versions and treat this repository as the first place where public
+The Root `contracts/` workspace owns the public OpenSoha contract surface. Consumers should
+pin released versions and treat this workspace as the first place where public
 API, schema, and SDK behavior changes are proposed.
 
 ## Version Streams
 
-Current stream: `0.1.x`.
+Current source metadata stream: `0.1.x` (`0.1.29` candidate).
+
+The Go source identity is now `github.com/opensoha/soha/contracts` in the
+`opensoha/soha` Root repository, directory `contracts`. This namespace move
+changes Go imports and is an intentional `0.x` minor migration for B5, not an
+optional `0.1.x` patch addition. The retained source version does not establish
+a public release under the new module path. Public HTTP/schema/DTO semantics
+and the existing schema compatibility baseline are unchanged by this move.
 
 - `0.x` releases may still evolve quickly, but compatibility gates must run for
   every change.
@@ -37,12 +44,12 @@ follow the partial HTTP schema. Both full and partial requests use the same endp
 Each release must keep these values aligned:
 
 - `package.json` `version`
-- `package-lock.json` root package version
+- Root `package-lock.json` `packages["contracts"].version`
 - `openapi/soha-api.yaml` `info.version`
 - `gen/go/sohaapi/client.go` default user agent version
-- Git tag `v<version>`
+- SDK Git tag `contracts/v<version>`
 - Go module tag for consumers importing
-  `github.com/opensoha/soha-contracts/gen/go/sohaapi`
+  `github.com/opensoha/soha/contracts/gen/go/sohaapi`
 
 The version sync gate runs with:
 
@@ -52,17 +59,22 @@ npm run check:version-sync
 
 The gate fails when any of the synchronized versions diverge. In GitHub tag
 release workflows it also verifies that the pushed tag is exactly
-`v<package.json version>`.
+`contracts/v<package.json version>`. Core `v*` and other component tags are
+not SDK release tags and do not trigger SDK tag-version comparison.
 
-Release order for `0.1.x`:
+Release order (after the B5 namespace/version decision):
 
-1. Update `package.json`, `package-lock.json`, and OpenAPI `info.version` to
-   the same patch version.
+1. Align `package.json`, Root lock `packages["contracts"]`, OpenAPI versions
+   and the client user agent. The namespace migration requires a `0.x` minor
+   version; do not publish the retained `0.1.29` candidate as a migrated patch.
 2. Regenerate SDKs when OpenAPI changed.
 3. Run `npm test`, `npm pack --dry-run`, `npm run release:artifacts`, and
    the consumer matrix.
-4. Create tag `v<version>`.
-5. Let the release workflow stage the npm package with `NPM_TOKEN`. After a
+4. Create the immutable SDK tag `contracts/v<version>` after acceptance.
+5. B5 must first enable Root `.github/workflows/contracts-release.yml` for
+   `contracts/v*`. Local artifact policy metadata only describes that expected
+   publisher; it is not a signed attestation or registry availability proof.
+   Let that publisher stage the npm package with `NPM_TOKEN`. After a
    maintainer approves the stage with 2FA, dispatch recovery for the same tag.
    The workflow verifies the public npm package and Go tag before attaching
    the tarball, checksums, and release manifest to the GitHub release.

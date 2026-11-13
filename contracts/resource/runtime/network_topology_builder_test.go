@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 func topologyFixture(source, namespace, name, body string) cr.NetworkTopologySourceResult {

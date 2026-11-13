@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensoha/soha-contracts/resource"
+	"github.com/opensoha/soha/contracts/resource"
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

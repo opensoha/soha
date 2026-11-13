@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 // BuildCustomResourceGraph builds the metadata relationships for an observed

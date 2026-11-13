@@ -1,4 +1,4 @@
-module github.com/opensoha/soha-contracts
+module github.com/opensoha/soha/contracts
 
 go 1.27.4
 

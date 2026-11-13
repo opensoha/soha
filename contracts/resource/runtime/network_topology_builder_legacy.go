@@ -1,6 +1,6 @@
 package runtime
 
-import cr "github.com/opensoha/soha-contracts/resource"
+import cr "github.com/opensoha/soha/contracts/resource"
 
 // Legacy traces are a bounded projection of the graph, never a separately inferred topology.
 func (g *topologyGraph) projectLegacy() {

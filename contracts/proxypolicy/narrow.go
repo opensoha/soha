@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"unicode/utf8"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 // NarrowResult contains the effective structural subset and diagnostics for

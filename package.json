@@ -24,7 +24,10 @@
     "undici@>=8 <8.12.2": "^8.12.2",
     "fast-uri": "^3.1.9",
     "playwright": "1.63.0",
-    "playwright-core": "1.63.0"
+    "playwright-core": "1.63.0",
+    "fetch-socks": {
+      "undici": "^7.30.2"
+    }
   },
   "scripts": {
     "check:workspace": "python3 scripts/source-workspace.py check-npm",

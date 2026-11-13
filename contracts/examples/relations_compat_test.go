@@ -1,7 +1,7 @@
 package examples
 
 import (
-	sdk "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sdk "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"testing"
 )
 

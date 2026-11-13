@@ -7,6 +7,11 @@ import { spawnSync } from "node:child_process";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+const modulePath = "github.com/opensoha/soha/contracts";
+const source = { repository: "opensoha/soha", directory: "contracts" };
+const releaseTag = `contracts/v${packageJson.version}`;
+const releaseWorkflow = ".github/workflows/contracts-release.yml";
+verifyPackageSource(packageJson, "package.json");
 const openapiArtifacts = await Promise.all(
   ["openapi/soha-api.yaml", "openapi/soha-api.json"].map(async (path) => {
     const body = await readFile(join(root, path));
@@ -67,8 +72,9 @@ await writeFile(
       schemaVersion: 1,
       packageName: packageJson.name,
       version: packageJson.version,
-      tag: `v${packageJson.version}`,
-      goModule: "github.com/opensoha/soha-contracts",
+      tag: releaseTag,
+      goModule: modulePath,
+      source,
       npmPackage: packageJson.name,
       openapi: {
         version: packageJson.version,
@@ -217,8 +223,11 @@ async function verifyReleaseArtifacts(tarballPath) {
   if (manifest.packageName !== packageJson.name || manifest.npmPackage !== packageJson.name) {
     throw new Error(`${relative(root, manifestPath)} package name does not match package.json`);
   }
-  if (manifest.version !== packageJson.version || manifest.tag !== `v${packageJson.version}`) {
+  if (manifest.version !== packageJson.version || manifest.tag !== releaseTag) {
     throw new Error(`${relative(root, manifestPath)} version/tag does not match package.json`);
+  }
+  if (manifest.goModule !== modulePath || manifest.source?.repository !== source.repository || manifest.source?.directory !== source.directory) {
+    throw new Error(`${relative(root, manifestPath)} SDK source identity does not match the contracts workspace`);
   }
   if (!artifact || artifact.sha256 !== actualSha256 || basename(artifact.name) !== basename(tarballPath)) {
     throw new Error(`${relative(root, manifestPath)} artifact metadata does not match tarball`);
@@ -244,6 +253,11 @@ async function verifyReleaseArtifacts(tarballPath) {
     const packedPackageJson = JSON.parse(await readFile(join(extractDir, "package", "package.json"), "utf8"));
     if (packedPackageJson.name !== packageJson.name || packedPackageJson.version !== packageJson.version) {
       throw new Error(`${relative(root, tarballPath)} packed package.json does not match root package.json`);
+    }
+    verifyPackageSource(packedPackageJson, "packed package.json");
+    const packedGoMod = await readFile(join(extractDir, "package", "go.mod"), "utf8");
+    if (!packedGoMod.startsWith(`module ${modulePath}\n`)) {
+      throw new Error("packed go.mod does not match the SDK module identity");
     }
     for (const requiredExport of Object.values(packageJson.exports ?? {})) {
       const packedPath = join(extractDir, "package", requiredExport.replace(/^\.\//, ""));
@@ -319,6 +333,10 @@ async function verifyProvenancePolicy(manifest, manifestPath, tarballPath) {
     throw new Error(`${relative(root, manifestPath)} must include provenance policy metadata`);
   }
 
+  if (provenance.workflow !== releaseWorkflow) {
+    throw new Error(`${relative(root, manifestPath)} provenance workflow must identify the Root SDK publisher`);
+  }
+
   const policyPath = await resolveManifestAssetPath(provenance.path, tarballPath);
   const policyChecksumPath = await resolveManifestAssetPath(provenance.checksumFile, tarballPath);
   const [policyText, checksumText] = await Promise.all([
@@ -337,11 +355,11 @@ async function verifyProvenancePolicy(manifest, manifestPath, tarballPath) {
   if (policy.schemaVersion !== 1) {
     throw new Error(`${relative(root, policyPath)} schemaVersion must be 1`);
   }
-  if (policy.packageName !== packageJson.name || policy.version !== packageJson.version || policy.tag !== `v${packageJson.version}`) {
+  if (policy.packageName !== packageJson.name || policy.version !== packageJson.version || policy.tag !== releaseTag) {
     throw new Error(`${relative(root, policyPath)} package identity does not match package.json`);
   }
-  if (policy.workflow?.path !== ".github/workflows/release.yml") {
-    throw new Error(`${relative(root, policyPath)} workflow path must be .github/workflows/release.yml`);
+  if (policy.source?.repository !== source.repository || policy.source?.directory !== source.directory || policy.workflow?.path !== releaseWorkflow || policy.workflow?.trigger !== "push tags matching contracts/v*") {
+    throw new Error(`${relative(root, policyPath)} source/workflow must identify the Root SDK publisher`);
   }
   if (policy.githubActions?.permissions?.["id-token"] !== "write") {
     throw new Error(`${relative(root, policyPath)} must require GitHub Actions id-token: write`);
@@ -370,6 +388,7 @@ function run(command, args) {
       npm_config_cache: npmCache,
     },
     encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.status !== 0) {
@@ -382,12 +401,48 @@ function run(command, args) {
 }
 
 function generateSBOM() {
-  const result = run("npm", ["sbom", "--package-lock-only", "--sbom-format", "cyclonedx", "--sbom-type", "library"]);
+  const result = run("npm", ["sbom", "--workspace", packageJson.name, "--package-lock-only", "--sbom-format", "cyclonedx", "--sbom-type", "library"]);
+  let sbom;
   try {
-    return JSON.parse(result.stdout);
+    sbom = JSON.parse(result.stdout);
   } catch (error) {
     throw new Error(`npm sbom did not return JSON output: ${error.message}\n${result.stdout}`);
   }
+  const sdkPurl = `pkg:npm/%40opensoha/contracts@${packageJson.version}`;
+  const candidates = sbom.components?.filter((item) => item.purl?.startsWith("pkg:npm/%40opensoha/contracts@") || item["bom-ref"]?.startsWith(`${packageJson.name}@`)) ?? [];
+  const sdk = candidates[0];
+  const rootRef = sbom.metadata?.component?.["bom-ref"];
+  if (candidates.length !== 1 || sdk.purl !== sdkPurl || sdk.version !== packageJson.version || sdk.name !== "contracts" || sdk["bom-ref"] !== `${packageJson.name}@${packageJson.version}` || typeof rootRef !== "string" || rootRef === sdk["bom-ref"]) {
+    throw new Error("npm SBOM must contain exactly one SDK workspace component at the package identity");
+  }
+  if (!Array.isArray(sbom.dependencies)) throw new Error("npm SBOM dependency graph is missing");
+  const included = new Set();
+  const components = [];
+  const dependencies = [];
+  const pending = [sdk["bom-ref"]];
+  for (let index = 0; index < pending.length; index++) {
+    const ref = pending[index];
+    if (ref === rootRef) throw new Error("SDK SBOM must not depend on the Root synthetic component");
+    if (included.has(ref)) continue;
+    const nodes = sbom.components.filter((item) => item["bom-ref"] === ref);
+    const edges = sbom.dependencies.filter((item) => item.ref === ref);
+    if (!nodes.length || !edges.length) throw new Error(`npm SBOM has missing dependency ${ref}`);
+    const identity = (item) => JSON.stringify({ ...item, properties: (item.properties ?? []).filter((property) => property.name !== "cdx:npm:package:path") });
+    const expectedIdentity = identity(nodes[0]);
+    if (nodes.some((item) => identity(item) !== expectedIdentity)) throw new Error(`npm SBOM has conflicting artifact identity ${ref}`);
+    const properties = new Map();
+    for (const item of nodes) for (const property of item.properties ?? []) properties.set(JSON.stringify(property), property);
+    if (ref !== sdk["bom-ref"]) components.push({ ...nodes[0], properties: [...properties.values()] });
+    const dependsOn = [...new Set(edges.flatMap((item) => item.dependsOn ?? []))];
+    dependencies.push({ ...edges[0], dependsOn });
+    included.add(ref);
+    pending.push(...dependsOn);
+  }
+  // Keep npm's actual SDK dependency graph; its workspace output still includes Root.
+  sbom.metadata.component = sdk;
+  sbom.components = components;
+  sbom.dependencies = dependencies;
+  return sbom;
 }
 
 function buildProvenancePolicy(tarballName) {
@@ -395,10 +450,11 @@ function buildProvenancePolicy(tarballName) {
     schemaVersion: 1,
     packageName: packageJson.name,
     version: packageJson.version,
-    tag: `v${packageJson.version}`,
+    tag: releaseTag,
+    source,
     workflow: {
-      path: ".github/workflows/release.yml",
-      trigger: "push tags matching v*",
+      path: releaseWorkflow,
+      trigger: "push tags matching contracts/v*",
       requiredJobs: ["verify", "consumers", "release"],
     },
     githubActions: {
@@ -420,7 +476,7 @@ function buildProvenancePolicy(tarballName) {
       localArtifactsDoNotProveRemoteAttestation: true,
     },
     localVerification: {
-      command: `npm run release:verify -- dist/release/${tarballName}`,
+      command: `npm run release:verify --workspace contracts -- dist/release/${tarballName}`,
       checks: [
         "tarball checksum",
         "packed package identity",
@@ -432,7 +488,7 @@ function buildProvenancePolicy(tarballName) {
     },
     remoteVerification: {
       npm: `npm view "${packageJson.name}@${packageJson.version}" version dist.tarball dist.integrity --json`,
-      goModule: `go list -m -json "github.com/opensoha/soha-contracts@v${packageJson.version}"`,
+      goModule: `go list -m -json "${modulePath}@v${packageJson.version}"`,
       githubReleaseAssets: "gh release download <tag> and rerun release:verify against downloaded assets",
     },
   };
@@ -462,5 +518,11 @@ async function resolveManifestAssetPath(assetPath, tarballPath) {
     return fromManifest;
   } catch {
     return fromTarballDirectory;
+  }
+}
+
+function verifyPackageSource(metadata, label) {
+  if (metadata.repository?.type !== "git" || metadata.repository?.url !== `https://github.com/${source.repository}` || metadata.repository?.directory !== source.directory) {
+    throw new Error(`${label} repository must identify ${source.repository} ${source.directory}/`);
   }
 }

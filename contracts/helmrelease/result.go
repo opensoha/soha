@@ -3,7 +3,7 @@ package helmrelease
 import (
 	"errors"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 // ValidateCompletedResult binds completion to the frozen plan and native revision.

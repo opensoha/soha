@@ -12,6 +12,7 @@ function fixture(t) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   for (const name of ["soha", "soha-web", "soha-app/frontend"]) mkdirSync(join(root, name), { recursive: true });
   writeFileSync(join(root, "soha", "keep.txt"), "owned fixture\n");
+  writeFileSync(join(root, "soha", "go.mod"), "module fixture\nrequire github.com/opensoha/soha-contracts v0.1.0\n");
   return root;
 }
 function run(root, args, extra = {}, checker = script) {
@@ -336,13 +337,13 @@ function internalFixture(t) {
   };
   const writeJSON = (path, value) => write(path, JSON.stringify(value) + "\n");
   write(".gitignore", "node_modules/\nresult.json\nskills/ran\n");
-  for (const [path, name] of [["", "soha"], ["cli/", "soha-cli"], ["agent/", "soha-agent"]]) {
-    write(path + "go.mod", "module github.com/opensoha/" + name + "\n\ngo 1.27.4\n\nrequire github.com/opensoha/soha-contracts v0.1.29\n");
+  for (const [path, name] of [["", "soha"], ["cli/", "soha/cli"], ["agent/", "soha/agent"]]) {
+    write(path + "go.mod", "module github.com/opensoha/" + name + "\n\ngo 1.27.4\n\nrequire github.com/opensoha/soha/contracts v0.1.29\n");
     write(path + "go.sum", "");
-    write(path + "probe_test.go", 'package source\nimport("testing"; "github.com/opensoha/soha-contracts/b2unpublished")\nfunc TestLocalSDK(t *testing.T) { if b2unpublished.SourceOnly != "B2_SOURCE_ONLY_FIXTURE" { t.Fatal("wrong SDK") } }\n');
+    write(path + "probe_test.go", 'package source\nimport("testing"; "github.com/opensoha/soha/contracts/b2unpublished")\nfunc TestLocalSDK(t *testing.T) { if b2unpublished.SourceOnly != "B2_SOURCE_ONLY_FIXTURE" { t.Fatal("wrong SDK") } }\n');
   }
-  write("go.work", "go 1.27.4\n\nuse (\n .\n ./contracts\n ./cli\n ./agent\n)\n");
-  write("contracts/go.mod", "module github.com/opensoha/soha-contracts\n\ngo 1.27.4\n");
+  write("go.work", "go 1.27.4\n\nuse (\n .\n ./contracts\n ./cli\n ./agent\n)\nreplace github.com/opensoha/soha/contracts v0.1.29 => ./contracts\n");
+  write("contracts/go.mod", "module github.com/opensoha/soha/contracts\n\ngo 1.27.4\n");
   write("contracts/go.sum", "");
   write("contracts/b2unpublished/probe.go", 'package b2unpublished\nconst SourceOnly = "B2_SOURCE_ONLY_FIXTURE"\n');
   const workspacePaths = ["contracts", "web", "connectors", "cli/npm/cli"];
@@ -376,6 +377,7 @@ function internalFixture(t) {
   copyFileSync(script, join(root, "contracts/scripts/check-consumers.mjs"));
   mkdirSync(join(root, "scripts"));
   copyFileSync(resolve(dirname(script), "../../scripts/source-workspace.py"), join(root, "scripts/source-workspace.py"));
+  copyFileSync(resolve(dirname(script), "../../scripts/check-module-boundaries.go"), join(root, "scripts/check-module-boundaries.go"));
   const git = (...args) => {
     const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
@@ -427,7 +429,7 @@ for (const invalid of ["missing-go", "wrong-module", "work-use", "work-replace",
     if (invalid === "missing-go") rmSync(join(f.root, "contracts/go.mod"));
     if (invalid === "wrong-module") f.write("contracts/go.mod", "module invalid.example/wrong\n\ngo 1.27.4\n");
     if (invalid === "work-use") f.write("go.work", "go 1.27.4\nuse .\n");
-    if (invalid === "work-replace") f.write("go.work", 'go 1.27.4\nuse (\n.\n./contracts\n)\nreplace github.com/opensoha/soha-contracts => ./contracts\n');
+    if (invalid === "work-replace") f.write("go.work", 'go 1.27.4\nuse (\n.\n./contracts\n)\nreplace github.com/opensoha/soha/contracts => ./contracts\n');
     if (invalid === "missing-lock") rmSync(join(f.root, "package-lock.json"));
     if (invalid === "child-lock") f.write("web/package-lock.json", "{}\n");
     if (invalid === "missing-link") rmSync(join(f.root, "node_modules/@opensoha/contracts"));
@@ -746,3 +748,30 @@ print(json.dumps({"exitCode": child.returncode, "stdout": child.stdout, "stderr"
     assert.deepEqual(calls.map((args) => args[0]), ["list", "mod", "test"]);
   });
 }
+
+for (const modulePath of ["github.com/opensoha/soha-contracts", "github.com/opensoha/soha/contracts"]) {
+  test(`declared mode resolves its actual ${modulePath} identity`, (t) => {
+    const root = fixture(t);
+    writeFileSync(join(root, "soha", "go.mod"), `module fixture\nrequire ${modulePath} v0.1.0\n`);
+    const result = run(root, ["--declared", "--consumer", "soha"], fakeGo(root, { Version: "v0.1.0", Sum: "h1:unit-only" }));
+    assert.equal(result.status, 0, result.stderr);
+    const calls = readFileSync(join(root, "trace.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+    assert.equal(calls[0].at(-1), modulePath);
+    assert.equal(calls[1].at(-1), modulePath);
+  });
+}
+test("candidate rejects old-module consumer before substituting the new SDK", (t) => {
+  const root = fixture(t);
+  const result = run(root, ["--consumer", "soha"], fakeGo(root, {}));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /candidate SDK module identity differs/);
+  assert.equal(existsSync(join(root, "trace.jsonl")), false);
+});
+
+test("declared module selection ignores exclude blocks", (t) => {
+  const root = fixture(t);
+  const modulePath = "github.com/opensoha/soha/contracts";
+  writeFileSync(join(root, "soha", "go.mod"), `module fixture\nrequire (\n ${modulePath} v0.1.0\n)\nexclude (\n ${modulePath} v0.0.9\n)\n`);
+  const result = run(root, ["--declared", "--consumer", "soha"], fakeGo(root, { Version: "v0.1.0", Sum: "h1:unit-only" }));
+  assert.equal(result.status, 0, result.stderr);
+});

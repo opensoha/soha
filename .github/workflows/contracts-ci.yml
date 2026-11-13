@@ -57,7 +57,7 @@ jobs:
       - run: npm ci
         working-directory: source
       - name: Root workspace SDK version identity tests
-        run: node --test scripts/check-version-sync.checks.mjs
+        run: node --test scripts/check-version-sync.checks.mjs scripts/prepare-release-artifacts.checks.mjs
       - name: Verify staged release workflow
         run: node --test scripts/release-workflow.checks.mjs
       - name: Verify consumer CI independence and candidate selection

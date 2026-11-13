@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 func graphHPAScaleEnrichmentFixture() (cr.ResourceGraph, ResourceGraphEnrichment) {

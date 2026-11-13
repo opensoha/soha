@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	env "github.com/opensoha/soha-contracts/agent/environment"
+	env "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 const RuntimeOperationVersion = "opensoha.dev/personal-guest-runtime/v1"

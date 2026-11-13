@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	env "github.com/opensoha/soha-contracts/agent/environment"
+	env "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 func runtimeFixture(t *testing.T) (RuntimeOperation, time.Time) {

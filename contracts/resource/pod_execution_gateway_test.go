@@ -2,7 +2,7 @@ package resource
 
 import (
 	"encoding/json"
-	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
+	contractsopenapi "github.com/opensoha/soha/contracts/openapi"
 	"regexp"
 	"strings"
 	"testing"

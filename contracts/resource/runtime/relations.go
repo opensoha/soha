@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	resource "github.com/opensoha/soha-contracts/resource"
+	resource "github.com/opensoha/soha/contracts/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 )

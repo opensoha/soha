@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 // BuildNetworkResourceGraph consumes the same projected facts as topology.

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 func networkFixtureGraph(t *testing.T, root cr.NetworkTopologySourceResult, sources ...cr.NetworkTopologySourceResult) cr.ResourceGraph {

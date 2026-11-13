@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func narrowFixture() ([]api.NetworkProxyGroup, []api.NetworkProxyRule) {

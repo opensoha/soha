@@ -7,7 +7,7 @@ const openapiPath = "openapi/soha-api.yaml";
 const openapiJsonPath = "openapi/soha-api.json";
 const goModPath = "go.mod";
 const goClientPath = "gen/go/sohaapi/client.go";
-const modulePath = "github.com/opensoha/soha-contracts";
+const modulePath = "github.com/opensoha/soha/contracts";
 
 const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
 const packageLock = JSON.parse(await readFile(packageLockPath, "utf8"));
@@ -27,6 +27,7 @@ expect(
   packageLock.packages?.contracts?.name === packageJson.name && packageLock.packages?.contracts?.version === version,
   `${packageLockPath} packages["contracts"] must match SDK name ${packageJson.name} and version ${version}`,
 );
+expect(packageJson.repository?.type === "git" && packageJson.repository?.url === "https://github.com/opensoha/soha" && packageJson.repository?.directory === "contracts", `${packagePath} repository must identify opensoha/soha contracts/`);
 expect(goMod.startsWith(`module ${modulePath}\n`), `${goModPath} must declare module ${modulePath}`);
 expect(
   goClient.includes(`const defaultUserAgent = "opensoha-contracts/${version}"`),
@@ -35,7 +36,7 @@ expect(
 
 const releaseTag = currentReleaseTag();
 if (releaseTag) {
-  expect(releaseTag === `v${version}`, `release tag ${releaseTag} must match version v${version}`);
+  expect(releaseTag === `contracts/v${version}`, `release tag ${releaseTag} must match version contracts/v${version}`);
 }
 
 if (errors.length > 0) {
@@ -51,12 +52,13 @@ console.log(`version sync ok: npm/OpenAPI YAML+JSON/root workspace lock/Go modul
 function currentReleaseTag() {
   const refName = process.env.GITHUB_REF_NAME?.trim();
   if (process.env.GITHUB_REF_TYPE === "tag" && refName) {
-    return refName;
+    return refName.startsWith("contracts/v") ? refName : "";
   }
 
   const ref = process.env.GITHUB_REF?.trim();
   if (ref?.startsWith("refs/tags/")) {
-    return ref.slice("refs/tags/".length);
+    const tag = ref.slice("refs/tags/".length);
+    return tag.startsWith("contracts/v") ? tag : "";
   }
 
   return "";

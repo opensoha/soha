@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/opensoha/soha-contracts/helmrelease"
+	"github.com/opensoha/soha/contracts/helmrelease"
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/release"
 	helmreleasev1 "helm.sh/helm/v4/pkg/release/v1"

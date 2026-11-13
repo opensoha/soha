@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type Rule = api.NetworkProxyRule
