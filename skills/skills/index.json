@@ -1,0 +1,559 @@
+{
+  "$schema": "../schemas/skills-index.schema.json",
+  "schemaVersion": "opensoha.dev/skills-index/v1",
+  "version": "0.1.3",
+  "skills": [
+    {
+      "id": "agent-runtime",
+      "name": "Agent Runtime",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Agent Runtime claim, callback, and failure artifact handoff through Soha AI Gateway.",
+      "path": "skills/ai-gateway/agent-runtime/SKILL.md",
+      "capabilityRefs": [
+        "delivery.execution_tasks.list",
+        "delivery.execution_logs.list",
+        "diagnosis.release_failure.analyze",
+        "k8s.events.list",
+        "k8s.pods.logs"
+      ],
+      "requiredScopes": [
+        "application",
+        "environment",
+        "executionTask",
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "ai-evaluation-engineer",
+      "name": "AI Evaluation Engineer",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Analyze AI evaluation contracts and bounded execution evidence without presenting planned evaluation runs as live capabilities.",
+      "path": "skills/ai-gateway/ai-evaluation-engineer/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read",
+        "delivery.execution_tasks.list",
+        "delivery.execution_logs.list"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill",
+        "application",
+        "environment",
+        "executionTask"
+      ]
+    },
+    {
+      "id": "cloud-local-presets",
+      "name": "Cloud Local Presets",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Choose and validate cloud or local Soha MCP presets and profile scope before use.",
+      "path": "skills/ai-gateway/cloud-local-presets/SKILL.md",
+      "capabilityRefs": [
+        "delivery.applications.list",
+        "delivery.workflow_templates.list",
+        "delivery.execution_tasks.list",
+        "k8s.pods.list",
+        "k8s.events.list"
+      ],
+      "requiredScopes": [
+        "businessLine",
+        "application",
+        "environment",
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "compute-sre",
+      "name": "Compute SRE",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Read-only virtualization and container-runtime diagnosis through Soha Compute Gateway tools.",
+      "path": "skills/ai-gateway/compute-sre/SKILL.md",
+      "capabilityRefs": [
+        "compute.overview.read",
+        "compute.resources.read",
+        "compute.resource_relations.list",
+        "compute.tasks.list",
+        "compute.tasks.get",
+        "compute.task_logs.list"
+      ],
+      "requiredScopes": [
+        "computeDomain",
+        "computeResource",
+        "computeTask"
+      ]
+    },
+    {
+      "id": "delivery-developer",
+      "name": "Delivery Developer",
+      "version": "0.1.0",
+      "category": "delivery",
+      "description": "Developer delivery workflows through Soha AI Gateway.",
+      "path": "skills/ai-gateway/delivery-developer/SKILL.md",
+      "capabilityRefs": [
+        "delivery.applications.list",
+        "delivery.applications.detail",
+        "delivery.applications.create",
+        "delivery.onboarding.analyze_repo",
+        "delivery.standards.dockerfile.generate",
+        "delivery.standards.dockerfile.validate",
+        "delivery.standards.helm.generate",
+        "delivery.standards.k8s.validate",
+        "delivery.spec.render",
+        "delivery.application.bootstrap",
+        "delivery.drafts.create",
+        "delivery.drafts.confirm",
+        "delivery.application_environments.list",
+        "delivery.application_services.list",
+        "delivery.build_sources.list",
+        "delivery.release_targets.list",
+        "delivery.release_bundles.list",
+        "delivery.execution_tasks.list",
+        "delivery.execution_logs.list",
+        "delivery.release.plan",
+        "delivery.plans.create",
+        "delivery.plans.confirm",
+        "delivery.release_context.diff",
+        "delivery.rollback.context",
+        "delivery.actions.trigger",
+        "delivery.workflows.create",
+        "delivery.workflows.get",
+        "delivery.batches.create",
+        "delivery.batches.get",
+        "delivery.batches.cancel",
+        "delivery.batches.assess",
+        "observability.metrics.assess"
+      ],
+      "requiredScopes": [
+        "businessLine",
+        "application",
+        "environment"
+      ]
+    },
+    {
+      "id": "delivery-tester",
+      "name": "Delivery Tester",
+      "version": "0.1.0",
+      "category": "delivery",
+      "description": "Release testing and promotion evidence through Soha AI Gateway.",
+      "path": "skills/ai-gateway/delivery-tester/SKILL.md",
+      "capabilityRefs": [
+        "delivery.application_environments.list",
+        "delivery.release_targets.list",
+        "delivery.release_bundles.list",
+        "delivery.execution_tasks.list",
+        "delivery.execution_logs.list",
+        "delivery.release.plan",
+        "delivery.release_context.diff",
+        "diagnosis.release_failure.analyze"
+      ],
+      "requiredScopes": [
+        "application",
+        "environment"
+      ]
+    },
+    {
+      "id": "docker-runtime-operator",
+      "name": "Docker Runtime Operator",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Approval-bound Docker host, Compose project, and service operations through Soha.",
+      "path": "skills/ai-gateway/docker-runtime-operator/SKILL.md",
+      "capabilityRefs": [
+        "docker.hosts.quick_create.plan",
+        "docker.hosts.quick_create.trigger",
+        "docker.projects.create",
+        "docker.projects.get",
+        "docker.projects.deploy.plan",
+        "docker.projects.deploy.trigger",
+        "docker.services.action.trigger",
+        "docker.operations.get",
+        "docker.projects.runtime.assess",
+        "docker.operations.cancel"
+      ],
+      "requiredScopes": [
+        "virtualizationConnection",
+        "dockerHost",
+        "dockerProject",
+        "dockerService",
+        "dockerOperation"
+      ]
+    },
+    {
+      "id": "evaluation-release-gate-reviewer",
+      "name": "Evaluation Release Gate Reviewer",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Execute reproducible evaluation evidence, isolated replay, and fail-closed release gate review.",
+      "path": "skills/ai-gateway/evaluation-release-gate-reviewer/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read",
+        "delivery.execution_tasks.list",
+        "delivery.execution_logs.list"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill",
+        "application",
+        "environment",
+        "executionTask"
+      ]
+    },
+    {
+      "id": "gateway-governance",
+      "name": "Gateway Governance",
+      "version": "0.1.0",
+      "category": "security",
+      "description": "Read-only review of Soha AI Gateway clients, policies, tools, approvals, and audit evidence.",
+      "path": "skills/ai-gateway/gateway-governance/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read",
+        "gateway.governance.status",
+        "gateway.audit_logs.list"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill",
+        "policy",
+        "tool",
+        "audit"
+      ]
+    },
+    {
+      "id": "incident-handoff",
+      "name": "Incident Handoff",
+      "version": "0.1.0",
+      "category": "delivery",
+      "description": "Incident handoff summaries using delivery, rollback, Kubernetes, and analysis evidence.",
+      "path": "skills/ai-gateway/incident-handoff/SKILL.md",
+      "capabilityRefs": [
+        "delivery.execution_tasks.list",
+        "delivery.execution_logs.list",
+        "delivery.release_context.diff",
+        "delivery.rollback.context",
+        "diagnosis.release_failure.analyze",
+        "k8s.events.list"
+      ],
+      "requiredScopes": [
+        "application",
+        "environment",
+        "executionTask",
+        "releaseBundle",
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "k8s-operator",
+      "name": "K8s Operator",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Approval-bound Kubernetes changes against a reviewed UID and resourceVersion through Soha AI Gateway.",
+      "path": "skills/ai-gateway/k8s-operator/SKILL.md",
+      "capabilityRefs": [
+        "k8s.resources.identity.read",
+        "k8s.resources.conditional.preflight",
+        "k8s.resources.conditional.update",
+        "k8s.resources.conditional.delete",
+        "k8s.resources.conditional.assess",
+        "k8s.workloads.conditional.preflight",
+        "k8s.workloads.conditional.action",
+        "k8s.workloads.scale",
+        "k8s.workloads.scale.assess",
+        "k8s.deployments.rollout_status"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "k8s-pod-executor",
+      "name": "K8s Pod Executor",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Independently approved bounded Pod argv against a reviewed UID with original receipt recovery through Soha Gateway.",
+      "path": "skills/ai-gateway/k8s-pod-executor/SKILL.md",
+      "capabilityRefs": [
+        "k8s.resources.identity.read",
+        "k8s.pods.exec",
+        "k8s.pods.exec.receipt",
+        "k8s.pods.exec.assess"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace",
+        "pod"
+      ]
+    },
+    {
+      "id": "k8s-resource-provisioner",
+      "name": "K8s Resource Provisioner",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Kubernetes workload snapshot generation plus approval-bound manifest preflight and creation for scoped environments.",
+      "path": "skills/ai-gateway/k8s-resource-provisioner/SKILL.md",
+      "capabilityRefs": [
+        "k8s.workloads.snapshot.generate",
+        "k8s.resources.create.preflight",
+        "k8s.resources.create.trigger",
+        "k8s.resources.create.get",
+        "k8s.resources.create.assess"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "k8s-sre",
+      "name": "K8s SRE",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Read-only Kubernetes diagnosis through Soha AI Gateway.",
+      "path": "skills/ai-gateway/k8s-sre/SKILL.md",
+      "capabilityRefs": [
+        "k8s.namespaces.list",
+        "k8s.workloads.overview",
+        "k8s.configmaps.list",
+        "k8s.secrets.metadata",
+        "k8s.helm.releases.list",
+        "k8s.pods.list",
+        "k8s.pods.logs",
+        "k8s.pods.describe",
+        "k8s.deployments.list",
+        "k8s.deployments.rollout_status",
+        "k8s.deployments.events",
+        "k8s.services.list",
+        "k8s.services.backends",
+        "k8s.routes.context",
+        "k8s.storage.context",
+        "k8s.nodes.detail",
+        "k8s.events.list"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "knowledge-connector-operator",
+      "name": "Knowledge Connector Operator",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Operate governed external knowledge connectors and bounded synchronization jobs through public Soha APIs.",
+      "path": "skills/ai-gateway/knowledge-connector-operator/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read",
+        "knowledge.search"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill"
+      ]
+    },
+    {
+      "id": "knowledge-curator",
+      "name": "Knowledge Curator",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Govern Soha knowledge bases and sources, inspect synchronization health, and maintain citation-ready indexes.",
+      "path": "skills/ai-gateway/knowledge-curator/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read",
+        "knowledge.search"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill"
+      ]
+    },
+    {
+      "id": "knowledge-researcher",
+      "name": "Knowledge Researcher",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Search authorized Soha knowledge bases, compare grounded evidence, and answer with traceable citations.",
+      "path": "skills/ai-gateway/knowledge-researcher/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read",
+        "knowledge.search"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill"
+      ]
+    },
+    {
+      "id": "memory-privacy-curator",
+      "name": "Memory Privacy Curator",
+      "version": "0.1.0",
+      "category": "security",
+      "description": "Inspect governed AI memory provenance and execute auditable privacy deletion.",
+      "path": "skills/ai-gateway/memory-privacy-curator/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill"
+      ]
+    },
+    {
+      "id": "observability",
+      "name": "Observability",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Cross-domain observability triage through Soha AI Gateway evidence.",
+      "path": "skills/ai-gateway/observability/SKILL.md",
+      "capabilityRefs": [
+        "observability.metrics.assess",
+        "k8s.pods.logs",
+        "k8s.events.list",
+        "k8s.nodes.detail",
+        "delivery.execution_logs.list",
+        "diagnosis.release_failure.analyze"
+      ],
+      "requiredScopes": [
+        "cluster",
+        "namespace",
+        "application",
+        "environment"
+      ]
+    },
+    {
+      "id": "onboarding",
+      "name": "Onboarding",
+      "version": "0.1.0",
+      "category": "delivery",
+      "description": "New application, environment, cluster, and service onboarding through Soha Gateway.",
+      "path": "skills/ai-gateway/onboarding/SKILL.md",
+      "capabilityRefs": [
+        "delivery.applications.list",
+        "delivery.applications.detail",
+        "delivery.application_environments.list",
+        "delivery.application_services.list",
+        "delivery.build_sources.list",
+        "delivery.release_targets.list",
+        "k8s.pods.list",
+        "k8s.services.list"
+      ],
+      "requiredScopes": [
+        "businessLine",
+        "application",
+        "environment",
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "plugin-administration",
+      "name": "Plugin Administration",
+      "version": "0.1.0",
+      "category": "security",
+      "description": "Plugin installation and upgrade governance planning through existing Soha Gateway evidence.",
+      "path": "skills/ai-gateway/plugin-administration/SKILL.md",
+      "capabilityRefs": [
+        "delivery.workflow_templates.list",
+        "delivery.execution_tasks.list",
+        "delivery.actions.trigger",
+        "delivery.rollback.context"
+      ],
+      "requiredScopes": [
+        "application",
+        "environment",
+        "executionTask",
+        "releaseBundle"
+      ]
+    },
+    {
+      "id": "provider-rollout-operator",
+      "name": "Provider Rollout Operator",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Review and operate bounded Agent Provider fleet rollouts with conformance and rollback evidence.",
+      "path": "skills/ai-gateway/provider-rollout-operator/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read",
+        "delivery.execution_tasks.list",
+        "delivery.execution_logs.list"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill",
+        "application",
+        "environment",
+        "executionTask"
+      ]
+    },
+    {
+      "id": "rag-quality-engineer",
+      "name": "RAG Quality Engineer",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Evaluate retrieval quality and govern bounded knowledge index rebuilds with citation evidence.",
+      "path": "skills/ai-gateway/rag-quality-engineer/SKILL.md",
+      "capabilityRefs": [
+        "gateway.manifest.read",
+        "knowledge.search"
+      ],
+      "requiredScopes": [
+        "aiClient",
+        "skill"
+      ]
+    },
+    {
+      "id": "security-change",
+      "name": "Security Change",
+      "version": "0.1.0",
+      "category": "security",
+      "description": "Security-sensitive operational change planning through Soha AI Gateway.",
+      "path": "skills/ai-gateway/security-change/SKILL.md",
+      "capabilityRefs": [
+        "delivery.actions.trigger",
+        "delivery.workflow_templates.list",
+        "delivery.rollback.context",
+        "delivery.execution_tasks.list",
+        "k8s.events.list"
+      ],
+      "requiredScopes": [
+        "application",
+        "environment",
+        "cluster",
+        "namespace"
+      ]
+    },
+    {
+      "id": "virtualization-operator",
+      "name": "Virtualization Operator",
+      "version": "0.1.0",
+      "category": "platform",
+      "description": "Approval-bound virtual machine planning, creation, and typed lifecycle operations through Soha.",
+      "path": "skills/ai-gateway/virtualization-operator/SKILL.md",
+      "capabilityRefs": [
+        "virtualization.worker_pools.list",
+        "virtualization.worker_pools.get",
+        "virtualization.workers.create",
+        "virtualization.workers.assess",
+        "virtualization.capacity.check",
+        "virtualization.operations.get",
+        "virtualization.operations.cancel",
+        "virtualization.operations.retry",
+        "virtualization.vms.create.plan",
+        "virtualization.vms.create.trigger",
+        "virtualization.vms.action.trigger"
+      ],
+      "requiredScopes": [
+        "virtualizationConnection",
+        "vm",
+        "cluster",
+        "workerPool"
+      ]
+    }
+  ]
+}

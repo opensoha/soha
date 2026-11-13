@@ -1,0 +1,191 @@
+schemaVersion: opensoha.dev/mcp-preset/v1
+id: local-environment-provisioning
+name: Local Environment Provisioning
+version: 0.1.0
+description: Local AI preset for approval-bound VM, Docker Compose, and Kubernetes demo environment provisioning.
+riskLevel: high
+skillRefs:
+  - virtualization-operator
+  - docker-runtime-operator
+  - k8s-resource-provisioner
+platformCapabilityRefs:
+  - resource.creation
+requiredScopes:
+  - cluster
+  - namespace
+tools:
+  - name: virtualization.worker_pools.list
+    description: Discover registered supply pools for a connection.
+    riskLevel: read
+    requiredScopes:
+      - virtualizationConnection
+      - cluster
+      - workerPool
+  - name: virtualization.worker_pools.get
+    description: Read the original worker pool and current revision.
+    riskLevel: read
+    requiredScopes:
+      - virtualizationConnection
+      - cluster
+      - workerPool
+  - name: virtualization.workers.create
+    description: Create one approved worker using atomic pool and provider admission.
+    riskLevel: execute
+    requiredScopes:
+      - virtualizationConnection
+      - cluster
+      - workerPool
+  - name: virtualization.workers.assess
+    description: Read original Node identity and fresh readiness evidence.
+    riskLevel: read
+    requiredScopes:
+      - virtualizationConnection
+      - cluster
+      - workerPool
+  - name: virtualization.capacity.check
+    description: Read fresh VM placement capacity including concurrent reservations; does not reserve.
+    riskLevel: read
+    requiredScopes:
+      - virtualizationConnection
+      - namespace
+      - vm
+  - name: virtualization.operations.get
+    description: Read the original VM operation receipt with sensitive content omitted.
+    riskLevel: read
+    requiredScopes:
+      - virtualizationConnection
+      - namespace
+      - vm
+  - name: virtualization.operations.cancel
+    description: Request cancellation while retaining existing provider resources.
+    riskLevel: execute
+    requiredScopes:
+      - virtualizationConnection
+      - namespace
+      - vm
+  - name: virtualization.operations.retry
+    description: Retry the original operation with current authorization and capacity admission.
+    riskLevel: execute
+    requiredScopes:
+      - virtualizationConnection
+      - namespace
+      - vm
+  - name: virtualization.vms.create.plan
+    description: Plan a virtual machine create request without side effects.
+    riskLevel: analyze
+    requiredScopes:
+      - virtualizationConnection
+      - namespace
+      - vm
+  - name: virtualization.vms.create.trigger
+    description: Create a virtual machine through the durable task queue.
+    riskLevel: execute
+    requiredScopes:
+      - virtualizationConnection
+      - namespace
+      - vm
+  - name: virtualization.vms.action.trigger
+    description: Run a typed virtual machine lifecycle action.
+    riskLevel: execute
+    requiredScopes:
+      - virtualizationConnection
+      - vm
+  - name: docker.hosts.quick_create.plan
+    description: Plan Docker host provisioning without side effects.
+    riskLevel: analyze
+    requiredScopes:
+      - virtualizationConnection
+      - dockerHost
+  - name: docker.hosts.quick_create.trigger
+    description: Provision a Docker host through a durable operation.
+    riskLevel: execute
+    requiredScopes:
+      - virtualizationConnection
+      - dockerHost
+  - name: docker.projects.create
+    description: Save inline Docker project configuration with an immutable creation receipt; does not deploy.
+    riskLevel: execute
+    requiredScopes:
+      - dockerHost
+      - dockerProject
+  - name: docker.projects.get
+    description: Read the authorized Docker project identity and configuration state.
+    riskLevel: read
+    requiredScopes:
+      - dockerHost
+      - dockerProject
+  - name: docker.projects.deploy.plan
+    description: Plan a Docker Compose project deployment.
+    riskLevel: analyze
+    requiredScopes:
+      - dockerHost
+      - dockerProject
+  - name: docker.projects.deploy.trigger
+    description: Execute a Docker Compose project deployment.
+    riskLevel: execute
+    requiredScopes:
+      - dockerHost
+      - dockerProject
+  - name: docker.services.action.trigger
+    description: Run a typed action on a Docker service.
+    riskLevel: execute
+    requiredScopes:
+      - dockerHost
+      - dockerService
+  - name: docker.operations.get
+    description: Read the existing durable Docker operation after submission or reconnect.
+    riskLevel: read
+    requiredScopes:
+      - dockerOperation
+  - name: docker.projects.runtime.assess
+    description: Evaluate expected services from fresh inventory after a specific deployment.
+    riskLevel: read
+    requiredScopes:
+      - dockerProject
+      - dockerOperation
+  - name: docker.operations.cancel
+    description: Request cancellation and follow the domain outcome and any required approval.
+    riskLevel: execute
+    requiredScopes:
+      - dockerOperation
+  - name: k8s.workloads.snapshot.generate
+    description: Generate a Job, CronJob, or image-following WorkloadCronJob manifest from a scoped workload template.
+    riskLevel: analyze
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.resources.create.preflight
+    description: Authorize and dry-run Kubernetes manifests without creating resources.
+    riskLevel: analyze
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.resources.create.trigger
+    description: Create preflighted Kubernetes manifests through a durable batch.
+    riskLevel: high
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.resources.create.get
+    description: Read the original actor-owned resource creation receipt without repeating writes.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.resources.create.assess
+    description: Verify original Kubernetes object UIDs; missing evidence is inconclusive.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+guardrails:
+  - discover_live_capabilities
+  - use_provider_allowed_actions_only
+  - plan_before_execute
+  - approval_required_for_execute
+  - stable_idempotency_keys
+  - top_level_secret_refs_only
+  - secret_use_scope_binding_required
+  - one_time_agent_secret_lease
+  - no_direct_runtime_credentials
+  - no_secret_output

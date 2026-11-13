@@ -1,0 +1,188 @@
+schemaVersion: opensoha.dev/mcp-preset/v1
+id: local-runtime-diagnosis
+name: Local Runtime Diagnosis
+version: 0.1.0
+description: Local self-hosted diagnosis preset for Kubernetes and Agent Runtime evidence.
+riskLevel: analyze
+skillRefs:
+  - k8s-sre
+  - agent-runtime
+  - observability
+  - cloud-local-presets
+platformCapabilityRefs:
+  - cluster.inventory
+  - workload.read
+  - configuration.inventory
+  - network.inventory
+  - storage.inventory
+  - pod.logs
+  - metrics
+requiredScopes:
+  - cluster
+  - namespace
+tools:
+  - name: observability.metrics.assess
+    description: Assess explicit metric conditions using complete windows and fresh source samples.
+    riskLevel: read
+    requiredScopes:
+      - dataSource
+  - name: delivery.applications.list
+    description: List applications when local runtime diagnosis needs delivery context.
+    riskLevel: read
+    requiredScopes:
+      - businessLine
+      - application
+  - name: delivery.execution_tasks.list
+    description: List execution tasks that handed off to Agent Runtime.
+    riskLevel: read
+    requiredScopes:
+      - application
+      - environment
+  - name: delivery.workflow_templates.list
+    description: List workflow templates to inspect approval and verification nodes before choosing a preset.
+    riskLevel: read
+    requiredScopes:
+      - application
+      - environment
+  - name: delivery.execution_logs.list
+    description: Read execution logs for runtime handoff evidence.
+    riskLevel: read
+    requiredScopes:
+      - application
+      - environment
+      - executionTask
+  - name: diagnosis.release_failure.analyze
+    description: Analyze release failures with scoped runtime evidence.
+    riskLevel: analyze
+    requiredScopes:
+      - application
+      - environment
+      - executionTask
+  - name: k8s.namespaces.list
+    description: List namespace metadata in the scoped cluster.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.workloads.overview
+    description: Read workload health totals and bounded problematic pod summaries.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.configmaps.list
+    description: List ConfigMap metadata without configuration content.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.secrets.metadata
+    description: List Secret metadata without Secret data.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.helm.releases.list
+    description: List Helm release metadata without release values or manifests.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+  - name: k8s.pods.list
+    description: List pods in the scoped namespace.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.pods.logs
+    description: Read recent pod logs in the scoped namespace.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - pod
+  - name: k8s.pods.describe
+    description: Read pod describe context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - pod
+  - name: k8s.deployments.list
+    description: List deployments in the scoped namespace.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.deployments.rollout_status
+    description: Read deployment rollout status.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - deployment
+  - name: k8s.deployments.events
+    description: Read deployment event context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - deployment
+      - timeRange
+  - name: k8s.services.list
+    description: List services in the scoped namespace.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+  - name: k8s.services.backends
+    description: Read service backend context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - service
+  - name: k8s.routes.context
+    description: Read route and ingress context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - service
+  - name: k8s.storage.context
+    description: Read storage binding context.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - storage
+  - name: k8s.nodes.detail
+    description: Read node detail for observability triage.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - node
+  - name: k8s.events.list
+    description: Read recent Kubernetes events.
+    riskLevel: read
+    requiredScopes:
+      - cluster
+      - namespace
+      - timeRange
+resources:
+  - name: soha://k8s/runtime
+    description: Scoped Kubernetes runtime context for local diagnosis.
+    requiredScopes:
+      - cluster
+      - namespace
+prompts:
+  - name: soha.runtime.diagnose_agent_handoff
+    description: Agent Runtime handoff diagnosis prompt bounded to Gateway evidence.
+    requiredScopes:
+      - cluster
+      - namespace
+guardrails:
+  - read_mostly
+  - no_kubeconfig
+  - no_secret_output
+  - preserve_runtime_evidence
+  - separate_local_and_cloud_scope

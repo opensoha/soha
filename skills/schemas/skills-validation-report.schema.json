@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/skills-validation-report.schema.json",
+  "title": "OpenSoha Skills Validation Report",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "repository",
+    "generatedAt",
+    "releaseVersion",
+    "status",
+    "checks",
+    "summary",
+    "error"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/skills-validation-report/v1"
+    },
+    "repository": {
+      "const": "soha-skills"
+    },
+    "generatedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "releaseVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "skipped",
+              "failed"
+            ]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "packageDryRun": {
+          "type": "object",
+          "required": [
+            "artifact",
+            "sha256",
+            "manifestSha256",
+            "checksumFileSha256",
+            "files",
+            "members"
+          ],
+          "properties": {
+            "artifact": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "manifestSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "checksumFileSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "files": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "members": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "packageOutput": {
+          "type": "object",
+          "required": [
+            "artifact",
+            "manifest",
+            "checksumFile",
+            "sha256",
+            "manifestSha256",
+            "checksumFileSha256",
+            "files",
+            "members"
+          ],
+          "properties": {
+            "artifact": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifest": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checksumFile": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "manifestSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "checksumFileSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "files": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "members": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "packageVerify": {
+          "type": "object",
+          "required": [
+            "artifact",
+            "manifest",
+            "checksumFile",
+            "sha256",
+            "manifestSha256",
+            "checksumFileSha256",
+            "files",
+            "members"
+          ],
+          "properties": {
+            "artifact": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifest": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checksumFile": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "manifestSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "checksumFileSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "files": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "members": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

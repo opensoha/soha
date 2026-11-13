@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha"
+  short_description: "Governed OpenSoha delivery-center workflows"
+  default_prompt: "Use $soha to create or operate a Soha-compliant application service through the configured MCP server."

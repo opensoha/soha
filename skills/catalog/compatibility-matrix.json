@@ -1,0 +1,94 @@
+{
+  "$schema": "../schemas/compatibility-matrix.schema.json",
+  "schemaVersion": "opensoha.dev/skills-compatibility-matrix/v1",
+  "skillsVersion": "0.1.3",
+  "gatewayCapabilityCatalogVersion": "0.1.1",
+  "platformCapabilityCatalogVersion": "0.1.0",
+  "requiredScopes": [
+    "aiClient",
+    "application",
+    "applicationEnvironment",
+    "approval",
+    "audit",
+    "businessLine",
+    "cluster",
+    "computeDomain",
+    "computeResource",
+    "computeTask",
+    "dataSource",
+    "deployment",
+    "device",
+    "dockerHost",
+    "dockerOperation",
+    "dockerProject",
+    "dockerService",
+    "enrollment",
+    "environment",
+    "executionTask",
+    "gateway",
+    "grant",
+    "namespace",
+    "node",
+    "pod",
+    "policy",
+    "producer",
+    "relayCache",
+    "relayCall",
+    "relayRoute",
+    "relayUpstream",
+    "releaseBundle",
+    "repository",
+    "resource",
+    "runtime",
+    "service",
+    "serviceAccount",
+    "session",
+    "site",
+    "skill",
+    "storage",
+    "subject",
+    "timeRange",
+    "token",
+    "tool",
+    "virtualizationConnection",
+    "vm",
+    "workerPool"
+  ],
+  "supportedVersions": {
+    "soha-core": ">=0.1.0 <0.2.0",
+    "soha-cli": ">=0.1.0 <0.2.0",
+    "soha-agent": ">=0.1.0 <0.2.0"
+  },
+  "contractSchemas": {
+    "preferred": "node_modules/@opensoha/contracts",
+    "fallback": "../soha-contracts",
+    "policy": "Use the published @opensoha/contracts schemas when installed. Use the sibling soha-contracts checkout only for local development before public release artifacts are available. Local repository schemas may be stricter for official assets, but must remain compatible with these public contracts.",
+    "assets": {
+      "skillManifest": {
+        "preferred": "node_modules/@opensoha/contracts/skills/skill-manifest.schema.json",
+        "fallback": "../soha-contracts/skills/skill-manifest.schema.json"
+      },
+      "mcpPreset": {
+        "preferred": "node_modules/@opensoha/contracts/presets/mcp-preset.schema.json",
+        "fallback": "../soha-contracts/presets/mcp-preset.schema.json"
+      },
+      "agentProfile": {
+        "preferred": "node_modules/@opensoha/contracts/profiles/agent-profile.schema.json",
+        "fallback": "../soha-contracts/profiles/agent-profile.schema.json"
+      }
+    }
+  },
+  "installStrategy": {
+    "wrapperPackage": {
+      "install": "Install the versioned soha-skills release package that matches skillsVersion.",
+      "upgrade": "Upgrade only after validating the release manifest, checksum, compatibility matrix, and validation report.",
+      "rollback": "Reinstall the previous versioned wrapper package and restore its matching validation report and manifest."
+    },
+    "rawSkillsRuntime": {
+      "path": "~/.soha/skills",
+      "install": "Expand the verified skills runtime from the release package into a versioned staging directory before activating it.",
+      "upgrade": "Switch the active runtime pointer only after validation passes and the target CLI can load the new index.",
+      "rollback": "Switch the active runtime pointer back to the previous verified directory and keep the failed version for audit."
+    }
+  }
+}

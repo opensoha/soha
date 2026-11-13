@@ -1,0 +1,28 @@
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+tmp/
+.tmp/
+.cache/
+
+# Generated/build artifacts
+dist/
+build/
+out/
+graphify-out/
+coverage/
+node_modules/
+__pycache__/
+*.py[cod]
+
+# Local environment
+.env
+.env.*
+!.env.example

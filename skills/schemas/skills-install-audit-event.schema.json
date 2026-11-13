@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensoha.dev/schemas/skills-install-audit-event.schema.json",
+  "title": "OpenSoha Skills Install Audit Event",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "assetType",
+    "assetId",
+    "assetVersion",
+    "packageVersion",
+    "actor",
+    "source",
+    "checksum",
+    "decision"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "opensoha.dev/skills-install-audit-event/v1"
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "verify",
+        "install",
+        "upgrade",
+        "rollback",
+        "activate"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assetType": {
+      "type": "string",
+      "enum": [
+        "package",
+        "skill",
+        "mcpPreset",
+        "agentProfile"
+      ]
+    },
+    "assetId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assetVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packageVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$"
+    },
+    "actor": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "user",
+            "serviceAccount",
+            "system"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "kind",
+        "uri"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "releasePackage",
+            "localDirectory",
+            "marketplace"
+          ]
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "checksum": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "allowed",
+        "blocked",
+        "rolledBack"
+      ]
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}
