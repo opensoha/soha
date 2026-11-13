@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "0.1.0",
+  "connectors": [
+    {
+      "id": "feishu",
+      "status": "experimental",
+      "capabilities": [
+        {
+          "name": "runtime.http.health_manifest",
+          "direction": "bidirectional",
+          "status": "implemented",
+          "evidence": ["src/sdk/http.ts", "test/feishu-http-runtime.test.ts"]
+        },
+        {
+          "name": "runtime.http.webhook_server",
+          "direction": "inbound",
+          "status": "implemented",
+          "evidence": ["src/sdk/http.ts", "src/connectors/feishu/server.ts", "test/feishu-http-runtime.test.ts"]
+        },
+        {
+          "name": "runtime.http.action_endpoint",
+          "direction": "outbound",
+          "status": "implemented",
+          "evidence": ["src/sdk/http.ts", "test/feishu-http-runtime.test.ts", "test/credential-delivery.test.ts"]
+        },
+        {
+          "name": "runtime.config.env",
+          "direction": "bidirectional",
+          "status": "implemented",
+          "evidence": [".env.example", "src/connectors/feishu/config.ts", "src/connectors/feishu/server.ts"]
+        },
+        {
+          "name": "runtime.graceful_shutdown",
+          "direction": "bidirectional",
+          "status": "implemented",
+          "evidence": ["src/sdk/http.ts", "src/connectors/feishu/server.ts"]
+        },
+        {
+          "name": "webhook.url_verification",
+          "direction": "inbound",
+          "status": "implemented",
+          "evidence": ["src/connectors/feishu/webhook.ts", "test/feishu-webhook.test.ts"]
+        },
+        {
+          "name": "webhook.signature_and_decryption",
+          "direction": "inbound",
+          "status": "implemented",
+          "evidence": ["src/connectors/feishu/webhook.ts", "test/feishu-webhook.test.ts"]
+        },
+        {
+          "name": "event.im.message.receive_v1",
+          "direction": "inbound",
+          "status": "implemented",
+          "evidence": ["src/connectors/feishu/webhook.ts", "test/feishu-connector.test.ts"]
+        },
+        {
+          "name": "action.message.send_text",
+          "direction": "outbound",
+          "status": "implemented",
+          "evidence": ["src/connectors/feishu/connector.ts", "test/feishu-http-runtime.test.ts"]
+        },
+        {
+          "name": "reliability.retry",
+          "direction": "outbound",
+          "status": "implemented",
+          "evidence": ["src/sdk/reliability.ts", "test/reliability.test.ts", "test/feishu-http-runtime.test.ts"]
+        },
+        {
+          "name": "reliability.idempotency",
+          "direction": "inbound",
+          "status": "implemented",
+          "evidence": ["src/sdk/reliability.ts", "test/reliability.test.ts", "test/feishu-http-runtime.test.ts"]
+        },
+        {
+          "name": "reliability.rate_limit",
+          "direction": "outbound",
+          "status": "implemented_memory",
+          "evidence": ["src/sdk/reliability.ts", "src/connectors/feishu/connector.ts"]
+        },
+        {
+          "name": "reliability.dead_letter",
+          "direction": "outbound",
+          "status": "implemented",
+          "evidence": ["src/sdk/reliability.ts", "test/reliability.test.ts", "test/feishu-http-runtime.test.ts"]
+        },
+        {
+          "name": "observability.metrics",
+          "direction": "bidirectional",
+          "status": "implemented_minimal",
+          "evidence": ["src/sdk/http.ts", "src/connectors/feishu/connector.ts", "test/feishu-http-runtime.test.ts"]
+        },
+        {
+          "name": "observability.structured_logs_redaction",
+          "direction": "bidirectional",
+          "status": "implemented_minimal",
+          "evidence": ["src/sdk/logger.ts", "src/sdk/redaction.ts"]
+        }
+      ]
+    },
+    {
+      "id": "wechat",
+      "status": "planned",
+      "capabilities": [
+        {
+          "name": "webhook.verify",
+          "direction": "inbound",
+          "status": "planned",
+          "evidence": ["connectors/wechat/README.md"]
+        },
+        {
+          "name": "event.message.normalize",
+          "direction": "inbound",
+          "status": "planned",
+          "evidence": ["connectors/wechat/README.md"]
+        },
+        {
+          "name": "action.message.send_text",
+          "direction": "outbound",
+          "status": "planned",
+          "evidence": ["connectors/wechat/README.md"]
+        }
+      ]
+    },
+    {
+      "id": "wecom",
+      "status": "planned",
+      "capabilities": [
+        {
+          "name": "webhook.verify",
+          "direction": "inbound",
+          "status": "planned",
+          "evidence": ["connectors/wecom/README.md"]
+        },
+        {
+          "name": "event.message_or_approval.normalize",
+          "direction": "inbound",
+          "status": "planned",
+          "evidence": ["connectors/wecom/README.md"]
+        },
+        {
+          "name": "action.message.send_text",
+          "direction": "outbound",
+          "status": "planned",
+          "evidence": ["connectors/wecom/README.md"]
+        }
+      ]
+    }
+  ]
+}

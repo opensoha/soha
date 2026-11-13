@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha Connectors"
+  short_description: "Connector SDK, manifests, events, and lifecycle"
+  default_prompt: "Use $soha-connectors to implement or review a connector and its runtime contract."

@@ -1,0 +1,35 @@
+name: connectors-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate connector scaffold
+        run: |
+          test -f README.md
+          test -d connectors
+      - name: Build, test, and validate connectors
+        run: npm run check
+      - name: Verify package artifact contents
+        run: npm run package:check
+      - name: Pack connector artifact
+        run: npm pack --json
+      - name: Upload connector package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: opensoha-connectors-package
+          path: opensoha-connectors-*.tgz
+          if-no-files-found: error

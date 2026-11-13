@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "0.1.0",
+  "connectors": [
+    {
+      "id": "feishu",
+      "path": "connectors/feishu/connector.manifest.json",
+      "status": "experimental"
+    },
+    {
+      "id": "wechat",
+      "path": "connectors/wechat/README.md",
+      "status": "planned"
+    },
+    {
+      "id": "wecom",
+      "path": "connectors/wecom/README.md",
+      "status": "planned"
+    }
+  ]
+}

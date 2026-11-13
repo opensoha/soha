@@ -1,0 +1,59 @@
+{
+  "name": "@opensoha/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenSoha external connector SDK and official connector implementations.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./feishu": {
+      "types": "./dist/connectors/feishu/index.d.ts",
+      "default": "./dist/connectors/feishu/index.js"
+    },
+    "./feishu/server": {
+      "types": "./dist/connectors/feishu/server.d.ts",
+      "default": "./dist/connectors/feishu/server.js"
+    },
+    "./connectors/index.json": "./connectors/index.json",
+    "./connectors/capability-matrix.json": "./connectors/capability-matrix.json",
+    "./connectors/feishu/manifest.json": "./connectors/feishu/connector.manifest.json",
+    "./schemas/connector-manifest.schema.json": "./schemas/connector-manifest.schema.json",
+    "./schemas/connector-event-envelope.schema.json": "./schemas/connector-event-envelope.schema.json",
+    "./schemas/connector-action.schema.json": "./schemas/connector-action.schema.json"
+  },
+  "files": [
+    ".env.example",
+    "CHANGELOG.md",
+    "connectors",
+    "dist",
+    "docs",
+    "schemas",
+    "scripts/validate.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:test": "tsc -p tsconfig.test.json",
+    "check": "npm run lint && npm run test && npm run build && npm run validate",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "package:check": "npm run build && node scripts/check-package.mjs",
+    "release:artifacts": "npm run build && node scripts/prepare-release-artifacts.mjs",
+    "release:verify": "node scripts/verify-release-artifacts.mjs",
+    "start:feishu": "node dist/connectors/feishu/server.js",
+    "test": "node scripts/run-tests.mjs",
+    "validate": "node scripts/validate.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "^5.8.3"
+  }
+}
