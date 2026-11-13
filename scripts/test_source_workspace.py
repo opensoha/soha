@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 import tempfile
 import unittest
+import uuid
 from unittest.mock import patch
 
 
@@ -105,13 +106,20 @@ class GoSourceTest(unittest.TestCase):
             directory.mkdir(parents=True, exist_ok=True)
             (directory / "go.mod").write_text(f"module {name}\n\ngo 1.27.4\n")
             (directory / "go.sum").write_text("")
-        (self.root / "go.work").write_text("go 1.27.4\n\nuse (\n .\n ./contracts\n ./cli\n ./agent\n)\n")
+        self.versions = ["v0.0.0-20261113000000-" + uuid.uuid4().hex[:12] for _ in range(3)]
+        for version, (_, directory) in zip(self.versions, [m for m in self.modules if m[1] != workspace.SDK]):
+            with (directory / "go.mod").open("a") as stream:
+                stream.write(f"require {workspace.SDK_MODULE} {version}\n")
+        self.aliases = [{"Old": {"Path": workspace.SDK_MODULE, "Version": v},
+                         "New": {"Path": "./contracts"}} for v in self.versions]
+        (self.root / "go.work").write_text("go 1.27.4\n\nuse (\n .\n ./contracts\n ./cli\n ./agent\n)\n" +
+            "".join(f"replace {workspace.SDK_MODULE} {v} => ./contracts\n" for v in self.versions))
 
     def fake_go(self, args, **kwargs):
         if args == ["go", "env", "GOWORK"]:
             return str(self.root / "go.work")
         if args == ["go", "work", "edit", "-json"]:
-            return json.dumps({"Use": [{"DiskPath": str(directory)} for _, directory in self.modules]})
+            return json.dumps({"Use": [{"DiskPath": str(directory)} for _, directory in self.modules], "Replace": self.aliases})
         name = args[-1]
         directory = dict(self.modules)[name]
         return json.dumps({"Path": name, "Dir": str(directory), "Main": True})
@@ -140,6 +148,16 @@ class GoSourceTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "exactly"):
                     workspace.check_go()
 
+    def test_each_module_rejects_non_sdk_replacements(self):
+        for _, directory in self.modules:
+            manifest = directory / "go.mod"
+            before = manifest.read_text()
+            with self.subTest(module=directory):
+                manifest.write_text(before + "replace github.com/google/uuid v1.6.0 => /outside\n")
+                with self.assertRaisesRegex(ValueError, "must not contain replacements"):
+                    workspace.check_go()
+            manifest.write_text(before)
+
     def test_wrong_module_resolution_fails(self):
         def run(args, **kwargs):
             if args[-1] == "github.com/opensoha/soha-cli":
@@ -149,25 +167,53 @@ class GoSourceTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "same-checkout source"):
                 workspace.check_go()
 
-    def test_unpublished_sdk_package_builds_only_from_source_workspace(self):
+    def test_sdk_aliases_reject_missing_extra_unversioned_foreign_and_redirects(self):
+        cases = [[], self.aliases + [self.aliases[0]], self.aliases[:-1]]
+        for section, key, value in [("Old", "Version", ""), ("Old", "Version", "v9.0.0"),
+                                     ("Old", "Path", "example.invalid/foreign"),
+                                     ("New", "Path", "../contracts"), ("New", "Path", str(workspace.SDK)),
+                                     ("New", "Version", "v1.0.0")]:
+            aliases = json.loads(json.dumps(self.aliases))
+            aliases[0][section][key] = value
+            cases.append(aliases)
+        for aliases in cases:
+            with self.subTest(aliases=aliases), self.assertRaisesRegex(ValueError, "exactly"):
+                workspace.validate_sdk_aliases({"Replace": aliases}, self.root)
+
+    def test_sdk_alias_versions_come_only_from_require_declarations(self):
+        manifest = self.root / "cli/go.mod"
+        manifest.write_text(f"module github.com/opensoha/soha-cli\nrequire (\n {workspace.SDK_MODULE} {self.versions[1]} // SDK\n)\n"
+                            f"exclude {workspace.SDK_MODULE} v9.0.0\n")
+        self.assertEqual(workspace.validate_sdk_aliases({"Replace": self.aliases}, self.root), set(self.versions))
+        with manifest.open("a") as stream:
+            stream.write(f"require {workspace.SDK_MODULE} {self.versions[1]}\n")
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            workspace.validate_sdk_aliases({"Replace": self.aliases}, self.root)
+
+    def test_unpublished_sdk_graph_with_external_dependency_builds_from_source_workspace(self):
         sdk = self.root / "contracts/unpublished"
         sdk.mkdir()
-        (sdk / "value.go").write_text("package unpublished\nconst Value = 1\n")
-        for index, (name, directory) in enumerate(self.modules):
-            if directory == workspace.SDK:
-                continue
+        (sdk / "value.go").write_text('package unpublished\nimport "github.com/google/uuid"\nvar Value = uuid.Nil.String()\n')
+        sums = "".join(line + "\n" for line in (Path(spec.origin).parents[1] / "go.sum").read_text().splitlines()
+                       if line.startswith("github.com/google/uuid v1.6.0 ") or line.startswith("github.com/google/uuid v1.6.0/go.mod "))
+        self.assertEqual(len(sums.splitlines()), 2)
+        for _, directory in self.modules:
             with (directory / "go.mod").open("a") as stream:
-                # Each consumer's unpublished declaration must resolve to the local SDK.
-                stream.write(f"require github.com/opensoha/soha-contracts v0.0.0-20261113000000-deadbeef{index:04x}\n")
-            (directory / "source.go").write_text('package source\nimport "github.com/opensoha/soha-contracts/unpublished"\nvar Value = unpublished.Value\n')
+                stream.write("require github.com/google/uuid v1.6.0\n")
+            (directory / "go.sum").write_text(sums)
+            if directory != workspace.SDK:
+                (directory / "source.go").write_text('package source\nimport "github.com/opensoha/soha-contracts/unpublished"\nvar Value = unpublished.Value\n')
         env = {**os.environ, "GOWORK": str(self.root / "go.work"), "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
+        manifests = {p: p.read_bytes() for p in self.root.rglob("go.mod")}
         with patch.dict(os.environ, env):
             workspace.check_go()
             for _, directory in self.modules:
                 subprocess.run(["go", "test", "./..."], cwd=directory, env=env, check=True, capture_output=True)
+            for args in (["list", "-m", "all"], ["mod", "download"], ["mod", "download", "all"]):
+                subprocess.run(["go", *args], cwd=self.root, env=env, check=True, capture_output=True)
             standalone = subprocess.run(["go", "test", "./..."], cwd=self.root, env={**env, "GOWORK": "off"}, capture_output=True)
             self.assertNotEqual(standalone.returncode, 0)
-        self.assertTrue((self.root / "go.work").is_file())
+        self.assertEqual(manifests, {p: p.read_bytes() for p in manifests})
 
 
 class NpmSourceTest(unittest.TestCase):

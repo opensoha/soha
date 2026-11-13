@@ -173,7 +173,7 @@ The default `DEV_DB_MODE=external` uses your configured PostgreSQL service.
 Use `make init DEV_DB_MODE=local` to start PostgreSQL from `deploy/docker-compose.yaml`.
 Install the shared npm workspace from the repository root with `npm ci`.
 The root lockfile owns `contracts/`, `web/`, `connectors/` and `cli/npm/cli/`; no sibling checkout or new
-SDK release is required for source development. `go.work` selects Core,
+SDK release is required for source development. `go.work` maps only the SDK versions declared by Core, CLI and Agent to local `contracts/` for dependency-graph metadata; distribution pins remain unchanged. It selects Core,
 Contracts, CLI and Agent modules from this checkout. Agent DSH retains its
 own Node 24 runtime and lockfile under `agent/runtimes/dsh/`. Public module identities and external
 declared-dependency checks remain separate from this source workspace.

@@ -238,7 +238,7 @@ This repository is licensed under the Apache License 2.0. See
 
 ### Combined Task115 and Task117 development
 
-Internal source integration uses same-Root `contracts/` through the committed workspace. B3 preserves the declared SDK pin for separately qualified external consumers; source success does not certify that pin as publicly available. Use `python3 agent/deploy/resolve_contracts.py --mode source` from Root to record the actual Root SHA and SDK source digest, and explicit `--mode declared` only for external dependency verification. Missing source/schema fails instead of selecting a registry or sibling fallback.
+Internal source integration uses same-Root `contracts/` through the committed four-module workspace. Its only replacements are version-scoped aliases for the exact SDK versions required by Core, CLI and Agent, all targeting `./contracts`; module manifests keep their pins and contain no replacements. B3 preserves the declared SDK pin for separately qualified external consumers; source success does not certify that pin as publicly available. Use `python3 agent/deploy/resolve_contracts.py --mode source` from Root to record the actual Root SHA, workspace hash and SDK source digest, and explicit `--mode declared` only for external dependency verification. Missing source/schema or any alias-policy mismatch fails instead of selecting a registry or sibling fallback.
 
 ### Pod session identity
 

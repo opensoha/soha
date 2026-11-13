@@ -14,6 +14,27 @@ import sys
 MODULE = "github.com/opensoha/soha-contracts"
 
 
+def directive_rows(text, directive):
+    rows = []
+    block = False
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if block:
+            if line == ")":
+                block = False
+            elif line:
+                rows.append(shlex.split(line))
+        elif re.match(r"^" + directive + r"\b", line):
+            value = line[len(directive):].strip()
+            if value == "(":
+                block = True
+            else:
+                rows.append(shlex.split(value))
+    if block:
+        raise ValueError("unterminated " + directive + " directive")
+    return rows
+
+
 def resolve_source_contracts(root=None):
     root = Path(root or Path(__file__).resolve().parents[2]).resolve(strict=True)
     expected = {".": "github.com/opensoha/soha", "contracts": MODULE,
@@ -23,22 +44,39 @@ def resolve_source_contracts(root=None):
     if (workspace.is_symlink() or not workspace.is_file()
             or workspace_sum.is_symlink() or not workspace_sum.is_file()):
         raise ValueError("same-Root source mode requires the committed four-module go.work")
+    workspace_bytes = workspace.read_bytes()
+    workspace_text = workspace_bytes.decode()
     uses = []
-    for block, single in re.findall(r"(?m)^\s*use\s+(?:\(([\s\S]*?)\)|([^\n]+))", workspace.read_text()):
-        for line in (block or single).splitlines():
-            for entry in shlex.split(line.split("//", 1)[0]):
-                directory = (root / entry).resolve(strict=True)
-                uses.append(str(directory.relative_to(root)) if directory != root else ".")
+    for row in directive_rows(workspace_text, "use"):
+        if len(row) != 1 or row[0] not in {".", "./contracts", "./cli", "./agent"}:
+            raise ValueError("source workspace use must name an exact Root module directory")
+        directory = (root / row[0]).resolve(strict=True)
+        uses.append(str(directory.relative_to(root)) if directory != root else ".")
     if len(uses) != 4 or set(uses) != set(expected):
         raise ValueError("source mode must use exactly Root, contracts, cli and agent")
+    versions = set()
     for directory, module in expected.items():
+        module_directory = root / directory
         manifest = root / directory / "go.mod"
         sums = manifest.with_name("go.sum")
-        if manifest.is_symlink() or not manifest.is_file() or sums.is_symlink() or not sums.is_file() or not re.search(
-                r"(?m)^module\s+" + re.escape(module) + r"\s*$", manifest.read_text()):
+        if (module_directory.is_symlink() or not module_directory.is_dir() or module_directory.resolve(strict=True) != module_directory
+                or manifest.is_symlink() or not manifest.is_file() or sums.is_symlink() or not sums.is_file()):
             raise ValueError("source module identity is missing or changed: " + directory)
+        manifest_text = manifest.read_text()
+        if directive_rows(manifest_text, "module") != [[module]] or re.search(r"(?m)^\s*replace\b", manifest_text):
+            raise ValueError("source modules must keep their identities without go.mod replacements")
+        if directory != "contracts":
+            requirements = [row for row in directive_rows(manifest_text, "require") if row and row[0] == MODULE]
+            if (len(requirements) != 1 or len(requirements[0]) != 2
+                    or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", requirements[0][1])):
+                raise ValueError("each source consumer must declare exactly one SDK version")
+            versions.add(requirements[0][1])
+    aliases = directive_rows(workspace_text, "replace")
+    required_aliases = {(MODULE, version, "=>", "./contracts") for version in versions}
+    if len(aliases) != len(required_aliases) or {tuple(row) for row in aliases} != required_aliases:
+        raise ValueError("workspace aliases must match only the declared SDK versions to ./contracts")
     schema = root / "contracts/agent/dsh-runtime.schema.json"
-    if schema.is_symlink() or not schema.is_file() or not isinstance(json.loads(schema.read_text()), dict):
+    if schema.parent.is_symlink() or schema.is_symlink() or not schema.is_file() or not isinstance(json.loads(schema.read_text()), dict):
         raise ValueError("same-Root contracts is missing the dsh runtime schema")
 
     def git(*args):
@@ -61,6 +99,7 @@ def resolve_source_contracts(root=None):
     if "contracts/go.mod" not in {item["path"] for item in files}:
         raise ValueError("SDK source manifest is incomplete")
     return {"mode": "source", "ref": revision, "dir": str(root / "contracts"), "repository": str(root),
+            "goWorkSHA256": hashlib.sha256(workspace_bytes).hexdigest(),
             "sourceSHA256": hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
 
 

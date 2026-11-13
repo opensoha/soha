@@ -6,3 +6,8 @@ use (
 	./cli
 	./agent
 )
+
+replace (
+	github.com/opensoha/soha-contracts v0.1.30-0.20261110173546-4aef3ea31f6a => ./contracts
+	github.com/opensoha/soha-contracts v0.1.30-0.20261112071503-e0b9d2f86a68 => ./contracts
+)

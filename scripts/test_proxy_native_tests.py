@@ -52,12 +52,98 @@ class ProxyNativeTests(unittest.TestCase):
         root = Path(directory)
         (root / 'go.mod').write_text('module github.com/opensoha/soha\n\ngo 1.27.4\nrequire ' + runner.SDK + ' v1.2.3\n')
         (root / 'go.sum').write_text(runner.SDK + ' v1.2.3 h1:distribution\n')
-        (root / 'go.work').write_text('go 1.27.4\n\nuse (\n\t.\n\t./contracts\n\t./cli\n\t./agent\n)\n')
+        (root / 'go.work').write_text(runner.SOURCE_WORKSPACE + '\nreplace (\n\t' + runner.SDK
+            + ' v1.2.3 => ./contracts\n\t' + runner.SDK + ' v1.2.4 => ./contracts\n)\n')
         for folder, module in (('contracts', runner.SDK), ('cli', 'github.com/opensoha/soha-cli'),
                                ('agent', 'github.com/opensoha/soha-agent')):
             (root / folder).mkdir()
-            (root / folder / 'go.mod').write_text('module ' + module + '\ngo 1.27.4\n')
+            requirement = '' if folder == 'contracts' else 'require ' + runner.SDK + (' v1.2.3\n' if folder == 'cli' else ' v1.2.4\n')
+            (root / folder / 'go.mod').write_text('module ' + module + '\ngo 1.27.4\n' + requirement)
         return root
+
+    def test_source_aliases_record_policy_and_keep_selected_sdk_main_without_go(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.source(tmp)
+            with patch.object(runner, 'command', side_effect=AssertionError('No Go invocation')):
+                identity = runner.sdk_input(root, 'source')
+            self.assertEqual(identity['sourceSDKAliasVersions'], ['v1.2.3', 'v1.2.4'])
+            self.assertEqual(identity['sourcePolicySHA256'], hashlib.sha256(
+                (runner.ROOT / 'scripts/source-workspace.py').read_bytes()).hexdigest())
+            runner.verify_sdk({'Path': runner.SDK, 'Main': True, 'Dir': '/src/contracts'}, identity)
+            with self.assertRaises(ValueError):
+                runner.verify_sdk({'Path': runner.SDK, 'Main': True, 'Dir': '/src/contracts',
+                    'Replace': {'Path': './contracts'}}, identity)
+
+    def test_source_rejects_missing_extra_duplicate_and_unscoped_aliases(self):
+        sdk = runner.SDK
+        valid = [sdk + ' v1.2.3 => ./contracts', sdk + ' v1.2.4 => ./contracts']
+        invalid = [[], valid[:1], valid + [valid[0]], valid + [sdk + ' v1.2.5 => ./contracts'],
+            [sdk + ' => ./contracts', valid[1]], [valid[0], 'example.invalid/sdk v1.2.4 => ./contracts'],
+            [valid[0], sdk + ' v1.2.4 => ./contracts v1.0.0'],
+            [valid[0], sdk + ' v1.2.4 => ../contracts'],
+            [valid[0], sdk + ' v1.2.4 => /src/contracts'],
+            [valid[0], sdk + ' v1.2.4 => ./contracts/../contracts']]
+        for aliases in invalid:
+            with self.subTest(aliases=aliases), tempfile.TemporaryDirectory() as tmp:
+                root = self.source(tmp)
+                (root / 'go.work').write_text(runner.SOURCE_WORKSPACE + '\nreplace (\n' + '\n'.join(aliases) + '\n)\n')
+                with self.assertRaises(ValueError):
+                    runner.sdk_input(root, 'source')
+
+    def test_source_alias_versions_follow_all_three_declared_requirements(self):
+        for folder in ('.', 'cli', 'agent'):
+            with self.subTest(folder=folder), tempfile.TemporaryDirectory() as tmp:
+                root = self.source(tmp)
+                manifest = root / folder / 'go.mod'
+                original = manifest.read_text()
+                old = 'v1.2.4' if folder == 'agent' else 'v1.2.3'
+                manifest.write_text(original.replace(old, 'v1.2.5'))
+                with self.assertRaises(ValueError):
+                    runner.sdk_input(root, 'source')
+                versions = {'v1.2.3', 'v1.2.4', 'v1.2.5'} - ({'v1.2.4'} if folder == 'agent' else set())
+                (root / 'go.work').write_text(runner.SOURCE_WORKSPACE + '\n' + ''.join(
+                    'replace ' + runner.SDK + ' ' + version + ' => ./contracts\n' for version in sorted(versions)))
+                self.assertEqual(runner.sdk_input(root, 'source')['sourceSDKAliasVersions'], sorted(versions))
+                for malformed in (original.replace('require ' + runner.SDK + ' ' + old + '\n', ''),
+                        original + 'require ' + runner.SDK + ' ' + old + '\n'):
+                    manifest.write_text(malformed)
+                    with self.assertRaises(ValueError):
+                        runner.sdk_input(root, 'source')
+
+    def test_source_alias_target_rejects_internal_and_external_directory_symlinks(self):
+        for external in (False, True):
+            with self.subTest(external=external), tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
+                root = self.source(tmp)
+                target = Path(outside) / 'contracts' if external else root / 'other-contracts'
+                (root / 'contracts').rename(target)
+                (root / 'contracts').symlink_to(target, target_is_directory=True)
+                with self.assertRaises(ValueError):
+                    runner.sdk_input(root, 'source')
+
+    def test_source_alias_bytes_are_bound_in_identity_and_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.source(tmp)
+            first = runner.sdk_input(root, 'source')
+            work = root / 'go.work'
+            work.write_text(runner.SOURCE_WORKSPACE + '\nreplace ' + runner.SDK + ' v1.2.3 => ./contracts\nreplace '
+                + runner.SDK + ' v1.2.4 => ./contracts\n')
+            second = runner.sdk_input(root, 'source')
+            self.assertNotEqual(first['goWorkSHA256'], second['goWorkSHA256'])
+            self.assertEqual(first['sourceModules'], second['sourceModules'])
+            with patch.object(runner, 'command', return_value=b'go.work\0'):
+                archive, _ = runner.source_archive(root, 'source')
+            with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+                self.assertEqual(tar.extractfile('src/go.work').read(), work.read_bytes())
+
+    def test_declared_ignores_workspace_aliases_and_never_loads_source_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.source(tmp)
+            (root / 'go.work').write_text('replace foreign => /outside\n')
+            with patch.object(runner, 'load', side_effect=AssertionError('No source helper in declared mode')):
+                identity = runner.sdk_input(root, 'declared')
+            self.assertNotIn('sourceSDKAliasVersions', identity)
+            self.assertNotIn('sourcePolicySHA256', identity)
+            runner.verify_sdk({'Path': runner.SDK, 'Version': 'v1.2.3', 'Sum': 'h1:distribution'}, identity)
 
     def test_source_and_declared_sdk_identities_never_substitute(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -18,6 +18,9 @@ with no sibling checkout or source workspace. Its revision label identifies the
 actual Root commit. Root active CI owns source builds and authenticated startup;
 nested Agent release workflows remain historical definitions during B3. Public
 module/tag/publisher changes and declared SDK qualification remain separate.
+The source resolver binds the workspace hash and permits only the exact
+version-scoped SDK aliases required by Core, CLI and Agent to `./contracts`.
+Missing, extra or redirected aliases and module-level replacements fail closed.
 `resolve_contracts.py --mode declared` preserves checksum-verified external SDK
 resolution and must not be confused with the default source mode.
 

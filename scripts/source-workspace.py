@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,52 @@ def go_modules():
     ]
 
 
+def validate_sdk_aliases(config: dict, root: Path) -> set[str]:
+    """Bind historical SDK graph metadata to this checkout, without changing release pins."""
+    sdk = root / "contracts"
+    if sdk.resolve() != sdk or not sdk.is_dir():
+        raise ValueError("SDK aliases require confined same-checkout contracts")
+    versions = set()
+    for part in (".", "cli", "agent"):
+        directory = root / part
+        manifest = directory / "go.mod"
+        if directory.resolve() != directory or manifest.is_symlink() or not manifest.is_file():
+            raise ValueError("SDK aliases require confined same-checkout manifests")
+        required = []
+        in_require = False
+        for original in manifest.read_text().splitlines():
+            line = original.split("//", 1)[0].strip()
+            if line == "require (":
+                in_require = True
+                continue
+            if line == ")":
+                in_require = False
+                continue
+            fields = line.split()
+            if fields[:1] == ["require"]:
+                fields = fields[1:]
+            elif not in_require:
+                continue
+            if fields[:1] == [SDK_MODULE] and len(fields) == 2:
+                required.append(fields[1])
+        if len(required) != 1:
+            raise ValueError("each consumer must require exactly one SDK version")
+        versions.add(required[0])
+    found = []
+    for entry in config.get("Replace") or []:
+        if not isinstance(entry, dict):
+            raise ValueError("go.work must contain exactly the version-scoped SDK aliases to ./contracts")
+        old, new = entry.get("Old", {}), entry.get("New", {})
+        if (not isinstance(old, dict) or not isinstance(new, dict)
+                or old.get("Path") != SDK_MODULE or old.get("Version") not in versions
+                or new.get("Path") != "./contracts" or new.get("Version")):
+            raise ValueError("go.work must contain exactly the version-scoped SDK aliases to ./contracts")
+        found.append(old["Version"])
+    if len(found) != len(versions) or set(found) != versions:
+        raise ValueError("go.work must contain exactly the version-scoped SDK aliases to ./contracts")
+    return versions
+
+
 def check_go():
     work = ROOT / "go.work"
     modules = go_modules()
@@ -37,13 +84,16 @@ def check_go():
         if (directory.resolve() != directory or not manifest.is_file()
                 or manifest.is_symlink()):
             raise ValueError(f"{name} requires a confined same-checkout go.mod")
+        if re.search(r"(?m)^\s*replace\b", manifest.read_text()):
+            raise ValueError("source go.mod files must not contain replacements")
     active = run(["go", "env", "GOWORK"])
     if not active or active == "off" or Path(active).resolve() != work:
         raise ValueError("internal Go checks require this checkout's go.work")
     config = json.loads(run(["go", "work", "edit", "-json"]))
     uses = {(ROOT / entry["DiskPath"]).resolve() for entry in config["Use"]}
-    if uses != {directory for _, directory in modules} or config.get("Replace"):
-        raise ValueError("go.work must use exactly Core, contracts, CLI and Agent without replacements")
+    if len(config["Use"]) != 4 or uses != {directory for _, directory in modules}:
+        raise ValueError("go.work must use exactly Core, contracts, CLI and Agent")
+    validate_sdk_aliases(config, ROOT)
     for name, directory in modules:
         module = json.loads(run(["go", "list", "-m", "-json", name]))
         if (module.get("Path") != name or not module.get("Main") or module.get("Replace")

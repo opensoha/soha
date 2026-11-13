@@ -96,6 +96,27 @@ def docker_endpoint(environment, allow_remote):
     raise ValueError('Use a local Docker socket or explicitly allow ssh://database')
 
 
+def source_workspace_config(workspace):
+    if not workspace.startswith(SOURCE_WORKSPACE):
+        raise ValueError('Native source gate requires the exact root workspace')
+    lines = [line.strip() for line in workspace[len(SOURCE_WORKSPACE):].splitlines() if line.strip()]
+    if lines and lines[0] == 'replace (' and lines[-1] == ')':
+        aliases = lines[1:-1]
+    elif all(line.startswith('replace ') for line in lines):
+        aliases = [line.removeprefix('replace ') for line in lines]
+    else:
+        raise ValueError('Invalid native source workspace aliases')
+    replacements = []
+    for line in aliases:
+        match = re.fullmatch(r'(\S+)(?:\s+(\S+))?\s+=>\s+(\S+)(?:\s+(\S+))?', line)
+        if not match:
+            raise ValueError('Invalid native source workspace alias')
+        replacements.append({'Old': {'Path': match[1], 'Version': match[2] or ''},
+                             'New': {'Path': match[3], 'Version': match[4] or ''}})
+    return {'Use': [{'DiskPath': '.' if folder == '.' else './' + folder} for folder in SOURCE_MODULES],
+            'Replace': replacements}
+
+
 def sdk_input(root, mode):
     root = root.resolve(strict=True)
 
@@ -119,8 +140,7 @@ def sdk_input(root, mode):
                 'goModSHA256': hashlib.sha256(core.encode()).hexdigest()}
     if mode == 'source':
         workspace = read('go.work')
-        if workspace != SOURCE_WORKSPACE:
-            raise ValueError('Native source gate requires the exact root workspace')
+        config = source_workspace_config(workspace)
         modules = identity['sourceModules'] = {}
         for folder, module in SOURCE_MODULES.items():
             content = core if folder == '.' else read(folder + '/go.mod')
@@ -130,6 +150,9 @@ def sdk_input(root, mode):
                 raise ValueError('Native source gate forbids module replacements')
             modules[module] = {'Dir': '/src' if folder == '.' else '/src/' + folder,
                                'goModSHA256': hashlib.sha256(content.encode()).hexdigest()}
+        policy = load('source-workspace')
+        identity['sourceSDKAliasVersions'] = sorted(policy.validate_sdk_aliases(config, root))
+        identity['sourcePolicySHA256'] = hashlib.sha256(Path(policy.__file__).read_bytes()).hexdigest()
         identity['contractsGoModSHA256'] = modules[SDK]['goModSHA256']
         identity['goWorkSHA256'] = hashlib.sha256(workspace.encode()).hexdigest()
     else:
