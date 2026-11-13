@@ -99,10 +99,10 @@ test("active router waits for every selected workflow and preserves the original
   const ci = readWorkflow("ci");
   assert.deepEqual(Object.keys(ci.on), ["pull_request", "push", "workflow_dispatch"]);
   assert.equal(ci.jobs.summary.if, "always()");
-  assert.deepEqual(ci.jobs.summary.needs, ["route", "core", "web", "contracts", "deletion"]);
+  assert.deepEqual(ci.jobs.summary.needs, ["route", "core", "web", "contracts", "cli", "agent", "connectors", "skills", "deletion"]);
   assert.equal(ci.jobs.summary.steps.at(-1).env.CI_NEEDS, "${{ toJSON(needs) }}");
   assert.equal(ci.jobs.summary.steps.at(-1).run, "python3 scripts/ci-impact.py summary");
-  for (const name of ["core", "web", "contracts", "deletion"]) {
+  for (const name of ["core", "web", "contracts", "cli", "agent", "connectors", "skills", "deletion"]) {
     assert.equal(ci.jobs[name].needs, "route");
     assert.equal(ci.jobs[name].if, `needs.route.outputs.${name} == 'true'`);
   }
@@ -143,6 +143,8 @@ test("native proxy gate is mandatory in Core, both release SDK modes and interna
   assert.equal(ci.jobs.core.steps.find((step) => step.name === "Race test").run, "go test -race ./...");
   const internal = workflow.jobs["internal-source"];
   const consumer = internal.steps.find((step) => step.run?.includes("--internal-source --require-all"));
+  assert.match(consumer.name, /five same-source consumers/);
+  assert.deepEqual(internal.steps.find((step) => step.uses?.startsWith("actions/setup-go@")).with["cache-dependency-path"].trim().split("\n"), ["go.sum", "contracts/go.sum", "cli/go.sum", "agent/go.sum"]);
   assert.equal(consumer.if, undefined);
   assert.equal(consumer["continue-on-error"], undefined);
   assert.equal(consumer.env.OPENSOHA_KEEP_VERIFY_ARTIFACTS, "1");

@@ -1,3 +1,4 @@
+import { sourceProvenance } from "./source-provenance.mjs";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -30,6 +31,8 @@ const artifactSha256 = await sha256File(artifactPath);
 const checksumPath = `${artifactPath}.sha256`;
 await writeFile(checksumPath, `${artifactSha256}  ${pack.filename}\n`);
 
+const manifestPath = path.join(outputDir, `opensoha-connectors-${version}.release-manifest.json`);
+const provenance = sourceProvenance(root, [artifactPath, checksumPath, manifestPath]);
 const manifest = {
   schemaVersion: "opensoha.dev/connectors-release/v1",
   packageName: packageJson.name,
@@ -41,11 +44,11 @@ const manifest = {
   artifactSha256,
   checksumFile: path.basename(checksumPath),
   provenance: {
-    sourceRepository: "github.com/opensoha/soha-connectors",
-    buildType: "github-actions",
+    ...provenance,
+    buildType: process.env.GITHUB_ACTIONS === "true" ? "github-actions" : "local-source",
     attestationProvider: "github-actions-attest-build-provenance",
     signingRequired: true,
-    verificationCommand: "gh attestation verify <artifact> --repo opensoha/soha-connectors"
+    verificationCommand: `gh attestation verify <artifact> --repo ${provenance.sourceRepository.replace("github.com/", "")}`
   },
   connectorManifests: await connectorManifestEntries(connectorIndex),
   files: (pack.files ?? []).map((file) => ({
@@ -55,7 +58,6 @@ const manifest = {
   }))
 };
 
-const manifestPath = path.join(outputDir, `opensoha-connectors-${version}.release-manifest.json`);
 await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
 console.log(`release artifact ${path.relative(root, artifactPath)} sha256=${artifactSha256}`);

@@ -19,6 +19,7 @@ try {
   if (code === 0) {
     cpSync("schemas", join(directory, "schemas"), { recursive: true });
     code = run(["--test", join(output, "**/*.test.js")]);
+    if (code === 0) code = run(["--test", "scripts/source-provenance.checks.mjs"]);
   }
   process.exitCode = code;
 } finally {

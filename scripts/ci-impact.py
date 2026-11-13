@@ -7,10 +7,10 @@ import re
 import subprocess
 import sys
 
-JOBS = ("core", "web", "contracts", "deletion")
+JOBS = ("core", "web", "contracts", "cli", "agent", "connectors", "skills", "deletion")
 
 
-def changed_paths(data):
+def changed_entries(data):
     fields = data.decode("utf-8", errors="strict").split("\0")
     if fields.pop() != "":
         raise ValueError("unterminated Git diff")
@@ -26,26 +26,53 @@ def changed_paths(data):
             path = fields.pop(0)
             if not path or path.startswith("/") or ".." in path.split("/"):
                 raise ValueError("invalid Git diff path")
-            paths.append(path)
+            paths.append((status, path))
     return paths
+
+
+def changed_paths(data):
+    return [path for _, path in changed_entries(data)]
 
 
 def select(data):
     try:
-        paths = changed_paths(data)
+        entries = changed_entries(data)
     except (UnicodeError, ValueError):
         return dict.fromkeys(JOBS, True)
     result = dict.fromkeys(JOBS, False)
-    for path in paths:
+    for status, path in entries:
+        parts = path.split("/")
+        # DSH is an independent Node24 runtime, outside the Root npm workspace.
+        if path in {"agent/runtimes/dsh/package.json", "agent/runtimes/dsh/package-lock.json"}:
+            result["agent"] = True
+            continue
         # Shared tooling and public contracts can affect every consumer.
-        if path.startswith((".github/", "scripts/", "contracts/", "deploy/", ".agents/", "web/.github/")) or path in {
+        if path.startswith((".github/", "scripts/", "contracts/", "deploy/", ".agents/")) or ".github" in parts or parts[-1] in {
             "go.mod", "go.sum", "go.work", "go.work.sum", "package.json", "package-lock.json", "Makefile", "Dockerfile",
+            "npm-shrinkwrap.json",
+        } or path in {
+            ".prettierrc", ".prettierrc.json", ".prettierrc.yml", ".prettierrc.yaml", ".prettierrc.js",
+            ".prettierrc.cjs", ".prettierignore", "prettier.config.js", "prettier.config.mjs", ".editorconfig",
         }:
             return dict.fromkeys(JOBS, True)
-        if path.startswith(("docs/", "web/docs/")) or path.endswith(".md") or path in {"LICENSE", "web/LICENSE", "contracts/LICENSE"}:
+        # Only explicit documentation directories/root documents bypass component
+        # routing. Runtime SKILL.md, fixtures and generated Markdown remain inputs.
+        if path.endswith(".md") and (parts[0] == "docs" or (len(parts) > 2 and parts[0] in {"web", "cli", "agent", "connectors", "skills"} and parts[1] == "docs")):
+            continue
+        if status[0] in "AM" and (len(parts) == 1 or (len(parts) == 2 and parts[0] in JOBS)) and parts[-1] in {
+            "README.md", "CHANGELOG.md", "LICENSE", "LICENSE.md",
+        }:
             continue
         if path.startswith("web/"):
             result.update(core=True, web=True)
+        elif path.startswith("cli/"):
+            result["cli"] = True
+        elif path.startswith("agent/"):
+            result["agent"] = True
+        elif path.startswith("connectors/"):
+            result["connectors"] = True
+        elif path.startswith("skills/"):
+            result.update(skills=True, cli=True, agent=True)
         elif path.startswith(("cmd/", "internal/", "pkg/", "migrations/", "configs/")):
             result.update(core=True, deletion=True)
         else:
@@ -54,14 +81,20 @@ def select(data):
 
 
 def check_summary(needs):
+    if not isinstance(needs, dict):
+        raise ValueError("job results must be an object")
     route = needs.get("route", {})
-    if route.get("result") != "success":
+    if not isinstance(route, dict) or route.get("result") != "success":
         raise ValueError("impact route did not succeed")
+    outputs = route.get("outputs")
+    if not isinstance(outputs, dict):
+        raise ValueError("impact route outputs are missing or invalid")
     for job in JOBS:
-        required = route.get("outputs", {}).get(job)
-        if required not in {"true", "false"}:
+        required = outputs.get(job)
+        if not isinstance(required, str) or required not in {"true", "false"}:
             raise ValueError(f"missing/invalid route output: {job}")
-        result = needs.get(job, {}).get("result")
+        entry = needs.get(job)
+        result = entry.get("result") if isinstance(entry, dict) else None
         allowed = {"success"} if required == "true" else {"success", "skipped"}
         if result not in allowed:
             raise ValueError(f"{job}: required={required}, result={result!r}")
@@ -117,7 +150,7 @@ if __name__ == "__main__":
         try:
             data = git_changes()
             selected = select(data) if data is not None else dict.fromkeys(JOBS, True)
-        except (KeyError, ValueError, OSError, subprocess.CalledProcessError) as error:
+        except (KeyError, TypeError, ValueError, OSError, subprocess.CalledProcessError) as error:
             print(f"Full validation: cannot classify diff: {error}", file=sys.stderr)
             selected = dict.fromkeys(JOBS, True)
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:

@@ -136,3 +136,23 @@ complexity-report: ## Report complexity, duplication, function length, and maint
 # Clean
 clean: ## Remove local build outputs.
 	rm -rf bin/ internal/staticassets/web/dist/
+
+# Standalone products use the same checkout and retain their own validation gates.
+.PHONY: build-cli build-agent test-cli test-agent check-connectors check-skills
+build-cli: ## Build the standalone CLI from this source workspace.
+	$(MAKE) -C cli build
+
+build-agent: ## Build the standalone Agent from this source workspace.
+	$(MAKE) -C agent build
+
+test-cli: ## Run CLI tests; launcher packaging remains a separate gate.
+	$(MAKE) -C cli test
+
+test-agent: ## Run Agent tests; runtime and image acceptance remain separate gates.
+	$(MAKE) -C agent test
+
+check-connectors: ## Validate the Connectors package and manifests.
+	$(LOCAL_VERIFY) npm run check --workspace connectors
+
+check-skills: ## Validate runtime skills against same-source schemas and Core catalogs.
+	$(LOCAL_VERIFY) python3 skills/tools/validate_assets.py

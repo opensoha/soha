@@ -18,43 +18,72 @@ def run(args, cwd=ROOT, env=None):
     return subprocess.check_output(args, cwd=cwd, env=env, text=True).strip()
 
 
+def go_modules():
+    return [
+        ("github.com/opensoha/soha", ROOT),
+        (SDK_MODULE, SDK),
+        ("github.com/opensoha/soha-cli", ROOT / "cli"),
+        ("github.com/opensoha/soha-agent", ROOT / "agent"),
+    ]
+
+
 def check_go():
     work = ROOT / "go.work"
-    if not work.is_file() or work.is_symlink() or not (SDK / "go.mod").is_file():
-        raise ValueError("same-checkout go.work and contracts/go.mod are required")
+    modules = go_modules()
+    if not work.is_file() or work.is_symlink():
+        raise ValueError("same-checkout go.work is required")
+    for name, directory in modules:
+        manifest = directory / "go.mod"
+        if (directory.resolve() != directory or not manifest.is_file()
+                or manifest.is_symlink()):
+            raise ValueError(f"{name} requires a confined same-checkout go.mod")
     active = run(["go", "env", "GOWORK"])
     if not active or active == "off" or Path(active).resolve() != work:
         raise ValueError("internal Go checks require this checkout's go.work")
     config = json.loads(run(["go", "work", "edit", "-json"]))
     uses = {(ROOT / entry["DiskPath"]).resolve() for entry in config["Use"]}
-    if uses != {ROOT, SDK} or config.get("Replace"):
-        raise ValueError("go.work must use only Core and contracts without replacements")
-    for name, directory in [("github.com/opensoha/soha", ROOT), (SDK_MODULE, SDK)]:
+    if uses != {directory for _, directory in modules} or config.get("Replace"):
+        raise ValueError("go.work must use exactly Core, contracts, CLI and Agent without replacements")
+    for name, directory in modules:
         module = json.loads(run(["go", "list", "-m", "-json", name]))
-        if not module.get("Main") or module.get("Replace") or Path(module["Dir"]).resolve() != directory:
+        if (module.get("Path") != name or not module.get("Main") or module.get("Replace")
+                or Path(module["Dir"]).resolve() != directory):
             raise ValueError(f"{name} must resolve to same-checkout source")
 
 
 def check_npm():
-    if SDK.resolve() != SDK or (ROOT / "web").resolve() != ROOT / "web":
-        raise ValueError("workspace source directories must not redirect outside this checkout")
+    workspaces = {
+        "contracts": "@opensoha/contracts",
+        "web": "soha-web",
+        "connectors": "@opensoha/connectors",
+        "cli/npm/cli": "@opensoha/cli",
+    }
     package = json.loads((ROOT / "package.json").read_text())
     lock = json.loads((ROOT / "package-lock.json").read_text())
+    if not package.get("private") or set(package.get("workspaces", [])) != set(workspaces):
+        raise ValueError("the private root npm workspace must contain contracts, web, connectors and the CLI launcher")
+    if set(lock.get("packages", {}).get("", {}).get("workspaces", [])) != set(workspaces):
+        raise ValueError("the root npm lockfile workspace set differs from source")
+    for part, name in workspaces.items():
+        directory = ROOT / part
+        manifest = directory / "package.json"
+        if directory.resolve() != directory or manifest.is_symlink():
+            raise ValueError("workspace source directories must not redirect outside this checkout")
+        if (directory / "package-lock.json").exists() or (directory / "package-lock.json").is_symlink():
+            raise ValueError("only the root npm lockfile is an installation input for root workspaces")
+        owned = json.loads(manifest.read_text())
+        installed = ROOT / "node_modules" / name
+        linked = lock.get("packages", {}).get("node_modules/" + name, {})
+        if owned.get("name") != name or installed.resolve() != directory or not linked.get("link") or linked.get("resolved") != part:
+            raise ValueError(f"{name} must install from same-checkout {part}/")
+        if lock.get("packages", {}).get(part, {}).get("version") != owned.get("version"):
+            raise ValueError(f"root lockfile {name} identity differs from source")
+    if lock.get("packages", {}).get("agent/runtimes/dsh"):
+        raise ValueError("DSH is a separate Node24 runtime, not a root npm workspace")
     sdk = json.loads((SDK / "package.json").read_text())
     web = json.loads((ROOT / "web/package.json").read_text())
-    if not package.get("private") or set(package.get("workspaces", [])) != {"contracts", "web"}:
-        raise ValueError("the private root workspace must contain contracts and web")
-    if any((ROOT / part / "package-lock.json").exists() for part in ["contracts", "web"]):
-        raise ValueError("only the root npm lockfile is an installation input")
-    if sdk["name"] != "@opensoha/contracts" or web["dependencies"].get(sdk["name"]) != "file:../contracts":
+    if web["dependencies"].get(sdk["name"]) != "file:../contracts":
         raise ValueError("Web must declare the same-checkout SDK")
-    installed = ROOT / "node_modules/@opensoha/contracts"
-    link = lock.get("packages", {}).get("node_modules/@opensoha/contracts", {})
-    if installed.resolve() != SDK or not link.get("link") or link.get("resolved") != "contracts":
-        raise ValueError("the root SDK installation must link to contracts/")
-    locked_sdk = lock["packages"].get("contracts", {})
-    if locked_sdk.get("version") != sdk["version"]:
-        raise ValueError("root lockfile SDK identity differs from source")
     entry = run(["node", "-e", "console.log(require.resolve('@opensoha/contracts/gen/ts/sohaapi', {paths: [process.argv[1]]}))", str(ROOT / "web")])
     if not Path(entry).resolve().is_relative_to(SDK):
         raise ValueError("Web resolves an SDK outside same-checkout contracts/")
@@ -62,25 +91,31 @@ def check_npm():
 
 def tidy():
     check_go()
-    manifests = [ROOT / name for name in ["go.mod", "go.sum", "go.work"]]
-    manifests += [SDK / name for name in ["go.mod", "go.sum"]]
+    modules = go_modules()
+    manifests = [ROOT / name for name in ["go.work", "go.work.sum"] if (ROOT / name).exists()]
+    manifests += [directory / name for _, directory in modules for name in ["go.mod", "go.sum"]]
+    if any(path.is_symlink() for path in manifests):
+        raise ValueError("module manifests must not be symlinks")
     before = {p: p.read_bytes() for p in manifests}
     env = {**os.environ, "GOWORK": "off"}
+    def external_sums(data):
+        return [line for line in data.splitlines() if not line.startswith(SDK_MODULE.encode() + b" ")]
     try:
-        # tidy is module-scoped; a temporary replacement prevents a release prerequisite.
-        with tempfile.TemporaryDirectory(prefix="soha-source-tidy-", dir=os.environ.get("OPENSOHA_VERIFY_DIR")) as directory:
-            module = Path(directory) / "go.mod"
-            module.write_bytes(before[ROOT / "go.mod"])
-            module.with_suffix(".sum").write_bytes(before[ROOT / "go.sum"])
-            run(["go", "mod", "edit", f"-modfile={module}", f"-replace={SDK_MODULE}={SDK}"], env=env)
-            run(["go", "mod", "tidy", f"-modfile={module}"], env=env)
-            run(["go", "mod", "edit", f"-modfile={module}", f"-dropreplace={SDK_MODULE}"], env=env)
-            if module.read_bytes() != before[ROOT / "go.mod"]:
-                raise ValueError("Core go.mod is not tidy against the source SDK")
-            def external_sums(data):
-                return [line for line in data.splitlines() if not line.startswith(SDK_MODULE.encode() + b" ")]
-            if external_sums(module.with_suffix(".sum").read_bytes()) != external_sums(before[ROOT / "go.sum"]):
-                raise ValueError("Core go.sum is not tidy against the source SDK")
+        for module_name, directory in modules:
+            if directory == SDK:
+                continue
+            # tidy is module-scoped; a temporary replacement prevents a release prerequisite.
+            with tempfile.TemporaryDirectory(prefix="soha-source-tidy-", dir=os.environ.get("OPENSOHA_VERIFY_DIR")) as temporary:
+                module = Path(temporary) / "go.mod"
+                module.write_bytes(before[directory / "go.mod"])
+                module.with_suffix(".sum").write_bytes(before[directory / "go.sum"])
+                run(["go", "mod", "edit", f"-modfile={module}", f"-replace={SDK_MODULE}={SDK}"], cwd=directory, env=env)
+                run(["go", "mod", "tidy", f"-modfile={module}"], cwd=directory, env=env)
+                run(["go", "mod", "edit", f"-modfile={module}", f"-dropreplace={SDK_MODULE}"], cwd=directory, env=env)
+                if module.read_bytes() != before[directory / "go.mod"]:
+                    raise ValueError(f"{module_name} go.mod is not tidy against the source SDK")
+                if external_sums(module.with_suffix(".sum").read_bytes()) != external_sums(before[directory / "go.sum"]):
+                    raise ValueError(f"{module_name} go.sum is not tidy against the source SDK")
         run(["go", "mod", "tidy", "-diff"], cwd=SDK, env=env)
     finally:
         if any(p.read_bytes() != original for p, original in before.items()):

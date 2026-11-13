@@ -1,3 +1,4 @@
+import { sourceProvenance } from "./source-provenance.mjs";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -41,8 +42,10 @@ if (manifest.artifactSha256 !== actualSha256) {
 if (checksumText !== `${actualSha256}  ${path.basename(artifactPath)}`) {
   throw new Error(`${checksumPath} does not match artifact sha256/name`);
 }
-if (manifest.provenance?.sourceRepository !== "github.com/opensoha/soha-connectors") {
-  throw new Error("release manifest must declare the source repository provenance");
+for (const [key, value] of Object.entries(sourceProvenance(root, [artifactPath, checksumPath, manifestPath]))) {
+  if (manifest.provenance?.[key] !== value) {
+    throw new Error(`release manifest source provenance mismatch: ${key}`);
+  }
 }
 if (manifest.provenance?.attestationProvider !== "github-actions-attest-build-provenance") {
   throw new Error("release manifest must require GitHub build provenance attestation");

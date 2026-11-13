@@ -2,25 +2,24 @@
 
 This image runs the Node service directly, without a Go Agent forwarding hop.
 Node 24.14.0 and dsh SDK/runtime 0.2.2-rc.1 are fixed inputs; npm consumes the committed lock.
-Resolve the Contracts version pinned in the Agent `go.mod` and build from the
-Agent repository with its checksum-verified module directory as the schema context.
-The resolver supports both release tags and immutable Go pseudo-versions.
+Build from the complete Root source context. The schema is the same-commit
+`contracts/agent/dsh-runtime.schema.json`; missing source fails the build.
+DSH is not a Root Node22 workspace: its own lock and Node24 image are retained.
 
 ```sh
-contracts_dir="$(opensoha-verify run -- python3 -c 'from deploy.resolve_contracts import resolve_contracts; print(resolve_contracts()["dir"])')"
-opensoha-verify image -- --build-context "contracts=$contracts_dir" -f deploy/Dockerfile.dsh-runtime .
+python3 agent/deploy/resolve_contracts.py --mode source
+opensoha-verify image -- --build-arg COMMIT="$(git rev-parse HEAD)" \
+  -f agent/deploy/Dockerfile.dsh-runtime .
 ```
 
-For a retained image use the workspace `build-image` entry with your own tag.
-The image packages the Agent runtime and the pinned Contracts schema. CI builds it
-and checks authenticated startup with the built-in health probe. The Agent tag
-workflow builds both `linux/amd64` and `linux/arm64` and publishes
-`ghcr.io/opensoha/soha-dsh:<agent-tag>` on tag refs. It checks that the published
-manifest includes both platforms before creating the GitHub release.
-
-The image gate requires `agent/dsh-runtime.schema.json` in that verified module.
-A missing schema or a requested version that differs from the reviewed `go.mod`
-dependency fails before the build; an unversioned sibling checkout is not used.
+For retained images use the existing `build-image` entry and an explicit tag.
+The image contains only the DSH service, pinned dependencies and schema at runtime,
+with no sibling checkout or source workspace. Its revision label identifies the
+actual Root commit. Root active CI owns source builds and authenticated startup;
+nested Agent release workflows remain historical definitions during B3. Public
+module/tag/publisher changes and declared SDK qualification remain separate.
+`resolve_contracts.py --mode declared` preserves checksum-verified external SDK
+resolution and must not be confused with the default source mode.
 
 Run as UID/GID 1000 with a read-only root filesystem, writable named volume at
 `/var/lib/soha-dsh`, and ephemeral `/tmp`. Mount the same service token file used by

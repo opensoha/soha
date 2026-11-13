@@ -64,18 +64,19 @@ The normalized Gateway required scope union is:
 - `vm`
 - `workerPool`
 
-Validation prefers the published `node_modules/@opensoha/contracts` package
-when it is available. A sibling `../soha-contracts` checkout is a local
-development fallback before public release artifacts are published.
+Source validation requires the same repository's `../contracts` producer.
+The root workspace link `../node_modules/@opensoha/contracts` refers to that same
+producer. Missing or redirected source inputs fail; published release installation
+remains an independent verification path.
 
 The packaged contract schema locations are:
 
-- `node_modules/@opensoha/contracts/skills/skill-manifest.schema.json`
-- `node_modules/@opensoha/contracts/presets/mcp-preset.schema.json`
-- `node_modules/@opensoha/contracts/profiles/agent-profile.schema.json`
-- `../soha-contracts/skills/skill-manifest.schema.json`
-- `../soha-contracts/presets/mcp-preset.schema.json`
-- `../soha-contracts/profiles/agent-profile.schema.json`
+- `../node_modules/@opensoha/contracts/skills/skill-manifest.schema.json`
+- `../node_modules/@opensoha/contracts/presets/mcp-preset.schema.json`
+- `../node_modules/@opensoha/contracts/profiles/agent-profile.schema.json`
+- `../contracts/skills/skill-manifest.schema.json`
+- `../contracts/presets/mcp-preset.schema.json`
+- `../contracts/profiles/agent-profile.schema.json`
 
 [`asset-governance.json`](./asset-governance.json) records release signing
 requirements, permission review coverage for every packaged skill, MCP preset,

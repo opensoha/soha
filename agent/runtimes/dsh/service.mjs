@@ -81,7 +81,7 @@ export async function configFromEnv(env = process.env) {
     dataDir: resolve(env.SOHA_DSH_DATA_DIR || '/var/lib/soha-dsh'),
     schemaPath:
       env.SOHA_DSH_SCHEMA_PATH ||
-      resolve(here, '../../../soha-contracts/agent/dsh-runtime.schema.json'),
+      resolve(here, '../../../contracts/agent/dsh-runtime.schema.json'),
     capacity: integer('SOHA_DSH_MAX_CONCURRENCY', 4, 128),
     maxRunMs: integer('SOHA_DSH_MAX_RUN_MS', 120000, 3600000),
     maxTokens: integer('SOHA_DSH_MAX_OUTPUT_TOKENS', 4096, 131072),

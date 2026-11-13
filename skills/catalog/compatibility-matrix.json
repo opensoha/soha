@@ -60,21 +60,21 @@
     "soha-agent": ">=0.1.0 <0.2.0"
   },
   "contractSchemas": {
-    "preferred": "node_modules/@opensoha/contracts",
-    "fallback": "../soha-contracts",
-    "policy": "Use the published @opensoha/contracts schemas when installed. Use the sibling soha-contracts checkout only for local development before public release artifacts are available. Local repository schemas may be stricter for official assets, but must remain compatible with these public contracts.",
+    "preferred": "../contracts",
+    "fallback": "../node_modules/@opensoha/contracts",
+    "policy": "Validate this source tree against ../contracts. The root npm workspace link ../node_modules/@opensoha/contracts identifies the same producer; missing or redirected source inputs fail. Published release installation remains independent from source validation.",
     "assets": {
       "skillManifest": {
-        "preferred": "node_modules/@opensoha/contracts/skills/skill-manifest.schema.json",
-        "fallback": "../soha-contracts/skills/skill-manifest.schema.json"
+        "preferred": "../contracts/skills/skill-manifest.schema.json",
+        "fallback": "../node_modules/@opensoha/contracts/skills/skill-manifest.schema.json"
       },
       "mcpPreset": {
-        "preferred": "node_modules/@opensoha/contracts/presets/mcp-preset.schema.json",
-        "fallback": "../soha-contracts/presets/mcp-preset.schema.json"
+        "preferred": "../contracts/presets/mcp-preset.schema.json",
+        "fallback": "../node_modules/@opensoha/contracts/presets/mcp-preset.schema.json"
       },
       "agentProfile": {
-        "preferred": "node_modules/@opensoha/contracts/profiles/agent-profile.schema.json",
-        "fallback": "../soha-contracts/profiles/agent-profile.schema.json"
+        "preferred": "../contracts/profiles/agent-profile.schema.json",
+        "fallback": "../node_modules/@opensoha/contracts/profiles/agent-profile.schema.json"
       }
     }
   },

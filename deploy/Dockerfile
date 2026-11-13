@@ -7,6 +7,8 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 COPY contracts/package.json ./contracts/package.json
 COPY web/package.json ./web/package.json
+COPY connectors/package.json ./connectors/package.json
+COPY cli/npm/cli ./cli/npm/cli
 COPY web/scripts/apply-dependency-patches.mjs web/scripts/dependency-patches.json web/scripts/dependency-patches.patch ./web/scripts/
 RUN npm ci
 COPY contracts ./contracts
@@ -28,8 +30,10 @@ RUN for attempt in 1 2 3; do \
       sleep 2; \
     done; \
     exit 1
-COPY go.mod go.sum go.work ./soha/
+COPY go.mod go.sum go.work go.work.sum ./soha/
 COPY contracts/go.mod contracts/go.sum ./soha/contracts/
+COPY cli/go.mod cli/go.sum ./soha/cli/
+COPY agent/go.mod agent/go.sum ./soha/agent/
 RUN for attempt in 1 2 3; do \
       (cd soha && timeout 180 go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \

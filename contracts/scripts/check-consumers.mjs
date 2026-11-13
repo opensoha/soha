@@ -59,6 +59,9 @@ const consumerRoot = internalSource ? workspaceRoot : resolve(process.env.SOHA_C
 const availableConsumers = internalSource ? [
   { name: "soha", path: ".", kind: "go", commands: [["go", ["test", "./..."]]] },
   { name: "soha-web", path: "web", kind: "npm", commands: [["npm", ["run", "build", "--workspace", "web"]]] },
+  { name: "soha-cli", path: "cli", kind: "go", commands: [["go", ["test", "./..."]]] },
+  { name: "soha-agent", path: "agent", kind: "go", commands: [["go", ["test", "./..."]]] },
+  { name: "soha-skills", path: "skills", kind: "python", commands: [["python3", ["tools/validate_assets.py"]]] },
 ] : consumers;
 const listOnly = args.includes("--list");
 const outputPath = valueArg("--out");
@@ -137,6 +140,9 @@ for (const target of targets) {
         }
       }
     }
+    if (internalSource && realpathSync(dir) !== resolve(realpathSync(workspaceRoot), consumer.path)) {
+      throw new Error("internal-source consumer directory must not redirect outside its same-checkout component");
+    }
     entry = { consumer: consumer.name, path: dir, commands: [...consumer.commands], revision: revision(dir) };
     if (dryRun) {
       console.log(`[dry-run] ${consumer.name}: ${dir}`);
@@ -164,7 +170,9 @@ for (const target of targets) {
     console.log(`checking consumer ${consumer.name} in ${dir}`);
     if (internalSource) {
       env = { ...process.env, GOWORK: join(workspaceRoot, "go.work"), GOFLAGS: "-mod=readonly" };
-      run("python3", [join(workspaceRoot, "scripts/source-workspace.py"), consumer.kind === "go" ? "check-go" : "check-npm"], workspaceRoot, env);
+      if (consumer.kind !== "python") {
+        run("python3", [join(workspaceRoot, "scripts/source-workspace.py"), consumer.kind === "go" ? "check-go" : "check-npm"], workspaceRoot, env);
+      }
     } else if (consumer.kind === "go") {
       if (declaredSDK) env = { ...process.env, GOWORK: "off", GOFLAGS: "-mod=readonly" };
       else {
@@ -486,7 +494,13 @@ function verifyDeclaredGoSDK(dir, env) {
 }
 
 function internalInputs() {
-  const inputs = ["go.work", "package.json", "package-lock.json", "go.mod", "go.sum", "contracts/package.json", "contracts/go.mod", "contracts/go.sum", "web/package.json"];
+  const inputs = ["go.work", "go.work.sum", "package.json", "package-lock.json", "go.mod", "go.sum",
+    "contracts/package.json", "contracts/go.mod", "contracts/go.sum", "web/package.json",
+    "cli/go.mod", "cli/go.sum", "agent/go.mod", "agent/go.sum", "cli/npm/cli/package.json", "connectors/package.json",
+    "skills/tools/validate_assets.py", "skills/catalog/compatibility-matrix.json",
+    "contracts/skills/skill-manifest.schema.json", "contracts/presets/mcp-preset.schema.json",
+    "contracts/profiles/agent-profile.schema.json", "contracts/auth/permission-catalog.json",
+    "internal/application/aigateway/catalog.go", "internal/domain/cluster/capabilities.go"];
   return Object.fromEntries(inputs.map((path) => [path, existsSync(join(workspaceRoot, path))
     ? createHash("sha256").update(readFileSync(join(workspaceRoot, path))).digest("hex") : null]));
 }

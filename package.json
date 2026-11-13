@@ -5,7 +5,9 @@
   "license": "Apache-2.0",
   "workspaces": [
     "contracts",
-    "web"
+    "web",
+    "connectors",
+    "cli/npm/cli"
   ],
   "overrides": {
     "geojson-flatten": {
@@ -31,6 +33,9 @@
     "check:internal-consumers": "node contracts/scripts/check-consumers.mjs --internal-source --require-all",
     "test:workspace": "python3 -m unittest discover -s scripts -p test_source_workspace.py",
     "postinstall": "node web/scripts/apply-dependency-patches.mjs",
-    "check:dependencies": "npm audit --audit-level=low"
+    "check:dependencies": "npm audit --audit-level=low",
+    "check:connectors": "npm run check --workspace connectors && npm run package:check --workspace connectors",
+    "test:cli-launcher": "npm test --workspace cli/npm/cli",
+    "check:skills": "python3 skills/tools/validate_assets.py --package-dry-run"
   }
 }

@@ -16,7 +16,7 @@ evidence. This repository's `skills/**` are governed runtime workflow assets,
 
 1. Read the affected asset, its local schema, `catalog/README.md`,
    `catalog/compatibility-matrix.json`, and `tools/validate_assets.py`.
-2. If a public manifest field changes, update `../soha-contracts` first.
+2. If a public manifest field changes, update `../contracts` first.
    Local schemas may be stricter but may not fork the public contract.
 3. Keep capability references backed by the Gateway, platform, or AI platform
    catalog and by real runtime evidence.
@@ -50,3 +50,5 @@ python3 tools/validate_assets.py --package-dry-run
 Use the package dry run, `--release-version`, and `--verify-package` for package/release-facing
 changes. Repository-local `.agents/skills` prose does not update the runtime index; validate
 its metadata and references instead.
+
+In the source monorepo, follow the root AGENTS and active root workflow; nested `.github/workflows` are historical and inactive. Public package identities and release installation remain independent from source checks.

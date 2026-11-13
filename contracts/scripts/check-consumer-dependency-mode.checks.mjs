@@ -335,15 +335,18 @@ function internalFixture(t) {
     writeFileSync(join(root, path), body);
   };
   const writeJSON = (path, value) => write(path, JSON.stringify(value) + "\n");
-  write(".gitignore", "node_modules/\nresult.json\n");
-  write("go.mod", "module github.com/opensoha/soha\n\ngo 1.27.4\n\nrequire github.com/opensoha/soha-contracts v0.1.29\n");
-  write("go.sum", "");
-  write("go.work", "go 1.27.4\n\nuse (\n .\n ./contracts\n)\n");
+  write(".gitignore", "node_modules/\nresult.json\nskills/ran\n");
+  for (const [path, name] of [["", "soha"], ["cli/", "soha-cli"], ["agent/", "soha-agent"]]) {
+    write(path + "go.mod", "module github.com/opensoha/" + name + "\n\ngo 1.27.4\n\nrequire github.com/opensoha/soha-contracts v0.1.29\n");
+    write(path + "go.sum", "");
+    write(path + "probe_test.go", 'package source\nimport("testing"; "github.com/opensoha/soha-contracts/b2unpublished")\nfunc TestLocalSDK(t *testing.T) { if b2unpublished.SourceOnly != "B2_SOURCE_ONLY_FIXTURE" { t.Fatal("wrong SDK") } }\n');
+  }
+  write("go.work", "go 1.27.4\n\nuse (\n .\n ./contracts\n ./cli\n ./agent\n)\n");
   write("contracts/go.mod", "module github.com/opensoha/soha-contracts\n\ngo 1.27.4\n");
   write("contracts/go.sum", "");
   write("contracts/b2unpublished/probe.go", 'package b2unpublished\nconst SourceOnly = "B2_SOURCE_ONLY_FIXTURE"\n');
-  write("probe_test.go", 'package soha\nimport("testing"; "github.com/opensoha/soha-contracts/b2unpublished")\nfunc TestLocalSDK(t *testing.T) { if b2unpublished.SourceOnly != "B2_SOURCE_ONLY_FIXTURE" { t.Fatal("wrong SDK") } }\n');
-  writeJSON("package.json", { private: true, workspaces: ["contracts", "web"] });
+  const workspacePaths = ["contracts", "web", "connectors", "cli/npm/cli"];
+  writeJSON("package.json", { private: true, workspaces: workspacePaths });
   writeJSON("contracts/package.json", { name: "@opensoha/contracts", version: "0.1.29", type: "module", exports: {
     "./gen/ts/sohaapi": "./gen/ts/sohaapi/index.ts", "./b2unpublished": "./b2unpublished/index.js"
   } });
@@ -351,16 +354,24 @@ function internalFixture(t) {
   write("contracts/b2unpublished/index.js", 'export const sourceOnly = "B2_SOURCE_ONLY_FIXTURE"\n');
   writeJSON("web/package.json", { name: "soha-web", version: "0.0.0", type: "module", dependencies: { "@opensoha/contracts": "file:../contracts" }, scripts: { build: "node build.mjs" } });
   write("web/build.mjs", 'import assert from "node:assert/strict"; import { sourceOnly } from "@opensoha/contracts/b2unpublished"; assert.equal(sourceOnly, "B2_SOURCE_ONLY_FIXTURE");\n');
-  // Synthetic link-only lock: no registry package, downloaded bytes or invented checksum.
-  writeJSON("package-lock.json", { lockfileVersion: 3, packages: {
-    "": { workspaces: ["contracts", "web"] }, contracts: { name: "@opensoha/contracts", version: "0.1.29" },
-    web: { name: "soha-web", version: "0.0.0", dependencies: { "@opensoha/contracts": "file:../contracts" } },
-    "node_modules/@opensoha/contracts": { resolved: "contracts", link: true },
-    "node_modules/soha-web": { resolved: "web", link: true }
-  } });
-  mkdirSync(join(root, "node_modules/@opensoha"), { recursive: true });
-  symlinkSync(join(root, "contracts"), join(root, "node_modules/@opensoha/contracts"), "dir");
-  symlinkSync(join(root, "web"), join(root, "node_modules/soha-web"), "dir");
+  writeJSON("connectors/package.json", { name: "@opensoha/connectors", version: "0.1.0" });
+  writeJSON("cli/npm/cli/package.json", { name: "@opensoha/cli", version: "0.1.8" });
+  const packages = { "": { workspaces: workspacePaths } };
+  for (const part of workspacePaths) {
+    const manifest = JSON.parse(readFileSync(join(root, part, "package.json")));
+    packages[part] = manifest;
+    packages["node_modules/" + manifest.name] = { resolved: part, link: true };
+    const installed = join(root, "node_modules", manifest.name);
+    mkdirSync(dirname(installed), { recursive: true });
+    symlinkSync(join(root, part), installed, "dir");
+  }
+  // Link-only fixture: no registry package or invented checksum.
+  writeJSON("package-lock.json", { lockfileVersion: 3, packages });
+  const required = ["contracts/skills/skill-manifest.schema.json", "contracts/presets/mcp-preset.schema.json",
+    "contracts/profiles/agent-profile.schema.json", "contracts/auth/permission-catalog.json",
+    "internal/application/aigateway/catalog.go", "internal/domain/cluster/capabilities.go"];
+  for (const path of required) write(path, path.endsWith(".go") ? "package fixture\n" : "{}\n");
+  write("skills/tools/validate_assets.py", 'from pathlib import Path\nroot = Path(__file__).resolve().parents[2]\nrequired = ' + JSON.stringify(required) + '\nassert all((root / p).is_file() for p in required), "missing same-source schema/Core input"\nPath("ran").write_text("strict fixture validated")\n');
   mkdirSync(join(root, "contracts/scripts"));
   copyFileSync(script, join(root, "contracts/scripts/check-consumers.mjs"));
   mkdirSync(join(root, "scripts"));
@@ -375,7 +386,7 @@ function internalFixture(t) {
   return { root, write, writeJSON, checker: join(root, "contracts/scripts/check-consumers.mjs"), head: git("rev-parse", "HEAD"), test: t };
 }
 function frozenInputs(root) {
-  return Object.fromEntries(["package.json", "package-lock.json", "go.work", "go.mod", "go.sum", "contracts/package.json", "contracts/go.mod", "contracts/go.sum", "web/package.json"].map((name) => [name,
+  return Object.fromEntries(["package.json", "package-lock.json", "go.work", "go.mod", "go.sum", "contracts/package.json", "contracts/go.mod", "contracts/go.sum", "web/package.json", "cli/go.mod", "cli/go.sum", "agent/go.mod", "agent/go.sum", "connectors/package.json", "cli/npm/cli/package.json"].map((name) => [name,
     existsSync(join(root, name)) ? readFileSync(join(root, name), "utf8") : null]));
 }
 function internalRun(f, args = []) {
@@ -388,7 +399,7 @@ test("internal source compiles unpublished Go and Web SDK imports offline withou
   const report = JSON.parse(readFileSync(join(f.root, "result.json")));
   assert.equal(report.dependencyMode, "internal-source");
   assert.equal(report.status, "passed");
-  assert.deepEqual(report.results.map(({ consumer, status }) => [consumer, status]), [["soha", "passed"], ["soha-web", "passed"]]);
+  assert.deepEqual(report.results.map(({ consumer, status }) => [consumer, status]), [["soha", "passed"], ["soha-web", "passed"], ["soha-cli", "passed"], ["soha-agent", "passed"], ["soha-skills", "passed"]]);
   assert.equal(report.results[0].nativeQualification.status, "not-applicable");
   assert.equal(report.results[0].nativeQualification.reason, "fixed source has no native suite");
   assert.equal(report.contractsRevision.head, f.head);
@@ -396,15 +407,17 @@ test("internal source compiles unpublished Go and Web SDK imports offline withou
   assert.deepEqual(frozenInputs(f.root), before);
   assert.ok(existsSync(join(f.root, "contracts/scripts/check-consumers.mjs")), "cleanup must preserve source root");
 });
-for (const failing of ["soha", "soha-web"]) test(`internal ${failing} failure preserves root/workspace/lock and does not hide the other result`, (t) => {
+for (const failing of ["soha", "soha-web", "soha-cli", "soha-agent", "soha-skills"]) test(`internal ${failing} failure preserves root/workspace/lock and does not hide the other result`, (t) => {
   const f = internalFixture(t);
-  if (failing === "soha") f.write("probe_test.go", 'package soha\nimport "testing"\nfunc TestFailure(t *testing.T) { t.Fatal("fixture failure") }\n');
-  else f.write("web/build.mjs", 'process.exit(17)\n');
+  if (failing === "soha") f.write("probe_test.go", 'package source\nimport "testing"\nfunc TestFailure(t *testing.T) { t.Fatal("fixture failure") }\n');
+  else if (failing === "soha-web") f.write("web/build.mjs", 'process.exit(17)\n');
+  else if (failing === "soha-skills") f.write("skills/tools/validate_assets.py", 'raise SystemExit(17)\n');
+  else f.write((failing === "soha-cli" ? "cli" : "agent") + "/probe_test.go", 'package source\nimport "testing"\nfunc TestFailure(t *testing.T) { t.Fatal("fixture failure") }\n');
   const before = frozenInputs(f.root); const result = internalRun(f);
   assert.notEqual(result.status, 0);
   const report = JSON.parse(readFileSync(join(f.root, "result.json")));
   assert.equal(report.results.find((r) => r.consumer === failing).status, "failed");
-  assert.equal(report.results.find((r) => r.consumer !== failing).status, "passed");
+  assert.ok(report.results.filter((r) => r.consumer !== failing).every((r) => r.status === "passed"));
   assert.deepEqual(frozenInputs(f.root), before);
 });
 for (const invalid of ["missing-go", "wrong-module", "work-use", "work-replace", "missing-lock", "child-lock", "missing-link", "redirect-link", "redirect-web-resolution", "missing-web"]) {
@@ -438,13 +451,34 @@ for (const invalid of ["missing-go", "wrong-module", "work-use", "work-replace",
     assert.ok(existsSync(join(f.root, "scripts/source-workspace.py")));
   });
 }
+for (const [consumer, path] of [["soha-cli", "cli/go.mod"], ["soha-agent", "agent/go.mod"], ["soha-skills", "contracts/skills/skill-manifest.schema.json"], ["soha-skills", "internal/domain/cluster/capabilities.go"]]) {
+  test(`internal ${consumer} rejects missing same-source ${path}`, (t) => {
+    const f = internalFixture(t);
+    rmSync(join(f.root, path));
+    const before = frozenInputs(f.root);
+    const result = internalRun(f, ["--consumer", consumer]);
+    assert.notEqual(result.status, 0, result.stdout + result.stderr);
+    assert.equal(JSON.parse(readFileSync(join(f.root, "result.json"))).status, "failed");
+    assert.deepEqual(frozenInputs(f.root), before);
+  });
+}
+test("internal Skills rejects a redirected component directory", (t) => {
+  const f = internalFixture(t);
+  const other = mkdtempSync(join(tmpdir(), "redirected-skills-unit-"));
+  t.after(() => rmSync(other, { recursive: true, force: true }));
+  rmSync(join(f.root, "skills"), { recursive: true });
+  symlinkSync(other, join(f.root, "skills"), "dir");
+  const result = internalRun(f, ["--consumer", "soha-skills"]);
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.equal(JSON.parse(readFileSync(join(f.root, "result.json"))).status, "failed");
+});
 test("internal mode rejects declared, external selection, source root redirection and stale SHA", (t) => {
   const f = internalFixture(t); const before = frozenInputs(f.root);
   const listed = internalRun(f, ["--list"]);
   assert.equal(listed.status, 0);
-  assert.equal(listed.stdout.trim(), "soha\nsoha-web");
+  assert.equal(listed.stdout.trim(), "soha\nsoha-web\nsoha-cli\nsoha-agent\nsoha-skills");
   assert.notEqual(internalRun(f, ["--declared"]).status, 0);
-  assert.notEqual(internalRun(f, ["--consumer", "soha-cli"]).status, 0);
+  assert.notEqual(internalRun(f, ["--consumer", "soha-app"]).status, 0);
   const redirected = run(f.root, ["--internal-source"], { SOHA_CONSUMER_ROOT: join(f.root, "web") }, f.checker);
   assert.notEqual(redirected.status, 0);
   assert.notEqual(internalRun(f, ["--contracts-sha", "f".repeat(40)]).status, 0);
@@ -543,7 +577,7 @@ for (const invalid of ["partial-suite", "missing-helper"]) test(`native caller $
   const result = internalRun(f);
   assert.equal(result.status, 1, result.stdout + result.stderr);
   const report = JSON.parse(readFileSync(join(f.root, "result.json")));
-  assert.deepEqual(report.results.map(({ status }) => status), ["failed", "passed"]);
+  assert.deepEqual(report.results.map(({ status }) => status), ["failed", "passed", "passed", "passed", "passed"]);
   assert.equal(report.results[0].nativeQualification.status, "failed");
   assert.match(report.results[0].reason, invalid === "partial-suite" ? /partial/ : /owning.*helper/);
 });
@@ -581,7 +615,7 @@ for (const variant of ["exit-fail", "missing-receipt", "malformed-receipt", "fai
     const result = run(f.root, ["--internal-source"], { ...env, GOPROXY: "off", GOSUMDB: "off", GOTOOLCHAIN: "local", npm_config_offline: "true" }, f.checker);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     const report = JSON.parse(readFileSync(join(f.root, "result.json")));
-    assert.deepEqual(report.results.map(({ status }) => status), ["failed", "passed"]);
+    assert.deepEqual(report.results.map(({ status }) => status), ["failed", "passed", "passed", "passed", "passed"]);
     const qualification = report.results[0].nativeQualification;
     t.after(() => rmSync(qualification.artifactDirectory, { recursive: true, force: true }));
     assert.equal(qualification.status, "failed");

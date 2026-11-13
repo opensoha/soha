@@ -2,9 +2,9 @@
 
 ## Scope
 
-These rules apply to the entire `soha-cli` repository. In a confirmed OpenSoha workspace,
-read `../AGENTS.md` once; do not assume it is loaded across the Git root.
-For a standalone clone, these local rules are sufficient to begin work.
+These rules own `cli/` in the shared Root source repository. Read Root
+`../AGENTS.md` once. The product remains an independent Go client and native artifact;
+its public Go module identity is still `github.com/opensoha/soha-cli`.
 Before implementation or substantive review, read [.agents/skills/soha-cli/SKILL.md](.agents/skills/soha-cli/SKILL.md)
 and its references relevant to the task. Skill symlinks provide discovery, not proof of loading.
 Read README for unfamiliar command behavior and the relevant workflow under
@@ -12,12 +12,13 @@ Read README for unfamiliar command behavior and the relevant workflow under
 
 The executable sources of truth are:
 
-- `.github/workflows/ci.yml` for pull-request and `main` gates.
-- `.github/workflows/release.yml` for tagged artifacts, GitHub Releases, npm,
-  and GHCR publishing.
+- Root `../.github/workflows/` for active source gates. The nested workflow files
+  preserve the original complete CI and release contracts as historical references;
+  B3 does not activate another publisher.
 - `internal/sohacli/command_metadata.go` for command discovery, help, generated
   docs, and completion metadata.
-- Released `github.com/opensoha/soha-contracts` types for public API contracts.
+- Same-commit Root `contracts/` types for internal source builds; declared external
+  SDK verification remains a separate, explicit `GOWORK=off` qualification.
 
 When these rules disagree with an executable workflow, first determine whether
 the workflow or documentation is stale, then update both in the same change.
@@ -45,10 +46,11 @@ the workflow or documentation is stale, then update both in the same change.
 
 ## Ownership And Boundaries
 
-- Keep `soha-cli` a standalone Go client. Do not import `soha/internal/**` or
-  rely on a sibling core checkout at build or release time.
-- Keep `go.mod` on a released `soha-contracts` version. Use an uncommitted local
-  `go.work` only while coordinating unreleased contract changes.
+- Keep the CLI independent from Core internals: never import `soha/internal/**`.
+  Internal builds use Root `go.work` and `contracts/`, with no sibling repository.
+- Preserve the declared SDK pin and existing module/import/ldflags identities in B3.
+  Root source success does not certify the declared SDK or a new public module path;
+  test external distribution explicitly with `GOWORK=off` and no replacements.
 - Keep Cloud-only lifecycle, billing, quota, and operations logic outside this
   repository. The CLI may call public Cloud APIs without owning their logic.
 - Keep the npm package a checksum-verifying launcher for the native Go binary.
@@ -105,28 +107,28 @@ the workflow or documentation is stale, then update both in the same change.
 Use the change-to-validation matrix during iteration. This full gate applies
 to the changes that require it and to CI/release verification, not every edit.
 
-Use Go `1.27.2`, Node.js `20.x`, `govulncheck v1.8.0`, and
-`golangci-lint v2.14.0`. Run release-sensitive checks with the parent workspace
-disabled:
+Use Root Go `1.27.4`, Node.js `22.x`, `govulncheck v1.8.0`, and
+`golangci-lint v2.14.0`. Run each module explicitly in the four-module Root
+workspace; Root `go test ./...` does not discover this nested module:
 
 ```bash
-GOWORK=off go mod tidy
-git diff --exit-code -- go.mod go.sum
-GOWORK=off go mod verify
-GOWORK=off go test ./...
-GOWORK=off go test -race ./...
-GOWORK=off go vet ./...
-GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+export GOWORK="$(git rev-parse --show-toplevel)/go.work"
+python3 ../scripts/source-workspace.py check-go
+go mod verify
+go test ./...
+go test -race ./...
+go vet ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 golangci-lint run --timeout=5m
-GOWORK=off CGO_ENABLED=0 go build -o /tmp/soha ./cmd/soha
-(cd npm/cli && npm test && npm pack --dry-run)
-docker build -f Dockerfile -t ghcr.io/opensoha/soha-cli:test .
+make build
+(cd .. && npm test --workspace @opensoha/cli && npm pack --workspace @opensoha/cli --dry-run)
+make verify-image
 git diff --check
 ```
 
 Do not report a missing local tool or Docker daemon as a pass. For release work,
-use the successful matching GitHub Actions job to complete verification. The
-current `ci.yml` enforces the commands through the Docker build;
+use the successful matching GitHub Actions job to complete verification. Root active CI must retain the complete original gate through the Docker build;
+external declared-SDK checks use `GOWORK=off` separately;
 `git diff --check` is an additional mandatory local pre-submit check.
 
 ## Release Contract
@@ -175,6 +177,6 @@ Before declaring a release complete, require all of the following:
 
 ## Graphify
 
-- 跨模块依赖、共享能力影响、模块迁移或跨仓任务，先查询已有图谱并核对源码；在已确认的多仓工作区按 [Graphify 开发手册](../docs/guides/graphify-development/runbook.md)检查新鲜度、查询和刷新。
+- 跨模块依赖、共享能力影响、模块迁移或跨仓任务，先查询已有图谱并核对源码；在已确认的多仓工作区按 [Graphify 开发手册](../AGENTS.md#graphify)检查新鲜度、查询和刷新。
 - 结构变更稳定后显式刷新受影响仓库及跨仓图；普通小修改、文案和局部样式不自动建图。刷新失败先诊断，不默认使用 `--force`。
 - 独立克隆时使用本仓 `graphify-out/graph.json` 与原生 Graphify 命令；缺少工具或图谱时直接查源码并说明缺口，不要求补齐相邻仓库。

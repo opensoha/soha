@@ -1,4 +1,8 @@
 import importlib.util
+import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -86,6 +90,153 @@ class WebStageTest(unittest.TestCase):
         (self.root / ".tmp/embedded-web.json").hardlink_to(self.protected)
         workspace.stage_web()
         self.assertEqual(self.protected.read_text(), "keep")
+
+
+class GoSourceTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="soha-go-source-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.addCleanup(patch.stopall)
+        patch.object(workspace, "ROOT", self.root).start()
+        patch.object(workspace, "SDK", self.root / "contracts").start()
+        self.modules = workspace.go_modules()
+        for name, directory in self.modules:
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "go.mod").write_text(f"module {name}\n\ngo 1.27.4\n")
+            (directory / "go.sum").write_text("")
+        (self.root / "go.work").write_text("go 1.27.4\n\nuse (\n .\n ./contracts\n ./cli\n ./agent\n)\n")
+
+    def fake_go(self, args, **kwargs):
+        if args == ["go", "env", "GOWORK"]:
+            return str(self.root / "go.work")
+        if args == ["go", "work", "edit", "-json"]:
+            return json.dumps({"Use": [{"DiskPath": str(directory)} for _, directory in self.modules]})
+        name = args[-1]
+        directory = dict(self.modules)[name]
+        return json.dumps({"Path": name, "Dir": str(directory), "Main": True})
+
+    def test_exact_four_module_identity(self):
+        with patch.object(workspace, "run", side_effect=self.fake_go):
+            workspace.check_go()
+
+    def test_missing_component_manifest_fails(self):
+        (self.root / "cli/go.mod").unlink()
+        with self.assertRaisesRegex(ValueError, "same-checkout"):
+            workspace.check_go()
+
+    def test_component_symlink_fails(self):
+        shutil.rmtree(self.root / "agent")
+        (self.root / "agent").symlink_to(self.root / "cli", target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "confined"):
+            workspace.check_go()
+
+    def test_wrong_workspace_and_replacement_fail(self):
+        for config in ({"Use": [{"DiskPath": str(self.root)}]},
+                       {"Use": [{"DiskPath": str(d)} for _, d in self.modules], "Replace": [{"Old": "sdk"}]}):
+            def run(args, **kwargs):
+                return json.dumps(config) if args[1:3] == ["work", "edit"] else self.fake_go(args, **kwargs)
+            with self.subTest(config=config), patch.object(workspace, "run", side_effect=run):
+                with self.assertRaisesRegex(ValueError, "exactly"):
+                    workspace.check_go()
+
+    def test_wrong_module_resolution_fails(self):
+        def run(args, **kwargs):
+            if args[-1] == "github.com/opensoha/soha-cli":
+                return json.dumps({"Path": args[-1], "Dir": str(self.root / "cli"), "Main": False})
+            return self.fake_go(args, **kwargs)
+        with patch.object(workspace, "run", side_effect=run):
+            with self.assertRaisesRegex(ValueError, "same-checkout source"):
+                workspace.check_go()
+
+    def test_unpublished_sdk_package_builds_only_from_source_workspace(self):
+        sdk = self.root / "contracts/unpublished"
+        sdk.mkdir()
+        (sdk / "value.go").write_text("package unpublished\nconst Value = 1\n")
+        for name, directory in self.modules:
+            if directory == workspace.SDK:
+                continue
+            with (directory / "go.mod").open("a") as stream:
+                stream.write("require github.com/opensoha/soha-contracts v0.0.0-20261113000000-deadbeef0123\n")
+            (directory / "source.go").write_text('package source\nimport "github.com/opensoha/soha-contracts/unpublished"\nvar Value = unpublished.Value\n')
+        env = {**os.environ, "GOWORK": str(self.root / "go.work"), "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
+        with patch.dict(os.environ, env):
+            workspace.check_go()
+            for _, directory in self.modules:
+                subprocess.run(["go", "test", "./..."], cwd=directory, env=env, check=True, capture_output=True)
+            standalone = subprocess.run(["go", "test", "./..."], cwd=self.root, env={**env, "GOWORK": "off"}, capture_output=True)
+            self.assertNotEqual(standalone.returncode, 0)
+        self.assertTrue((self.root / "go.work").is_file())
+
+
+class NpmSourceTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="soha-npm-source-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.addCleanup(patch.stopall)
+        patch.object(workspace, "ROOT", self.root).start()
+        patch.object(workspace, "SDK", self.root / "contracts").start()
+        self.names = {"contracts": "@opensoha/contracts", "web": "soha-web", "connectors": "@opensoha/connectors", "cli/npm/cli": "@opensoha/cli"}
+        self.package = {"private": True, "workspaces": list(self.names)}
+        self.lock = {"packages": {"": {"workspaces": list(self.names)}}}
+        for part, name in self.names.items():
+            directory = self.root / part
+            directory.mkdir(parents=True)
+            package = {"name": name, "version": "1.0.0"}
+            if part == "web":
+                package["dependencies"] = {"@opensoha/contracts": "file:../contracts"}
+            (directory / "package.json").write_text(json.dumps(package))
+            installed = self.root / "node_modules" / name
+            installed.parent.mkdir(parents=True, exist_ok=True)
+            installed.symlink_to(directory, target_is_directory=True)
+            self.lock["packages"][part] = {"version": "1.0.0"}
+            self.lock["packages"]["node_modules/" + name] = {"resolved": part, "link": True}
+        sdk = workspace.SDK / "gen/ts/sohaapi/index.d.ts"
+        sdk.parent.mkdir(parents=True)
+        sdk.write_text("export {}")
+        patch.object(workspace, "run", return_value=str(sdk)).start()
+        self.write()
+
+    def write(self):
+        (self.root / "package.json").write_text(json.dumps(self.package))
+        (self.root / "package-lock.json").write_text(json.dumps(self.lock))
+
+    def test_root_four_workspaces_and_separate_dsh_lock(self):
+        dsh = self.root / "agent/runtimes/dsh"
+        dsh.mkdir(parents=True)
+        (dsh / "package-lock.json").write_text("{}")
+        workspace.check_npm()
+
+    def test_missing_new_workspace_link_fails(self):
+        del self.lock["packages"]["node_modules/@opensoha/cli"]
+        self.write()
+        with self.assertRaisesRegex(ValueError, "same-checkout"):
+            workspace.check_npm()
+
+    def test_dsh_in_root_workspace_fails(self):
+        self.package["workspaces"].append("agent/runtimes/dsh")
+        self.write()
+        with self.assertRaisesRegex(ValueError, "private root npm"):
+            workspace.check_npm()
+
+    def test_other_install_lock_fails(self):
+        (self.root / "connectors/package-lock.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "only the root"):
+            workspace.check_npm()
+
+    def test_sdk_redirect_and_bad_locked_identity_fail(self):
+        link = self.root / "node_modules/@opensoha/contracts"
+        link.unlink()
+        link.symlink_to(self.root / "web", target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "same-checkout"):
+            workspace.check_npm()
+        link.unlink()
+        link.symlink_to(workspace.SDK, target_is_directory=True)
+        self.lock["packages"]["cli/npm/cli"]["version"] = "2.0.0"
+        self.write()
+        with self.assertRaisesRegex(ValueError, "identity"):
+            workspace.check_npm()
 
 
 if __name__ == "__main__":

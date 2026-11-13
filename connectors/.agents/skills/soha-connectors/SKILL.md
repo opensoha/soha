@@ -20,7 +20,7 @@ provider boundaries.
    `connectors/index.json`, and `connectors/capability-matrix.json` aligned
    with implemented code and evidence.
 4. Change the canonical public event or manifest contract in
-   `../soha-contracts` first, then update the local compatibility copy.
+   `../contracts` first, then update the local compatibility copy.
 5. Add boundary tests for signatures, replay/idempotency, retries, rate limits,
    redaction, event normalization, and action errors as applicable.
 
@@ -45,3 +45,5 @@ npm run check
 
 Run package and release artifact checks only when exports, manifests, or
 release contents change.
+
+In the source monorepo, follow the root AGENTS and active root workflow; nested `.github/workflows` are historical and inactive. Public package identities and release installation remain independent from source checks.

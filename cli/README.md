@@ -1,6 +1,6 @@
 # OpenSoha Soha CLI
 
-This repository contains the standalone command-line client for OpenSoha Soha.
+Root `cli/` contains the independently packaged command-line client for OpenSoha Soha.
 The CLI command is `soha`, and the Go module is `github.com/opensoha/soha-cli`.
 
 The CLI connects to a Soha HTTP API by base URL, so the same client can talk to
@@ -46,42 +46,46 @@ command for installed binaries.
 
 ## Build
 
-This module requires Go 1.27.3 or newer.
+Internal source builds use Go1.27.4 and the committed Root workspace containing
+Core, Contracts, CLI and Agent. From Root:
 
 ```sh
-GOWORK=off go test ./...
-GOWORK=off go build ./cmd/soha
+make -C cli test
+make -C cli build
+npm test --workspace @opensoha/cli
+npm pack --workspace @opensoha/cli --dry-run
+make -C cli verify-image
 ```
 
-`soha-cli` consumes versioned Go contracts from
-`github.com/opensoha/soha-contracts`. A clean checkout should build without a
-sibling `../soha-contracts` directory. When developing unreleased contract
-changes locally, create a temporary workspace outside the committed module
-state:
+The image uses the complete Root context and the same `contracts/` source.
+`make build` injects the real Root commit and UTC build date into the existing
+ldflags symbols. Set `VERSION=0.1.8` when intentionally producing that CLI version;
+without it the native development version remains unchanged. Root and CLI do not
+share a product version.
 
-```sh
-go work init . ../soha-contracts
-go test ./...
-```
+The launcher package, checksum verification, release download URLs and public
+module identity remain unchanged in B3. Root Node22 installs its dependency-free
+workspace; it adds no install hook. Nested `.github/workflows` preserve the old
+release contract, while Root workflows own active source gates. Publisher, tag
+and public download changes are separate B4/B5 work.
 
-Do not commit local `go.work` files unless the release process explicitly asks
-for a multi-repository workspace.
+For external declared-dependency qualification, run `make -C cli test-declared`
+or explicitly use `GOWORK=off` from `cli/`. That result and internal source
+compatibility are separate evidence. Missing same-Root source must fail; do not
+create another sibling workspace or silently fall back to a published SDK.
 
 ## Contracts Compatibility
 
 `soha-cli` treats `github.com/opensoha/soha-contracts` as its public API source.
-Formal release branches pin a released contracts tag. The current Task115
-integration candidate pins immutable source commit
-`d1eaebb02c5bb222badf52dc43d569ccedc34c02` through its canonical Go pseudo-version,
-so matching Core/Agent/CLI builds can be validated without publishing an SDK
-package. Standard builds use `GOWORK=off` and no sibling replacement. This source
-commit must remain reachable when the candidate branches are integrated; retain
-its ancestry or the source branch. A source pin is not an SDK registry release. Contract upgrades should be reviewed with this minimum matrix:
+B3 preserves the declared SDK pin in `go.mod` and uses Root `contracts/` for
+internal source validation. This does not assert that the declared SDK is publicly
+available or that a new module location has been published. External consumers
+and `GOWORK=off` distribution checks retain their own qualification. Contract upgrades should be reviewed with this minimum matrix:
 
 | soha-cli | soha-contracts | Compatible Soha API | Notes |
 | --- | --- | --- | --- |
 | `v0.1.x` | `v0.1.x` | `v0.1.x` beta API | Supported beta line. |
-| `main` Task115 candidate | the reviewed immutable source above | matching candidate API | Complete owner gates and both declared-dependency and local-candidate consumer matrices. |
+| Root source candidate | same-commit `contracts/` | same-commit API | Complete each module gate and distinguish source results from declared external consumer qualification. |
 
 When a contracts change is not backward compatible, release a new contracts tag
 first, update this module in a dedicated commit, and run the consumer matrix for

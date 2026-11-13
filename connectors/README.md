@@ -19,8 +19,8 @@ cloud operations logic into this repository.
   `npm run build:test` keeps `dist-test/` for inspection.
 
 ```bash
-npm install
-npm run check
+npm ci # from the source repository root
+npm run check --workspace connectors
 ```
 
 ## Layout
@@ -87,7 +87,7 @@ permissions, events, and actions.
 
 Connector events are posted to Core as a batch wrapper mirrored at
 `schemas/connector-event-envelope.schema.json`. The canonical schema lives in
-`soha-contracts/connectors/connector-event-envelope.schema.json`; the local
+`../contracts/connectors/connector-event-envelope.schema.json`; the local
 copy is kept for package compatibility. The wrapper is
 `{ connectorId: string, events: ConnectorEvent[] }`. Each `ConnectorEvent`
 contains `id`, `type`, `source`, `occurredAt`, provider-specific `payload`, and
@@ -198,3 +198,17 @@ tarball, checksum, and release manifest before publishing.
 
 This repository is licensed under the Apache License 2.0. See
 [LICENSE](./LICENSE) for the full license text.
+
+## Source repository integration
+
+This component lives at `connectors/` in `opensoha/soha`. Install only from the
+repository root using its single lockfile; component scripts run with the
+connector directory as cwd (`npm run <script> --workspace connectors`). The
+nested `connectors/` registry directory and package exports retain their layout.
+The active check workflow is [connectors-ci](../.github/workflows/connectors-ci.yml);
+this component's nested workflows are retained history and do not run here.
+
+Local release artifact provenance records the actual source repository, commit,
+component directory, source digest and modification state. Packaging is not a
+publication: publisher, download URL and release-tag migration remain separate.
+The package stays private and can still run independently after packing.

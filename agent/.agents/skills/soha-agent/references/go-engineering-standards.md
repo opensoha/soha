@@ -5,7 +5,7 @@ Apply this reference to production Go changes in `soha-agent`. Repository contra
 ## Repository Boundary
 
 - Keep `soha-agent` a standalone Go module and runtime. Never import `github.com/opensoha/soha/internal/**`.
-- Exchange stable API shapes through released `github.com/opensoha/soha-contracts` types. A sibling replacement may be used for development and Docker build context, but changes must remain compatible with the intended released tag.
+- Exchange stable API shapes through same-Root `contracts/` in internal source mode. B3 retains the declared module/import/ldflags identities; qualify external dependencies separately with `GOWORK=off` and no replacement, without claiming a published SDK from source results.
 - Keep `cmd/agent/main.go` minimal and explicit. Construct configuration, logger, Kubernetes client, runner, and HTTP server through `internal/agent/bootstrap`.
 - Do not add mutable global services, implicit `init` setup, a service locator, or a DI container. Define narrow consumer-owned interfaces and inject concrete implementations.
 
@@ -52,10 +52,10 @@ Apply this reference to production Go changes in `soha-agent`. Repository contra
 
 ## Module and Build Rules
 
-- Match the Go and toolchain versions declared by `go.mod`. Do not silently depend on a local `go.work`.
+- Use Root Go1.27.4 and the explicit committed four-module `go.work` for source builds; execute every module separately. Do not create another local workspace or fall back to a registry SDK when Root source is missing.
 - Review every direct dependency and `go mod tidy` change. Prefer the standard library or existing dependencies when they clearly satisfy the requirement.
-- Keep generic and Hermes images buildable from the same released contract boundary. Do not bake runtime tokens, kubeconfigs, provider credentials, or test files into images.
-- Build release binaries with `GOWORK=off`, `CGO_ENABLED=0`, `-trimpath`, and the release workflow's version `ldflags`.
+- Build generic/Hermes/runtime images from the same Root context and contracts source, with all four module manifests available. Do not bake runtime tokens, kubeconfigs, provider credentials, or test files into images.
+- Source binaries use Root `GOWORK`, `CGO_ENABLED=0`, `-trimpath`, unchanged ldflags symbols, true Root commit metadata and independent component versions. External release qualification remains explicit `GOWORK=off`; B3 does not activate publishers.
 
 ## Verification Gate
 
@@ -63,21 +63,21 @@ Use the [skill's Testing section](../SKILL.md#testing) to select checks by impac
 
 Before completing architecture, module/dependency, public-contract, security, concurrency/runner, image/packaging, or release changes, run the applicable full gate below and the affected artifact checks. CI requirements remain unchanged. Reuse successful results while the relevant code and environment are unchanged; expand or repeat checks only for new changes, failures, or a concrete unresolved risk.
 
-Tool versions and exact CI commands are owned by [CI](../../../../.github/workflows/ci.yml) and [release](../../../../.github/workflows/release.yml). For local incremental lint, set `SOHA_AGENT_LINT_BASE_REF` to the verified PR target or configured integration upstream, then use the workspace verification wrapper for the selected checks.
+Tool versions and exact CI commands are owned by [Root active CI](../../../../../.github/workflows/) and [release](../../../../.github/workflows/release.yml). For local incremental lint, set `SOHA_AGENT_LINT_BASE_REF` to the verified PR target or configured integration upstream, then use the workspace verification wrapper for the selected checks.
 
 ```bash
-GOWORK=off go mod tidy
-git diff -- go.mod go.sum
-GOWORK=off go mod verify
-GOWORK=off go test ./...
-GOWORK=off go test -race ./...
-GOWORK=off go vet ./...
-GOWORK=off go run github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0 -over 20 internal/agent | awk '!/_test[.]go/'
+export GOWORK="$(git rev-parse --show-toplevel)/go.work"
+python3 ../scripts/source-workspace.py check-go
+go mod verify
+go test ./...
+go test -race ./...
+go vet ./...
+go run github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0 -over 20 internal/agent | awk '!/_test[.]go/'
 : "${SOHA_AGENT_LINT_BASE_REF:?set the verified PR base or upstream ref}"
 BASE_REV="$(git merge-base HEAD "$SOHA_AGENT_LINT_BASE_REF")"
 golangci-lint run --new-from-rev="$BASE_REV" ./...
-GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-GOWORK=off CGO_ENABLED=0 go build -trimpath -o /tmp/soha-agent ./cmd/agent
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+make build
 git diff --check
 ```
 

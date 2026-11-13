@@ -50,11 +50,13 @@ class ProxyNativeTests(unittest.TestCase):
 
     def source(self, directory):
         root = Path(directory)
-        (root / 'contracts').mkdir()
         (root / 'go.mod').write_text('module github.com/opensoha/soha\n\ngo 1.27.4\nrequire ' + runner.SDK + ' v1.2.3\n')
         (root / 'go.sum').write_text(runner.SDK + ' v1.2.3 h1:distribution\n')
-        (root / 'go.work').write_text('go 1.27.4\n\nuse (\n\t.\n\t./contracts\n)\n')
-        (root / 'contracts/go.mod').write_text('module ' + runner.SDK + '\ngo 1.27.4\n')
+        (root / 'go.work').write_text('go 1.27.4\n\nuse (\n\t.\n\t./contracts\n\t./cli\n\t./agent\n)\n')
+        for folder, module in (('contracts', runner.SDK), ('cli', 'github.com/opensoha/soha-cli'),
+                               ('agent', 'github.com/opensoha/soha-agent')):
+            (root / folder).mkdir()
+            (root / folder / 'go.mod').write_text('module ' + module + '\ngo 1.27.4\n')
         return root
 
     def test_source_and_declared_sdk_identities_never_substitute(self):
@@ -83,6 +85,104 @@ class ProxyNativeTests(unittest.TestCase):
             (root / 'go.sum').write_text('')
             with self.assertRaises(ValueError):
                 runner.sdk_input(root, 'declared')
+
+    def test_source_binds_and_resolves_all_four_module_identities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.source(tmp)
+            identity = runner.sdk_input(root, 'source')
+            self.assertEqual(set(identity['sourceModules']), {'github.com/opensoha/soha', runner.SDK,
+                'github.com/opensoha/soha-cli', 'github.com/opensoha/soha-agent'})
+            for folder, module in runner.SOURCE_MODULES.items():
+                with self.subTest(module=module):
+                    expected = identity['sourceModules'][module]
+                    self.assertEqual(expected['goModSHA256'], hashlib.sha256((root / folder / 'go.mod').read_bytes()).hexdigest())
+                    actual = {'Path': module, 'Dir': '/src' if folder == '.' else '/src/' + folder, 'Main': True}
+                    runner.verify_source_module(actual, identity)
+                    for changed in ({'Dir': '/outside'}, {'Main': False}, {'Main': 'true'},
+                                    {'Replace': {'Dir': actual['Dir']}}, {'Error': 'unavailable'}):
+                        with self.assertRaises(ValueError):
+                            runner.verify_source_module(dict(actual, **changed), identity)
+
+    def test_source_rejects_missing_cli_and_agent_manifests_without_affecting_declared(self):
+        for folder in ('cli', 'agent'):
+            with self.subTest(folder=folder), tempfile.TemporaryDirectory() as tmp:
+                root = self.source(tmp)
+                (root / folder / 'go.mod').unlink()
+                with self.assertRaisesRegex(ValueError, 'Unavailable or unconfined'):
+                    runner.sdk_input(root, 'source')
+                declared = runner.sdk_input(root, 'declared')
+                self.assertNotIn('sourceModules', declared)
+                self.assertEqual(declared['expectedSum'], 'h1:distribution')
+
+    def test_source_rejects_wrong_module_ids_and_replacements_in_every_module(self):
+        for folder in ('contracts', 'cli', 'agent'):
+            for change in ('module other\n', '\n  replace example.invalid/old => ../other\n'):
+                with self.subTest(folder=folder, change=change), tempfile.TemporaryDirectory() as tmp:
+                    root = self.source(tmp)
+                    path = root / folder / 'go.mod'
+                    path.write_text(change if change.startswith('module') else path.read_text() + change)
+                    with self.assertRaises(ValueError):
+                        runner.sdk_input(root, 'source')
+
+    def test_source_rejects_external_manifest_symlinks(self):
+        for folder in ('.', 'contracts', 'cli', 'agent'):
+            with self.subTest(folder=folder), tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
+                root = self.source(tmp)
+                path = root / folder / 'go.mod'
+                target = Path(outside) / 'go.mod'
+                target.write_bytes(path.read_bytes())
+                path.unlink()
+                path.symlink_to(target)
+                with self.assertRaisesRegex(ValueError, 'Unavailable or unconfined'):
+                    runner.sdk_input(root, 'source')
+
+    def test_archive_includes_four_module_inputs_and_binds_cli_agent_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.source(tmp)
+            names = ['go.mod', 'go.sum', 'go.work', 'contracts/go.mod', 'cli/go.mod', 'agent/go.mod']
+            files = {'cli/cmd/main.go': 'package main\n//go:embed message.txt\nvar message string\n',
+                'cli/cmd/message.txt': 'public embedded fixture',
+                'agent/internal/runtime/runtime_test.go': 'package runtime\n',
+                'agent/internal/runtime/testdata/reply.json': '{"ok":true}',
+                'cli/private/token.go': 'private fixture', 'agent/.env': 'private fixture',
+                'cli/bin/generated.go': 'generated fixture', 'agent/node_modules/private.go': 'generated fixture'}
+            for name, content in files.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            names.extend(files)
+            with patch.object(runner, 'command', return_value=('\0'.join(names) + '\0').encode()):
+                archive, digest = runner.source_archive(root, 'source')
+                declared, _ = runner.source_archive(root, 'declared')
+                (root / 'cli/cmd/main.go').write_text(files['cli/cmd/main.go'] + '// changed source\n')
+                _, changed_cli = runner.source_archive(root, 'source')
+                (root / 'agent/internal/runtime/runtime_test.go').write_text('package runtime\n// changed source\n')
+                _, changed_agent = runner.source_archive(root, 'source')
+            self.assertNotEqual(digest, changed_cli)
+            self.assertNotEqual(changed_cli, changed_agent)
+            with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+                members = tar.getnames()
+                for name in names[:6] + list(files)[:4]:
+                    self.assertIn('src/' + name, members)
+                for name in list(files)[4:]:
+                    self.assertNotIn('src/' + name, members)
+                self.assertEqual(tar.extractfile('src/cli/cmd/message.txt').read(), b'public embedded fixture')
+            with tarfile.open(fileobj=io.BytesIO(declared)) as tar:
+                self.assertFalse(any(name.startswith(('src/contracts/', 'src/cli/', 'src/agent/'))
+                                     or name.startswith('src/go.work') for name in tar.getnames()))
+
+    def test_archive_rejects_cli_and_agent_symlink_escape_and_unsafe_paths(self):
+        for folder in ('cli', 'agent'):
+            with self.subTest(folder=folder), tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
+                root = self.source(tmp)
+                target = Path(outside) / 'source.go'
+                target.write_text('package fixture\n')
+                (root / folder / 'escape.go').symlink_to(target)
+                with patch.object(runner, 'command', return_value=(folder + '/escape.go\0').encode()):
+                    with self.assertRaises(ValueError):
+                        runner.source_archive(root, 'source')
+            self.assertFalse(runner.source_file('/' + folder + '/source.go', 'source'))
+            self.assertFalse(runner.source_file(folder + '/../internal/source.go', 'source'))
 
     def test_archive_includes_untracked_go_testdata_and_embeds_without_private_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:

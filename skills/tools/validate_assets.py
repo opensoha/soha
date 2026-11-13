@@ -27,8 +27,7 @@ COMPATIBILITY_MATRIX_PATH = ROOT / "catalog" / "compatibility-matrix.json"
 ASSET_GOVERNANCE_PATH = ROOT / "catalog" / "asset-governance.json"
 CATALOG_README_PATH = ROOT / "catalog" / "README.md"
 AGENT_SKILLS_ROOT = ROOT / "agent-skills"
-PUBLIC_CONTRACTS_ROOT = ROOT / "node_modules" / "@opensoha" / "contracts"
-SIBLING_CONTRACTS_ROOT = ROOT.parent / "soha-contracts"
+SOURCE_CONTRACTS_ROOT = ROOT.parent / "contracts"
 CONTRACT_SCHEMA_RELATIVE_PATHS = {
     "skill": "skills/skill-manifest.schema.json",
     "mcpPreset": "presets/mcp-preset.schema.json",
@@ -39,8 +38,8 @@ LOCAL_SCHEMA_FILES = {
     "mcpPreset": "mcp-preset.schema.json",
     "agentProfile": "agent-profile.schema.json",
 }
-DEFAULT_GATEWAY_CATALOG_SOURCE = ROOT.parent / "soha" / "internal" / "application" / "aigateway" / "catalog.go"
-DEFAULT_PLATFORM_CAPABILITY_SOURCE = ROOT.parent / "soha" / "internal" / "domain" / "cluster" / "capabilities.go"
+DEFAULT_GATEWAY_CATALOG_SOURCE = ROOT.parent / "internal" / "application" / "aigateway" / "catalog.go"
+DEFAULT_PLATFORM_CAPABILITY_SOURCE = ROOT.parent / "internal" / "domain" / "cluster" / "capabilities.go"
 REQUIRED_SKILL_SECTIONS = ("Operating Contract", "Workflow", "Examples", "Permission Boundaries", "Forbidden Actions", "Guardrails")
 ALLOWED_SKILL_CATEGORIES = {"delivery", "platform", "security"}
 RELEASE_INCLUDE_DIRS = ("agent-profiles", "agent-skills", "catalog", "mcp-presets", "schemas", "skills")
@@ -342,27 +341,46 @@ def load_ai_platform_capability_catalog() -> dict[str, Any]:
     return catalog
 
 
-def default_contract_schema(relative_path: str) -> Path | None:
-    for root in (PUBLIC_CONTRACTS_ROOT, SIBLING_CONTRACTS_ROOT):
-        candidate = root / relative_path
-        if candidate.exists():
-            return candidate
-    return None
+def default_contract_schema(relative_path: str) -> Path:
+    return SOURCE_CONTRACTS_ROOT / relative_path
 
 
-def default_contracts_skill_schema() -> Path | None:
+def required_source_inputs() -> dict[str, Path]:
+    return {
+        "contracts_skill_schema": default_contracts_skill_schema(),
+        "contracts_mcp_preset_schema": default_contracts_mcp_preset_schema(),
+        "contracts_agent_profile_schema": default_contracts_agent_profile_schema(),
+        "contracts_permission_catalog": default_contracts_permission_catalog(),
+        "gateway_catalog_source": DEFAULT_GATEWAY_CATALOG_SOURCE,
+        "platform_capability_source": DEFAULT_PLATFORM_CAPABILITY_SOURCE,
+    }
+
+
+def validate_source_inputs(args: argparse.Namespace) -> None:
+    for name, expected in required_source_inputs().items():
+        actual = getattr(args, name, None)
+        if actual is None or not expected.is_file():
+            raise ValidationError(f"required same-source input {name} is missing: {expected}")
+        if actual.resolve() != expected.resolve():
+            raise ValidationError(f"{name} must use the same-source input {expected}, got {actual}")
+        # A redirected producer directory must not masquerade as this source tree.
+        if expected.resolve() != expected.absolute():
+            raise ValidationError(f"same-source input must not redirect outside its source path: {expected}")
+
+
+def default_contracts_skill_schema() -> Path:
     return default_contract_schema(CONTRACT_SCHEMA_RELATIVE_PATHS["skill"])
 
 
-def default_contracts_mcp_preset_schema() -> Path | None:
+def default_contracts_mcp_preset_schema() -> Path:
     return default_contract_schema(CONTRACT_SCHEMA_RELATIVE_PATHS["mcpPreset"])
 
 
-def default_contracts_agent_profile_schema() -> Path | None:
+def default_contracts_agent_profile_schema() -> Path:
     return default_contract_schema(CONTRACT_SCHEMA_RELATIVE_PATHS["agentProfile"])
 
 
-def default_contracts_permission_catalog() -> Path | None:
+def default_contracts_permission_catalog() -> Path:
     return default_contract_schema("auth/permission-catalog.json")
 
 
@@ -915,13 +933,13 @@ def validate_compatibility_matrix(
             raise ValidationError(f"{rel(COMPATIBILITY_MATRIX_PATH)}: supportedVersions.{component} is required")
 
     contract_schemas = matrix["contractSchemas"]
-    if "@opensoha/contracts" not in contract_schemas["preferred"]:
+    if contract_schemas["preferred"] != "../contracts":
         raise ValidationError(
-            f"{rel(COMPATIBILITY_MATRIX_PATH)}: contractSchemas.preferred must point at @opensoha/contracts"
+            f"{rel(COMPATIBILITY_MATRIX_PATH)}: contractSchemas.preferred must point at ../contracts"
         )
-    if "../soha-contracts" not in contract_schemas["fallback"]:
+    if contract_schemas["fallback"] != "../node_modules/@opensoha/contracts":
         raise ValidationError(
-            f"{rel(COMPATIBILITY_MATRIX_PATH)}: contractSchemas.fallback must point at the sibling soha-contracts checkout"
+            f"{rel(COMPATIBILITY_MATRIX_PATH)}: contractSchemas.fallback must point at ../node_modules/@opensoha/contracts"
         )
     assets = contract_schemas["assets"]
     expected_assets = {
@@ -931,8 +949,8 @@ def validate_compatibility_matrix(
     }
     for asset_name, relative_path in expected_assets.items():
         asset = assets[asset_name]
-        expected_preferred = f"node_modules/@opensoha/contracts/{relative_path}"
-        expected_fallback = f"../soha-contracts/{relative_path}"
+        expected_preferred = f"../contracts/{relative_path}"
+        expected_fallback = f"../node_modules/@opensoha/contracts/{relative_path}"
         if asset["preferred"] != expected_preferred:
             raise ValidationError(
                 f"{rel(COMPATIBILITY_MATRIX_PATH)}: contractSchemas.assets.{asset_name}.preferred "
@@ -1576,6 +1594,10 @@ def run_validation(args: argparse.Namespace) -> tuple[int, dict[str, Any], dict[
     current_check = ""
 
     try:
+        current_check = "same-source-inputs"
+        validate_source_inputs(args)
+        checks.append(check(current_check, sources={name: report_path(path) for name, path in required_source_inputs().items()}))
+
         current_check = "schema-files"
         validate_schema_files()
         schema_count = len(list(SCHEMA_DIR.glob("*.schema.json")))
@@ -1820,37 +1842,37 @@ def main() -> int:
         "--contracts-skill-schema",
         type=Path,
         default=default_contracts_skill_schema(),
-        help="optional path to soha-contracts skills/skill-manifest.schema.json for schema alignment checks",
+        help="required same-source path to contracts skills/skill-manifest.schema.json for schema alignment checks",
     )
     parser.add_argument(
         "--contracts-mcp-preset-schema",
         type=Path,
         default=default_contracts_mcp_preset_schema(),
-        help="optional path to soha-contracts presets/mcp-preset.schema.json for public contract validation",
+        help="required same-source path to contracts presets/mcp-preset.schema.json for public contract validation",
     )
     parser.add_argument(
         "--contracts-agent-profile-schema",
         type=Path,
         default=default_contracts_agent_profile_schema(),
-        help="optional path to soha-contracts profiles/agent-profile.schema.json for public contract validation",
+        help="required same-source path to contracts profiles/agent-profile.schema.json for public contract validation",
     )
     parser.add_argument(
         "--contracts-permission-catalog",
         type=Path,
         default=default_contracts_permission_catalog(),
-        help="optional path to soha-contracts auth/permission-catalog.json for permission-key conformance",
+        help="required same-source path to contracts auth/permission-catalog.json for permission-key conformance",
     )
     parser.add_argument(
         "--gateway-catalog-source",
         type=Path,
-        default=DEFAULT_GATEWAY_CATALOG_SOURCE if DEFAULT_GATEWAY_CATALOG_SOURCE.exists() else None,
-        help="optional path to Soha Gateway catalog.go for capability snapshot drift checks",
+        default=DEFAULT_GATEWAY_CATALOG_SOURCE,
+        help="required same-source path to Soha Gateway catalog.go for capability snapshot drift checks",
     )
     parser.add_argument(
         "--platform-capability-source",
         type=Path,
-        default=DEFAULT_PLATFORM_CAPABILITY_SOURCE if DEFAULT_PLATFORM_CAPABILITY_SOURCE.exists() else None,
-        help="optional path to Soha cluster capabilities.go for platform capability snapshot drift checks",
+        default=DEFAULT_PLATFORM_CAPABILITY_SOURCE,
+        help="required same-source path to Soha cluster capabilities.go for platform capability snapshot drift checks",
     )
     args = parser.parse_args()
 

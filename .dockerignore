@@ -22,3 +22,7 @@ coverage
 configs/config.yaml
 configs/config.toml
 deploy/network-runtime-tls
+
+# The npm launcher bin directory contains source scripts.
+!cli/npm/cli/bin
+!cli/npm/cli/bin/**

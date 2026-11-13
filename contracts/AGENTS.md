@@ -16,7 +16,7 @@
 ## 验证与交付
 
 - 依赖从主仓根目录以唯一根 `package-lock.json` 执行 `npm ci`，不创建子目录 lockfile。组件主入口为 `npm test --workspace contracts`（在根目录执行）；公开契约修改执行兼容性和[根 CI](../.github/workflows/contracts-ci.yml)的完整 consumer 矩阵，不在本文件复制一个可能过期的消费者数量。
-- 同提交源码验证使用 `npm run check:consumers --workspace contracts -- --internal-source`，只检查 Core 根与 `web/`，不证明 SDK 已发布。外部六消费者仍分别运行原 manifest/lock 的 `--declared` 和候选源码替换检查；外部 checkout 必须位于源码 workspace 之外。
+- 同提交源码验证使用 `npm run check:consumers --workspace contracts -- --internal-source`，分别检查 Core 根、`web/`、`cli/`、`agent/` 与 `skills/`，不证明 SDK 已发布。外部六消费者仍分别运行原 manifest/lock 的 `--declared` 和候选源码替换检查；外部 checkout 必须位于源码 workspace 之外。
 - 固定组合从 `compat/consumer-revisions.json` 选择提交，缺少或无效版本必须失败；手动选择 latest 的集成检查独立报告，不替代固定组合验收。记录实际 contracts/consumer SHA，而非只记录分支名。
 - 缺少 consumer、工具或发布依赖时报告验证缺口，不用临时替换掩盖缺失。区分通过、失败、跳过、未运行；生成成功、编译成功、运行行为及发布验收不是同一结论。
 - 协作说明修改仅检查元数据、引用、内容一致性和差异，不无故重新生成 SDK 或运行 consumer。工作流/脚本修改执行相关正反例与适用 CI；相关代码、依赖和环境不变时复用成功证据。

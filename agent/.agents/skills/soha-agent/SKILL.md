@@ -7,14 +7,14 @@ description: Change or review the standalone Soha agent APIs, runners, cluster a
 
 ## Overview
 
-Use this skill for the `soha-agent` repository only. The agent is a standalone
+Use this skill for Root `agent/`, preserving its independent Go module and artifacts. The agent is a standalone
 runtime that exposes local cluster and runtime APIs, claims work from the Soha
 control plane, and calls back with task, Docker, or Agent Runtime results.
 
 ## Workflow
 
 1. Consult the relevant sections of [Go engineering standards](references/go-engineering-standards.md) for package ownership, lifecycle, API/security, concurrency, dependency, or verification changes. Localized fixes can use the affected implementation and the Testing section below; do not reread unchanged guidance. Keep `cmd/agent/main.go` thin. Startup belongs in `internal/agent/bootstrap`, config in `internal/agent/config`, HTTP surfaces in `internal/agent/api`, Kubernetes access in `internal/agent/kubernetes`, and control-plane execution in `internal/agent/runner`.
-2. Do not import core `github.com/opensoha/soha/internal/**` packages. Share API shapes through released `github.com/opensoha/soha-contracts` types.
+2. Do not import core `github.com/opensoha/soha/internal/**` packages. Share API shapes through same-Root `contracts/` types in source mode, with declared external SDK verification kept separate.
 3. Use `SOHA_AGENT_CONFIG_FILE`, `SOHA_AGENT_*` env overrides, and `configs/agent.config.yaml` as the config path. Keep viper env keys aligned with config struct tags.
 4. When adding a runtime capability, decide whether it belongs to the local HTTP API, Kubernetes adapter, execution or Docker runner, Identity Outpost, environment runtime manager, Agent Runtime provider, or packaging. Put it in the existing owner.
 5. Keep diagnostics safe. `/api/v1/diagnostics` may summarize readiness and counts; it must not expose bearer tokens, kubeconfig contents, command secrets, or raw internal failures.
@@ -51,12 +51,13 @@ control plane, and calls back with task, Docker, or Agent Runtime results.
 - Its `buildpacks-runtime` target adds pinned pack and Docker CLI tooling for a dedicated CNB runner; never share the business-node Docker socket. `buildpacks-daemonless-runtime` adds pinned Podman for direct local lifecycle containers and requires its own Linux rootful runner and exclusive storage, with no daemon socket.
 - `deploy/Dockerfile.hermes-agent-runner` builds the Hermes-derived runner image.
 - `deploy/kubernetes/**` is a starter manifest; Helm charts live in `opensoha/soha-helm`.
-- Docker builds may use sibling `../soha-contracts` only as build context. The committed module should stay compatible with released contract tags.
+- Dockerfiles consume the complete Root context, all four module manifests and Root `contracts/` source. No sibling context or registry fallback is used for source builds. Existing module/import/ldflags and public download identities stay unchanged in B3.
+- DSH keeps its own Node>=24.9 lock and Node24 image; it is not part of the Root Node22 npm workspace. Runtime skills/MCP assets remain supplied by their explicit Core-owned definitions or same-Root `skills/` packages, never an implicit sibling checkout.
 
 ## Testing
 
 - Run focused package tests for affected behavior; broaden to the full gate for architecture, dependency, security, runner/concurrency, packaging, or release changes. Documentation-only collaboration edits need metadata and link checks, not runtime builds.
-- Use `GOWORK=off` for Go verification; do not rely on a sibling `go.work` or unreviewed local contract code.
+- Use the committed Root `go.work` for internal source verification, executing this module explicitly. Use `GOWORK=off` only for separate declared external dependency/distribution checks; source success does not prove the SDK is published.
 - Run `go test ./internal/agent/api` for auth, action allowlist, route, and stream changes.
 - Run `go test ./internal/agent/runner` for claim/callback, Docker runner, Agent Runtime, cancellation, timeout, and metrics changes.
 - Run `python3 deploy/hermes-tools/test_plugin.py` for the Hermes controlled-tool adapter; CI also runs this standard-library check.
@@ -66,23 +67,20 @@ control plane, and calls back with task, Docker, or Agent Runtime results.
 
 ## CI Gate
 
-Use the toolchain and tool versions declared by [go.mod](../../../go.mod), [CI](../../../.github/workflows/ci.yml), and the [release workflow](../../../.github/workflows/release.yml). Run the full gate for dependency, packaging, Dockerfile, workflow, or release changes; local execution uses the workspace verification wrapper and its temporary output paths:
+Use the toolchain and tool versions declared by [go.mod](../../../go.mod), [Root active CI](../../../../.github/workflows/), and the [release workflow](../../../.github/workflows/release.yml). Run the full gate for dependency, packaging, Dockerfile, workflow, or release changes; local execution uses the workspace verification wrapper and its temporary output paths:
 
 ```bash
-GOWORK=off go mod tidy
-git diff --exit-code -- go.mod go.sum
-GOWORK=off go mod verify
-GOWORK=off go test ./...
+export GOWORK="$(git rev-parse --show-toplevel)/go.work"
+python3 ../scripts/source-workspace.py check-go
+go mod verify
+go test ./...
 python3 deploy/hermes-tools/test_plugin.py
-GOWORK=off go test -race ./...
-GOWORK=off go vet ./...
-GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-GOWORK=off CGO_ENABLED=0 go build -o /tmp/soha-agent ./cmd/agent
+go test -race ./...
+go vet ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+make build
 kubectl kustomize deploy/kubernetes/outpost | go run github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0 -kubernetes-version 1.34.1 -strict -summary -
-docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha-agent:test .
-docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile.hermes-agent-runner -t ghcr.io/opensoha/soha-hermes-agent:test .
-docker build --build-context contracts=../soha-contracts --target buildpacks-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:test .
-docker build --build-context contracts=../soha-contracts --target buildpacks-daemonless-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-buildpacks-agent:daemonless-test .
+make verify-images # all six Agent runtime images, using the complete Root context
 git diff --check
 ```
 

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
 import { mkdir, mkdtemp, realpath, rename, rm, readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRuntime, configFromEnv, effectiveRunDeadline } from './service.mjs';
 import { VERSION, sha, stable } from './protocol.mjs';
 import { createOrderedToolBridge } from './worker.mjs';
@@ -82,7 +83,7 @@ async function config() {
     dataDir: await mkdtemp(
       join(process.env.OPENSOHA_VERIFY_DIR || tmpdir(), 'task123-dsh-service-'),
     ),
-    schemaPath: resolve('../../../soha-contracts/agent/dsh-runtime.schema.json'),
+    schemaPath: fileURLToPath(new URL('../../../contracts/agent/dsh-runtime.schema.json', import.meta.url)),
     capacity: 1,
     maxRunMs: 25000,
     maxTokens: 512,

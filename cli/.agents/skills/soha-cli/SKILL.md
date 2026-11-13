@@ -7,9 +7,10 @@ description: Change or review the standalone soha CLI, authentication/profile ha
 
 ## Overview
 
-Use this skill for the `soha-cli` repository only. The CLI is a standalone Go
-client that talks to Soha APIs through released `github.com/opensoha/soha-contracts`
-types and local HTTP calls. It should remain testable without a real server.
+Use this skill for Root `cli/`. The CLI remains an independent Go module and
+native client, using same-Root `contracts/` in internal source mode. Explicit
+external verification uses its declared SDK with `GOWORK=off`; source success
+is not public distribution qualification. It remains testable without a real server.
 
 ## Workflow
 
@@ -18,7 +19,7 @@ types and local HTTP calls. It should remain testable without a real server.
 3. Keep the `Run(ctx, args, Runtime)` boundary. Use `Runtime.In`, `Runtime.Out`, `Runtime.Err`, `Runtime.ConfigPath`, and injectable HTTP clients in tests; do not write directly to `os.Stdout` or `os.Stderr` outside `cmd/soha/main.go`.
 4. Use stdlib `flag` plus `newRuntimeFlagSet`. Return errors from handlers and let `Run` map them to exit codes.
 5. Use `APIClient`, focused clients, and contracts DTOs for HTTP work. Do not import `github.com/opensoha/soha/internal/**` or sibling checkout internals.
-6. Keep the committed `go.mod` on a released `soha-contracts` tag. Use temporary local `go.work` only for unreleased multi-repo contract work.
+6. Preserve the committed module/SDK identities during B3. Use the committed four-module Root `go.work` for source builds, without sibling checkouts; run declared external checks separately with `GOWORK=off` and no local replacements.
 7. For command-surface changes, update metadata, dispatch, completion words where relevant, tests, and regenerate `docs/commands.md` with `go run ./cmd/soha docs --format markdown > docs/commands.md`.
 8. Keep `soha mcp` as the canonical direct stdio entry. Official SaaS is the endpoint default; self-hosted client configurations must carry an explicit `--base-url`. Keep `soha mcp start` compatible.
 9. Source the agent-facing `$soha` skill from the verified `soha-skills/agent-skills/soha` release asset. Do not embed or generate a second copy in the CLI. Resolve normal installs and updates to the latest stable release; reserve explicit source pins for rollback and reproducibility rather than adding a routine `--skills-version` flow.
@@ -64,9 +65,9 @@ types and local HTTP calls. It should remain testable without a real server.
 - For command-surface changes, assert metadata, dispatch, help, completion, and generated command docs stay aligned.
 - For login and profile changes, cover `0700`/`0600` permissions, atomic writes, non-interactive credentials, token rotation, and secret-free errors.
 - For skill releases, cover a real tar.gz fixture, latest GitHub Release resolution, explicit version pins, cache reuse and tampering, checksum mismatch, unsafe archive members, generation activation/rollback, scope precedence, audit output, and the packaged release smoke path.
-- Run `npm test` and `npm pack --dry-run` in `npm/cli` when launcher or release assets change.
+- Run Root `npm test --workspace @opensoha/cli` and `npm pack --workspace @opensoha/cli --dry-run` when launcher or release assets change. The launcher stays dependency-free and checksum-verifying.
 - Run affected package tests for local behavior changes; documentation-only collaboration edits need metadata and link checks, not runtime builds.
-- Run `GOWORK=off go test ./...` before changes that touch contracts, module state, Dockerfile, or release behavior.
+- Run this module explicitly with Root `GOWORK` for source changes. Repeat `GOWORK=off go test ./...` as separate declared-dependency qualification before external distribution.
 - Run `go vet ./...` and `go test -race ./...` for concurrency, token refresh, MCP stdio, or release-sensitive work.
 
 ## Release Integrity
@@ -81,20 +82,20 @@ types and local HTTP calls. It should remain testable without a real server.
 
 ## CI Gate
 
-Use Go `1.27.2` and run the release-sensitive gate with the root workspace disabled:
+Use Go `1.27.4` and Node22 for internal source gates. Root active workflows own execution; nested workflows retain historical release requirements and do not publish from this prefix. From `cli/`:
 
 ```bash
-GOWORK=off go mod tidy
-git diff --exit-code -- go.mod go.sum
-GOWORK=off go mod verify
-GOWORK=off go test ./...
-GOWORK=off go test -race ./...
-GOWORK=off go vet ./...
-GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+export GOWORK="$(git rev-parse --show-toplevel)/go.work"
+python3 ../scripts/source-workspace.py check-go
+go mod verify
+go test ./...
+go test -race ./...
+go vet ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 golangci-lint run --timeout=5m
-GOWORK=off CGO_ENABLED=0 go build -o /tmp/soha-cli ./cmd/soha
-(cd npm/cli && npm test && npm pack --dry-run)
-docker build -f Dockerfile -t ghcr.io/opensoha/soha-cli:test .
+make build
+(cd .. && npm test --workspace @opensoha/cli && npm pack --workspace @opensoha/cli --dry-run)
+make verify-image
 git diff --check
 ```
 

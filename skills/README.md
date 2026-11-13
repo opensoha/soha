@@ -46,29 +46,27 @@ references. It also validates `catalog/compatibility-matrix.json` against the
 Gateway catalog and `skills/index.json`, then freshness-checks
 `catalog/README.md`.
 
-Validation first checks official assets against the public contracts schema
-when it is installed, then applies the stricter local schema for official
-OpenSoha assets. The preferred source is `node_modules/@opensoha/contracts`;
-when public release artifacts are not available in local development, a sibling
-`../soha-contracts` checkout is used as the fallback. The compatibility matrix
-records the concrete contract schema paths for skill manifests, MCP presets,
-and agent profiles:
+Source validation checks official assets against the same repository's
+`../contracts` schemas and permission catalog, then applies stricter local schemas.
+The root npm link `../node_modules/@opensoha/contracts` represents that same
+producer; it is not proof of a published SDK. Missing or redirected source inputs
+fail rather than skipping these checks. The compatibility matrix records:
 
-- `node_modules/@opensoha/contracts/skills/skill-manifest.schema.json`
-- `node_modules/@opensoha/contracts/presets/mcp-preset.schema.json`
-- `node_modules/@opensoha/contracts/profiles/agent-profile.schema.json`
-- `../soha-contracts/skills/skill-manifest.schema.json`
-- `../soha-contracts/presets/mcp-preset.schema.json`
-- `../soha-contracts/profiles/agent-profile.schema.json`
+- `../contracts/skills/skill-manifest.schema.json`
+- `../contracts/presets/mcp-preset.schema.json`
+- `../contracts/profiles/agent-profile.schema.json`
+- `../node_modules/@opensoha/contracts/skills/skill-manifest.schema.json`
+- `../node_modules/@opensoha/contracts/presets/mcp-preset.schema.json`
+- `../node_modules/@opensoha/contracts/profiles/agent-profile.schema.json`
 
 Local schemas may require extra official-asset fields or narrower values, but
 they must not expose fields outside the matching public contract. This keeps the
 repository-specific guardrails explicit without forking the cross-repository
 asset contracts.
 
-When this repository is checked out next to `soha`, validation also checks
+Source validation also checks
 `catalog/gateway-capabilities.json` against
-`../soha/internal/application/aigateway/catalog.go`. The catalog is a release
+`../internal/application/aigateway/catalog.go`. The catalog is a release
 snapshot of Gateway tools, not a replacement for the runtime manifest.
 
 When skill front matter changes, regenerate the index with:
@@ -172,3 +170,18 @@ over this canonical release and must not copy the skill source.
 
 This repository is licensed under the Apache License 2.0. See
 [LICENSE](./LICENSE) for the full license text.
+
+## Source repository integration
+
+The component is under `skills/` in `opensoha/soha`. Run the commands above from
+that directory, or use `python3 skills/tools/validate_assets.py` from the source
+root. Core drift checks read `../internal/application/aigateway/catalog.go` and
+`../internal/domain/cluster/capabilities.go`; they are mandatory source checks.
+The active workflow is [skills-ci](../.github/workflows/skills-ci.yml). Nested
+workflows are historical and inactive; no new publisher is enabled here.
+
+Asset IDs, versions, the generated index and the archive's `soha-skills/` prefix
+remain unchanged. Published download URLs still describe the existing stable
+release channel; a locally generated package does not establish availability at
+that URL. Normal skill installation continues to verify stable release artifacts,
+not install this source directory by default.

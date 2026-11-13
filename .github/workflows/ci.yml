@@ -16,6 +16,10 @@ jobs:
       core: ${{ steps.impact.outputs.core }}
       web: ${{ steps.impact.outputs.web }}
       contracts: ${{ steps.impact.outputs.contracts }}
+      cli: ${{ steps.impact.outputs.cli }}
+      agent: ${{ steps.impact.outputs.agent }}
+      connectors: ${{ steps.impact.outputs.connectors }}
+      skills: ${{ steps.impact.outputs.skills }}
       deletion: ${{ steps.impact.outputs.deletion }}
     steps:
       - uses: actions/checkout@v7
@@ -50,10 +54,12 @@ jobs:
           cache-dependency-path: |
             go.sum
             contracts/go.sum
+            cli/go.sum
+            agent/go.sum
       - name: Record same-commit source combination
         run: |
           printf '### Source combination (internal-source)\n' >> "$GITHUB_STEP_SUMMARY"
-          printf 'Core, Web, Contracts: `%s`\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Core, Web, Contracts, CLI, Agent, Connectors, Skills: `%s`\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
           sha256sum package-lock.json >> "$GITHUB_STEP_SUMMARY"
       - name: Verify same-source Go workspace and module state
         run: |
@@ -151,13 +157,29 @@ jobs:
     needs: route
     if: needs.route.outputs.contracts == 'true'
     uses: ./.github/workflows/contracts-ci.yml
+  cli:
+    needs: route
+    if: needs.route.outputs.cli == 'true'
+    uses: ./.github/workflows/cli-ci.yml
+  agent:
+    needs: route
+    if: needs.route.outputs.agent == 'true'
+    uses: ./.github/workflows/agent-ci.yml
+  connectors:
+    needs: route
+    if: needs.route.outputs.connectors == 'true'
+    uses: ./.github/workflows/connectors-ci.yml
+  skills:
+    needs: route
+    if: needs.route.outputs.skills == 'true'
+    uses: ./.github/workflows/skills-ci.yml
   deletion:
     needs: route
     if: needs.route.outputs.deletion == 'true'
     uses: ./.github/workflows/deletion-integration.yml
   summary:
     if: always()
-    needs: [route, core, web, contracts, deletion]
+    needs: [route, core, web, contracts, cli, agent, connectors, skills, deletion]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

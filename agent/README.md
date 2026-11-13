@@ -2,21 +2,26 @@
 
 Standalone agent runtime for OpenSoha.
 
-This repository builds the `soha-agent` binary from `./cmd/agent`. It is split from the open-source Soha core and must not import core repository internal packages.
+Root `agent/` builds the independent `soha-agent` binary from `cmd/agent`. Its Go module/import/ldflags identity stays `github.com/opensoha/soha-agent`; it must not import Core internal packages.
 
 ## Development
 
 ```sh
-go mod tidy
-go test ./...
-go build ./cmd/agent
+make -C agent test
+make -C agent build
 ```
 
-Build metadata is injected with Go ldflags and is available from the CLI and HTTP API:
+Run the commands above from Root with Go1.27.4 and the committed four-module
+`go.work`. Source mode uses the same `contracts/`; Root `go test ./...` alone does
+not include the nested Agent module. `make -C agent test-declared` separately
+checks the declared external SDK with `GOWORK=off`, without claiming publication.
+
+Build metadata uses the actual Root commit and UTC date with the unchanged Go
+ldflags symbols. The component version remains independent. From `agent/`:
 
 ```sh
 go build -trimpath \
-  -ldflags "-X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=v0.1.7 -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -ldflags "-X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=v0.1.7 -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=$(git rev-parse HEAD) -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -o bin/soha-agent ./cmd/agent
 bin/soha-agent --version
 curl -s http://127.0.0.1:18080/api/v1/build-info
@@ -139,19 +144,24 @@ Local diagnostics are available from `GET /api/v1/diagnostics`; the response is 
 
 ## Docker
 
-The generic cluster agent image can be built with:
+All component Dockerfiles use the complete Root context, Root `contracts/`, and
+all four Go module manifests. From Root, the generic image can be built with:
 
 ```sh
-make deploy-agent-image IMAGE_TAG=v0.1.11
+make -C agent deploy-agent-image IMAGE_TAG=v0.1.11 VERSION=v0.1.11
 ```
 
 The Hermes runner image can be built separately with:
 
 ```sh
-make deploy-hermes-image IMAGE_TAG=v0.1.11
+make -C agent deploy-hermes-image IMAGE_TAG=v0.1.11 VERSION=v0.1.11
 ```
 
-The release workflow publishes multi-arch Linux images (`linux/amd64`, `linux/arm64`) to GHCR as `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent`, plus binary archives for Linux, macOS, and Windows. It also publishes the dedicated Buildpacks targets as `ghcr.io/opensoha/soha-buildpacks-agent:v0.1.11` and `ghcr.io/opensoha/soha-buildpacks-agent:daemonless-v0.1.11`. Each archive has a `.sha256` sidecar plus a release-level `SHA256SUMS` manifest.
+Root active CI retains all six independent image gates (default, Hermes, volume
+reader, Buildpacks, daemonless and DSH); `make -C agent verify-images` exercises
+them without publishing. Nested workflows are historical release definitions,
+not a second active publisher. B3 does not change public module/tag/download
+routes or claim external release qualification. The preserved release contract publishes multi-arch Linux images (`linux/amd64`, `linux/arm64`) to GHCR as `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent`, plus binary archives for Linux, macOS, and Windows. It also publishes the dedicated Buildpacks targets as `ghcr.io/opensoha/soha-buildpacks-agent:v0.1.11` and `ghcr.io/opensoha/soha-buildpacks-agent:daemonless-v0.1.11`. Each archive has a `.sha256` sidecar plus a release-level `SHA256SUMS` manifest.
 
 The packaged Outpost uses the same generic `soha-agent` image. Its protocol-matched Kubernetes install path and NGINX/Traefik ForwardAuth examples are documented in [`deploy/kubernetes/outpost`](./deploy/kubernetes/outpost/README.md). Helm packaging remains in `opensoha/soha-helm`; use the `soha-agent` chart with `mode=outpost`.
 
@@ -161,7 +171,8 @@ Buildpacks uses a dedicated Agent and Docker-compatible daemon. Build the separa
 
 ```sh
 docker build --target buildpacks-runtime \
-  -f deploy/Dockerfile -t soha-buildpacks-agent:local .
+  --build-arg COMMIT="$(git rev-parse HEAD)" --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -f agent/deploy/Dockerfile -t soha-buildpacks-agent:local .
 ```
 
 Set `control_plane.enabled=true`, a distinct `agent_id`, `max_concurrency=1`, `provider_kinds=[]`, and disable Kubernetes, Docker operations, Agent Runtime, and Outpost on this process. Mount only its dedicated daemon socket and private Agent workspace. Do not share the daemon with business workloads or another runner. Preload the approved builder, run image and lifecycle by digest, then configure their exact architecture and the daemon ID returned by `docker info`:
@@ -195,7 +206,7 @@ A completed build requires a structured report, the pushed registry digest and S
 
 ### Daemonless lifecycle runtime
 
-Build `deploy/Dockerfile --target buildpacks-daemonless-runtime` for Podman 5.7.0. Configure `runtime: podman`, an exclusive absolute `podman_root`, and empty `docker_host` / `daemon_id`; retain the pinned toolchain, application allowlist and one-slot dedicated runner requirements above. This backend calls local Podman directly with `--remote=false`. The separately pinned amd64 four-language matrix also passed on this backend, including registry digest startup and private workspace cleanup; it does not reuse pack acceptance as daemonless evidence. It does not start a Podman service or mount a Docker socket. The Docker CLI is used only for registry manifest verification.
+From Root, build `agent/deploy/Dockerfile --target buildpacks-daemonless-runtime` for Podman 5.7.0. Configure `runtime: podman`, an exclusive absolute `podman_root`, and empty `docker_host` / `daemon_id`; retain the pinned toolchain, application allowlist and one-slot dedicated runner requirements above. This backend calls local Podman directly with `--remote=false`. The separately pinned amd64 four-language matrix also passed on this backend, including registry digest startup and private workspace cleanup; it does not reuse pack acceptance as daemonless evidence. It does not start a Podman service or mount a Docker socket. The Docker CLI is used only for registry manifest verification.
 
 Preload images with the same explicit storage flags used by the Agent, for example `podman --remote=false --root /var/lib/soha-cnb --runroot /var/lib/soha-cnb-run pull IMAGE_AT_DIGEST` for `podman_root: /var/lib/soha-cnb`. The builder must declare a numeric non-root UID:GID. This path uses CNB Platform API 0.14 and the frozen lifecycle; builder image extensions are not supported. Registry auth is mounted only in the trusted analyzer/restorer/exporter image, while detector/builder receive only source, layers, platform variables and the pinned lifecycle binaries.
 
@@ -227,7 +238,7 @@ This repository is licensed under the Apache License 2.0. See
 
 ### Combined Task115 and Task117 development
 
-The local integration uses the workspace's combined Contracts checkout. The declared Contracts version `v0.1.29` supplies the published Task117 SDK. Task115 Docker runtime and terminal packages are available in the combined workspace source. Standalone Go and Docker builds require a published Contracts version that includes both sets of APIs.
+Internal source integration uses same-Root `contracts/` through the committed workspace. B3 preserves the declared SDK pin for separately qualified external consumers; source success does not certify that pin as publicly available. Use `python3 agent/deploy/resolve_contracts.py --mode source` from Root to record the actual Root SHA and SDK source digest, and explicit `--mode declared` only for external dependency verification. Missing source/schema fails instead of selecting a registry or sibling fallback.
 
 ### Pod session identity
 

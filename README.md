@@ -107,15 +107,17 @@ See the published docs for current public architecture and API behavior.
 
 ### Agent And CLI
 
-- Agent repository: `github.com/opensoha/soha-agent`
-- CLI repository: `github.com/opensoha/soha-cli`
+- Agent source: `agent/`; standalone binary and images remain independent.
+- CLI source: `cli/`; standalone binary and npm launcher remain independent.
+- Connectors source: `connectors/`; Skills and runtime assets: `skills/`.
+- Public Go module names and download URLs retain their existing identities until their separate release migration.
 - `soha` core exposes the control-plane APIs; agent and CLI clients consume those APIs through contracts and HTTP boundaries.
 
 ## Tech Stack
 
 | Layer | Stack |
 | --- | --- |
-| Backend | Go 1.27.3, Gin, PostgreSQL, Kubernetes `client-go` |
+| Backend | Go 1.27.4, Gin, PostgreSQL, Kubernetes `client-go` |
 | Frontend | React 18, TypeScript 5, Vite 6, React Router 6, TanStack Query 5, Zustand 5, Ant Design 6, Tailwind CSS 4 |
 | Docs | Next.js 16 and Nextra 4 in the sibling `soha-docs` repository |
 | Packaging | Docker, Docker Compose, raw Kubernetes YAML; Helm charts live in `soha-helm` |
@@ -170,9 +172,10 @@ This installs Go dependencies and prepares the configuration without starting Do
 The default `DEV_DB_MODE=external` uses your configured PostgreSQL service.
 Use `make init DEV_DB_MODE=local` to start PostgreSQL from `deploy/docker-compose.yaml`.
 Install the shared npm workspace from the repository root with `npm ci`.
-The root lockfile owns both `contracts/` and `web/`; no sibling checkout or new
-SDK release is required for source development. `go.work` selects the Core and
-Contracts modules from this checkout. Public module identities and external
+The root lockfile owns `contracts/`, `web/`, `connectors/` and `cli/npm/cli/`; no sibling checkout or new
+SDK release is required for source development. `go.work` selects Core,
+Contracts, CLI and Agent modules from this checkout. Agent DSH retains its
+own Node 24 runtime and lockfile under `agent/runtimes/dsh/`. Public module identities and external
 declared-dependency checks remain separate from this source workspace.
 
 MinIO exposes its S3 API at `http://127.0.0.1:9000` and console at `http://127.0.0.1:9001`, with persistent data in `opensoha-minio-data`. Its local defaults are `minioadmin` / `minioadmin`; override `SOHA_MINIO_ROOT_USER` and `SOHA_MINIO_ROOT_PASSWORD` in the environment or an untracked `deploy/.env` to preserve existing credentials. Change these defaults before exposing MinIO beyond loopback. Start it separately with `docker compose -f deploy/docker-compose.yaml up -d minio`; `make init` and `make dev` do not start MinIO.
@@ -216,11 +219,11 @@ go run ./cmd/server
 ### Start the agent runtime
 
 ```bash
-cd ../soha-agent
+cd agent
 go run ./cmd/agent
 ```
 
-The default agent config is in the sibling `soha-agent` repository at `configs/agent.config.yaml`. Override it with:
+The default agent config is in `agent/configs/agent.config.yaml`. Override it with:
 
 ```bash
 SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent
@@ -469,8 +472,8 @@ Docker instances and a shared load balancer for normal multi-replica delivery.
 Recommended boundaries:
 
 - Docker image: use `ghcr.io/opensoha/soha`; local builds default to the `local` tag.
-- Agent images: use `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent` from the sibling `soha-agent` repository.
-- CLI tool image: use `yshanchui/soha-cli` from the sibling `soha-cli` repository for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
+- Agent images: use `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent` built from `agent/`.
+- CLI tool image: use `yshanchui/soha-cli` built from `cli/` for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
 - Docker Compose: use for local development and single-node trials, not as the primary production orchestrator.
 - Helm: use as the primary Kubernetes delivery path. `soha-helm` publishes `soha`, `soha-agent`, and `soha-hermes-agent` charts.
 - Kustomize: keep as a lightweight raw YAML customization entrypoint, avoiding a second full Kubernetes template set.
@@ -529,12 +532,12 @@ The raw manifest includes the standard `pgsql`/`opensoha` initial credentials
 and the four public system-key defaults in `soha-app-config`. Replace them with
 an overlay or external Secret integration before a public rollout.
 
-Identity Outpost is deployed from the sibling `soha-agent` repository or from
+Identity Outpost is deployed from `agent/` or from
 the `soha-agent` Helm chart with `mode=outpost`. Pin a released agent image that
 supports Identity Outpost protocol `v1`; server and agent SemVer values may
 differ because the protocol version and signed configuration key are the
 compatibility boundary. NGINX Ingress and Traefik ForwardAuth examples live in
-`soha-agent/deploy/kubernetes/outpost/examples`.
+`agent/deploy/kubernetes/outpost/examples`.
 
 ## Documentation
 
@@ -564,6 +567,10 @@ Useful validation commands:
 
 ```bash
 make test
+make test-cli
+make test-agent
+make check-connectors
+make check-skills
 npm ci
 npm run typecheck --workspace web
 npm run build:web

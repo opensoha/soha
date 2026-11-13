@@ -5,23 +5,30 @@ ARG GOPROXY=https://proxy.golang.org,direct
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-ENV GOPROXY=$GOPROXY GOWORK=off
+ENV GOPROXY=$GOPROXY GOWORK=/src/go.work GOFLAGS=-mod=readonly
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates
-COPY go.mod go.sum ./soha-agent/
+COPY go.mod go.sum go.work go.work.sum ./
+COPY contracts/go.mod contracts/go.sum ./contracts/
+COPY cli/go.mod cli/go.sum ./cli/
+COPY agent/go.mod agent/go.sum ./agent/
+WORKDIR /src/agent
 RUN for attempt in 1 2 3; do \
-      (cd soha-agent && go mod download) && exit 0; \
+      go mod download && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \
     done; \
     exit 1
-COPY . ./soha-agent
+COPY contracts/ /src/contracts/
+COPY agent/ /src/agent/
 ARG GOMAXPROCS=4
 ENV GOMAXPROCS=$GOMAXPROCS
 RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
-    cd soha-agent && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=${VERSION} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=${COMMIT} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=${DATE}" -o /out/soha-agent ./cmd/agent
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=${VERSION} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=${COMMIT} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=${DATE}" -o /out/soha-agent ./cmd/agent
 
 FROM scratch AS volume-reader-runtime
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.revision=$COMMIT
 LABEL io.opensoha.volume-reader-protocol="docker-runtime-read-v1"
 COPY --from=agent-build /out/soha-agent /soha-agent
 USER 0:0
@@ -32,6 +39,8 @@ CMD ["volume-reader"]
 FROM docker:29.4.0-cli@sha256:2efe7c8e806b35050def6ba1ba0ddad67b521a0a6d37f4910b3d88f11b495d03 AS docker-cli
 
 FROM docker-cli AS buildpacks-runtime
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.revision=$COMMIT
 ARG TARGETARCH
 RUN apk add --no-cache ca-certificates curl git openssh-client tzdata \
     && case "$TARGETARCH" in \
@@ -48,7 +57,7 @@ RUN apk add --no-cache ca-certificates curl git openssh-client tzdata \
     && chown -R 10001:10001 /var/lib/soha-agent /var/log/soha-agent
 WORKDIR /app
 COPY --from=agent-build /out/soha-agent /app/soha-agent
-COPY configs/agent.config.yaml /app/configs/agent.config.yaml
+COPY agent/configs/agent.config.yaml /app/configs/agent.config.yaml
 ENV SOHA_AGENT_CONFIG_FILE=/app/configs/agent.config.yaml
 USER 10001:10001
 EXPOSE 18080
@@ -59,12 +68,14 @@ USER 0:0
 RUN apk add --no-cache podman=5.7.0-r6 fuse-overlayfs=1.16-r0
 
 FROM alpine:3.20 AS agent-runtime
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.revision=$COMMIT
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 RUN addgroup -S -g 10001 soha && adduser -S -D -H -u 10001 -G soha soha && apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=agent-build /out/soha-agent /app/soha-agent
-COPY configs/agent.config.yaml /app/configs/agent.config.yaml
+COPY agent/configs/agent.config.yaml /app/configs/agent.config.yaml
 RUN mkdir -p /app/configs /var/lib/soha-agent /var/log/soha-agent \
     && chown -R 10001:10001 /var/lib/soha-agent /var/log/soha-agent
 ENV SOHA_AGENT_CONFIG_FILE=/app/configs/agent.config.yaml

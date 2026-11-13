@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       consumer_mode:
-        description: 'Reviewed B1 compatibility baseline'
+        description: 'Reviewed external compatibility baseline'
         type: choice
         options: [pinned]
         default: pinned
@@ -191,13 +191,15 @@ jobs:
           cache-dependency-path: |
             go.sum
             contracts/go.sum
+            cli/go.sum
+            agent/go.sum
       - name: Verify checked out Contracts SHA
         env:
           CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$CONTRACTS_SHA"
       - run: npm ci
       - run: npm run generate --workspace @opensoha/contracts
-      - name: Verify two same-source consumers separately from external compatibility
+      - name: Verify five same-source consumers separately from external compatibility
         env:
           OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
         run: node contracts/scripts/check-consumers.mjs --internal-source --require-all --out internal-source-report.json

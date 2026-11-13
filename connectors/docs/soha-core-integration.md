@@ -80,7 +80,7 @@ The action endpoint accepts:
 
 ## Per-call Credential Envelope
 
-The canonical `soha-contracts/connectors/connector-action.schema.json` is mirrored
+The canonical `../../contracts/connectors/connector-action.schema.json` is mirrored
 at `schemas/connector-action.schema.json`. An action declares
 `credentialProtocol: "opensoha.dev/connector-action/v1"` and bounded
 `credentialAliases`, such as `["SOURCE"]`. This advertises support, not a
@@ -124,12 +124,12 @@ and boundary validation, not HTTP/Git/Object source fetching.
 | Webhooks | Provider sends callbacks to `/webhooks/feishu`; the runtime can forward normalized events to `SOHA_CONNECTOR_EVENT_SINK_URL`. | Feishu verification stays in connector; durable storage, retention, and query remain Soha core responsibilities. |
 | Actions | Core invokes `/actions/{actionName}` using a connector runtime token. | Core remains responsible for RBAC, AI Gateway grants, risk policy, and audit before invoking. |
 | AI Gateway / MCP | Core may map connector actions into AI Gateway tools after plugin install and grants. | This runtime does not expose an MCP server; it exposes action metadata through the manifest. |
-| Event schema | Runtime posts the batch wrapper validated against `schemas/connector-event-envelope.schema.json`: `connectorId` plus `events`. Each `ConnectorEvent` contains `id`, `type`, `source`, `occurredAt`, provider-specific `payload`, and optional `subject`. | The canonical schema is owned by `soha-contracts/connectors/connector-event-envelope.schema.json`; this repository keeps a mirror for package compatibility. |
+| Event schema | Runtime posts the batch wrapper validated against `schemas/connector-event-envelope.schema.json`: `connectorId` plus `events`. Each `ConnectorEvent` contains `id`, `type`, `source`, `occurredAt`, provider-specific `payload`, and optional `subject`. | The canonical schema is owned by `../../contracts/connectors/connector-event-envelope.schema.json`; this repository keeps a mirror for package compatibility. |
 
 ## Contracts Promotion Checklist
 
 - Keep the local `schemas/connector-event-envelope.schema.json` mirror aligned
-  with `soha-contracts/connectors/connector-event-envelope.schema.json`, the
+  with `../../contracts/connectors/connector-event-envelope.schema.json`, the
   SDK `ConnectorEvent` fields, and current Feishu `im.message.receive_v1`
   output.
 - Update the contracts-owned schema first when changing the public connector

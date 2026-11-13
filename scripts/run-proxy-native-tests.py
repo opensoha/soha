@@ -24,6 +24,9 @@ SDK = 'github.com/opensoha/soha-contracts'
 PACKAGE = 'github.com/opensoha/soha/internal/networkproxyruntime'
 PURPOSE = 'proxy-native-race'
 LABEL = 'soha.test.run'
+SOURCE_MODULES = {'.': 'github.com/opensoha/soha', 'contracts': SDK,
+                  'cli': 'github.com/opensoha/soha-cli', 'agent': 'github.com/opensoha/soha-agent'}
+SOURCE_WORKSPACE = 'go 1.27.4\n\nuse (\n\t.\n\t./contracts\n\t./cli\n\t./agent\n)\n'
 
 
 def error_message(error):
@@ -94,10 +97,20 @@ def docker_endpoint(environment, allow_remote):
 
 
 def sdk_input(root, mode):
-    core = (root / 'go.mod').read_text()
+    root = root.resolve(strict=True)
+
+    def read(name):
+        path = root / name
+        try:
+            path.resolve(strict=True).relative_to(root)
+            return path.read_text()
+        except (OSError, ValueError):
+            raise ValueError('Unavailable or unconfined native source input: ' + name) from None
+
+    core = read('go.mod')
     if not re.search(r'^module github.com/opensoha/soha\s*$', core, re.M):
         raise ValueError('Incorrect Core module identity')
-    if re.search(r'^replace\b', core, re.M):
+    if re.search(r'^\s*replace\b', core, re.M):
         raise ValueError('Native SDK proof forbids module replacements')
     version = re.search(r'^\s*(?:require\s+)?' + re.escape(SDK) + r'\s+(v\S+)', core, re.M)
     if not version:
@@ -105,17 +118,22 @@ def sdk_input(root, mode):
     identity = {'mode': mode, 'declaredVersion': version[1],
                 'goModSHA256': hashlib.sha256(core.encode()).hexdigest()}
     if mode == 'source':
-        contracts = (root / 'contracts/go.mod').read_text()
-        if not re.search(r'^module ' + re.escape(SDK) + r'\s*$', contracts, re.M):
-            raise ValueError('Incorrect nested Contracts module identity')
-        if (root / 'go.work').read_text() != 'go 1.27.4\n\nuse (\n\t.\n\t./contracts\n)\n':
+        workspace = read('go.work')
+        if workspace != SOURCE_WORKSPACE:
             raise ValueError('Native source gate requires the exact root workspace')
-        if re.search(r'^replace\b', contracts, re.M):
-            raise ValueError('Native source gate forbids SDK replacements')
-        identity['contractsGoModSHA256'] = hashlib.sha256(contracts.encode()).hexdigest()
-        identity['goWorkSHA256'] = hashlib.sha256((root / 'go.work').read_bytes()).hexdigest()
+        modules = identity['sourceModules'] = {}
+        for folder, module in SOURCE_MODULES.items():
+            content = core if folder == '.' else read(folder + '/go.mod')
+            if not re.search(r'^module ' + re.escape(module) + r'\s*$', content, re.M):
+                raise ValueError('Incorrect native source module identity: ' + module)
+            if re.search(r'^\s*replace\b', content, re.M):
+                raise ValueError('Native source gate forbids module replacements')
+            modules[module] = {'Dir': '/src' if folder == '.' else '/src/' + folder,
+                               'goModSHA256': hashlib.sha256(content.encode()).hexdigest()}
+        identity['contractsGoModSHA256'] = modules[SDK]['goModSHA256']
+        identity['goWorkSHA256'] = hashlib.sha256(workspace.encode()).hexdigest()
     else:
-        sums = (root / 'go.sum').read_text().splitlines()
+        sums = read('go.sum').splitlines()
         matches = [line.split()[2] for line in sums if line.startswith(SDK + ' ' + version[1] + ' ')]
         if len(matches) != 1 or not matches[0].startswith('h1:'):
             raise ValueError('Declared SDK lacks a unique archive checksum')
@@ -125,6 +143,8 @@ def sdk_input(root, mode):
 
 def source_file(name, mode):
     parts = Path(name).parts
+    if Path(name).is_absolute() or '..' in parts:
+        return False
     forbidden = {'.git', '.tmp', 'node_modules', 'dist', '.next', 'coverage', 'bin',
                  'graphify-out', '__pycache__', 'private', '.ssh'}
     if any(part in forbidden or part.startswith('.env') for part in parts):
@@ -133,7 +153,9 @@ def source_file(name, mode):
         return False
     if name in ('go.mod', 'go.sum', 'go.work', 'go.work.sum'):
         return mode == 'source' or not name.startswith('go.work')
-    return bool(parts) and parts[0] in ('cmd', 'internal', 'pkg', 'migrations', 'contracts') and (parts[0] != 'contracts' or mode == 'source')
+    if parts and parts[0] in ('contracts', 'cli', 'agent'):
+        return mode == 'source'
+    return bool(parts) and parts[0] in ('cmd', 'internal', 'pkg', 'migrations')
 
 
 def source_archive(root, mode):
@@ -193,10 +215,16 @@ def verify_sdk(value, identity):
     if value.get('Path') != SDK or value.get('Replace') or value.get('Error'):
         raise ValueError('SDK module identity/replacement mismatch')
     if identity['mode'] == 'source':
-        if value.get('Dir') != '/src/contracts' or not value.get('Main'):
-            raise ValueError('SDK did not resolve to this source workspace')
+        verify_source_module(value, identity)
     elif (value.get('Version') != identity['declaredVersion'] or value.get('Sum') != identity['expectedSum'] or value.get('Main')):
         raise ValueError('SDK did not resolve to the declared checksummed distribution')
+
+
+def verify_source_module(value, identity):
+    expected = identity['sourceModules'].get(value.get('Path'))
+    if (expected is None or value.get('Dir') != expected['Dir'] or value.get('Main') is not True
+            or value.get('Replace') or value.get('Error')):
+        raise ValueError('Module did not resolve to this source workspace')
 
 
 def labels(run):
@@ -469,6 +497,15 @@ def execute(args, report):
         actual = json.loads(resources.call(['exec', prep, 'go', 'list', '-m', '-json', SDK], text=True))
         verify_sdk(actual, identity)
         identity['resolved'] = {k: actual.get(k) for k in ('Path', 'Version', 'Main', 'Dir', 'Sum', 'GoModSum')}
+        if args.sdk_mode == 'source':
+            identity['resolvedSourceModules'] = {SDK: identity['resolved']}
+            for module in identity['sourceModules']:
+                if module == SDK:
+                    continue
+                resolved = json.loads(resources.call(['exec', prep, 'go', 'list', '-m', '-json', module], text=True))
+                verify_source_module(resolved, identity)
+                identity['resolvedSourceModules'][module] = {k: resolved.get(k)
+                    for k in ('Path', 'Version', 'Main', 'Dir', 'Sum', 'GoModSum')}
         if args.sdk_mode == 'declared':
             ziphash = '/go/pkg/mod/cache/download/' + SDK + '/@v/' + identity['declaredVersion'] + '.ziphash'
             identity['downloadDirHash'] = resources.call(['exec', prep, 'cat', ziphash], text=True).strip()
