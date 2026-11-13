@@ -26,7 +26,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	controlhttp "github.com/opensoha/soha/internal/api/networkcontrol"
 	access "github.com/opensoha/soha/internal/application/access"
 	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"

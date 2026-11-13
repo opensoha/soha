@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"slices"
 
-	agentapi "github.com/opensoha/soha-agent/internal/agent/api"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	loggerpkg "github.com/opensoha/soha-agent/internal/agent/logger"
-	runnerpkg "github.com/opensoha/soha-agent/internal/agent/runner"
-	sessionpkg "github.com/opensoha/soha-agent/internal/agent/session"
+	agentapi "github.com/opensoha/soha/agent/internal/agent/api"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	loggerpkg "github.com/opensoha/soha/agent/internal/agent/logger"
+	runnerpkg "github.com/opensoha/soha/agent/internal/agent/runner"
+	sessionpkg "github.com/opensoha/soha/agent/internal/agent/session"
 	"go.uber.org/zap"
 )
 

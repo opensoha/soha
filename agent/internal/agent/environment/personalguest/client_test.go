@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/opensoha/soha-agent/internal/agent/config"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	"github.com/opensoha/soha/agent/internal/agent/config"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 type guestTLSFixture struct {

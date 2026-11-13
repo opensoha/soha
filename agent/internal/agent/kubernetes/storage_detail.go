@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

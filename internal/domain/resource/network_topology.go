@@ -1,8 +1,8 @@
 package resource
 
 import (
-	cr "github.com/opensoha/soha-contracts/resource"
-	shared "github.com/opensoha/soha-contracts/resource/runtime"
+	cr "github.com/opensoha/soha/contracts/resource"
+	shared "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 // BuildNetworkTopology applies the shared, provider-neutral snapshot rules.

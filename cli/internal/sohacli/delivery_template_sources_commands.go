@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	deliverydoc "github.com/opensoha/soha-contracts/delivery"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	deliverydoc "github.com/opensoha/soha/contracts/delivery"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func deliveryTemplateSourceEndpoint(action string) (string, string, any, any, error) {

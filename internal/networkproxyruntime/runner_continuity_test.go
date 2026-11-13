@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/proxytransport"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/proxytransport"
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 	"github.com/opensoha/soha/internal/networkprotocol"
 )

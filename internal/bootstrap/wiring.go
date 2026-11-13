@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"

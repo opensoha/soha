@@ -1,7 +1,7 @@
 package networkproxy
 
 import "time"
-import api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+import api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 
 type RuntimeCommandInput = api.NetworkProxyRuntimeCommandInput
 type RuntimeCommandReceipt = api.NetworkProxyRuntimeCommandReceipt

@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"

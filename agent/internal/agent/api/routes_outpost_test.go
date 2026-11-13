@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	runnerpkg "github.com/opensoha/soha-agent/internal/agent/runner"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	runnerpkg "github.com/opensoha/soha/agent/internal/agent/runner"
 	"go.uber.org/zap"
 )
 

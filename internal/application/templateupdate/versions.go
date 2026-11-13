@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"

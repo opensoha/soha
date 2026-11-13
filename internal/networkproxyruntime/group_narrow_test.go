@@ -3,7 +3,7 @@ package networkproxyruntime
 import (
 	"context"
 	"encoding/json"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 	"net/http"
 	"net/http/httptest"

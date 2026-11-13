@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type buildpacksCapabilityReader interface {

@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func TestStorageGraphHTTPReadScopeAndAuth(t *testing.T) {

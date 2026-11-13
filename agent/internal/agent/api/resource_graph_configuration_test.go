@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
 )
 
 func TestConfigurationGraphHTTPReadWithoutMutationAllowlist(t *testing.T) {

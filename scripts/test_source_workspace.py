@@ -120,12 +120,22 @@ class GoSourceTest(unittest.TestCase):
             return str(self.root / "go.work")
         if args == ["go", "work", "edit", "-json"]:
             return json.dumps({"Use": [{"DiskPath": str(directory)} for _, directory in self.modules], "Replace": self.aliases})
+        if args[:2] == ["go", "run"]:
+            return ""
         name = args[-1]
         directory = dict(self.modules)[name]
         return json.dumps({"Path": name, "Dir": str(directory), "Main": True})
 
     def test_exact_four_module_identity(self):
         with patch.object(workspace, "run", side_effect=self.fake_go):
+            workspace.check_go()
+
+    def test_import_boundary_guard_failure_is_not_ignored(self):
+        def run(args, **kwargs):
+            if args[:2] == ["go", "run"]:
+                raise subprocess.CalledProcessError(1, args)
+            return self.fake_go(args, **kwargs)
+        with patch.object(workspace, "run", side_effect=run), self.assertRaises(subprocess.CalledProcessError):
             workspace.check_go()
 
     def test_missing_component_manifest_fails(self):
@@ -160,7 +170,7 @@ class GoSourceTest(unittest.TestCase):
 
     def test_wrong_module_resolution_fails(self):
         def run(args, **kwargs):
-            if args[-1] == "github.com/opensoha/soha-cli":
+            if args[-1] == "github.com/opensoha/soha/cli":
                 return json.dumps({"Path": args[-1], "Dir": str(self.root / "cli"), "Main": False})
             return self.fake_go(args, **kwargs)
         with patch.object(workspace, "run", side_effect=run):
@@ -182,7 +192,7 @@ class GoSourceTest(unittest.TestCase):
 
     def test_sdk_alias_versions_come_only_from_require_declarations(self):
         manifest = self.root / "cli/go.mod"
-        manifest.write_text(f"module github.com/opensoha/soha-cli\nrequire (\n {workspace.SDK_MODULE} {self.versions[1]} // SDK\n)\n"
+        manifest.write_text(f"module github.com/opensoha/soha/cli\nrequire (\n {workspace.SDK_MODULE} {self.versions[1]} // SDK\n)\n"
                             f"exclude {workspace.SDK_MODULE} v9.0.0\n")
         self.assertEqual(workspace.validate_sdk_aliases({"Replace": self.aliases}, self.root), set(self.versions))
         with manifest.open("a") as stream:
@@ -202,7 +212,7 @@ class GoSourceTest(unittest.TestCase):
                 stream.write("require github.com/google/uuid v1.6.0\n")
             (directory / "go.sum").write_text(sums)
             if directory != workspace.SDK:
-                (directory / "source.go").write_text('package source\nimport "github.com/opensoha/soha-contracts/unpublished"\nvar Value = unpublished.Value\n')
+                (directory / "source.go").write_text('package source\nimport "github.com/opensoha/soha/contracts/unpublished"\nvar Value = unpublished.Value\n')
         env = {**os.environ, "GOWORK": str(self.root / "go.work"), "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
         manifests = {p: p.read_bytes() for p in self.root.rglob("go.mod")}
         with patch.dict(os.environ, env):

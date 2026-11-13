@@ -2,7 +2,7 @@ package cluster
 
 import (
 	"context"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"time"
 )
 

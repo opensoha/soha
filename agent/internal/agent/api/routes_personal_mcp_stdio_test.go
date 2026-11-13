@@ -18,9 +18,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	"github.com/opensoha/soha-agent/internal/agent/environment"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	"github.com/opensoha/soha/agent/internal/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	"go.uber.org/zap"
 )
 

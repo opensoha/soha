@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
-	"github.com/opensoha/soha-contracts/helmrelease"
-	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	helmruntime "github.com/opensoha/soha/contracts/helmrelease/runtime"
 )
 
 func writeHelmError(c *gin.Context, err error) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	helmrelease "github.com/opensoha/soha-contracts/helmrelease"
+	helmrelease "github.com/opensoha/soha/contracts/helmrelease"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	helmreleasev1 "helm.sh/helm/v4/pkg/release/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

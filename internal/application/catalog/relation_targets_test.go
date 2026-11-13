@@ -1,7 +1,7 @@
 package catalog
 
 import (
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	dc "github.com/opensoha/soha/internal/domain/catalog"
 	"testing"
 	"time"

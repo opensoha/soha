@@ -7,9 +7,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/helmrelease"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/helmrelease"
 )
 
 type helmDeliveryReader interface {

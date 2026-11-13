@@ -1,6 +1,6 @@
 package resource
 
-import contractresource "github.com/opensoha/soha-contracts/resource"
+import contractresource "github.com/opensoha/soha/contracts/resource"
 
 // PodExecutionRecord is private persistence state. Input and output must be
 // encrypted; only the receipt is exposed by the application capability.

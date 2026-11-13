@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 const outpostControlMaxLease = 30 * time.Second

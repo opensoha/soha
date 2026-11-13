@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func (b *runtimeBroker) file(ctx context.Context, op guest.RuntimeOperation) (*guest.RuntimeFileResult, error) {

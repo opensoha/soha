@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 const personalProbeOwnerPrefix = "quota-probe:"

@@ -2,8 +2,8 @@ package proxypublication
 
 import (
 	"context"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/proxypolicy"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/proxypolicy"
 	access "github.com/opensoha/soha/internal/domain/networkaccess"
 	domain "github.com/opensoha/soha/internal/domain/proxypublication"
 	"github.com/opensoha/soha/internal/platform/apperrors"

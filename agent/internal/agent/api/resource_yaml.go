@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 type resourceYAMLRequest struct {

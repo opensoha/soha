@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	deliverydoc "github.com/opensoha/soha-contracts/delivery"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	deliverydoc "github.com/opensoha/soha/contracts/delivery"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 const deliveryDocumentFixture = "apiVersion: delivery.soha.io/v1alpha1\nkind: BuildTemplate\nmetadata:\n  name: cli-build\nspec:\n  builderKind: custom\n  dockerfileTemplate: FROM scratch\n"

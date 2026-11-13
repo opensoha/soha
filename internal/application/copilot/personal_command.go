@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"

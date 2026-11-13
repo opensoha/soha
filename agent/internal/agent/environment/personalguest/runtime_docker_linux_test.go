@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	env "github.com/opensoha/soha-contracts/agent/environment"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	env "github.com/opensoha/soha/contracts/agent/environment"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func TestRuntimeDockerRejectsUnboundedLogsAndRemoval(t *testing.T) {

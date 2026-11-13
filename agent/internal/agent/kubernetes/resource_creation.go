@@ -22,8 +22,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/restmapper"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 const resourceCreateTimeout = 10 * time.Second

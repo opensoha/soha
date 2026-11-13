@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 )

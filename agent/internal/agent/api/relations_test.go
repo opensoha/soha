@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	cr "github.com/opensoha/soha-contracts/resource"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	cr "github.com/opensoha/soha/contracts/resource"
 )
 
 func TestGenericRelationRPCChecksAuthActionsAndMetadataProjection(t *testing.T) {

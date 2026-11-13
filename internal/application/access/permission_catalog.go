@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	contractauth "github.com/opensoha/soha-contracts/auth"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractauth "github.com/opensoha/soha/contracts/auth"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

@@ -11,7 +11,7 @@ import stat
 import subprocess
 import sys
 
-MODULE = "github.com/opensoha/soha-contracts"
+MODULE = "github.com/opensoha/soha/contracts"
 
 
 def directive_rows(text, directive):
@@ -38,7 +38,7 @@ def directive_rows(text, directive):
 def resolve_source_contracts(root=None):
     root = Path(root or Path(__file__).resolve().parents[2]).resolve(strict=True)
     expected = {".": "github.com/opensoha/soha", "contracts": MODULE,
-                "cli": "github.com/opensoha/soha-cli", "agent": "github.com/opensoha/soha-agent"}
+                "cli": "github.com/opensoha/soha/cli", "agent": "github.com/opensoha/soha/agent"}
     workspace = root / "go.work"
     workspace_sum = root / "go.work.sum"
     if (workspace.is_symlink() or not workspace.is_file()

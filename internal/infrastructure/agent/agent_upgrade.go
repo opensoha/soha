@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"

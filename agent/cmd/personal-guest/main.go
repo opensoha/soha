@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/opensoha/soha-agent/internal/agent/bootstrap/personalguest"
+	"github.com/opensoha/soha/agent/internal/agent/bootstrap/personalguest"
 )
 
 func main() {

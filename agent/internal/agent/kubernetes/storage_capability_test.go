@@ -8,11 +8,11 @@ import (
 	"slices"
 	"testing"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	"github.com/opensoha/soha-agent/internal/agent/runner"
-	"github.com/opensoha/soha-contracts/helmrelease"
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	"github.com/opensoha/soha/agent/internal/agent/runner"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	discoveryfake "k8s.io/client-go/discovery/fake"
 	clienttesting "k8s.io/client-go/testing"
 )

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func (r *Runner) executeManifestTask(ctx context.Context, task ExecutionTask) {

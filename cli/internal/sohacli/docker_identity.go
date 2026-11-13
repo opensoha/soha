@@ -3,7 +3,7 @@ package sohacli
 import (
 	"context"
 	"fmt"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"net/url"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"

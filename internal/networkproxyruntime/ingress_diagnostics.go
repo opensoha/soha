@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 // The message preserves the existing caller error; diagnostic fields never

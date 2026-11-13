@@ -9,9 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	"github.com/opensoha/soha-contracts/resource/terminalstream"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	"github.com/opensoha/soha/contracts/resource/terminalstream"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 

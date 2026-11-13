@@ -3,8 +3,8 @@ package kubernetes
 import (
 	"context"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/metadata"

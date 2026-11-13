@@ -1,7 +1,7 @@
 # OpenSoha Soha CLI
 
 Root `cli/` contains the independently packaged command-line client for OpenSoha Soha.
-The CLI command is `soha`, and the Go module is `github.com/opensoha/soha-cli`.
+The CLI command is `soha`, and the Go module is `github.com/opensoha/soha/cli`.
 
 The CLI connects to a Soha HTTP API by base URL, so the same client can talk to
 a self-hosted Soha server or a compatible Soha Cloud endpoint. Cloud-specific
@@ -22,7 +22,7 @@ The npm package does not implement MCP in JavaScript. It downloads the native
 binary from the matching GitHub release, verifies `checksums.txt`, caches it by
 version, and rechecks the cached binary before execution.
 
-Install a tagged module with Go:
+Install the existing legacy release with Go (the new source module path is not yet publicly qualified):
 
 ```sh
 go install github.com/opensoha/soha-cli/cmd/soha@v0.1.8
@@ -63,11 +63,11 @@ ldflags symbols. Set `VERSION=0.1.8` when intentionally producing that CLI versi
 without it the native development version remains unchanged. Root and CLI do not
 share a product version.
 
-The launcher package, checksum verification, release download URLs and public
-module identity remain unchanged in B3. Root Node22 installs its dependency-free
-workspace; it adds no install hook. Nested `.github/workflows` preserve the old
+The module/import/ldflags identity is `github.com/opensoha/soha/cli`.
+The launcher package, checksum verification and existing release download URLs
+remain unchanged. Root Node22 installs its dependency-free workspace; it adds no install hook. Nested `.github/workflows` preserve the old
 release contract, while Root workflows own active source gates. Publisher, tag
-and public download changes are separate B4/B5 work.
+and public download changes remain separate B5 work.
 
 For external declared-dependency qualification, run `make -C cli test-declared`
 or explicitly use `GOWORK=off` from `cli/`. That result and internal source
@@ -76,15 +76,15 @@ create another sibling workspace or silently fall back to a published SDK.
 
 ## Contracts Compatibility
 
-`soha-cli` treats `github.com/opensoha/soha-contracts` as its public API source.
-B3 preserves the declared SDK pin in `go.mod` and uses Root `contracts/` for
+`soha-cli` treats `github.com/opensoha/soha/contracts` as its public API source.
+B4 pins the actual SDK checkpoint in `go.mod` and uses Root `contracts/` for
 internal source validation. This does not assert that the declared SDK is publicly
 available or that a new module location has been published. External consumers
 and `GOWORK=off` distribution checks retain their own qualification. Contract upgrades should be reviewed with this minimum matrix:
 
 | soha-cli | soha-contracts | Compatible Soha API | Notes |
 | --- | --- | --- | --- |
-| `v0.1.x` | `v0.1.x` | `v0.1.x` beta API | Supported beta line. |
+| Published legacy `v0.1.x` | Legacy `v0.1.x` SDK | `v0.1.x` beta API | Existing release line; the new Go namespace requires a separately qualified release. |
 | Root source candidate | same-commit `contracts/` | same-commit API | Complete each module gate and distinguish source results from declared external consumer qualification. |
 
 When a contracts change is not backward compatible, release a new contracts tag

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/networkaccess"
 )
 

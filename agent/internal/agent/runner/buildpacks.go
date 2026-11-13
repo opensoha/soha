@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 var buildpacksOutputImage = regexp.MustCompile(`^[a-z0-9][a-z0-9._:/-]*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)

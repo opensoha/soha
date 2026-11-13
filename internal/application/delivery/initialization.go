@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/helmrelease"
-	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	helmruntime "github.com/opensoha/soha/contracts/helmrelease/runtime"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"

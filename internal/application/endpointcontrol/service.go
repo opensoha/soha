@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"time"
 
-	ec "github.com/opensoha/soha-contracts/endpointcontrol"
+	ec "github.com/opensoha/soha/contracts/endpointcontrol"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	access "github.com/opensoha/soha/internal/domain/access"
 	"github.com/opensoha/soha/internal/domain/identity"

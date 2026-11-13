@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"io"
 
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

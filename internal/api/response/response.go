@@ -2,7 +2,7 @@ package response
 
 import (
 	"github.com/gin-gonic/gin"
-	contractsresponse "github.com/opensoha/soha-contracts/apiresponse"
+	contractsresponse "github.com/opensoha/soha/contracts/apiresponse"
 )
 
 type ErrorBody = contractsresponse.ErrorBody

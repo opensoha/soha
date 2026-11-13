@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	middleware "github.com/opensoha/soha/internal/api/middleware"
 	response "github.com/opensoha/soha/internal/api/response"
 	app "github.com/opensoha/soha/internal/application/networkaccess"

@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
 )
 
 func registerPlatformNetworkRoutes(platform *gin.RouterGroup, client *k8sagent.Client) {

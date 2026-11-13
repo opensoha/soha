@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	contractdelivery "github.com/opensoha/soha-contracts/delivery"
-	contractsapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractdelivery "github.com/opensoha/soha/contracts/delivery"
+	contractsapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"

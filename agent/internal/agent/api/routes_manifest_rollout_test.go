@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type manifestRolloutStub struct {

@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func deliveryTaskRequest(action string, ids []string, opt deliveryWorkbenchOptions) (deliveryWorkbenchRequest, error) {

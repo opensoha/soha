@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 	"github.com/opensoha/soha/internal/platform/apperrors"

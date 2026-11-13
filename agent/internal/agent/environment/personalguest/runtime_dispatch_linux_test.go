@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func TestRuntimeDispatchSurvivesBrokerRestart(t *testing.T) {

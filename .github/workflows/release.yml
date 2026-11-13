@@ -81,14 +81,16 @@ jobs:
           set -euo pipefail
           module_dir="$(mktemp -d "${RUNNER_TEMP:?}/soha-release-module.XXXXXX")"
           trap 'rm -rf "$module_dir"' EXIT
-          GOFLAGS=-mod=readonly GOWORK=off go list -m -json github.com/opensoha/soha-contracts > "$module_dir/module.json"
+          GOFLAGS=-mod=readonly GOWORK=off go list -m -json github.com/opensoha/soha/contracts > "$module_dir/module.json"
           python3 - "$module_dir/module.json" <<'SDK_IDENTITY'
           import json, sys
           module = json.load(open(sys.argv[1]))
+          if module.get("Path") != "github.com/opensoha/soha/contracts":
+              raise SystemExit("published contracts module identity mismatch")
           if module.get("Replace") is not None:
               raise SystemExit("published contracts module must not use a replacement")
           SDK_IDENTITY
-          reviewed_ref="$(GOFLAGS=-mod=readonly GOWORK=off go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts)"
+          reviewed_ref="$(GOFLAGS=-mod=readonly GOWORK=off go list -m -f '{{.Version}}' github.com/opensoha/soha/contracts)"
           [[ "${reviewed_ref}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           if [ -n "${CONTRACTS_REF}" ] && [ "${CONTRACTS_REF}" != "${reviewed_ref}" ]; then
             echo "contracts input differs from the reviewed go.mod dependency" >&2
@@ -97,18 +99,20 @@ jobs:
           echo "CONTRACTS_REF=${reviewed_ref}" >> "$GITHUB_ENV"
           GOFLAGS=-mod=readonly GOWORK=off go mod download
           GOFLAGS=-mod=readonly GOWORK=off go mod verify
-          GOFLAGS=-mod=readonly GOWORK=off go list -m -json github.com/opensoha/soha-contracts > "$module_dir/module.json"
-          GOFLAGS=-mod=readonly GOWORK=off go mod download -json github.com/opensoha/soha-contracts > "$module_dir/download.json"
+          GOFLAGS=-mod=readonly GOWORK=off go list -m -json github.com/opensoha/soha/contracts > "$module_dir/module.json"
+          GOFLAGS=-mod=readonly GOWORK=off go mod download -json github.com/opensoha/soha/contracts > "$module_dir/download.json"
           python3 - "$module_dir/module.json" "$module_dir/download.json" <<'SDK_CHECKSUM'
           import json, sys
           module = json.load(open(sys.argv[1]))
           downloaded = json.load(open(sys.argv[2]))
+          if module.get("Path") != "github.com/opensoha/soha/contracts" or downloaded.get("Path") != module.get("Path"):
+              raise SystemExit("published contracts module identity mismatch")
           if module.get("Replace") is not None or not module.get("Sum"):
               raise SystemExit("published contracts module requires an unreplaced checksum")
           if downloaded.get("Version") != module.get("Version") or downloaded.get("Sum") != module["Sum"] or not downloaded.get("GoModSum"):
               raise SystemExit("published contracts version/checksum mismatch")
           SDK_CHECKSUM
-          GOFLAGS=-mod=readonly GOWORK=off go list -m github.com/opensoha/soha-contracts | tee ../soha-contracts-module.txt
+          GOFLAGS=-mod=readonly GOWORK=off go list -m github.com/opensoha/soha/contracts | tee ../soha-contracts-module.txt
       - name: Qualify Core against the published Go SDK
         working-directory: soha
         run: |

@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"

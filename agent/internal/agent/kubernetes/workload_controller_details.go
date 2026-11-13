@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 func (c *Client) GetReplicaSetDetail(ctx context.Context, namespace, name string) (domainresource.ReplicaSetDetailView, error) {

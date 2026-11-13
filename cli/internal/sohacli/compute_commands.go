@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func runCompute(ctx context.Context, args []string, rt Runtime) error {

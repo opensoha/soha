@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/gin-gonic/gin"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	apierrors "github.com/opensoha/soha/internal/api/errors"
 	"github.com/opensoha/soha/internal/api/middleware"
 	response "github.com/opensoha/soha/internal/api/response"

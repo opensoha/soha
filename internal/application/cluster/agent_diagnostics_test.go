@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 )
 

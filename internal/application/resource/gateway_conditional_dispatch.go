@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainai "github.com/opensoha/soha/internal/domain/aigateway"

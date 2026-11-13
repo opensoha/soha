@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"

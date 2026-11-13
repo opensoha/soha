@@ -5,7 +5,7 @@
 - 根目录负责 Go 核心控制平面、Server API 和原始 Docker/Kubernetes 部署；必须可脱离 `soha-cloud` 独立运行。Core 保持单 module 的模块化单体；`contracts/` 是独立 SDK module，`web/` 是控制台源码；`cli/`、`agent/`、`connectors/`、`skills/` 分别拥有独立客户端、运行时、连接器和技能产品。组件分别遵循其目录内的 AGENTS 与技能，不按菜单或代码行数拆服务。
 - 在已确认的 OpenSoha 多仓工作区显式读取工作区根 `AGENTS.md` 一次，不按固定父级猜测隔离 worktree 的位置；独立克隆使用本仓规则，不要求补齐相邻仓库。技能链接只是发现入口，未自动加载时读取本仓真实路径。
 - 后端实现或实质审查前读取 [soha-backend](.agents/skills/soha-backend/SKILL.md) 及本次相关参考；部署变更读取 [soha-deploy](.agents/skills/soha-deploy/SKILL.md)。只读查询按需定位，已读且未变化的内容可复用；交接后缺少关键约束时补读必要部分。
-- 公开协议唯一源为 `contracts/`，Web 源码唯一入口为 `web/`；同仓使用根 `go.work`、npm workspace 与唯一根锁文件，不等待 SDK 公开发布。根 go.work 仅允许 Core/CLI/Agent 声明的精确 SDK 历史版本映射到 ./contracts，以本地源码解析依赖图；禁止其他 replacement。Core 消费同提交 Web 构建产物，不手改嵌入生成物。公开 module identity 在显式迁移前保持不变；源码验证不等于已发布依赖或分发资格。
+- 公开协议唯一源为 `contracts/`，Web 源码唯一入口为 `web/`；同仓使用根 `go.work`、npm workspace 与唯一根锁文件，不等待 SDK 公开发布。根 go.work 仅允许 Core/CLI/Agent 声明的精确 SDK 版本映射到 ./contracts，以本地源码解析依赖图；禁止其他 replacement。Core 消费同提交 Web 构建产物，不手改嵌入生成物。Core module identity 保持 `github.com/opensoha/soha`，SDK/CLI/Agent 分别使用其 `contracts`/`cli`/`agent` 子 module identity；源码验证不等于已发布依赖或分发资格。
 
 ## 变更契约
 

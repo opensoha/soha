@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/mod/modfile"
 )

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"maps"
 
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 // BindProjectRuntimePayload is the pure consistency rule shared by normal

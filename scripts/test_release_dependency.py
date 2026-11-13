@@ -121,6 +121,8 @@ class ReleaseFixture:
             path = self.runner / f"metadata-{index}.json"
             path.write_text(json.dumps(document))
             files.append(str(path))
+        # Bind the guard to this isolated proxy namespace, preserving its actual validation logic.
+        program = program.replace("github.com/opensoha/soha/contracts", SDK)
         return subprocess.run([sys.executable, "-", *files], input=program, cwd=self.root, env=self.env, capture_output=True, text=True)
 
 
@@ -168,6 +170,20 @@ class ReleaseDependencyTest(unittest.TestCase):
         result = fixture.guard(IDENTITY_GUARD, metadata)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must not use a replacement", result.stderr)
+
+    def test_actual_guards_reject_legacy_and_foreign_module_identities(self):
+        self.assertIn('"github.com/opensoha/soha/contracts"', IDENTITY_GUARD)
+        self.assertIn('"github.com/opensoha/soha/contracts"', CHECKSUM_GUARD)
+        fixture = self.fixture("none")
+        metadata = fixture.metadata()
+        for path in ["github.com/opensoha/soha-contracts", "example.invalid/foreign"]:
+            with self.subTest(path=path):
+                result = fixture.guard(IDENTITY_GUARD, {**metadata, "Path": path})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("identity mismatch", result.stderr)
+                result = fixture.guard(CHECKSUM_GUARD, metadata, {**fixture.downloaded, "Path": path})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("identity mismatch", result.stderr)
 
     def test_actual_checksum_guard_requires_matching_native_sums(self):
         fixture = self.fixture("none")

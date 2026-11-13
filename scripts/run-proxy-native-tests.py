@@ -20,12 +20,12 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = 'golang:1.27.4'
-SDK = 'github.com/opensoha/soha-contracts'
+SDK = 'github.com/opensoha/soha/contracts'
 PACKAGE = 'github.com/opensoha/soha/internal/networkproxyruntime'
 PURPOSE = 'proxy-native-race'
 LABEL = 'soha.test.run'
 SOURCE_MODULES = {'.': 'github.com/opensoha/soha', 'contracts': SDK,
-                  'cli': 'github.com/opensoha/soha-cli', 'agent': 'github.com/opensoha/soha-agent'}
+                  'cli': 'github.com/opensoha/soha/cli', 'agent': 'github.com/opensoha/soha/agent'}
 SOURCE_WORKSPACE = 'go 1.27.4\n\nuse (\n\t.\n\t./contracts\n\t./cli\n\t./agent\n)\n'
 
 

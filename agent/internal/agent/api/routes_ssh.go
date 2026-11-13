@@ -11,10 +11,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	runnerpkg "github.com/opensoha/soha-agent/internal/agent/runner"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	runnerpkg "github.com/opensoha/soha/agent/internal/agent/runner"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type sshStagedSession struct {

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 func TestPersonalDockerPreflightReal(t *testing.T) {

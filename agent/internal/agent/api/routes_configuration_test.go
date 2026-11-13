@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
 )
 
 func TestRegisterPlatformConfigurationDetailRoutes(t *testing.T) {

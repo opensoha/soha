@@ -14,8 +14,8 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
-	"github.com/opensoha/soha-agent/internal/agent/config"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/agent/internal/agent/config"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type outpostConfigFloor struct {

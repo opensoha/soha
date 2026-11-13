@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func (r *Runner) stopConfirmationRequired() bool {

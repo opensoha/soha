@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
-	"github.com/opensoha/soha-contracts/resource"
-	"github.com/opensoha/soha-contracts/resource/terminalstream"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
+	"github.com/opensoha/soha/contracts/resource"
+	"github.com/opensoha/soha/contracts/resource/terminalstream"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domain "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

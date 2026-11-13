@@ -13,8 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	deliverydoc "github.com/opensoha/soha-contracts/delivery"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	deliverydoc "github.com/opensoha/soha/contracts/delivery"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func runDeliveryDocuments(ctx context.Context, args []string, rt Runtime) error {

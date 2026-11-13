@@ -1,6 +1,6 @@
 package dto
 
-import sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+import sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 
 type BuildRepositoryRefRequest struct {
 	RepositoryID string `json:"repositoryId"`

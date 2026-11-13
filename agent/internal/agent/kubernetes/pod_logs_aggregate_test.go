@@ -19,9 +19,9 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func TestAggregatePodLogOptionsDoesNotTailExplicitTimeRange(t *testing.T) {

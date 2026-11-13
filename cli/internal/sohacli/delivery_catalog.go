@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func deliveryCatalogRequest(resource, action string, ids []string, opt deliveryWorkbenchOptions) (deliveryWorkbenchRequest, error) {

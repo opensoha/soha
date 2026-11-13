@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 type nodeResourceTotals struct {

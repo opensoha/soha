@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func TestTUIRecoveryReferencesSurviveUnknownContextSwitchAndQuit(t *testing.T) {

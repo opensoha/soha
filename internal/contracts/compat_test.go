@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"

@@ -3,7 +3,7 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"net/url"
 	"regexp"
 	"slices"

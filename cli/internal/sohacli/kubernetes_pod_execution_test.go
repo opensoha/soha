@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func fixturePodExecutionReceipt(status string) contractresource.PodExecutionReceipt {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func (b *runtimeBroker) docker(ctx context.Context, op guest.RuntimeOperation) (*string, *int, error) {

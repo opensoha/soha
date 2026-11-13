@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 // Two queued tasks exercise the actual claim loop against a real CNB runtime.

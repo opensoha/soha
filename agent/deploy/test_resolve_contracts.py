@@ -75,7 +75,7 @@ class SourceContractsTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         identities = {".": "github.com/opensoha/soha", "contracts": resolver.MODULE,
-                      "cli": "github.com/opensoha/soha-cli", "agent": "github.com/opensoha/soha-agent"}
+                      "cli": "github.com/opensoha/soha/cli", "agent": "github.com/opensoha/soha/agent"}
         self.versions = {".": "v0.1.30-0.20261110173546-4aef3ea31f6a", "cli": "v0.1.30-0.20261110173546-4aef3ea31f6a",
                          "agent": "v0.1.30-0.20261112071503-e0b9d2f86a68"}
         for directory, module in identities.items():

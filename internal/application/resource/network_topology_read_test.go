@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	"testing"
 	"time"
 

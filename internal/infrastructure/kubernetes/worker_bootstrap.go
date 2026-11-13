@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	corev1 "k8s.io/api/core/v1"

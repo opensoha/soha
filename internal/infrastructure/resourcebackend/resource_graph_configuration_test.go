@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	cr "github.com/opensoha/soha-contracts/resource"
-	shared "github.com/opensoha/soha-contracts/resource/runtime"
+	cr "github.com/opensoha/soha/contracts/resource"
+	shared "github.com/opensoha/soha/contracts/resource/runtime"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"

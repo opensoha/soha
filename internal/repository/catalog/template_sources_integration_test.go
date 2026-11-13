@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractdelivery "github.com/opensoha/soha-contracts/delivery"
-	contractsapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractdelivery "github.com/opensoha/soha/contracts/delivery"
+	contractsapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"

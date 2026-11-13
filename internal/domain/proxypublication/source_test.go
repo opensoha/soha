@@ -2,7 +2,7 @@ package proxypublication
 
 import (
 	"github.com/google/uuid"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"testing"
 )
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	contractsnetwork "github.com/opensoha/soha-contracts/network"
+	contractsnetwork "github.com/opensoha/soha/contracts/network"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 

@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 var dockerReadServiceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)

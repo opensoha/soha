@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 // These wire values are owned by Contracts' claimExecutionTask specification.

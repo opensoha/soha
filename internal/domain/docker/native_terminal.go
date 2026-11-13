@@ -1,7 +1,7 @@
 package docker
 
 import (
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 

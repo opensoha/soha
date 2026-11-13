@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 // PersonalGuestRecord grants authenticated liveness only, never environment readiness.

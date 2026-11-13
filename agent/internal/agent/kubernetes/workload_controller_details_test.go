@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 func TestGetReplicaSetDetailAggregatesSelectedResources(t *testing.T) {

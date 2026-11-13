@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
+	contractsopenapi "github.com/opensoha/soha/contracts/openapi"
 )
 
 func TestRegisterServesCanonicalOpenAPI(t *testing.T) {

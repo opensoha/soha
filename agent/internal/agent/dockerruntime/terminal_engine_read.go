@@ -9,7 +9,7 @@ import (
 	"path"
 	"regexp"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 var terminalAPIVersion = regexp.MustCompile(`^[1-9][0-9]{0,2}\.[0-9]{1,3}$`)

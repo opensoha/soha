@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 type PersonalMCPStdioCommand struct {

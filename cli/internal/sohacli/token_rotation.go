@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type localRotationRequest struct {

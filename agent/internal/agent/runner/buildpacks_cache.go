@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"time"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
 )
 
 var buildpacksCacheName = regexp.MustCompile(`^soha-cnb-[a-f0-9]{64}-(build|launch)$`)

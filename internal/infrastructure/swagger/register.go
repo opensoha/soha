@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
+	contractsopenapi "github.com/opensoha/soha/contracts/openapi"
 )
 
 func Register(router gin.IRoutes, enabled bool, path string) {

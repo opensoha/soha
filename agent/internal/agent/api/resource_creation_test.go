@@ -12,9 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 func TestValidateResourceCreateRequestBoundsDocuments(t *testing.T) {

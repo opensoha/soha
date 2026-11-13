@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func runAIRunEvents(ctx context.Context, args []string, rt Runtime) error {

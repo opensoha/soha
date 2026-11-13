@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	cr "github.com/opensoha/soha-contracts/resource"
-	shared "github.com/opensoha/soha-contracts/resource/runtime"
+	cr "github.com/opensoha/soha/contracts/resource"
+	shared "github.com/opensoha/soha/contracts/resource/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )

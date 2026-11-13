@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 type podExecutionClient interface {

@@ -18,7 +18,7 @@ COPY agent/ /src/agent/
 ARG GOMAXPROCS=4
 ENV GOMAXPROCS=$GOMAXPROCS
 RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=${VERSION} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=${COMMIT} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=${DATE}" -o /out/soha-agent ./cmd/agent
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Version=${VERSION} -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Commit=${COMMIT} -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Date=${DATE}" -o /out/soha-agent ./cmd/agent
 
 FROM scratch AS volume-reader-runtime
 ARG COMMIT=unknown

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/helmrelease"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/helmrelease"
 	aa "github.com/opensoha/soha/internal/application/access"
 	dc "github.com/opensoha/soha/internal/domain/catalog"
 	dd "github.com/opensoha/soha/internal/domain/delivery"

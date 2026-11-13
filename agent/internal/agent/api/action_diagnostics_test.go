@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func TestActionDiagnosticsRequireAuthenticationAndReportActualPolicy(t *testing.T) {

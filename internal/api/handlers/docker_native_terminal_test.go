@@ -12,9 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
-	"github.com/opensoha/soha-contracts/resource"
-	"github.com/opensoha/soha-contracts/resource/terminalstream"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
+	"github.com/opensoha/soha/contracts/resource"
+	"github.com/opensoha/soha/contracts/resource/terminalstream"
 	appdocker "github.com/opensoha/soha/internal/application/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/keyring"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"

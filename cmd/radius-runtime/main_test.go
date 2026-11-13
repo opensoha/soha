@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	runtime "github.com/opensoha/soha/internal/radiusruntime"
 )
 

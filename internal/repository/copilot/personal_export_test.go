@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )

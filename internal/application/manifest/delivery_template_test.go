@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	domainapp "github.com/opensoha/soha/internal/domain/application"

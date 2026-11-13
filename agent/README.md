@@ -2,7 +2,7 @@
 
 Standalone agent runtime for OpenSoha.
 
-Root `agent/` builds the independent `soha-agent` binary from `cmd/agent`. Its Go module/import/ldflags identity stays `github.com/opensoha/soha-agent`; it must not import Core internal packages.
+Root `agent/` builds the independent `soha-agent` binary from `cmd/agent`. Its Go module/import/ldflags identity is `github.com/opensoha/soha/agent`; it must not import Core internal packages.
 
 ## Development
 
@@ -16,12 +16,12 @@ Run the commands above from Root with Go1.27.4 and the committed four-module
 not include the nested Agent module. `make -C agent test-declared` separately
 checks the declared external SDK with `GOWORK=off`, without claiming publication.
 
-Build metadata uses the actual Root commit and UTC date with the unchanged Go
+Build metadata uses the actual Root commit and UTC date with the current module-qualified Go
 ldflags symbols. The component version remains independent. From `agent/`:
 
 ```sh
 go build -trimpath \
-  -ldflags "-X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=v0.1.7 -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=$(git rev-parse HEAD) -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -ldflags "-X github.com/opensoha/soha/agent/internal/agent/buildinfo.Version=v0.1.7 -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Commit=$(git rev-parse HEAD) -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -o bin/soha-agent ./cmd/agent
 bin/soha-agent --version
 curl -s http://127.0.0.1:18080/api/v1/build-info
@@ -160,8 +160,8 @@ make -C agent deploy-hermes-image IMAGE_TAG=v0.1.11 VERSION=v0.1.11
 Root active CI retains all six independent image gates (default, Hermes, volume
 reader, Buildpacks, daemonless and DSH); `make -C agent verify-images` exercises
 them without publishing. Nested workflows are historical release definitions,
-not a second active publisher. B3 does not change public module/tag/download
-routes or claim external release qualification. The preserved release contract publishes multi-arch Linux images (`linux/amd64`, `linux/arm64`) to GHCR as `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent`, plus binary archives for Linux, macOS, and Windows. It also publishes the dedicated Buildpacks targets as `ghcr.io/opensoha/soha-buildpacks-agent:v0.1.11` and `ghcr.io/opensoha/soha-buildpacks-agent:daemonless-v0.1.11`. Each archive has a `.sha256` sidecar plus a release-level `SHA256SUMS` manifest.
+not a second active publisher. B4 changes module/import/ldflags identities; tag/download
+routes stay unchanged and source validation does not claim external release qualification. The preserved release contract publishes multi-arch Linux images (`linux/amd64`, `linux/arm64`) to GHCR as `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent`, plus binary archives for Linux, macOS, and Windows. It also publishes the dedicated Buildpacks targets as `ghcr.io/opensoha/soha-buildpacks-agent:v0.1.11` and `ghcr.io/opensoha/soha-buildpacks-agent:daemonless-v0.1.11`. Each archive has a `.sha256` sidecar plus a release-level `SHA256SUMS` manifest.
 
 The packaged Outpost uses the same generic `soha-agent` image. Its protocol-matched Kubernetes install path and NGINX/Traefik ForwardAuth examples are documented in [`deploy/kubernetes/outpost`](./deploy/kubernetes/outpost/README.md). Helm packaging remains in `opensoha/soha-helm`; use the `soha-agent` chart with `mode=outpost`.
 
@@ -238,7 +238,7 @@ This repository is licensed under the Apache License 2.0. See
 
 ### Combined Task115 and Task117 development
 
-Internal source integration uses same-Root `contracts/` through the committed four-module workspace. Its only replacements are version-scoped aliases for the exact SDK versions required by Core, CLI and Agent, all targeting `./contracts`; module manifests keep their pins and contain no replacements. B3 preserves the declared SDK pin for separately qualified external consumers; source success does not certify that pin as publicly available. Use `python3 agent/deploy/resolve_contracts.py --mode source` from Root to record the actual Root SHA, workspace hash and SDK source digest, and explicit `--mode declared` only for external dependency verification. Missing source/schema or any alias-policy mismatch fails instead of selecting a registry or sibling fallback.
+Internal source integration uses same-Root `contracts/` through the committed four-module workspace. Its only replacements are version-scoped aliases for the exact SDK versions required by Core, CLI and Agent, all targeting `./contracts`; module manifests keep their pins and contain no replacements. B4 declares `github.com/opensoha/soha/contracts` at the actual SDK checkpoint for separately qualified external consumers; source success does not certify that pin as publicly available. Use `python3 agent/deploy/resolve_contracts.py --mode source` from Root to record the actual Root SHA, workspace hash and SDK source digest, and explicit `--mode declared` only for external dependency verification. Missing source/schema or any alias-policy mismatch fails instead of selecting a registry or sibling fallback.
 
 ### Pod session identity
 

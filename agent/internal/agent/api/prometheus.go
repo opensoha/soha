@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func registerPrometheusRoutes(platform *gin.RouterGroup, cfg cfgpkg.PrometheusConfig) {

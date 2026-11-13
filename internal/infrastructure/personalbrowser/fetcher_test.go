@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func TestBrowserNetworkPrivateTargets(t *testing.T) {

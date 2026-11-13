@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 	"golang.org/x/crypto/ssh"

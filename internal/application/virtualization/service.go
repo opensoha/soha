@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"

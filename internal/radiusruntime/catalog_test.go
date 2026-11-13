@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type catalogSource struct {

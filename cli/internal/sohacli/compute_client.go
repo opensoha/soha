@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func (c APIClient) GetComputeCapabilities(ctx context.Context) (sohaapi.ComputeCapabilityManifest, error) {

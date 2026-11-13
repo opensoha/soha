@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func inspectionEndpoint(action string) (string, string, any, error) {

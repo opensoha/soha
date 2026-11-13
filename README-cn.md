@@ -93,8 +93,9 @@ PostgreSQL + Kubernetes 集群
 
 ### 前端
 
-- 源码仓库：`github.com/opensoha/soha-web`
-- 构建产物：`dist`
+- 源码目录：本仓库 `web/`
+- 公共协议与生成 SDK 源码：`contracts/`
+- 构建产物：`web/dist`
 - `soha` release staging 路径：`internal/staticassets/web/dist`
 - 运行模式：`embed`、`dir`、`proxy`
 
@@ -106,8 +107,11 @@ PostgreSQL + Kubernetes 集群
 
 ### Agent 和 CLI
 
-- Agent 仓库：`github.com/opensoha/soha-agent`
-- CLI 仓库：`github.com/opensoha/soha-cli`
+- Agent 源码：`agent/`，独立二进制与镜像保持独立；Go module 为 `github.com/opensoha/soha/agent`。
+- CLI 源码：`cli/`，独立二进制与 npm launcher 保持独立；Go module 为 `github.com/opensoha/soha/cli`。
+- Core module 保持 `github.com/opensoha/soha`；SDK module 为 `github.com/opensoha/soha/contracts`。
+- Connectors 源码为 `connectors/`；Skills 与运行时资产为 `skills/`。
+- 新源码身份不代表已公开可获取；已有发布版本与下载地址保持不变，正式发布迁移另行验证。
 - `soha` core 暴露控制面 API；agent 和 CLI client 通过 contracts 与 HTTP 边界消费这些 API。
 
 ## 技术栈

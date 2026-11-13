@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/metadata"
 	"sigs.k8s.io/yaml"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 func (c *Client) ReadCustomResourceGraphPage(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace string) (contractresource.CustomResourceGraphPage, error) {

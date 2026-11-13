@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	dc "github.com/opensoha/soha/internal/domain/catalog"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )

@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/proxypolicy"
-	"github.com/opensoha/soha-contracts/proxytransport"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/proxypolicy"
+	"github.com/opensoha/soha/contracts/proxytransport"
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 	"golang.org/x/net/proxy"
 )

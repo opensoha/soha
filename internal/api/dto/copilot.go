@@ -1,6 +1,6 @@
 package dto
 
-import "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+import "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 
 import domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 

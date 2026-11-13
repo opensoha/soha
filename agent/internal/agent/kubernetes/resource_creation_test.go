@@ -14,8 +14,8 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	ktesting "k8s.io/client-go/testing"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 func TestPreflightResourceCreateUsesDiscoveryDryRunWithoutPersisting(t *testing.T) {

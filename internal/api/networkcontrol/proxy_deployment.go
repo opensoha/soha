@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/gin-gonic/gin"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"io"

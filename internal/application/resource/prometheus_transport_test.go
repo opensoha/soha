@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
 	"net/http"

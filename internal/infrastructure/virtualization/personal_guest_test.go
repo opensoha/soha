@@ -3,7 +3,7 @@ package virtualization
 import (
 	"context"
 	"encoding/json"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	"net/http"
 	"net/http/httptest"
 	"reflect"

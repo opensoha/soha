@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/opensoha/soha-agent/internal/agent/config"
-	guestclient "github.com/opensoha/soha-agent/internal/agent/environment/personalguest"
+	"github.com/opensoha/soha/agent/internal/agent/config"
+	guestclient "github.com/opensoha/soha/agent/internal/agent/environment/personalguest"
 )
 
 func InitializeData(ctx context.Context, path string, output io.Writer) error {

@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func governedBinding(metadata map[string]any) (*sohaapi.GovernedAITokenBinding, error) {

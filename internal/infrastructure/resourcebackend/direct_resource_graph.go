@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

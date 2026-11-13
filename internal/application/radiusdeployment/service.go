@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appnetwork "github.com/opensoha/soha/internal/application/networkaccess"
 	"github.com/opensoha/soha/internal/domain/delivery"
 	"github.com/opensoha/soha/internal/domain/identity"

@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/proxypolicy"
-	"github.com/opensoha/soha-contracts/proxytransport"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/proxypolicy"
+	"github.com/opensoha/soha/contracts/proxytransport"
 )
 
 type ingressLease interface {

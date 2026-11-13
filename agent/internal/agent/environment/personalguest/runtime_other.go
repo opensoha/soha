@@ -5,7 +5,7 @@ package personalguest
 import (
 	"context"
 	"errors"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 type browserPipe struct{}

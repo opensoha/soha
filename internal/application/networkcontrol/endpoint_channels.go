@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	ec "github.com/opensoha/soha-contracts/endpointcontrol"
+	ec "github.com/opensoha/soha/contracts/endpointcontrol"
 	runtime "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/platform/apperrors"

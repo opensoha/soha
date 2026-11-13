@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

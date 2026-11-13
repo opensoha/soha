@@ -19,7 +19,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/google/uuid"
-	"github.com/opensoha/soha-agent/internal/agent/config"
+	"github.com/opensoha/soha/agent/internal/agent/config"
 )
 
 const personalDataRoot = "/var/lib/soha/personal-guest-data"

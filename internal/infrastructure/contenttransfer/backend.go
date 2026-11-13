@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	sdk "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sdk "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	app "github.com/opensoha/soha/internal/application/contenttransfer"
 	d "github.com/opensoha/soha/internal/domain/contenttransfer"
 	"github.com/opensoha/soha/internal/domain/identity"

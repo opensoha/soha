@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	shared "github.com/opensoha/soha-contracts/resource/runtime"
+	shared "github.com/opensoha/soha/contracts/resource/runtime"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

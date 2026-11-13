@@ -7,7 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"io"
 	"net/http"
 	"net/url"

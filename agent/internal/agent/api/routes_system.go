@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/opensoha/soha-agent/internal/agent/buildinfo"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	runnerpkg "github.com/opensoha/soha-agent/internal/agent/runner"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
+	"github.com/opensoha/soha/agent/internal/agent/buildinfo"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	runnerpkg "github.com/opensoha/soha/agent/internal/agent/runner"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
 )
 
 func registerSystemRoutes(

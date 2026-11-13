@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
 	"k8s.io/client-go/tools/remotecommand"
 )
 

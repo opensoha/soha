@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sync"
 
-	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
+	contractsopenapi "github.com/opensoha/soha/contracts/openapi"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"

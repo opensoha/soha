@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
+	helmruntime "github.com/opensoha/soha/contracts/helmrelease/runtime"
 
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/chart/loader"
@@ -31,7 +31,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 const (

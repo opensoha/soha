@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/proxypolicy"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/proxypolicy"
 	domain "github.com/opensoha/soha/internal/domain/proxypublication"
 	"go.yaml.in/yaml/v3"
 )

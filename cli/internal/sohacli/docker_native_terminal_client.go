@@ -15,8 +15,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
-	"github.com/opensoha/soha-contracts/resource"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
+	"github.com/opensoha/soha/contracts/resource"
 )
 
 func dockerTerminalPath(project, id string) (string, error) {

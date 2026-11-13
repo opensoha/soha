@@ -38,13 +38,13 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/yaml"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	domaincluster "github.com/opensoha/soha-agent/internal/domain/cluster"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
-	helmrelease "github.com/opensoha/soha-contracts/helmrelease"
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
-	"github.com/opensoha/soha-contracts/streamlimit"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	domaincluster "github.com/opensoha/soha/agent/internal/domain/cluster"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
+	helmrelease "github.com/opensoha/soha/contracts/helmrelease"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
+	"github.com/opensoha/soha/contracts/streamlimit"
 )
 
 type Client struct {

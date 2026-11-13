@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
 )
 
 func TestConditionalHelmValuesRequiresActionAndRevision(t *testing.T) {

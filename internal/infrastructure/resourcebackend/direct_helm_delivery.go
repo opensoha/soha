@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	helmruntime "github.com/opensoha/soha/contracts/helmrelease/runtime"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domainupdate "github.com/opensoha/soha/internal/domain/templateupdate"

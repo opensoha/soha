@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strconv"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func deliveryManifestRequest(resource, action string, ids []string, opt deliveryWorkbenchOptions) (deliveryWorkbenchRequest, error) {

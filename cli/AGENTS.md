@@ -4,7 +4,7 @@
 
 These rules own `cli/` in the shared Root source repository. Read Root
 `../AGENTS.md` once. The product remains an independent Go client and native artifact;
-its public Go module identity is still `github.com/opensoha/soha-cli`.
+its Go module identity is `github.com/opensoha/soha/cli`.
 Before implementation or substantive review, read [.agents/skills/soha-cli/SKILL.md](.agents/skills/soha-cli/SKILL.md)
 and its references relevant to the task. Skill symlinks provide discovery, not proof of loading.
 Read README for unfamiliar command behavior and the relevant workflow under
@@ -48,8 +48,9 @@ the workflow or documentation is stale, then update both in the same change.
 
 - Keep the CLI independent from Core internals: never import `soha/internal/**`.
   Internal builds use Root `go.work` and `contracts/`, with no sibling repository.
-- Preserve the declared SDK pin and existing module/import/ldflags identities in B3.
-  Root source success does not certify the declared SDK or a new public module path;
+- Use `github.com/opensoha/soha/cli` for module/import/ldflags identity and
+  `github.com/opensoha/soha/contracts` for the declared SDK. Root source success
+  does not certify the declared SDK or the new public module path;
   test external distribution explicitly with `GOWORK=off` and no replacements.
 - Keep Cloud-only lifecycle, billing, quota, and operations logic outside this
   repository. The CLI may call public Cloud APIs without owning their logic.

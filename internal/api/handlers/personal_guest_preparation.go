@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	identity "github.com/opensoha/soha/internal/domain/identity"

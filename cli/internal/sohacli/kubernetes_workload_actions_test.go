@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func TestKubernetesWorkloadActionPreflightsExactInputAndChecksReceipt(t *testing.T) {

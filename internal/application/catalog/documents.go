@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractdelivery "github.com/opensoha/soha-contracts/delivery"
+	contractdelivery "github.com/opensoha/soha/contracts/delivery"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

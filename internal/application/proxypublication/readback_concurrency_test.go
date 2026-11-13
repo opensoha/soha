@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	access "github.com/opensoha/soha/internal/domain/networkaccess"
 	proxy "github.com/opensoha/soha/internal/domain/networkproxy"
 	domain "github.com/opensoha/soha/internal/domain/proxypublication"

@@ -8,8 +8,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"

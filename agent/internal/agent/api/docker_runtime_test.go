@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
 	"go.uber.org/zap"
 )
 

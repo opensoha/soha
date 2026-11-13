@@ -19,7 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func boundedUTF8(value string, limit int) string {

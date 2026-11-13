@@ -1,6 +1,6 @@
 package resource
 
-import sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+import sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 
 type (
 	KubernetesResourceAgentCreateDocument  = sohaapi.KubernetesResourceAgentCreateDocument

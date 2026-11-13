@@ -23,7 +23,7 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 		"python3 scripts/source-workspace.py check-go",
 		".tmp/embedded-web.json",
 		"same-source SDK differs from published npm package",
-		"go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts",
+		"go list -m -f '{{.Version}}' github.com/opensoha/soha/contracts",
 		"contracts input differs from the reviewed go.mod dependency",
 		`[[ "${reviewed_ref}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]`,
 		"GOWORK=off go mod download",
@@ -35,7 +35,7 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 		"export GOWORK=off GOFLAGS=-mod=readonly",
 		"${RUNNER_TEMP:?}/soha-published-sdk.XXXXXX",
 		`CGO_ENABLED=0 go build -tags embedassets -trimpath -o "$qualification_dir/soha-server" ./cmd/server`,
-		"go list -m github.com/opensoha/soha-contracts",
+		"go list -m github.com/opensoha/soha/contracts",
 		"run: go test ./...",
 		"CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build",
 		"target: network-gateway-runtime",
@@ -76,7 +76,7 @@ func TestReleaseWorkflowDoesNotUseSiblingContractsCheckout(t *testing.T) {
 	disallowed := []string{
 		// Release images must resolve the checksummed module themselves rather
 		// than replace it with staged or sibling source.
-		"go list -m -f '{{.Dir}}' github.com/opensoha/soha-contracts",
+		"go list -m -f '{{.Dir}}' github.com/opensoha/soha/contracts",
 		"contracts-build-context",
 		"contracts=./",
 		"go get",
@@ -87,8 +87,8 @@ func TestReleaseWorkflowDoesNotUseSiblingContractsCheckout(t *testing.T) {
 		"path: soha-contracts",
 		"../soha-contracts/",
 		"go.work <<'EOF'",
-		"replace github.com/opensoha/soha-contracts v0.0.0 =>",
-		"go mod edit -dropreplace=github.com/opensoha/soha-contracts",
+		"replace github.com/opensoha/soha/contracts v0.0.0 =>",
+		"go mod edit -dropreplace=github.com/opensoha/soha/contracts",
 	}
 	for _, value := range disallowed {
 		if strings.Contains(workflow, value) {

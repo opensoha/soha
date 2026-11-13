@@ -15,9 +15,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/streamlimit"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/streamlimit"
 )
 
 const (

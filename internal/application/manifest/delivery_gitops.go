@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"

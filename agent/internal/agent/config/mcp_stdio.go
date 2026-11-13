@@ -6,7 +6,7 @@ import (
 	"path"
 	"strings"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 type MCPStdioAssetRef struct {

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"encoding/json"
-	"github.com/opensoha/soha-contracts/proxytransport"
+	"github.com/opensoha/soha/contracts/proxytransport"
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 	"golang.org/x/net/proxy"
 	"sigs.k8s.io/yaml"

@@ -18,7 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/opensoha/soha-contracts/streamlimit"
+	"github.com/opensoha/soha/contracts/streamlimit"
 )
 
 const dockerEnvironmentLabel = "soha.environment"

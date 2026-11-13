@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	contractsopenapi "github.com/opensoha/soha/contracts/openapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appidentityprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

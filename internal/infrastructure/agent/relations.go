@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	"net/http"
 	"slices"
 )

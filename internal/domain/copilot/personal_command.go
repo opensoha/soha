@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 // Native run IDs include a prefix; the private Agent protocol accepts UUIDs.

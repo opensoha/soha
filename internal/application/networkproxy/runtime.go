@@ -3,7 +3,7 @@ package networkproxy
 import (
 	"context"
 	"fmt"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"regexp"
 	"slices"
 	"strings"

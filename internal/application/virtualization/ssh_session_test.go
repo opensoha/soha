@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	delivery "github.com/opensoha/soha/internal/domain/delivery"
 	identity "github.com/opensoha/soha/internal/domain/identity"

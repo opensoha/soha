@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )

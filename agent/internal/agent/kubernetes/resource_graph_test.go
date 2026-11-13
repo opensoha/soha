@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	cr "github.com/opensoha/soha-contracts/resource"
-	shared "github.com/opensoha/soha-contracts/resource/runtime"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	cr "github.com/opensoha/soha/contracts/resource"
+	shared "github.com/opensoha/soha/contracts/resource/runtime"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"

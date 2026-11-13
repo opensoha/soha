@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	identity "github.com/opensoha/soha/internal/domain/identity"
 	access "github.com/opensoha/soha/internal/domain/networkaccess"
 	proxy "github.com/opensoha/soha/internal/domain/networkproxy"

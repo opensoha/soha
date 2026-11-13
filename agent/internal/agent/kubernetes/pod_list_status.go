@@ -3,7 +3,7 @@ package kubernetes
 import (
 	"strings"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 	corev1 "k8s.io/api/core/v1"
 )
 

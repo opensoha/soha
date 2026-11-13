@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appobservability "github.com/opensoha/soha/internal/application/observability"
 	"github.com/opensoha/soha/internal/platform/telemetry"
 )

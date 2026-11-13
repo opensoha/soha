@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	cr "github.com/opensoha/soha-contracts/resource"
-	shared "github.com/opensoha/soha-contracts/resource/runtime"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	cr "github.com/opensoha/soha/contracts/resource"
+	shared "github.com/opensoha/soha/contracts/resource/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )

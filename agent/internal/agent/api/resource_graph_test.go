@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	shared "github.com/opensoha/soha-contracts/resource/runtime"
+	shared "github.com/opensoha/soha/contracts/resource/runtime"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )

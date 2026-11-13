@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 const (

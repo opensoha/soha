@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	contractsapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractsapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/repository/deliverysource"

@@ -3,7 +3,7 @@ package copilot
 import (
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainknowledge "github.com/opensoha/soha/internal/domain/knowledge"
 )
 

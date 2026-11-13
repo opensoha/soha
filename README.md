@@ -110,7 +110,8 @@ See the published docs for current public architecture and API behavior.
 - Agent source: `agent/`; standalone binary and images remain independent.
 - CLI source: `cli/`; standalone binary and npm launcher remain independent.
 - Connectors source: `connectors/`; Skills and runtime assets: `skills/`.
-- Public Go module names and download URLs retain their existing identities until their separate release migration.
+- Core keeps `github.com/opensoha/soha`; the SDK, CLI and Agent source modules use `github.com/opensoha/soha/contracts`, `github.com/opensoha/soha/cli` and `github.com/opensoha/soha/agent`.
+- These source identities do not establish public availability. Existing release download URLs and published versions remain unchanged until their separate release migration.
 - `soha` core exposes the control-plane APIs; agent and CLI clients consume those APIs through contracts and HTTP boundaries.
 
 ## Tech Stack

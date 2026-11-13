@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"

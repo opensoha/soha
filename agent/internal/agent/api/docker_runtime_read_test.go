@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 func TestVersionedDockerReadsRequireAllowlistAndExactResponseIdentity(t *testing.T) {

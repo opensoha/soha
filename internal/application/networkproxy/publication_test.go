@@ -3,7 +3,7 @@ package networkproxy
 import (
 	"context"
 	"errors"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 	runtime "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/networkidentity"

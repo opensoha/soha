@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	cr "github.com/opensoha/soha-contracts/resource"
+	cr "github.com/opensoha/soha/contracts/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

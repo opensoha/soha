@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"context"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/helmrelease"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

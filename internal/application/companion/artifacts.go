@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domaincompanion "github.com/opensoha/soha/internal/domain/companion"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"

@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

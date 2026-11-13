@@ -1,7 +1,7 @@
 package docker
 
 import (
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 // ConfigurationRequest is private transaction state. Input bodies are never

@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/opensoha/soha-contracts/proxytransport"
+	"github.com/opensoha/soha/contracts/proxytransport"
 	"golang.org/x/net/proxy"
 	"io"
 	"net"

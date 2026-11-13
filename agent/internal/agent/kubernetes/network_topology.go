@@ -2,8 +2,8 @@ package kubernetes
 
 import (
 	"context"
-	resource "github.com/opensoha/soha-contracts/resource"
-	runtime "github.com/opensoha/soha-contracts/resource/runtime"
+	resource "github.com/opensoha/soha/contracts/resource"
+	runtime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func (c *Client) NetworkTopologySnapshot(ctx context.Context, input resource.NetworkTopologySnapshotRequest) (resource.NetworkTopologySnapshot, error) {

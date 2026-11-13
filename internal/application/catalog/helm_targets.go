@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/opensoha/soha-contracts/helmrelease"
+	"github.com/opensoha/soha/contracts/helmrelease"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )

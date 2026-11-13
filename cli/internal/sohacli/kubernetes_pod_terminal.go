@@ -7,7 +7,7 @@ import (
 	"os"
 	"slices"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"golang.org/x/term"
 )
 

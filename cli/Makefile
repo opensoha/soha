@@ -22,7 +22,7 @@ IMAGE_TAG ?= local
 IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
 GOPROXY ?= https://proxy.golang.org,direct
 PUSH_LATEST ?= 0
-BUILD_LDFLAGS = -X github.com/opensoha/soha-cli/internal/sohacli.commit=$(SOURCE_COMMIT) -X github.com/opensoha/soha-cli/internal/sohacli.date=$(BUILD_DATE) $(if $(VERSION),-X github.com/opensoha/soha-cli/internal/sohacli.version=$(VERSION))
+BUILD_LDFLAGS = -X github.com/opensoha/soha/cli/internal/sohacli.commit=$(SOURCE_COMMIT) -X github.com/opensoha/soha/cli/internal/sohacli.date=$(BUILD_DATE) $(if $(VERSION),-X github.com/opensoha/soha/cli/internal/sohacli.version=$(VERSION))
 
 IMAGE_BUILD_TAGS = -t $(IMAGE_REPOSITORY):$(IMAGE_TAG)
 ifeq ($(PUSH_LATEST),1)

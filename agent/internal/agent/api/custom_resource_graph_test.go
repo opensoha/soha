@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func TestCustomResourceGraphPageHTTP(t *testing.T) {

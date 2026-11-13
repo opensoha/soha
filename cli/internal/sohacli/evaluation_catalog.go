@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func runEvaluationCatalog(ctx context.Context, args []string, rt Runtime) error {

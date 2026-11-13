@@ -2,7 +2,7 @@ package kubernetes
 
 import (
 	"context"
-	domainresource "github.com/opensoha/soha-contracts/resource"
+	domainresource "github.com/opensoha/soha/contracts/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"time"

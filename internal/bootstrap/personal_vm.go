@@ -3,7 +3,7 @@ package bootstrap
 import (
 	"context"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	appidentity "github.com/opensoha/soha/internal/application/identity"
 	"github.com/opensoha/soha/internal/application/personalenvironment"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"

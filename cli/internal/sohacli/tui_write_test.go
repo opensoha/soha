@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 type tuiWriteFake struct {

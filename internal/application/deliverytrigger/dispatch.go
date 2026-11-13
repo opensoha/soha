@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 	domain "github.com/opensoha/soha/internal/domain/deliverytrigger"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

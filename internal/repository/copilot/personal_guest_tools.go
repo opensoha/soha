@@ -2,7 +2,7 @@ package copilot
 
 import (
 	"context"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"

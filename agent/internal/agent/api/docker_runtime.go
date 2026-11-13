@@ -21,10 +21,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	"github.com/opensoha/soha-agent/internal/agent/dockerruntime"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	domaindocker "github.com/opensoha/soha-agent/internal/domain/docker"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	"github.com/opensoha/soha/agent/internal/agent/dockerruntime"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	domaindocker "github.com/opensoha/soha/agent/internal/domain/docker"
 	"go.uber.org/zap"
 	"sigs.k8s.io/yaml"
 )

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	publication "github.com/opensoha/soha/internal/application/proxypublication"
 	identity "github.com/opensoha/soha/internal/domain/identity"

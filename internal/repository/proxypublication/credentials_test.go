@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/DATA-DOG/go-sqlmock"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/proxypublication"
 	"testing"
 	"time"

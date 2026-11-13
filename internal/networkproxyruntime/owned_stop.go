@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/opensoha/soha-contracts/proxyadapter"
+	"github.com/opensoha/soha/contracts/proxyadapter"
 )
 
 // Stop only the command handles and listeners created by this host. A timeout

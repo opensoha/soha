@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensoha/soha-contracts/helmrelease"
+	"github.com/opensoha/soha/contracts/helmrelease"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"

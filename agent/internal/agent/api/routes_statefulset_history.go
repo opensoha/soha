@@ -2,8 +2,8 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
 	"net/http"
 )
 

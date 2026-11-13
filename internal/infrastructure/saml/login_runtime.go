@@ -14,7 +14,7 @@ import (
 
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appidentity "github.com/opensoha/soha/internal/application/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 )

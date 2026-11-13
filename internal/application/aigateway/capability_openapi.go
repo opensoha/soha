@@ -3,7 +3,7 @@ package aigateway
 import (
 	"encoding/json"
 	"fmt"
-	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
+	contractsopenapi "github.com/opensoha/soha/contracts/openapi"
 	"strings"
 )
 

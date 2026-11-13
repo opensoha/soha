@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"k8s.io/client-go/dynamic"
 )

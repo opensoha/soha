@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 type DataPlan = guest.DataPlan

@@ -12,7 +12,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SDK = ROOT / "contracts"
-SDK_MODULE = "github.com/opensoha/soha-contracts"
+SDK_MODULE = "github.com/opensoha/soha/contracts"
 
 
 def run(args, cwd=ROOT, env=None):
@@ -23,13 +23,13 @@ def go_modules():
     return [
         ("github.com/opensoha/soha", ROOT),
         (SDK_MODULE, SDK),
-        ("github.com/opensoha/soha-cli", ROOT / "cli"),
-        ("github.com/opensoha/soha-agent", ROOT / "agent"),
+        ("github.com/opensoha/soha/cli", ROOT / "cli"),
+        ("github.com/opensoha/soha/agent", ROOT / "agent"),
     ]
 
 
 def validate_sdk_aliases(config: dict, root: Path) -> set[str]:
-    """Bind historical SDK graph metadata to this checkout, without changing release pins."""
+    """Bind exact declared SDK versions to this checkout without changing release pins."""
     sdk = root / "contracts"
     if sdk.resolve() != sdk or not sdk.is_dir():
         raise ValueError("SDK aliases require confined same-checkout contracts")
@@ -99,6 +99,8 @@ def check_go():
         if (module.get("Path") != name or not module.get("Main") or module.get("Replace")
                 or Path(module["Dir"]).resolve() != directory):
             raise ValueError(f"{name} must resolve to same-checkout source")
+
+    run(["go", "run", str(Path(__file__).with_name("check-module-boundaries.go")), "-root", str(ROOT)])
 
 
 def check_npm():

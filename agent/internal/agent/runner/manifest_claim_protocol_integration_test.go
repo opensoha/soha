@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	"github.com/opensoha/soha-contracts/apiresponse"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	"github.com/opensoha/soha/contracts/apiresponse"
 )
 
 // This entry point is run by Core's explicitly enabled protocol acceptance tests.

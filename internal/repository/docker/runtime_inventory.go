@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
 	domain "github.com/opensoha/soha/internal/domain/docker"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/dbtx"

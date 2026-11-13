@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	"go.uber.org/zap"
 )
 

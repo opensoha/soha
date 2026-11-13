@@ -3,9 +3,9 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/helmrelease"
-	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	helmruntime "github.com/opensoha/soha/contracts/helmrelease/runtime"
 )
 
 func (c *Client) PrepareHelmDelivery(ctx context.Context, input sohaapi.HelmExecutionTaskPayload) (sohaapi.HelmExecutionTaskPayload, error) {

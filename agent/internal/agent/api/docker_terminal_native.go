@@ -13,12 +13,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	"github.com/opensoha/soha-agent/internal/agent/dockerruntime"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
-	"github.com/opensoha/soha-contracts/resource"
-	"github.com/opensoha/soha-contracts/resource/terminalstream"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	"github.com/opensoha/soha/agent/internal/agent/dockerruntime"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
+	"github.com/opensoha/soha/contracts/resource"
+	"github.com/opensoha/soha/contracts/resource/terminalstream"
 )
 
 type dockerNativeTerminalClient interface {

@@ -1,4 +1,4 @@
-module github.com/opensoha/soha-cli
+module github.com/opensoha/soha/cli
 
 go 1.27.4
 
@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/opensoha/soha-contracts v0.1.30-0.20261110173546-4aef3ea31f6a
+	github.com/opensoha/soha/contracts v0.0.0-20261113083804-3d8938200237
 	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0

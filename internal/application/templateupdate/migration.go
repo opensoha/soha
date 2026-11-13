@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainupdate "github.com/opensoha/soha/internal/domain/templateupdate"

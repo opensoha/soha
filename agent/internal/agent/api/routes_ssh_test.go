@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func TestSSHSessionOneUseCapacityAndShutdown(t *testing.T) {

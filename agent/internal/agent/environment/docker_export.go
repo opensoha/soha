@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
-	"github.com/opensoha/soha-contracts/streamlimit"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
+	"github.com/opensoha/soha/contracts/streamlimit"
 )
 
 // ExportPersonalData reads a stopped owner's entire data tree, including link

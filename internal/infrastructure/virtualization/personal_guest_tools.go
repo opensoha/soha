@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	domain "github.com/opensoha/soha/internal/domain/virtualization"
 )
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func capabilityTaskEndpoint(action string) (string, string, any, any, error) {

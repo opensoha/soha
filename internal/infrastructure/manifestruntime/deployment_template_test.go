@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"go.yaml.in/yaml/v3"

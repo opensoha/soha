@@ -3,7 +3,7 @@ package radiusdeployment
 import (
 	"context"
 	"errors"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/domain/delivery"
 	domain "github.com/opensoha/soha/internal/domain/radiusdeployment"
 	"github.com/opensoha/soha/internal/platform/apperrors"

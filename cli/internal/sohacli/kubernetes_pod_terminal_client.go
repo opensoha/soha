@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func kubernetesPodTerminalPath(cluster, namespace, name, id string) (string, error) {

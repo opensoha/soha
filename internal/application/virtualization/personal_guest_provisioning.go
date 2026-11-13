@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	identity "github.com/opensoha/soha/internal/domain/identity"

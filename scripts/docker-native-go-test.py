@@ -21,9 +21,14 @@ CONTRACT_EMBEDS = {
 
 
 def validate_repository(repository, module):
-    repository = Path(repository).resolve()
-    top = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', '--show-toplevel'], text=True).strip()
-    if Path(top).resolve() != repository or not re.search(r'^module\s+' + re.escape(module) + r'\s*$', (repository / 'go.mod').read_text(), re.M):
+    supplied = Path(repository)
+    repository = supplied.resolve(strict=True)
+    top = Path(subprocess.check_output(['git', '-C', str(repository), 'rev-parse', '--show-toplevel'], text=True).strip()).resolve(strict=True)
+    relative = {'github.com/opensoha/soha': '.', 'github.com/opensoha/soha/contracts': 'contracts'}.get(module)
+    manifest = repository / 'go.mod'
+    if (relative is None or supplied.is_symlink() or repository != top / relative
+            or (top / relative).is_symlink() or manifest.is_symlink() or not manifest.is_file()
+            or not re.search(r'^module\s+' + re.escape(module) + r'\s*$', manifest.read_text(), re.M)):
         raise ValueError('Native test source is not the declared owning Go repository')
 
 
@@ -43,7 +48,10 @@ def source_file(name, prefix):
 
 def source_archive(repository, prefix):
     repository = Path(repository).resolve()
-    names = subprocess.check_output(['git', '-C', str(repository), 'ls-files', '--cached', '--others', '--exclude-standard', '-z']).decode().split('\0')
+    names = subprocess.check_output(['git', '-C', str(repository), 'ls-files', '--full-name', '--cached', '--others', '--exclude-standard', '-z', '--', '.']).decode().split('\0')
+    top = Path(subprocess.check_output(['git', '-C', str(repository), 'rev-parse', '--show-toplevel'], text=True).strip()).resolve()
+    relative = repository.relative_to(top)
+    names = [str(Path(name).relative_to(relative)) for name in names if name]
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode='w') as archive:
         for name in sorted(set(names) - {''}):
@@ -95,7 +103,9 @@ def cleanup(docker, name, identifier, image_id, run_id, env, report):
 def run(docker, run_id, repository, contracts, test_command, environment, stdout, stderr, report):
     validate_repository(repository, 'github.com/opensoha/soha')
     if contracts is not None:
-        validate_repository(contracts, 'github.com/opensoha/soha-contracts')
+        validate_repository(contracts, 'github.com/opensoha/soha/contracts')
+        if Path(contracts).resolve() != Path(repository).resolve() / 'contracts':
+            raise ValueError('Native SDK source must be this Root contracts subdirectory')
     env = dict(environment, OPENSOHA_VERIFY_INTERNAL='1')
 
     def command(args, **kwargs):
@@ -129,7 +139,7 @@ def run(docker, run_id, repository, contracts, test_command, environment, stdout
             report['sourceArchives'][repo_name] = hashlib.sha256(archive).hexdigest()
             subprocess.run([*docker, 'cp', '-', container + ':/'], input=archive, env=env, check=True, timeout=90)
         if contracts is not None:
-            command(['exec', container, 'go', 'mod', 'edit', '-replace=github.com/opensoha/soha-contracts=/src/contracts'])
+            command(['exec', container, 'go', 'mod', 'edit', '-replace=github.com/opensoha/soha/contracts=/src/contracts'])
         variables = ['SOHA_TEST_POSTGRES_HOST', 'SOHA_TEST_POSTGRES_PASSWORD',
                      'SOHA_APPLICATION_TEST_POSTGRES_PORT', 'SOHA_CATALOG_TEST_POSTGRES_PORT']
         flags = [value for name in variables for value in ('--env', name)]

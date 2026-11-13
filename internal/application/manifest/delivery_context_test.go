@@ -2,7 +2,7 @@ package manifest
 
 import (
 	"errors"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"strings"
 	"testing"
 	"time"

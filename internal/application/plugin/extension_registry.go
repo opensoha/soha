@@ -4,7 +4,7 @@ import (
 	"slices"
 	"sync"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 )
 

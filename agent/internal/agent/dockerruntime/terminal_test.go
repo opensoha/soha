@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
-	"github.com/opensoha/soha-contracts/resource"
-	"github.com/opensoha/soha-contracts/resource/terminalstream"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
+	"github.com/opensoha/soha/contracts/resource"
+	"github.com/opensoha/soha/contracts/resource/terminalstream"
 )
 
 type ownedTerminalSizes struct{ sent atomic.Bool }

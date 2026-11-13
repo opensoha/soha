@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"

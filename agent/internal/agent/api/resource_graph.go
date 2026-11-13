@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func writeResourceGraphError(c *gin.Context, err error) {

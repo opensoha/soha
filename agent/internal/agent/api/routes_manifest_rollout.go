@@ -7,9 +7,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 type manifestRolloutExecutor interface {

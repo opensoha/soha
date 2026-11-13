@@ -54,8 +54,8 @@ class ProxyNativeTests(unittest.TestCase):
         (root / 'go.sum').write_text(runner.SDK + ' v1.2.3 h1:distribution\n')
         (root / 'go.work').write_text(runner.SOURCE_WORKSPACE + '\nreplace (\n\t' + runner.SDK
             + ' v1.2.3 => ./contracts\n\t' + runner.SDK + ' v1.2.4 => ./contracts\n)\n')
-        for folder, module in (('contracts', runner.SDK), ('cli', 'github.com/opensoha/soha-cli'),
-                               ('agent', 'github.com/opensoha/soha-agent')):
+        for folder, module in (('contracts', runner.SDK), ('cli', 'github.com/opensoha/soha/cli'),
+                               ('agent', 'github.com/opensoha/soha/agent')):
             (root / folder).mkdir()
             requirement = '' if folder == 'contracts' else 'require ' + runner.SDK + (' v1.2.3\n' if folder == 'cli' else ' v1.2.4\n')
             (root / folder / 'go.mod').write_text('module ' + module + '\ngo 1.27.4\n' + requirement)
@@ -177,7 +177,7 @@ class ProxyNativeTests(unittest.TestCase):
             root = self.source(tmp)
             identity = runner.sdk_input(root, 'source')
             self.assertEqual(set(identity['sourceModules']), {'github.com/opensoha/soha', runner.SDK,
-                'github.com/opensoha/soha-cli', 'github.com/opensoha/soha-agent'})
+                'github.com/opensoha/soha/cli', 'github.com/opensoha/soha/agent'})
             for folder, module in runner.SOURCE_MODULES.items():
                 with self.subTest(module=module):
                     expected = identity['sourceModules'][module]

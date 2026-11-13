@@ -5,7 +5,7 @@ Apply this reference to production Go changes in `soha-agent`. Repository contra
 ## Repository Boundary
 
 - Keep `soha-agent` a standalone Go module and runtime. Never import `github.com/opensoha/soha/internal/**`.
-- Exchange stable API shapes through same-Root `contracts/` in internal source mode. B3 retains the declared module/import/ldflags identities; qualify external dependencies separately with `GOWORK=off` and no replacement, without claiming a published SDK from source results.
+- Exchange stable API shapes through same-Root `contracts/` in internal source mode. The Agent module/import/ldflags identity is `github.com/opensoha/soha/agent` and SDK identity is `github.com/opensoha/soha/contracts`; qualify external dependencies separately with `GOWORK=off` and no replacement, without claiming a published SDK from source results.
 - Keep `cmd/agent/main.go` minimal and explicit. Construct configuration, logger, Kubernetes client, runner, and HTTP server through `internal/agent/bootstrap`.
 - Do not add mutable global services, implicit `init` setup, a service locator, or a DI container. Define narrow consumer-owned interfaces and inject concrete implementations.
 
@@ -55,7 +55,7 @@ Apply this reference to production Go changes in `soha-agent`. Repository contra
 - Use Root Go1.27.4 and the explicit committed four-module `go.work` for source builds; execute every module separately. Do not create another local workspace or fall back to a registry SDK when Root source is missing.
 - Review every direct dependency and `go mod tidy` change. Prefer the standard library or existing dependencies when they clearly satisfy the requirement.
 - Build generic/Hermes/runtime images from the same Root context and contracts source, with all four module manifests available. Do not bake runtime tokens, kubeconfigs, provider credentials, or test files into images.
-- Source binaries use Root `GOWORK`, `CGO_ENABLED=0`, `-trimpath`, unchanged ldflags symbols, true Root commit metadata and independent component versions. External release qualification remains explicit `GOWORK=off`; B3 does not activate publishers.
+- Source binaries use Root `GOWORK`, `CGO_ENABLED=0`, `-trimpath`, the current module-qualified ldflags symbols, true Root commit metadata and independent component versions. External release qualification remains explicit `GOWORK=off`; B3 does not activate publishers.
 
 ## Verification Gate
 

@@ -1,8 +1,8 @@
 package resource
 
 import (
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	contractsresource "github.com/opensoha/soha-contracts/resource"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	contractsresource "github.com/opensoha/soha/contracts/resource"
 )
 
 const (

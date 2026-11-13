@@ -51,7 +51,7 @@ control plane, and calls back with task, Docker, or Agent Runtime results.
 - Its `buildpacks-runtime` target adds pinned pack and Docker CLI tooling for a dedicated CNB runner; never share the business-node Docker socket. `buildpacks-daemonless-runtime` adds pinned Podman for direct local lifecycle containers and requires its own Linux rootful runner and exclusive storage, with no daemon socket.
 - `deploy/Dockerfile.hermes-agent-runner` builds the Hermes-derived runner image.
 - `deploy/kubernetes/**` is a starter manifest; Helm charts live in `opensoha/soha-helm`.
-- Dockerfiles consume the complete Root context, all four module manifests and Root `contracts/` source. No sibling context or registry fallback is used for source builds. Existing module/import/ldflags and public download identities stay unchanged in B3.
+- Dockerfiles consume the complete Root context, all four module manifests and Root `contracts/` source. No sibling context or registry fallback is used for source builds. Use `github.com/opensoha/soha/agent` module/import/ldflags identity and `github.com/opensoha/soha/contracts` SDK; preserve existing public download routes.
 - DSH keeps its own Node>=24.9 lock and Node24 image; it is not part of the Root Node22 npm workspace. Runtime skills/MCP assets remain supplied by their explicit Core-owned definitions or same-Root `skills/` packages, never an implicit sibling checkout.
 
 ## Testing

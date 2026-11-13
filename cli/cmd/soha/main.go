@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/opensoha/soha-cli/internal/sohacli"
+	"github.com/opensoha/soha/cli/internal/sohacli"
 )
 
 func main() {

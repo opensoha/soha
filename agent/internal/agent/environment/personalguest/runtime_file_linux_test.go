@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func TestRuntimeFileContainmentAndContentCAS(t *testing.T) {

@@ -11,9 +11,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	"github.com/opensoha/soha-agent/internal/agent/dockerruntime"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	"github.com/opensoha/soha/agent/internal/agent/dockerruntime"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 type dockerVersionedReader func(context.Context, protocol.ReadRequest) (protocol.ReadResult, error)

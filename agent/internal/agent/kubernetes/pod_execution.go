@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func (c *Client) InspectPodExecutionTarget(ctx context.Context, namespace, name, uid, container string) (contractresource.PodExecutionTarget, error) {

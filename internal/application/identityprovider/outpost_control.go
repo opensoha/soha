@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	domainruntime "github.com/opensoha/soha/internal/domain/outpostruntime"
 	"github.com/opensoha/soha/internal/platform/apperrors"

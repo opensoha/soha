@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	identity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/networkaccess"
 	"github.com/opensoha/soha/internal/platform/apperrors"

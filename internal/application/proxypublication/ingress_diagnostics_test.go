@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	proxy "github.com/opensoha/soha/internal/domain/networkproxy"
 	domain "github.com/opensoha/soha/internal/domain/proxypublication"
 	"github.com/opensoha/soha/internal/networkidentity"

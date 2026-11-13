@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/helmrelease"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 type recordingHelmExecutor struct{ calls int }

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/DATA-DOG/go-sqlmock"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/proxypublication"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/driver/postgres"

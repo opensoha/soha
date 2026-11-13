@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	env "github.com/opensoha/soha-contracts/agent/environment"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	env "github.com/opensoha/soha/contracts/agent/environment"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

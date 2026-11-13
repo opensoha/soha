@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/domain/delivery"
 	proxy "github.com/opensoha/soha/internal/domain/networkproxy"
 	domain "github.com/opensoha/soha/internal/domain/proxydeployment"

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensoha/soha-contracts/helmrelease"
-	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	helmruntime "github.com/opensoha/soha/contracts/helmrelease/runtime"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"

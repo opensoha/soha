@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/helmrelease"
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/helmrelease"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 type clusterExecutionClaim struct {

@@ -15,7 +15,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/yamux"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
 	"go.uber.org/zap"
 )
 

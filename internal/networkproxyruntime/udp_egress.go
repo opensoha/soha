@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/opensoha/soha-contracts/proxytransport"
+	"github.com/opensoha/soha/contracts/proxytransport"
 )
 
 const udpGuardProbeTarget = "198.18.0.1:9"

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	ec "github.com/opensoha/soha-contracts/endpointcontrol"
+	ec "github.com/opensoha/soha/contracts/endpointcontrol"
 	domain "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	channelrepo "github.com/opensoha/soha/internal/repository/endpointcontrol"

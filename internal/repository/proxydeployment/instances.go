@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	app "github.com/opensoha/soha/internal/application/proxydeployment"
 	proxy "github.com/opensoha/soha/internal/domain/networkproxy"
 	domain "github.com/opensoha/soha/internal/domain/proxydeployment"

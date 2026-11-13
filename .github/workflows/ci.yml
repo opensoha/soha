@@ -63,6 +63,7 @@ jobs:
           sha256sum package-lock.json >> "$GITHUB_STEP_SUMMARY"
       - name: Verify same-source Go workspace and module state
         run: |
+          go test ./scripts/check-module-boundaries.go ./scripts/check-module-boundaries_test.go
           python3 scripts/source-workspace.py check-go
           python3 scripts/source-workspace.py tidy
           go mod verify

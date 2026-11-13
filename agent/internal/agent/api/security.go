@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
 	"go.uber.org/zap"
 )
 

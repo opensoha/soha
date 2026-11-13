@@ -9,13 +9,14 @@
 先构建当前工作区代码。这里用缓存运行时镜像挂载新二进制，属于本地联调，不代替发行镜像构建验收。需要已有 `soha-vpn-implementation:test`、`soha-vpn-gateway:test` 镜像；也可把脚本中的镜像名改为按 `deploy/Dockerfile` 构建的对应 runtime target。
 
 ```sh
-# 在 soha 仓库执行；显式使用 sibling contracts。
+# 在 Root soha 仓库执行，使用 Go1.27.4 和同提交 contracts/。
+export GOWORK="$PWD/go.work"
+opensoha-verify run -- python3 scripts/source-workspace.py check-go
 mkdir -p /private/tmp/soha-vpn-build
-printf 'go 1.27.3\n\nuse %s\n\nreplace github.com/opensoha/soha-contracts => %s\n' "$PWD" "$(cd ../soha-contracts && pwd)" > /private/tmp/soha-vpn-build/go.work
-GOWORK=/private/tmp/soha-vpn-build/go.work GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags embedassets -o /private/tmp/soha-vpn-build/lab-server ./cmd/server
-GOWORK=/private/tmp/soha-vpn-build/go.work GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /private/tmp/soha-vpn-build/lab-control ./cmd/network-control
-GOWORK=/private/tmp/soha-vpn-build/go.work GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /private/tmp/soha-vpn-build/lab-ingest ./cmd/ingest
-GOWORK=/private/tmp/soha-vpn-build/go.work GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /private/tmp/soha-vpn-build/lab-gateway ./cmd/network-gateway
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 opensoha-verify run -- go build -tags embedassets -o /private/tmp/soha-vpn-build/lab-server ./cmd/server
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 opensoha-verify run -- go build -o /private/tmp/soha-vpn-build/lab-control ./cmd/network-control
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 opensoha-verify run -- go build -o /private/tmp/soha-vpn-build/lab-ingest ./cmd/ingest
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 opensoha-verify run -- go build -o /private/tmp/soha-vpn-build/lab-gateway ./cmd/network-gateway
 python3 deploy/network-test/vpn-lab.py up
 ```
 

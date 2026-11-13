@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
-	"github.com/opensoha/soha-contracts/streamlimit"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
+	"github.com/opensoha/soha/contracts/streamlimit"
 )
 
 // ReadLogs addresses the original full container ID. It never resolves a

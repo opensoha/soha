@@ -58,7 +58,39 @@ class SourceArchiveTests(unittest.TestCase):
             repo = self.repository(directory)
             (repo / 'go.mod').write_text('module example.test/private\n')
             with self.assertRaises(ValueError):
-                native.validate_repository(repo, 'github.com/opensoha/soha-contracts')
+                native.validate_repository(repo, 'github.com/opensoha/soha/contracts')
+
+    def test_root_contracts_submodule_identity_and_archive_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.repository(directory)
+            (root / 'go.mod').write_text('module github.com/opensoha/soha\n')
+            (root / 'internal').mkdir()
+            (root / 'internal/root.go').write_text('package root')
+            sdk = root / 'contracts'
+            sdk.mkdir()
+            (sdk / 'go.mod').write_text('module github.com/opensoha/soha/contracts\n')
+            (sdk / 'sdk.go').write_text('package sdk')
+            native.validate_repository(root, 'github.com/opensoha/soha')
+            native.validate_repository(sdk, 'github.com/opensoha/soha/contracts')
+            with tarfile.open(fileobj=io.BytesIO(native.source_archive(sdk, 'src/contracts'))) as archive:
+                self.assertEqual(set(archive.getnames()), {'src/contracts/go.mod', 'src/contracts/sdk.go'})
+            manifest = sdk / 'go.mod'
+            manifest.rename(sdk / 'go.mod.saved')
+            manifest.symlink_to(sdk / 'go.mod.saved')
+            with self.assertRaises(ValueError):
+                native.validate_repository(sdk, 'github.com/opensoha/soha/contracts')
+            manifest.unlink()
+            manifest.write_text('module github.com/opensoha/soha/contracts\n')
+            link = root / 'redirect'
+            link.symlink_to(sdk, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                native.validate_repository(link, 'github.com/opensoha/soha/contracts')
+            standalone = root / 'standalone'
+            standalone.mkdir()
+            subprocess.run(['git', 'init', '-q', str(standalone)], check=True)
+            (standalone / 'go.mod').write_text('module github.com/opensoha/soha/contracts\n')
+            with self.assertRaises(ValueError):
+                native.validate_repository(standalone, 'github.com/opensoha/soha/contracts')
 
     def test_contracts_handwritten_go_and_private_non_source_boundary(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -134,7 +166,7 @@ class SourceArchiveTests(unittest.TestCase):
                 return 'go version go1.27.3 linux/amd64\n'
             return b''
         with patch.object(native, 'validate_repository'), patch.object(native, 'source_archive', return_value=b'owned source archive'), patch.object(native.subprocess, 'check_output', side_effect=output), patch.object(native.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)), patch.object(native, 'cleanup') as cleanup:
-            native.run(['docker'], 'nonce', Path('/core'), Path('/contracts'), ['go', 'version'], {}, io.StringIO(), io.StringIO(), {})
+            native.run(['docker'], 'nonce', Path('/core'), Path('/core/contracts'), ['go', 'version'], {}, io.StringIO(), io.StringIO(), {})
         self.assertEqual(cleanup.call_args.args[1:3], ('soha-native-pg-nonce', 'container-id'))
 
 

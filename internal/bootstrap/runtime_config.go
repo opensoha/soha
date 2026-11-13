@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appexecution "github.com/opensoha/soha/internal/application/execution"
 	appplugin "github.com/opensoha/soha/internal/application/plugin"
 	appruntimeconfig "github.com/opensoha/soha/internal/application/runtimeconfig"

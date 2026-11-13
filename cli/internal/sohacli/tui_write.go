@@ -12,8 +12,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/uuid"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 // Plans retain a private, typed submission closure. Rendering never reparses a

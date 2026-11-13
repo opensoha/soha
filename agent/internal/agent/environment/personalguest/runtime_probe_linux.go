@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 // Readiness has bounded retained fixtures; it cannot format or delete data.

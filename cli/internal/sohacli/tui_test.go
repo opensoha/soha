@@ -12,7 +12,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 type tuiFake struct {

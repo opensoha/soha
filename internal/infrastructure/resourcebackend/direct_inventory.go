@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"

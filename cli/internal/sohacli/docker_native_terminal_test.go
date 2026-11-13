@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	"github.com/opensoha/soha-contracts/resource/terminalstream"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	"github.com/opensoha/soha/contracts/resource/terminalstream"
 )
 
 func fixtureDockerTerminalLease() protocol.TerminalLease {

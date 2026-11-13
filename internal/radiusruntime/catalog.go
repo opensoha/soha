@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 // ConfigurationSnapshot is local installer approval, never downloaded control

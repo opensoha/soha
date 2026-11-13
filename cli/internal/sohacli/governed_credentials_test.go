@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func TestGovernedCredentialMintingFailsClosedAcrossServerVersions(t *testing.T) {

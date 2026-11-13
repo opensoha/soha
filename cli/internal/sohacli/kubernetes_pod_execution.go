@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 type remoteProcessExitError struct{ code int64 }

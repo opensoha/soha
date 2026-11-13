@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
-	"github.com/opensoha/soha-contracts/resource"
-	"github.com/opensoha/soha-contracts/resource/terminalstream"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
+	"github.com/opensoha/soha/contracts/resource"
+	"github.com/opensoha/soha/contracts/resource/terminalstream"
 )
 
 var errTerminalInputLimit = errors.New("terminal input limit")

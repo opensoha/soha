@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 // VolumeReaderMain is the isolated image process entry. It never bootstraps the

@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	agentbootstrap "github.com/opensoha/soha-agent/internal/agent/bootstrap"
-	"github.com/opensoha/soha-agent/internal/agent/buildinfo"
-	"github.com/opensoha/soha-agent/internal/agent/dockerruntime"
+	agentbootstrap "github.com/opensoha/soha/agent/internal/agent/bootstrap"
+	"github.com/opensoha/soha/agent/internal/agent/buildinfo"
+	"github.com/opensoha/soha/agent/internal/agent/dockerruntime"
 	"go.uber.org/zap"
 )
 

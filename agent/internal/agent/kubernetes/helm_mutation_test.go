@@ -9,7 +9,7 @@ import (
 	helmreleasecommon "helm.sh/helm/v4/pkg/release/common"
 	helmreleasepkg "helm.sh/helm/v4/pkg/release/v1"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 func TestNormalizeAgentHelmChartInstallInputBoundsTimeout(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/opensoha/soha-agent/internal/agent/config"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	"github.com/opensoha/soha/agent/internal/agent/config"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func (b *runtimeBroker) browserNetwork(ctx context.Context, op guest.RuntimeOperation, input guest.BrowserNetworkRequest) (guest.BrowserNetworkResponse, error) {

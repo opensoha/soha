@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 const maxTUIReferences = 128

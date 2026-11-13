@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func testDataPlan() DataPlan {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	engine "github.com/opensoha/soha-agent/internal/agent/dockerruntime"
-	dockerruntime "github.com/opensoha/soha-contracts/docker/runtime"
+	engine "github.com/opensoha/soha/agent/internal/agent/dockerruntime"
+	dockerruntime "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 func dockerOperationBinding(operation DockerOperation) (dockerruntime.ProjectBinding, bool, error) {

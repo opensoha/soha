@@ -2,7 +2,7 @@ package networkproxyruntime
 
 import (
 	"errors"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"slices"
 )
 

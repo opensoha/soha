@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensoha/soha-agent/internal/agent/buildinfo"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	runnerpkg "github.com/opensoha/soha-agent/internal/agent/runner"
+	"github.com/opensoha/soha/agent/internal/agent/buildinfo"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	runnerpkg "github.com/opensoha/soha/agent/internal/agent/runner"
 )
 
 type diagnosticsView struct {

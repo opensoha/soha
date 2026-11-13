@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appruntimeconfig "github.com/opensoha/soha/internal/application/runtimeconfig"
 	domainruntimeconfig "github.com/opensoha/soha/internal/domain/runtimeconfig"

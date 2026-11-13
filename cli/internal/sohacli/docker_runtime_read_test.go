@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 func dockerReadFixture(action string) protocol.ReadResult {

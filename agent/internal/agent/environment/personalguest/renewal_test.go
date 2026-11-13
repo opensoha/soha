@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 func TestPersonalGuestRenewalLostRepliesAndRestartPreserveSequence(t *testing.T) {

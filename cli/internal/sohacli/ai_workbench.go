@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 const copilotPath = "/api/v1/copilot"

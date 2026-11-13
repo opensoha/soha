@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strconv"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func runKnowledgeCatalog(ctx context.Context, args []string, rt Runtime) error {

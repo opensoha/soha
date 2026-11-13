@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strconv"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 )
 
 func (c APIClient) ExecuteKubernetesWorkloadAction(ctx context.Context, cluster, namespace, kind, name, action string, input contractresource.ConditionalWorkloadActionInput) (contractresource.ConditionalWorkloadActionReceipt, error) {

@@ -3,7 +3,7 @@ package access
 import (
 	"context"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )

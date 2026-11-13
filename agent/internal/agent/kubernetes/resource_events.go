@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"

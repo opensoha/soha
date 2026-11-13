@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 func registerConfigurationObjectReadRoutes(platform *gin.RouterGroup, client *k8sagent.Client) {

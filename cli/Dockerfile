@@ -16,7 +16,7 @@ WORKDIR /src/cli
 COPY contracts/ /src/contracts/
 COPY cli/ /src/cli/
 RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha-cli/internal/sohacli.version=${VERSION} -X github.com/opensoha/soha-cli/internal/sohacli.commit=${COMMIT} -X github.com/opensoha/soha-cli/internal/sohacli.date=${DATE}" -o /out/soha ./cmd/soha
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha/cli/internal/sohacli.version=${VERSION} -X github.com/opensoha/soha/cli/internal/sohacli.commit=${COMMIT} -X github.com/opensoha/soha/cli/internal/sohacli.date=${DATE}" -o /out/soha ./cmd/soha
 
 FROM alpine:3.20
 ARG COMMIT=unknown

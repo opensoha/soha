@@ -19,10 +19,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/opensoha/soha-agent/internal/agent/buildinfo"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	k8sagent "github.com/opensoha/soha-agent/internal/agent/kubernetes"
-	runnerpkg "github.com/opensoha/soha-agent/internal/agent/runner"
+	"github.com/opensoha/soha/agent/internal/agent/buildinfo"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	k8sagent "github.com/opensoha/soha/agent/internal/agent/kubernetes"
+	runnerpkg "github.com/opensoha/soha/agent/internal/agent/runner"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )

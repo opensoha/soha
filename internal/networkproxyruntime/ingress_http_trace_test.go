@@ -3,7 +3,7 @@ package networkproxyruntime
 import (
 	"context"
 	"errors"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"io"
 	"net"
 	"net/http"

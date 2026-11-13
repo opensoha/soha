@@ -6,10 +6,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	"github.com/opensoha/soha-agent/internal/agent/environment"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	"github.com/opensoha/soha/agent/internal/agent/environment"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	"go.uber.org/zap"
 )
 

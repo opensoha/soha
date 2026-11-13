@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	accessdomain "github.com/opensoha/soha/internal/domain/networkaccess"

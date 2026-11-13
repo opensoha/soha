@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 )

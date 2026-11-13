@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensoha/soha-contracts/proxytransport"
+	"github.com/opensoha/soha/contracts/proxytransport"
 	domain "github.com/opensoha/soha/internal/domain/networkproxy"
 )
 

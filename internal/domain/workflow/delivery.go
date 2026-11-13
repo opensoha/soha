@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"

@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 // Keep strict JSON decoding at the CLI boundary, including generated unions.

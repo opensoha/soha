@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	contractsapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	contractsapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 )

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )

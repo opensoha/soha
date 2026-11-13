@@ -1,6 +1,6 @@
 package resource
 
-import contractsresource "github.com/opensoha/soha-contracts/resource"
+import contractsresource "github.com/opensoha/soha/contracts/resource"
 
 const (
 	PodLogsMaxContentBytes = contractsresource.PodLogsMaxContentBytes

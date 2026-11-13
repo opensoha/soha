@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	resourceruntime "github.com/opensoha/soha/contracts/resource/runtime"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

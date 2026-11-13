@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	runnerpkg "github.com/opensoha/soha-agent/internal/agent/runner"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	runnerpkg "github.com/opensoha/soha/agent/internal/agent/runner"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
 )
 
 type outpostRuntimeController interface {

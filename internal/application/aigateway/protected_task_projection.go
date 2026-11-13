@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"

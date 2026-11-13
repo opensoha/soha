@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainai "github.com/opensoha/soha/internal/domain/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"

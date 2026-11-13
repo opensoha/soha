@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strconv"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 func (a tuiAPI) follow(ctx context.Context, runID, sessionID string, sequence int, emit func(aiRunStreamOutput) error) error {

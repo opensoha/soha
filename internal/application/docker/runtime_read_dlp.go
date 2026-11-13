@@ -5,7 +5,7 @@ import (
 	"path"
 	"unicode/utf8"
 
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 	appdlp "github.com/opensoha/soha/internal/application/contentdlp"
 	domaindlp "github.com/opensoha/soha/internal/domain/contentdlp"
 	domain "github.com/opensoha/soha/internal/domain/docker"

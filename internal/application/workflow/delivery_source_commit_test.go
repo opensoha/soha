@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"

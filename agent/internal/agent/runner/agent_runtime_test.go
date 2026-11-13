@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
 	"go.uber.org/zap"
 )
 

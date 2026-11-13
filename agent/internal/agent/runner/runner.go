@@ -19,8 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"go.uber.org/zap"
 )
 

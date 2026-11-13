@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	protocol "github.com/opensoha/soha-contracts/docker/runtime"
+	protocol "github.com/opensoha/soha/contracts/docker/runtime"
 )
 
 var ErrVolumeReaderUnsupported = errors.New("safe Docker volume reader is unavailable")

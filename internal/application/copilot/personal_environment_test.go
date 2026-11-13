@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domain "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 // Lease is private supervisor input. The C1 adapter maps generated contracts to

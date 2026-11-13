@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"

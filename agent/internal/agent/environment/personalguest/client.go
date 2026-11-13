@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/opensoha/soha-agent/internal/agent/config"
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	"github.com/opensoha/soha/agent/internal/agent/config"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 )
 
 var errTransient = errors.New("personal guest transport is temporarily unavailable")

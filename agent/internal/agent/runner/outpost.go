@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/opensoha/soha-agent/internal/agent/buildinfo"
-	cfgpkg "github.com/opensoha/soha-agent/internal/agent/config"
-	contractauth "github.com/opensoha/soha-contracts/auth"
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/agent/internal/agent/buildinfo"
+	cfgpkg "github.com/opensoha/soha/agent/internal/agent/config"
+	contractauth "github.com/opensoha/soha/contracts/auth"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	"go.uber.org/zap"
 )
 

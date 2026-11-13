@@ -520,7 +520,7 @@ def run(report, core_check=False, prepare_only=False, manual_models=False, chat_
                 shutil.copyfile('go.mod', modfile)
                 shutil.copyfile('go.sum', root / 'core.sum')
                 go_env = dict(os.environ, GOWORK='off')
-                subprocess.run(['go', 'mod', 'edit', '-modfile=' + str(modfile), '-replace=github.com/opensoha/soha-contracts=../soha-contracts'], env=go_env, check=True, capture_output=True)
+                subprocess.run(['go', 'mod', 'edit', '-modfile=' + str(modfile), '-replace=github.com/opensoha/soha/contracts=' + str(Path('contracts').resolve(strict=True))], env=go_env, check=True, capture_output=True)
                 compiled = subprocess.run(['go', 'test', '-c', '-modfile=' + str(modfile), '-o', str(root / 'core-hindsight.test'), './internal/infrastructure/hindsight'], env=go_env, capture_output=True, timeout=120)
                 report['core_sources_before'] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in [*Path('internal/infrastructure/hindsight').glob('*.go'), *Path('internal/application/memory').glob('*.go')] if not p.name.endswith('_test.go') or p.name == 'client_real_integration_test.go'}
                 report['core_test_sha256'] = hashlib.sha256(Path('internal/infrastructure/hindsight/client_real_integration_test.go').read_bytes()).hexdigest()

@@ -20,7 +20,7 @@ COPY agent/ /src/agent/
 ARG GOMAXPROCS=4
 ENV GOMAXPROCS=$GOMAXPROCS
 RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=${VERSION} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=${COMMIT} -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=${DATE}" -o /out/soha-agent ./cmd/agent
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Version=${VERSION} -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Commit=${COMMIT} -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Date=${DATE}" -o /out/soha-agent ./cmd/agent
 
 FROM nousresearch/hermes-agent:v2026.6.5@sha256:9ad3b04ec916ea2c2da22358fd43b024c788d74073210695af88bfc2e63869b4
 ARG COMMIT=unknown

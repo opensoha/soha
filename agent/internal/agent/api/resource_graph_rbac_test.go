@@ -11,8 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	contractresource "github.com/opensoha/soha-contracts/resource"
-	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
+	contractresource "github.com/opensoha/soha/contracts/resource"
+	contractruntime "github.com/opensoha/soha/contracts/resource/runtime"
 )
 
 func TestRBACGraphHTTPReadScopeAndAuth(t *testing.T) {

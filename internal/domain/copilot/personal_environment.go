@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 // Local dispatch checks alone may return this marker. A network failure or an

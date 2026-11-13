@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	app "github.com/opensoha/soha/internal/application/radiusdeployment"
 	"github.com/opensoha/soha/internal/domain/delivery"
 	runtime "github.com/opensoha/soha/internal/domain/networkruntime"

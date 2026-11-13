@@ -3,8 +3,8 @@ package proxypublication
 import (
 	"context"
 	"encoding/json"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/proxypolicy"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/proxypolicy"
 	domain "github.com/opensoha/soha/internal/domain/proxypublication"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/platform/apperrors"

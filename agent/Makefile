@@ -21,7 +21,7 @@ IMAGE_TAG ?= local
 IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
 GOPROXY ?= https://proxy.golang.org,direct
 PUSH_LATEST ?= 0
-BUILD_LDFLAGS = -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Commit=$(SOURCE_COMMIT) -X github.com/opensoha/soha-agent/internal/agent/buildinfo.Date=$(BUILD_DATE) $(if $(VERSION),-X github.com/opensoha/soha-agent/internal/agent/buildinfo.Version=$(VERSION))
+BUILD_LDFLAGS = -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Commit=$(SOURCE_COMMIT) -X github.com/opensoha/soha/agent/internal/agent/buildinfo.Date=$(BUILD_DATE) $(if $(VERSION),-X github.com/opensoha/soha/agent/internal/agent/buildinfo.Version=$(VERSION))
 AGENT_IMAGE_REPOSITORY ?= ghcr.io/opensoha/soha-agent
 HERMES_IMAGE_REPOSITORY ?= ghcr.io/opensoha/soha-hermes-agent
 

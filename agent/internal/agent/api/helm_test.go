@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
-	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
+	helmruntime "github.com/opensoha/soha/contracts/helmrelease/runtime"
 )
 
 func TestHelmErrorsPreserveConflictWithoutProviderDetails(t *testing.T) {

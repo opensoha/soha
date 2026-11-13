@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	sohaapi "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 )
 
 var dockerConfigurationKey = regexp.MustCompile(`^[A-Za-z0-9._:-]{8,128}$`)

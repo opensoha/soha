@@ -13,7 +13,7 @@ import (
 	metadatafake "k8s.io/client-go/metadata/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	domainresource "github.com/opensoha/soha-agent/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/agent/internal/domain/resource"
 )
 
 func TestCRDDefinitionDeletionFencesUIDAndResourceVersion(t *testing.T) {

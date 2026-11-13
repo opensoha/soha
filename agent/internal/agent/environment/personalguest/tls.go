@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/opensoha/soha-agent/internal/agent/config"
+	"github.com/opensoha/soha/agent/internal/agent/config"
 )
 
 func guestHTTPClient(cfg config.PersonalGuestConfig) (*http.Client, error) {

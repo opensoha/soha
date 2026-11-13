@@ -104,7 +104,7 @@ class QualityLabGuards(unittest.TestCase):
                 'environment': {'disposable': True, 'containerId': 'core', 'imageDigest': 'image'},
                 'tests': [{'result': 'passed'}] * 4}
         with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'ROOT', Path(directory)), patch.object(lab, 'LAB', Path(directory) / 'private'):
-            legacy = Path(directory) / 'soha-web/test-results/run-manifest.json'
+            legacy = Path(directory) / 'soha/web/test-results/run-manifest.json'
             legacy.parent.mkdir(parents=True)
             legacy.write_text(json.dumps(good))  # stale PASS must be ignored and preserved
             for flow in [False, True]:
@@ -134,7 +134,7 @@ class QualityLabGuards(unittest.TestCase):
         state = {'runId': run_id, 'coreId': 'core', 'coreImage': 'image', 'sources': {'core': 'sha'},
                  'accounts': {'direct-readonly': {'username': 'test'}}, 'secrets': {'readonly': 'synthetic'}}
         with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'ROOT', Path(directory)), patch.object(lab, 'LAB', Path(directory) / 'private'):
-            results = Path(directory) / 'soha-web/test-results'
+            results = Path(directory) / 'soha/web/test-results'
             legacy = results / 'run-manifest.json'
             unrelated = results / 'tasks/another-task/another-execution/run-manifest.json'
             for path in [legacy, unrelated]:
@@ -180,7 +180,7 @@ class QualityLabGuards(unittest.TestCase):
                 env = kwargs['env']
                 self.assertEqual(args[0], ['npm', 'run', 'test:flow:real'])
                 self.assertEqual(env['SOHA_E2E_MUTATIONS'], '1')
-                output = Path(directory) / 'soha-web/test-results/tasks' / env['SOHA_E2E_TASK_ID'] / env['SOHA_E2E_EXECUTION_ID'] / 'run-manifest.json'
+                output = Path(directory) / 'soha/web/test-results/tasks' / env['SOHA_E2E_TASK_ID'] / env['SOHA_E2E_EXECUTION_ID'] / 'run-manifest.json'
                 output.parent.mkdir(parents=True)
                 output.write_text(json.dumps({'result': 'PASS', 'runId': 'run', 'mode': 'e2e-agent', 'sources': {},
                                               'taskId': env['SOHA_E2E_TASK_ID'], 'executionId': env['SOHA_E2E_EXECUTION_ID'],

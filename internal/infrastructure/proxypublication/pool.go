@@ -5,7 +5,7 @@ package proxypublication
 import (
 	"context"
 	"fmt"
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
 	proxyDomain "github.com/opensoha/soha/internal/domain/networkproxy"
 	deploymentDomain "github.com/opensoha/soha/internal/domain/proxydeployment"
 	publicationDomain "github.com/opensoha/soha/internal/domain/proxypublication"

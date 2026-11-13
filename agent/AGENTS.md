@@ -3,7 +3,7 @@
 ## 入口与所有权
 
 - 本目录 `agent/` 负责独立 Agent、runner 和集群执行产物；不得 import `soha/internal/**`，通过公开 API 和 contracts 与控制面交互。
-- 先读取同一 Root 的 `../AGENTS.md`；内部源码使用 Root `go.work` 的四个 module 和同提交 `contracts/`，不依赖旧 sibling 仓库。公开 module/import/ldflags 身份在 B3 保持不变，外部分发另以显式 `GOWORK=off` 验证，不把源码通过称为 SDK 已发布。技能链接仅提供发现，不能代替读取真实源。
+- 先读取同一 Root 的 `../AGENTS.md`；内部源码使用 Root `go.work` 的四个 module 和同提交 `contracts/`，不依赖旧 sibling 仓库。module/import/ldflags 身份为 `github.com/opensoha/soha/agent`，SDK 为 `github.com/opensoha/soha/contracts`；外部分发另以显式 `GOWORK=off` 验证，不把源码通过称为 SDK 已发布。技能链接仅提供发现，不能代替读取真实源。
 - Agent 实现或实质审查前读取 [soha-agent](.agents/skills/soha-agent/SKILL.md) 及其指定的相关参考；只读查询按需定位。已读且未变化的规则可复用，交接后缺少关键约束时补读必要部分。
 - 技能与历史计划不是安装、执行远程任务、修改生产环境或发布的授权。
 

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	guest "github.com/opensoha/soha-contracts/agent/guest"
+	guest "github.com/opensoha/soha/contracts/agent/guest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/opensoha/soha-agent/internal/api/response"
+	apiresponse "github.com/opensoha/soha/agent/internal/api/response"
 )
 
 func authMiddleware(token string) gin.HandlerFunc {

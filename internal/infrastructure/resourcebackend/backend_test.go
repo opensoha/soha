@@ -2,7 +2,7 @@ package resourcebackend
 
 import (
 	"errors"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"testing"
 	"time"
 

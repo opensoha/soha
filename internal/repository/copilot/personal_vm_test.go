@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appaudit "github.com/opensoha/soha/internal/application/audit"
 	appcopilot "github.com/opensoha/soha/internal/application/copilot"

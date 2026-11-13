@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	"github.com/opensoha/soha-contracts/proxytransport"
+	api "github.com/opensoha/soha/contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/contracts/proxytransport"
 )
 
 func TestIngressRenewsAcrossShortGrantWindowsAndClosesAtFailedLease(t *testing.T) {

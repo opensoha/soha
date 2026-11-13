@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	contractenv "github.com/opensoha/soha/contracts/agent/environment"
 )
 
 // PersonalOperation recovers identity from durable Docker receipts, not an

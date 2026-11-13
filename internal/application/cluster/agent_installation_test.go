@@ -3,7 +3,7 @@ package cluster
 import (
 	"context"
 	"errors"
-	contractresource "github.com/opensoha/soha-contracts/resource"
+	contractresource "github.com/opensoha/soha/contracts/resource"
 	"io"
 	rbacv1 "k8s.io/api/rbac/v1"
 	kyaml "k8s.io/apimachinery/pkg/util/yaml"
