@@ -1,0 +1,27 @@
+{
+  "name": "@opensoha/cli",
+  "version": "0.1.8",
+  "description": "Verified launcher for the official Soha CLI",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/opensoha/soha-cli.git"
+  },
+  "homepage": "https://github.com/opensoha/soha-cli",
+  "bugs": "https://github.com/opensoha/soha-cli/issues",
+  "type": "module",
+  "bin": {
+    "soha": "bin/soha.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

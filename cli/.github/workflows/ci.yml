@@ -1,0 +1,50 @@
+name: cli-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cli
+        uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.4"
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Check Go module state
+        run: |
+          GOWORK=off go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Verify Go module checksums
+        run: GOWORK=off go mod verify
+      - name: Test
+        run: GOWORK=off go test ./...
+      - name: Race test
+        run: GOWORK=off go test -race ./...
+      - name: Vet
+        run: GOWORK=off go vet ./...
+      - name: Govulncheck
+        run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          args: --timeout=5m
+      - name: Build
+        run: GOWORK=off CGO_ENABLED=0 go build -o /tmp/soha ./cmd/soha
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20.x"
+      - name: Test npm launcher
+        working-directory: npm/cli
+        run: |
+          npm test
+          npm pack --dry-run
+      - name: Docker build
+        run: docker build -f Dockerfile -t ghcr.io/opensoha/soha-cli:test .
