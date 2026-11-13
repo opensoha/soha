@@ -142,7 +142,7 @@ jobs:
           OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
         run: npm run check:consumers -- --consumer "$CONSUMER" --require-all --declared --out ../../consumer-reports/declared.json
         working-directory: source/contracts
-      - name: Verify Contracts candidate independently of declared result
+      - name: Verify candidate independently (Go uses Root; declared retains pinned external revisions)
         id: candidate
         if: ${{ !cancelled() && steps.consumer-setup.outcome == 'success' }}
         env:
@@ -150,7 +150,15 @@ jobs:
           CONTRACTS_SHA: ${{ inputs.contracts_sha || github.sha }}
           SOHA_CONSUMER_ROOT: ${{ github.workspace }}/consumers
           OPENSOHA_KEEP_VERIFY_ARTIFACTS: '1'
-        run: npm run check:consumers -- --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --contracts-skill-schema "$GITHUB_WORKSPACE/source/contracts/skills/skill-manifest.schema.json" --contracts-mcp-preset-schema "$GITHUB_WORKSPACE/source/contracts/presets/mcp-preset.schema.json" --contracts-agent-profile-schema "$GITHUB_WORKSPACE/source/contracts/profiles/agent-profile.schema.json" --contracts-permission-catalog "$GITHUB_WORKSPACE/source/contracts/auth/permission-catalog.json" --out ../../consumer-reports/candidate.json
+        run: |
+          case "$CONSUMER" in
+            soha|soha-cli|soha-agent)
+              SOHA_CONSUMER_ROOT="$GITHUB_WORKSPACE/source" npm run check:consumers -- --internal-source --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --out ../../consumer-reports/candidate.json
+              ;;
+            *)
+              npm run check:consumers -- --consumer "$CONSUMER" --require-all --contracts-sha "$CONTRACTS_SHA" --contracts-skill-schema "$GITHUB_WORKSPACE/source/contracts/skills/skill-manifest.schema.json" --contracts-mcp-preset-schema "$GITHUB_WORKSPACE/source/contracts/presets/mcp-preset.schema.json" --contracts-agent-profile-schema "$GITHUB_WORKSPACE/source/contracts/profiles/agent-profile.schema.json" --contracts-permission-catalog "$GITHUB_WORKSPACE/source/contracts/auth/permission-catalog.json" --out ../../consumer-reports/candidate.json
+              ;;
+          esac
         working-directory: source/contracts
       - name: Report both dependency modes
         if: always()
