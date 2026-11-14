@@ -16,13 +16,14 @@ npx -y @opensoha/cli@latest mcp
 npx -y @opensoha/cli@latest setup --client codex --mode both
 ```
 
-The local candidate is `0.2.1`; it is not published yet. Root
-`cli/v0.2.0` already has its 13 native release assets and
+Root publishes the `0.2.1` launcher through the protected `cli/v0.2.1` workflow.
+Check the [npm package](https://www.npmjs.com/package/@opensoha/cli) and
+[Root CLI releases](https://github.com/opensoha/soha/releases?q=cli%2Fv) for available versions.
+Root `cli/v0.2.0` has its 13 native release assets and
 `ghcr.io/opensoha/soha-cli:v0.2.0` image published; the npm `0.2.0` launcher
 was not published because its pack-descriptor verification failed. These public
-`0.2.0` artifacts remain immutable. The `0.2.1` candidate fixes npm12 descriptor
+`0.2.0` artifacts remain immutable. Version `0.2.1` fixes npm12 descriptor
 handling and must pass its own protected release checks before publication.
-Existing `@latest` installations continue to resolve the published legacy `0.1.8` line.
 
 The npm package does not implement MCP in JavaScript. It downloads the native
 binary from the matching GitHub release, verifies `checksums.txt`, caches it by
