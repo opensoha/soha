@@ -47,6 +47,9 @@ class ImpactTests(unittest.TestCase):
             manifest.write_text(json.dumps({"soha-web": web}))
             git("add", ".")
             git("commit", "--quiet", "-m", "Source workspace")
+            workspace = git("rev-parse", "HEAD")
+            merge = git("commit-tree", git("rev-parse", "HEAD^{tree}"), "-p", core, "-p", workspace, data="PR merge\n")
+            git("update-ref", "HEAD", merge, workspace)
             self.assertEqual(impact.web_baseline(core, root), imported)
             self.assertEqual(impact.web_baseline(imported, root), imported)
             with self.assertRaises(ValueError):

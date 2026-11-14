@@ -127,19 +127,20 @@ def web_baseline(base, root=Path.cwd()):
     if present.returncode == 0:
         return base
     # The first migration compares against the reviewed imported Web tree, preserving its debt.
-    additions = git("log", "--first-parent", "--diff-filter=A", "--format=%H", "HEAD", "--", "web/package.json").splitlines()
+    additions = git("log", "-m", "--full-history", "--ancestry-path", "--diff-filter=A", "--format=%H", f"{base}..HEAD", "--", "web/package.json").splitlines()
     if not additions:
         raise ValueError("reviewed Web import is missing")
-    imported = additions[0]
     source = json.loads((root / "contracts/compat/consumer-revisions.json").read_text())["soha-web"]
     if not re.fullmatch(r"[0-9a-f]{40}", source):
         raise ValueError("reviewed Web source SHA is missing")
-    git("merge-base", "--is-ancestor", base, imported)
-    git("merge-base", "--is-ancestor", imported, "HEAD")
     git("merge-base", "--is-ancestor", source, "HEAD")
-    if git("rev-parse", f"{imported}:web") != git("rev-parse", f"{source}^{{tree}}"):
-        raise ValueError("Web import differs from the reviewed source tree")
-    return imported
+    source_tree = git("rev-parse", f"{source}^{{tree}}")
+    for imported in additions:
+        if git("rev-parse", f"{imported}:web") == source_tree and source in git(
+            "rev-list", "--parents", "-n", "1", imported
+        ).split()[1:]:
+            return imported
+    raise ValueError("Web import differs from the reviewed source tree")
 
 
 if __name__ == "__main__":
