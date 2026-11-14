@@ -7,4 +7,4 @@ use (
 	./agent
 )
 
-replace github.com/opensoha/soha/contracts v0.0.0-20261113083804-3d8938200237 => ./contracts
+replace github.com/opensoha/soha/contracts v0.2.0 => ./contracts

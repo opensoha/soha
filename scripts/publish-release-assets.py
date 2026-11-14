@@ -24,13 +24,54 @@ def gh(*args):
     return subprocess.check_output(["gh", *args], text=True, timeout=300)
 
 
-def release_metadata(repo, tag):
-    response = subprocess.run(["gh", "api", "--method", "GET", f"repos/{repo}/releases/tags/{quote(tag, safe='')}"], capture_output=True, text=True, timeout=60)
+def release_metadata(repo, tag, release_id=None):
+    # The by-tag REST endpoint does not expose drafts; discover them with authenticated pagination.
+    response = subprocess.run(["gh", "api", "--method", "GET", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"], capture_output=True, text=True, timeout=60)
     if response.returncode:
-        if "(HTTP 404)" in response.stderr:
-            return None
-        raise ValueError("Cannot establish release state; no writes attempted")
-    return json.loads(response.stdout)
+        raise ValueError("Cannot establish release state")
+    pages = json.loads(response.stdout)
+    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+        raise ValueError("Unexpected release listing")
+    rows = [row for page in pages for row in page]
+    if any(not isinstance(row, dict) or not isinstance(row.get("tag_name"), str) for row in rows):
+        raise ValueError("Unexpected release identity in listing")
+    matches = [row for row in rows if row["tag_name"] == tag]
+    if len(matches) > 1:
+        raise ValueError("Ambiguous releases for the exact tag")
+    if not matches:
+        if release_id is not None:
+            raise ValueError("Selected release disappeared or changed tag")
+        return None
+    if release_id is None:
+        release_id = matches[0].get("id")
+    elif matches[0].get("id") != release_id:
+        raise ValueError("Selected release was replaced")
+    if type(release_id) is not int or release_id <= 0:
+        raise ValueError("Invalid release ID")
+    response = subprocess.run(["gh", "api", "--method", "GET", f"repos/{repo}/releases/{release_id}"], capture_output=True, text=True, timeout=60)
+    if response.returncode:
+        raise ValueError("Cannot establish selected release state")
+    return validate_release(json.loads(response.stdout), tag, release_id)
+
+
+def validate_release(release, tag, release_id):
+    if (type(release_id) is not int or release_id <= 0
+            or not isinstance(release, dict) or release.get("id") != release_id
+            or release.get("tag_name") != tag or release.get("prerelease") is not False
+            or type(release.get("draft")) is not bool or not isinstance(release.get("assets"), list)):
+        raise ValueError("Selected release identity differs")
+    if any(not isinstance(asset, dict) or not isinstance(asset.get("name"), str)
+           or type(asset.get("id")) is not int or asset["id"] <= 0 for asset in release["assets"]):
+        raise ValueError("Unexpected release asset metadata")
+    if len({asset["id"] for asset in release["assets"]}) != len(release["assets"]):
+        raise ValueError("Ambiguous release asset IDs")
+    return release
+
+
+def download_asset(repo, asset, output):
+    with output.open("wb") as stream:
+        subprocess.run(["gh", "api", "--method", "GET", f"repos/{repo}/releases/assets/{asset['id']}",
+                        "--header", "Accept:application/octet-stream"], stdout=stream, check=True, timeout=300)
 
 
 def compare_existing(files, assets, download):
@@ -44,7 +85,7 @@ def compare_existing(files, assets, download):
                 missing.append(source)
                 continue
             received = Path(temporary) / source.name
-            download(source.name, received)
+            download(next(asset for asset in assets if asset["name"] == source.name), received)
             if digest(source) != digest(received):
                 raise ValueError(f"Existing immutable asset differs: {source.name}")
     return missing
@@ -65,19 +106,38 @@ def publish(release, files, title, latest=False):
     if existing and not {item["name"] for item in existing.get("assets", [])} <= {file.name for file in files}:
         raise ValueError("Existing release has assets outside the approved set")
     missing = compare_existing(files, existing.get("assets", []) if existing else [],
-        lambda name, output: gh("release", "download", tag, "--repo", repo, "--pattern", name, "--output", str(output)))
+        lambda asset, output: download_asset(repo, asset, output))
     control.verify(release)
     if existing is None:
-        gh("release", "create", tag, "--repo", repo, "--target", release["sha"], "--draft", "--latest=false", "--title", title)
+        created = json.loads(gh("api", "--method", "POST", f"repos/{repo}/releases",
+                                "--raw-field", f"tag_name={tag}", "--raw-field", f"target_commitish={release['sha']}",
+                                "--raw-field", f"name={title}", "--field", "draft=true",
+                                "--field", "prerelease=false", "--raw-field", "make_latest=false"))
+        existing = validate_release(created, tag, created.get("id") if isinstance(created, dict) else None)
+        if existing["draft"] is not True:
+            raise ValueError("Created release is not a draft")
+    release_id = existing["id"]
     for file in missing:
-        gh("release", "upload", tag, str(file), "--repo", repo)
-    current = release_metadata(repo, tag)
-    if not current or not {file.name for file in files} <= {item["name"] for item in current.get("assets", [])}:
+        state = release_metadata(repo, tag, release_id)
+        if (not {asset["name"] for asset in state["assets"]} <= {source.name for source in files}
+                or any(asset["name"] == file.name for asset in state["assets"])):
+            raise ValueError("Release assets changed before upload")
+        gh("api", "--method", "POST", f"https://uploads.github.com/repos/{repo}/releases/{release_id}/assets?name={quote(file.name, safe='')}",
+           "--header", "Content-Type:application/octet-stream", "--header", f"Content-Length:{file.stat().st_size}", "--input", str(file))
+    current = release_metadata(repo, tag, release_id)
+    if not current or {file.name for file in files} != {item["name"] for item in current.get("assets", [])}:
         raise ValueError("Release asset upload is incomplete")
     compare_existing(files, current["assets"],
-        lambda name, output: gh("release", "download", tag, "--repo", repo, "--pattern", name, "--output", str(output)))
+        lambda asset, output: download_asset(repo, asset, output))
     control.verify(release)
-    gh("release", "edit", tag, "--repo", repo, "--draft=false", "--prerelease=false", "--latest=" + str(latest).lower())
+    final = release_metadata(repo, tag, release_id)
+    if {(asset["id"], asset["name"]) for asset in final["assets"]} != {(asset["id"], asset["name"]) for asset in current["assets"]}:
+        raise ValueError("Verified release assets changed before publication")
+    published = json.loads(gh("api", "--method", "PATCH", f"repos/{repo}/releases/{release_id}",
+                              "--field", "draft=false", "--field", "prerelease=false", "--raw-field", "make_latest=" + str(latest).lower()))
+    validate_release(published, tag, release_id)
+    if published["draft"] is not False:
+        raise ValueError("Release is still a draft")
     print(json.dumps({"tag": tag, "sha": release["sha"], "assets": [file.name for file in files], "result": "PASS"}))
 
 

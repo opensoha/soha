@@ -24,7 +24,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/openctemio/saml v0.5.2-openctem.2
-	github.com/opensoha/soha/contracts v0.0.0-20261113083804-3d8938200237
+	github.com/opensoha/soha/contracts v0.2.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/russellhaering/goxmldsig v1.6.1

@@ -67,8 +67,8 @@ github.com/oapi-codegen/nullable v1.1.0 h1:eAh8JVc5430VtYVnq00Hrbpag9PFRGWLjxR1/
 github.com/oapi-codegen/nullable v1.1.0/go.mod h1:KUZ3vUzkmEKY90ksAmit2+5juDIhIZhfDl+0PwOQlFY=
 github.com/oapi-codegen/runtime v1.7.0 h1:t7358VYPvNbWJ9gdAkIK/smVeHpBf6yp8VTsaZsb/7k=
 github.com/oapi-codegen/runtime v1.7.0/go.mod h1:GwV7hC2hviaMzj+ITfHVRESK5J2W/GefVwIND/bMGvU=
-github.com/opensoha/soha/contracts v0.0.0-20261113083804-3d8938200237 h1:79lqN/n/NEGN4fQwWN0+fvc2hB/RmoX3OnjXXQ//i0I=
-github.com/opensoha/soha/contracts v0.0.0-20261113083804-3d8938200237/go.mod h1:mS9d/hEaQt2DDqGdmSKLKqDKr7IFWLnWB6LgsNCoetk=
+github.com/opensoha/soha/contracts v0.2.0 h1:76LP5QdZLVjO+YFzb0tY+XpvaWBX7vfULky4F3Y9mHU=
+github.com/opensoha/soha/contracts v0.2.0/go.mod h1:mS9d/hEaQt2DDqGdmSKLKqDKr7IFWLnWB6LgsNCoetk=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
