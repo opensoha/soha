@@ -1,6 +1,6 @@
 {
   "name": "@opensoha/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Verified launcher for the official Soha CLI",
   "license": "Apache-2.0",
   "repository": {
